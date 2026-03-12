@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-11 13:46:03 EET  
-**Commit:** b557b60  
+**Generated:** 2026-03-12 20:33:41 EET
+**Commit:** 4674816
 **Branch:** main
 
 ## OVERVIEW
@@ -9,9 +9,14 @@ Ledger is a dual-stack portfolio tracker stitched together from backend and fron
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend structure, route/service/schema/test rules
-- `backend/app/services/AGENTS.md` — service-layer transaction, cache, and CSV workflow rules
+- `backend/app/services/AGENTS.md` — service-layer transaction, cache, CSV workflow, stock analysis orchestration rules
+- `backend/app/api/AGENTS.md` — route handler rules, service delegation, error translation
+- `backend/app/schemas/AGENTS.md` — Pydantic schema validation, serialization, camelCase aliasing
+- `backend/app/models/AGENTS.md` — ORM entity constraints, indexes, relationships
+- `backend/app/repositories/AGENTS.md` — data access layer query patterns
 - `frontend/AGENTS.md` — frontend routing, build/test flow, UI boundaries
 - `frontend/src/lib/AGENTS.md` — shared API/query/analytics/formatting rules
+- `frontend/src/components/ui/AGENTS.md` — generic UI primitive rules, shadcn/Radix-Nova conventions
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace feature rules
 
 ## STRUCTURE
