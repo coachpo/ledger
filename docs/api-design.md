@@ -3,10 +3,12 @@
 ## Conventions
 
 - Base path: `/api/v1`
-- Format: JSON for standard endpoints, `multipart/form-data` for CSV upload endpoints.
-- IDs use UUID strings.
-- Decimal values are serialized as strings.
-- Timestamps use ISO 8601 UTC strings.
+- Standard format: JSON
+- CSV upload endpoints use `multipart/form-data`
+- IDs use UUID strings
+- Decimal values serialize as strings
+- Timestamps serialize as ISO 8601 UTC strings
+- External field names use camelCase
 
 ## Error Envelope
 
@@ -23,23 +25,6 @@
 ### GET `/api/v1/portfolios`
 
 Returns all portfolios.
-
-Response:
-
-```json
-[
-  {
-    "id": "9b2b4d82-5e71-4f41-8d44-1b9d4b2712b6",
-    "name": "Core Portfolio",
-    "description": "Long-term holdings",
-    "baseCurrency": "USD",
-    "positionCount": 4,
-    "balanceCount": 2,
-    "createdAt": "2026-03-10T14:00:00Z",
-    "updatedAt": "2026-03-10T14:00:00Z"
-  }
-]
-```
 
 ### POST `/api/v1/portfolios`
 
@@ -70,7 +55,7 @@ Request:
 
 ### DELETE `/api/v1/portfolios/{portfolioId}`
 
-Deletes the portfolio and all related balances, positions, and trading operations.
+Deletes the portfolio and all related balances, positions, operations, stock-analysis history, and stock-analysis settings.
 
 ## Balance Endpoints
 
@@ -86,20 +71,6 @@ Request:
 {
   "label": "Cash",
   "amount": "25000.00"
-}
-```
-
-Response:
-
-```json
-{
-  "id": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
-  "portfolioId": "9b2b4d82-5e71-4f41-8d44-1b9d4b2712b6",
-  "label": "Cash",
-  "amount": "25000.00",
-  "currency": "USD",
-  "createdAt": "2026-03-10T14:00:00Z",
-  "updatedAt": "2026-03-10T14:00:00Z"
 }
 ```
 
@@ -150,7 +121,7 @@ Request:
 
 ### DELETE `/api/v1/portfolios/{portfolioId}/positions/{positionId}`
 
-Deletes the position.
+Deletes the selected position.
 
 ## CSV Import Endpoints
 
@@ -216,7 +187,9 @@ Returns recent trading operations for the portfolio, newest first.
 
 ### POST `/api/v1/portfolios/{portfolioId}/trading-operations`
 
-Request:
+The request uses a discriminated union on `side`.
+
+#### BUY request
 
 ```json
 {
@@ -227,6 +200,45 @@ Request:
   "price": "190.00",
   "commission": "3.50",
   "executedAt": "2026-03-10T14:05:00Z"
+}
+```
+
+#### SELL request
+
+```json
+{
+  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "symbol": "AAPL",
+  "side": "SELL",
+  "quantity": "2",
+  "price": "195.00",
+  "commission": "1.50",
+  "executedAt": "2026-03-11T14:05:00Z"
+}
+```
+
+#### DIVIDEND request
+
+```json
+{
+  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "symbol": "AAPL",
+  "side": "DIVIDEND",
+  "dividendAmount": "25.00",
+  "commission": "0.50",
+  "executedAt": "2026-03-12T14:05:00Z"
+}
+```
+
+#### SPLIT request
+
+```json
+{
+  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "symbol": "AAPL",
+  "side": "SPLIT",
+  "splitRatio": "2",
+  "executedAt": "2026-03-13T14:05:00Z"
 }
 ```
 
@@ -244,6 +256,8 @@ Response:
     "quantity": "5",
     "price": "190.00",
     "commission": "3.50",
+    "dividendAmount": null,
+    "splitRatio": null,
     "currency": "USD",
     "executedAt": "2026-03-10T14:05:00Z",
     "createdAt": "2026-03-10T14:05:01Z"
@@ -265,8 +279,10 @@ Response:
 
 Business rules:
 
-- Reject `SELL` when quantity exceeds the existing position quantity.
+- Reject `SELL` when quantity exceeds the current position quantity.
 - Reject `BUY` when the selected balance amount is lower than the required cash impact.
+- Reject `DIVIDEND` when `dividendAmount <= 0`.
+- Reject `SPLIT` when no current position exists for the symbol.
 - Commission is treated as an absolute amount.
 
 ## Market Data Endpoints
@@ -278,7 +294,7 @@ Returns delayed indicative quotes for the requested symbols in the selected port
 Behavior:
 
 - The endpoint returns `200` with `quotes` and optional `warnings` even when some or all quotes are unavailable.
-- Quotes whose provider currency does not match the portfolio base currency are omitted and returned as warnings in MVP.
+- Quotes whose provider currency does not match the portfolio base currency are omitted and returned as warnings in the current release.
 
 Response:
 
@@ -291,33 +307,334 @@ Response:
       "currency": "USD",
       "provider": "public_delayed_feed",
       "asOf": "2026-03-10T13:55:00Z",
-      "isStale": false
-    },
-    {
-      "symbol": "MSFT",
-      "price": "403.10",
-      "currency": "USD",
-      "provider": "public_delayed_feed",
-      "asOf": "2026-03-10T13:50:00Z",
-      "isStale": true
+      "isStale": false,
+      "previousClose": "189.10"
     }
   ],
   "warnings": []
 }
 ```
 
+### GET `/api/v1/portfolios/{portfolioId}/market-data/history?symbols=AAPL,%5EGSPC&range=3mo`
+
+Supported `range` values:
+
+- `1mo`
+- `3mo`
+- `ytd`
+- `1y`
+- `max`
+
+Response:
+
+```json
+{
+  "range": "3mo",
+  "interval": "1d",
+  "series": [
+    {
+      "symbol": "AAPL",
+      "currency": "USD",
+      "provider": "public_delayed_feed",
+      "points": [
+        {
+          "at": "2026-01-05T14:30:00Z",
+          "close": "190.00"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+## Stock Analysis API
+
+### Canonical Enums
+
+- `LlmProvider = "openai" | "anthropic" | "gemini"`
+- `OpenAiEndpointMode = "chat_completions" | "responses"`
+- `StockAnalysisRunType = "initial_review" | "periodic_review" | "event_review" | "manual_follow_up"`
+- `StockAnalysisRunStatus = "queued" | "running" | "completed" | "partial_failure" | "failed"`
+- `StockAnalysisAction = "buy" | "add" | "hold" | "trim" | "sell" | "avoid" | "watch" | "no_action"`
+
+### LLM Config Endpoints
+
+#### GET `/api/v1/stock-analysis/llm-configs`
+
+Returns all reusable LLM configs.
+
+#### POST `/api/v1/stock-analysis/llm-configs`
+
+Request:
+
+```json
+{
+  "provider": "openai",
+  "displayName": "OpenAI Responses",
+  "model": "gpt-5-mini",
+  "openaiEndpointMode": "responses",
+  "baseUrl": null,
+  "apiKeySecret": "sk-live-value",
+  "enabled": true,
+  "defaultGenerationSettings": {
+    "temperature": 0.2,
+    "max_tokens": 2000
+  }
+}
+```
+
+Read response shape:
+
+```json
+{
+  "id": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "provider": "openai",
+  "displayName": "OpenAI Responses",
+  "model": "gpt-5-mini",
+  "openaiEndpointMode": "responses",
+  "baseUrl": null,
+  "hasApiKey": true,
+  "enabled": true,
+  "defaultGenerationSettings": {
+    "temperature": 0.2,
+    "max_tokens": 2000
+  },
+  "createdAt": "2026-03-10T14:00:00Z",
+  "updatedAt": "2026-03-10T14:00:00Z"
+}
+```
+
+#### GET `/api/v1/stock-analysis/llm-configs/{configId}`
+
+Returns one config.
+
+#### PATCH `/api/v1/stock-analysis/llm-configs/{configId}`
+
+Updates display name, model, endpoint mode, base URL, secret, enabled state, or generation defaults.
+
+#### DELETE `/api/v1/stock-analysis/llm-configs/{configId}`
+
+Delete semantics:
+
+- Hard-delete when the config has never been referenced.
+- Disable instead of hard-delete when historical runs depend on it.
+
+### Prompt Template Endpoints
+
+#### GET `/api/v1/stock-analysis/prompt-templates`
+
+Returns all prompt templates.
+
+#### POST `/api/v1/stock-analysis/prompt-templates`
+
+Request:
+
+```json
+{
+  "name": "Default Stock Review",
+  "description": "Standard two-step review template",
+  "freshInstructionsTemplate": "You are a senior equity analyst...",
+  "freshInputTemplate": "Review {{stock.symbol}} using {{quote.summary}}",
+  "compareInstructionsTemplate": "Compare the fresh analysis to prior versions...",
+  "compareInputTemplate": "Latest prior version: {{version:latest.summary}}"
+}
+```
+
+#### GET `/api/v1/stock-analysis/prompt-templates/{templateId}`
+
+Returns one template.
+
+#### PATCH `/api/v1/stock-analysis/prompt-templates/{templateId}`
+
+Updates template content and may archive the template.
+
+#### DELETE `/api/v1/stock-analysis/prompt-templates/{templateId}`
+
+Delete semantics:
+
+- Hard-delete when unused.
+- Archive instead of hard-delete when historical requests depend on it.
+
+#### POST `/api/v1/stock-analysis/prompt-templates/preview`
+
+Previews saved or ad hoc template text at the global template-management route.
+
+Request shape:
+
+```json
+{
+  "templateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
+  "step": "fresh_analysis",
+  "portfolioId": "9b2b4d82-5e71-4f41-8d44-1b9d4b2712b6",
+  "symbol": "AAPL",
+  "llmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "conversationId": null,
+  "runType": "initial_review",
+  "reviewTrigger": "Quarterly refresh",
+  "userNote": "Focus on balance-sheet resilience",
+  "freshAnalysisPayload": null,
+  "instructionsTemplate": null,
+  "inputTemplate": null
+}
+```
+
+Response shape:
+
+```json
+{
+  "renderedInstructions": "You are a senior equity analyst...",
+  "renderedInput": "Review AAPL using current quote context...",
+  "placeholderValues": {
+    "stock.symbol": "AAPL"
+  },
+  "referencedRecords": [],
+  "warnings": [],
+  "errors": []
+}
+```
+
+### Portfolio Stock-Analysis Endpoints
+
+All portfolio-scoped analysis endpoints live under `/api/v1/portfolios/{portfolioId}/stock-analysis`.
+
+#### GET `/settings`
+
+Returns the portfolio's stock-analysis settings.
+
+#### PATCH `/settings`
+
+Request:
+
+```json
+{
+  "enabled": true,
+  "defaultPromptTemplateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
+  "defaultLlmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "compareToOrigin": true
+}
+```
+
+#### GET `/conversations?symbol=AAPL&include_archived=false`
+
+Lists stock-analysis conversations for the portfolio.
+
+#### POST `/conversations`
+
+Request:
+
+```json
+{
+  "symbol": "AAPL",
+  "title": "Apple Core Thesis"
+}
+```
+
+#### GET `/conversations/{conversationId}`
+
+Returns one conversation.
+
+#### PATCH `/conversations/{conversationId}`
+
+Request:
+
+```json
+{
+  "title": "Apple Quality Thesis",
+  "isArchived": false
+}
+```
+
+#### GET `/conversations/{conversationId}/runs`
+
+Lists runs for one conversation.
+
+#### POST `/conversations/{conversationId}/runs`
+
+Request:
+
+```json
+{
+  "runType": "initial_review",
+  "llmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "promptTemplateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
+  "reviewTrigger": "Quarterly refresh",
+  "userNote": "Focus on margin durability",
+  "compareToOrigin": true,
+  "freshInstructionsOverride": null,
+  "freshInputOverride": null,
+  "compareInstructionsOverride": null,
+  "compareInputOverride": null
+}
+```
+
+Behavior:
+
+- Creates a queued run and snapshots prompt/template/provider metadata.
+- Does not execute the run until the explicit execute endpoint is called.
+
+#### GET `/runs/{runId}`
+
+Returns one run with nested request/response history when available.
+
+#### POST `/runs/{runId}/execute`
+
+Executes the queued run using the canonical two-step flow:
+
+1. `fresh_analysis`
+2. `compare_decide_reflect`
+
+#### GET `/versions?symbol=AAPL`
+
+Lists version snapshots for the portfolio, optionally filtered by symbol.
+
+#### GET `/versions/{versionId}`
+
+Returns one structured version snapshot.
+
+#### POST `/prompt-preview`
+
+Portfolio-scoped preview endpoint for rendering prompt text against live portfolio context.
+
+Validation rule:
+
+- `portfolioId` in the JSON body must match the route portfolio id.
+
+## Stock Analysis Type Surface
+
+Canonical request and response models to keep aligned across backend and frontend:
+
+- `PortfolioStockAnalysisSettingsRead`
+- `PortfolioStockAnalysisSettingsUpdate`
+- `LlmConfigRead`
+- `LlmConfigWrite`
+- `LlmConfigUpdate`
+- `PromptTemplateRead`
+- `PromptTemplateWrite`
+- `PromptTemplateUpdate`
+- `PromptPreviewRequest`
+- `PromptPreviewResponse`
+- `StockAnalysisConversationWrite`
+- `StockAnalysisConversationUpdate`
+- `StockAnalysisConversationRead`
+- `StockAnalysisRunCreate`
+- `StockAnalysisRunRead`
+- `StockAnalysisRequestRead`
+- `StockAnalysisResponseRead`
+- `StockAnalysisVersionRead`
+
 ## HTTP Status Guidelines
 
-- `200` - successful read or update response
+- `200` - successful read, update, or execute response
 - `201` - successful create response
 - `204` - successful delete response
-- `400` - business-rule violation or malformed file
+- `400` - malformed file, preview mismatch, or business-rule violation
 - `404` - portfolio or nested resource not found
 - `422` - payload validation failure
 
 ## Notes
 
-- CSV preview and commit are intentionally separate so the user can correct files before persistence.
-- Trading operations are append-only. Corrections should happen through manual balance or position edits rather than trade mutation in MVP.
-- Current balances and positions are authoritative in MVP; trading operations are not replayed to reconstruct state.
-- Market data is decoupled from portfolio CRUD so quote-provider failure does not block core records.
+- CSV preview and commit stay intentionally separate.
+- Trading operations are append-only historical artifacts.
+- Stock-analysis history is local-first and remains readable even if provider-side retention expires.
+- Multiple providers are supported across the product, but a single run selects exactly one provider config.
