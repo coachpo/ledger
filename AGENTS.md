@@ -44,7 +44,7 @@ ledger/
 | Frontend shared logic | `frontend/src/lib/AGENTS.md` | API contract, query keys, analytics, formatting |
 | Portfolio feature work | `frontend/src/components/portfolios/AGENTS.md` | routed workspace, dialogs, mutations, quote UX |
 | Workflow/release behavior | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml` | recursive submodule checkout, quality gates, Docker smoke builds |
-| Product/reference docs | `docs/spec.md`, `docs/api-design.md`, `docs/data-model.md` | business constraints live here; `docs/new_looking/` is reference material |
+| Product/reference docs | `docs/spec.md`, `docs/api-design.md`, `docs/data-model.md` | business constraints live here |
 
 ## CODE MAP
 | Symbol / Entry | Location | Role |
@@ -64,7 +64,7 @@ ledger/
 - Decimal money/quantity values cross the API as strings; convert with shared helpers, not ad-hoc parsing.
 - Market data is best-effort: warnings can accompany partial/empty quote results without blocking the UI.
 - Backend and frontend live as git submodules; root workflows check them out with `submodules: recursive`.
-- `artifacts/`, `frontend/dist/`, cache folders, and `docs/new_looking/screenshots/` are generated/reference material, not source.
+- `artifacts/`, `frontend/dist/`, and cache folders are generated/reference material, not source.
 
 ## ANTI-PATTERNS
 - Do not bypass backend service layers for business rules.
