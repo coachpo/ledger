@@ -5,7 +5,7 @@
 - Base path: `/api/v1`
 - Standard format: JSON
 - CSV upload endpoints use `multipart/form-data`
-- IDs use UUID strings
+- IDs use numeric integers
 - Decimal values serialize as strings
 - Timestamps serialize as ISO 8601 UTC strings
 - External field names use camelCase
@@ -193,7 +193,7 @@ The request uses a discriminated union on `side`.
 
 ```json
 {
-  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "balanceId": 12,
   "symbol": "AAPL",
   "side": "BUY",
   "quantity": "5",
@@ -207,7 +207,7 @@ The request uses a discriminated union on `side`.
 
 ```json
 {
-  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "balanceId": 12,
   "symbol": "AAPL",
   "side": "SELL",
   "quantity": "2",
@@ -221,7 +221,7 @@ The request uses a discriminated union on `side`.
 
 ```json
 {
-  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "balanceId": 12,
   "symbol": "AAPL",
   "side": "DIVIDEND",
   "dividendAmount": "25.00",
@@ -234,7 +234,7 @@ The request uses a discriminated union on `side`.
 
 ```json
 {
-  "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+  "balanceId": 12,
   "symbol": "AAPL",
   "side": "SPLIT",
   "splitRatio": "2",
@@ -247,9 +247,9 @@ Response:
 ```json
 {
   "operation": {
-    "id": "aab78df0-5d37-4b15-875a-4f5fa620f822",
-    "portfolioId": "9b2b4d82-5e71-4f41-8d44-1b9d4b2712b6",
-    "balanceId": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+    "id": 41,
+    "portfolioId": 7,
+    "balanceId": 12,
     "balanceLabel": "Cash",
     "symbol": "AAPL",
     "side": "BUY",
@@ -269,7 +269,7 @@ Response:
     "currency": "USD"
   },
   "updatedBalance": {
-    "id": "e5266f3d-f4ce-45d1-a8e2-c42ee27caa7f",
+    "id": 12,
     "label": "Cash",
     "amount": "24046.50",
     "currency": "USD"
@@ -355,7 +355,6 @@ Response:
 - `LlmProvider = "openai" | "anthropic" | "gemini"`
 - `OpenAiEndpointMode = "chat_completions" | "responses"`
 - `StockAnalysisRunType = "initial_review" | "periodic_review" | "event_review" | "manual_follow_up"`
-- `StockAnalysisRunStatus = "queued" | "running" | "completed" | "partial_failure" | "failed"`
 - `StockAnalysisAction = "buy" | "add" | "hold" | "trim" | "sell" | "avoid" | "watch" | "no_action"`
 
 ### LLM Config Endpoints
@@ -388,7 +387,7 @@ Read response shape:
 
 ```json
 {
-  "id": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "id": 3,
   "provider": "openai",
   "displayName": "OpenAI Responses",
   "model": "gpt-5-mini",
@@ -464,11 +463,11 @@ Request shape:
 
 ```json
 {
-  "templateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
+  "templateId": 5,
   "step": "fresh_analysis",
-  "portfolioId": "9b2b4d82-5e71-4f41-8d44-1b9d4b2712b6",
+  "portfolioId": 7,
   "symbol": "AAPL",
-  "llmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "llmConfigId": 3,
   "conversationId": null,
   "runType": "initial_review",
   "reviewTrigger": "Quarterly refresh",
@@ -485,7 +484,7 @@ Returns all reusable snippets.
 
 #### POST `/api/v1/stock-analysis/snippets`
 
-Creates a reusable snippet with `name`, `content`, and optional `description`.
+Creates a reusable snippet with `name`, unique `snippetAlias`, `content`, and optional `description`.
 
 #### PATCH `/api/v1/stock-analysis/snippets/{snippetId}`
 
@@ -499,14 +498,13 @@ Response shape:
 
 ```json
 {
-  "renderedInstructions": "You are a senior equity analyst...",
-  "renderedInput": "Review AAPL using current quote context...",
-  "placeholderValues": {
-    "stock.symbol": "AAPL"
-  },
-  "referencedRecords": [],
-  "warnings": [],
-  "errors": []
+  "id": 9,
+  "name": "Core Thesis",
+  "snippetAlias": "core_thesis",
+  "content": "Focus on durable free cash flow.",
+  "description": "Reusable thesis framing",
+  "createdAt": "2026-03-10T14:00:00Z",
+  "updatedAt": "2026-03-10T14:00:00Z"
 }
 ```
 
@@ -525,8 +523,8 @@ Request:
 ```json
 {
   "enabled": true,
-  "defaultPromptTemplateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
-  "defaultLlmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
+  "defaultPromptTemplateId": 5,
+  "defaultLlmConfigId": 3,
   "compareToOrigin": true
 }
 ```
@@ -561,56 +559,9 @@ Request:
 }
 ```
 
-#### GET `/conversations/{conversationId}/runs`
-
-Lists runs for one conversation.
-
-#### POST `/conversations/{conversationId}/runs`
-
-Creates a queued run. Request payload now supports:
-
-- `mode`: `single_prompt` or `two_step_workflow`
-- `instructionsText` and `inputText` for single-prompt mode
-- existing two-step override fields for workflow mode
-
-Request:
-
-```json
-{
-  "runType": "initial_review",
-  "llmConfigId": "4d734ec4-6f3c-4020-9803-cf261f8c2278",
-  "promptTemplateId": "8b8d50be-a641-41be-85f2-c8c05d369276",
-  "reviewTrigger": "Quarterly refresh",
-  "userNote": "Focus on margin durability",
-  "compareToOrigin": true,
-  "freshInstructionsOverride": null,
-  "freshInputOverride": null,
-  "compareInstructionsOverride": null,
-  "compareInputOverride": null
-}
-```
-
-Behavior:
-
-- Creates a queued run and snapshots prompt/template/provider metadata.
-- Does not execute the run until the explicit execute endpoint is called.
-
-#### GET `/runs/{runId}`
-
-Returns one run with nested request/response history when available.
-
-#### POST `/runs/{runId}/execute`
-
-Starts async execution. The route returns immediately with status `running`; clients poll `GET /runs/{runId}` for terminal state.
-
 #### GET `/responses`
 
 Returns response summaries for picker UIs. Supports optional `conversation_id` and `limit` query params.
-
-Executes the queued run using the canonical two-step flow:
-
-1. `fresh_analysis`
-2. `compare_decide_reflect`
 
 #### GET `/versions?symbol=AAPL`
 
@@ -645,15 +596,12 @@ Canonical request and response models to keep aligned across backend and fronten
 - `StockAnalysisConversationWrite`
 - `StockAnalysisConversationUpdate`
 - `StockAnalysisConversationRead`
-- `StockAnalysisRunCreate`
-- `StockAnalysisRunRead`
-- `StockAnalysisRequestRead`
-- `StockAnalysisResponseRead`
+- `StockAnalysisResponseSummary`
 - `StockAnalysisVersionRead`
 
 ## HTTP Status Guidelines
 
-- `200` - successful read, update, or execute response
+- `200` - successful read or update response
 - `201` - successful create response
 - `204` - successful delete response
 - `400` - malformed file, preview mismatch, or business-rule violation

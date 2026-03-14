@@ -13,7 +13,7 @@ This document describes the current automated test coverage for the rewritten fr
 - API client (`src/lib/api.ts`): 90%+
 - Formatting utilities (`src/lib/format.ts`): 100%
 - Portfolio analytics (`src/lib/portfolio-analytics.ts`): 90%+
-- E2E: Route smoke coverage plus critical CRUD / run-builder journeys
+- E2E: Route smoke coverage plus critical CRUD and response-viewer journeys
 
 ---
 
@@ -46,8 +46,8 @@ Covered behaviors:
 
 | File | Current Assertions |
 |------|--------------------|
-| `e2e/smoke.spec.ts` | app boot, sidebar presence, all seven route URLs |
-| `e2e/functional.spec.ts` | portfolio creation flow, portfolio list render, LLM configs/templates/snippets pages render, run builder page render, responses page render |
+| `e2e/smoke.spec.ts` | app boot, sidebar presence, all six route URLs |
+| `e2e/functional.spec.ts` | portfolio creation flow, portfolio list render, LLM configs/templates/snippets pages render, responses page render |
 
 ---
 
@@ -61,7 +61,7 @@ These areas are not fully implemented yet, but they are the next useful addition
 |------|--------------------|
 | `use-portfolios.ts` | list fetch, create/update/delete invalidation, error states |
 | `use-market-data.ts` | disabled queries without symbols, stale quote handling |
-| `use-stock-analysis.ts` | conversation listing, run polling, response filtering |
+| `use-stock-analysis.ts` | conversation listing, version queries, response filtering |
 | `query-keys.ts` | tuple stability and portfolio-scope invalidation |
 
 ### 3.2 Component Tests
@@ -71,9 +71,6 @@ These areas are not fully implemented yet, but they are the next useful addition
 | `PortfolioListPage` | create/edit/delete flows and empty states |
 | `PortfolioDetailPage` | positions/balances/trades tabs and degraded data states |
 | `TradingOperationForm` | side-specific fields for BUY/SELL/DIVIDEND/SPLIT |
-| `RunBuilderForm` | template/config defaults, mode-specific fields, submit payload |
-| `ConversationPicker` | create flow, disabled/loading states |
-| `RunStatusDisplay` | polling and terminal status rendering |
 
 ### 3.3 E2E Growth Areas
 
@@ -81,7 +78,6 @@ These areas are not fully implemented yet, but they are the next useful addition
 |------|--------------------|
 | Portfolio detail | add balances, positions, and trades end-to-end |
 | Global stock-analysis resources | create/edit/delete LLM configs, templates, and snippets |
-| Run builder | create conversation, create run, execute, poll, inspect response |
 | Responses page | portfolio and conversation filtering against seeded data |
 
 ---
@@ -132,7 +128,7 @@ cd frontend && pnpm exec playwright test --ui
 
 ## 7. Gaps And Future Work
 
-- Add React Query hook tests around invalidation and polling behavior.
-- Add component tests for the portfolio detail workspace and stock-analysis run builder.
+- Add React Query hook tests around invalidation and response filtering behavior.
+- Add component tests for the portfolio detail workspace and response browser.
 - Add stronger Playwright assertions for resource CRUD and response filtering.
 - Add accessibility and visual-regression coverage once the UI stabilizes.

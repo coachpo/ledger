@@ -7,12 +7,7 @@ This specification defines Ledger as an auth-less portfolio application with two
 - portfolio tracking and simulation for balances, positions, market context, and manual operations;
 - stock-scoped advisory analysis that uses configurable LLM providers while keeping local history authoritative.
 
-The canonical analysis workflow is stock-only in the current release. Each run uses one selected LLM config and supports two execution modes:
-
-1. `single_prompt` for one composed prompt with async execution and persisted request/response history.
-2. `two_step_workflow` for the original `fresh_analysis` then `compare_decide_reflect` loop.
-
-The two-step mode preserves the core rule from the original playbook: analyze first, compare later.
+The current stock-analysis surface is stock-only and centered on prompt preview, reusable prompt resources, stored responses, and version history. Historical run/request rows remain part of the persisted data model, but the live run create/execute surface is not exposed in the current release.
 
 ## Explicit Scope Boundaries
 
@@ -188,12 +183,11 @@ React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, 
 - `/llm-configs` — Global LLM configuration CRUD (provider, model, API key, generation settings).
 - `/templates` — Global prompt template CRUD with single/two-step mode toggle.
 - `/snippets` — Global user snippet CRUD.
-- `/requests` — Stock analysis run builder: portfolio → conversation → run config → execute.
 - `/responses` — Stock analysis response viewer with portfolio and conversation filters.
 
 ### Key UI Components
 
-- `Layout` / `Dashboard` — seven-route app shell and overview landing page.
+- `Layout` / `Dashboard` — six-route app shell and overview landing page.
 - `PortfolioListPage` / `PortfolioDetailPage` — portfolio CRUD and workspace.
 - `PortfolioPositionsSection` — positions table with market data enrichment.
 - `PortfolioBalancesSection` — balance CRUD.
@@ -202,10 +196,6 @@ React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, 
 - `LLMConfigs` — LLM config management with provider-specific fields.
 - `PromptTemplates` — template management with mode toggle and placeholder guide.
 - `Snippets` — snippet management.
-- `RunBuilderPage` / `RunBuilderForm` — stock analysis run creation and execution.
-- `ConversationPicker` — conversation selection/creation per symbol.
-- `RunStatusDisplay` — run status polling and result display.
-- `PromptPreviewPanel` — live prompt preview via backend API.
 - `ResponsesPage` — stored response browser with portfolio/conversation filters.
 - `ErrorBoundary` — React error boundary with recovery UI.
 
@@ -218,8 +208,8 @@ TanStack Query for all server state. No client-side store. Query key factory wit
 - Destructive actions require confirmation.
 - Trading-operation forms change fields based on the selected side.
 - Market data renders warnings and stale state without blocking workspace access.
-- Analysis runs execute asynchronously: create → execute → poll for completion.
 - Prompt preview renders via backend API, not client-side compilation.
+- Stored stock-analysis responses remain browseable by portfolio and conversation.
 - Loading skeletons shown during data fetches.
 - Toast notifications for mutation success/error feedback.
 
@@ -244,67 +234,45 @@ TanStack Query for all server state. No client-side store. Query key factory wit
 - `CsvImportService`: preview and commit workflow.
 - `TradingOperationService`: side-specific simulation rules and transactional updates.
 - `MarketDataService`: delayed quote and history retrieval with warnings and cache-aware behavior.
-- `StockAnalysisService`: conversation, run, execution, and version orchestration.
+- `StockAnalysisService`: settings, conversation, response-summary, and version orchestration.
 - `AnalysisContextService`: context snapshot assembly, placeholder resolution, and prompt rendering.
 - `LlmConfigService`: provider-config CRUD and validation.
 - `PromptTemplateService`: template CRUD, archival, and preview helpers.
 - `LlmGatewayService`: provider request assembly and dispatch.
 - `StockAnalysisParserService`: strict structured-response validation.
 
-## Stock-Analysis Execution Flow
+## Stock-Analysis Preview And History Flow
 
 ### Phase 0. Preconditions
 
-- Stock analysis is enabled for the portfolio.
-- The selected LLM config exists, is enabled, and has valid server-side credentials.
-- A prompt template or ad hoc prompt override is present.
+- The portfolio exists.
 - The symbol is valid in portfolio context.
+- A saved template or inline prompt text is available for preview when prompt rendering is requested.
 
 ### Phase 1. Conversation Selection Or Creation
 
 - The user picks or creates a conversation for `(portfolio, symbol)`.
-- The UI loads prior runs and versions for that conversation.
+- The UI can then load stored responses or versions for that conversation.
 
 ### Phase 2. Context Snapshot Build
 
-Before any provider call, the backend creates an immutable context snapshot that may include:
+Before rendering a preview, the backend creates an immutable context snapshot that may include:
 
 - portfolio metadata;
 - position summary;
 - delayed quote and price-history summary;
-- run type, trigger, and user note;
-- ad hoc prompt overrides when the run uses them.
+- preview metadata such as run type, trigger, and user note when supplied in the request.
 
 ### Phase 3. Prompt Preview
 
 - Preview resolves placeholders without calling a provider.
 - It returns rendered text, placeholder values, referenced records, warnings, and errors.
-- Execution must stop when preview-equivalent validation would fail.
+- Preview requests must fail fast when placeholder resolution or portfolio scoping is invalid.
 
-### Phase 4. Fresh Analysis Request
+### Phase 4. History Browsing
 
-- Persist a request row before the outbound call.
-- Render the `fresh_analysis` prompt from current snapshot data.
-- Do not inject prior thesis text by default.
-- Call the selected provider and persist raw response data.
-- Parse the result into structured `freshAnalysis` data.
-
-### Phase 5. Compare, Decide, Reflect Request
-
-- Persist a second request row before the outbound call.
-- Render the `compare_decide_reflect` prompt using the parsed fresh-analysis payload plus prior version summaries.
-- For OpenAI Responses configs, the compare step may forward the fresh step's `previous_response_id` as an optional continuation hint.
-- Persist raw and parsed response data.
-
-### Phase 6. Version Materialization
-
-- Create a version row only when the final structured response parses successfully.
-- Materialize queryable `fresh_analysis`, `comparison`, `decision`, and `reflection` sections.
-
-### Phase 7. Timeline Rendering
-
-- The frontend reads persisted run, request, response, and version rows.
-- Timeline rendering must not depend on provider retrieval APIs.
+- The frontend reads stored response summaries and version rows for the selected portfolio or conversation.
+- History rendering must not depend on provider retrieval APIs.
 
 ## Prompt System And Preview Behavior
 
