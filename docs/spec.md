@@ -176,40 +176,52 @@ The structured response may include a standardized scorecard across categories s
 
 ## Frontend Specification
 
+### Tech Stack
+
+React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, Playwright.
+
 ### Routes And Entry Points
 
-- Portfolio list route for all portfolios.
-- Portfolio workspace route for one selected portfolio.
-- Stock-analysis entry points inside the portfolio workspace.
-- Dedicated stock-analysis management surfaces for LLM configs, prompt templates, run creation, preview, and timeline review.
+- `/` — Dashboard with portfolio overview stats.
+- `/portfolios` — Portfolio list with create/edit/delete.
+- `/portfolios/:portfolioId` — Portfolio detail with summary metrics plus tabs for positions, balances, and trades.
+- `/llm-configs` — Global LLM configuration CRUD (provider, model, API key, generation settings).
+- `/templates` — Global prompt template CRUD with single/two-step mode toggle.
+- `/snippets` — Global user snippet CRUD.
+- `/requests` — Stock analysis run builder: portfolio → conversation → run config → execute.
+- `/responses` — Stock analysis response viewer with portfolio and conversation filters.
 
 ### Key UI Components
 
-- `PortfolioTable`
-- `BalanceTable`
-- `PositionTable`
-- `CsvImportDialog`
-- `TradingOperationForm`
-- `TradingOperationTable`
-- `MarketQuotePanel`
-- `MarketHistoryPanel`
-- `StockAnalysisWorkspace`
-- `StockAnalysisConversationList`
-- `StockAnalysisRunForm`
-- `StockAnalysisTimeline`
-- `StockAnalysisReviewViewer`
-- `LlmConfigManager`
-- `PromptTemplateManager`
+- `Layout` / `Dashboard` — seven-route app shell and overview landing page.
+- `PortfolioListPage` / `PortfolioDetailPage` — portfolio CRUD and workspace.
+- `PortfolioPositionsSection` — positions table with market data enrichment.
+- `PortfolioBalancesSection` — balance CRUD.
+- `PortfolioTradesSection` — trading operation history.
+- `TradingOperationForm` — BUY/SELL/DIVIDEND/SPLIT discriminated union form.
+- `LLMConfigs` — LLM config management with provider-specific fields.
+- `PromptTemplates` — template management with mode toggle and placeholder guide.
+- `Snippets` — snippet management.
+- `RunBuilderPage` / `RunBuilderForm` — stock analysis run creation and execution.
+- `ConversationPicker` — conversation selection/creation per symbol.
+- `RunStatusDisplay` — run status polling and result display.
+- `PromptPreviewPanel` — live prompt preview via backend API.
+- `ResponsesPage` — stored response browser with portfolio/conversation filters.
+- `ErrorBoundary` — React error boundary with recovery UI.
+
+### State Management
+
+TanStack Query for all server state. No client-side store. Query key factory with portfolio-scoped invalidation via `invalidatePortfolioScope()`. Global resources (LLM configs, templates, snippets) use separate key namespaces.
 
 ### UX Behavior
 
 - Destructive actions require confirmation.
-- CSV validation errors render before commit.
 - Trading-operation forms change fields based on the selected side.
 - Market data renders warnings and stale state without blocking workspace access.
-- Analysis preview runs before execution when the user requests it or when validation is needed.
-- Parse failures and partial failures remain visible in the timeline.
-- Historical runs show stored prompt snapshots rather than reconstructed prompt text.
+- Analysis runs execute asynchronously: create → execute → poll for completion.
+- Prompt preview renders via backend API, not client-side compilation.
+- Loading skeletons shown during data fetches.
+- Toast notifications for mutation success/error feedback.
 
 ## Backend Specification
 

@@ -16,18 +16,15 @@ Ledger is a dual-stack portfolio tracker stitched together from backend and fron
 - `backend/app/schemas/AGENTS.md` — Pydantic schema validation, serialization, camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM entity constraints, indexes, relationships
 - `backend/app/repositories/AGENTS.md` — data access layer query patterns
-- `frontend/AGENTS.md` — frontend routing, build/test flow, UI boundaries
-- `frontend/src/lib/AGENTS.md` — shared API/query/analytics/formatting rules
-- `frontend/src/components/ui/AGENTS.md` — generic UI primitive rules, shadcn/Radix-Nova conventions
-- `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace feature rules
-- `frontend/src/components/portfolios/stock-analysis-workspace/AGENTS.md` — stock-analysis workspace state/query/card orchestration
+
+Frontend does not currently ship nested `AGENTS.md` files in this snapshot. Use the code locations in **Where To Look** instead.
 
 ## STRUCTURE
 ```text
 ledger/
 ├── backend/              # git submodule: FastAPI app, SQLAlchemy models, pytest suite
-├── frontend/             # git submodule: React/Vite app, Vitest, Playwright, shadcn config
-├── docs/                 # product/API/data-model refs + requirements
+├── frontend/             # git submodule: React/Vite app, TanStack Query, Vitest, Playwright, shadcn
+├── docs/                 # product/API/data-model refs + requirements + test plan
 ├── .github/workflows/    # CI, Docker image publishing, cleanup jobs
 ├── artifacts/            # generated Playwright/screenshots; not source
 ├── .gitmodules           # backend/frontend submodule remotes
@@ -44,12 +41,11 @@ ledger/
 | Backend route wiring | `backend/app/api/router.py` + `backend/app/api/dependencies.py` | v1 router composition + DI |
 | Backend stock-analysis orchestration | `backend/app/services/stock_analysis/AGENTS.md` | prompt rendering, single/two-step runs, version materialization |
 | Backend provider adapters | `backend/app/services/providers/AGENTS.md` | OpenAI chat/responses, Anthropic, Gemini contracts |
-| Frontend app shell | `frontend/src/App.tsx` + `frontend/index.html` | router/providers + pre-mount theme sync |
-| Frontend shared logic | `frontend/src/lib/AGENTS.md` | API contract, query keys, analytics, formatting |
-| Portfolio feature work | `frontend/src/components/portfolios/AGENTS.md` | routed workspace, dialogs, quote UX, stock-analysis entry points |
-| Stock-analysis workspace UI | `frontend/src/components/portfolios/stock-analysis-workspace/AGENTS.md` | portfolio settings, conversations, runs, timeline |
-| Shared LLM input management | `frontend/src/components/portfolios/stock-analysis-inputs-page.tsx` | global config/template/snippet CRUD route |
-| Quality gates | `.github/workflows/ci.yml`, `backend/tests/test_api.py`, `backend/tests/test_stock_analysis.py`, `backend/tests/test_stock_analysis_schema.py`, `backend/tests/test_openai_responses_service.py`, `backend/tests/test_provider_schema_free_paths.py`, `frontend/src/lib/*.test.ts`, `frontend/src/hooks/use-user-preferences.test.ts`, `frontend/src/components/portfolios/**/*.test.tsx`, `frontend/e2e/app.spec.ts` | backend quality + provider/schema checks, frontend unit and e2e tests |
+| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router, and seven-route sidebar shell |
+| Frontend shared logic | `frontend/src/lib/api.ts`, `frontend/src/lib/query-keys.ts`, `frontend/src/lib/portfolio-analytics.ts` | API contract, cache naming, derived portfolio metrics |
+| Portfolio feature work | `frontend/src/components/portfolios/*.tsx` | list/detail pages, balances, positions, trades, dialogs |
+| Stock-analysis UI | `frontend/src/components/stock-analysis/*.tsx`, `frontend/src/components/llm-configs.tsx`, `frontend/src/components/prompt-templates.tsx`, `frontend/src/components/snippets.tsx`, `frontend/src/components/responses-page.tsx` | global inputs, run builder, response browsing |
+| Quality gates | `.github/workflows/ci.yml`, `backend/tests/test_api.py`, `backend/tests/test_stock_analysis.py`, `backend/tests/test_stock_analysis_schema.py`, `backend/tests/test_openai_responses_service.py`, `backend/tests/test_provider_schema_free_paths.py`, `frontend/src/lib/*.test.ts`, `frontend/e2e/smoke.spec.ts`, `frontend/e2e/functional.spec.ts` | backend quality + provider/schema checks, frontend unit and e2e tests |
 | Product/reference docs | `docs/spec.md`, `docs/api-design.md`, `docs/data-model.md`, `docs/requirements.md` | business constraints live here |
 
 ## CODE MAP
@@ -64,13 +60,16 @@ ledger/
 | `StockAnalysisService` | `backend/app/services/stock_analysis/service.py` | settings, conversations, runs, versions |
 | `AnalysisContextService` | `backend/app/services/stock_analysis/context.py` | context snapshots + placeholder rendering |
 | `LlmGatewayService` | `backend/app/services/llm_gateway_service.py` | routes provider-backed stock-analysis requests |
-| `App` | `frontend/src/App.tsx` | router + providers + lazy stock-analysis routes |
+| `App` | `frontend/src/App.tsx` | query client, router provider, error boundary, toaster |
+| `router` | `frontend/src/routes.ts` | route table for dashboard, portfolios, LLM inputs, run builder, and responses |
+| `Layout` | `frontend/src/components/layout.tsx` | responsive sidebar shell with seven route entries |
+| `PortfolioListPage` | `frontend/src/components/portfolios/portfolio-list-page.tsx` | portfolio CRUD entry point |
+| `PortfolioDetailPage` | `frontend/src/components/portfolios/portfolio-detail-page.tsx` | positions, balances, and trades workspace |
+| `RunBuilderPage` | `frontend/src/components/stock-analysis/run-builder-page.tsx` | portfolio selection, conversation management, run execution |
+| `ResponsesPage` | `frontend/src/components/responses-page.tsx` | response browser with portfolio/conversation filters |
 | `request` / `ApiRequestError` | `frontend/src/lib/api.ts` | typed fetch wrapper + structured errors |
 | `queryKeys` / `invalidatePortfolioScope` | `frontend/src/lib/query-keys.ts` | portfolio + stock-analysis cache naming/invalidation |
-| `usePortfolioWorkspaceData` | `frontend/src/components/portfolios/use-portfolio-workspace-data.ts` | shared portfolio workspace data orchestration |
-| `useStockAnalysisWorkspace` | `frontend/src/components/portfolios/stock-analysis-workspace/use-stock-analysis-workspace.ts` | stock-analysis workspace state orchestration |
-| `StockAnalysisInputsPage` | `frontend/src/components/portfolios/stock-analysis-inputs-page.tsx` | global LLM config, prompt template, and snippet management |
-| `PromptComposer` | `frontend/src/components/portfolios/stock-analysis-workspace/prompt-composer.tsx` | shared prompt builder for single/two-step runs |
+| `useStockAnalysis*` hooks | `frontend/src/hooks/use-stock-analysis.ts` | conversations, settings, runs, responses, preview, and execution hooks |
 
 ## CROSS-STACK CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally.
@@ -80,6 +79,7 @@ ledger/
 - Prompt preview renders saved or inline templates against live portfolio context without calling a provider.
 - `single_prompt` runs persist request/response history without creating versions; `two_step_workflow` runs materialize versioned analyses.
 - Backend and frontend live as git submodules; root workflows check them out with `submodules: recursive`.
+- Frontend currently exposes a flat 7-route sidebar app shell rather than a nested portfolio workspace route tree.
 - `artifacts/`, `frontend/dist/`, and cache folders are generated/reference material, not source.
 
 ## ANTI-PATTERNS
@@ -98,16 +98,18 @@ python -m pip install -e './backend[dev]'
 ./start.sh
 (cd backend && python -m uvicorn app.main:app --reload)
 (cd backend && ruff check app tests && black --check app tests && isort --check-only app tests && mypy app && pytest)
-(cd frontend && pnpm lint && pnpm build)
+(cd frontend && pnpm typecheck && pnpm lint && pnpm build)
+(cd frontend && pnpm test:run)
 (cd frontend && pnpm test)
-(cd frontend && pnpm test:watch)
 (cd frontend && pnpm exec playwright install --with-deps chromium && pnpm test:e2e)
 ```
 
 ## NOTES
 - No root package manifest; backend and frontend toolchains are independent submodules.
-- CI checks out submodules recursively, then runs backend quality, frontend lint/build/e2e, and Docker smoke builds.
+- CI checks out submodules recursively, then runs backend quality, frontend lint/build/test, and Docker smoke builds.
 - Backend test hotspots live in `backend/tests/test_api.py`, `backend/tests/test_stock_analysis.py`, `backend/tests/test_stock_analysis_schema.py`, `backend/tests/test_openai_responses_service.py`, and `backend/tests/test_provider_schema_free_paths.py`.
-- Stock analysis now supports `single_prompt` and `two_step_workflow` modes plus global reusable snippets.
+- Stock analysis supports `single_prompt` and `two_step_workflow` modes plus global reusable snippets.
+- Frontend uses flat 7-route sidebar navigation with TanStack Query for all server state.
 - SQLite is the zero-config local default; PostgreSQL comes via `DATABASE_URL`.
 - Local dev ports (`8000`/`5173`) differ from Playwright ports (`8001`/`4173`).
+- Test plan documented in `docs/test-plan.md`.
