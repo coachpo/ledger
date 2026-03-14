@@ -105,5 +105,6 @@ python -m pip install -e './backend[dev]'
 - No root package manifest; backend and frontend toolchains are independent submodules.
 - CI checks out submodules recursively, then runs backend quality, frontend lint/build/e2e, and Docker smoke builds.
 - `backend/tests/test_api.py` and `backend/tests/test_stock_analysis.py` are the main backend integration hotspots.
+- Stock analysis now supports `single_prompt` and `two_step_workflow` modes plus global reusable snippets.
 - SQLite is the zero-config local default; PostgreSQL comes via `DATABASE_URL`.
 - Local dev ports (`8000`/`5173`) differ from Playwright ports (`8001`/`4173`).

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned entities store current balances, aggregate positions, simulated operations, and stock-analysis history. Global analysis entities store reusable LLM configs and prompt templates. Local database rows remain the source of truth for analysis history, replay, and auditability.
+Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned entities store current balances, aggregate positions, simulated operations, and stock-analysis history. Global analysis entities store reusable LLM configs, prompt templates, and user snippets. Local database rows remain the source of truth for analysis history, replay, and auditability.
 
 ## Entity Relationship Summary
 
@@ -15,7 +15,7 @@ Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned
 - One `stock_analysis_run` has many `stock_analysis_requests`.
 - One `stock_analysis_request` has at most one `stock_analysis_response`.
 - One `stock_analysis_run` has at most one `stock_analysis_version`.
-- `llm_configs` and `prompt_templates` are app-global reference tables.
+- `llm_configs`, `prompt_templates`, and `user_snippets` are app-global reference tables.
 - `market_quotes` are shared quote cache rows keyed by symbol and provider.
 
 ## Tables
@@ -208,6 +208,9 @@ Indexes:
 | description | text | Yes | Optional description |
 | revision | integer | No | Monotonic template revision |
 | status | varchar(20) | No | `active` or `archived` |
+| template_mode | varchar(20) | No | `single` or `two_step` |
+| instructions_template | text | Yes | Single-prompt instructions template |
+| input_template | text | Yes | Single-prompt input template |
 | fresh_instructions_template | text | No | Step-one instructions template |
 | fresh_input_template | text | No | Step-one input template |
 | compare_instructions_template | text | No | Step-two instructions template |
@@ -252,6 +255,7 @@ Indexes:
 |---|---|---|---|
 | id | uuid | No | Primary key |
 | conversation_id | uuid | No | FK to `stock_analysis_conversations.id` |
+| mode | varchar(32) | No | `single_prompt` or `two_step_workflow` |
 | run_type | varchar(32) | No | `initial_review`, `periodic_review`, `event_review`, or `manual_follow_up` |
 | status | varchar(32) | No | `queued`, `running`, `completed`, `partial_failure`, or `failed` |
 | llm_config_id | uuid | Yes | FK to `llm_configs.id` |
@@ -287,7 +291,18 @@ Indexes:
 |---|---|---|---|
 | id | uuid | No | Primary key |
 | run_id | uuid | No | FK to `stock_analysis_runs.id` |
-| step | varchar(40) | No | `fresh_analysis`, `compare_decide_reflect`, or `follow_up` |
+| step | varchar(40) | No | `fresh_analysis`, `compare_decide_reflect`, `follow_up`, or `single` |
+
+### user_snippets
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| id | uuid | No | Primary key |
+| name | varchar(120) | No | Unique snippet name |
+| content | text | No | Reusable prompt body |
+| description | text | Yes | Optional label |
+| created_at | timestamptz | No | Creation timestamp |
+| updated_at | timestamptz | No | Last update timestamp |
 | step_index | integer | No | Execution order within the run |
 | status | varchar(32) | No | Request lifecycle status |
 | prompt_source | varchar(20) | No | `saved_template` or `ad_hoc` |

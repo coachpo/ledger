@@ -7,12 +7,12 @@ This specification defines Ledger as an auth-less portfolio application with two
 - portfolio tracking and simulation for balances, positions, market context, and manual operations;
 - stock-scoped advisory analysis that uses configurable LLM providers while keeping local history authoritative.
 
-The canonical analysis workflow is stock-only in the current release. Each run uses one selected LLM config and executes a required two-step review flow:
+The canonical analysis workflow is stock-only in the current release. Each run uses one selected LLM config and supports two execution modes:
 
-1. `fresh_analysis`
-2. `compare_decide_reflect`
+1. `single_prompt` for one composed prompt with async execution and persisted request/response history.
+2. `two_step_workflow` for the original `fresh_analysis` then `compare_decide_reflect` loop.
 
-That sequence preserves the core rule from the original playbook: analyze first, compare later.
+The two-step mode preserves the core rule from the original playbook: analyze first, compare later.
 
 ## Explicit Scope Boundaries
 
@@ -114,8 +114,15 @@ That sequence preserves the core rule from the original playbook: analyze first,
 ### Stock Analysis Runs
 
 - A run belongs to one conversation.
+- A run declares `mode` as `single_prompt` or `two_step_workflow`.
 - Runs can be `queued`, `running`, `completed`, `partial_failure`, or `failed`.
 - Each run snapshots provider, model, endpoint family, prompt template revision, run metadata, and context before execution.
+
+### Flexible Prompt Composition
+
+- Prompt templates support `single` and `two_step` modes.
+- Global snippets are reusable prompt fragments inserted through placeholders.
+- Placeholder resolution happens server-side against a frozen context snapshot before execution.
 
 ### Requests, Responses, And Versions
 

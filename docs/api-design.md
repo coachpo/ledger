@@ -479,6 +479,22 @@ Request shape:
 }
 ```
 
+#### GET `/api/v1/stock-analysis/snippets`
+
+Returns all reusable snippets.
+
+#### POST `/api/v1/stock-analysis/snippets`
+
+Creates a reusable snippet with `name`, `content`, and optional `description`.
+
+#### PATCH `/api/v1/stock-analysis/snippets/{snippetId}`
+
+Updates a reusable snippet.
+
+#### DELETE `/api/v1/stock-analysis/snippets/{snippetId}`
+
+Deletes a reusable snippet.
+
 Response shape:
 
 ```json
@@ -551,6 +567,12 @@ Lists runs for one conversation.
 
 #### POST `/conversations/{conversationId}/runs`
 
+Creates a queued run. Request payload now supports:
+
+- `mode`: `single_prompt` or `two_step_workflow`
+- `instructionsText` and `inputText` for single-prompt mode
+- existing two-step override fields for workflow mode
+
 Request:
 
 ```json
@@ -578,6 +600,12 @@ Behavior:
 Returns one run with nested request/response history when available.
 
 #### POST `/runs/{runId}/execute`
+
+Starts async execution. The route returns immediately with status `running`; clients poll `GET /runs/{runId}` for terminal state.
+
+#### GET `/responses`
+
+Returns response summaries for picker UIs. Supports optional `conversation_id` and `limit` query params.
 
 Executes the queued run using the canonical two-step flow:
 

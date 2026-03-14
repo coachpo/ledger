@@ -17,8 +17,10 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 - Per-portfolio stock-analysis enablement and defaults.
 - App-global LLM config CRUD.
 - App-global prompt template CRUD and preview.
+- App-global snippet CRUD.
 - Stock-analysis conversations, runs, requests, responses, and version history.
-- Advisory-only structured outputs that separate fresh analysis, comparison, decision, and reflection.
+- Advisory-only structured outputs that separate fresh analysis, comparison, decision, and reflection for the two-step workflow.
+- Flexible single-prompt composition with server-side placeholder resolution and async execution.
 
 ### Out Of Scope
 
@@ -126,12 +128,17 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 ### FR-10 Prompt Template Management And Preview
 
 - The system must let the user create, read, update, list, and delete reusable prompt templates.
-- Each template must carry separate text for the `fresh_analysis` and `compare_decide_reflect` steps.
+- The system must support `single` templates with one instructions/input pair and `two_step` templates with separate fresh/compare text.
 - The system must support ad hoc prompt overrides for one-off runs.
 - The system must expose preview endpoints that render prompt text against live portfolio context without calling an LLM provider.
 - Preview must fail when placeholders are invalid, out of scope, or unresolved against the current step context.
 - Templates used by historical requests must remain readable even after later edits.
 - A used template must archive instead of being hard-deleted.
+
+### FR-10A Snippet Management
+
+- The system must let the user create, read, update, list, and delete reusable snippets.
+- Snippets are global prompt fragments referenced from composed prompts.
 
 ### FR-11 Stock-Analysis Conversations
 
@@ -145,12 +152,14 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 
 - The system must let the user create queued runs for an existing stock-analysis conversation.
 - Supported run types must be `initial_review`, `periodic_review`, `event_review`, and `manual_follow_up`.
-- A review-bearing run must execute the `fresh_analysis` step before the `compare_decide_reflect` step.
+- The system must support `single_prompt` and `two_step_workflow` run modes.
+- A `two_step_workflow` run must execute the `fresh_analysis` step before the `compare_decide_reflect` step.
 - The fresh-analysis step must default to current context only and must not inject prior thesis text by default.
 - The compare step must use locally persisted context, prior version references, and the parsed fresh-analysis payload.
 - The system must persist request records before each outbound provider call.
 - The system must expose explicit run execution status transitions including `queued`, `running`, `completed`, `partial_failure`, and `failed`.
 - The current release must not fan out a single run to multiple providers or multiple configs.
+- `single_prompt` runs must execute asynchronously, persist one request/response pair, and stay visible in run history without creating versions.
 
 ### FR-13 Structured Output And Versioning
 
