@@ -24,7 +24,7 @@ Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
+| id | integer | No | Primary key |
 | name | varchar(100) | No | User-facing portfolio name |
 | description | text | Yes | Optional description |
 | base_currency | char(3) | No | ISO 4217 code |
@@ -43,8 +43,8 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| portfolio_id | uuid | No | FK to `portfolios.id` |
+| id | integer | No | Primary key |
+| portfolio_id | integer | No | FK to `portfolios.id` |
 | label | varchar(60) | No | Example: `Cash`, `Reserve` |
 | amount | numeric(20, 4) | No | Decimal-safe cash amount |
 | currency | char(3) | No | Must match portfolio base currency |
@@ -66,8 +66,8 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| portfolio_id | uuid | No | FK to `portfolios.id` |
+| id | integer | No | Primary key |
+| portfolio_id | integer | No | FK to `portfolios.id` |
 | symbol | varchar(32) | No | Uppercase ticker symbol |
 | name | varchar(120) | Yes | Optional display name |
 | quantity | numeric(20, 8) | No | Aggregate units held |
@@ -93,9 +93,9 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| portfolio_id | uuid | No | FK to `portfolios.id` |
-| balance_id | uuid | Yes | FK to `balances.id`, nullable for preserved history |
+| id | integer | No | Primary key |
+| portfolio_id | integer | No | FK to `portfolios.id` |
+| balance_id | integer | Yes | FK to `balances.id`, nullable for preserved history |
 | balance_label | varchar(60) | No | Snapshot of selected balance label |
 | symbol | varchar(32) | No | Uppercase ticker symbol |
 | side | varchar(10) | No | `BUY`, `SELL`, `DIVIDEND`, or `SPLIT` |
@@ -127,7 +127,7 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
+| id | integer | No | Primary key |
 | symbol | varchar(32) | No | Uppercase ticker symbol |
 | provider | varchar(50) | No | Public datasource identifier |
 | price | numeric(20, 8) | No | Latest delayed price |
@@ -150,11 +150,11 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| portfolio_id | uuid | No | FK to `portfolios.id`, unique |
+| id | integer | No | Primary key |
+| portfolio_id | integer | No | FK to `portfolios.id`, unique |
 | enabled | boolean | No | Enables stock analysis for this portfolio |
-| default_prompt_template_id | uuid | Yes | FK to `prompt_templates.id` |
-| default_llm_config_id | uuid | Yes | FK to `llm_configs.id` |
+| default_prompt_template_id | integer | Yes | FK to `prompt_templates.id` |
+| default_llm_config_id | integer | Yes | FK to `llm_configs.id` |
 | compare_to_origin | boolean | No | Default comparison against origin version |
 | created_at | timestamptz | No | Creation timestamp |
 | updated_at | timestamptz | No | Last update timestamp |
@@ -175,7 +175,7 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
+| id | integer | No | Primary key |
 | provider | varchar(20) | No | `openai`, `anthropic`, or `gemini` |
 | display_name | varchar(120) | No | User-facing label |
 | model | varchar(80) | No | Provider model id |
@@ -203,7 +203,7 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
+| id | integer | No | Primary key |
 | name | varchar(120) | No | User-facing template name |
 | description | text | Yes | Optional description |
 | revision | integer | No | Monotonic template revision |
@@ -232,8 +232,8 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| portfolio_id | uuid | No | FK to `portfolios.id` |
+| id | integer | No | Primary key |
+| portfolio_id | integer | No | FK to `portfolios.id` |
 | symbol | varchar(32) | No | Uppercase ticker symbol |
 | title | varchar(160) | Yes | Optional user-facing title |
 | is_archived | boolean | No | Soft archive flag |
@@ -253,18 +253,18 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| conversation_id | uuid | No | FK to `stock_analysis_conversations.id` |
+| id | integer | No | Primary key |
+| conversation_id | integer | No | FK to `stock_analysis_conversations.id` |
 | mode | varchar(32) | No | `single_prompt` or `two_step_workflow` |
 | run_type | varchar(32) | No | `initial_review`, `periodic_review`, `event_review`, or `manual_follow_up` |
 | status | varchar(32) | No | `queued`, `running`, `completed`, `partial_failure`, or `failed` |
-| llm_config_id | uuid | Yes | FK to `llm_configs.id` |
+| llm_config_id | integer | Yes | FK to `llm_configs.id` |
 | provider | varchar(20) | No | Provider captured at run time |
 | model | varchar(80) | No | Model captured at run time |
 | provider_endpoint | varchar(32) | Yes | Example: `responses`, `chat_completions`, `messages`, or `generate_content` |
 | review_trigger | text | Yes | Optional trigger summary |
 | user_note | text | Yes | Optional user note |
-| prompt_template_id | uuid | Yes | FK to `prompt_templates.id` |
+| prompt_template_id | integer | Yes | FK to `prompt_templates.id` |
 | prompt_template_revision | integer | Yes | Template revision captured at run time |
 | context_snapshot | jsonb | No | Frozen context snapshot |
 | compare_to_origin | boolean | No | Whether origin comparison was requested |
@@ -289,20 +289,9 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| run_id | uuid | No | FK to `stock_analysis_runs.id` |
+| id | integer | No | Primary key |
+| run_id | integer | No | FK to `stock_analysis_runs.id` |
 | step | varchar(40) | No | `fresh_analysis`, `compare_decide_reflect`, `follow_up`, or `single` |
-
-### user_snippets
-
-| Column | Type | Null | Notes |
-|---|---|---|---|
-| id | uuid | No | Primary key |
-| name | varchar(120) | No | Unique snippet name |
-| content | text | No | Reusable prompt body |
-| description | text | Yes | Optional label |
-| created_at | timestamptz | No | Creation timestamp |
-| updated_at | timestamptz | No | Last update timestamp |
 | step_index | integer | No | Execution order within the run |
 | status | varchar(32) | No | Request lifecycle status |
 | prompt_source | varchar(20) | No | `saved_template` or `ad_hoc` |
@@ -321,19 +310,42 @@ Constraints:
 
 - Primary key: `id`
 - Foreign key: `run_id -> stock_analysis_runs.id` with `ON DELETE CASCADE`
-- Check: `step IN ('fresh_analysis', 'compare_decide_reflect', 'follow_up')`
+- Check: `step IN ('fresh_analysis', 'compare_decide_reflect', 'follow_up', 'single')`
 - Unique: `(run_id, step_index)`
 
 Indexes:
 
 - Unique index on `(run_id, step_index)`
 
+### user_snippets
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| id | integer | No | Primary key |
+| name | varchar(120) | No | Unique snippet name |
+| snippet_alias | varchar(80) | No | Unique readable alias used in placeholders such as `{{user.snippet.hello_snippets}}` |
+| content | text | No | Reusable prompt body |
+| description | text | Yes | Optional label |
+| created_at | timestamptz | No | Creation timestamp |
+| updated_at | timestamptz | No | Last update timestamp |
+
+Constraints:
+
+- Primary key: `id`
+- Unique: `name`
+- Unique: `snippet_alias`
+
+Indexes:
+
+- Unique index on `name`
+- Unique index on `snippet_alias`
+
 ### stock_analysis_responses
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| request_id | uuid | No | FK to `stock_analysis_requests.id`, unique |
+| id | integer | No | Primary key |
+| request_id | integer | No | FK to `stock_analysis_requests.id`, unique |
 | provider | varchar(20) | No | Provider denormalized for lookup |
 | provider_response_id | varchar(128) | Yes | Provider-issued response id |
 | provider_request_id | varchar(128) | Yes | Provider-issued request or trace id |
@@ -362,9 +374,9 @@ Indexes:
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| id | uuid | No | Primary key |
-| conversation_id | uuid | No | FK to `stock_analysis_conversations.id` |
-| run_id | uuid | No | FK to `stock_analysis_runs.id`, unique |
+| id | integer | No | Primary key |
+| conversation_id | integer | No | FK to `stock_analysis_conversations.id` |
+| run_id | integer | No | FK to `stock_analysis_runs.id`, unique |
 | version_number | integer | No | Monotonic per conversation |
 | symbol | varchar(32) | No | Denormalized symbol for filtering |
 | action | varchar(20) | No | Final action enum |
