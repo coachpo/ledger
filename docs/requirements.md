@@ -15,7 +15,6 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 - Delayed quote and price-history retrieval for symbols in a portfolio.
 - Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations.
 - Per-portfolio stock-analysis enablement and defaults.
-- App-global LLM config CRUD.
 - App-global prompt template CRUD and preview.
 - App-global snippet CRUD.
 - Stock-analysis conversations, runs, requests, responses, and version history.
@@ -40,7 +39,7 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 - A portfolio has one base currency. Balances, positions, prices, and simulated operations use that currency in the current release.
 - Market data is delayed and indicative; it assists display and analysis but never becomes the source of truth for balances or positions.
 - Stock analysis is disabled by default per portfolio until the user enables it explicitly.
-- Each stock-analysis run uses exactly one enabled LLM config.
+- Each stock-analysis run uses exactly one enabled LLM provider.
 - Local database records are authoritative for history, replay, and audits even if a provider later loses retention or becomes unavailable.
 
 ## Functional Requirements
@@ -111,21 +110,11 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 
 - The system must expose one stock-analysis settings record per portfolio.
 - The settings record must support enabling or disabling stock analysis for that portfolio.
-- The settings record must support optional default LLM config and default prompt template selections.
+- The settings record must support optional default prompt template selection.
 - The settings record must support a `compareToOrigin` default that later runs can override.
 - The backend must reject new runs when stock analysis is disabled for the selected portfolio.
 
-### FR-9 LLM Config Management
-
-- The system must let the user create, read, update, list, and delete reusable LLM configs.
-- Supported providers must be `openai`, `anthropic`, and `gemini`.
-- OpenAI configs must require an endpoint mode of `chat_completions` or `responses`.
-- Non-OpenAI configs must reject an OpenAI endpoint mode.
-- API keys must be stored server-side and must not be returned in plaintext on reads.
-- A referenced config must become disabled instead of being hard-deleted.
-- Each run must use exactly one enabled LLM config.
-
-### FR-10 Prompt Template Management And Preview
+### FR-9 Prompt Template Management And Preview
 
 - The system must let the user create, read, update, list, and delete reusable prompt templates.
 - The system must support `single` templates with one instructions/input pair and `two_step` templates with separate fresh/compare text.
@@ -135,7 +124,7 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 - Templates used by historical requests must remain readable even after later edits.
 - A used template must archive instead of being hard-deleted.
 
-### FR-10A Snippet Management
+### FR-9A Snippet Management
 
 - The system must let the user create, read, update, list, and delete reusable snippets.
 - Snippets are global prompt fragments referenced from composed prompts.
@@ -204,7 +193,7 @@ Define the product, workflow, and contract requirements for Ledger as the canoni
 - A user cannot submit an operation when the resulting balance would be negative, a sell would overshoot holdings, or a split targets a missing position.
 - A user can view delayed quotes and price history with warnings and freshness metadata, and the app still works when market-data retrieval fails.
 - A user can enable stock analysis for a portfolio, assign defaults, and later disable it again.
-- A user can create or edit an LLM config and prompt template, preview the rendered prompt for a selected stock, and submit a run successfully.
+- A user can create or edit a prompt template, preview the rendered prompt for a selected stock, and submit a run successfully.
 - An `initial_review` followed by a later `periodic_review` for the same symbol produces a version timeline with structured deltas.
 - Invalid placeholders, cross-portfolio references, and missing prompt context are rejected before provider execution.
 - Historical runs continue to display their original rendered prompts and parsed outputs after later template edits or archival.

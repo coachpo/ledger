@@ -12,7 +12,7 @@ The current stock-analysis surface is stock-only and centered on prompt preview,
 ## Explicit Scope Boundaries
 
 - Stock analysis is scoped to one `(portfolio, symbol)` conversation.
-- Each run uses one enabled LLM config at a time.
+- Each run uses one enabled provider at a time.
 - The current release does not support portfolio-scope analysis.
 - The current release does not support multi-provider fan-out, dispatch planning, or concurrency caps per run.
 - Provider-side conversation or thread objects are not the source of truth.
@@ -37,7 +37,6 @@ The current stock-analysis surface is stock-only and centered on prompt preview,
 
 ### Provider Boundary
 
-- Provider configs are app-owned `LlmConfig` records.
 - Supported providers are OpenAI, Anthropic, and Gemini.
 - OpenAI configs select `chat_completions` or `responses` per config.
 - Prompt rendering is provider-neutral and always produces canonical `instructions` and `input` strings before adapter-specific payload assembly.
@@ -98,7 +97,7 @@ The current stock-analysis surface is stock-only and centered on prompt preview,
 
 - Each portfolio owns one stock-analysis settings record.
 - Analysis is disabled by default until explicitly enabled.
-- Settings can define default prompt template, default LLM config, and default `compareToOrigin` behavior.
+- Settings can define default prompt template and default `compareToOrigin` behavior.
 
 ### Stock Analysis Conversations
 
@@ -180,7 +179,6 @@ React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, 
 - `/` — Dashboard with portfolio overview stats.
 - `/portfolios` — Portfolio list with create/edit/delete.
 - `/portfolios/:portfolioId` — Portfolio detail with summary metrics plus tabs for positions, balances, and trades.
-- `/llm-configs` — Global LLM configuration CRUD (provider, model, API key, generation settings).
 - `/templates` — Global prompt template CRUD with single/two-step mode toggle.
 - `/snippets` — Global user snippet CRUD.
 - `/responses` — Stock analysis response viewer with portfolio and conversation filters.
@@ -193,7 +191,6 @@ React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, 
 - `PortfolioBalancesSection` — balance CRUD.
 - `PortfolioTradesSection` — trading operation history.
 - `TradingOperationForm` — BUY/SELL/DIVIDEND/SPLIT discriminated union form.
-- `LLMConfigs` — LLM config management with provider-specific fields.
 - `PromptTemplates` — template management with mode toggle and placeholder guide.
 - `Snippets` — snippet management.
 - `ResponsesPage` — stored response browser with portfolio/conversation filters.
@@ -201,7 +198,7 @@ React 19, Vite, TanStack Query 5, React Router 7, shadcn/Radix UI, Zod, Vitest, 
 
 ### State Management
 
-TanStack Query for all server state. No client-side store. Query key factory with portfolio-scoped invalidation via `invalidatePortfolioScope()`. Global resources (LLM configs, templates, snippets) use separate key namespaces.
+TanStack Query for all server state. No client-side store. Query key factory with portfolio-scoped invalidation via `invalidatePortfolioScope()`. Global resources (templates, snippets) use separate key namespaces.
 
 ### UX Behavior
 
@@ -223,7 +220,6 @@ TanStack Query for all server state. No client-side store. Query key factory wit
 - `market_data`
 - `trading_operations`
 - `stock_analysis`
-- `llm_configs`
 - `prompt_templates`
 
 ### Service Responsibilities
@@ -236,7 +232,6 @@ TanStack Query for all server state. No client-side store. Query key factory wit
 - `MarketDataService`: delayed quote and history retrieval with warnings and cache-aware behavior.
 - `StockAnalysisService`: settings, conversation, response-summary, and version orchestration.
 - `AnalysisContextService`: context snapshot assembly, placeholder resolution, and prompt rendering.
-- `LlmConfigService`: provider-config CRUD and validation.
 - `PromptTemplateService`: template CRUD, archival, and preview helpers.
 - `LlmGatewayService`: provider request assembly and dispatch.
 - `StockAnalysisParserService`: strict structured-response validation.
@@ -347,7 +342,7 @@ Provider adapters then map those values into provider-specific payload shapes.
 
 ### Shared Rules
 
-- Model ids are stored exactly as configured on the selected LLM config.
+- Model ids are stored exactly as configured on the selected provider.
 - Secrets and auth headers must never be persisted in request snapshots.
 - Raw payloads and parsed payloads must both be stored when available.
 - Provider request or response identifiers may be stored when returned.
@@ -460,7 +455,7 @@ If step one succeeds and step two fails:
 - History viewers read from stored local snapshots rather than re-rendering from live provider state.
 - Conversations archive instead of being deleted in the current release.
 - Used templates archive instead of deleting.
-- Referenced LLM configs disable instead of deleting.
+- Referenced providers disable instead of deleting.
 
 ## Security And Advisory Boundary
 
@@ -474,7 +469,7 @@ If step one succeeds and step two fails:
 
 ### Backend Focus
 
-- CRUD for portfolios, balances, positions, LLM configs, prompt templates, and stock-analysis settings.
+- CRUD for portfolios, balances, positions, prompt templates, and stock-analysis settings.
 - Trading-operation rules for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT`.
 - Prompt preview validation and placeholder-scope enforcement.
 - Two-step run orchestration, parse validation, and version creation.
@@ -482,7 +477,7 @@ If step one succeeds and step two fails:
 ### Frontend Focus
 
 - Run-form defaults and symbol switching.
-- LLM config and prompt template management.
+- Prompt template management.
 - Preview-before-submit behavior.
 - Timeline rendering for success, partial failure, and parse failure.
 

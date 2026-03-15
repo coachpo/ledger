@@ -357,68 +357,6 @@ Response:
 - `StockAnalysisRunType = "initial_review" | "periodic_review" | "event_review" | "manual_follow_up"`
 - `StockAnalysisAction = "buy" | "add" | "hold" | "trim" | "sell" | "avoid" | "watch" | "no_action"`
 
-### LLM Config Endpoints
-
-#### GET `/api/v1/stock-analysis/llm-configs`
-
-Returns all reusable LLM configs.
-
-#### POST `/api/v1/stock-analysis/llm-configs`
-
-Request:
-
-```json
-{
-  "provider": "openai",
-  "displayName": "OpenAI Responses",
-  "model": "gpt-5-mini",
-  "openaiEndpointMode": "responses",
-  "baseUrl": null,
-  "apiKeySecret": "sk-live-value",
-  "enabled": true,
-  "defaultGenerationSettings": {
-    "temperature": 0.2,
-    "max_tokens": 2000
-  }
-}
-```
-
-Read response shape:
-
-```json
-{
-  "id": 3,
-  "provider": "openai",
-  "displayName": "OpenAI Responses",
-  "model": "gpt-5-mini",
-  "openaiEndpointMode": "responses",
-  "baseUrl": null,
-  "hasApiKey": true,
-  "enabled": true,
-  "defaultGenerationSettings": {
-    "temperature": 0.2,
-    "max_tokens": 2000
-  },
-  "createdAt": "2026-03-10T14:00:00Z",
-  "updatedAt": "2026-03-10T14:00:00Z"
-}
-```
-
-#### GET `/api/v1/stock-analysis/llm-configs/{configId}`
-
-Returns one config.
-
-#### PATCH `/api/v1/stock-analysis/llm-configs/{configId}`
-
-Updates display name, model, endpoint mode, base URL, secret, enabled state, or generation defaults.
-
-#### DELETE `/api/v1/stock-analysis/llm-configs/{configId}`
-
-Delete semantics:
-
-- Hard-delete when the config has never been referenced.
-- Disable instead of hard-delete when historical runs depend on it.
-
 ### Prompt Template Endpoints
 
 #### GET `/api/v1/stock-analysis/prompt-templates`
@@ -467,7 +405,6 @@ Request shape:
   "step": "fresh_analysis",
   "portfolioId": 7,
   "symbol": "AAPL",
-  "llmConfigId": 3,
   "conversationId": null,
   "runType": "initial_review",
   "reviewTrigger": "Quarterly refresh",
@@ -524,7 +461,7 @@ Request:
 {
   "enabled": true,
   "defaultPromptTemplateId": 5,
-  "defaultLlmConfigId": 3,
+
   "compareToOrigin": true
 }
 ```
@@ -585,9 +522,6 @@ Canonical request and response models to keep aligned across backend and fronten
 
 - `PortfolioStockAnalysisSettingsRead`
 - `PortfolioStockAnalysisSettingsUpdate`
-- `LlmConfigRead`
-- `LlmConfigWrite`
-- `LlmConfigUpdate`
 - `PromptTemplateRead`
 - `PromptTemplateWrite`
 - `PromptTemplateUpdate`

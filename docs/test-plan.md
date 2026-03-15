@@ -47,7 +47,7 @@ Covered behaviors:
 | File | Current Assertions |
 |------|--------------------|
 | `e2e/smoke.spec.ts` | app boot, sidebar presence, all six route URLs |
-| `e2e/functional.spec.ts` | portfolio creation flow, portfolio list render, LLM configs/templates/snippets pages render, responses page render |
+| `e2e/functional.spec.ts` | portfolio creation flow, portfolio list render, prompt templates/snippets pages render, responses page render |
 
 ---
 
@@ -77,7 +77,7 @@ These areas are not fully implemented yet, but they are the next useful addition
 | Area | Planned Assertions |
 |------|--------------------|
 | Portfolio detail | add balances, positions, and trades end-to-end |
-| Global stock-analysis resources | create/edit/delete LLM configs, templates, and snippets |
+| Global stock-analysis resources | create/edit/delete templates and snippets |
 | Responses page | portfolio and conversation filtering against seeded data |
 
 ---

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned entities store current balances, aggregate positions, simulated operations, and stock-analysis history. Global analysis entities store reusable LLM configs, prompt templates, and user snippets. Local database rows remain the source of truth for analysis history, replay, and auditability.
+Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned entities store current balances, aggregate positions, simulated operations, and stock-analysis history. Global analysis entities store reusable prompt templates and user snippets. Local database rows remain the source of truth for analysis history, replay, and auditability.
 
 ## Entity Relationship Summary
 
@@ -15,7 +15,7 @@ Ledger uses a relational schema centered on isolated portfolios. Portfolio-owned
 - One `stock_analysis_run` has many `stock_analysis_requests`.
 - One `stock_analysis_request` has at most one `stock_analysis_response`.
 - One `stock_analysis_run` has at most one `stock_analysis_version`.
-- `llm_configs`, `prompt_templates`, and `user_snippets` are app-global reference tables.
+- `prompt_templates` and `user_snippets` are app-global reference tables.
 - `market_quotes` are shared quote cache rows keyed by symbol and provider.
 
 ## Tables
@@ -154,7 +154,6 @@ Indexes:
 | portfolio_id | integer | No | FK to `portfolios.id`, unique |
 | enabled | boolean | No | Enables stock analysis for this portfolio |
 | default_prompt_template_id | integer | Yes | FK to `prompt_templates.id` |
-| default_llm_config_id | integer | Yes | FK to `llm_configs.id` |
 | compare_to_origin | boolean | No | Default comparison against origin version |
 | created_at | timestamptz | No | Creation timestamp |
 | updated_at | timestamptz | No | Last update timestamp |
@@ -165,13 +164,12 @@ Constraints:
 - Unique: `portfolio_id`
 - Foreign key: `portfolio_id -> portfolios.id` with `ON DELETE CASCADE`
 - Foreign key: `default_prompt_template_id -> prompt_templates.id` with `ON DELETE SET NULL`
-- Foreign key: `default_llm_config_id -> llm_configs.id` with `ON DELETE SET NULL`
 
 Indexes:
 
 - Unique index on `portfolio_id`
 
-### llm_configs
+### prompt_templates
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
@@ -258,7 +256,6 @@ Indexes:
 | mode | varchar(32) | No | `single_prompt` or `two_step_workflow` |
 | run_type | varchar(32) | No | `initial_review`, `periodic_review`, `event_review`, or `manual_follow_up` |
 | status | varchar(32) | No | `queued`, `running`, `completed`, `partial_failure`, or `failed` |
-| llm_config_id | integer | Yes | FK to `llm_configs.id` |
 | provider | varchar(20) | No | Provider captured at run time |
 | model | varchar(80) | No | Model captured at run time |
 | provider_endpoint | varchar(32) | Yes | Example: `responses`, `chat_completions`, `messages`, or `generate_content` |
@@ -276,7 +273,6 @@ Constraints:
 
 - Primary key: `id`
 - Foreign key: `conversation_id -> stock_analysis_conversations.id` with `ON DELETE CASCADE`
-- Foreign key: `llm_config_id -> llm_configs.id` with `ON DELETE SET NULL`
 - Foreign key: `prompt_template_id -> prompt_templates.id` with `ON DELETE SET NULL`
 - Check: `run_type IN ('initial_review', 'periodic_review', 'event_review', 'manual_follow_up')`
 - Check: `status IN ('queued', 'running', 'completed', 'partial_failure', 'failed')`
@@ -423,8 +419,6 @@ Indexes:
 
 - `positions.last_source`: `manual`, `csv`, `simulation`
 - `trading_operations.side`: `BUY`, `SELL`, `DIVIDEND`, `SPLIT`
-- `llm_configs.provider`: `openai`, `anthropic`, `gemini`
-- `llm_configs.openai_endpoint_mode`: `chat_completions`, `responses`
 - `stock_analysis_runs.run_type`: `initial_review`, `periodic_review`, `event_review`, `manual_follow_up`
 - `stock_analysis_runs.status`: `queued`, `running`, `completed`, `partial_failure`, `failed`
 - `stock_analysis_responses.parse_status`: `pending`, `parsed_success`, `parsed_failure`
@@ -434,7 +428,6 @@ Indexes:
 - Trading operations remain append-only for auditability of simulated actions.
 - Current balances and positions are authoritative after manual edits, CSV imports, and simulated operations.
 - Market quotes are cache rows and may be refreshed or cleaned up without affecting portfolio records.
-- LLM configs referenced by historical runs disable instead of hard-deleting.
 - Prompt templates used by historical requests archive instead of hard-deleting.
 - Conversations archive instead of deleting in the current release.
 - `retry` creates a new run id and new request rows.

@@ -26,7 +26,7 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 - Make balances, positions, CSV imports, and simulated operations easy to understand and correct.
 - Show delayed market data and history as helpful context without making core records depend on provider uptime.
 - Support structured stock-analysis reviews that preserve fresh analysis, comparison, decision, and reflection over time.
-- Let the user manage LLM configs and prompt templates from the UI while keeping secrets server-side.
+- Let the user manage prompt templates from the UI while keeping secrets server-side.
 - Preserve local history as the authoritative record for analysis timelines, replay, and audits.
 
 ## Non-Goals
@@ -71,19 +71,16 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 - Review run creation for `initial_review`, `periodic_review`, `event_review`, and `manual_follow_up`.
 - Structured viewer for fresh analysis, comparison, action memo, reversal conditions, and reflection.
 
-### 6. LLM Config Manager
-
-- CRUD for reusable provider configs.
-- First-class support for OpenAI, Anthropic, and Gemini providers.
-- OpenAI endpoint-mode selection for `chat_completions` or `responses`.
-- Server-side secret storage with masked read behavior.
-
-### 7. Prompt Template Manager
+### 6. Prompt Template Manager
 
 - CRUD and archival for reusable prompt templates.
 - Separate prompt text for `fresh_analysis` and `compare_decide_reflect` steps.
 - Preview rendering against live portfolio context before execution.
 - Stable request snapshots so later template edits do not rewrite history.
+
+### 7. Snippet Manager
+
+- CRUD for reusable prompt snippets.
 
 ## Core User Stories
 
@@ -91,7 +88,7 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 - As a user, I want to maintain balances and positions manually or by CSV so I can correct state quickly.
 - As a user, I want simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations so Ledger can model portfolio changes without touching a broker.
 - As a user, I want delayed quotes and price history for my symbols so I have context for simulation and review.
-- As a user, I want to configure provider credentials and prompt templates in the product so I do not have to edit code to run reviews.
+- As a user, I want to configure prompt templates in the product so I do not have to edit code to run reviews.
 - As a user, I want each stock review to analyze the current situation first and compare against prior versions only afterward so I avoid anchoring to old conclusions.
 - As a user, I want every run, prompt, response, and version snapshot stored locally so I can inspect what the model saw and why it recommended an action.
 - As a user, I want the final result to include an explicit action stance, reversal conditions, and reflection notes so the output is operational rather than vague.
@@ -124,10 +121,6 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 
 - Symbol selector, settings panel, run form, preview flow, and conversation timeline.
 
-### LLM Config Manager
-
-- Provider, model, endpoint mode, enabled state, base URL, and masked secret state.
-
 ### Prompt Template Manager
 
 - Template list, revision-aware editing, archive flow, and preview support.
@@ -142,7 +135,7 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 - CSV validation is clear enough that the user can fix bad files without backend help.
 - Simulated operations update balance and aggregate position state in one step and reject invalid requests deterministically.
 - Delayed market quotes and price history remain visibly non-authoritative and do not block core record access.
-- A user can configure an LLM config and template, preview a prompt, and submit a stock review without editing code.
+- A user can configure a template, preview a prompt, and submit a stock review without editing code.
 - A user can run an initial review and later a periodic or event review for the same symbol and see a structured delta with preserved history.
 - Historical analysis runs remain readable after later template edits, provider changes, or remote-provider retention expiry.
 
@@ -161,6 +154,6 @@ Ledger solves this by treating portfolio records and stock-analysis history as f
 - CSV import validates and commits correctly.
 - Delayed quotes and price history are available with warnings and freshness metadata.
 - Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations update state correctly.
-- Stock analysis can be enabled per portfolio and executed with configurable LLM configs and prompt templates.
+- Stock analysis can be enabled per portfolio and executed with configurable prompt templates.
 - Analysis runs persist conversations, requests, responses, and version snapshots locally.
 - Final analysis outputs are structured, inspectable, and advisory only.
