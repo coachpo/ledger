@@ -12,11 +12,24 @@ FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}/api/v1}"
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-else
+PYTHON_BIN=""
+
+for candidate in python3 python; do
+  if ! command -v "$candidate" >/dev/null 2>&1; then
+    continue
+  fi
+
+  if "$candidate" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+
+  if [[ -z "$PYTHON_BIN" ]]; then
+    PYTHON_BIN="$candidate"
+  fi
+done
+
+if [[ -z "$PYTHON_BIN" ]]; then
   printf 'Python is required but was not found.\n' >&2
   exit 1
 fi
