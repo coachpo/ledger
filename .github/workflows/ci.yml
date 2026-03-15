@@ -18,6 +18,23 @@ jobs:
   backend-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
+      TEST_DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ledger
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U ledger -d ledger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -46,6 +63,23 @@ jobs:
   frontend-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
+      TEST_DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ledger
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U ledger -d ledger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

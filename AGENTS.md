@@ -10,7 +10,7 @@ Ledger is a dual-stack portfolio tracker split across backend and frontend submo
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, commands, and layer routing
 - `backend/app/core/AGENTS.md` — config, error envelope, normalization helpers
-- `backend/app/db/AGENTS.md` — session lifecycle and in-code SQLite upgrades
+- `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only init/upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries and DI
 - `backend/app/services/AGENTS.md` — service transaction ownership and quote-provider wiring
 - `backend/app/services/stock_analysis/AGENTS.md` — context building, prompt rendering, parser rules
@@ -18,7 +18,7 @@ Ledger is a dual-stack portfolio tracker split across backend and frontend submo
 - `backend/app/schemas/AGENTS.md` — Pydantic validation and camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships
 - `backend/app/repositories/AGENTS.md` — query/repository patterns
-- `backend/tests/AGENTS.md` — pytest fixtures, temp SQLite, high-signal backend tests
+- `backend/tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, high-signal backend tests
 - `frontend/AGENTS.md` — frontend architecture, router shell, pnpm/test workflow
 - `frontend/src/lib/AGENTS.md` — API client, query keys, analytics, formatting
 - `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
@@ -41,10 +41,10 @@ ledger/
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `.gitmodules` + `git submodule update --init --recursive` | CI and local dev both rely on recursive submodules |
-| Start both apps locally | `start.sh` | backend `8000`, frontend `5173`, reuses a healthy backend |
+| Start both apps locally | `start.sh` | backend `8000`, frontend `5173`; requires PostgreSQL already running for the backend |
 | Cross-app E2E startup | `frontend/playwright.config.ts` + `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001`, frontend `4173` |
 | Backend app bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, error handlers, router composition, DI |
-| Backend infrastructure | `backend/app/core/AGENTS.md`, `backend/app/db/AGENTS.md` | settings, error envelope, normalization, session/init/SQLite upgrades |
+| Backend infrastructure | `backend/app/core/AGENTS.md`, `backend/app/db/AGENTS.md` | settings, error envelope, normalization, session/init/PostgreSQL upgrades |
 | Backend service work | `backend/app/services/AGENTS.md`, `backend/app/services/stock_analysis/AGENTS.md`, `backend/app/services/providers/AGENTS.md` | CRUD flows, market data, stock-analysis orchestration, provider adapters |
 | Backend data contracts | `backend/app/schemas/AGENTS.md`, `backend/app/models/AGENTS.md`, `backend/app/repositories/AGENTS.md` | Pydantic schemas, ORM entities, SQLAlchemy queries |
 | Backend test hotspots | `backend/tests/AGENTS.md` | fixture setup + API, stock-analysis, schema, provider tests |
@@ -62,7 +62,7 @@ ledger/
 | `create_app` | `backend/app/main.py` | FastAPI app factory + lifecycle |
 | `api_router` | `backend/app/api/router.py` | mounts all `/api/v1` routers |
 | `get_settings` | `backend/app/core/config.py` | cached settings / env alias resolution |
-| `upgrade_local_sqlite_schema` | `backend/app/db/session.py` | in-code SQLite upgrades; no Alembic |
+| `validate_supported_database_engine` | `backend/app/db/session.py` | PostgreSQL-only guardrail during backend initialization |
 | `QuoteProvider` / `YahooFinanceQuoteProvider` | `backend/app/services/quote_provider.py` | quote/history provider contract + Yahoo Finance adapter |
 | `MarketDataService` | `backend/app/services/market_data_service.py` | quote/history fetch + cache/warnings |
 | `TradingOperationService` | `backend/app/services/trading_operation_service.py` | BUY/SELL/DIVIDEND/SPLIT rules |
@@ -112,7 +112,7 @@ python -m pip install -e './backend[dev]'
 
 ## NOTES
 - Backend requires Python 3.13+ per `backend/pyproject.toml`; frontend CI uses Node 24 and pnpm 10.
-- `start.sh` validates dependencies, reuses an existing healthy backend, and exports `VITE_API_BASE_URL` for the frontend dev server.
+- `start.sh` validates dependencies, reuses an existing healthy backend, and exports `VITE_API_BASE_URL` for the frontend dev server; PostgreSQL must already be available to the backend.
 - Backend test hotspots are `backend/tests/test_api.py`, `backend/tests/test_stock_analysis.py`, `backend/tests/test_stock_analysis_schema.py`, `backend/tests/test_openai_responses_service.py`, and `backend/tests/test_provider_schema_free_paths.py`.
 - Frontend unit coverage currently sits in `frontend/src/lib/*.test.ts`; route and CRUD coverage lives in `frontend/e2e/*.spec.ts`.
 - Playwright uses backend `8001` and frontend `4173`, which differs from local dev ports `8000` and `5173`.
