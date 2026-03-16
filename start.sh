@@ -11,6 +11,11 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}/api/v1}"
+DEFAULT_DATABASE_URL="postgresql+psycopg://ledger:ledger@localhost:25432/ledger"
+DATABASE_URL="${DATABASE_URL:-}"
+DB_IMAGE="${LEDGER_DB_IMAGE:-postgres:16-alpine}"
+DB_CONTAINER_NAME="${LEDGER_DB_CONTAINER_NAME:-}"
+DB_VOLUME_NAME="${LEDGER_DB_VOLUME_NAME:-}"
 
 PYTHON_BIN=""
 
@@ -49,6 +54,93 @@ if ! (cd "$BACKEND_DIR" && "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null
   exit 1
 fi
 
+read_backend_env_value() {
+  local key=$1
+  local env_file="$BACKEND_DIR/.env"
+
+  if [[ ! -f "$env_file" ]]; then
+    return 1
+  fi
+
+  "$PYTHON_BIN" - "$env_file" "$key" <<'PY'
+from pathlib import Path
+import sys
+
+env_file, key = sys.argv[1], sys.argv[2]
+
+for raw_line in Path(env_file).read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+
+    current_key, value = line.split("=", 1)
+    if current_key.strip() == key:
+        print(value.strip().strip('"').strip("'"))
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
+resolve_backend_database_url() {
+  local env_database_url=""
+
+  if [[ -n "$DATABASE_URL" ]]; then
+    printf '%s' "$DATABASE_URL"
+    return
+  fi
+
+  if env_database_url="$(read_backend_env_value DATABASE_URL 2>/dev/null)"; then
+    printf '%s' "$env_database_url"
+    return
+  fi
+
+  printf '%s' "$DEFAULT_DATABASE_URL"
+}
+
+DATABASE_URL="$(resolve_backend_database_url)"
+
+eval "$($PYTHON_BIN - "$DATABASE_URL" <<'PY'
+from urllib.parse import unquote, urlsplit
+import shlex
+import sys
+
+database_url = sys.argv[1]
+parts = urlsplit(database_url)
+
+values = {
+    "DB_SCHEME": parts.scheme.split("+", 1)[0],
+    "DB_HOST": parts.hostname or "",
+    "DB_PORT": str(parts.port or 5432),
+    "DB_USER": unquote(parts.username or ""),
+    "DB_PASSWORD": unquote(parts.password or ""),
+    "DB_NAME": parts.path.lstrip("/"),
+}
+
+for key, value in values.items():
+    print(f"{key}={shlex.quote(value)}")
+PY
+)"
+
+if [[ "$DB_SCHEME" != "postgres" && "$DB_SCHEME" != "postgresql" ]]; then
+  printf 'DATABASE_URL must use PostgreSQL: %s\n' "$DATABASE_URL" >&2
+  exit 1
+fi
+
+if [[ -z "$DB_HOST" || -z "$DB_NAME" ]]; then
+  printf 'DATABASE_URL is missing required connection parts: %s\n' "$DATABASE_URL" >&2
+  exit 1
+fi
+
+if [[ -z "$DB_CONTAINER_NAME" ]]; then
+  DB_CONTAINER_NAME="ledger-postgres-${DB_PORT}"
+fi
+
+if [[ -z "$DB_VOLUME_NAME" ]]; then
+  DB_VOLUME_NAME="ledger-postgres-data-${DB_PORT}"
+fi
+
+database_started=0
 backend_pid=""
 frontend_pid=""
 backend_started=0
@@ -67,6 +159,105 @@ probe_host() {
   fi
 
   printf '%s' "$host"
+}
+
+database_uses_local_host() {
+  case "$DB_HOST" in
+    localhost|127.0.0.1|0.0.0.0)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+docker_container_exists() {
+  local container_name=$1
+  docker container inspect "$container_name" >/dev/null 2>&1
+}
+
+docker_container_running() {
+  local container_name=$1
+  [[ "$(docker container inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null)" == "true" ]]
+}
+
+wait_for_database_container() {
+  local deadline=$((SECONDS + 60))
+
+  while (( SECONDS < deadline )); do
+    if ! docker_container_running "$DB_CONTAINER_NAME"; then
+      return 1
+    fi
+
+    if docker exec "$DB_CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  return 1
+}
+
+ensure_database_ready() {
+  if ! database_uses_local_host; then
+    printf 'Using external database on %s:%s\n' "$DB_HOST" "$DB_PORT"
+    return
+  fi
+
+  if port_is_listening "$DB_PORT"; then
+    printf 'Reusing existing database on %s:%s\n' "$DB_HOST" "$DB_PORT"
+    return
+  fi
+
+  if [[ -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_NAME" ]]; then
+    printf 'Cannot provision the local database without user, password, and database name in DATABASE_URL.\n' >&2
+    exit 1
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    printf 'Docker is required to start the local database but was not found.\n' >&2
+    exit 1
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    printf 'Docker is installed but the daemon is not available.\n' >&2
+    exit 1
+  fi
+
+  printf 'Starting database container %s on %s:%s\n' "$DB_CONTAINER_NAME" "$DB_HOST" "$DB_PORT"
+
+  if docker_container_exists "$DB_CONTAINER_NAME"; then
+    docker start "$DB_CONTAINER_NAME" >/dev/null
+  else
+    docker run -d \
+      --name "$DB_CONTAINER_NAME" \
+      --publish "${DB_PORT}:5432" \
+      --env "POSTGRES_DB=$DB_NAME" \
+      --env "POSTGRES_USER=$DB_USER" \
+      --env "POSTGRES_PASSWORD=$DB_PASSWORD" \
+      --volume "${DB_VOLUME_NAME}:/var/lib/postgresql/data" \
+      --health-cmd "pg_isready -U $DB_USER -d $DB_NAME" \
+      --health-interval 5s \
+      --health-timeout 5s \
+      --health-retries 10 \
+      "$DB_IMAGE" >/dev/null
+  fi
+
+  database_started=1
+
+  if ! wait_for_database_container; then
+    printf 'Database container %s failed to become ready.\n' "$DB_CONTAINER_NAME" >&2
+    docker logs "$DB_CONTAINER_NAME" >&2 || true
+    exit 1
+  fi
+}
+
+stop_database_container() {
+  if [[ "$database_started" -eq 1 ]]; then
+    docker stop "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
+  fi
 }
 
 ledger_backend_running() {
@@ -141,6 +332,8 @@ cleanup() {
     stop_process "$backend_pid"
   fi
 
+  stop_database_container
+
   exit "$exit_code"
 }
 
@@ -159,6 +352,7 @@ if port_is_listening "$BACKEND_PORT"; then
     exit 1
   fi
 else
+  ensure_database_ready
   printf 'Starting backend on http://%s:%s\n' "$BACKEND_HOST" "$BACKEND_PORT"
   (
     cd "$BACKEND_DIR"
