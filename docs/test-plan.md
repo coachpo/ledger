@@ -1,134 +1,127 @@
-# Test Plan — Ledger Frontend
+# Test Plan
 
-## 1. Overview
+## Overview
 
-This document describes the current automated test coverage for the rewritten frontend and the next logical areas to expand. It is intentionally split into **current coverage** and **planned coverage** so the repo docs do not imply tests exist when they do not.
+This document describes the current automated coverage for the live Ledger stack and the most useful next expansion areas. It is intentionally split into current coverage and targeted gaps so the docs do not imply tests exist where they do not.
 
-### Tools
-- **Unit tests**: Vitest + React Testing Library + jsdom
-- **E2E tests**: Playwright (Chromium)
-- **Mocking**: `vi.fn()` and fetch stubs in unit tests
+## Current Tooling
 
-### Coverage Targets
-- API client (`src/lib/api.ts`): 90%+
-- Formatting utilities (`src/lib/format.ts`): 100%
-- Portfolio analytics (`src/lib/portfolio-analytics.ts`): 90%+
-- E2E: Route smoke coverage plus critical CRUD and response-viewer journeys
+- Backend integration tests: `pytest` against isolated PostgreSQL databases
+- Frontend unit/component tests: Vitest + React Testing Library + jsdom
+- End-to-end tests: Playwright (Chromium)
+- CI runners: GitHub Actions with separate backend-quality, frontend-quality, and Docker smoke-build jobs
 
----
+## Current Automated Coverage
 
-## 2. Current Automated Coverage
+### Backend: `backend/tests/test_api.py`
 
-### 2.1 Unit Tests
+The backend suite is the highest-signal regression layer and covers:
 
-Implemented test files:
+- portfolio CRUD and slug validation
+- balance CRUD plus `operationType` lock behavior once trading history exists
+- position CRUD, symbol lookup, and symbol-name cache reuse
+- CSV preview/commit validation and upsert behavior
+- trading-operation rules for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT`
+- market-data success, warning, cached-quote fallback, and history behavior
+- template CRUD, placeholder browsing, inline compile, and stored compile-by-id
+- supported legacy schema upgrades, including dropped stock-analysis tables and balance `operation_type` backfill
 
-- `src/lib/api.test.ts`
-- `src/lib/format.test.ts`
-- `src/lib/portfolio-analytics.test.ts`
+### Frontend Unit And Component Tests
+
+Implemented files:
+
+- `frontend/src/lib/api.test.ts`
+- `frontend/src/lib/format.test.ts`
+- `frontend/src/lib/portfolio-analytics.test.ts`
+- `frontend/src/lib/query-keys.test.ts`
+- `frontend/src/components/forms/portfolio-form-dialog.test.tsx`
+- `frontend/src/components/portfolios/position-form-dialog.test.tsx`
+- `frontend/src/components/portfolios/portfolio-positions-section.test.tsx`
+- `frontend/src/components/portfolios/trading-operation-form.test.tsx`
+- `frontend/src/components/portfolios/record-trading-operation-dialog.test.tsx`
+- `frontend/src/components/portfolios/portfolio-trades-section.test.tsx`
 
 Covered behaviors:
 
-| File | Current Assertions |
-|------|--------------------|
-| `src/lib/api.test.ts` | request success/error handling, base URL selection, query encoding |
-| `src/lib/format.test.ts` | currency, decimal, percent, and date formatting helpers |
-| `src/lib/portfolio-analytics.test.ts` | quote enrichment, total value, P&L, and allocation helpers |
+| File / Area | Current Assertions |
+|---|---|
+| `api.test.ts` | request success/error mapping, base URL selection, query/path encoding, symbol lookup URL generation |
+| `format.test.ts` | currency, decimal, percent, date/datetime, compact-number formatting |
+| `portfolio-analytics.test.ts` | quote enrichment, marked value, P&L, allocation math, withdrawal sign handling |
+| `query-keys.test.ts` | id normalization, market-history symbol normalization, lookup-key normalization |
+| portfolio form/dialog tests | portfolio create/edit validation and UI behavior |
+| trading/position component tests | side-specific form behavior, position entry, trade recording, and trades table rendering |
 
-### 2.2 E2E Tests
+### Frontend E2E
 
 Implemented Playwright specs:
 
-- `e2e/smoke.spec.ts`
-- `e2e/functional.spec.ts`
+- `frontend/e2e/smoke.spec.ts`
+- `frontend/e2e/functional.spec.ts`
 
 Covered behaviors:
 
 | File | Current Assertions |
-|------|--------------------|
-| `e2e/smoke.spec.ts` | app boot, sidebar presence, all six route URLs |
-| `e2e/functional.spec.ts` | portfolio creation flow, portfolio list render, prompt templates/snippets pages render, responses page render |
+|---|---|
+| `smoke.spec.ts` | app boot, dashboard visibility, sidebar links, portfolios route navigation |
+| `functional.spec.ts` | portfolio creation flow, portfolio list render, add-position symbol lookup, manual name fallback when lookup fails |
 
----
+## Test Environment Matrix
 
-## 3. Planned Coverage Expansion
+| Test Level | Environment |
+|---|---|
+| Backend integration | Temporary PostgreSQL databases created and dropped by pytest fixtures |
+| Frontend unit/component | jsdom with mocked `ResizeObserver`, `matchMedia`, and `IntersectionObserver` |
+| Playwright E2E | Real backend on `8001`, real frontend on `4173`, PostgreSQL-backed flows |
+| Manual local full stack | `start.sh` on backend `28000`, frontend `25173`, PostgreSQL `25432` |
 
-These areas are not fully implemented yet, but they are the next useful additions.
+## CI Coverage
 
-### 3.1 Query / Hook Tests
+### `backend-quality`
 
-| Area | Planned Assertions |
-|------|--------------------|
-| `use-portfolios.ts` | list fetch, create/update/delete invalidation, error states |
-| `use-market-data.ts` | disabled queries without symbols, stale quote handling |
-| `use-stock-analysis.ts` | conversation listing, version queries, response filtering |
-| `query-keys.ts` | tuple stability and portfolio-scope invalidation |
+- `ruff check app tests`
+- `black --check app tests`
+- `isort --check-only app tests`
+- `mypy app`
+- `pytest`
 
-### 3.2 Component Tests
+### `frontend-quality`
 
-| Area | Planned Assertions |
-|------|--------------------|
-| `PortfolioListPage` | create/edit/delete flows and empty states |
-| `PortfolioDetailPage` | positions/balances/trades tabs and degraded data states |
-| `TradingOperationForm` | side-specific fields for BUY/SELL/DIVIDEND/SPLIT |
+- `pnpm lint`
+- `pnpm build`
+- `pnpm test:e2e`
 
-### 3.3 E2E Growth Areas
+### `docker-build-smoke`
 
-| Area | Planned Assertions |
-|------|--------------------|
-| Portfolio detail | add balances, positions, and trades end-to-end |
-| Global stock-analysis resources | create/edit/delete templates and snippets |
-| Responses page | portfolio and conversation filtering against seeded data |
+- builds both backend and frontend Dockerfiles for `linux/amd64`
+- runs only after both quality jobs pass
 
----
+Local-only but recommended checks:
 
-## 4. Test Data Strategy
+- `cd frontend && pnpm typecheck`
+- `cd frontend && pnpm test:run`
 
-| Test Level | Data Source |
-|------------|------------|
-| Unit tests | Hardcoded fixtures matching frontend API types |
-| Future component tests | Mocked fetch responses with React Query providers |
-| E2E tests | Real backend on port `8001`; test data created during the scenario |
-
----
-
-## 5. CI Integration
-
-```yaml
-# Frontend quality job
-- pnpm typecheck
-- pnpm lint
-- pnpm test:run
-- pnpm build
-- pnpm test:e2e
-```
-
----
-
-## 6. Test Execution Commands
+## Execution Commands
 
 ```bash
-# Run unit tests once
+# Backend
+cd backend && pytest tests/test_api.py
+
+# Frontend unit/component tests
 cd frontend && pnpm test:run
 
-# Run Vitest in watch mode
-cd frontend && pnpm test
-
-# Run a specific unit test file
-cd frontend && pnpm test:run src/lib/format.test.ts
-
-# Run E2E tests
+# Frontend E2E
 cd frontend && pnpm test:e2e
 
-# Run E2E with Playwright UI
-cd frontend && pnpm exec playwright test --ui
+# Full local validation
+cd backend && ruff check app tests && black --check app tests && isort --check-only app tests && mypy app && pytest
+cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run && pnpm test:e2e
 ```
 
----
+## Highest-Value Next Coverage
 
-## 7. Gaps And Future Work
-
-- Add React Query hook tests around invalidation and response filtering behavior.
-- Add component tests for the portfolio detail workspace and response browser.
-- Add stronger Playwright assertions for resource CRUD and response filtering.
-- Add accessibility and visual-regression coverage once the UI stabilizes.
+- Add Playwright coverage for balance CRUD and trading-operation flows end to end.
+- Add Playwright coverage for template create/edit/delete and inline compile preview.
+- Add route-level frontend tests for `PortfolioDetailPage` degraded quote-warning states.
+- Add direct tests for quote warning rendering and cached-quote fallback in portfolio UI.
+- Add a root-level smoke check around `start.sh` once CI support for Docker-in-Docker orchestration is acceptable.

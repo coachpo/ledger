@@ -2,158 +2,136 @@
 
 ## Product Summary
 
-Ledger is a trusted single-user portfolio workspace for tracking balances, positions, delayed market context, simulated trading operations, and structured stock-analysis reviews. The product combines manual record keeping with LLM-assisted decision support so the user can preserve portfolio state and investment reasoning in one place without automating trade execution.
+Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, and reusable text templates that compile live portfolio data into plain text or markdown.
 
 ## Problem Statement
 
-Users often split portfolio management across spreadsheets, notes, broker dashboards, and ad hoc AI chats. That creates three persistent problems:
+Portfolio tracking is easy to fragment across spreadsheets, broker dashboards, notes, and ad hoc prompts. That fragmentation causes four practical issues:
 
-- portfolio state is easy to corrupt because balances, positions, and simulated trades are updated in different places;
-- delayed market context is available, but the user still has to manually reconstruct what changed and why;
-- investment reasoning is not versioned, so it is hard to tell whether a view changed because of new facts, narrative drift, market noise, or hindsight.
+- balances, positions, and simulated trades drift out of sync;
+- market context is visible, but not tied cleanly to portfolio state;
+- importing or correcting data is tedious when there is no preview step;
+- reusable research or reporting templates become stale when they are not connected to live portfolio data.
 
-Ledger solves this by treating portfolio records and stock-analysis history as first-class product data. The product keeps manual portfolio state editable, stores every analysis artifact locally, and turns the self-reflection loop into a repeatable workflow: fresh analysis first, comparison second, then action and reflection.
+Ledger solves this by keeping portfolio state, market context, and template rendering in one local system. The product favors explicit user-controlled records over broker sync or automation.
 
 ## Target User
 
-- A single operator or trusted internal user working in an auth-less environment.
-- A user who wants explicit, editable portfolio records instead of broker connectivity or reconciliation-heavy tooling.
-- A user who wants AI-assisted stock reviews with prompt transparency, version history, and decision support, not autonomous trading.
+- A single operator working in a trusted local or private environment.
+- A user who wants manual, editable portfolio records instead of reconciliation-heavy broker integrations.
+- A user who wants reusable text templates backed by live portfolio data for summaries, journaling, or downstream LLM prompts.
 
 ## Goals
 
-- Keep each portfolio isolated so experiments in one workspace do not affect another.
+- Keep each portfolio isolated so one workspace cannot leak into another.
 - Make balances, positions, CSV imports, and simulated operations easy to understand and correct.
-- Show delayed market data and history as helpful context without making core records depend on provider uptime.
-- Support structured stock-analysis reviews that preserve fresh analysis, comparison, decision, and reflection over time.
-- Let the user manage prompt templates from the UI while keeping secrets server-side.
-- Preserve local history as the authoritative record for analysis timelines, replay, and audits.
+- Show delayed quotes and history as helpful context without making them authoritative.
+- Preserve deterministic portfolio math for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` flows.
+- Let the user author templates in the UI and preview compiled output before saving or reusing it.
+- Keep local persistence authoritative even when provider lookups fail.
 
 ## Non-Goals
 
 - Authentication, authorization, or multi-tenant account management.
 - Live broker integration, order routing, or automatic trade execution.
-- Realtime quotes, websocket streaming, or autonomous alerting.
-- External news, filings, or research ingestion in the current release.
-- Provider-side threads or conversations as the product source of truth.
+- Realtime quote streaming, alerts, or background schedulers.
 - Tax-lot accounting, FIFO, realized tax reporting, or accounting exports.
+- Stock-analysis conversations, response history, snippets, or provider-orchestrated research flows.
 
 ## Product Areas
 
 ### 1. Portfolio Workspace
 
 - Portfolio list with create, edit, delete, and open flows.
-- Portfolio detail workspace that keeps balances, positions, operations, market context, and stock analysis tied to one portfolio.
+- Portfolio detail workspace with balances, positions, trades, and quote-enriched metrics.
 - Clear portfolio isolation in both API scope and UI navigation.
 
-### 2. Balance And Position Management
+### 2. Cash Accounts
 
-- Manual CRUD for balances in the portfolio base currency.
-- Manual CRUD for aggregate positions keyed by symbol.
-- CSV position import with preview-before-commit and row-level validation.
+- Balance CRUD inside a portfolio.
+- Explicit `DEPOSIT` and `WITHDRAWAL` balance types.
+- Portfolio cash math that subtracts withdrawal balances from available cash.
 
-### 3. Market Context
+### 3. Positions And Imports
 
-- Delayed quote retrieval for symbols in the active portfolio.
-- Price-history retrieval for charting and analysis context.
-- Freshness and warning metadata so the user can distinguish delayed data from authoritative portfolio records.
+- Manual position CRUD with one aggregate position per symbol.
+- Optional symbol-name enrichment via provider lookup and cache.
+- CSV preview-before-commit with row-level validation and atomic apply.
 
-### 4. Simulated Operation Ledger
+### 4. Market Context
 
-- Append-only simulated operations for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT`.
+- Delayed quote retrieval for portfolio symbols.
+- Price-history retrieval for supported ranges.
+- Warning and stale-state messaging when quote providers fail or return mismatched currency data.
+
+### 5. Simulated Trading Ledger
+
+- Append-only `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations.
 - Deterministic balance and aggregate-position updates.
-- Immediate feedback when an operation would violate business rules.
+- Immediate rejection of invalid operations such as oversells, negative cash, or missing positions.
 
-### 5. Stock Analysis Workspace
+### 6. Template Manager
 
-- Portfolio-scoped stock-analysis settings with enable/disable and defaults.
-- Conversation timeline per `(portfolio, symbol)`.
-- Review run creation for `initial_review`, `periodic_review`, `event_review`, and `manual_follow_up`.
-- Structured viewer for fresh analysis, comparison, action memo, reversal conditions, and reflection.
-
-### 6. Prompt Template Manager
-
-- CRUD and archival for reusable prompt templates.
-- Separate prompt text for `fresh_analysis` and `compare_decide_reflect` steps.
-- Preview rendering against live portfolio context before execution.
-- Stable request snapshots so later template edits do not rewrite history.
-
-### 7. Snippet Manager
-
-- CRUD for reusable prompt snippets.
+- Global text-template CRUD.
+- Placeholder browser driven by live portfolio slugs and positions.
+- Inline compile preview plus stored-template compile-by-id.
 
 ## Core User Stories
 
-- As a user, I want separate portfolios for different strategies so their balances, positions, operations, and analysis history stay isolated.
-- As a user, I want to maintain balances and positions manually or by CSV so I can correct state quickly.
-- As a user, I want simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations so Ledger can model portfolio changes without touching a broker.
-- As a user, I want delayed quotes and price history for my symbols so I have context for simulation and review.
-- As a user, I want to configure prompt templates in the product so I do not have to edit code to run reviews.
-- As a user, I want each stock review to analyze the current situation first and compare against prior versions only afterward so I avoid anchoring to old conclusions.
-- As a user, I want every run, prompt, response, and version snapshot stored locally so I can inspect what the model saw and why it recommended an action.
-- As a user, I want the final result to include an explicit action stance, reversal conditions, and reflection notes so the output is operational rather than vague.
+- As a user, I want separate portfolios for different strategies so their balances, positions, and trades stay isolated.
+- As a user, I want deposit and withdrawal balances so the portfolio cash picture matches how I actually manage funds.
+- As a user, I want to import positions by CSV with a preview step so I can catch bad rows before commit.
+- As a user, I want simulated trades and cash events so Ledger can model changes without touching a broker.
+- As a user, I want delayed quotes and price history for context while keeping my manually entered records authoritative.
+- As a user, I want reusable templates with `{{placeholders}}` so I can render live portfolio summaries without copy-paste work.
 
 ## Experience Principles
 
-- Analyze first, compare later.
-- Keep local history authoritative.
-- Make non-action explicit.
-- Prefer structured outputs over opaque chat transcripts.
-- Show the rendered prompt and referenced context when possible.
-- Keep AI advisory only; trades remain manual user actions.
+- Keep local records authoritative.
+- Make state corrections cheap and explicit.
+- Prefer preview-before-commit for risky actions.
+- Preserve degraded-but-usable flows when providers fail.
+- Keep templates transparent: the user should see both the source text and compiled result.
 
 ## Key Screens
 
+### Dashboard
+
+- Portfolio counts, position counts, balance counts, and latest activity summary.
+
 ### Portfolio List
 
-- Shows all portfolios and top-level portfolio actions.
+- Portfolio cards with create, edit, delete, and open flows.
 
 ### Portfolio Detail Workspace
 
-- Header with portfolio metadata and currency.
-- Balances, positions, operations, market context, and stock-analysis entry points.
+- Header with portfolio metadata and base currency.
+- Tabs for positions, balances, and trades.
+- Quote-enriched metrics and warning states.
 
-### CSV Import Dialog
+### CSV Import Flow
 
-- File picker, validation preview, accepted rows, errors, and commit action.
+- File picker, validation preview, accepted rows, row errors, and commit action.
 
-### Stock Analysis Workspace
+### Template List
 
-- Symbol selector, settings panel, run form, preview flow, and conversation timeline.
+- Template inventory with edit and delete actions.
 
-### Prompt Template Manager
+### Template Editor
 
-- Template list, revision-aware editing, archive flow, and preview support.
-
-### Structured Review Viewer
-
-- Panels for fresh analysis, comparison, action memo, reversal conditions, and reflection.
+- Full-height editor, inline compile preview, and placeholder reference panel.
 
 ## Success Criteria
 
 - A new portfolio can be created and populated with balances and positions in minutes.
-- CSV validation is clear enough that the user can fix bad files without backend help.
-- Simulated operations update balance and aggregate position state in one step and reject invalid requests deterministically.
-- Delayed market quotes and price history remain visibly non-authoritative and do not block core record access.
-- A user can configure a template, preview a prompt, and submit a stock review without editing code.
-- A user can run an initial review and later a periodic or event review for the same symbol and see a structured delta with preserved history.
-- Historical analysis runs remain readable after later template edits, provider changes, or remote-provider retention expiry.
+- CSV validation is clear enough that the user can fix bad files without backend intervention.
+- Simulated operations update cash and aggregate positions in one step and reject invalid requests deterministically.
+- Delayed market data remains visibly non-authoritative and does not block the rest of the workspace.
+- A user can create or edit a template, preview compiled output, and reuse it without editing code.
 
 ## Risks And Mitigations
 
-- Public market data can be stale or unavailable; mitigate with warnings, freshness metadata, and non-blocking read behavior.
-- Prompt brittleness can create unstable results; mitigate with preview, versioned templates, and stored snapshots.
-- Provider contract differences can drift; mitigate with a shared normalized response model and strict parser validation.
-- An auth-less deployment is unsafe for public exposure; mitigate by documenting trusted-environment usage clearly.
-- Users may over-trust AI output; mitigate with advisory-only boundaries, explicit reversal conditions, and prompt transparency.
-- Historical reasoning can become anchored to prior theses; mitigate with a mandatory fresh-analysis-first workflow.
-
-## Release-Ready Definition
-
-- Portfolio, balance, and position management work for isolated portfolios.
-- CSV import validates and commits correctly.
-- Delayed quotes and price history are available with warnings and freshness metadata.
-- Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations update state correctly.
-- Stock analysis can be enabled per portfolio and executed with configurable prompt templates.
-- Analysis runs persist conversations, requests, responses, and version snapshots locally.
-- Final analysis outputs are structured, inspectable, and advisory only.
+- Public market data can be stale or unavailable; mitigate with warnings, stale flags, and cached-quote fallback.
+- Manual records can drift from reality; mitigate with strict validation, duplicate checks, and preview-before-commit imports.
+- Template placeholder drift can confuse users; mitigate with a live placeholder browser and compile preview.
+- Auth-less deployment is unsafe for public exposure; mitigate by documenting trusted-environment usage clearly.

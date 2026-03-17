@@ -5,7 +5,7 @@
 **Branch:** main
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/` git submodules. The live surface spans portfolio CRUD, balances, positions, template authoring/compilation, delayed market data, CSV imports, symbol-name lookup caching, and simulated BUY/SELL/DIVIDEND/SPLIT workflows.
+Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/` git submodules. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, template authoring/compilation, delayed market data, CSV imports, symbol-name lookup caching, and simulated BUY/SELL/DIVIDEND/SPLIT workflows.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
@@ -30,7 +30,7 @@ Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/`
 ledger/
 ├── backend/              # git submodule: FastAPI app, SQLAlchemy models, pytest suite
 ├── frontend/             # git submodule: React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # historical/reference docs; verify against live code
+├── docs/                 # refreshed reference docs; still secondary to live code
 ├── .github/workflows/    # CI quality gates, Docker smoke build, image publish/cleanup
 ├── artifacts/            # generated screenshots and review artifacts; not source
 ├── .gitmodules           # backend/frontend submodule remotes
@@ -73,6 +73,7 @@ ledger/
 ## CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
 - Money, quantities, and market values cross the API as strings; backend parsing lives in `backend/app/core/formatting.py`, while frontend conversion lives in shared formatting and analytics helpers.
+- Balance records carry `operationType` (`DEPOSIT` or `WITHDRAWAL`); `BUY`, `SELL`, and `DIVIDEND` operations can only use deposit balances, `SPLIT` uses no balance, and portfolio cash calculations subtract withdrawal balances.
 - Portfolio slugs are lowercase underscore identifiers, unique at create time, and intentionally absent from the update contract.
 - Symbol-name lookup and market-data fetches are best-effort: cache reuse and warning paths should preserve a usable response whenever possible.
 - Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; do not invent ad-hoc keys inside hooks or components.

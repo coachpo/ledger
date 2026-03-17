@@ -3,11 +3,12 @@
 ## Conventions
 
 - Base path: `/api/v1`
+- Health path: `/health`
 - Standard format: JSON
 - CSV upload endpoints use `multipart/form-data`
 - IDs use numeric integers
 - Decimal values serialize as strings
-- Timestamps serialize as ISO 8601 UTC strings
+- Timestamps serialize as ISO 8601 UTC strings with `Z`
 - External field names use camelCase
 
 ## Error Envelope
@@ -20,84 +21,71 @@
 }
 ```
 
-## Portfolio Endpoints
+Common business-rule codes include `duplicate_portfolio_slug`, `duplicate_balance_label`, `duplicate_symbol`, `insufficient_balance`, `oversell_rejected`, `balance_operation_type_locked`, and `duplicate_template_name`.
 
-### GET `/api/v1/portfolios`
+## Health
 
-Returns all portfolios.
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/health` | Returns `{"status":"ok"}` |
 
-### POST `/api/v1/portfolios`
+## Portfolios
 
-Request:
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/portfolios` | List all portfolios with summary counts |
+| `POST` | `/api/v1/portfolios` | Create portfolio |
+| `GET` | `/api/v1/portfolios/{portfolioId}` | Read one portfolio |
+| `PATCH` | `/api/v1/portfolios/{portfolioId}` | Update `name` and `description` only |
+| `DELETE` | `/api/v1/portfolios/{portfolioId}` | Delete portfolio and cascaded child data |
+
+Create request example:
 
 ```json
 {
-  "name": "Core Portfolio",
+  "name": "Retirement",
+  "slug": "retirement",
   "description": "Long-term holdings",
   "baseCurrency": "USD"
 }
 ```
 
-### GET `/api/v1/portfolios/{portfolioId}`
+## Balances
 
-Returns one portfolio and lightweight summary metadata.
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/portfolios/{portfolioId}/balances` | List balances for the portfolio |
+| `POST` | `/api/v1/portfolios/{portfolioId}/balances` | Create balance |
+| `PATCH` | `/api/v1/portfolios/{portfolioId}/balances/{balanceId}` | Update label, amount, or operation type |
+| `DELETE` | `/api/v1/portfolios/{portfolioId}/balances/{balanceId}` | Delete balance |
 
-### PATCH `/api/v1/portfolios/{portfolioId}`
-
-Request:
-
-```json
-{
-  "name": "Core Portfolio",
-  "description": "Updated description"
-}
-```
-
-### DELETE `/api/v1/portfolios/{portfolioId}`
-
-Deletes the portfolio and all related balances, positions, operations, stock-analysis history, and stock-analysis settings.
-
-## Balance Endpoints
-
-### GET `/api/v1/portfolios/{portfolioId}/balances`
-
-Returns all balances for the portfolio.
-
-### POST `/api/v1/portfolios/{portfolioId}/balances`
-
-Request:
+Create request example:
 
 ```json
 {
-  "label": "Cash",
-  "amount": "25000.00"
+  "label": "Broker Cash",
+  "amount": "25000.00",
+  "operationType": "DEPOSIT"
 }
 ```
 
-### PATCH `/api/v1/portfolios/{portfolioId}/balances/{balanceId}`
+Notes:
 
-Request:
+- `operationType` is `DEPOSIT` or `WITHDRAWAL`.
+- A balance with trading history cannot change `operationType`.
+- Balance responses include `hasTradingOperations` so the UI can show safer affordances.
 
-```json
-{
-  "label": "Trading Cash",
-  "amount": "22000.00"
-}
-```
+## Positions
 
-### DELETE `/api/v1/portfolios/{portfolioId}/balances/{balanceId}`
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/portfolios/{portfolioId}/positions` | List aggregate positions |
+| `POST` | `/api/v1/portfolios/{portfolioId}/positions` | Create position |
+| `GET` | `/api/v1/portfolios/{portfolioId}/positions/lookup?symbol=AAPL` | Resolve optional company name |
+| `PATCH` | `/api/v1/portfolios/{portfolioId}/positions/{positionId}` | Update name, quantity, or average cost |
+| `DELETE` | `/api/v1/portfolios/{portfolioId}/positions/{positionId}` | Delete position |
 
-Deletes the selected balance.
-
-## Position Endpoints
-
-### GET `/api/v1/portfolios/{portfolioId}/positions`
-
-Returns all aggregate positions for the portfolio.
-
-### POST `/api/v1/portfolios/{portfolioId}/positions`
-
-Request:
+Create request example:
 
 ```json
 {
@@ -108,32 +96,35 @@ Request:
 }
 ```
 
-### PATCH `/api/v1/portfolios/{portfolioId}/positions/{positionId}`
-
-Request:
+Lookup response example:
 
 ```json
 {
-  "quantity": "12",
-  "averageCost": "184.10"
+  "symbol": "AAPL",
+  "name": "Apple Inc."
 }
 ```
 
-### DELETE `/api/v1/portfolios/{portfolioId}/positions/{positionId}`
+Notes:
 
-Deletes the selected position.
+- Symbols normalize to uppercase.
+- If `name` is omitted during create, the backend may fill it from the symbol lookup cache/provider.
 
-## CSV Import Endpoints
+## Position CSV Import
 
-### POST `/api/v1/portfolios/{portfolioId}/positions/imports/preview`
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/v1/portfolios/{portfolioId}/positions/imports/preview` | Validate file and return accepted rows plus row errors |
+| `POST` | `/api/v1/portfolios/{portfolioId}/positions/imports/commit` | Revalidate and atomically apply upserts |
 
-Content type: `multipart/form-data`
+Upload contract:
 
-Form fields:
+- Content type: `multipart/form-data`
+- Form field: `file`
+- Required headers: `symbol`, `quantity`, `average_cost`
+- Optional header: `name`
 
-- `file`: CSV file
-
-Response:
+Preview response example:
 
 ```json
 {
@@ -158,38 +149,14 @@ Response:
 }
 ```
 
-### POST `/api/v1/portfolios/{portfolioId}/positions/imports/commit`
+## Trading Operations
 
-Content type: `multipart/form-data`
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/portfolios/{portfolioId}/trading-operations` | List operations, newest first |
+| `POST` | `/api/v1/portfolios/{portfolioId}/trading-operations` | Create one operation via discriminated union on `side` |
 
-Form fields:
-
-- `file`: CSV file
-
-Response:
-
-```json
-{
-  "fileName": "positions.csv",
-  "mode": "upsert",
-  "inserted": 2,
-  "updated": 1,
-  "unchanged": 0,
-  "errors": []
-}
-```
-
-## Trading Operation Endpoints
-
-### GET `/api/v1/portfolios/{portfolioId}/trading-operations`
-
-Returns recent trading operations for the portfolio, newest first.
-
-### POST `/api/v1/portfolios/{portfolioId}/trading-operations`
-
-The request uses a discriminated union on `side`.
-
-#### BUY request
+`BUY` example:
 
 ```json
 {
@@ -203,21 +170,7 @@ The request uses a discriminated union on `side`.
 }
 ```
 
-#### SELL request
-
-```json
-{
-  "balanceId": 12,
-  "symbol": "AAPL",
-  "side": "SELL",
-  "quantity": "2",
-  "price": "195.00",
-  "commission": "1.50",
-  "executedAt": "2026-03-11T14:05:00Z"
-}
-```
-
-#### DIVIDEND request
+`DIVIDEND` example:
 
 ```json
 {
@@ -230,11 +183,10 @@ The request uses a discriminated union on `side`.
 }
 ```
 
-#### SPLIT request
+`SPLIT` example:
 
 ```json
 {
-  "balanceId": 12,
   "symbol": "AAPL",
   "side": "SPLIT",
   "splitRatio": "2",
@@ -242,70 +194,42 @@ The request uses a discriminated union on `side`.
 }
 ```
 
-Response:
+Response shape:
 
 ```json
 {
-  "operation": {
-    "id": 41,
-    "portfolioId": 7,
-    "balanceId": 12,
-    "balanceLabel": "Cash",
-    "symbol": "AAPL",
-    "side": "BUY",
-    "quantity": "5",
-    "price": "190.00",
-    "commission": "3.50",
-    "dividendAmount": null,
-    "splitRatio": null,
-    "currency": "USD",
-    "executedAt": "2026-03-10T14:05:00Z",
-    "createdAt": "2026-03-10T14:05:01Z"
-  },
-  "updatedPosition": {
-    "symbol": "AAPL",
-    "quantity": "15",
-    "averageCost": "187.23333333",
-    "currency": "USD"
-  },
-  "updatedBalance": {
-    "id": 12,
-    "label": "Cash",
-    "amount": "24046.50",
-    "currency": "USD"
-  }
+  "operation": { "id": 41, "side": "BUY", "symbol": "AAPL" },
+  "updatedPosition": { "symbol": "AAPL", "quantity": "15", "averageCost": "187.23333333", "currency": "USD" },
+  "updatedBalance": { "id": 12, "label": "Broker Cash", "amount": "24046.50", "currency": "USD" }
 }
 ```
 
 Business rules:
 
-- Reject `SELL` when quantity exceeds the current position quantity.
-- Reject `BUY` when the selected balance amount is lower than the required cash impact.
-- Reject `DIVIDEND` when `dividendAmount <= 0`.
-- Reject `SPLIT` when no current position exists for the symbol.
-- Commission is treated as an absolute amount.
+- `BUY`, `SELL`, and `DIVIDEND` require a deposit balance.
+- `BUY` rejects insufficient selected-balance cash and insufficient portfolio cash after withdrawals.
+- `SELL` rejects oversell.
+- `DIVIDEND` and `SPLIT` require an existing position.
+- `SPLIT` does not return an updated balance because no cash changes.
 
-## Market Data Endpoints
+## Market Data
 
-### GET `/api/v1/portfolios/{portfolioId}/market-data/quotes?symbols=AAPL,MSFT`
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/portfolios/{portfolioId}/market-data/quotes?symbols=AAPL,MSFT` | Delayed quotes plus warnings |
+| `GET` | `/api/v1/portfolios/{portfolioId}/market-data/history?symbols=AAPL,%5EGSPC&range=3mo` | History series plus warnings |
 
-Returns delayed indicative quotes for the requested symbols in the selected portfolio context.
-
-Behavior:
-
-- The endpoint returns `200` with `quotes` and optional `warnings` even when some or all quotes are unavailable.
-- Quotes whose provider currency does not match the portfolio base currency are omitted and returned as warnings in the current release.
-
-Response:
+Quote response example:
 
 ```json
 {
   "quotes": [
     {
       "symbol": "AAPL",
+      "name": "Apple Inc.",
       "price": "191.24",
       "currency": "USD",
-      "provider": "public_delayed_feed",
+      "provider": "yahoo_finance",
       "asOf": "2026-03-10T13:55:00Z",
       "isStale": false,
       "previousClose": "189.10"
@@ -315,9 +239,7 @@ Response:
 }
 ```
 
-### GET `/api/v1/portfolios/{portfolioId}/market-data/history?symbols=AAPL,%5EGSPC&range=3mo`
-
-Supported `range` values:
+History ranges:
 
 - `1mo`
 - `3mo`
@@ -325,226 +247,75 @@ Supported `range` values:
 - `1y`
 - `max`
 
-Response:
+Notes:
+
+- The endpoint returns `200` even when some symbols degrade to warnings.
+- Cached quote fallback is allowed when the live quote fetch fails.
+- Currency mismatch suppresses the quote and returns a warning.
+
+## Templates
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/templates` | List templates |
+| `POST` | `/api/v1/templates` | Create template |
+| `GET` | `/api/v1/templates/placeholders` | List live placeholder tree |
+| `POST` | `/api/v1/templates/compile` | Inline compile ad hoc content |
+| `GET` | `/api/v1/templates/{templateId}` | Read one template |
+| `PATCH` | `/api/v1/templates/{templateId}` | Update template |
+| `DELETE` | `/api/v1/templates/{templateId}` | Delete template |
+| `GET` | `/api/v1/templates/{templateId}/compile` | Compile stored template content |
+
+Create request example:
 
 ```json
 {
-  "range": "3mo",
-  "interval": "1d",
-  "series": [
+  "name": "Morning Summary",
+  "content": "Slug: {{portfolios.retirement.slug}}\nBalance: {{portfolios.retirement.balance.amount}}"
+}
+```
+
+Inline compile request example:
+
+```json
+{
+  "content": "Apple name: {{portfolios.retirement.positions.AAPL.name}}"
+}
+```
+
+Inline compile response example:
+
+```json
+{
+  "compiled": "Apple name: Apple Inc."
+}
+```
+
+Placeholder tree response sketch:
+
+```json
+{
+  "portfolios": [
     {
-      "symbol": "AAPL",
-      "currency": "USD",
-      "provider": "public_delayed_feed",
-      "points": [
-        {
-          "at": "2026-01-05T14:30:00Z",
-          "close": "190.00"
-        }
-      ]
+      "slug": "retirement",
+      "name": "Retirement",
+      "baseCurrency": "USD",
+      "positions": [{ "symbol": "AAPL", "name": "Apple Inc." }]
     }
-  ],
-  "warnings": []
+  ]
 }
 ```
 
-## Stock Analysis API
+Notes:
 
-### Canonical Enums
-
-- `LlmProvider = "openai" | "anthropic" | "gemini"`
-- `OpenAiEndpointMode = "chat_completions" | "responses"`
-- `StockAnalysisRunType = "initial_review" | "periodic_review" | "event_review" | "manual_follow_up"`
-- `StockAnalysisAction = "buy" | "add" | "hold" | "trim" | "sell" | "avoid" | "watch" | "no_action"`
-
-### Prompt Template Endpoints
-
-#### GET `/api/v1/stock-analysis/prompt-templates`
-
-Returns all prompt templates.
-
-#### POST `/api/v1/stock-analysis/prompt-templates`
-
-Request:
-
-```json
-{
-  "name": "Default Stock Review",
-  "description": "Standard two-step review template",
-  "freshInstructionsTemplate": "You are a senior equity analyst...",
-  "freshInputTemplate": "Review {{stock.symbol}} using {{quote.summary}}",
-  "compareInstructionsTemplate": "Compare the fresh analysis to prior versions...",
-  "compareInputTemplate": "Latest prior version: {{version:latest.summary}}"
-}
-```
-
-#### GET `/api/v1/stock-analysis/prompt-templates/{templateId}`
-
-Returns one template.
-
-#### PATCH `/api/v1/stock-analysis/prompt-templates/{templateId}`
-
-Updates template content and may archive the template.
-
-#### DELETE `/api/v1/stock-analysis/prompt-templates/{templateId}`
-
-Delete semantics:
-
-- Hard-delete when unused.
-- Archive instead of hard-delete when historical requests depend on it.
-
-#### POST `/api/v1/stock-analysis/prompt-templates/preview`
-
-Previews saved or ad hoc template text at the global template-management route.
-
-Request shape:
-
-```json
-{
-  "templateId": 5,
-  "step": "fresh_analysis",
-  "portfolioId": 7,
-  "symbol": "AAPL",
-  "conversationId": null,
-  "runType": "initial_review",
-  "reviewTrigger": "Quarterly refresh",
-  "userNote": "Focus on balance-sheet resilience",
-  "freshAnalysisPayload": null,
-  "instructionsTemplate": null,
-  "inputTemplate": null
-}
-```
-
-#### GET `/api/v1/stock-analysis/snippets`
-
-Returns all reusable snippets.
-
-#### POST `/api/v1/stock-analysis/snippets`
-
-Creates a reusable snippet with `name`, unique `snippetAlias`, `content`, and optional `description`.
-
-#### PATCH `/api/v1/stock-analysis/snippets/{snippetId}`
-
-Updates a reusable snippet.
-
-#### DELETE `/api/v1/stock-analysis/snippets/{snippetId}`
-
-Deletes a reusable snippet.
-
-Response shape:
-
-```json
-{
-  "id": 9,
-  "name": "Core Thesis",
-  "snippetAlias": "core_thesis",
-  "content": "Focus on durable free cash flow.",
-  "description": "Reusable thesis framing",
-  "createdAt": "2026-03-10T14:00:00Z",
-  "updatedAt": "2026-03-10T14:00:00Z"
-}
-```
-
-### Portfolio Stock-Analysis Endpoints
-
-All portfolio-scoped analysis endpoints live under `/api/v1/portfolios/{portfolioId}/stock-analysis`.
-
-#### GET `/settings`
-
-Returns the portfolio's stock-analysis settings.
-
-#### PATCH `/settings`
-
-Request:
-
-```json
-{
-  "enabled": true,
-  "defaultPromptTemplateId": 5,
-
-  "compareToOrigin": true
-}
-```
-
-#### GET `/conversations?symbol=AAPL&include_archived=false`
-
-Lists stock-analysis conversations for the portfolio.
-
-#### POST `/conversations`
-
-Request:
-
-```json
-{
-  "symbol": "AAPL",
-  "title": "Apple Core Thesis"
-}
-```
-
-#### GET `/conversations/{conversationId}`
-
-Returns one conversation.
-
-#### PATCH `/conversations/{conversationId}`
-
-Request:
-
-```json
-{
-  "title": "Apple Quality Thesis",
-  "isArchived": false
-}
-```
-
-#### GET `/responses`
-
-Returns response summaries for picker UIs. Supports optional `conversation_id` and `limit` query params.
-
-#### GET `/versions?symbol=AAPL`
-
-Lists version snapshots for the portfolio, optionally filtered by symbol.
-
-#### GET `/versions/{versionId}`
-
-Returns one structured version snapshot.
-
-#### POST `/prompt-preview`
-
-Portfolio-scoped preview endpoint for rendering prompt text against live portfolio context.
-
-Validation rule:
-
-- `portfolioId` in the JSON body must match the route portfolio id.
-
-## Stock Analysis Type Surface
-
-Canonical request and response models to keep aligned across backend and frontend:
-
-- `PortfolioStockAnalysisSettingsRead`
-- `PortfolioStockAnalysisSettingsUpdate`
-- `PromptTemplateRead`
-- `PromptTemplateWrite`
-- `PromptTemplateUpdate`
-- `PromptPreviewRequest`
-- `PromptPreviewResponse`
-- `StockAnalysisConversationWrite`
-- `StockAnalysisConversationUpdate`
-- `StockAnalysisConversationRead`
-- `StockAnalysisResponseSummary`
-- `StockAnalysisVersionRead`
+- Placeholder resolution is permissive: unknown roots, slugs, symbols, or fields render explicit sentinel text rather than returning a validation error.
+- Supported live namespace starts at `portfolios`.
 
 ## HTTP Status Guidelines
 
-- `200` - successful read or update response
+- `200` - successful read, update, or compile response
 - `201` - successful create response
 - `204` - successful delete response
-- `400` - malformed file, preview mismatch, or business-rule violation
+- `400` - malformed file or business-rule violation
 - `404` - portfolio or nested resource not found
 - `422` - payload validation failure
-
-## Notes
-
-- CSV preview and commit stay intentionally separate.
-- Trading operations are append-only historical artifacts.
-- Stock-analysis history is local-first and remains readable even if provider-side retention expires.
-- Multiple providers are supported across the product, but a single run selects exactly one provider config.
