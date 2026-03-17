@@ -5,19 +5,26 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
+COMPOSE_FILE="$BACKEND_DIR/docker-compose.yml"
+COMPOSE_PROJECT_NAME="${LEDGER_COMPOSE_PROJECT_NAME:-ledger-local}"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-28000}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}/api/v1}"
-DEFAULT_DATABASE_URL="postgresql+psycopg://ledger:ledger@localhost:25432/ledger"
-DATABASE_URL="${DATABASE_URL:-}"
-DB_IMAGE="${LEDGER_DB_IMAGE:-postgres:16-alpine}"
-DB_CONTAINER_NAME="${LEDGER_DB_CONTAINER_NAME:-}"
-DB_VOLUME_NAME="${LEDGER_DB_VOLUME_NAME:-}"
+FRONTEND_PORT="${FRONTEND_PORT:-25173}"
+DB_HOST="127.0.0.1"
+DB_PORT="25432"
+DB_NAME="ledger"
+DB_USER="ledger"
+DB_PASSWORD="ledger"
+DATABASE_URL="postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 PYTHON_BIN=""
+backend_pid=""
+frontend_pid=""
+database_started=0
+backend_started=0
+frontend_started=0
 
 for candidate in python3 python; do
   if ! command -v "$candidate" >/dev/null 2>&1; then
@@ -39,8 +46,31 @@ if [[ -z "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  printf 'pnpm is required but was not found.\n' >&2
+require_command() {
+  local command_name=$1
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    printf '%s is required but was not found.\n' "$command_name" >&2
+    exit 1
+  fi
+}
+
+require_command docker
+require_command lsof
+require_command pnpm
+
+if ! docker info >/dev/null 2>&1; then
+  printf 'Docker is installed but the daemon is not available.\n' >&2
+  exit 1
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+  printf 'docker compose is required but not available.\n' >&2
+  exit 1
+fi
+
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  printf 'Expected Docker Compose file at %s\n' "$COMPOSE_FILE" >&2
   exit 1
 fi
 
@@ -54,235 +84,47 @@ if ! (cd "$BACKEND_DIR" && "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null
   exit 1
 fi
 
-read_backend_env_value() {
-  local key=$1
-  local env_file="$BACKEND_DIR/.env"
+probe_host() {
+  local host=$1
 
-  if [[ ! -f "$env_file" ]]; then
-    return 1
-  fi
-
-  "$PYTHON_BIN" - "$env_file" "$key" <<'PY'
-from pathlib import Path
-import sys
-
-env_file, key = sys.argv[1], sys.argv[2]
-
-for raw_line in Path(env_file).read_text(encoding="utf-8").splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-
-    current_key, value = line.split("=", 1)
-    if current_key.strip() == key:
-        print(value.strip().strip('"').strip("'"))
-        raise SystemExit(0)
-
-raise SystemExit(1)
-PY
+  case "$host" in
+    0.0.0.0|"")
+      printf '127.0.0.1'
+      ;;
+    *)
+      printf '%s' "$host"
+      ;;
+  esac
 }
 
-resolve_backend_database_url() {
-  local env_database_url=""
-
-  if [[ -n "$DATABASE_URL" ]]; then
-    printf '%s' "$DATABASE_URL"
-    return
-  fi
-
-  if env_database_url="$(read_backend_env_value DATABASE_URL 2>/dev/null)"; then
-    printf '%s' "$env_database_url"
-    return
-  fi
-
-  printf '%s' "$DEFAULT_DATABASE_URL"
+compose_cmd() {
+  docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
-
-DATABASE_URL="$(resolve_backend_database_url)"
-
-eval "$($PYTHON_BIN - "$DATABASE_URL" <<'PY'
-from urllib.parse import unquote, urlsplit
-import shlex
-import sys
-
-database_url = sys.argv[1]
-parts = urlsplit(database_url)
-
-values = {
-    "DB_SCHEME": parts.scheme.split("+", 1)[0],
-    "DB_HOST": parts.hostname or "",
-    "DB_PORT": str(parts.port or 5432),
-    "DB_USER": unquote(parts.username or ""),
-    "DB_PASSWORD": unquote(parts.password or ""),
-    "DB_NAME": parts.path.lstrip("/"),
-}
-
-for key, value in values.items():
-    print(f"{key}={shlex.quote(value)}")
-PY
-)"
-
-if [[ "$DB_SCHEME" != "postgres" && "$DB_SCHEME" != "postgresql" ]]; then
-  printf 'DATABASE_URL must use PostgreSQL: %s\n' "$DATABASE_URL" >&2
-  exit 1
-fi
-
-if [[ -z "$DB_HOST" || -z "$DB_NAME" ]]; then
-  printf 'DATABASE_URL is missing required connection parts: %s\n' "$DATABASE_URL" >&2
-  exit 1
-fi
-
-if [[ -z "$DB_CONTAINER_NAME" ]]; then
-  DB_CONTAINER_NAME="ledger-postgres-${DB_PORT}"
-fi
-
-if [[ -z "$DB_VOLUME_NAME" ]]; then
-  DB_VOLUME_NAME="ledger-postgres-data-${DB_PORT}"
-fi
-
-database_started=0
-backend_pid=""
-frontend_pid=""
-backend_started=0
-frontend_started=0
 
 port_is_listening() {
   local port=$1
   lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
 }
 
-probe_host() {
-  local host=$1
-  if [[ "$host" == "0.0.0.0" ]]; then
-    printf '127.0.0.1'
-    return
-  fi
-
-  printf '%s' "$host"
+port_pids() {
+  local port=$1
+  lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk '!seen[$0]++'
 }
 
-database_uses_local_host() {
-  case "$DB_HOST" in
-    localhost|127.0.0.1|0.0.0.0)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-docker_container_exists() {
-  local container_name=$1
-  docker container inspect "$container_name" >/dev/null 2>&1
-}
-
-docker_container_running() {
-  local container_name=$1
-  [[ "$(docker container inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null)" == "true" ]]
-}
-
-wait_for_database_container() {
-  local deadline=$((SECONDS + 60))
+wait_for_port_release() {
+  local port=$1
+  local timeout_seconds=${2:-10}
+  local deadline=$((SECONDS + timeout_seconds))
 
   while (( SECONDS < deadline )); do
-    if ! docker_container_running "$DB_CONTAINER_NAME"; then
-      return 1
-    fi
-
-    if docker exec "$DB_CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+    if ! port_is_listening "$port"; then
       return 0
     fi
 
-    sleep 2
+    sleep 1
   done
 
-  return 1
-}
-
-ensure_database_ready() {
-  if ! database_uses_local_host; then
-    printf 'Using external database on %s:%s\n' "$DB_HOST" "$DB_PORT"
-    return
-  fi
-
-  if port_is_listening "$DB_PORT"; then
-    printf 'Reusing existing database on %s:%s\n' "$DB_HOST" "$DB_PORT"
-    return
-  fi
-
-  if [[ -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_NAME" ]]; then
-    printf 'Cannot provision the local database without user, password, and database name in DATABASE_URL.\n' >&2
-    exit 1
-  fi
-
-  if ! command -v docker >/dev/null 2>&1; then
-    printf 'Docker is required to start the local database but was not found.\n' >&2
-    exit 1
-  fi
-
-  if ! docker info >/dev/null 2>&1; then
-    printf 'Docker is installed but the daemon is not available.\n' >&2
-    exit 1
-  fi
-
-  printf 'Starting database container %s on %s:%s\n' "$DB_CONTAINER_NAME" "$DB_HOST" "$DB_PORT"
-
-  if docker_container_exists "$DB_CONTAINER_NAME"; then
-    docker start "$DB_CONTAINER_NAME" >/dev/null
-  else
-    docker run -d \
-      --name "$DB_CONTAINER_NAME" \
-      --publish "${DB_PORT}:5432" \
-      --env "POSTGRES_DB=$DB_NAME" \
-      --env "POSTGRES_USER=$DB_USER" \
-      --env "POSTGRES_PASSWORD=$DB_PASSWORD" \
-      --volume "${DB_VOLUME_NAME}:/var/lib/postgresql/data" \
-      --health-cmd "pg_isready -U $DB_USER -d $DB_NAME" \
-      --health-interval 5s \
-      --health-timeout 5s \
-      --health-retries 10 \
-      "$DB_IMAGE" >/dev/null
-  fi
-
-  database_started=1
-
-  if ! wait_for_database_container; then
-    printf 'Database container %s failed to become ready.\n' "$DB_CONTAINER_NAME" >&2
-    docker logs "$DB_CONTAINER_NAME" >&2 || true
-    exit 1
-  fi
-}
-
-stop_database_container() {
-  if [[ "$database_started" -eq 1 ]]; then
-    docker stop "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
-  fi
-}
-
-ledger_backend_running() {
-  local host=$1
-  local port=$2
-  local resolved_host
-
-  resolved_host="$(probe_host "$host")"
-
-  "$PYTHON_BIN" - "$resolved_host" "$port" <<'PY' >/dev/null 2>&1
-import json
-import sys
-import urllib.request
-
-host, port = sys.argv[1], sys.argv[2]
-url = f"http://{host}:{port}/health"
-
-try:
-    with urllib.request.urlopen(url, timeout=2) as response:
-        payload = json.load(response)
-except Exception:
-    raise SystemExit(1)
-
-raise SystemExit(0 if payload == {"status": "ok"} else 1)
-PY
+  ! port_is_listening "$port"
 }
 
 kill_child_processes() {
@@ -320,6 +162,194 @@ stop_process() {
   wait "$pid" 2>/dev/null || true
 }
 
+stop_docker_containers_publishing_port() {
+  local port=$1
+  local docker_ps_output
+  local container_ids=()
+  local container_id
+
+  docker_ps_output="$(docker ps --format '{{.ID}}\t{{.Ports}}' 2>/dev/null || true)"
+  if [[ -z "$docker_ps_output" ]]; then
+    return
+  fi
+
+  while IFS= read -r container_id; do
+    [[ -z "$container_id" ]] && continue
+    container_ids+=("$container_id")
+  done < <(
+    printf '%s\n' "$docker_ps_output" | "$PYTHON_BIN" -c '
+import sys
+
+target_port = sys.argv[1]
+
+for raw_line in sys.stdin:
+    line = raw_line.rstrip("\n")
+    if not line:
+        continue
+
+    container_id, _, port_mappings = line.partition("\t")
+    for mapping in [item.strip() for item in port_mappings.split(",") if item.strip()]:
+        if f":{target_port}->" in mapping or mapping.startswith(f"{target_port}->"):
+            print(container_id)
+            break
+' "$port"
+  )
+
+  if [[ "${#container_ids[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  printf 'Stopping Docker containers publishing port %s: %s\n' "$port" "${container_ids[*]}"
+  docker stop "${container_ids[@]}" >/dev/null
+}
+
+kill_port_listeners() {
+  local port=$1
+  local pid
+  local command_line
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+
+    if [[ "$command_line" == *"com.docker"* || "$command_line" == *"vpnkit"* ]]; then
+      continue
+    fi
+
+    printf 'Stopping process %s on port %s\n' "$pid" "$port"
+    stop_process "$pid"
+  done < <(port_pids "$port")
+
+  if ! wait_for_port_release "$port" 10; then
+    printf 'Port %s is still in use after cleanup.\n' "$port" >&2
+    exit 1
+  fi
+}
+
+stop_existing_stack() {
+  compose_cmd down --remove-orphans >/dev/null 2>&1 || true
+
+  for port in "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    stop_docker_containers_publishing_port "$port"
+  done
+
+  for port in "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    kill_port_listeners "$port"
+  done
+}
+
+database_container_id() {
+  compose_cmd ps -q db 2>/dev/null | tail -n 1
+}
+
+wait_for_database_ready() {
+  local deadline=$((SECONDS + 60))
+  local container_id=""
+
+  while (( SECONDS < deadline )); do
+    container_id="$(database_container_id)"
+
+    if [[ -n "$container_id" ]] && docker exec "$container_id" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  return 1
+}
+
+ledger_backend_running() {
+  local host=$1
+  local port=$2
+  local resolved_host
+
+  resolved_host="$(probe_host "$host")"
+
+  "$PYTHON_BIN" - "$resolved_host" "$port" <<'PY' >/dev/null 2>&1
+import json
+import sys
+import urllib.request
+
+host, port = sys.argv[1], sys.argv[2]
+url = f"http://{host}:{port}/health"
+
+try:
+    with urllib.request.urlopen(url, timeout=2) as response:
+        payload = json.load(response)
+except Exception:
+    raise SystemExit(1)
+
+raise SystemExit(0 if payload == {"status": "ok"} else 1)
+PY
+}
+
+wait_for_backend_ready() {
+  local deadline=$((SECONDS + 60))
+
+  while (( SECONDS < deadline )); do
+    if ledger_backend_running "$BACKEND_HOST" "$BACKEND_PORT"; then
+      return 0
+    fi
+
+    if [[ "$backend_started" -eq 1 ]] && ! kill -0 "$backend_pid" 2>/dev/null; then
+      return 1
+    fi
+
+    sleep 1
+  done
+
+  return 1
+}
+
+build_cors_allowed_origins() {
+  local extra_origins=${CORS_ALLOWED_ORIGINS:-}
+
+  "$PYTHON_BIN" - "$FRONTEND_HOST" "$FRONTEND_PORT" "$extra_origins" <<'PY'
+import json
+import sys
+
+frontend_host, frontend_port, extra_origins = sys.argv[1], sys.argv[2], sys.argv[3]
+origins: list[str] = []
+
+if extra_origins.strip():
+    parsed_extra_origins = None
+    try:
+        parsed_extra_origins = json.loads(extra_origins)
+    except json.JSONDecodeError:
+        parsed_extra_origins = [item.strip() for item in extra_origins.split(",") if item.strip()]
+
+    if isinstance(parsed_extra_origins, list):
+        extra_origin_values = [str(item).strip() for item in parsed_extra_origins if str(item).strip()]
+    else:
+        extra_origin_values = [str(parsed_extra_origins).strip()] if str(parsed_extra_origins).strip() else []
+
+    for origin in extra_origin_values:
+        if origin not in origins:
+            origins.append(origin)
+
+for candidate in (
+    f"http://127.0.0.1:{frontend_port}",
+    f"http://localhost:{frontend_port}",
+):
+    if candidate not in origins:
+        origins.append(candidate)
+
+if frontend_host not in {"", "0.0.0.0", "127.0.0.1", "localhost"}:
+    candidate = f"http://{frontend_host}:{frontend_port}"
+    if candidate not in origins:
+        origins.append(candidate)
+
+print(json.dumps(origins))
+PY
+}
+
+stop_database() {
+  if [[ "$database_started" -eq 1 ]]; then
+    compose_cmd down --remove-orphans >/dev/null 2>&1 || true
+  fi
+}
+
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
@@ -332,37 +362,46 @@ cleanup() {
     stop_process "$backend_pid"
   fi
 
-  stop_database_container
+  stop_database
 
   exit "$exit_code"
 }
 
 trap cleanup EXIT INT TERM
 
-if port_is_listening "$FRONTEND_PORT"; then
-  printf 'Frontend port %s is already in use. Stop the existing process or run with FRONTEND_PORT=<port> ./start.sh\n' "$FRONTEND_PORT" >&2
+BACKEND_PUBLIC_HOST="$(probe_host "$BACKEND_HOST")"
+API_BASE_URL="http://${BACKEND_PUBLIC_HOST}:${BACKEND_PORT}/api/v1"
+RESOLVED_CORS_ALLOWED_ORIGINS="$(build_cors_allowed_origins)"
+
+printf 'Cleaning up ports %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"
+stop_existing_stack
+
+printf 'Starting database on postgres://%s@%s:%s/%s\n' "$DB_USER" "$DB_HOST" "$DB_PORT" "$DB_NAME"
+compose_cmd up -d db >/dev/null
+database_started=1
+
+if ! wait_for_database_ready; then
+  printf 'Database failed to become ready.\n' >&2
+  compose_cmd logs db >&2 || true
   exit 1
 fi
 
-if port_is_listening "$BACKEND_PORT"; then
-  if ledger_backend_running "$BACKEND_HOST" "$BACKEND_PORT"; then
-    printf 'Reusing existing backend on http://%s:%s\n' "$BACKEND_HOST" "$BACKEND_PORT"
-  else
-    printf 'Backend port %s is already in use by another process. Stop it or run with BACKEND_PORT=<port> ./start.sh\n' "$BACKEND_PORT" >&2
-    exit 1
-  fi
-else
-  ensure_database_ready
-  printf 'Starting backend on http://%s:%s\n' "$BACKEND_HOST" "$BACKEND_PORT"
-  (
-    cd "$BACKEND_DIR"
-    exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT"
-  ) &
-  backend_pid=$!
-  backend_started=1
+printf 'Starting backend on http://%s:%s\n' "$BACKEND_PUBLIC_HOST" "$BACKEND_PORT"
+(
+  cd "$BACKEND_DIR"
+  export DATABASE_URL="$DATABASE_URL"
+  export CORS_ALLOWED_ORIGINS="$RESOLVED_CORS_ALLOWED_ORIGINS"
+  exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+) &
+backend_pid=$!
+backend_started=1
+
+if ! wait_for_backend_ready; then
+  printf 'Backend failed to become ready on port %s.\n' "$BACKEND_PORT" >&2
+  exit 1
 fi
 
-printf 'Starting frontend on http://%s:%s\n' "$FRONTEND_HOST" "$FRONTEND_PORT"
+printf 'Starting frontend on http://%s:%s\n' "$(probe_host "$FRONTEND_HOST")" "$FRONTEND_PORT"
 (
   cd "$FRONTEND_DIR"
   export VITE_API_BASE_URL="$API_BASE_URL"
@@ -372,20 +411,20 @@ frontend_pid=$!
 frontend_started=1
 
 printf 'Frontend API base URL: %s\n' "$API_BASE_URL"
-printf 'Press Ctrl+C to stop both services.\n'
+printf 'Press Ctrl+C to stop the database, backend, and frontend.\n'
 
 status=0
 
 while true; do
   if [[ "$backend_started" -eq 1 ]] && ! kill -0 "$backend_pid" 2>/dev/null; then
     wait "$backend_pid" || status=$?
-    printf 'Backend exited. Stopping frontend...\n' >&2
+    printf 'Backend exited. Stopping the rest of the stack...\n' >&2
     break
   fi
 
-  if ! kill -0 "$frontend_pid" 2>/dev/null; then
+  if [[ "$frontend_started" -eq 1 ]] && ! kill -0 "$frontend_pid" 2>/dev/null; then
     wait "$frontend_pid" || status=$?
-    printf 'Frontend exited. Stopping backend...\n' >&2
+    printf 'Frontend exited. Stopping the rest of the stack...\n' >&2
     break
   fi
 
