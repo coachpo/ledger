@@ -1,5 +1,7 @@
 # Text Template Placeholder Metrics Upgrade Plan
 
+> Archive Status: Fully implemented. The metric placeholders described here are live in `backend/app/services/template_compiler_service.py` and exposed in the template editor placeholder browser.
+
 ## Overview
 
 This document plans the next upgrade to Ledger's text template system so templates can render quote-backed portfolio and position metrics in addition to the existing metadata, balance, and raw position fields.

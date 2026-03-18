@@ -2,16 +2,17 @@
 
 ## Overview
 
-Ledger is an auth-less portfolio application with two live capabilities:
+Ledger is an auth-less portfolio application with three live capabilities:
 
 - portfolio tracking and simulation for balances, positions, market context, CSV imports, and manual operations;
-- text-template management with server-side placeholder resolution against live portfolio data.
+- text-template management with server-side placeholder resolution against live portfolio data and persisted reports;
+- markdown report generation, upload, download, and edit flows built on top of the template system.
 
 Legacy stock-analysis tables and provider helper code still exist as upgrade-cleanup or dormant reference material, but they are not part of the live API or frontend router.
 
 ## Scope Boundaries
 
-- The live API surface includes portfolios, balances, positions, market data, trading operations, and templates.
+- The live API surface includes portfolios, balances, positions, market data, trading operations, templates, and reports.
 - There is no live stock-analysis route tree, snippet manager, or response viewer.
 - Templates are simple text documents with one `content` field, not multi-step workflows.
 - Quote and history providers are best-effort enrichment, not sources of truth.
@@ -54,7 +55,8 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `TradingOperationService`: deterministic `BUY`/`SELL`/`DIVIDEND`/`SPLIT` math and append-only operation logging.
 - `MarketDataService`: delayed quote retrieval, cached fallback, staleness calculation, and history fetches.
 - `TextTemplateService`: global template CRUD.
-- `TemplateCompilerService`: `{{portfolios.<slug>...}}` placeholder resolution and compile preview.
+- `TemplateCompilerService`: `{{portfolios.<slug>...}}` and `{{reports.<name>...}}` placeholder resolution, compile preview, and report-content re-compilation.
+- `ReportService`: compiled-report creation, markdown uploads, slug/name generation, content updates, and download lookups.
 
 ## Frontend Architecture
 
@@ -62,7 +64,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
 - Routing is flat under `frontend/src/routes.ts` and mounted through `Layout`.
-- The live route set is `/`, `/portfolios`, `/portfolios/:portfolioId`, `/templates`, `/templates/new`, and `/templates/:templateId/edit`.
+- The live route set is `/`, `/portfolios`, `/portfolios/:portfolioId`, `/templates`, `/templates/new`, `/templates/:templateId/edit`, `/reports`, and `/reports/:slug`.
 
 ### State Management
 
@@ -70,7 +72,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - Shared endpoint wrappers live in `frontend/src/lib/api/*.ts`.
 - Query keys are centralized in `frontend/src/lib/query-keys.ts`.
 - Portfolio-scoped mutations invalidate through `invalidatePortfolioScope()`.
-- Template flows use their own template key namespace.
+- Template and report flows use their own query-key namespaces.
 
 ### Page Responsibilities
 
@@ -78,7 +80,9 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `PortfolioListPage` handles portfolio create/edit/delete flows.
 - `PortfolioDetailPage` orchestrates balances, positions, trades, and quote-enriched metrics.
 - `TemplateListPage` manages template inventory.
-- `TemplateEditorPage` handles inline compile preview, placeholder insertion, and save flows.
+- `TemplateEditorPage` handles inline compile preview, placeholder insertion, markdown formatting, save flows, and direct report generation for saved templates.
+- `ReportListPage` manages report inventory, template-driven generation, markdown uploads, and delete/download actions.
+- `ReportDetailPage` handles markdown rendering, textarea edits, and markdown downloads.
 
 ## Domain Rules
 
@@ -117,6 +121,14 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - Currency mismatch suppresses the quote and returns a warning.
 - History supports `1mo`, `3mo`, `ytd`, `1y`, and `max` ranges.
 
+### Reports
+
+- Reports are stored markdown snapshots with unique `name` and `slug`.
+- Compiled reports derive timestamped snake_case names from template names and store `source="compiled"`.
+- Uploaded reports store `source="uploaded"` plus optional metadata (`author`, `description`, `tags`).
+- Reports are addressed by `slug` in the API and frontend routes, but by `name` inside template placeholders.
+- Updating a report only changes `content`; report metadata is immutable after creation.
+
 ## Template System
 
 ### Placeholder Grammar
@@ -127,19 +139,23 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 {{portfolios.<slug>.name}}
 {{portfolios.<slug>.balance.amount}}
 {{portfolios.<slug>.positions.AAPL.quantity}}
+{{reports}}
+{{reports.monthly_report_20260317_143052.content}}
 ```
 
 ### Resolution Rules
 
 - Resolution is single-pass regex substitution.
-- The root namespace is `portfolios` only.
+- The root namespaces are `portfolios` and `reports`.
 - `balance` resolves to the computed available balance for the portfolio, not an individual balance row.
 - `positions` resolves either to a rendered list or to a symbol-specific object path.
+- `reports.<name>.content` re-compiles the stored markdown body so embedded portfolio/report placeholders resolve against current live data.
+- Report-content recursion uses cycle detection and renders `[Circular report reference: ...]` when a loop is found.
 - Unknown roots, slugs, symbols, or fields render explicit sentinel text such as `[Unknown field: ...]`.
 
 ### Placeholder Tree Endpoint
 
-- The placeholder tree exposes live portfolio slugs, names, base currency, and known positions.
+- The placeholder tree exposes live portfolio slugs, names, base currency, known positions, and live report names plus creation timestamps.
 - The frontend uses that tree to build the editor reference panel and click-to-insert helper.
 
 ## Data Flow Highlights
@@ -164,6 +180,13 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 2. Frontend debounces content changes.
 3. Backend compiles placeholders against live portfolio data.
 4. Frontend renders compiled output side-by-side with the source template.
+
+### Report Generation Flow
+
+1. User selects a saved template from the reports page or clicks Generate Report from the template editor.
+2. Backend compiles the template through `TemplateCompilerService`.
+3. `ReportService` persists the compiled markdown as a new `reports` row with generated `name`/`slug` and `source="compiled"`.
+4. The reports page flow navigates directly to `/reports/:slug`; the template-editor flow shows a success toast with a `View` action that can open the new report.
 
 ## CI And Verification
 

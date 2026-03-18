@@ -1,5 +1,7 @@
 # Text Template System With Placeholders
 
+> Archive Status: Historical v1 design reference. The live system still supports this foundation, but it now also includes metric placeholders (`total_value`, `unrealized_pnl`, `market_value`, `unrealized_pnl_percent`) and the `reports` placeholder root described in later archive documents.
+
 ## Overview
 
 This archive captures the design decisions behind Ledger's text template system as implemented today. The live feature supports stored text templates, server-side placeholder compilation, placeholder browsing, and a dedicated editor route with inline preview.

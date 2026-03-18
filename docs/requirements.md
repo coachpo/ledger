@@ -15,6 +15,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - Delayed quote and price-history retrieval for symbols in a portfolio.
 - Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations.
 - Global text-template CRUD plus placeholder browsing and compile preview.
+- Report generation from templates, markdown upload, slug-based report CRUD, and markdown download.
 
 ### Out Of Scope
 
@@ -30,7 +31,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - Each portfolio is an isolated workspace with its own balances, positions, operations, and quote lookups.
 - A portfolio has one base currency. Balances, positions, prices, and simulated operations use that currency in the current release.
 - Market data is delayed and indicative; it never becomes the source of truth for balances or positions.
-- Local database records are authoritative for current portfolio state and saved templates.
+- Local database records are authoritative for current portfolio state, saved templates, and persisted reports.
 
 ## Functional Requirements
 
@@ -106,8 +107,24 @@ Define the live product requirements for Ledger as shipped today. This release i
 - The system must expose a placeholder tree that lists live portfolio slugs and positions.
 - The system must expose an inline compile endpoint that accepts ad hoc content and returns compiled output.
 - The system must expose a stored-template compile endpoint by template id.
-- Placeholder resolution must support the `portfolios.<slug>...` namespace.
+- Placeholder resolution must support the `portfolios.<slug>...` and `reports.<name>...` namespaces.
+- `reports.<name>.content` must re-compile stored report content so embedded placeholders resolve against current live data.
+- Report-content recursion must detect circular references and render an explicit sentinel instead of looping.
+- The placeholder tree must expose live reports with `name` and `createdAt` in addition to portfolio data.
 - Unknown roots, portfolios, or fields must compile to explicit sentinel strings such as `[Unknown portfolio: ...]` instead of silently disappearing.
+
+### FR-8 Report Management
+
+- The system must let the user list, read, update, delete, and download reports by `slug`.
+- The system must let the user create a compiled report by posting a stored template id.
+- Compiled report creation must normalize the template name to snake_case, append a UTC timestamp, and use that value for both `name` and `slug`.
+- If two compiled reports collide within the same second, the system must append `_2`, `_3`, and so on until the name/slug is unique.
+- The system must let the user upload a UTF-8 markdown file smaller than 2 MB to create a report.
+- Uploads must reject non-`.md` filenames, invalid encodings, and empty files.
+- Uploaded reports must store `source="uploaded"`; compiled reports must store `source="compiled"`.
+- Uploaded reports may include optional `author`, `description`, and comma-separated `tags` metadata.
+- Report update payloads must allow editing `content` only; `name`, `slug`, `source`, and metadata are immutable after creation.
+- Downloads must return the stored markdown content as `text/markdown` with `Content-Disposition: attachment; filename="{slug}.md"`.
 
 ## Non-Functional Requirements
 
@@ -129,3 +146,5 @@ Define the live product requirements for Ledger as shipped today. This release i
 - A user cannot submit an operation when it would overdraw cash, oversell holdings, or target a missing position.
 - A user can view delayed quotes and price history with warnings, and the app still works when quote retrieval fails.
 - A user can create or edit a template, browse placeholders, and compile live portfolio text successfully.
+- A user can generate a report from a template, upload a markdown report with metadata, edit report content, and download the report by slug.
+- A template can reference `reports.<name>.content` and receive circular-reference sentinels instead of infinite recursion.

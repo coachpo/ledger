@@ -2,7 +2,7 @@
 
 ## Product Summary
 
-Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, and reusable text templates that compile live portfolio data into plain text or markdown.
+Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, reusable text templates, and persisted markdown reports generated from templates or uploaded directly.
 
 ## Problem Statement
 
@@ -28,6 +28,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Show delayed quotes and history as helpful context without making them authoritative.
 - Preserve deterministic portfolio math for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` flows.
 - Let the user author templates in the UI and preview compiled output before saving or reusing it.
+- Let the user turn template output into point-in-time report snapshots, edit uploaded or generated markdown, and download reports without leaving the app.
 - Keep local persistence authoritative even when provider lookups fail.
 
 ## Non-Goals
@@ -76,6 +77,13 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Placeholder browser driven by live portfolio slugs and positions.
 - Inline compile preview plus stored-template compile-by-id.
 
+### 7. Reports Workspace
+
+- Generate point-in-time report snapshots from saved templates.
+- Upload markdown files as reports with optional author, description, and tags metadata.
+- Browse, edit, download, and delete reports from dedicated list/detail routes.
+- Reuse reports inside templates through `{{reports.<name>...}}` placeholders.
+
 ## Core User Stories
 
 - As a user, I want separate portfolios for different strategies so their balances, positions, and trades stay isolated.
@@ -84,6 +92,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - As a user, I want simulated trades and cash events so Ledger can model changes without touching a broker.
 - As a user, I want delayed quotes and price history for context while keeping my manually entered records authoritative.
 - As a user, I want reusable templates with `{{placeholders}}` so I can render live portfolio summaries without copy-paste work.
+- As a user, I want generated or uploaded markdown reports so I can keep point-in-time deliverables alongside my live templates.
 
 ## Experience Principles
 
@@ -121,6 +130,14 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 
 - Full-height editor, inline compile preview, and placeholder reference panel.
 
+### Reports List
+
+- Inventory of generated and uploaded reports with generate, upload, download, and delete actions.
+
+### Report Detail
+
+- Markdown read mode, inline text edit mode, and file download from a slug-addressed route.
+
 ## Success Criteria
 
 - A new portfolio can be created and populated with balances and positions in minutes.
@@ -128,6 +145,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Simulated operations update cash and aggregate positions in one step and reject invalid requests deterministically.
 - Delayed market data remains visibly non-authoritative and does not block the rest of the workspace.
 - A user can create or edit a template, preview compiled output, and reuse it without editing code.
+- A user can generate a report from a template or upload a markdown file, then open, edit, download, and delete that report through the UI.
 
 ## Risks And Mitigations
 

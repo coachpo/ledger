@@ -1,5 +1,7 @@
 # Text Template Report Placeholder Plan
 
+> Archive Status: Fully implemented. The `reports` placeholder root, placeholder-tree exposure, report-content re-compilation, and circular-reference detection are all live in the current backend and frontend code.
+
 ## Overview
 
 This document plans the addition of a `reports` placeholder root to Ledger's text template system. Templates will be able to embed compiled report content and metadata, enabling master documents that compose multiple reports into a single output.

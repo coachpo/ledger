@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ledger uses a relational schema centered on isolated portfolios. Live persistence covers portfolios, balances, positions, trading operations, cached market quotes, symbol-name cache rows, and global text templates.
+Ledger uses a relational schema centered on isolated portfolios. Live persistence covers portfolios, balances, positions, trading operations, cached market quotes, symbol-name cache rows, global text templates, and persisted markdown reports.
 
 Legacy stock-analysis tables from older builds are not part of the live schema contract; `init_db()` drops them during supported upgrade paths.
 
@@ -15,6 +15,7 @@ Legacy stock-analysis tables from older builds are not part of the live schema c
 - `market_quotes` are shared cache rows keyed by provider and symbol metadata.
 - `symbol_name_cache` is a global cache keyed by symbol.
 - `text_templates` are global reusable documents.
+- `reports` are global markdown snapshots keyed by both `name` and `slug`.
 
 ## Tables
 
@@ -153,12 +154,30 @@ Constraints:
 
 - Unique `name`
 
+### reports
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| `id` | integer | No | Primary key |
+| `name` | varchar(200) | No | Unique display name for the report |
+| `slug` | varchar(200) | No | Unique route/download identifier |
+| `source` | varchar(20) | No | `compiled` or `uploaded` |
+| `content` | text | No | Stored markdown content |
+| `metadata` | jsonb | No | Optional `author`, `description`, `tags` envelope |
+| `created_at` / `updated_at` | timestamptz | No | Timestamps from mixin |
+
+Constraints:
+
+- Unique `name`
+- Unique `slug`
+
 ## Derived Values And Read-Time Rules
 
 - Portfolio cash is derived from balances: deposits add, withdrawals subtract.
 - Position market value is calculated at read time only when quote currency matches portfolio base currency.
 - Market history series are fetched on demand and are not persisted as first-class rows.
 - Template compile output is derived from current portfolios, balances, and positions at compile time.
+- Report content is persisted, but `{{reports.<name>.content}}` re-compiles the stored markdown when embedded through the template system.
 
 ## Data Integrity Rules
 
@@ -167,12 +186,14 @@ Constraints:
 - Trading-operation balance and position changes commit in one transaction.
 - CSV import commit updates positions atomically.
 - Cached quotes and symbol-name cache rows are reconstructible and must not be treated as authoritative user data.
+- Reports are global documents with immutable `name`, `slug`, `source`, and metadata after creation; only `content` is editable.
 
 ## Suggested Enums
 
 - `balances.operation_type`: `DEPOSIT`, `WITHDRAWAL`
 - `positions.last_source`: `manual`, `csv`, `simulation`
 - `trading_operations.side`: `BUY`, `SELL`, `DIVIDEND`, `SPLIT`
+- `reports.source`: `compiled`, `uploaded`
 
 ## Lifecycle Notes
 
@@ -180,3 +201,4 @@ Constraints:
 - Full sell-down deletes the corresponding position row.
 - Quote cache rows may be refreshed or cleaned without affecting portfolio records.
 - Legacy stock-analysis tables are removed by supported DB upgrade logic and should not be reintroduced casually.
+- Reports survive template deletion because there is intentionally no foreign key back to `text_templates`.

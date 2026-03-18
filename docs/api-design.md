@@ -21,7 +21,7 @@
 }
 ```
 
-Common business-rule codes include `duplicate_portfolio_slug`, `duplicate_balance_label`, `duplicate_symbol`, `insufficient_balance`, `oversell_rejected`, `balance_operation_type_locked`, and `duplicate_template_name`.
+Common business-rule codes include `duplicate_portfolio_slug`, `duplicate_balance_label`, `duplicate_symbol`, `insufficient_balance`, `oversell_rejected`, `balance_operation_type_locked`, `duplicate_template_name`, `invalid_slug`, `slug_conflict`, `invalid_file_type`, `invalid_file_encoding`, `file_too_large`, and `empty_file`.
 
 ## Health
 
@@ -302,6 +302,12 @@ Placeholder tree response sketch:
       "baseCurrency": "USD",
       "positions": [{ "symbol": "AAPL", "name": "Apple Inc." }]
     }
+  ],
+  "reports": [
+    {
+      "name": "monthly_report_20260318_105651",
+      "createdAt": "2026-03-18T10:56:51Z"
+    }
   ]
 }
 ```
@@ -309,13 +315,66 @@ Placeholder tree response sketch:
 Notes:
 
 - Placeholder resolution is permissive: unknown roots, slugs, symbols, or fields render explicit sentinel text rather than returning a validation error.
-- Supported live namespace starts at `portfolios`.
+- Supported live namespaces start at `portfolios` and `reports`.
+- `reports.<name>.content` re-compiles stored report markdown and returns `[Circular report reference: ...]` if a report chain loops.
+
+## Reports
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/reports` | List reports, newest first |
+| `POST` | `/api/v1/reports/compile/{templateId}` | Compile a stored template into a persisted report |
+| `POST` | `/api/v1/reports/upload` | Upload UTF-8 markdown as a report |
+| `GET` | `/api/v1/reports/{slug}` | Read one report by slug |
+| `PATCH` | `/api/v1/reports/{slug}` | Update report `content` only |
+| `DELETE` | `/api/v1/reports/{slug}` | Delete a report |
+| `GET` | `/api/v1/reports/{slug}/download` | Download stored markdown by slug |
+
+Compiled report response example:
+
+```json
+{
+  "id": 7,
+  "name": "monthly_report_20260318_105651",
+  "slug": "monthly_report_20260318_105651",
+  "source": "compiled",
+  "content": "# Report\n\nSlug: retirement",
+  "metadata": {
+    "author": null,
+    "description": null,
+    "tags": []
+  },
+  "createdAt": "2026-03-18T10:56:51Z",
+  "updatedAt": "2026-03-18T10:56:51Z"
+}
+```
+
+Upload request sketch:
+
+```text
+POST /api/v1/reports/upload
+Content-Type: multipart/form-data
+
+file=<markdown .md>
+slug=quarterly_update
+author=Analyst
+description=Uploaded from disk
+tags=quarterly,finance
+```
+
+Notes:
+
+- Compiled reports derive `name` and `slug` from the source template name plus a UTC timestamp; collisions append `_2`, `_3`, and so on.
+- Uploaded reports normalize the provided slug, fall back to the uploaded filename stem when `slug` is omitted, reject invalid file types/encodings, enforce a 2 MB limit, and persist `source="uploaded"`.
+- Report updates are content-only; `name`, `slug`, `source`, and metadata are immutable after creation.
+- Downloads return `text/markdown; charset=utf-8` with `Content-Disposition: attachment; filename="{slug}.md"`.
 
 ## HTTP Status Guidelines
 
-- `200` - successful read, update, or compile response
-- `201` - successful create response
+- `200` - successful read, update, or template compile response
+- `201` - successful create response, including report compile/upload
 - `204` - successful delete response
 - `400` - malformed file or business-rule violation
-- `404` - portfolio or nested resource not found
+- `409` - report slug conflict on upload
+- `404` - requested resource not found
 - `422` - payload validation failure

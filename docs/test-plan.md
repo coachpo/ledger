@@ -23,8 +23,9 @@ The backend suite is the highest-signal regression layer and covers:
 - CSV preview/commit validation and upsert behavior
 - trading-operation rules for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT`
 - market-data success, warning, cached-quote fallback, and history behavior
-- template CRUD, placeholder browsing, inline compile, and stored compile-by-id
-- supported legacy schema upgrades, including dropped stock-analysis tables and balance `operation_type` backfill
+- template CRUD, placeholder browsing, inline compile, stored compile-by-id, report placeholder expansion, and cycle detection
+- report compile/upload/update/delete/download flows plus placeholder-tree inclusion
+- supported legacy schema upgrades, including dropped stock-analysis tables, balance `operation_type` backfill, and report `slug`/`source`/`metadata` backfill
 
 ### Frontend Unit And Component Tests
 
@@ -58,6 +59,7 @@ Implemented Playwright specs:
 
 - `frontend/e2e/smoke.spec.ts`
 - `frontend/e2e/functional.spec.ts`
+- `frontend/e2e/reports.spec.ts`
 
 Covered behaviors:
 
@@ -65,6 +67,7 @@ Covered behaviors:
 |---|---|
 | `smoke.spec.ts` | app boot, dashboard visibility, sidebar links, portfolios route navigation |
 | `functional.spec.ts` | portfolio creation flow, portfolio list render, add-position symbol lookup, manual name fallback when lookup fails |
+| `reports.spec.ts` | reports sidebar nav, generate from template, upload with metadata, edit/download/delete behavior, template-editor generate shortcut |
 
 ## Test Environment Matrix
 
@@ -121,7 +124,8 @@ cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run && pnp
 ## Highest-Value Next Coverage
 
 - Add Playwright coverage for balance CRUD and trading-operation flows end to end.
-- Add Playwright coverage for template create/edit/delete and inline compile preview.
+- Add Playwright coverage for template create/edit/delete and inline compile preview beyond the report-generation shortcut.
 - Add route-level frontend tests for `PortfolioDetailPage` degraded quote-warning states.
 - Add direct tests for quote warning rendering and cached-quote fallback in portfolio UI.
+- Add route-level frontend tests for report upload validation edge cases and report detail error states.
 - Add a root-level smoke check around `start.sh` once CI support for Docker-in-Docker orchestration is acceptable.

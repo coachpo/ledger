@@ -1,5 +1,7 @@
 # Compiled Reports Design
 
+> Archive Status: Fully implemented with follow-on refinements. Live code uses slug-based report routes, persists `source` and `metadata`, and keeps this document as the original design record rather than the primary contract. Specific route tables, schema snippets, and id-based examples below are superseded by `docs/api-design.md` and `docs/data-model.md`.
+
 ## Overview
 
 A new "Reports" feature that persists compiled template output as standalone, immutable-by-default deliverables. Reports are created by compiling a stored template against live portfolio data at a point in time. Once created, reports have no backward link to the source template — they are independent documents.
