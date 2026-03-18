@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-03-18
-**Commit:** f737675
+**Commit:** c175a98
 **Branch:** main
 
 ## OVERVIEW
@@ -20,10 +20,15 @@ Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/`
 - `backend/tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, report/template regression coverage
 - `frontend/AGENTS.md` — frontend architecture, router shell, report-aware validation workflow
 - `frontend/src/lib/AGENTS.md` — API client, query keys, analytics, formatting, template contracts
+- `frontend/src/lib/api/AGENTS.md` — domain API modules, upload/download boundaries, and route-path helpers
+- `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, and trading
 - `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
 - `frontend/src/components/AGENTS.md` — layout shell, theme system, shared components, forms, portfolio UI
+- `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, trades
 - `frontend/src/pages/AGENTS.md` — dashboard, portfolio routes, template routes, and report routes
+- `frontend/src/pages/portfolios/AGENTS.md` — portfolio list/detail orchestration and quote-enriched workspace rules
+- `frontend/src/pages/templates/AGENTS.md` — template list/editor flows, debounce preview, and placeholder browser rules
 - `frontend/src/pages/reports/AGENTS.md` — report list/detail flows, markdown render/edit/download behavior
 
 ## STRUCTURE
@@ -50,6 +55,7 @@ ledger/
 | Backend DB upgrades | `backend/app/db/session.py` | portfolio/report upgrades, balance `operation_type`, market-quote `name`, obsolete-table cleanup |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py` | CRUD, templates, reports, market-data fallback, symbol cache, legacy-schema upgrades |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle |
+| Frontend API/type contracts | `frontend/src/lib/api/AGENTS.md`, `frontend/src/lib/types/AGENTS.md` | request helpers, upload/download rules, and shared wire types |
 | Frontend portfolio UI | `frontend/src/components/portfolios/AGENTS.md` | balances, positions, trades, dialogs, tables |
 | Frontend template UI | `frontend/src/pages/templates/editor.tsx`, `frontend/src/hooks/use-templates.ts`, `frontend/src/lib/api/templates.ts` | editor, preview, placeholder browser, CRUD |
 | Frontend reports UI | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/hooks/use-reports.ts`, `frontend/src/lib/api/reports.ts` | list/detail pages, upload/generate/delete, download/edit flows |
@@ -83,7 +89,8 @@ ledger/
 - Symbol-name lookup and market-data fetches are best-effort: cache reuse and warning paths should preserve a usable response whenever possible.
 - Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; do not invent ad-hoc keys inside hooks or components.
 - Template placeholder paths are a cross-stack contract spanning `backend/app/services/template_compiler_service.py`, `backend/app/schemas/text_template.py`, `frontend/src/lib/types/text-template.ts`, and `frontend/src/pages/templates/editor.tsx`; the live roots are `portfolios` and `reports`.
-- Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional author/description/tags metadata, and both download by slug.
+- Report placeholder selectors support both exact names and dynamic selectors such as `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`; valid no-match selectors compile to an empty string, malformed selectors compile to explicit sentinel text.
+- Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional author/description/tags metadata, direct JSON creation is supported, and all three sources download by slug.
 - Backend and frontend are git submodules; root workflows always check them out with `submodules: recursive`.
 
 ## ANTI-PATTERNS
@@ -91,23 +98,23 @@ ledger/
 - Do not invent snake_case API fields, ad-hoc query keys, or duplicate placeholder/type contracts.
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, or template compile payloads without updating backend tests and frontend callers.
-- Do not change report slug/name/source/download behavior or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
+- Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
 - Do not treat `docs/`, `artifacts/`, `frontend/dist/`, or cache directories as the source of truth over live code.
 - Do not ignore submodule state when cloning, updating CI, or reviewing backend/frontend diffs.
 
 ## COMMANDS
 ```bash
 git submodule update --init --recursive
-python -m pip install -e './backend[dev]'
+(cd backend && uv sync)
 (cd frontend && pnpm install)
 ./start.sh
-(cd backend && python -m uvicorn app.main:app --reload --port 8000)
+(cd backend && uv run uvicorn app.main:app --reload --port 8000)
 (cd frontend && pnpm dev)
 ```
 
 ## VALIDATION
 ```bash
-(cd backend && ruff check app tests && black --check app tests && isort --check-only app tests && mypy app && pytest)
+(cd backend && uv run ruff check app tests && uv run black --check app tests && uv run isort --check-only app tests && uv run mypy app && uv run pytest)
 (cd frontend && pnpm lint)
 (cd frontend && pnpm typecheck)
 (cd frontend && pnpm build)

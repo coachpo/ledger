@@ -1,5 +1,7 @@
 # API Design
 
+> Status: Current live-code reference as of 2026-03-18 (`c175a98`).
+
 ## Conventions
 
 - Base path: `/api/v1`

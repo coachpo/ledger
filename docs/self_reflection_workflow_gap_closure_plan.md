@@ -1,5 +1,7 @@
 # Self-Reflection Workflow Gap Closure Plan
 
+> Status: Historical implementation plan. Most core gaps described here are now closed in live code: direct external report creation, compile-time metadata, report list filters, dynamic report selectors, and placeholder-browser guidance are shipped. Remaining work is follow-up UX and workflow hardening rather than foundational backend capability.
+
 ## Purpose
 
 Define a focused implementation plan that closes the gaps between Ledger's current template/report system and the self-reflection stock analysis workflow described in `docs/self_reflection_stock_analysis_loop.md`.

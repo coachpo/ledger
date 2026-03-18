@@ -1,5 +1,7 @@
 # Technical Specification
 
+> Status: Current live-code reference as of 2026-03-18 (`c175a98`).
+
 ## Overview
 
 Ledger is an auth-less portfolio application with three live capabilities:

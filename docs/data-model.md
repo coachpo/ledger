@@ -1,5 +1,7 @@
 # Data Model Design
 
+> Status: Current live-code reference as of 2026-03-18 (`c175a98`).
+
 ## Overview
 
 Ledger uses a relational schema centered on isolated portfolios. Live persistence covers portfolios, balances, positions, trading operations, cached market quotes, symbol-name cache rows, global text templates, and persisted markdown reports.

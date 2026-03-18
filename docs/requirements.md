@@ -1,5 +1,7 @@
 # Requirements Document
 
+> Status: Current release requirements reference as of 2026-03-18 (`c175a98`).
+
 ## Purpose
 
 Define the live product requirements for Ledger as shipped today. This release is a trusted single-user portfolio tracker with text-template rendering, not a stock-analysis platform.

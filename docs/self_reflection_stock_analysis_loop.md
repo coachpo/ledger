@@ -1,5 +1,7 @@
 # Self-Reflection Stock Analysis Loop
 
+> Status: Strategy/process reference. The current Ledger codebase provides template-backed report history, report filters, external report creation, and dynamic report selectors, but it still does not run scheduling or analysis automation internally.
+
 ## Purpose
 
 This document describes a structured, versioned approach to stock analysis designed to improve decision quality over time. The core idea is simple:

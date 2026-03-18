@@ -1,5 +1,7 @@
 # Self-Reflection Workflow PR Tasks
 
+> Status: Historical PR breakdown. The report-contract, filtering, selector, and frontend authoring foundations described here are substantially shipped; treat this file as rollout history plus a source of follow-up hardening ideas.
+
 ## Purpose
 
 Break `docs/self_reflection_workflow_gap_closure_plan.md` into PR-sized implementation tasks that can be reviewed and shipped incrementally.

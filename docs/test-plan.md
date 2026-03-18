@@ -1,5 +1,9 @@
 # Test Plan
 
+> Status: Current automated coverage reference as of 2026-03-18 (`c175a98`).
+
+This file reflects the existing automated surface only. The documentation refresh did not change application code, add new tests, or promote local-only checks into CI.
+
 ## Overview
 
 This document describes the current automated coverage for the live Ledger stack and the most useful next expansion areas. It is intentionally split into current coverage and targeted gaps so the docs do not imply tests exist where they do not.
@@ -33,8 +37,10 @@ Implemented files:
 
 - `frontend/src/lib/api.test.ts`
 - `frontend/src/lib/format.test.ts`
+- `frontend/src/lib/markdown-format.test.ts`
 - `frontend/src/lib/portfolio-analytics.test.ts`
 - `frontend/src/lib/query-keys.test.ts`
+- `frontend/src/pages/templates/editor.test.tsx`
 - `frontend/src/components/forms/portfolio-form-dialog.test.tsx`
 - `frontend/src/components/portfolios/position-form-dialog.test.tsx`
 - `frontend/src/components/portfolios/portfolio-positions-section.test.tsx`
@@ -48,8 +54,10 @@ Covered behaviors:
 |---|---|
 | `api.test.ts` | request success/error mapping, base URL selection, query/path encoding, symbol lookup URL generation |
 | `format.test.ts` | currency, decimal, percent, date/datetime, compact-number formatting |
-| `portfolio-analytics.test.ts` | quote enrichment, marked value, P&L, allocation math, withdrawal sign handling |
+| `markdown-format.test.ts` | Prettier-backed markdown normalization while preserving `{{placeholders}}` |
+| `portfolio-analytics.test.ts` | quote enrichment, market value, P&L, allocation math, withdrawal sign handling |
 | `query-keys.test.ts` | id normalization, market-history symbol normalization, lookup-key normalization |
+| `templates/editor.test.tsx` | dynamic report selector guidance and click-to-insert placeholder behavior |
 | portfolio form/dialog tests | portfolio create/edit validation and UI behavior |
 | trading/position component tests | side-specific form behavior, position entry, trade recording, and trades table rendering |
 
@@ -108,7 +116,7 @@ Local-only but recommended checks:
 
 ```bash
 # Backend
-cd backend && pytest tests/test_api.py
+cd backend && uv run pytest tests/test_api.py
 
 # Frontend unit/component tests
 cd frontend && pnpm test:run
@@ -117,7 +125,7 @@ cd frontend && pnpm test:run
 cd frontend && pnpm test:e2e
 
 # Full local validation
-cd backend && ruff check app tests && black --check app tests && isort --check-only app tests && mypy app && pytest
+cd backend && uv run ruff check app tests && uv run black --check app tests && uv run isort --check-only app tests && uv run mypy app && uv run pytest
 cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run && pnpm test:e2e
 ```
 

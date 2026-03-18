@@ -1,5 +1,7 @@
 # Product Requirements Document (PRD)
 
+> Status: Current product-scope reference as of 2026-03-18 (`c175a98`).
+
 ## Product Summary
 
 Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, reusable text templates, and persisted markdown reports generated from templates or uploaded directly.
