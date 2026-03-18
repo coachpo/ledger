@@ -19,32 +19,11 @@ DB_USER="ledger"
 DB_PASSWORD="ledger"
 DATABASE_URL="postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
-PYTHON_BIN=""
 backend_pid=""
 frontend_pid=""
 database_started=0
 backend_started=0
 frontend_started=0
-
-for candidate in python3 python; do
-  if ! command -v "$candidate" >/dev/null 2>&1; then
-    continue
-  fi
-
-  if "$candidate" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
-    PYTHON_BIN="$candidate"
-    break
-  fi
-
-  if [[ -z "$PYTHON_BIN" ]]; then
-    PYTHON_BIN="$candidate"
-  fi
-done
-
-if [[ -z "$PYTHON_BIN" ]]; then
-  printf 'Python is required but was not found.\n' >&2
-  exit 1
-fi
 
 require_command() {
   local command_name=$1
@@ -58,6 +37,7 @@ require_command() {
 require_command docker
 require_command lsof
 require_command pnpm
+require_command uv
 
 if ! docker info >/dev/null 2>&1; then
   printf 'Docker is installed but the daemon is not available.\n' >&2
@@ -79,10 +59,15 @@ if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   exit 1
 fi
 
-if ! (cd "$BACKEND_DIR" && "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null 2>&1); then
-  printf "Backend dependencies are missing. Run: %s -m pip install -e './backend[dev]'\n" "$PYTHON_BIN" >&2
+printf 'Syncing backend environment with uv\n'
+if ! uv sync --directory "$BACKEND_DIR" --frozen; then
+  printf 'Backend dependency sync failed. Run: (cd "%s" && uv lock && uv sync)\n' "$BACKEND_DIR" >&2
   exit 1
 fi
+
+run_backend_python() {
+  uv run --directory "$BACKEND_DIR" --frozen python "$@"
+}
 
 probe_host() {
   local host=$1
@@ -177,7 +162,7 @@ stop_docker_containers_publishing_port() {
     [[ -z "$container_id" ]] && continue
     container_ids+=("$container_id")
   done < <(
-    printf '%s\n' "$docker_ps_output" | "$PYTHON_BIN" -c '
+    printf '%s\n' "$docker_ps_output" | run_backend_python -c '
 import sys
 
 target_port = sys.argv[1]
@@ -266,7 +251,7 @@ ledger_backend_running() {
 
   resolved_host="$(probe_host "$host")"
 
-  "$PYTHON_BIN" - "$resolved_host" "$port" <<'PY' >/dev/null 2>&1
+  run_backend_python - "$resolved_host" "$port" <<'PY' >/dev/null 2>&1
 import json
 import sys
 import urllib.request
@@ -305,7 +290,7 @@ wait_for_backend_ready() {
 build_cors_allowed_origins() {
   local extra_origins=${CORS_ALLOWED_ORIGINS:-}
 
-  "$PYTHON_BIN" - "$FRONTEND_HOST" "$FRONTEND_PORT" "$extra_origins" <<'PY'
+  run_backend_python - "$FRONTEND_HOST" "$FRONTEND_PORT" "$extra_origins" <<'PY'
 import json
 import sys
 
@@ -391,7 +376,7 @@ printf 'Starting backend on http://%s:%s\n' "$BACKEND_PUBLIC_HOST" "$BACKEND_POR
   cd "$BACKEND_DIR"
   export DATABASE_URL="$DATABASE_URL"
   export CORS_ALLOWED_ORIGINS="$RESOLVED_CORS_ALLOWED_ORIGINS"
-  exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+  exec uv run --frozen uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT"
 ) &
 backend_pid=$!
 backend_started=1
