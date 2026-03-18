@@ -317,12 +317,17 @@ Notes:
 - Placeholder resolution is permissive: unknown roots, slugs, symbols, or fields render explicit sentinel text rather than returning a validation error.
 - Supported live namespaces start at `portfolios` and `reports`.
 - `reports.<name>.content` re-compiles stored report markdown and returns `[Circular report reference: ...]` if a report chain loops.
+- Dynamic report selectors are supported in template content: `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`.
+- Dynamic report selectors may be followed by `.name`, `.created_at`, or `.content` after selecting a single report.
+- Valid dynamic selectors that match no report render an empty string.
+- Malformed dynamic selectors render `[Invalid report selector: ...]`.
 
 ## Reports
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/v1/reports` | List reports, newest first |
+| `GET` | `/api/v1/reports` | List reports, newest first, with optional filters |
+| `POST` | `/api/v1/reports` | Create an external report from JSON |
 | `POST` | `/api/v1/reports/compile/{templateId}` | Compile a stored template into a persisted report |
 | `POST` | `/api/v1/reports/upload` | Upload UTF-8 markdown as a report |
 | `GET` | `/api/v1/reports/{slug}` | Read one report by slug |
@@ -349,6 +354,37 @@ Compiled report response example:
 }
 ```
 
+Direct create request example:
+
+```json
+{
+  "name": "AAPL Weekly Reflection",
+  "content": "# AAPL\n\nReview body.",
+  "metadata": {
+    "tags": ["weekly_review"],
+    "analysis": {
+      "ticker": "AAPL",
+      "reviewType": "weekly_review"
+    },
+    "customFlag": true
+  }
+}
+```
+
+Compile-with-metadata request example:
+
+```json
+{
+  "metadata": {
+    "tags": ["weekly_review"],
+    "analysis": {
+      "ticker": "AAPL",
+      "portfolioSlug": "core_us"
+    }
+  }
+}
+```
+
 Upload request sketch:
 
 ```text
@@ -365,7 +401,15 @@ tags=quarterly,finance
 Notes:
 
 - Compiled reports derive `name` and `slug` from the source template name plus a UTC timestamp; collisions append `_2`, `_3`, and so on.
+- Direct JSON-created reports persist `source="external"`, require `content`, accept optional `name`, optional `slug`, and extensible `metadata`, and normalize analysis tickers to uppercase when present.
+- Compiled report creation accepts an optional JSON body with `metadata`.
 - Uploaded reports normalize the provided slug, fall back to the uploaded filename stem when `slug` is omitted, reject invalid file types/encodings, enforce a 2 MB limit, and persist `source="uploaded"`.
+- Report metadata is extensible JSON. The known fields are `author`, `description`, `tags`, and optional `analysis`, but unknown keys are preserved.
+- `GET /api/v1/reports` accepts optional query parameters: `ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, and `offset`.
+- `ticker` is trimmed and matched against normalized uppercase `metadata.analysis.ticker` values.
+- `tag` is trimmed and matches membership inside the top-level `metadata.tags` array.
+- `reviewType` and `portfolioSlug` are trimmed exact-string matches against `metadata.analysis.reviewType` and `metadata.analysis.portfolioSlug`.
+- Report lists remain ordered by `createdAt DESC, id DESC` whether filters are applied or not.
 - Report updates are content-only; `name`, `slug`, `source`, and metadata are immutable after creation.
 - Downloads return `text/markdown; charset=utf-8` with `Content-Disposition: attachment; filename="{slug}.md"`.
 

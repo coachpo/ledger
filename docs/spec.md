@@ -6,7 +6,7 @@ Ledger is an auth-less portfolio application with three live capabilities:
 
 - portfolio tracking and simulation for balances, positions, market context, CSV imports, and manual operations;
 - text-template management with server-side placeholder resolution against live portfolio data and persisted reports;
-- markdown report generation, upload, download, and edit flows built on top of the template system.
+- markdown report generation, direct JSON creation, upload, download, and edit flows built on top of the template system.
 
 Legacy stock-analysis tables and provider helper code still exist as upgrade-cleanup or dormant reference material, but they are not part of the live API or frontend router.
 
@@ -56,7 +56,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `MarketDataService`: delayed quote retrieval, cached fallback, staleness calculation, and history fetches.
 - `TextTemplateService`: global template CRUD.
 - `TemplateCompilerService`: `{{portfolios.<slug>...}}` and `{{reports.<name>...}}` placeholder resolution, compile preview, and report-content re-compilation.
-- `ReportService`: compiled-report creation, markdown uploads, slug/name generation, content updates, and download lookups.
+- `ReportService`: compiled-report creation, direct JSON report creation, markdown uploads, slug/name generation, content updates, and download lookups.
 
 ## Frontend Architecture
 
@@ -125,7 +125,10 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 
 - Reports are stored markdown snapshots with unique `name` and `slug`.
 - Compiled reports derive timestamped snake_case names from template names and store `source="compiled"`.
-- Uploaded reports store `source="uploaded"` plus optional metadata (`author`, `description`, `tags`).
+- Uploaded reports store `source="uploaded"`; direct JSON-created reports store `source="external"`.
+- Report metadata is an extensible JSON object with known fields such as `author`, `description`, `tags`, and optional `analysis` metadata.
+- Report listing supports optional filters on the canonical metadata subset: `analysis.ticker`, `analysis.reviewType`, `analysis.portfolioSlug`, top-level `tags`, and `source`.
+- Report list ordering is stable newest first: `created_at DESC, id DESC`.
 - Reports are addressed by `slug` in the API and frontend routes, but by `name` inside template placeholders.
 - Updating a report only changes `content`; report metadata is immutable after creation.
 
@@ -141,6 +144,10 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 {{portfolios.<slug>.positions.AAPL.quantity}}
 {{reports}}
 {{reports.monthly_report_20260317_143052.content}}
+{{reports.latest}}
+{{reports.latest("AAPL").content}}
+{{reports[0].name}}
+{{reports.by_tag("weekly_review").latest.name}}
 ```
 
 ### Resolution Rules
@@ -150,6 +157,10 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `balance` resolves to the computed available balance for the portfolio, not an individual balance row.
 - `positions` resolves either to a rendered list or to a symbol-specific object path.
 - `reports.<name>.content` re-compiles the stored markdown body so embedded portfolio/report placeholders resolve against current live data.
+- Dynamic report selectors support the first selector set: `latest`, `latest("TICKER")`, zero-based `[index]`, and `by_tag("tag").latest`.
+- Dynamic report selectors can be followed by `.name`, `.created_at`, or `.content` after they resolve to a single report.
+- Valid dynamic report selectors that match no reports resolve to an empty string.
+- Malformed dynamic report selectors resolve to an explicit sentinel string.
 - Report-content recursion uses cycle detection and renders `[Circular report reference: ...]` when a loop is found.
 - Unknown roots, slugs, symbols, or fields render explicit sentinel text such as `[Unknown field: ...]`.
 
@@ -187,6 +198,13 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 2. Backend compiles the template through `TemplateCompilerService`.
 3. `ReportService` persists the compiled markdown as a new `reports` row with generated `name`/`slug` and `source="compiled"`.
 4. The reports page flow navigates directly to `/reports/:slug`; the template-editor flow shows a success toast with a `View` action that can open the new report.
+
+### Direct Report Create Flow
+
+1. External automation or a manual client posts JSON to `/api/v1/reports`.
+2. Backend validates `content`, optional `name`, optional `slug`, and extensible `metadata`.
+3. `ReportService` persists the markdown as a new `reports` row with `source="external"`.
+4. The report becomes available through the existing slug-based read, list, update, delete, and download routes.
 
 ## CI And Verification
 

@@ -161,9 +161,9 @@ Constraints:
 | `id` | integer | No | Primary key |
 | `name` | varchar(200) | No | Unique display name for the report |
 | `slug` | varchar(200) | No | Unique route/download identifier |
-| `source` | varchar(20) | No | `compiled` or `uploaded` |
+| `source` | varchar(20) | No | `compiled`, `uploaded`, or `external` |
 | `content` | text | No | Stored markdown content |
-| `metadata` | jsonb | No | Optional `author`, `description`, `tags` envelope |
+| `metadata` | jsonb | No | Extensible metadata object with known `author`, `description`, `tags`, and optional `analysis` keys used by filtered report retrieval |
 | `created_at` / `updated_at` | timestamptz | No | Timestamps from mixin |
 
 Constraints:
@@ -187,13 +187,15 @@ Constraints:
 - CSV import commit updates positions atomically.
 - Cached quotes and symbol-name cache rows are reconstructible and must not be treated as authoritative user data.
 - Reports are global documents with immutable `name`, `slug`, `source`, and metadata after creation; only `content` is editable.
+- Direct JSON-created reports use `source="external"` and follow the same slug-addressed lifecycle as compiled and uploaded reports.
+- Canonical report list filters read from `metadata.analysis.ticker`, `metadata.analysis.reviewType`, `metadata.analysis.portfolioSlug`, top-level `metadata.tags`, and `source`.
 
 ## Suggested Enums
 
 - `balances.operation_type`: `DEPOSIT`, `WITHDRAWAL`
 - `positions.last_source`: `manual`, `csv`, `simulation`
 - `trading_operations.side`: `BUY`, `SELL`, `DIVIDEND`, `SPLIT`
-- `reports.source`: `compiled`, `uploaded`
+- `reports.source`: `compiled`, `uploaded`, `external`
 
 ## Lifecycle Notes
 

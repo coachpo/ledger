@@ -15,7 +15,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - Delayed quote and price-history retrieval for symbols in a portfolio.
 - Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations.
 - Global text-template CRUD plus placeholder browsing and compile preview.
-- Report generation from templates, markdown upload, slug-based report CRUD, and markdown download.
+- Report generation from templates, direct JSON report creation, markdown upload, slug-based report CRUD, and markdown download.
 
 ### Out Of Scope
 
@@ -108,7 +108,11 @@ Define the live product requirements for Ledger as shipped today. This release i
 - The system must expose an inline compile endpoint that accepts ad hoc content and returns compiled output.
 - The system must expose a stored-template compile endpoint by template id.
 - Placeholder resolution must support the `portfolios.<slug>...` and `reports.<name>...` namespaces.
+- Placeholder resolution must also support dynamic report selectors: `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`.
 - `reports.<name>.content` must re-compile stored report content so embedded placeholders resolve against current live data.
+- Dynamic report selectors must support `.name`, `.created_at`, and `.content` field access after report selection.
+- Valid dynamic report selectors that match no report must compile to an empty string.
+- Malformed dynamic report selectors must compile to an explicit sentinel string rather than silently disappearing.
 - Report-content recursion must detect circular references and render an explicit sentinel instead of looping.
 - The placeholder tree must expose live reports with `name` and `createdAt` in addition to portfolio data.
 - Unknown roots, portfolios, or fields must compile to explicit sentinel strings such as `[Unknown portfolio: ...]` instead of silently disappearing.
@@ -116,13 +120,18 @@ Define the live product requirements for Ledger as shipped today. This release i
 ### FR-8 Report Management
 
 - The system must let the user list, read, update, delete, and download reports by `slug`.
+- The report list endpoint must support optional filters for `ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, and `offset`.
+- Filtered and unfiltered report lists must remain ordered newest first, with a stable tie-breaker when timestamps match.
 - The system must let the user create a compiled report by posting a stored template id.
+- The system must let the user create an external report by posting JSON with `content` plus optional `name`, `slug`, and `metadata`.
+- Compiled report creation may include optional metadata in the request body.
 - Compiled report creation must normalize the template name to snake_case, append a UTC timestamp, and use that value for both `name` and `slug`.
 - If two compiled reports collide within the same second, the system must append `_2`, `_3`, and so on until the name/slug is unique.
 - The system must let the user upload a UTF-8 markdown file smaller than 2 MB to create a report.
 - Uploads must reject non-`.md` filenames, invalid encodings, and empty files.
-- Uploaded reports must store `source="uploaded"`; compiled reports must store `source="compiled"`.
-- Uploaded reports may include optional `author`, `description`, and comma-separated `tags` metadata.
+- Uploaded reports must store `source="uploaded"`; compiled reports must store `source="compiled"`; direct JSON-created reports must store `source="external"`.
+- Report metadata must remain an extensible JSON object.
+- Report metadata must continue to support `author`, `description`, and `tags`, and may include an optional `analysis` object plus additional unknown keys.
 - Report update payloads must allow editing `content` only; `name`, `slug`, `source`, and metadata are immutable after creation.
 - Downloads must return the stored markdown content as `text/markdown` with `Content-Disposition: attachment; filename="{slug}.md"`.
 
@@ -147,4 +156,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - A user can view delayed quotes and price history with warnings, and the app still works when quote retrieval fails.
 - A user can create or edit a template, browse placeholders, and compile live portfolio text successfully.
 - A user can generate a report from a template, upload a markdown report with metadata, edit report content, and download the report by slug.
+- A user can create an external report from JSON and receive the persisted metadata back unchanged, except for documented normalization such as uppercased analysis tickers.
+- A user can filter the report list by canonical workflow metadata and still receive results in stable newest-first order.
 - A template can reference `reports.<name>.content` and receive circular-reference sentinels instead of infinite recursion.
+- A template can reference dynamic report selectors such as `reports.latest("AAPL").content` and receive empty output when no report matches.
