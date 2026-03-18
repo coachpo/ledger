@@ -11,7 +11,7 @@ Report content is re-compiled at inclusion time — any `{{portfolios...}}` plac
 This plan depends on:
 - The compiled reports feature described in `docs/archive/compiled-reports-design.md` (Report model, CRUD, compile endpoint).
 - The existing placeholder system described in `docs/archive/text-template-system-with-placeholders.md`.
-- The metric placeholders described in `docs/text-template-placeholder-metrics-upgrade-plan.md`.
+- The metric placeholders described in `docs/archive/text-template-placeholder-metrics-upgrade-plan.md`.
 
 ## Scope
 
