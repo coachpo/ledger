@@ -267,6 +267,7 @@ Notes:
 | `PATCH` | `/api/v1/templates/{templateId}` | Update template |
 | `DELETE` | `/api/v1/templates/{templateId}` | Delete template |
 | `GET` | `/api/v1/templates/{templateId}/compile` | Compile stored template content |
+| `POST` | `/api/v1/templates/{templateId}/compile` | Compile stored template content with runtime inputs |
 
 Create request example:
 
@@ -281,7 +282,11 @@ Inline compile request example:
 
 ```json
 {
-  "content": "Apple name: {{portfolios.retirement.positions.AAPL.name}}"
+  "content": "Ticker: {{inputs.ticker}}\nQuantity: {{portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity}}",
+  "inputs": {
+    "ticker": "AAPL",
+    "portfolio_slug": "retirement"
+  }
 }
 ```
 
@@ -317,10 +322,14 @@ Placeholder tree response sketch:
 Notes:
 
 - Placeholder resolution is permissive: unknown roots, slugs, symbols, or fields render explicit sentinel text rather than returning a validation error.
-- Supported live namespaces start at `portfolios` and `reports`.
+- Supported live namespaces start at `inputs`, `portfolios`, and `reports`.
 - `reports.<name>.content` re-compiles stored report markdown and returns `[Circular report reference: ...]` if a report chain loops.
+- Runtime inputs are available as `inputs.<name>` and may be used directly or inside selector arguments.
+- Dynamic portfolio selectors are supported in template content: `portfolios.by_slug(...)` and `portfolios.by_slug(...).positions.by_symbol(...)`.
 - Dynamic report selectors are supported in template content: `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`.
+- Dynamic report selectors may consume runtime inputs, for example `reports.latest(inputs.ticker)` or `reports.by_tag(inputs.analysis_tag).latest`.
 - Dynamic report selectors may be followed by `.name`, `.created_at`, or `.content` after selecting a single report.
+- Missing runtime inputs render explicit sentinel text such as `[Missing input: ticker]`.
 - Valid dynamic selectors that match no report render an empty string.
 - Malformed dynamic selectors render `[Invalid report selector: ...]`.
 
@@ -383,6 +392,11 @@ Compile-with-metadata request example:
       "ticker": "AAPL",
       "portfolioSlug": "core_us"
     }
+  },
+  "inputs": {
+    "ticker": "AAPL",
+    "portfolio_slug": "core_us",
+    "analysis_tag": "analysis_result"
   }
 }
 ```
@@ -404,7 +418,7 @@ Notes:
 
 - Compiled reports derive `name` and `slug` from the source template name plus a UTC timestamp; collisions append `_2`, `_3`, and so on.
 - Direct JSON-created reports persist `source="external"`, require `content`, accept optional `name`, optional `slug`, and extensible `metadata`, and normalize analysis tickers to uppercase when present.
-- Compiled report creation accepts an optional JSON body with `metadata`.
+- Compiled report creation accepts an optional JSON body with `metadata` and runtime `inputs`.
 - Uploaded reports normalize the provided slug, fall back to the uploaded filename stem when `slug` is omitted, reject invalid file types/encodings, enforce a 2 MB limit, and persist `source="uploaded"`.
 - Report metadata is extensible JSON. The known fields are `author`, `description`, `tags`, and optional `analysis`, but unknown keys are preserved.
 - `GET /api/v1/reports` accepts optional query parameters: `ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, and `offset`.

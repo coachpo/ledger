@@ -150,17 +150,24 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 {{reports.latest("AAPL").content}}
 {{reports[0].name}}
 {{reports.by_tag("weekly_review").latest.name}}
+{{inputs.ticker}}
+{{reports.latest(inputs.ticker).content}}
+{{portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity}}
 ```
 
 ### Resolution Rules
 
 - Resolution is single-pass regex substitution.
-- The root namespaces are `portfolios` and `reports`.
+- The root namespaces are `inputs`, `portfolios`, and `reports`.
 - `balance` resolves to the computed available balance for the portfolio, not an individual balance row.
 - `positions` resolves either to a rendered list or to a symbol-specific object path.
 - `reports.<name>.content` re-compiles the stored markdown body so embedded portfolio/report placeholders resolve against current live data.
+- Runtime inputs are available during compile as `inputs.<name>`.
+- Dynamic portfolio selectors support `by_slug(...)` and `positions.by_symbol(...)` so one stored template can target different portfolios and symbols at compile time.
 - Dynamic report selectors support the first selector set: `latest`, `latest("TICKER")`, zero-based `[index]`, and `by_tag("tag").latest`.
+- Dynamic report selectors can consume runtime inputs inside selector arguments, such as `reports.latest(inputs.ticker)` and `reports.by_tag(inputs.analysis_tag).latest`.
 - Dynamic report selectors can be followed by `.name`, `.created_at`, or `.content` after they resolve to a single report.
+- Missing runtime inputs resolve to explicit sentinel text such as `[Missing input: ticker]`.
 - Valid dynamic report selectors that match no reports resolve to an empty string.
 - Malformed dynamic report selectors resolve to an explicit sentinel string.
 - Report-content recursion uses cycle detection and renders `[Circular report reference: ...]` when a loop is found.
@@ -190,16 +197,17 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 ### Template Compile Flow
 
 1. User types template content in the editor.
-2. Frontend debounces content changes.
-3. Backend compiles placeholders against live portfolio data.
+2. Frontend debounces content changes and optional runtime inputs.
+3. Backend compiles placeholders against live portfolio/report data plus any runtime inputs.
 4. Frontend renders compiled output side-by-side with the source template.
 
 ### Report Generation Flow
 
 1. User selects a saved template from the reports page or clicks Generate Report from the template editor.
-2. Backend compiles the template through `TemplateCompilerService`.
-3. `ReportService` persists the compiled markdown as a new `reports` row with generated `name`/`slug` and `source="compiled"`.
-4. The reports page flow navigates directly to `/reports/:slug`; the template-editor flow shows a success toast with a `View` action that can open the new report.
+2. Optional runtime inputs are supplied when the template is parameterized.
+3. Backend compiles the template through `TemplateCompilerService`.
+4. `ReportService` persists the compiled markdown as a new `reports` row with generated `name`/`slug` and `source="compiled"`.
+5. The reports page flow navigates directly to `/reports/:slug`; the template-editor flow shows a success toast with a `View` action that can open the new report.
 
 ### Direct Report Create Flow
 

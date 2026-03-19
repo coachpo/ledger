@@ -111,6 +111,9 @@ Define the live product requirements for Ledger as shipped today. This release i
 - The system must expose a stored-template compile endpoint by template id.
 - Placeholder resolution must support the `portfolios.<slug>...` and `reports.<name>...` namespaces.
 - Placeholder resolution must also support dynamic report selectors: `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`.
+- Placeholder resolution must support compile-time runtime inputs through the `inputs.<name>` namespace.
+- Runtime inputs must be usable inside selector arguments so one stored template can be reused across rounds, including `reports.latest(inputs.ticker)` and `reports.by_tag(inputs.analysis_tag).latest`.
+- Placeholder resolution must support dynamic portfolio selectors driven by runtime inputs, including `portfolios.by_slug(inputs.portfolio_slug)` and `portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker)`.
 - `reports.<name>.content` must re-compile stored report content so embedded placeholders resolve against current live data.
 - Dynamic report selectors must support `.name`, `.created_at`, and `.content` field access after report selection.
 - Valid dynamic report selectors that match no report must compile to an empty string.
@@ -127,6 +130,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - The system must let the user create a compiled report by posting a stored template id.
 - The system must let the user create an external report by posting JSON with `content` plus optional `name`, `slug`, and `metadata`.
 - Compiled report creation may include optional metadata in the request body.
+- Template inline compile and report compile must accept optional runtime inputs as a string map.
 - Compiled report creation must normalize the template name to snake_case, append a UTC timestamp, and use that value for both `name` and `slug`.
 - If two compiled reports collide within the same second, the system must append `_2`, `_3`, and so on until the name/slug is unique.
 - The system must let the user upload a UTF-8 markdown file smaller than 2 MB to create a report.
@@ -162,3 +166,4 @@ Define the live product requirements for Ledger as shipped today. This release i
 - A user can filter the report list by canonical workflow metadata and still receive results in stable newest-first order.
 - A template can reference `reports.<name>.content` and receive circular-reference sentinels instead of infinite recursion.
 - A template can reference dynamic report selectors such as `reports.latest("AAPL").content` and receive empty output when no report matches.
+- A user can reuse one saved template across multiple rounds by changing runtime inputs instead of editing the template body.
