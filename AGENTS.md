@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-18
-**Commit:** c175a98
+**Generated:** 2026-03-19
+**Commit:** 1958217
 **Branch:** main
 
 ## OVERVIEW
@@ -24,6 +24,7 @@ Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/`
 - `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, and trading
 - `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
 - `frontend/src/components/AGENTS.md` — layout shell, theme system, shared components, forms, portfolio UI
+- `frontend/src/components/ui/AGENTS.md` — shadcn/ui primitives, sidebar context, and shared variant helpers
 - `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, trades
 - `frontend/src/pages/AGENTS.md` — dashboard, portfolio routes, template routes, and report routes
@@ -59,8 +60,8 @@ ledger/
 | Frontend portfolio UI | `frontend/src/components/portfolios/AGENTS.md` | balances, positions, trades, dialogs, tables |
 | Frontend template UI | `frontend/src/pages/templates/editor.tsx`, `frontend/src/hooks/use-templates.ts`, `frontend/src/lib/api/templates.ts` | editor, preview, placeholder browser, CRUD |
 | Frontend reports UI | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/hooks/use-reports.ts`, `frontend/src/lib/api/reports.ts` | list/detail pages, upload/generate/delete, download/edit flows |
-| Frontend tests / E2E | `frontend/vite.config.ts`, `frontend/src/test/setup.ts`, `frontend/playwright.config.ts`, `frontend/e2e/*.spec.ts` | jsdom unit tests plus Chromium E2E |
-| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml` | backend/frontend quality jobs, Docker smoke build, publish workflow |
+| Frontend tests / E2E | `frontend/vite.config.ts`, `frontend/src/test/setup.ts`, `frontend/playwright.config.ts`, `frontend/e2e/*.spec.ts` | local jsdom unit setup plus Chromium E2E on `8001`/`4173` |
+| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | quality jobs, Docker smoke/publish workflows, artifact/package cleanup |
 
 ## CODE MAP
 | Symbol / Entry | Location | Role |
@@ -83,6 +84,7 @@ ledger/
 
 ## CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
+- Backend error envelopes are `{code, message, details[]}`; frontend `ApiRequestError` parsing depends on that exact shape.
 - Money, quantities, and market values cross the API as strings; backend parsing lives in `backend/app/core/formatting.py`, while frontend conversion lives in shared formatting and analytics helpers.
 - Balance records carry `operationType` (`DEPOSIT` or `WITHDRAWAL`); `BUY`, `SELL`, and `DIVIDEND` operations can only use deposit balances, `SPLIT` uses no balance, and portfolio cash calculations subtract withdrawal balances.
 - Portfolio slugs are lowercase underscore identifiers, unique at create time, and intentionally absent from the update contract.
@@ -124,6 +126,7 @@ git submodule update --init --recursive
 
 ## NOTES
 - `start.sh` is the authoritative local orchestrator; unlike the raw backend/frontend dev defaults, it binds backend/frontend to `28000/25173` and injects `VITE_API_BASE_URL` for the frontend process.
+- Supported schema repair is code-based in `backend/app/db/session.py`; the leftover `backend/alembic/` tree is not the source of truth.
 - Playwright still runs against backend `8001` and frontend `4173`, so route/E2E issues should always be checked in that environment too.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - CI currently runs backend lint/format/type/test checks, then frontend lint/build/E2E, then an amd64 Docker smoke build. Local frontend typecheck and unit tests are available even though they are not both enforced in `ci.yml` yet, and report flows have dedicated E2E coverage in `frontend/e2e/reports.spec.ts`.
