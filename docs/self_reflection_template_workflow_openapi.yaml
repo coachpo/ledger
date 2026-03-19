@@ -1,0 +1,904 @@
+# yaml-language-server: $schema=https://spec.openapis.org/oas/3.1/schema/2022-10-07
+openapi: '3.1.0'
+info:
+  title: Ledger Self-Reflection Workflow API
+  version: 1.0.0
+  summary: Focused external API contract for the self-reflection template workflow.
+  description: |
+    This OpenAPI document exposes the subset of Ledger's live API that a third-party
+    service needs to run the versioned self-reflection stock-analysis workflow described
+    in `docs/self_reflection_template_workflow_guide.md`.
+
+    It is intentionally narrower than the full backend OpenAPI document. The focus is:
+
+    1. prepare or inspect one portfolio context,
+    2. store a reusable Chinese template,
+    3. preview the template with runtime inputs,
+    4. generate versioned reports from that template,
+    5. read the resulting report history by tag, ticker, review type, or slug.
+
+    Ledger is currently auth-less, so this workflow does not require an authorization scheme.
+servers:
+  - url: http://127.0.0.1:28000
+    description: Local stack started by ./start.sh
+  - url: https://your-ledger-host.example.com
+    description: Replace with your deployed Ledger backend host
+tags:
+  - name: Health
+    description: Basic availability checks before running workflow calls.
+  - name: Portfolio Bootstrap
+    description: Create or inspect the portfolio context used by template placeholders.
+  - name: Templates
+    description: Store and compile the reusable self-reflection template.
+  - name: Reports
+    description: Generate, query, and download versioned reports.
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Healthcheck
+      operationId: healthcheck
+      responses:
+        '200':
+          description: Backend is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/portfolios:
+    get:
+      tags: [Portfolio Bootstrap]
+      summary: List portfolios
+      operationId: listPortfolios
+      description: List existing portfolios so an external service can resolve a reusable portfolio slug.
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PortfolioRead'
+    post:
+      tags: [Portfolio Bootstrap]
+      summary: Create portfolio
+      operationId: createPortfolio
+      description: |
+        Create a portfolio that will later be referenced by
+        `portfolios.by_slug(inputs.portfolio_slug)` placeholders.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortfolioCreate'
+            examples:
+              reflectionPortfolio:
+                value:
+                  name: 苹果复盘组合
+                  slug: aapl_loop_demo
+                  description: 用于最小化自我复盘流程演示
+                  baseCurrency: USD
+      responses:
+        '201':
+          description: Portfolio created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioRead'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/portfolios/{portfolioId}/positions:
+    get:
+      tags: [Portfolio Bootstrap]
+      summary: List positions for a portfolio
+      operationId: listPositions
+      parameters:
+        - $ref: '#/components/parameters/PortfolioId'
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PositionRead'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+    post:
+      tags: [Portfolio Bootstrap]
+      summary: Create position
+      operationId: createPosition
+      description: |
+        Create the symbol context required by placeholders such as
+        `portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity`.
+      parameters:
+        - $ref: '#/components/parameters/PortfolioId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PositionCreate'
+            examples:
+              aaplPosition:
+                value:
+                  symbol: AAPL
+                  name: Apple Inc.
+                  quantity: '10'
+                  averageCost: '185.50'
+      responses:
+        '201':
+          description: Position created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PositionRead'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/templates:
+    get:
+      tags: [Templates]
+      summary: List templates
+      operationId: listTemplates
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TextTemplateRead'
+    post:
+      tags: [Templates]
+      summary: Create stored template
+      operationId: createTemplate
+      description: |
+        Store the self-reflection template before compiling reports from it.
+        This endpoint is the starting point for reusable template-based integrations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextTemplateCreate'
+            examples:
+              chineseReflectionTemplate:
+                value:
+                  name: AAPL Reflection Loop CN Minimal
+                  content: |
+                    # {{inputs.ticker}} 复盘（{{inputs.review_date}}）
+
+                    - 触发原因：{{inputs.trigger}}
+                    - 组合：{{portfolios.by_slug(inputs.portfolio_slug).name}}
+                    - 当前持仓：{{portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity}} 股
+                    - 上一版报告：{{reports.by_tag(inputs.analysis_tag).latest.name}}
+
+                    ## 1. 当前判断
+                    - 结论：{{inputs.current_stance}}
+                    - 变化：{{inputs.change_summary}}
+
+                    ## 2. 行动
+                    - 动作：{{inputs.action}}
+                    - 原因：{{inputs.action_reason}}
+
+                    ## 3. 反思
+                    {{inputs.reflection}}
+
+                    ## 4. 上一版摘要
+                    {{reports.by_tag(inputs.analysis_tag).latest.content}}
+      responses:
+        '201':
+          description: Template created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextTemplateRead'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/templates/placeholders:
+    get:
+      tags: [Templates]
+      summary: Get placeholder tree
+      operationId: getPlaceholders
+      description: |
+        Inspect currently known portfolio slugs, position symbols, and stored report names.
+        Third-party tools can use this endpoint to build safer templates or verify preconditions.
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceholderTreeRead'
+
+  /api/v1/templates/{templateId}/compile:
+    post:
+      tags: [Templates]
+      summary: Compile stored template with runtime inputs
+      operationId: compileTemplateWithInputs
+      description: |
+        Preview a stored template against live portfolio and report data without creating a report row.
+        This is the recommended preview step before generating version 1 or later versions.
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextTemplateStoredCompile'
+            examples:
+              firstRunPreview:
+                value:
+                  inputs:
+                    ticker: AAPL
+                    review_date: '2026-03-19'
+                    trigger: 首次建模
+                    portfolio_slug: aapl_loop_demo
+                    analysis_tag: aapl_loop_min
+                    current_stance: 观察
+                    change_summary: 先建立基线版本，后续只比较真正变化。
+                    action: 不动
+                    action_reason: 先记录初始判断，不急于调整仓位。
+                    reflection: 先从空白页写判断，再回看历史版本，避免被旧叙事绑架。
+      responses:
+        '200':
+          description: Compiled preview of the stored template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextTemplateCompileRead'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/reports:
+    get:
+      tags: [Reports]
+      summary: List reports with workflow filters
+      operationId: listReports
+      description: |
+        Query report history for one reflection series. The main filters for the self-reflection
+        workflow are `ticker`, `tag`, `reviewType`, `portfolioSlug`, and `source`.
+      parameters:
+        - name: ticker
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by `metadata.analysis.ticker`.
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by `metadata.tags` membership.
+        - name: reviewType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by `metadata.analysis.reviewType`.
+        - name: portfolioSlug
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by `metadata.analysis.portfolioSlug`.
+        - name: source
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ReportSource'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Successful response ordered newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReportRead'
+    post:
+      tags: [Reports]
+      summary: Create external report directly
+      operationId: createExternalReport
+      description: |
+        Alternative path for third-party services that want to store a report directly without
+        generating it from a saved template. The `source` value is always `external`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreate'
+            examples:
+              directExternalReport:
+                value:
+                  name: AAPL 外部复盘草稿
+                  slug: aapl_external_review_20260326
+                  source: external
+                  content: |
+                    # AAPL 外部复盘
+
+                    这是由外部自动化系统直接写入的版本。
+                  metadata:
+                    tags:
+                      - aapl_loop_min
+                    analysis:
+                      ticker: AAPL
+                      portfolioSlug: aapl_loop_demo
+                      reviewType: weekly_review
+                      trigger: external_automation
+                      reviewDate: '2026-03-26'
+      responses:
+        '201':
+          description: Report created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRead'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/reports/compile/{templateId}:
+    post:
+      tags: [Reports]
+      summary: Generate compiled report from a stored template
+      operationId: compileReport
+      description: |
+        Compile a stored template and persist the resulting markdown as a new report with
+        `source=compiled`. This is the main endpoint used to create version 1, version 2,
+        and later reports in one reflection series.
+
+        Important workflow rule:
+        `inputs.analysis_tag` should match the tag placed in `metadata.tags` so that the next
+        compile can find the previous report through `reports.by_tag(inputs.analysis_tag).latest`.
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCompileCreate'
+            examples:
+              version1:
+                value:
+                  inputs:
+                    ticker: AAPL
+                    review_date: '2026-03-19'
+                    trigger: 首次建模
+                    portfolio_slug: aapl_loop_demo
+                    analysis_tag: aapl_loop_min
+                    current_stance: 观察
+                    change_summary: 先建立基线版本，后续只比较真正变化。
+                    action: 不动
+                    action_reason: 先记录初始判断，不急于调整仓位。
+                    reflection: 先从空白页写判断，再回看历史版本，避免被旧叙事绑架。
+                  metadata:
+                    tags:
+                      - aapl_loop_min
+                    description: AAPL 最小复盘流程演示：第 1 版
+                    analysis:
+                      ticker: AAPL
+                      portfolioSlug: aapl_loop_demo
+                      reviewType: weekly_review
+                      trigger: 首次建模
+                      reviewDate: '2026-03-19'
+                      versionGroup: aapl_loop_min
+              version2:
+                value:
+                  inputs:
+                    ticker: AAPL
+                    review_date: '2026-03-26'
+                    trigger: 周度复盘
+                    portfolio_slug: aapl_loop_demo
+                    analysis_tag: aapl_loop_min
+                    current_stance: 继续持有
+                    change_summary: 本周没有出现 thesis-breaking 事件，只把上周基线与本周事实做差异记录。
+                    action: 持有
+                    action_reason: 逻辑未破坏，暂时没有新的买卖触发条件。
+                    reflection: 价格波动不等于逻辑变化；先确认事实变化，再决定是否行动。
+                  metadata:
+                    tags:
+                      - aapl_loop_min
+                    description: AAPL 最小复盘流程演示：第 2 版
+                    analysis:
+                      ticker: AAPL
+                      portfolioSlug: aapl_loop_demo
+                      reviewType: weekly_review
+                      trigger: 周度复盘
+                      reviewDate: '2026-03-26'
+                      versionGroup: aapl_loop_min
+      responses:
+        '201':
+          description: Compiled report created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRead'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/reports/{slug}:
+    get:
+      tags: [Reports]
+      summary: Get report by slug
+      operationId: getReport
+      parameters:
+        - $ref: '#/components/parameters/ReportSlug'
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRead'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /api/v1/reports/{slug}/download:
+    get:
+      tags: [Reports]
+      summary: Download report markdown
+      operationId: downloadReport
+      parameters:
+        - $ref: '#/components/parameters/ReportSlug'
+      responses:
+        '200':
+          description: Raw markdown content.
+          content:
+            text/markdown:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+components:
+  parameters:
+    PortfolioId:
+      name: portfolioId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Numeric portfolio identifier.
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Numeric stored-template identifier.
+    ReportSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Stable report slug returned from report create or compile calls.
+
+  responses:
+    ErrorEnvelope:
+      description: Business-rule or resource-level API error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationError:
+      description: Request validation error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorEnvelope'
+
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties:
+        type: string
+      example:
+        status: ok
+
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+      example:
+        code: duplicate_template_name
+        message: Template name already exists
+        details: []
+
+    ValidationErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ReportSource:
+      type: string
+      enum: [compiled, uploaded, external]
+
+    PortfolioCreate:
+      type: object
+      additionalProperties: false
+      required: [name, slug, baseCurrency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Must start with a letter and contain only lowercase letters, digits, and underscores.
+        description:
+          type: string
+          nullable: true
+        baseCurrency:
+          type: string
+          minLength: 3
+          maxLength: 3
+
+    PortfolioRead:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - baseCurrency
+        - positionCount
+        - balanceCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        baseCurrency:
+          type: string
+        positionCount:
+          type: integer
+        balanceCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PositionCreate:
+      type: object
+      additionalProperties: false
+      required: [symbol, quantity, averageCost]
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+          maxLength: 32
+        name:
+          type: string
+          nullable: true
+          maxLength: 120
+        quantity:
+          type: string
+          description: Decimal serialized as string.
+        averageCost:
+          type: string
+          description: Decimal serialized as string.
+
+    PositionRead:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - portfolioId
+        - symbol
+        - name
+        - quantity
+        - averageCost
+        - currency
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        portfolioId:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+          nullable: true
+        quantity:
+          type: string
+        averageCost:
+          type: string
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TextTemplateCreate:
+      type: object
+      additionalProperties: false
+      required: [name, content]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        content:
+          type: string
+          minLength: 1
+
+    TextTemplateRead:
+      type: object
+      additionalProperties: false
+      required: [id, name, content, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TextTemplateStoredCompile:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          $ref: '#/components/schemas/RuntimeInputs'
+
+    TextTemplateCompileRead:
+      type: object
+      additionalProperties: false
+      required: [id, name, compiled]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        compiled:
+          type: string
+
+    RuntimeInputs:
+      type: object
+      additionalProperties:
+        type: string
+      description: |
+        Runtime input map used by `inputs.*` placeholders. Missing required inputs
+        may resolve to explicit sentinel text such as `[Missing input: ticker]`.
+
+    PlaceholderTreeRead:
+      type: object
+      additionalProperties: false
+      required: [portfolios, reports]
+      properties:
+        portfolios:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceholderPortfolioRead'
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceholderReportRead'
+
+    PlaceholderPortfolioRead:
+      type: object
+      additionalProperties: false
+      required: [slug, name, baseCurrency, positions]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        baseCurrency:
+          type: string
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceholderPositionRead'
+
+    PlaceholderPositionRead:
+      type: object
+      additionalProperties: false
+      required: [symbol, name]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+          nullable: true
+
+    PlaceholderReportRead:
+      type: object
+      additionalProperties: false
+      required: [name, createdAt]
+      properties:
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ReportAnalysisMetadata:
+      type: object
+      additionalProperties: true
+      properties:
+        ticker:
+          type: string
+          nullable: true
+        portfolioSlug:
+          type: string
+          nullable: true
+        reviewType:
+          type: string
+          nullable: true
+        trigger:
+          type: string
+          nullable: true
+        reviewDate:
+          type: string
+          nullable: true
+        versionGroup:
+          type: string
+          nullable: true
+
+    ReportMetadata:
+      type: object
+      additionalProperties: true
+      properties:
+        author:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+          default: []
+        analysis:
+          anyOf:
+            - $ref: '#/components/schemas/ReportAnalysisMetadata'
+            - type: 'null'
+
+    ReportCompileCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        metadata:
+          $ref: '#/components/schemas/ReportMetadata'
+        inputs:
+          $ref: '#/components/schemas/RuntimeInputs'
+
+    ReportCreate:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        name:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+        slug:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+        source:
+          type: string
+          enum: [external]
+          default: external
+        content:
+          type: string
+          minLength: 1
+        metadata:
+          $ref: '#/components/schemas/ReportMetadata'
+
+    ReportRead:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - source
+        - content
+        - metadata
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        source:
+          $ref: '#/components/schemas/ReportSource'
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Extensible metadata envelope returned by the backend.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
