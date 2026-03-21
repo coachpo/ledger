@@ -1,6 +1,6 @@
 ---
 name: submitting-ledger-sell-trades
-description: Use when submitting a SELL trading operation to the local Ledger app for an existing portfolio symbol, especially when the request is phrased as selling from a position, starts from a portfolio slug, or references the narrower self_reflection workflow YAML.
+description: Use when submitting a SELL trading operation to the local Ledger app for an existing portfolio symbol, especially when the request is phrased as selling from a position or starts from a portfolio slug.
 ---
 
 # Submitting Ledger SELL Trades
@@ -12,7 +12,7 @@ Submit SELL operations to Ledger only. A sell targets the portfolio trade endpoi
 1. **Use the live trade surface**
    - Trading writes go to `POST /api/v1/portfolios/{portfolioId}/trading-operations`.
    - Do not use `/positions` as the write surface for a sell.
-   - `docs/self_reflection_template_workflow_openapi.yaml` does not define BUY or SELL endpoints.
+   - The live trade contract lives in the backend route, schema, service, and test files below.
    - Verify against the live app files when needed: `backend/app/api/trading_operations.py`, `backend/app/schemas/trading_operation.py`, `backend/app/services/trading_operation_service.py`, and `backend/tests/test_api.py`.
 
 2. **Resolve identifiers before POST**
@@ -59,7 +59,7 @@ Submit SELL operations to Ledger only. A sell targets the portfolio trade endpoi
 ## Must Not Do
 
 - Do not POST to `/positions` to represent a sell
-- Do not rely on `docs/self_reflection_template_workflow_openapi.yaml` for trade endpoints
+- Do not rely on narrow workflow guides for trade endpoints
 - Do not use a WITHDRAWAL balance
 - Do not invent quantity, price, ids, or timestamps
 - Do not auto-pick a deposit balance when the user has not clearly chosen one

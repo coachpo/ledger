@@ -1,17 +1,17 @@
 ---
 name: submitting-ledger-buy-trades
-description: Use when submitting a BUY trading operation to the local Ledger app for a portfolio symbol, especially when the request starts from a portfolio slug, balance label, or the narrower self_reflection workflow YAML.
+description: Use when submitting a BUY trading operation to the local Ledger app for a portfolio symbol, especially when the request starts from a portfolio slug or balance label.
 ---
 
 # Submitting Ledger BUY Trades
 
-Submit BUY operations to Ledger only. Do not create positions directly, and do not treat the self-reflection workflow OpenAPI file as the trade contract.
+Submit BUY operations to Ledger only. Do not create positions directly, and do not treat narrow workflow guides as the trade contract.
 
 ## Workflow
 
 1. **Use the live trade surface**
    - Trading writes go to `POST /api/v1/portfolios/{portfolioId}/trading-operations`.
-   - `docs/self_reflection_template_workflow_openapi.yaml` does not define BUY or SELL endpoints.
+   - The live trade contract lives in the backend route, schema, service, and test files below.
    - Verify against the live app files when needed: `backend/app/api/trading_operations.py`, `backend/app/schemas/trading_operation.py`, `backend/app/services/trading_operation_service.py`, and `backend/tests/test_api.py`.
 
 2. **Resolve identifiers before POST**
@@ -55,7 +55,7 @@ Submit BUY operations to Ledger only. Do not create positions directly, and do n
 ## Must Not Do
 
 - Do not POST to `/positions` to represent a buy
-- Do not rely on `docs/self_reflection_template_workflow_openapi.yaml` for trade endpoints
+- Do not rely on narrow workflow guides for trade endpoints
 - Do not use a WITHDRAWAL balance
 - Do not invent quantity, price, ids, or timestamps
 - Do not auto-pick a deposit balance when the user has not clearly chosen one
