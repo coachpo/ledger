@@ -13,7 +13,6 @@ Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/`
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only init/report-upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries and dependency wiring
 - `backend/app/services/AGENTS.md` — service ownership, template/report workflows, quote-provider wiring
-- `backend/app/services/providers/AGENTS.md` — dormant provider adapter contracts
 - `backend/app/schemas/AGENTS.md` — Pydantic validation and camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables
 - `backend/app/repositories/AGENTS.md` — query/repository patterns
@@ -56,7 +55,7 @@ ledger/
 | Backend template flow | `backend/app/api/templates.py`, `backend/app/services/template_compiler_service.py` | placeholder tree, inline compile, stored template compile |
 | Backend reports flow | `backend/app/api/reports.py`, `backend/app/services/report_service.py`, `backend/app/schemas/report.py` | compile from template, upload markdown, download by slug |
 | Backend backtests flow | `backend/app/api/backtests.py`, `backend/app/api/backtest_callbacks.py`, `backend/app/services/backtest_service.py`, `backend/app/services/backtest_cycle_service.py`, `backend/app/services/backtest_engine.py` | CRUD lifecycle, callback ingress, alternate webhook-cycle code, current direct-engine runner, results aggregation |
-| Backend DB upgrades | `backend/app/db/session.py` | portfolio/report upgrades, balance `operation_type`, market-quote `name`, obsolete-table cleanup |
+| Backend DB upgrades | `backend/app/db/upgrades.py`, `backend/app/db/session.py` | `session.py` composes startup init while `upgrades.py` owns portfolio/report upgrades, balance `operation_type`, market-quote `name`, and obsolete-table cleanup |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_backtests_api.py`, `backend/tests/test_backtest_engine.py` | CRUD, templates, reports, backtests, market-data fallback, cache behavior, legacy-schema upgrades |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle |
 | Frontend API/type contracts | `frontend/src/lib/api/AGENTS.md`, `frontend/src/lib/types/AGENTS.md` | request helpers, upload/download rules, and shared wire types |
@@ -72,7 +71,7 @@ ledger/
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
 | `api_router` | `backend/app/api/router.py` | mounts all `/api/v1` routers, including templates, reports, and backtests |
-| `init_db` | `backend/app/db/session.py` | creates tables and repairs supported legacy schemas |
+| `init_db` | `backend/app/db/session.py` | composes table creation, validation, legacy upgrades, and interrupted-backtest repair |
 | `PositionService` | `backend/app/services/position_service.py` | position CRUD plus symbol-name cache lookups |
 | `TemplateCompilerService` | `backend/app/services/template_compiler_service.py` | resolves `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholders against live data |
 | `ReportService` | `backend/app/services/report_service.py` | report CRUD, upload validation, unique slug/name generation |
@@ -140,7 +139,7 @@ git submodule update --init --recursive
 
 ## NOTES
 - `start.sh` is the authoritative local orchestrator; unlike the raw backend/frontend dev defaults, it binds backend/frontend to `28000/25173` and injects `VITE_API_BASE_URL` for the frontend process.
-- Supported schema repair is code-based in `backend/app/db/session.py`; the leftover `backend/alembic/` tree is not the source of truth.
+- Supported schema repair is code-based in `backend/app/db/`; there is no Alembic migration source of truth in this repo.
 - Playwright still runs against backend `8001` and frontend `4173`, so route/E2E issues should always be checked in that environment too; the Playwright backend startup script also sets `BACKTEST_TEST_MODE=1`, but the current launched run path still completes through `BacktestService.run_backtest()`'s direct deterministic loop.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - CI currently runs backend lint/format/type/test checks, then frontend lint/build/E2E, then an amd64 Docker smoke build. Local frontend typecheck and unit tests are available even though they are not both enforced in `ci.yml` yet, and both report and backtest flows have dedicated E2E coverage in `frontend/e2e/reports.spec.ts` and `frontend/e2e/backtests.spec.ts`.
