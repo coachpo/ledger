@@ -1,5 +1,7 @@
 # Backtest Module Implementation Plan
 
+> Status: Historical implementation plan. The backtest module described here is now live in the repository; keep this file as rollout history and execution detail, not the primary runtime contract.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the approved backtest module that runs portfolio-level historical simulations, stores per-cycle analysis reports, executes attributed simulated trades, and exposes pollable results plus charts in the frontend.

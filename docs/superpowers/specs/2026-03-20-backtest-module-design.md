@@ -1,6 +1,6 @@
 # Backtest Module Design Spec
 
-> Status: Approved design. Date: 2026-03-20.
+> Status: Historical design reference. Approved 2026-03-20, and much of it shipped by 2026-03-21 (`8fd7fee`), but this file still contains design-time detail that may drift from the live contract.
 
 ## Purpose
 

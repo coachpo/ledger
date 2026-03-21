@@ -1,21 +1,22 @@
 # Technical Specification
 
-> Status: Current live-code reference as of 2026-03-18 (`c175a98`).
+> Status: Current live-code reference as of 2026-03-21 (`8fd7fee`).
 
 ## Overview
 
-Ledger is an auth-less portfolio application with three live capabilities:
+Ledger is an auth-less portfolio application with four live capabilities:
 
 - portfolio tracking and simulation for balances, positions, market context, CSV imports, and manual operations;
 - text-template management with server-side placeholder resolution against live portfolio data and persisted reports;
-- markdown report generation, direct JSON creation, upload, download, and edit flows built on top of the template system.
+- markdown report generation, direct JSON creation, upload, download, and edit flows built on top of the template system;
+- backtests that run historical LLM-guided simulations over a saved portfolio and persist progress plus result curves.
 
 Legacy stock-analysis tables and provider helper code still exist as upgrade-cleanup or dormant reference material, but they are not part of the live API or frontend router.
 
 ## Scope Boundaries
 
-- The live API surface includes portfolios, balances, positions, market data, trading operations, templates, and reports.
-- There is no live stock-analysis route tree, snippet manager, or response viewer.
+- The live API surface includes portfolios, balances, positions, market data, trading operations, templates, reports, and backtests.
+- There is no general-purpose stock-analysis route tree, snippet manager, or response viewer outside the dedicated backtest workflow.
 - Templates are simple text documents with one `content` field, not multi-step workflows.
 - Quote and history providers are best-effort enrichment, not sources of truth.
 
@@ -31,6 +32,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 
 - Playwright starts its own backend on `8001` and frontend on `4173`.
 - This environment is intentionally separate from `start.sh` so E2E runs stay predictable.
+- The Playwright backend startup script sets `BACKTEST_TEST_MODE=1` so backtest flows stay deterministic under E2E.
 
 ## Backend Architecture
 
@@ -59,6 +61,8 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `TextTemplateService`: global template CRUD.
 - `TemplateCompilerService`: `{{portfolios.<slug>...}}` and `{{reports.<name>...}}` placeholder resolution, compile preview, and report-content re-compilation.
 - `ReportService`: compiled-report creation, direct JSON report creation, markdown uploads, slug/name generation, content updates, and download lookups.
+- `BacktestService`: backtest CRUD, default-template creation, deposit-balance selection, cancellation, delete cleanup, and background launch.
+- `BacktestEngine`: NYSE schedule generation, parquet-backed history loading, OpenAI Responses calls, report persistence, simulated trade execution, and result aggregation.
 
 ## Frontend Architecture
 
@@ -66,7 +70,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
 - Routing is flat under `frontend/src/routes.ts` and mounted through `Layout`.
-- The live route set is `/`, `/portfolios`, `/portfolios/:portfolioId`, `/templates`, `/templates/new`, `/templates/:templateId/edit`, `/reports`, and `/reports/:slug`.
+- The live route set is `/`, `/portfolios`, `/portfolios/:portfolioId`, `/templates`, `/templates/new`, `/templates/:templateId/edit`, `/reports`, `/reports/:slug`, `/backtests`, `/backtests/new`, and `/backtests/:backtestId`.
 
 ### State Management
 
@@ -85,6 +89,9 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - `TemplateEditorPage` handles inline compile preview, placeholder insertion, markdown formatting, save flows, and direct report generation for saved templates.
 - `ReportListPage` manages report inventory, template-driven generation, markdown uploads, and delete/download actions.
 - `ReportDetailPage` handles markdown rendering, textarea edits, and markdown downloads.
+- `BacktestListPage` shows run inventory, progress, terminal delete actions, and completed-return summaries.
+- `BacktestConfigPage` handles existing or new portfolio launch flows, template selection or default-template creation, benchmark selection, and per-run LLM plus commission settings.
+- `BacktestDetailPage` polls active runs, renders recent activity while running, and shows KPI cards, result curves, trade logs, and report links after completion.
 
 ## Domain Rules
 
@@ -134,6 +141,15 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - Reports are addressed by `slug` in the API and frontend routes, but by `name` inside template placeholders.
 - Updating a report only changes `content`; report metadata is immutable after creation.
 
+### Backtests
+
+- Backtests are addressed by numeric id and move through `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, and `CANCELLED` states.
+- Launch requires an existing portfolio, a deposit balance, one or more benchmark symbols, and per-run LLM connection settings.
+- `BacktestService` persists the selected deposit balance id so trade execution stays anchored to one cash source.
+- `BacktestEngine` writes `recent_activity` during active runs and stores completed `results` as JSON when the run finishes.
+- Generated analysis reports are tagged with `backtest_<id>` and simulated trades are written with `trading_operations.backtest_id` for cleanup and attribution.
+- Startup repair marks interrupted `PENDING` or `RUNNING` rows failed so the UI never polls a dead job forever.
+
 ## Template System
 
 ### Placeholder Grammar
@@ -171,7 +187,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 - Valid dynamic report selectors that match no reports resolve to an empty string.
 - Malformed dynamic report selectors resolve to an explicit sentinel string.
 - Report-content recursion uses cycle detection and renders `[Circular report reference: ...]` when a loop is found.
-- Unknown roots, slugs, symbols, or fields render explicit sentinel text such as `[Unknown field: ...]`.
+- Unknown roots and malformed field paths render explicit sentinel text such as `[Unknown field: ...]`, while valid dynamic selectors that match no portfolio or report resolve to an empty string.
 
 ### Placeholder Tree Endpoint
 
@@ -216,9 +232,18 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 3. `ReportService` persists the markdown as a new `reports` row with `source="external"`.
 4. The report becomes available through the existing slug-based read, list, update, delete, and download routes.
 
+### Backtest Launch Flow
+
+1. User opens `/backtests/new` and either selects an existing portfolio or creates a new one plus an initial cash balance.
+2. Frontend posts the validated payload to `POST /api/v1/backtests` with either an existing template id or `createTemplate=true`.
+3. `BacktestService` persists the `backtests` row, selects a deposit balance, optionally creates the default template, and submits `BacktestEngine` to the executor.
+4. `BacktestDetailPage` polls `GET /api/v1/backtests/{id}` every 5 seconds while the run is active.
+5. `BacktestEngine` writes reports, trades, recent activity, and final result curves back into the shared database.
+
 ## CI And Verification
 
 - Backend CI runs `ruff`, `black --check`, `isort --check-only`, `mypy`, and `pytest`.
 - Frontend CI runs `pnpm lint`, `pnpm build`, and `pnpm test:e2e`.
 - Local validation additionally includes `pnpm typecheck` and `pnpm test:run`.
 - Docker smoke builds run after both quality jobs and build `backend` and `frontend` images for `linux/amd64`.
+- High-signal backtest regression coverage lives in `backend/tests/test_backtests_api.py`, `backend/tests/test_backtest_engine.py`, and `frontend/e2e/backtests.spec.ts`.

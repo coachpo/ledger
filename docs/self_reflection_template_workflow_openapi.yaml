@@ -9,6 +9,10 @@ info:
     service needs to run the versioned self-reflection stock-analysis workflow described
     in `docs/self_reflection_template_workflow_guide.md`.
 
+    Ledger also ships a separate `/api/v1/backtests` surface for historical simulation,
+    but that feature is intentionally out of scope for this narrower template/report
+    workflow document.
+
     It is intentionally narrower than the full backend OpenAPI document. The focus is:
 
     1. prepare or inspect one portfolio context,

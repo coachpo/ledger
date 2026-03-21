@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Current live-code reference as of 2026-03-18 (`c175a98`).
+> Status: Current live-code reference as of 2026-03-21 (`8fd7fee`).
 
 ## Conventions
 
@@ -321,7 +321,7 @@ Placeholder tree response sketch:
 
 Notes:
 
-- Placeholder resolution is permissive: unknown roots, slugs, symbols, or fields render explicit sentinel text rather than returning a validation error.
+- Placeholder resolution is permissive: unknown roots and malformed field access render explicit sentinel text, while valid dynamic selectors that match no portfolio or report resolve to an empty string.
 - Supported live namespaces start at `inputs`, `portfolios`, and `reports`.
 - `reports.<name>.content` re-compiles stored report markdown and returns `[Circular report reference: ...]` if a report chain loops.
 - Runtime inputs are available as `inputs.<name>` and may be used directly or inside selector arguments.
@@ -428,6 +428,105 @@ Notes:
 - Report lists remain ordered by `createdAt DESC, id DESC` whether filters are applied or not.
 - Report updates are content-only; `name`, `slug`, `source`, and metadata are immutable after creation.
 - Downloads return `text/markdown; charset=utf-8` with `Content-Disposition: attachment; filename="{slug}.md"`.
+
+## Backtests
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/v1/backtests` | List backtests, newest first |
+| `POST` | `/api/v1/backtests` | Create and launch a backtest |
+| `GET` | `/api/v1/backtests/{backtestId}` | Read one backtest by id |
+| `POST` | `/api/v1/backtests/{backtestId}/cancel` | Cancel a pending or running backtest |
+| `DELETE` | `/api/v1/backtests/{backtestId}` | Delete a terminal backtest |
+
+Create request example:
+
+```json
+{
+  "name": "AAPL Monthly Backtest",
+  "portfolioId": 5,
+  "templateId": 12,
+  "createTemplate": false,
+  "templateName": null,
+  "frequency": "MONTHLY",
+  "startDate": "2024-01-02",
+  "endDate": "2024-03-29",
+  "llmBaseUrl": "http://localhost:11434/v1",
+  "llmApiKey": "secret-token",
+  "llmModel": "qwen2.5:72b",
+  "priceMode": "CLOSING_PRICE",
+  "llmPriceSuccessRate": null,
+  "commissionMode": "ZERO",
+  "commissionValue": "0",
+  "benchmarkSymbols": ["^GSPC"]
+}
+```
+
+Read response sketch:
+
+```json
+{
+  "id": 7,
+  "portfolioId": 5,
+  "portfolioName": "Core Portfolio",
+  "templateId": 12,
+  "depositBalanceId": 9,
+  "name": "AAPL Monthly Backtest",
+  "status": "COMPLETED",
+  "frequency": "MONTHLY",
+  "startDate": "2024-01-02",
+  "endDate": "2024-03-29",
+  "currentCycleDate": "2024-03-29",
+  "totalCycles": 3,
+  "completedCycles": 3,
+  "llmBaseUrl": "http://localhost:11434/v1",
+  "llmApiKey": "***",
+  "llmModel": "qwen2.5:72b",
+  "priceMode": "CLOSING_PRICE",
+  "llmPriceSuccessRate": null,
+  "commissionMode": "ZERO",
+  "commissionValue": "0",
+  "benchmarkSymbols": ["^GSPC"],
+  "recentActivity": null,
+  "results": {
+    "portfolio": {
+      "startingValue": "25000.00",
+      "endingValue": "26310.44",
+      "totalReturn": "0.0524176",
+      "annualizedReturn": "0.2289253",
+      "maxDrawdown": "-0.0312",
+      "sharpeRatio": "1.42",
+      "totalTrades": 4,
+      "winRate": "0.75",
+      "totalCommission": "0"
+    },
+    "benchmarks": {
+      "^GSPC": {
+        "startingPrice": "4769.83",
+        "endingPrice": "5254.35",
+        "totalReturn": "0.1015809"
+      }
+    },
+    "equityCurve": [{ "date": "2024-01-31", "value": "25110.00" }],
+    "benchmarkCurves": {
+      "^GSPC": [{ "date": "2024-01-31", "value": "1.0142" }]
+    },
+    "drawdownCurve": [{ "date": "2024-01-31", "value": "0" }],
+    "trades": []
+  },
+  "errorMessage": null,
+  "createdAt": "2026-03-21T08:00:00Z",
+  "updatedAt": "2026-03-21T08:03:00Z"
+}
+```
+
+Notes:
+
+- `llmApiKey` is always redacted in read responses.
+- `POST /api/v1/backtests` launches the run immediately and returns the persisted backtest row with `status="PENDING"`.
+- `POST /api/v1/backtests/{id}/cancel` is only valid for `PENDING` or `RUNNING` rows.
+- `DELETE /api/v1/backtests/{id}` is only valid after the backtest reaches `COMPLETED`, `FAILED`, or `CANCELLED`.
+- Backtest dates must be in the past, benchmark symbols are normalized to uppercase, and `priceMode="LLM_DECIDED"` requires `llmPriceSuccessRate` between `0` and `1`.
 
 ## HTTP Status Guidelines
 

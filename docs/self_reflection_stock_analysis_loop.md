@@ -1,6 +1,6 @@
 # Self-Reflection Stock Analysis Loop
 
-> Status: Strategy/process reference. The current Ledger codebase provides template-backed report history, report filters, external report creation, and dynamic report selectors, but it still does not run scheduling or analysis automation internally.
+> Status: Strategy/process reference. The current Ledger codebase provides template-backed report history, report filters, external report creation, dynamic report selectors, and an experimental backtest module for historical simulation, but it still does not run general-purpose scheduling or autonomous analysis automation internally.
 
 ## Purpose
 

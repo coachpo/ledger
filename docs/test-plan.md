@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Current automated coverage reference as of 2026-03-18 (`c175a98`).
+> Status: Current automated coverage reference as of 2026-03-21 (`8fd7fee`).
 
 This file reflects the existing automated surface only. The documentation refresh did not change application code, add new tests, or promote local-only checks into CI.
 
@@ -31,6 +31,18 @@ The backend suite is the highest-signal regression layer and covers:
 - report compile/upload/update/delete/download flows plus placeholder-tree inclusion
 - supported legacy schema upgrades, including dropped stock-analysis tables, balance `operation_type` backfill, and report `slug`/`source`/`metadata` backfill
 
+### Backend: `backend/tests/test_backtests_api.py` and `backend/tests/test_backtest_engine.py`
+
+Backtest-specific coverage includes:
+
+- `backtests` table creation and `trading_operations.backtest_id` schema upgrades
+- create/list/read/cancel/delete backtest API flows
+- largest-deposit-balance selection, default-template creation, and deterministic launch wiring
+- startup crash recovery for interrupted `PENDING` or `RUNNING` rows
+- NYSE schedule generation for `DAILY`, `WEEKLY`, and `MONTHLY` backtests
+- parquet market-data cache write, reuse, and append behavior
+- prompt construction, deterministic OpenAI responses, report tagging, trade attribution, and result aggregation
+
 ### Frontend Unit And Component Tests
 
 Implemented files:
@@ -47,6 +59,13 @@ Implemented files:
 - `frontend/src/components/portfolios/trading-operation-form.test.tsx`
 - `frontend/src/components/portfolios/record-trading-operation-dialog.test.tsx`
 - `frontend/src/components/portfolios/portfolio-trades-section.test.tsx`
+- `frontend/src/lib/types/backtest.test.ts`
+- `frontend/src/hooks/use-backtests.test.ts`
+- `frontend/src/pages/backtests/list.test.tsx`
+- `frontend/src/pages/backtests/config.test.tsx`
+- `frontend/src/pages/backtests/detail.test.tsx`
+- `frontend/src/components/backtests/equity-curve-chart.test.tsx`
+- `frontend/src/components/backtests/trade-log-table.test.tsx`
 
 Covered behaviors:
 
@@ -57,6 +76,7 @@ Covered behaviors:
 | `markdown-format.test.ts` | Prettier-backed markdown normalization while preserving `{{placeholders}}` |
 | `portfolio-analytics.test.ts` | quote enrichment, market value, P&L, allocation math, withdrawal sign handling |
 | `query-keys.test.ts` | id normalization, market-history symbol normalization, lookup-key normalization |
+| backtest hook/type/page/component tests | backtest wire contract guards, 5s polling behavior, config validation, result rendering, chart toggles, and trade-log sorting |
 | `templates/editor.test.tsx` | dynamic report selector guidance and click-to-insert placeholder behavior |
 | portfolio form/dialog tests | portfolio create/edit validation and UI behavior |
 | trading/position component tests | side-specific form behavior, position entry, trade recording, and trades table rendering |
@@ -68,6 +88,7 @@ Implemented Playwright specs:
 - `frontend/e2e/smoke.spec.ts`
 - `frontend/e2e/functional.spec.ts`
 - `frontend/e2e/reports.spec.ts`
+- `frontend/e2e/backtests.spec.ts`
 
 Covered behaviors:
 
@@ -76,6 +97,7 @@ Covered behaviors:
 | `smoke.spec.ts` | app boot, dashboard visibility, sidebar links, portfolios route navigation |
 | `functional.spec.ts` | portfolio creation flow, portfolio list render, add-position symbol lookup, manual name fallback when lookup fails |
 | `reports.spec.ts` | reports sidebar nav, generate from template, upload with metadata, edit/download/delete behavior, template-editor generate shortcut |
+| `backtests.spec.ts` | create backtest flow, polling to terminal state, result visibility, terminal delete cleanup |
 
 ## Test Environment Matrix
 
@@ -83,7 +105,7 @@ Covered behaviors:
 |---|---|
 | Backend integration | Temporary PostgreSQL databases created and dropped by pytest fixtures |
 | Frontend unit/component | jsdom with mocked `ResizeObserver`, `matchMedia`, and `IntersectionObserver` |
-| Playwright E2E | Real backend on `8001`, real frontend on `4173`, PostgreSQL-backed flows |
+| Playwright E2E | Real backend on `8001` with `BACKTEST_TEST_MODE=1`, real frontend on `4173`, PostgreSQL-backed flows |
 | Manual local full stack | `start.sh` on backend `28000`, frontend `25173`, PostgreSQL `25432` |
 
 ## CI Coverage
@@ -116,7 +138,7 @@ Local-only but recommended checks:
 
 ```bash
 # Backend
-cd backend && uv run pytest tests/test_api.py
+cd backend && uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_backtest_engine.py
 
 # Frontend unit/component tests
 cd frontend && pnpm test:run
@@ -136,4 +158,5 @@ cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run && pnp
 - Add route-level frontend tests for `PortfolioDetailPage` degraded quote-warning states.
 - Add direct tests for quote warning rendering and cached-quote fallback in portfolio UI.
 - Add route-level frontend tests for report upload validation edge cases and report detail error states.
+- Add more browser-level coverage for backtest failure, cancellation, and `LLM_DECIDED` pricing branches.
 - Add a root-level smoke check around `start.sh` once CI support for Docker-in-Docker orchestration is acceptable.

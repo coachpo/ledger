@@ -1,10 +1,10 @@
 # Requirements Document
 
-> Status: Current release requirements reference as of 2026-03-18 (`c175a98`).
+> Status: Current release requirements reference as of 2026-03-21 (`8fd7fee`).
 
 ## Purpose
 
-Define the live product requirements for Ledger as shipped today. This release is a trusted single-user portfolio tracker with text-template rendering, not a stock-analysis platform.
+Define the live product requirements for Ledger as shipped today. This release is a trusted single-user portfolio tracker with template, report, and experimental backtest workflows, not a general-purpose stock-analysis conversation platform.
 
 ## Product Scope
 
@@ -18,12 +18,13 @@ Define the live product requirements for Ledger as shipped today. This release i
 - Simulated `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` operations.
 - Global text-template CRUD plus placeholder browsing and compile preview.
 - Report generation from templates, direct JSON report creation, markdown upload, slug-based report CRUD, and markdown download.
+- Historical backtests with create/list/read/cancel/delete flows, benchmark comparison, recent activity, and result curves.
 
 ### Out Of Scope
 
 - Authentication, authorization, or multi-tenant access control.
 - Realtime quotes, websocket streaming, broker connectivity, or live order routing.
-- Stock-analysis conversations, snippets, responses, versions, or provider orchestration.
+- General stock-analysis conversations, snippets, responses, versions, or provider orchestration outside the shipped backtest flow.
 - Scheduling, alerts, notifications, or autonomous loops.
 - Tax lots, FIFO, realized tax reporting, or accounting exports.
 
@@ -141,6 +142,21 @@ Define the live product requirements for Ledger as shipped today. This release i
 - Report update payloads must allow editing `content` only; `name`, `slug`, `source`, and metadata are immutable after creation.
 - Downloads must return the stored markdown content as `text/markdown` with `Content-Disposition: attachment; filename="{slug}.md"`.
 
+### FR-9 Backtest Management
+
+- The system must let the user create, list, read, cancel, and delete backtests through `/api/v1/backtests`.
+- Creating a backtest must require `name`, `portfolioId`, schedule `frequency`, past-only `startDate` and `endDate`, LLM connection settings, commission settings, and at least one benchmark symbol.
+- Creating a backtest must accept either an existing `templateId` or `createTemplate=true` with an optional `templateName` for default-template creation.
+- Backtests must use a deposit balance and reject launch when the selected portfolio has no deposit balances.
+- When multiple deposit balances exist, the system must persist the chosen `depositBalanceId` on the backtest row.
+- The backtest lifecycle must use the statuses `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, and `CANCELLED`.
+- Cancelling a backtest must only be allowed while the run is `PENDING` or `RUNNING`.
+- Deleting a backtest must only be allowed after the run reaches a terminal state.
+- Reading a backtest must redact the stored LLM API key while still returning the rest of the per-run LLM configuration.
+- Running backtests must expose `currentCycleDate`, `totalCycles`, `completedCycles`, and `recentActivity` so the UI can show progress.
+- Completed backtests must persist result payloads that include portfolio metrics, benchmark metrics, equity and drawdown curves, and a trade log with optional `reportSlug` links.
+- Simulated trades must stay attributable to their originating backtest so terminal delete can clean up both reports and trading operations.
+
 ## Non-Functional Requirements
 
 - Frontend stack: React 19, Vite, TanStack Query 5, React Router 7, shadcn/ui, Vitest, Playwright.
@@ -150,6 +166,7 @@ Define the live product requirements for Ledger as shipped today. This release i
 - External JSON must stay camelCase and timestamps must serialize as ISO 8601 UTC strings.
 - The backend must return structured validation or business-rule errors for bad input.
 - The product must degrade gracefully when quote-provider calls fail by preserving truthful local state.
+- Historical backtest execution may be background and long-running, but interrupted `PENDING` or `RUNNING` jobs must not remain silently stuck after a restart.
 
 ## Acceptance Criteria
 
@@ -167,3 +184,4 @@ Define the live product requirements for Ledger as shipped today. This release i
 - A template can reference `reports.<name>.content` and receive circular-reference sentinels instead of infinite recursion.
 - A template can reference dynamic report selectors such as `reports.latest("AAPL").content` and receive empty output when no report matches.
 - A user can reuse one saved template across multiple rounds by changing runtime inputs instead of editing the template body.
+- A user can launch a backtest, poll it until completion, inspect benchmark-relative metrics and trade history, cancel an active run, and delete a terminal run.

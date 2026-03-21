@@ -1,10 +1,10 @@
 # Product Requirements Document (PRD)
 
-> Status: Current product-scope reference as of 2026-03-18 (`c175a98`).
+> Status: Current product-scope reference as of 2026-03-21 (`8fd7fee`).
 
 ## Product Summary
 
-Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, reusable text templates, and persisted markdown reports generated from templates or uploaded directly.
+Ledger is an auth-less portfolio workspace for a single trusted operator. The live product tracks portfolios, deposit and withdrawal balances, aggregate stock positions, delayed market context, simulated trading operations, reusable text templates, persisted markdown reports generated from templates or uploaded directly, and an experimental backtest workspace for historical LLM-guided simulations.
 
 ## Problem Statement
 
@@ -31,6 +31,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Preserve deterministic portfolio math for `BUY`, `SELL`, `DIVIDEND`, and `SPLIT` flows.
 - Let the user author templates in the UI and preview compiled output before saving or reusing it.
 - Let the user turn template output into point-in-time report snapshots, edit uploaded or generated markdown, and download reports without leaving the app.
+- Let the user launch an experimental backtest over a saved portfolio and compare simulated results against benchmarks without leaving the product.
 - Keep local persistence authoritative even when provider lookups fail.
 
 ## Non-Goals
@@ -39,7 +40,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Live broker integration, order routing, or automatic trade execution.
 - Realtime quote streaming, alerts, or background schedulers.
 - Tax-lot accounting, FIFO, realized tax reporting, or accounting exports.
-- Stock-analysis conversations, response history, snippets, or provider-orchestrated research flows.
+- General stock-analysis conversations, response history, snippets, or provider-orchestrated research flows outside the shipped template, report, and backtest surfaces.
 
 ## Product Areas
 
@@ -86,6 +87,12 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Browse, edit, download, and delete reports from dedicated list/detail routes.
 - Reuse reports inside templates through `{{reports.<name>...}}` placeholders.
 
+### 8. Backtests Workspace
+
+- Launch historical simulations against an existing or newly created portfolio.
+- Configure schedule, benchmarks, LLM endpoint/model settings, price mode, and commission mode per run.
+- Monitor in-progress runs, inspect recent activity, and review completed equity, drawdown, and trade-log results.
+
 ## Core User Stories
 
 - As a user, I want separate portfolios for different strategies so their balances, positions, and trades stay isolated.
@@ -95,6 +102,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - As a user, I want delayed quotes and price history for context while keeping my manually entered records authoritative.
 - As a user, I want reusable templates with `{{placeholders}}` so I can render live portfolio summaries without copy-paste work.
 - As a user, I want generated or uploaded markdown reports so I can keep point-in-time deliverables alongside my live templates.
+- As a user, I want to backtest a saved portfolio over historical market data so I can inspect simulated results, benchmark comparisons, and per-cycle decisions.
 
 ## Experience Principles
 
@@ -140,6 +148,18 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 
 - Markdown read mode, inline text edit mode, and file download from a slug-addressed route.
 
+### Backtests List
+
+- Inventory of launched simulations with progress, terminal-state cleanup, and completed return summaries.
+
+### Backtest Configuration
+
+- Existing/new portfolio flow, template selection or default-template creation, benchmark selection, and per-run LLM and commission settings.
+
+### Backtest Detail
+
+- Running-state progress and recent activity, then completed KPI cards, equity and drawdown charts, trade log, and links to generated reports.
+
 ## Success Criteria
 
 - A new portfolio can be created and populated with balances and positions in minutes.
@@ -148,6 +168,7 @@ Ledger solves this by keeping portfolio state, market context, and template rend
 - Delayed market data remains visibly non-authoritative and does not block the rest of the workspace.
 - A user can create or edit a template, preview compiled output, and reuse it without editing code.
 - A user can generate a report from a template or upload a markdown file, then open, edit, download, and delete that report through the UI.
+- A user can launch a backtest, watch it progress, and review completed benchmark-relative results plus report-linked trades from the UI.
 
 ## Risks And Mitigations
 

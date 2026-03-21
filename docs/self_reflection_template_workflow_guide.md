@@ -1,6 +1,6 @@
 # Self-Reflection Template Workflow Guide
 
-> Status: Current practical guide for running a minimal self-reflection stock-analysis loop in live Ledger. Verified locally on 2026-03-19 against the `start.sh` stack and the shipped template/report workflow.
+> Status: Current practical guide for running a minimal self-reflection stock-analysis loop in live Ledger. Verified locally on 2026-03-21 against the `start.sh` stack and the shipped template/report workflow; the separate backtest module is live but not required for this template-driven loop.
 
 ## Purpose
 

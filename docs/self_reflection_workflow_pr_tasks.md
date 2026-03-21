@@ -1,6 +1,6 @@
 # Self-Reflection Workflow PR Tasks
 
-> Status: Historical PR breakdown. The report-contract, filtering, selector, and frontend authoring foundations described here are substantially shipped; treat this file as rollout history plus a source of follow-up hardening ideas.
+> Status: Historical PR breakdown. The report-contract, filtering, selector, frontend authoring foundations, and the separate experimental backtest surface are substantially shipped; treat this file as rollout history plus a source of follow-up hardening ideas.
 
 ## Purpose
 
