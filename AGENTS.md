@@ -1,11 +1,11 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-03-21
-**Commit:** 8fd7fee
-**Branch:** main
+**Commit:** bb0a6ae
+**Branch:** feature/n8n-webhook-backtest
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/` git submodules. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, and an experimental backtest workspace that runs LLM-guided historical simulations over saved portfolios.
+Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/` git submodules. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, and a backtest workspace that stores webhook configuration, exposes callback endpoints, and currently launches runs through a direct engine loop with status polling.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
@@ -55,7 +55,7 @@ ledger/
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, router composition, DI |
 | Backend template flow | `backend/app/api/templates.py`, `backend/app/services/template_compiler_service.py` | placeholder tree, inline compile, stored template compile |
 | Backend reports flow | `backend/app/api/reports.py`, `backend/app/services/report_service.py`, `backend/app/schemas/report.py` | compile from template, upload markdown, download by slug |
-| Backend backtests flow | `backend/app/api/backtests.py`, `backend/app/services/backtest_service.py`, `backend/app/services/backtest_engine.py` | create/list/cancel/delete lifecycle, background simulation, results aggregation |
+| Backend backtests flow | `backend/app/api/backtests.py`, `backend/app/api/backtest_callbacks.py`, `backend/app/services/backtest_service.py`, `backend/app/services/backtest_cycle_service.py`, `backend/app/services/backtest_engine.py` | CRUD lifecycle, callback ingress, alternate webhook-cycle code, current direct-engine runner, results aggregation |
 | Backend DB upgrades | `backend/app/db/session.py` | portfolio/report upgrades, balance `operation_type`, market-quote `name`, obsolete-table cleanup |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_backtests_api.py`, `backend/tests/test_backtest_engine.py` | CRUD, templates, reports, backtests, market-data fallback, cache behavior, legacy-schema upgrades |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle |
@@ -76,8 +76,9 @@ ledger/
 | `PositionService` | `backend/app/services/position_service.py` | position CRUD plus symbol-name cache lookups |
 | `TemplateCompilerService` | `backend/app/services/template_compiler_service.py` | resolves `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholders against live data |
 | `ReportService` | `backend/app/services/report_service.py` | report CRUD, upload validation, unique slug/name generation |
-| `BacktestService` | `backend/app/services/backtest_service.py` | backtest CRUD, deposit-balance selection, optional default-template creation, background launch |
-| `BacktestEngine` | `backend/app/services/backtest_engine.py` | NYSE schedule generation, parquet history cache, OpenAI Responses calls, report/trade attribution, results metrics |
+| `BacktestService` | `backend/app/services/backtest_service.py` | backtest CRUD, deposit-balance selection, optional default-template creation, daemon-thread launch of direct engine runs |
+| `BacktestCycleService` | `backend/app/services/backtest_cycle_service.py` | callback-oriented webhook dispatch, callback validation, timeout handling, run-state persistence, cycle advancement |
+| `BacktestEngine` | `backend/app/services/backtest_engine.py` | schedule generation, prompt report creation, market-data loading, trade application, equity tracking, final metrics |
 | `TextTemplateService` | `backend/app/services/text_template_service.py` | stored template CRUD and uniqueness checks |
 | `QuoteProvider` / `YahooFinanceQuoteProvider` | `backend/app/services/quote_provider.py` | quote/history provider contract + Yahoo Finance adapter |
 | `App` | `frontend/src/App.tsx` | query client, router provider, theme provider, toaster, error boundary |
@@ -89,7 +90,7 @@ ledger/
 | `TemplateEditorPage` | `frontend/src/pages/templates/editor.tsx` | template editing, inline compile preview, placeholder browser |
 | `ReportListPage` | `frontend/src/pages/reports/list.tsx` | generate from template, upload markdown, browse/delete/download reports |
 | `BacktestDetailPage` | `frontend/src/pages/backtests/detail.tsx` | active-run progress, completed result charts, trade log, report links |
-| `BacktestConfigPage` | `frontend/src/pages/backtests/config.tsx` | existing/new portfolio launch flow, benchmark selection, LLM/commission config |
+| `BacktestConfigPage` | `frontend/src/pages/backtests/config.tsx` | existing/new portfolio launch flow, benchmark selection, webhook/commission config |
 
 ## CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
@@ -102,8 +103,8 @@ ledger/
 - Template placeholder paths are a cross-stack contract spanning `backend/app/services/template_compiler_service.py`, `backend/app/schemas/text_template.py`, `frontend/src/lib/types/text-template.ts`, and `frontend/src/pages/templates/editor.tsx`; the live roots are `inputs`, `portfolios`, and `reports`.
 - Report placeholder selectors support both exact names and dynamic selectors such as `reports.latest`, `reports.latest("TICKER")`, `reports[index]`, and `reports.by_tag("tag").latest`; valid no-match selectors compile to an empty string, malformed selectors compile to explicit sentinel text.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional author/description/tags metadata, direct JSON creation is supported, and all three sources download by slug.
-- Backtests are a live API/UI feature, not a dormant stock-analysis leftover: each run stores per-backtest LLM config, selected deposit balance, recent activity, result curves, and terminal errors on the `backtests` row.
-- Backtest execution reuses the existing report and trading infrastructure: generated reports are tagged with `backtest_<id>`, simulated trades carry `trading_operations.backtest_id`, and interrupted `PENDING`/`RUNNING` jobs are marked failed during `init_db()` startup repair.
+- Backtests are a live API/UI feature, not a dormant legacy leftover: each run stores the selected deposit balance, webhook URL/timeout, current-cycle callback fields, recent activity, result curves, and terminal errors on the `backtests` row.
+- Backtest execution reuses the existing report and trading infrastructure: prompt and analysis reports are tagged with `backtest_<id>`, simulated trades carry `trading_operations.backtest_id`, and interrupted `PENDING`/`RUNNING`/`AWAITING_CALLBACK`/`PROCESSING_CALLBACK` jobs are marked failed during `init_db()` startup repair.
 - Backend and frontend are git submodules; root workflows always check them out with `submodules: recursive`.
 
 ## ANTI-PATTERNS
@@ -112,8 +113,8 @@ ledger/
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, or template compile payloads without updating backend tests and frontend callers.
 - Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
-- Do not document backtests as absent or dormant; `/api/v1/backtests` and `/backtests/*` are live surfaces backed by dedicated services, pages, hooks, and E2E coverage.
-- Do not bypass `TradingOperationService` or `ReportService` when changing backtest execution semantics; the simulation engine depends on those shared contracts for attribution and cleanup.
+- Do not document backtests as absent, dormant, or LLM-local-only; `/api/v1/backtests`, `/api/v1/backtests/{id}/cycles/*`, and `/backtests/*` are live surfaces backed by dedicated services, pages, hooks, and E2E coverage.
+- Do not bypass `BacktestService`, `BacktestCycleService`, `TradingOperationService`, or `ReportService` when changing backtest execution semantics; the current launch path and the callback-oriented code path share report, trade-attribution, and cleanup contracts.
 - Do not treat `docs/`, `artifacts/`, `frontend/dist/`, or cache directories as the source of truth over live code.
 - Do not ignore submodule state when cloning, updating CI, or reviewing backend/frontend diffs.
 
@@ -140,6 +141,6 @@ git submodule update --init --recursive
 ## NOTES
 - `start.sh` is the authoritative local orchestrator; unlike the raw backend/frontend dev defaults, it binds backend/frontend to `28000/25173` and injects `VITE_API_BASE_URL` for the frontend process.
 - Supported schema repair is code-based in `backend/app/db/session.py`; the leftover `backend/alembic/` tree is not the source of truth.
-- Playwright still runs against backend `8001` and frontend `4173`, so route/E2E issues should always be checked in that environment too; the Playwright backend startup script also sets `BACKTEST_TEST_MODE=1` for deterministic backtest runs.
+- Playwright still runs against backend `8001` and frontend `4173`, so route/E2E issues should always be checked in that environment too; the Playwright backend startup script also sets `BACKTEST_TEST_MODE=1`, but the current launched run path still completes through `BacktestService.run_backtest()`'s direct deterministic loop.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - CI currently runs backend lint/format/type/test checks, then frontend lint/build/E2E, then an amd64 Docker smoke build. Local frontend typecheck and unit tests are available even though they are not both enforced in `ci.yml` yet, and both report and backtest flows have dedicated E2E coverage in `frontend/e2e/reports.spec.ts` and `frontend/e2e/backtests.spec.ts`.
