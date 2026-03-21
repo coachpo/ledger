@@ -16,7 +16,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://host.docker.internal:8000' + $json.reportDownloadUrl }}",
+        "url": "={{ 'http://host.docker.internal:8000' + $json.body.reportDownloadUrl }}",
         "options": {}
       },
       "id": "download-prompt",
@@ -28,10 +28,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.callbackBaseUrl + '/report' }}",
+        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.body.callbackBaseUrl + '/report' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ name: 'smoke_analysis_' + $('Webhook Trigger').item.json.cycleDate.replace(/-/g, ''), content: '# Smoke Analysis\\n\\nThis is an automated smoke test report for cycle ' + $('Webhook Trigger').item.json.cycleDate + '.\\n\\n## Assessment\\nPortfolio unchanged.\\n\\n## Reflection\\nSmoke test — no real analysis performed.', tags: ['backtest', 'backtest_' + $('Webhook Trigger').item.json.backtestId, 'smoke_test'] }) }}",
+        "jsonBody": "={{ JSON.stringify({ name: 'smoke_analysis_' + $('Webhook Trigger').item.json.body.cycleDate.replace(/-/g, ''), content: '# Smoke Analysis\\n\\nThis is an automated smoke test report for cycle ' + $('Webhook Trigger').item.json.body.cycleDate + '.\\n\\n## Assessment\\nPortfolio unchanged.\\n\\n## Reflection\\nSmoke test — no real analysis performed.', tags: ['backtest', 'backtest_' + $('Webhook Trigger').item.json.body.backtestId, 'smoke_test'] }) }}",
         "options": {}
       },
       "id": "upload-report",
@@ -43,7 +43,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.callbackBaseUrl + '/trades' }}",
+        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.body.callbackBaseUrl + '/trades' }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ decisions: [{ symbol: 'AAPL', action: 'HOLD', quantity: null, targetPrice: null, reasoning: 'Smoke test — no trade action taken.' }], reportSlug: $json.slug || null }) }}",
@@ -58,7 +58,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.callbackBaseUrl + '/complete' }}",
+        "url": "={{ 'http://host.docker.internal:8000' + $('Webhook Trigger').item.json.body.callbackBaseUrl + '/complete' }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={}",
