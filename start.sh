@@ -10,6 +10,7 @@ COMPOSE_PROJECT_NAME="${LEDGER_COMPOSE_PROJECT_NAME:-ledger-local}"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-28000}"
+BACKEND_PUBLIC_HOST="${BACKEND_PUBLIC_HOST:-}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-25173}"
 DB_HOST="127.0.0.1"
@@ -234,7 +235,9 @@ wait_for_database_ready() {
   while (( SECONDS < deadline )); do
     container_id="$(database_container_id)"
 
-    if [[ -n "$container_id" ]] && docker exec "$container_id" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+    if [[ -n "$container_id" ]] \
+      && docker exec "$container_id" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1 \
+      && database_host_connection_ready; then
       return 0
     fi
 
@@ -242,6 +245,26 @@ wait_for_database_ready() {
   done
 
   return 1
+}
+
+database_host_connection_ready() {
+  run_backend_python - "$DATABASE_URL" <<'PY' >/dev/null 2>&1
+import sys
+
+import psycopg
+
+database_url = sys.argv[1].replace("postgresql+psycopg://", "postgresql://", 1)
+
+try:
+    with psycopg.connect(database_url, connect_timeout=2) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+except Exception:
+    raise SystemExit(1)
+
+raise SystemExit(0)
+PY
 }
 
 ledger_backend_running() {
@@ -354,8 +377,12 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-BACKEND_PUBLIC_HOST="$(probe_host "$BACKEND_HOST")"
-API_BASE_URL="http://${BACKEND_PUBLIC_HOST}:${BACKEND_PORT}/api/v1"
+if [[ -z "$BACKEND_PUBLIC_HOST" ]]; then
+  BACKEND_PUBLIC_HOST="$(probe_host "$BACKEND_HOST")"
+fi
+
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://${BACKEND_PUBLIC_HOST}:${BACKEND_PORT}}"
+API_BASE_URL="${PUBLIC_BASE_URL}/api/v1"
 RESOLVED_CORS_ALLOWED_ORIGINS="$(build_cors_allowed_origins)"
 
 printf 'Cleaning up ports %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"
@@ -376,6 +403,7 @@ printf 'Starting backend on http://%s:%s\n' "$BACKEND_PUBLIC_HOST" "$BACKEND_POR
   cd "$BACKEND_DIR"
   export DATABASE_URL="$DATABASE_URL"
   export CORS_ALLOWED_ORIGINS="$RESOLVED_CORS_ALLOWED_ORIGINS"
+  export PUBLIC_BASE_URL="$PUBLIC_BASE_URL"
   exec uv run --frozen uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT"
 ) &
 backend_pid=$!
