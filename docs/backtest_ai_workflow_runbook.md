@@ -1,16 +1,16 @@
 # Ledger Backtest AI Workflow Runbook
 
-> Status: Success-path runbook for the current Ledger + n8n streamed backtest flow. Verified locally against the `start.sh` stack, the local streaming helper on `28180`, the live n8n instance on `192.168.1.222:8091`, and the final completed run `backtest 59`.
+> Status: Success-path runbook for the current Ledger + n8n native AI Agent flow. Verified locally against a freshly reset `start.sh` stack, the live n8n instance on `192.168.1.222:8091`, and the final completed run `backtest 1`.
 
 ## Purpose
 
-This runbook keeps only the working path for running Ledger backtests through n8n with the current streamed OpenAI-client helper setup.
+This runbook keeps only the current working path for running Ledger backtests through **n8n native AI support**.
 
 It covers:
 
 - how to start Ledger with LAN-reachable callback URLs,
-- how to run the local streamed helper,
-- which portfolio, template, and n8n workflow form the current known good path,
+- which n8n workflow, portfolio, and template form the current known good path,
+- how the native AI Agent path works,
 - how to launch the Jan-Feb 2026 backtest,
 - and how to verify success from Ledger, n8n, reports, and stored trades.
 
@@ -18,31 +18,38 @@ It covers:
 
 The current production runner in n8n is:
 
-- workflow name: `Ledger Tech Seven Ultrabacktest AI Stream Mini v4`
-- workflow id: `ZsRHdRBH9BJi7Avx`
-- webhook path: `/webhook/ledger-tech-seven-ultrabacktest-ai-stream-mini-v4`
+- workflow name: `Ledger Tech Seven Ultrabacktest AI Agent Native v4`
+- workflow id: `R9J5fXNwIbNvaG5A`
+- webhook path: `/webhook/ledger-tech-seven-ultrabacktest-ai-agent-native-v4`
 
-The current working LLM path is:
+The working LLM path is:
 
 1. Ledger sends a webhook to the n8n workflow.
 2. n8n downloads the cycle prompt report from Ledger.
-3. n8n posts the compacted cycle context to the local helper at `http://192.168.1.231:28180/analyze`.
-4. The helper uses the Python OpenAI client with `responses.stream(...)`.
-5. The helper calls the OpenAI-compatible provider at `http://192.168.1.222:8087/v1`.
-6. The helper returns parsed JSON back to n8n.
-7. n8n uploads the analysis report to Ledger.
-8. n8n submits trade decisions to Ledger.
-9. n8n completes the cycle.
+3. The native `AI Agent` node analyzes the cycle using the connected `OpenAI Chat Model` node.
+4. The `OpenAI Chat Model` node uses:
+   - model `gpt-5.4-mini`
+   - reasoning effort `low`
+   - Responses API enabled
+   - built-in `Web Search` enabled with `High` context size
+5. A native n8n JS step normalizes the agent output, filters invalid/future-dated sources, builds Ledger callback payloads, and submits them.
+6. n8n uploads the analysis report to Ledger.
+7. n8n submits trade decisions to Ledger.
+8. n8n completes the cycle.
 
-Current model settings in the helper:
+## Important n8n Usage Point
 
-- model: `gpt-5.4-mini`
-- reasoning effort: `low`
-- web search: enabled
+Use the **n8n-native AI Agent + OpenAI Chat Model** path to analyze the cycle.
 
-Important implementation detail:
+This is the preferred success path because:
 
-- n8n's Code node cannot load the `openai` module directly in this environment, so the streamed Python helper is part of the success path, not a fallback.
+- n8n already supports the required agent/model/tooling flow natively in the UI,
+- web search is configured directly on the native OpenAI Chat Model node,
+- and no external Python helper is needed in the execution path.
+
+Practical note:
+
+- n8n Code nodes in this environment still cannot import the `openai` module directly, but that does **not** matter for the current success path because model calls are handled by the native AI nodes, not by custom Python.
 
 ## Prerequisites
 
@@ -79,42 +86,32 @@ Both should return:
 {"status":"ok"}
 ```
 
-## Start the Local Stream Helper
+## n8n Native AI Configuration
 
-Run the helper from the repo root:
+The verified native configuration lives in the n8n UI workflow `Ledger Tech Seven Ultrabacktest AI Agent Native v4`.
 
-```bash
-python3 backtest_ai_stream_helper.py
-```
+Key node-level settings:
 
-Expected startup output:
-
-```text
-Backtest AI stream helper listening on 0.0.0.0:28180
-```
-
-Optional functional check:
-
-```bash
-python3 - <<'PY'
-import requests, json
-
-payload = {
-    "portfolio_context": "# Cycle Prompt (2026-01-02)\n\n## System\nToday is 2026-01-02. Do not use information from after this date.\n\n## User\nPortfolio state:\nBalances:\n- Initial Cash: 7404.3900 USD (DEPOSIT)\nPositions:\n- AAPL: 1.00000000 shares @ 271.85998500 USD\n- AMZN: 1.00000000 shares @ 230.82000700 USD\n- GOOGL: 1.00000000 shares @ 313.00000000 USD\n- META: 1.00000000 shares @ 660.09002700 USD\n- MSFT: 1.00000000 shares @ 483.61999500 USD\n- NVDA: 1.00000000 shares @ 186.50000000 USD\n- TSLA: 1.00000000 shares @ 449.72000100 USD"
-}
-
-resp = requests.post("http://127.0.0.1:28180/analyze", json=payload, timeout=120)
-print(resp.status_code)
-print(json.dumps(resp.json(), indent=2)[:4000])
-PY
-```
+- `AI Agent`
+  - used as the cycle analyzer
+  - receives the compacted prompt report text
+- `OpenAI Chat Model`
+  - model id: `gpt-5.4-mini`
+  - `Use Responses API`: enabled
+  - built-in `Web Search`: enabled
+  - `Search Context Size`: `High`
+  - `Reasoning Effort`: `Low`
+- native n8n JS step
+  - normalizes the AI output into valid Ledger callback payloads
+  - removes invalid or future-dated sources
+  - calls Ledger `/report`, `/trades`, and `/complete`
 
 ## Prepare the Portfolio Context
 
 The current verified portfolio used for the final success path is:
 
-- portfolio id: `5`
-- portfolio slug: `tech_seven_investor_stream_oracle_final`
+- portfolio id: `1`
+- portfolio slug: `tech_seven_investor_native_agent_fresh`
 - deposit balance: `10000 USD`
 - seeded symbols: `AAPL`, `MSFT`, `GOOGL`, `AMZN`, `META`, `NVDA`, `TSLA`
 
@@ -124,8 +121,8 @@ The seeded holdings were created as BUY operations at 2025-12-31 closes so the b
 
 The current verified template used for the final success path is:
 
-- template id: `4`
-- template name: `Tech Seven Self-Reflection Daily Backtest Template Stream Final`
+- template id: `1`
+- template name: `Tech Seven Self-Reflection Daily Backtest Template Native Agent Fresh`
 
 This template requires the analysis workflow to cover:
 
@@ -139,19 +136,19 @@ This template requires the analysis workflow to cover:
 
 ## Launch the Backtest
 
-Create a new full-session backtest pointing at the streamed n8n webhook path:
+Create a new full-session backtest pointing at the native n8n AI-agent webhook path:
 
 ```json
 {
-  "name": "Tech Seven Ultrabacktest Jan-Feb 2026 stream final",
-  "portfolioId": 5,
-  "templateId": 4,
+  "name": "Tech Seven Ultrabacktest Jan-Feb 2026 native agent fresh",
+  "portfolioId": 1,
+  "templateId": 1,
   "createTemplate": false,
   "templateName": null,
   "frequency": "DAILY",
   "startDate": "2026-01-01",
   "endDate": "2026-02-28",
-  "webhookUrl": "http://192.168.1.222:8091/webhook/ledger-tech-seven-ultrabacktest-ai-stream-mini-v4",
+  "webhookUrl": "http://192.168.1.222:8091/webhook/ledger-tech-seven-ultrabacktest-ai-agent-native-v4",
   "webhookTimeout": 600,
   "priceMode": "CLOSING_PRICE",
   "commissionMode": "ZERO",
@@ -173,7 +170,7 @@ POST /api/v1/backtests
 Check the backtest row:
 
 ```bash
-curl http://127.0.0.1:28000/api/v1/backtests/59
+curl http://127.0.0.1:28000/api/v1/backtests/1
 ```
 
 Success signals:
@@ -213,7 +210,7 @@ results = [
         'stoppedAt': row.get('stoppedAt'),
     }
     for row in resp.json()['data']['results']
-    if row['workflowId'] == 'ZsRHdRBH9BJi7Avx'
+    if row['workflowId'] == 'R9J5fXNwIbNvaG5A'
 ]
 
 print(json.dumps(results, indent=2))
@@ -222,7 +219,7 @@ PY
 
 Success signals:
 
-- executions belong to workflow `ZsRHdRBH9BJi7Avx`
+- executions belong to workflow `R9J5fXNwIbNvaG5A`
 - recent execution statuses are `success`
 
 ### Report evidence
@@ -234,7 +231,7 @@ python3 - <<'PY'
 import json, requests
 
 reports = requests.get(
-    'http://127.0.0.1:28000/api/v1/reports?tag=backtest_59',
+    'http://127.0.0.1:28000/api/v1/reports?tag=backtest_1',
     timeout=30,
 ).json()
 
@@ -261,7 +258,7 @@ python3 - <<'PY'
 import json, requests
 
 ops = requests.get(
-    'http://127.0.0.1:28000/api/v1/portfolios/5/trading-operations',
+    'http://127.0.0.1:28000/api/v1/portfolios/1/trading-operations',
     timeout=30,
 ).json()
 
@@ -284,7 +281,7 @@ import json, re, requests
 from datetime import datetime
 
 base = 'http://127.0.0.1:28000/api/v1'
-reports = requests.get(f'{base}/reports?tag=backtest_59', timeout=30).json()
+reports = requests.get(f'{base}/reports?tag=backtest_1', timeout=30).json()
 analysis = [
     row for row in reports
     if row.get('metadata', {}).get('analysis', {}).get('reviewType') == 'backtest_analysis'
@@ -323,11 +320,11 @@ Success signals:
 
 At the time of writing, the following has been verified locally:
 
-- streamed helper path is active and working
-- n8n workflow `ZsRHdRBH9BJi7Avx` is the current success-path workflow
-- template `4` was created and used for the final run
-- portfolio `5` was created and used for the final run
-- backtest `59` completed the full Jan-Feb 2026 window
+- native n8n AI Agent path is active and working
+- workflow `R9J5fXNwIbNvaG5A` is the current success-path workflow
+- template `1` was created and used for the final run
+- portfolio `1` was created and used for the final run
+- backtest `1` completed the full Jan-Feb 2026 window
 - 39 analysis reports were stored
 - simulated BUY/SELL trades were executed through Ledger's API during the run
 - the full report set passed a whole-run source-date audit with zero violations
