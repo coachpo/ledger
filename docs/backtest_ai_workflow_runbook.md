@@ -1,55 +1,57 @@
-# Ledger Backtest AI Workflow Runbook
+# Ledger Backtest External Client Runbook
 
-> Status: Success-path runbook for the current Ledger + n8n native AI Agent flow. Verified locally against a freshly reset `start.sh` stack, the live n8n instance on `192.168.1.222:8091`, and the final completed run `backtest 1`.
+> Status: Success-path runbook for the current Ledger backtest integration flow. Verified locally against a freshly reset `start.sh` stack, the configured external client endpoint at `192.168.1.222:8091`, and the final completed run `backtest 1`.
 
 ## Purpose
 
-This runbook keeps only the current working path for running Ledger backtests through **n8n native AI support**.
+This runbook keeps only the current working path for running Ledger backtests through a configured external client integration.
 
 It covers:
 
 - how to start Ledger with LAN-reachable callback URLs,
-- which n8n workflow, portfolio, and template form the current known good path,
-- how the native AI Agent path works,
+- which example external client, portfolio, and template form the current known good path,
+- how the example client implementation works,
 - how to launch the Jan-Feb 2026 backtest,
-- and how to verify success from Ledger, n8n, reports, and stored trades.
+- and how to verify success from Ledger, the client endpoint, reports, and stored trades.
 
 ## Current Known Good Architecture
 
-The current production runner in n8n is:
+Ledger posts each cycle payload to a configured external client endpoint and waits for strict callbacks back.
+
+The verified example client integration is:
 
 - workflow name: `Ledger Tech Seven Ultrabacktest AI Agent Native v4`
 - workflow id: `R9J5fXNwIbNvaG5A`
 - webhook path: `/webhook/ledger-tech-seven-ultrabacktest-ai-agent-native-v4`
 
-The working LLM path is:
+The working client flow is:
 
-1. Ledger sends a webhook to the n8n workflow.
-2. n8n downloads the cycle prompt report from Ledger.
-3. The native `AI Agent` node analyzes the cycle using the connected `OpenAI Chat Model` node.
-4. The `OpenAI Chat Model` node uses:
+1. Ledger posts the cycle payload to the configured external client endpoint.
+2. The example client downloads the cycle prompt report from Ledger.
+3. The example client implementation analyzes the cycle with a native AI agent and connected chat model.
+4. The example client uses:
    - model `gpt-5.4-mini`
    - reasoning effort `low`
    - Responses API enabled
    - built-in `Web Search` enabled with `High` context size
-5. A native n8n JS step normalizes the agent output, filters invalid/future-dated sources, builds Ledger callback payloads, and submits them.
-6. n8n uploads the analysis report to Ledger.
-7. n8n submits trade decisions to Ledger.
-8. n8n completes the cycle.
+5. The example client normalizes the agent output, filters invalid or future-dated sources, builds Ledger callback payloads, and submits them.
+6. The example client uploads the analysis report to Ledger.
+7. The example client submits trade decisions to Ledger.
+8. The example client completes the cycle.
 
-## Important n8n Usage Point
+## Important Example Integration Point
 
-Use the **n8n-native AI Agent + OpenAI Chat Model** path to analyze the cycle.
+This example client uses a native AI agent plus OpenAI Chat Model path to analyze the cycle.
 
-This is the preferred success path because:
+The example is useful because:
 
-- n8n already supports the required agent/model/tooling flow natively in the UI,
-- web search is configured directly on the native OpenAI Chat Model node,
+- it supports the required agent/model/tooling flow in the UI,
+- web search is configured directly on the chat model node,
 - and no external Python helper is needed in the execution path.
 
 Practical note:
 
-- n8n Code nodes in this environment still cannot import the `openai` module directly, but that does **not** matter for the current success path because model calls are handled by the native AI nodes, not by custom Python.
+- code nodes in this example environment still cannot import the `openai` module directly, but that does **not** matter for the current success path because model calls are handled by native AI nodes, not by custom Python.
 
 ## Prerequisites
 
@@ -58,12 +60,12 @@ Before running anything, make sure all of the following are true:
 1. Docker is running locally.
 2. `uv` and `pnpm` are installed.
 3. Python 3.13 is available locally.
-4. The n8n instance is reachable at `http://192.168.1.222:8091/`.
+4. The example client instance is reachable at `http://192.168.1.222:8091/`.
 5. The OpenAI-compatible provider is reachable at `http://192.168.1.222:8087/v1`.
 
 ## Start Ledger With LAN-Reachable URLs
 
-Run Ledger with a public base URL that n8n can reach from another machine:
+Run Ledger with a public base URL that the example client can reach from another machine:
 
 ```bash
 env UV_PYTHON=/opt/homebrew/bin/python3.13 \
@@ -86,9 +88,9 @@ Both should return:
 {"status":"ok"}
 ```
 
-## n8n Native AI Configuration
+## Example Client Native AI Configuration
 
-The verified native configuration lives in the n8n UI workflow `Ledger Tech Seven Ultrabacktest AI Agent Native v4`.
+The verified example configuration lives in the example client workflow `Ledger Tech Seven Ultrabacktest AI Agent Native v4`.
 
 Key node-level settings:
 
@@ -101,7 +103,7 @@ Key node-level settings:
   - built-in `Web Search`: enabled
   - `Search Context Size`: `High`
   - `Reasoning Effort`: `Low`
-- native n8n JS step
+- example-client JS step
   - normalizes the AI output into valid Ledger callback payloads
   - removes invalid or future-dated sources
   - calls Ledger `/report`, `/trades`, and `/complete`
@@ -136,7 +138,7 @@ This template requires the analysis workflow to cover:
 
 ## Launch the Backtest
 
-Create a new full-session backtest pointing at the native n8n AI-agent webhook path:
+Create a new full-session backtest pointing at the configured external client endpoint used by the example integration:
 
 ```json
 {
@@ -180,9 +182,9 @@ Success signals:
 - `totalCycles = 39`
 - `errorMessage = null`
 
-### n8n side
+### Client side example verification
 
-Use the n8n REST API to inspect the final workflow executions:
+Use the client system's REST API to inspect the final workflow executions in the example integration:
 
 ```bash
 python3 - <<'PY'
@@ -320,8 +322,8 @@ Success signals:
 
 At the time of writing, the following has been verified locally:
 
-- native n8n AI Agent path is active and working
-- workflow `R9J5fXNwIbNvaG5A` is the current success-path workflow
+- the example client AI Agent path is active and working
+- workflow `R9J5fXNwIbNvaG5A` is the current success-path workflow for the example integration
 - template `1` was created and used for the final run
 - portfolio `1` was created and used for the final run
 - backtest `1` completed the full Jan-Feb 2026 window
