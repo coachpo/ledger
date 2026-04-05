@@ -15,7 +15,40 @@ permissions:
   contents: read
 
 jobs:
-  backend-tests:
+  version-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Verify backend and frontend version sync
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+          import tomllib
+
+          root = pathlib.Path('.')
+          backend_version = (root / 'backend' / 'VERSION').read_text(encoding='utf-8').strip()
+          frontend_version = (root / 'frontend' / 'VERSION').read_text(encoding='utf-8').strip()
+          pyproject_version = tomllib.loads((root / 'backend' / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+          package_version = json.loads((root / 'frontend' / 'package.json').read_text(encoding='utf-8'))['version']
+
+          if backend_version != pyproject_version:
+              print(f'backend version mismatch: VERSION={backend_version} pyproject={pyproject_version}', file=sys.stderr)
+              raise SystemExit(1)
+
+          if frontend_version != package_version:
+              print(f'frontend version mismatch: VERSION={frontend_version} package.json={package_version}', file=sys.stderr)
+              raise SystemExit(1)
+
+          print(f'backend version OK: {backend_version}')
+          print(f'frontend version OK: {frontend_version}')
+          PY
+
+  backend-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -38,8 +71,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install uv and set Python version
         uses: astral-sh/setup-uv@v7
@@ -52,18 +83,21 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
 
-      - name: Run backend tests
+      - name: Run backend quality checks
         working-directory: backend
-        run: uv run pytest
+        run: |
+          uv run ruff check app tests
+          uv run black --check app tests
+          uv run isort --check-only app tests
+          uv run mypy app
+          uv run pytest
 
-  frontend-tests:
+  frontend-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -81,13 +115,18 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Run frontend tests
+      - name: Run frontend quality checks
         working-directory: frontend
-        run: pnpm test:run
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm build
+          pnpm test:run
 
   frontend-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: [version-sync, backend-quality, frontend-quality]
     env:
       DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
       TEST_DATABASE_URL: postgresql+psycopg://ledger:ledger@127.0.0.1:25432/ledger
@@ -108,8 +147,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
