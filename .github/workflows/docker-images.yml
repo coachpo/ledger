@@ -12,7 +12,6 @@ on:
       - 'frontend'
       - 'frontend/**'
       - '.github/workflows/docker-images.yml'
-      - '.gitmodules'
   workflow_dispatch:
     inputs:
       service:
@@ -48,10 +47,9 @@ jobs:
         service: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.service != 'all' && format('["{0}"]', inputs.service) || '["backend","frontend"]') }}
 
     steps:
-      - name: Checkout repository with submodules
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
       - name: Set up QEMU (for arm64 emulation)
@@ -88,7 +86,7 @@ jobs:
         id: frontend_build_metadata
         if: matrix.service == 'frontend'
         run: |
-          echo "git_revision=$(git -C frontend rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "git_revision=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_run_number=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image (linux/arm64)

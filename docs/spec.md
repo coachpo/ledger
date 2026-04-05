@@ -24,7 +24,7 @@ Legacy stock-analysis tables and provider helper code still exist as upgrade-cle
 
 ### Root Workspace
 
-- `backend/` and `frontend/` are git submodules.
+- `backend/` and `frontend/` are ordinary tracked directories in the root repo.
 - `start.sh` is the canonical local orchestrator.
 - Local full-stack ports are PostgreSQL `25432`, backend `28000`, and frontend `25173`.
 

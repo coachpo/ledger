@@ -5,7 +5,7 @@
 **Branch:** main
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/` git submodules. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation with runtime inputs, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, grouped report browsing, and a backtest workspace that launches runs through `BacktestCycleService` with webhook callbacks or deterministic test-mode cycles.
+Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked directly in this repository. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation with runtime inputs, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, grouped report browsing, and a backtest workspace that launches runs through `BacktestCycleService` with webhook callbacks or deterministic test-mode cycles.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
@@ -38,19 +38,18 @@ Ledger is a dual-stack portfolio tracker split across `backend/` and `frontend/`
 ## STRUCTURE
 ```text
 ledger/
-├── backend/              # git submodule: FastAPI app, SQLAlchemy models, pytest suite
-├── frontend/             # git submodule: React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
+├── backend/              # FastAPI app, SQLAlchemy models, pytest suite
+├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
 ├── docs/                 # reference docs plus `docs/superpowers/` plans/specs; secondary to live code
 ├── skills/               # repo-local task skills and workflows
 ├── .github/workflows/    # CI quality gates, Docker smoke build, image publish/cleanup
-├── .gitmodules           # backend/frontend submodule remotes
 └── start.sh              # local orchestrator: db on 25432, backend on 28000, frontend on 25173
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Bootstrap a fresh clone | `.gitmodules` + `git submodule update --init --recursive` | CI and local development both rely on recursive submodules |
+| Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `start.sh` | clone once, then run `uv sync` in `backend/` and `pnpm install` in `frontend/` |
 | Start the full stack locally | `start.sh`, `backend/docker-compose.yml` | cleans occupied ports, starts Postgres on `25432`, backend on `28000`, frontend on `25173` |
 | Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with `BACKTEST_TEST_MODE=1` |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, router composition, DI |
@@ -106,7 +105,7 @@ ledger/
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional author/description/tags metadata, direct JSON creation is supported, and all three sources download by slug.
 - Backtests are a live API/UI feature, not a dormant legacy leftover: each run stores the selected deposit balance, webhook URL/timeout, current-cycle callback fields, recent activity, result curves, and terminal errors on the `backtests` row.
 - Backtest execution reuses the existing report and trading infrastructure: prompt and analysis reports are tagged with `backtest_<id>`, simulated trades carry `trading_operations.backtest_id`, `BacktestService` kicks off `BacktestCycleService.start_backtest()` on a daemon thread, and interrupted `PENDING`/`RUNNING`/`AWAITING_CALLBACK`/`PROCESSING_CALLBACK` jobs are marked failed during `init_db()` startup repair.
-- Backend and frontend are git submodules; root workflows always check them out with `submodules: recursive`.
+- Backend and frontend are ordinary tracked directories in the root repo; root workflows check out the repository once before running backend and frontend jobs.
 
 ## ANTI-PATTERNS
 - Do not bypass backend services or call provider adapters directly from routes or frontend code.
@@ -117,11 +116,10 @@ ledger/
 - Do not document backtests as absent, dormant, direct-engine-only, or LLM-local-only; `/api/v1/backtests`, `/api/v1/backtests/{id}/cycles/*`, and `/backtests/*` are live surfaces backed by dedicated services, pages, hooks, and E2E coverage.
 - Do not bypass `BacktestService`, `BacktestCycleService`, `TradingOperationService`, or `ReportService` when changing backtest execution semantics; the current launch path and the callback-oriented path share report, trade-attribution, and cleanup contracts.
 - Do not treat `docs/`, `backend/alembic/`, `frontend/dist/`, or cache directories as the source of truth over live code.
-- Do not ignore submodule state when cloning, updating CI, or reviewing backend/frontend diffs.
+- Do not ignore root workflow and repo-topology state when updating backend/frontend boundaries, CI, or docs.
 
 ## COMMANDS
 ```bash
-git submodule update --init --recursive
 (cd backend && uv sync)
 (cd frontend && pnpm install)
 ./start.sh
