@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds the backend's business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, `template_compiler_service.py` resolves the live placeholder contract, and the backtest trio spans lifecycle kickoff, cycle/webhook orchestration, and simulation math.
+`app/services/` holds the backend's business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, `template_compiler_service.py` resolves the live placeholder contract, the backtest trio spans lifecycle kickoff, cycle/webhook orchestration, and simulation math, and worker-side TradingAgents execution stays in sibling `app/worker/` rather than this package.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -21,6 +21,7 @@
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote provider contract | `quote_provider.py` | provider protocol, DTOs, Yahoo Finance adapter, provider errors |
+| Worker-side execution | `../worker/AGENTS.md` | separate FastAPI worker downloads prompt reports, runs TradingAgents analysis, uploads reports, and posts callbacks |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
 | Service test hotspots | `../../tests/test_api.py`, `../../tests/test_backtests_api.py`, `../../tests/test_backtest_cycle_service.py`, `../../tests/test_backtest_engine.py` | CRUD, templates, market-data, symbol cache, backtest lifecycle, callback-state rules, engine behavior |
 
@@ -39,6 +40,7 @@
 - `BacktestCycleService` is the live execution path: it dispatches cycles to `backtest.webhook_url`, validates ordered callbacks, stores `_run_state` inside `backtest.results`, and marks runs failed when `webhook_timeout` expires.
 - `BACKTEST_TEST_MODE` is set in Playwright and read by `BacktestCycleService`; test mode swaps in `DeterministicQuoteProvider` and deterministic cycle decisions instead of waiting on webhook callbacks.
 - `BacktestEngine` reuses `TemplateCompilerService`, `ReportService`, and `TradingOperationService` instead of introducing simulation-only report or trade paths; it prepares prompt reports, applies trades, records equity, and computes final metrics.
+- `app/services/` stops at backend-side dispatch/orchestration; `app/worker/` owns TradingAgents graph loading, prompt-report download, analysis-report upload, trade callbacks, and completion callbacks.
 
 ## ANTI-PATTERNS
 - Do not commit from routers or repositories when a service already owns the workflow.
@@ -48,6 +50,7 @@
 - Do not change template placeholder paths or compile payloads without updating backend tests, frontend types, and the template editor.
 - Do not change report compile/upload/download contracts, slug generation, or `reports.<name>.content` cycle handling without updating backend tests and frontend callers.
 - Do not launch `BacktestEngine` or `BacktestCycleService` directly from routes when `BacktestService` already owns lifecycle validation and kickoff wiring.
+- Do not move TradingAgents worker concerns into this package just because backtests trigger them; keep process-boundary code in `app/worker/`.
 - Do not move symbol, currency, or decimal normalization into ad-hoc service code.
 
 ## VALIDATION
@@ -67,5 +70,5 @@ uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_backtest_
 - `YahooFinanceQuoteProvider` normalizes symbol/currency values before returning provider DTOs and raises `QuoteProviderError` for malformed or failed upstream responses.
 - `BacktestEngine` stores market history to parquet under `settings.market_data_cache_dir`, tags generated reports with `backtest_<id>`, and writes `trading_operations.backtest_id` so cleanup can stay query-driven.
 - `BacktestCycleService` stores internal progress under `results._run_state`; `BacktestRead` hides that internal-only payload until final results are available.
-- Current launched runs always flow through `BacktestCycleService`; verify quote-provider selection, webhook behavior, and callback ordering together when touching backtest execution.
+- Current launched runs always flow through `BacktestCycleService` and, for live webhook mode, across the separate worker dispatch endpoint; verify quote-provider selection, webhook behavior, and callback ordering together when touching backtest execution.
 - PostgreSQL schema upgrade helpers live in `app/db/upgrades.py`; service code should assume upgraded tables, not perform schema repair.

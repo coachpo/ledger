@@ -14,6 +14,8 @@
 | Backtest service coverage | `test_backtest_service.py` | verifies cycle-service kickoff wiring |
 | Backtest cycle-service coverage | `test_backtest_cycle_service.py` | callback-state validation plus deterministic cycle behavior |
 | Backtest engine coverage | `test_backtest_engine.py` | NYSE schedule rules, parquet cache reuse, prompt/report handling, trade attribution, results math |
+| Worker unit coverage | `test_trading_agents_worker.py` | dispatch payloads, async/background behavior, adapter coercion, fractional-sell handling |
+| Worker integration coverage | `test_trading_agents_worker_integration.py` | report download/upload, callback round-trips, timeout failure, external worker URL requirements |
 
 ## CONVENTIONS
 - Tests create an isolated PostgreSQL database per test run, monkeypatch `DATABASE_URL`, then call `init_db(database_url)`.
@@ -22,12 +24,14 @@
 - `test_backtests_api.py` follows the same explicit-helper style and monkeypatches `BacktestService.run_backtest()` so create flows stay deterministic.
 - Quote-provider behavior is exercised through `app.dependency_overrides` on the FastAPI app rather than through real network calls.
 - `test_backtest_engine.py` uses fake history providers and temporary parquet cache directories, while `test_backtest_cycle_service.py` exercises callback-state rules and deterministic cycle advancement with fake engines.
+- Worker unit tests use fake adapters and HTTP clients; worker integration tests spin up the real FastAPI app/callback flow and assert report upload plus trade/complete callbacks end-to-end.
 - `TEST_DATABASE_URL` or `DATABASE_URL` must point to a PostgreSQL server where the test user can connect to `postgres` and create/drop databases.
 
 ## ANTI-PATTERNS
 - Do not rely on shared DB state across tests.
 - Do not hit real provider APIs or network services from this suite.
 - Do not change CSV, template, report, symbol-lookup, market-data, backtest, or DB-upgrade contracts without updating the corresponding regression files.
+- Do not change worker dispatch, analysis-report upload, trade callback, or completion callback payloads without updating `test_trading_agents_worker.py` and `test_trading_agents_worker_integration.py`.
 - Do not leave dependency overrides behind after a test; `conftest.py` clears them for a reason.
 
 ## VALIDATION
@@ -43,3 +47,4 @@ uv run pytest
 - `test_backtest_service.py` verifies that `BacktestService.run_backtest()` initializes `BacktestCycleService` and launches execution in a background thread.
 - `test_backtest_cycle_service.py` covers callback-state validation plus deterministic callback-mode cycle handling for empty and populated portfolios.
 - `test_backtest_engine.py` covers schedule generation, parquet cache reuse, prompt report storage, trade attribution, and portfolio/benchmark result aggregation.
+- `test_trading_agents_worker.py` covers dispatch acceptance, prompt parsing, decision translation, async/background processing, and live-adapter runtime overrides; `test_trading_agents_worker_integration.py` covers real report-download + callback URLs, timeout failure, and `PUBLIC_BASE_URL` requirements.
