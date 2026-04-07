@@ -25,17 +25,22 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 ./start.sh
 ```
 
-The local helper starts PostgreSQL on `25432`, the backend on `28000`, and the frontend on `25173`.
+The local helper starts PostgreSQL on `25432`, the backend on `28000`, the TradingAgents worker on `8010`, and the frontend on `25173`.
 
 ## Direct Development Commands
 
 ```bash
 # Backend
-(cd backend && uv run uvicorn app.main:app --reload --port 28000)
+(cd backend && PUBLIC_BASE_URL=http://127.0.0.1:28000 uv run uvicorn app.main:app --reload --port 28000)
+
+# TradingAgents worker
+(cd backend && uv run uvicorn app.worker.main:app --port 8010)
 
 # Frontend
 (cd frontend && pnpm dev)
 ```
+
+For webhook backtests that use the separate TradingAgents worker, `PUBLIC_BASE_URL` must be set to an absolute backend URL so the worker can resolve report-download and callback endpoints. The live TradingAgents adapter also needs provider credentials such as `OPENAI_API_KEY` (or another supported provider key) in the backend environment.
 
 See `backend/README.md` for backend-specific local development details.
 

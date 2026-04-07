@@ -11,6 +11,8 @@ COMPOSE_PROJECT_NAME="${LEDGER_COMPOSE_PROJECT_NAME:-ledger-local}"
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-28000}"
 BACKEND_PUBLIC_HOST="${BACKEND_PUBLIC_HOST:-}"
+WORKER_HOST="${WORKER_HOST:-127.0.0.1}"
+WORKER_PORT="${WORKER_PORT:-8010}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-25173}"
 DB_HOST="127.0.0.1"
@@ -21,9 +23,11 @@ DB_PASSWORD="ledger"
 DATABASE_URL="postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 backend_pid=""
+worker_pid=""
 frontend_pid=""
 database_started=0
 backend_started=0
+worker_started=0
 frontend_started=0
 
 require_command() {
@@ -215,11 +219,11 @@ kill_port_listeners() {
 stop_existing_stack() {
   compose_cmd down --remove-orphans >/dev/null 2>&1 || true
 
-  for port in "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"; do
+  for port in "$DB_PORT" "$BACKEND_PORT" "$WORKER_PORT" "$FRONTEND_PORT"; do
     stop_docker_containers_publishing_port "$port"
   done
 
-  for port in "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"; do
+  for port in "$DB_PORT" "$BACKEND_PORT" "$WORKER_PORT" "$FRONTEND_PORT"; do
     kill_port_listeners "$port"
   done
 }
@@ -310,6 +314,24 @@ wait_for_backend_ready() {
   return 1
 }
 
+wait_for_worker_ready() {
+  local deadline=$((SECONDS + 60))
+
+  while (( SECONDS < deadline )); do
+    if ledger_backend_running "$WORKER_HOST" "$WORKER_PORT"; then
+      return 0
+    fi
+
+    if [[ "$worker_started" -eq 1 ]] && ! kill -0 "$worker_pid" 2>/dev/null; then
+      return 1
+    fi
+
+    sleep 1
+  done
+
+  return 1
+}
+
 build_cors_allowed_origins() {
   local extra_origins=${CORS_ALLOWED_ORIGINS:-}
 
@@ -370,6 +392,10 @@ cleanup() {
     stop_process "$backend_pid"
   fi
 
+  if [[ "$worker_started" -eq 1 ]]; then
+    stop_process "$worker_pid"
+  fi
+
   stop_database
 
   exit "$exit_code"
@@ -385,7 +411,7 @@ PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://${BACKEND_PUBLIC_HOST}:${BACKEND_PORT
 API_BASE_URL="${PUBLIC_BASE_URL}/api/v1"
 RESOLVED_CORS_ALLOWED_ORIGINS="$(build_cors_allowed_origins)"
 
-printf 'Cleaning up ports %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"
+printf 'Cleaning up ports %s, %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$WORKER_PORT" "$FRONTEND_PORT"
 stop_existing_stack
 
 printf 'Starting database on postgres://%s@%s:%s/%s\n' "$DB_USER" "$DB_HOST" "$DB_PORT" "$DB_NAME"
@@ -414,6 +440,19 @@ if ! wait_for_backend_ready; then
   exit 1
 fi
 
+printf 'Starting TradingAgents worker on http://%s:%s\n' "$(probe_host "$WORKER_HOST")" "$WORKER_PORT"
+(
+  cd "$BACKEND_DIR"
+  exec uv run --frozen uvicorn app.worker.main:app --host "$WORKER_HOST" --port "$WORKER_PORT"
+) &
+worker_pid=$!
+worker_started=1
+
+if ! wait_for_worker_ready; then
+  printf 'TradingAgents worker failed to become ready on port %s.\n' "$WORKER_PORT" >&2
+  exit 1
+fi
+
 printf 'Starting frontend on http://%s:%s\n' "$(probe_host "$FRONTEND_HOST")" "$FRONTEND_PORT"
 (
   cd "$FRONTEND_DIR"
@@ -424,7 +463,8 @@ frontend_pid=$!
 frontend_started=1
 
 printf 'Frontend API base URL: %s\n' "$API_BASE_URL"
-printf 'Press Ctrl+C to stop the database, backend, and frontend.\n'
+printf 'TradingAgents worker URL: http://%s:%s/api/v1/trading-agents/dispatch\n' "$(probe_host "$WORKER_HOST")" "$WORKER_PORT"
+printf 'Press Ctrl+C to stop the database, backend, worker, and frontend.\n'
 
 status=0
 
@@ -432,6 +472,12 @@ while true; do
   if [[ "$backend_started" -eq 1 ]] && ! kill -0 "$backend_pid" 2>/dev/null; then
     wait "$backend_pid" || status=$?
     printf 'Backend exited. Stopping the rest of the stack...\n' >&2
+    break
+  fi
+
+  if [[ "$worker_started" -eq 1 ]] && ! kill -0 "$worker_pid" 2>/dev/null; then
+    wait "$worker_pid" || status=$?
+    printf 'TradingAgents worker exited. Stopping the rest of the stack...\n' >&2
     break
   fi
 
