@@ -27,9 +27,9 @@ from app.services.report_service import ReportService
 logger = logging.getLogger(__name__)
 
 _TERMINAL_BACKTEST_STATUSES = {
-    BacktestStatus.COMPLETED.value,
-    BacktestStatus.FAILED.value,
-    BacktestStatus.CANCELLED.value,
+    BacktestStatus.COMPLETED,
+    BacktestStatus.FAILED,
+    BacktestStatus.CANCELLED,
 }
 
 
@@ -60,13 +60,13 @@ class BacktestCycleService:
             backtest,
             cycle_date,
             allow=[
-                BacktestStatus.AWAITING_CALLBACK.value,
-                BacktestStatus.PROCESSING_CALLBACK.value,
+                BacktestStatus.AWAITING_CALLBACK,
+                BacktestStatus.PROCESSING_CALLBACK,
             ],
         )
         self._set_cycle_status(
             backtest_id,
-            BacktestStatus.PROCESSING_CALLBACK.value,
+            BacktestStatus.PROCESSING_CALLBACK,
             cycle_date=cycle_date,
         )
 
@@ -97,13 +97,13 @@ class BacktestCycleService:
             backtest,
             cycle_date,
             allow=[
-                BacktestStatus.AWAITING_CALLBACK.value,
-                BacktestStatus.PROCESSING_CALLBACK.value,
+                BacktestStatus.AWAITING_CALLBACK,
+                BacktestStatus.PROCESSING_CALLBACK,
             ],
         )
         self._set_cycle_status(
             backtest_id,
-            BacktestStatus.PROCESSING_CALLBACK.value,
+            BacktestStatus.PROCESSING_CALLBACK,
             cycle_date=cycle_date,
         )
 
@@ -143,13 +143,13 @@ class BacktestCycleService:
             backtest,
             cycle_date,
             allow=[
-                BacktestStatus.AWAITING_CALLBACK.value,
-                BacktestStatus.PROCESSING_CALLBACK.value,
+                BacktestStatus.AWAITING_CALLBACK,
+                BacktestStatus.PROCESSING_CALLBACK,
             ],
         )
         self._set_cycle_status(
             backtest_id,
-            BacktestStatus.PROCESSING_CALLBACK.value,
+            BacktestStatus.PROCESSING_CALLBACK,
             cycle_date=cycle_date,
         )
 
@@ -232,9 +232,17 @@ class BacktestCycleService:
             return
 
         backtest = self._get_backtest_or_raise(backtest_id)
+        if not getattr(settings, "public_base_url", None):
+            engine._mark_failed(
+                "PUBLIC_BASE_URL is required for webhook backtests so external workers can "
+                "reach report and callback URLs"
+            )
+            self._clear_cycle_status(backtest_id)
+            return
+
         self._set_cycle_status(
             backtest_id,
-            BacktestStatus.AWAITING_CALLBACK.value,
+            BacktestStatus.AWAITING_CALLBACK,
             cycle_date=cycle_date,
         )
 
@@ -278,11 +286,14 @@ class BacktestCycleService:
             backtest = session.get(Backtest, backtest_id)
             if backtest is None:
                 return
-            if backtest.current_cycle_status != BacktestStatus.AWAITING_CALLBACK.value:
+            if backtest.current_cycle_status not in {
+                BacktestStatus.AWAITING_CALLBACK,
+                BacktestStatus.PROCESSING_CALLBACK,
+            }:
                 return
             if backtest.current_cycle_date != cycle_date:
                 return
-            backtest.status = BacktestStatus.FAILED.value
+            backtest.status = BacktestStatus.FAILED
             backtest.error_message = f"Webhook callback timed out after {backtest.webhook_timeout}s"
             backtest.current_cycle_status = None
             session.commit()
