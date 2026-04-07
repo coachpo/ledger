@@ -17,6 +17,7 @@ dependencies = [
   "pydantic-settings>=2.3,<3.0",
   "python-multipart>=0.0.9,<1.0",
   "sqlalchemy>=2.0,<3.0",
+  "tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@10c136f49c82e11f0e324c9c50cda1638a8ed5a7",
   "uvicorn[standard]>=0.30,<1.0",
   "yfinance>=0.2.54,<0.3.0",
 ]
@@ -32,6 +33,7 @@ dev = [
 
 [project.scripts]
 ledger-backend = "app.main:main"
+ledger-backend-worker = "app.worker.main:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
