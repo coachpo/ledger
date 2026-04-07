@@ -96,6 +96,6 @@ pnpm test:e2e
 
 ## NOTES
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
-- Playwright only runs Chromium here and starts both backend/frontend web servers automatically.
-- Current Vitest coverage is still selective, but it now spans `src/lib/` helpers plus targeted backtest hooks, pages, and result widgets; CI still gates `pnpm lint`, `pnpm build`, and `pnpm test:e2e`, while `pnpm typecheck` and `pnpm test:run` remain local verification steps.
+- Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001`, frontend `4173`, and `BACKTEST_TEST_MODE=1` for deterministic backtest E2E.
+- Current Vitest coverage is still selective, but it now spans `src/lib/` helpers plus targeted backtest hooks, pages, and result widgets; CI gates `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `pnpm test:run` before the separate Playwright job.
 - The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, and backtest list/config/detail routes.
