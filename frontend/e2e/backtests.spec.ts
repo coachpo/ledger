@@ -64,6 +64,7 @@ async function configureBacktestForm(page: Page, backtestName: string) {
   await page.locator("#frequency").selectOption("MONTHLY");
   await page.locator("#start-date").fill("2024-01-02");
   await page.locator("#end-date").fill("2024-03-29");
+  await page.getByRole("button", { name: /legacy callback settings/i }).click();
   await page.locator("#webhook-url").fill("http://localhost:5678/webhook/test");
   await page.locator("#webhook-timeout").fill("600");
   await page.getByLabel(/s&p 500/i).check();
