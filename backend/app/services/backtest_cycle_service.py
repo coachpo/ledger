@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.errors import business_rule_error, not_found_error
 from app.langgraph import BacktestLangGraphRequest, BacktestLangGraphRunner
 from app.langgraph.runner import LiveBacktestSymbolAnalyzer
-from app.langgraph.seeds import build_seeded_langgraph_runner
+from app.langgraph.seeds import build_backtest_langgraph_runner
 from app.models.backtest import Backtest
 from app.schemas.backtest import BacktestStatus, TradeDecision
 from app.schemas.backtest_callback import (
@@ -362,7 +362,7 @@ class BacktestCycleService:
             quote_provider=quote_provider,
         )
 
-    def _build_langgraph_runner(self) -> BacktestLangGraphRunner:
+    def _build_langgraph_runner(self, orchestration_pattern_key: str) -> BacktestLangGraphRunner:
         settings = get_settings()
         analyzer = LiveBacktestSymbolAnalyzer(
             model=settings.backtest_agent_model,
@@ -372,7 +372,10 @@ class BacktestCycleService:
             temperature=settings.backtest_agent_temperature,
             api_mode=cast(Any, settings.backtest_agent_api_mode),
         )
-        return build_seeded_langgraph_runner(analyzer=analyzer)
+        return build_backtest_langgraph_runner(
+            pattern_key=orchestration_pattern_key,
+            analyzer=analyzer,
+        )
 
     def _load_prompt_report(self, prompt_report_slug: str) -> str:
         with self.session_factory() as session:
@@ -452,7 +455,8 @@ class BacktestCycleService:
     ) -> None:
         prompt_report_slug = str(cycle_ctx["prompt_report_slug"])
         prompt_report = self._load_prompt_report(prompt_report_slug)
-        runner = self._build_langgraph_runner()
+        backtest = self._get_backtest_or_raise(backtest_id)
+        runner = self._build_langgraph_runner(backtest.orchestration_pattern_key)
         result = runner.run_cycle(
             BacktestLangGraphRequest(
                 backtest_id=backtest_id,

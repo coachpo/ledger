@@ -347,7 +347,19 @@ def test_dispatch_cycle_runs_internal_langgraph_analysis_without_webhook_dispatc
         "_build_engine",
         lambda backtest_id: cast(BacktestEngine, engine),
     )
-    monkeypatch.setattr(service, "_build_langgraph_runner", lambda: FakeRunner())
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: cast(
+            Backtest,
+            SimpleNamespace(orchestration_pattern_key="seeded_internal_backtest_v1"),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_langgraph_runner",
+        lambda orchestration_pattern_key: FakeRunner(),
+    )
     monkeypatch.setattr(
         service,
         "_load_prompt_report",
@@ -391,6 +403,96 @@ def test_dispatch_cycle_runs_internal_langgraph_analysis_without_webhook_dispatc
     ]
     assert engine.record_calls == [(cycle_date, {})]
     assert len(engine.finalize_calls) == 1
+
+
+def test_run_internal_cycle_uses_stored_orchestration_pattern_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    captured: dict[str, Any] = {}
+
+    class FakeRunner:
+        def run_cycle(self, request: Any) -> Any:
+            return SimpleNamespace(report_content="# LangGraph Analysis", decisions=[])
+
+    class FakeEngine:
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            return "langgraph_backtest_42_20240617"
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            _ = (cycle_date, decisions, market_data, report_slug)
+            return []
+
+        def record_cycle_equity(
+            self, requested_cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            _ = market_data
+            return requested_cycle_date.isoformat(), Decimal("100000.00")
+
+        def finalize(
+            self,
+            *,
+            equity_points: list[tuple[str, Decimal]],
+            benchmark_history: dict[str, list[tuple[str, Decimal]]],
+            trade_log: list[dict[str, Any]],
+            schedule: list[date],
+        ) -> None:
+            _ = (equity_points, benchmark_history, trade_log, schedule)
+
+    def build_runner(orchestration_pattern_key: str) -> FakeRunner:
+        captured["pattern_key"] = orchestration_pattern_key
+        return FakeRunner()
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: cast(
+            Backtest,
+            SimpleNamespace(orchestration_pattern_key="seeded_internal_backtest_v1"),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_langgraph_runner",
+        build_runner,
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_prompt_report",
+        lambda prompt_report_slug: f"prompt content for {prompt_report_slug}",
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(service, "_clear_cycle_status", lambda backtest_id: None)
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, FakeEngine()),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "market_data": {},
+        },
+    )
+
+    assert captured["pattern_key"] == "seeded_internal_backtest_v1"
 
 
 def test_handle_timeout_ignores_stale_timer_for_previous_cycle(

@@ -95,10 +95,12 @@ class BacktestLangGraphRunner:
         analyzer: BacktestSymbolAnalyzer,
         topology_key: str | None = None,
         agent_keys: tuple[str, ...] = (),
+        review_mode: Literal["none", "conservative"] = "none",
     ) -> None:
         self.analyzer = analyzer
         self.topology_key = topology_key
         self.agent_keys = agent_keys
+        self.review_mode = review_mode
         self._graph = self._build_graph()
 
     def run_cycle(self, request: BacktestLangGraphRequest) -> BacktestLangGraphResult:
@@ -126,7 +128,12 @@ class BacktestLangGraphRunner:
         workflow.add_node("compile_result", self._compile_result)
         workflow.add_edge(START, "parse_positions")
         workflow.add_edge("parse_positions", "analyze_positions")
-        workflow.add_edge("analyze_positions", "compile_result")
+        if self.review_mode == "conservative":
+            workflow.add_node("review_analyses", self._review_analyses)
+            workflow.add_edge("analyze_positions", "review_analyses")
+            workflow.add_edge("review_analyses", "compile_result")
+        else:
+            workflow.add_edge("analyze_positions", "compile_result")
         workflow.add_edge("compile_result", END)
         return workflow.compile()
 
@@ -156,6 +163,30 @@ class BacktestLangGraphRunner:
             "report_content": report_content,
             "decisions": decisions,
         }
+
+    def _review_analyses(self, state: RunnerState) -> RunnerState:
+        reviewed: list[PositionAnalysis] = []
+
+        for symbol_analysis in state["analyses"]:
+            label = symbol_analysis.analysis.label.strip().upper()
+            if label not in {"BUY", "OVERWEIGHT"}:
+                reviewed.append(symbol_analysis)
+                continue
+
+            reviewed.append(
+                PositionAnalysis(
+                    position=symbol_analysis.position,
+                    analysis=LangGraphSymbolAnalysis(
+                        label="HOLD",
+                        summary=(
+                            f"{symbol_analysis.analysis.summary} "
+                            f"Conservative review applied: {label} -> HOLD."
+                        ),
+                    ),
+                )
+            )
+
+        return {**state, "analyses": reviewed}
 
     def _extract_positions(self, prompt_report: str) -> list[HeldPosition]:
         positions: list[HeldPosition] = []

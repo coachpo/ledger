@@ -120,11 +120,150 @@ def test_seeded_runner_smoke_executes_seeded_agents_and_topology() -> None:
         "decision_writer",
     ]
     assert SEEDED_TOPOLOGY.key == "seeded_internal_backtest_v1"
+    assert SEEDED_TOPOLOGY.agent_order == ("position_analyst", "decision_writer")
     assert "Topology: seeded_internal_backtest_v1" in result.report_content
-    assert "Agents: position_analyst, risk_reviewer, decision_writer" in result.report_content
+    assert "Agents: position_analyst, decision_writer" in result.report_content
     assert [
         (decision.symbol, decision.action, decision.quantity) for decision in result.decisions
     ] == [("NVDA", "HOLD", None)]
+
+
+def test_analyst_reviewer_pattern_applies_conservative_review_before_decisions() -> None:
+    from app.langgraph.runner import BacktestLangGraphRequest, LangGraphSymbolAnalysis
+    from app.langgraph.seeds import build_backtest_langgraph_runner
+
+    class FakeAnalyzer:
+        def analyze_symbol(
+            self,
+            *,
+            symbol: str,
+            cycle_date: date,
+            prompt_report: str,
+            position_quantity: str,
+        ) -> LangGraphSymbolAnalysis:
+            _ = (cycle_date, prompt_report, position_quantity)
+            return LangGraphSymbolAnalysis(label="BUY", summary=f"Add to {symbol}.")
+
+    runner = build_backtest_langgraph_runner(
+        pattern_key="analyst_reviewer_v1",
+        analyzer=FakeAnalyzer(),
+    )
+
+    result = runner.run_cycle(
+        BacktestLangGraphRequest(
+            backtest_id=100,
+            cycle_date=date(2024, 7, 1),
+            prompt_report_slug="reviewer_prompt_report",
+            prompt_report=(
+                "# Cycle Prompt (2024-07-01)\n\n"
+                "## User\n"
+                "Portfolio state:\n"
+                "Positions:\n"
+                "- NVDA: 3 shares @ 1200.00 USD\n"
+            ),
+        )
+    )
+
+    assert "Topology: analyst_reviewer_v1" in result.report_content
+    assert "Agents: position_analyst, risk_reviewer, decision_writer" in result.report_content
+    assert "Conservative review applied: BUY -> HOLD" in result.report_content
+    assert [
+        (decision.symbol, decision.action, decision.quantity, decision.reasoning)
+        for decision in result.decisions
+    ] == [
+        (
+            "NVDA",
+            "HOLD",
+            None,
+            "HOLD: Add to NVDA. Conservative review applied: BUY -> HOLD.",
+        )
+    ]
+
+
+def test_seeded_and_reviewer_patterns_diverge_on_same_input() -> None:
+    from app.langgraph.runner import BacktestLangGraphRequest, LangGraphSymbolAnalysis
+    from app.langgraph.seeds import build_backtest_langgraph_runner
+
+    class FakeAnalyzer:
+        def analyze_symbol(
+            self,
+            *,
+            symbol: str,
+            cycle_date: date,
+            prompt_report: str,
+            position_quantity: str,
+        ) -> LangGraphSymbolAnalysis:
+            _ = (cycle_date, prompt_report, position_quantity)
+            return LangGraphSymbolAnalysis(label="BUY", summary=f"Add to {symbol}.")
+
+    request = BacktestLangGraphRequest(
+        backtest_id=101,
+        cycle_date=date(2024, 7, 1),
+        prompt_report_slug="paired_prompt_report",
+        prompt_report=(
+            "# Cycle Prompt (2024-07-01)\n\n"
+            "## User\n"
+            "Portfolio state:\n"
+            "Positions:\n"
+            "- NVDA: 3 shares @ 1200.00 USD\n"
+        ),
+    )
+
+    seeded_result = build_backtest_langgraph_runner(
+        pattern_key="seeded_internal_backtest_v1",
+        analyzer=FakeAnalyzer(),
+    ).run_cycle(request)
+    reviewer_result = build_backtest_langgraph_runner(
+        pattern_key="analyst_reviewer_v1",
+        analyzer=FakeAnalyzer(),
+    ).run_cycle(request)
+
+    assert [(decision.action, decision.quantity) for decision in seeded_result.decisions] == [
+        ("BUY", 1)
+    ]
+    assert [(decision.action, decision.quantity) for decision in reviewer_result.decisions] == [
+        ("HOLD", None)
+    ]
+
+
+def test_analyst_reviewer_pattern_converts_overweight_to_hold() -> None:
+    from app.langgraph.runner import BacktestLangGraphRequest, LangGraphSymbolAnalysis
+    from app.langgraph.seeds import build_backtest_langgraph_runner
+
+    class FakeAnalyzer:
+        def analyze_symbol(
+            self,
+            *,
+            symbol: str,
+            cycle_date: date,
+            prompt_report: str,
+            position_quantity: str,
+        ) -> LangGraphSymbolAnalysis:
+            _ = (symbol, cycle_date, prompt_report, position_quantity)
+            return LangGraphSymbolAnalysis(label="OVERWEIGHT", summary="Build the position.")
+
+    result = build_backtest_langgraph_runner(
+        pattern_key="analyst_reviewer_v1",
+        analyzer=FakeAnalyzer(),
+    ).run_cycle(
+        BacktestLangGraphRequest(
+            backtest_id=102,
+            cycle_date=date(2024, 7, 1),
+            prompt_report_slug="overweight_prompt_report",
+            prompt_report=(
+                "# Cycle Prompt (2024-07-01)\n\n"
+                "## User\n"
+                "Portfolio state:\n"
+                "Positions:\n"
+                "- NVDA: 3 shares @ 1200.00 USD\n"
+            ),
+        )
+    )
+
+    assert [(decision.action, decision.quantity) for decision in result.decisions] == [
+        ("HOLD", None)
+    ]
+    assert "Conservative review applied: OVERWEIGHT -> HOLD" in result.report_content
 
 
 def test_live_analyzer_falls_back_when_structured_output_parser_is_incompatible(
