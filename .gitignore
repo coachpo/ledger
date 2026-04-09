@@ -1,17 +1,7 @@
-.sisyphus/
 .DS_Store
-artifacts/
 .ruff_cache/
 
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-.pytest_cache/
+.sisyphus/
+.playwright-mcp/
 
-# Build artifacts
-dist/
-build/
+backend/results/
