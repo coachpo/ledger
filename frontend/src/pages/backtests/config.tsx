@@ -2,7 +2,13 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +56,7 @@ export function BacktestConfigPage() {
   const createBacktestMutation = useCreateBacktest();
   const createPortfolioMutation = useCreatePortfolio();
   const [values, setValues] = useState<BacktestCreateFormValues>(initialValues);
+  const [legacySettingsOpen, setLegacySettingsOpen] = useState(false);
   const [messages, setMessages] = useState<string[]>([]);
 
   const validationMessages = useMemo(
@@ -80,6 +87,11 @@ export function BacktestConfigPage() {
       : parsed.success
         ? []
         : parsed.error.issues.map((issue) => issue.message);
+
+    if (needsLegacySettings(nextMessages)) {
+      setLegacySettingsOpen(true);
+    }
+
     setMessages(nextMessages);
     if (!parsed.success || nextMessages.length > 0) {
       return;
@@ -146,6 +158,18 @@ export function BacktestConfigPage() {
               value={values.name}
               onChange={(event) => updateValue("name", event.target.value)}
             />
+          </section>
+
+          <section className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium">Execution Engine</p>
+              <Badge variant="secondary">LangGraph Internal</Badge>
+              <Badge variant="outline">Default</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Ledger now runs backtests through the internal LangGraph flow by default. Use the
+              retained callback settings only when you need the legacy compatibility path.
+            </p>
           </section>
 
           <section className="space-y-3">
@@ -356,34 +380,58 @@ export function BacktestConfigPage() {
             </div>
           </section>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium">External Client Configuration</h3>
-            <div className="space-y-2">
-              <Label htmlFor="webhook-url">Client Endpoint URL</Label>
-              <Input
-                id="webhook-url"
-                placeholder="http://localhost:5678/client-endpoint/backtest"
-                value={values.webhookUrl}
-                onChange={(event) => updateValue("webhookUrl", event.target.value)}
-              />
+          <Collapsible
+            open={legacySettingsOpen}
+            onOpenChange={setLegacySettingsOpen}
+            className="rounded-lg border border-dashed"
+          >
+            <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium">Legacy callback settings</p>
+                  <Badge variant="outline">Advanced</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Retained for the current backend contract. Expand this section only when you need
+                  compatibility with the legacy callback flow.
+                </p>
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  Legacy callback settings
+                </Button>
+              </CollapsibleTrigger>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="webhook-timeout">Client Callback Timeout (seconds)</Label>
-              <Input
-                id="webhook-timeout"
-                type="number"
-                min="30"
-                max="3600"
-                placeholder="600"
-                value={values.webhookTimeout}
-                onChange={(event) => updateValue("webhookTimeout", event.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Ledger waits this long for the external client to finish each cycle and call back (30-3600
-                seconds)
-              </p>
-            </div>
-          </div>
+            <CollapsibleContent>
+              <div className="flex flex-col gap-4 border-t px-4 pt-4 pb-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="webhook-url">Client Endpoint URL</Label>
+                  <Input
+                    id="webhook-url"
+                    placeholder="http://localhost:5678/client-endpoint/backtest"
+                    value={values.webhookUrl}
+                    onChange={(event) => updateValue("webhookUrl", event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="webhook-timeout">Client Callback Timeout (seconds)</Label>
+                  <Input
+                    id="webhook-timeout"
+                    type="number"
+                    min="30"
+                    max="3600"
+                    placeholder="600"
+                    value={values.webhookTimeout}
+                    onChange={(event) => updateValue("webhookTimeout", event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ledger keeps this timeout for compatibility with the retained callback contract
+                    (30-3600 seconds).
+                  </p>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
 
           <section className="space-y-2">
             <p className="text-sm font-medium">Benchmarks</p>
@@ -458,13 +506,18 @@ function buildValidationMessages(values: BacktestCreateFormValues, portfolios: P
     messages.push("Choose a complete date range");
   }
   if (!values.webhookUrl.trim()) {
-    messages.push("Enter a client endpoint URL");
+    messages.push("Enter a legacy client endpoint URL");
   }
   if (!values.webhookTimeout.trim()) {
-    messages.push("Enter a client callback timeout");
+    messages.push("Enter a legacy callback timeout");
   }
   if (values.benchmarkSymbols.length === 0) {
     messages.push("Select at least one benchmark");
   }
   return messages;
+}
+
+function needsLegacySettings(messages: string[]) {
+  return messages.some((message) => message.toLowerCase().includes("legacy client endpoint"))
+    || messages.some((message) => message.toLowerCase().includes("legacy callback timeout"));
 }

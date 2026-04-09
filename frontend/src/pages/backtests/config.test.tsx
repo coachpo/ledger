@@ -80,6 +80,19 @@ describe("BacktestConfigPage", () => {
     });
   });
 
+  it("shows LangGraph Internal as the default engine and tucks legacy callback settings behind a disclosure", () => {
+    render(<BacktestConfigPage />);
+
+    expect(screen.getByText(/langgraph internal/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /legacy callback settings/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
+
+    expect(screen.getByLabelText(/client endpoint url/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/client callback timeout/i)).toBeInTheDocument();
+  });
+
   it("blocks submit when the validation summary is incomplete", async () => {
     render(<BacktestConfigPage />);
 
@@ -131,6 +144,7 @@ describe("BacktestConfigPage", () => {
     fireEvent.change(screen.getByLabelText(/end date/i), {
       target: { value: "2024-12-31" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
     fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
       target: { value: "http://localhost:5678/webhook/backtest" },
     });
@@ -175,6 +189,7 @@ describe("BacktestConfigPage", () => {
     fireEvent.change(screen.getByLabelText(/end date/i), {
       target: { value: "2024-03-29" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
     fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
       target: { value: "http://localhost:5678/webhook/backtest" },
     });

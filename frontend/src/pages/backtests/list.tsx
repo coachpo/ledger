@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { BacktestStatusBadge } from "@/components/backtests/backtest-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -41,7 +42,8 @@ export function BacktestListPage() {
         <div className="space-y-0.5">
           <h1 className="text-xl font-semibold tracking-tight">Backtests</h1>
           <p className="text-xs text-muted-foreground">
-            Launch, monitor, and review historical portfolio simulations.
+            Launch, monitor, and review historical portfolio simulations on Ledger&apos;s internal
+            LangGraph engine.
           </p>
         </div>
         <Button size="sm" onClick={() => navigate("/backtests/new")}>
@@ -89,6 +91,7 @@ export function BacktestListPage() {
                       {backtest.name}
                     </CardTitle>
                     <BacktestStatusBadge status={backtest.status} />
+                    <Badge variant="outline">LangGraph Internal</Badge>
                     <span className="text-xs text-muted-foreground">{backtest.frequency}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">

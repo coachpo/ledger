@@ -161,8 +161,8 @@ export const backtestCreateFormSchema = z
     priceMode: z.enum(["CLOSING_PRICE"]),
     commissionMode: z.enum(["ZERO", "FIXED", "PERCENTAGE"]),
     commissionValue: numericText("Commission value"),
-    webhookUrl: requiredText("Client endpoint URL"),
-    webhookTimeout: numericText("Client callback timeout"),
+    webhookUrl: requiredText("Legacy client endpoint URL"),
+    webhookTimeout: numericText("Legacy callback timeout"),
     benchmarkSymbols: z.array(z.string()).min(1, "Select at least one benchmark"),
   })
   .superRefine((value, ctx) => {

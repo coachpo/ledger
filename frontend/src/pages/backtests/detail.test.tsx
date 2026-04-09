@@ -120,25 +120,31 @@ describe("BacktestDetailPage", () => {
     render(<BacktestDetailPage />);
 
     expect(await screen.findByText(/current simulation date/i)).toBeInTheDocument();
+    expect(screen.getByText(/langgraph internal/i)).toBeInTheDocument();
+    expect(screen.getByText(/running langgraph cycle analysis/i)).toBeInTheDocument();
     expect(screen.getByText(/elapsed time/i)).toBeInTheDocument();
     expect(screen.getByText(/35m/i)).toBeInTheDocument();
     expect(screen.getByText(/AAPL/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeEnabled();
   });
 
-  it("shows generic callback wording while awaiting a client callback", async () => {
+  it("reframes awaiting callback states as internal LangGraph progress", async () => {
     useBacktestMock.mockReturnValue({ data: awaitingCallbackBacktest, isLoading: false });
 
     render(<BacktestDetailPage />);
 
-    expect(await screen.findByText(/waiting for client callback/i)).toBeInTheDocument();
+    expect(await screen.findByText(/preparing langgraph cycle analysis/i)).toBeInTheDocument();
   });
 
-  it("renders completed backtest summary metrics and trade rows", async () => {
+  it("renders completed backtest metrics alongside a LangGraph decision summary", async () => {
     useBacktestMock.mockReturnValue({ data: completedBacktest, isLoading: false });
 
     render(<BacktestDetailPage />);
 
+    expect(await screen.findByText(/langgraph decision summary/i)).toBeInTheDocument();
+    expect(screen.getByText(/latest analysis cycle/i)).toBeInTheDocument();
+    expect(screen.getByText(/decisions captured/i)).toBeInTheDocument();
+    expect(screen.getByText(/executed trades/i)).toBeInTheDocument();
     expect(await screen.findByText(/total return/i)).toBeInTheDocument();
     expect(screen.getByText(/max drawdown/i)).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /symbol/i })).toBeInTheDocument();

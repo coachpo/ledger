@@ -8,8 +8,15 @@ import { EquityCurveChart } from "@/components/backtests/equity-curve-chart";
 import { MetricsSummary } from "@/components/backtests/metrics-summary";
 import { TradeLogTable } from "@/components/backtests/trade-log-table";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useBacktest, useCancelBacktest, useDeleteBacktest } from "@/hooks/use-backtests";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -50,6 +57,12 @@ export function BacktestDetailPage() {
     backtest.status === "AWAITING_CALLBACK" ||
     backtest.status === "PROCESSING_CALLBACK";
   const elapsedTime = getElapsedTimeLabel(backtest.createdAt);
+  const latestActivity = backtest.recentActivity?.at(-1) ?? null;
+  const totalCapturedDecisions = (backtest.recentActivity ?? []).reduce(
+    (count, entry) => count + entry.decisions.length,
+    0,
+  );
+  const executedTrades = backtest.results?.trades.filter((trade) => trade.executed).length ?? 0;
 
   return (
     <div className="max-w-6xl space-y-4 p-4">
@@ -83,6 +96,15 @@ export function BacktestDetailPage() {
       {isRunning ? (
         <div className="space-y-4">
           <Card>
+            <CardHeader className="gap-2 p-4 pb-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-base">LangGraph Internal</CardTitle>
+                <Badge variant="secondary">Active engine</Badge>
+              </div>
+              <CardDescription>
+                {getInternalStageLabel(backtest.status, backtest.currentCycleStatus)}
+              </CardDescription>
+            </CardHeader>
             <CardContent className="space-y-3 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Current simulation date</p>
@@ -91,18 +113,6 @@ export function BacktestDetailPage() {
                 </p>
               </div>
               <Progress value={progress} />
-              {(backtest.status === "RUNNING" ||
-                backtest.status === "AWAITING_CALLBACK" ||
-                backtest.status === "PROCESSING_CALLBACK") &&
-                backtest.currentCycleStatus && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {backtest.currentCycleStatus === "AWAITING_CALLBACK"
-                      ? "Waiting for client callback..."
-                      : backtest.currentCycleStatus === "PROCESSING_CALLBACK"
-                        ? "Processing client callback..."
-                        : "Running cycle..."}
-                  </p>
-                )}
               <p className="text-xs text-muted-foreground">
                 {backtest.completedCycles} / {backtest.totalCycles} cycles · Started {formatDateTime(backtest.createdAt)}
               </p>
@@ -137,6 +147,49 @@ export function BacktestDetailPage() {
       ) : backtest.results ? (
         <div className="space-y-4">
           <MetricsSummary portfolio={backtest.results.portfolio} />
+          <Card>
+            <CardHeader className="gap-2 p-4 pb-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-base">LangGraph Decision Summary</CardTitle>
+                <Badge variant="secondary">Internal engine</Badge>
+              </div>
+              <CardDescription>
+                A compact recap of the last internal analysis cycle using the existing backtest
+                activity and trade data.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+              <div className="flex flex-col gap-1 rounded-md border p-3">
+                <p className="text-xs font-medium text-muted-foreground">Latest analysis cycle</p>
+                <p className="text-sm font-medium">
+                  {latestActivity ? formatDate(latestActivity.cycleDate) : "No cycle captured"}
+                </p>
+              </div>
+              <div className="flex flex-col gap-1 rounded-md border p-3">
+                <p className="text-xs font-medium text-muted-foreground">Decisions captured</p>
+                <p className="text-sm font-medium">{totalCapturedDecisions}</p>
+              </div>
+              <div className="flex flex-col gap-1 rounded-md border p-3">
+                <p className="text-xs font-medium text-muted-foreground">Executed trades</p>
+                <p className="text-sm font-medium">{executedTrades}</p>
+              </div>
+              {latestActivity && latestActivity.decisions.length > 0 ? (
+                <div className="md:col-span-3 flex flex-col gap-2 rounded-md border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Latest cycle decisions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {latestActivity.decisions.map((decision) => (
+                      <Badge
+                        key={`${latestActivity.cycleDate}-${decision.symbol}-${decision.action}`}
+                        variant="outline"
+                      >
+                        {decision.symbol} · {decision.action}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
           <Card>
             <CardContent className="space-y-4 p-4">
               <CardTitle className="text-base">Equity Curve</CardTitle>
@@ -222,4 +275,18 @@ function getElapsedTimeLabel(createdAt: string): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
+}
+
+function getInternalStageLabel(status: string, currentCycleStatus: string | null) {
+  if (currentCycleStatus === "AWAITING_CALLBACK" || status === "AWAITING_CALLBACK") {
+    return "Preparing LangGraph cycle analysis...";
+  }
+  if (currentCycleStatus === "PROCESSING_CALLBACK" || status === "PROCESSING_CALLBACK") {
+    return "Applying LangGraph cycle decisions...";
+  }
+  if (status === "PENDING") {
+    return "Queueing LangGraph cycle analysis...";
+  }
+
+  return "Running LangGraph cycle analysis...";
 }

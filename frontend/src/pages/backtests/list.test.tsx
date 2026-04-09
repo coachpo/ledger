@@ -77,6 +77,7 @@ describe("BacktestListPage", () => {
   it("renders the backtest inventory with running progress, completed summary, and failed error state", async () => {
     render(<BacktestListPage />);
 
+    expect(screen.getByText(/internal langgraph engine/i)).toBeInTheDocument();
     expect(screen.getByText(/completed backtest/i)).toBeInTheDocument();
     expect(screen.getByText(/running backtest/i)).toBeInTheDocument();
     expect(screen.getByText(/failed backtest/i)).toBeInTheDocument();
