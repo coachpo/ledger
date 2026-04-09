@@ -11,6 +11,7 @@ describe("BacktestRead webhook contract", () => {
       templateId: 1,
       depositBalanceId: 1,
       name: "Backtest",
+      orchestrationPatternKey: "seeded_internal_backtest_v1",
       status: "COMPLETED",
       frequency: "DAILY",
       startDate: "2024-01-02",
@@ -34,5 +35,6 @@ describe("BacktestRead webhook contract", () => {
 
     expect(valid.webhookUrl).toBe("http://test.example.com/webhook");
     expect(valid.webhookTimeout).toBe(600);
+    expect(valid.orchestrationPatternKey).toBe("seeded_internal_backtest_v1");
   });
 });

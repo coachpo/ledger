@@ -155,6 +155,7 @@ export const backtestCreateFormSchema = z
     createTemplate: z.boolean(),
     templateId: z.string(),
     templateName: optionalText,
+    orchestrationPatternKey: requiredText("Orchestration pattern"),
     frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY"]),
     startDate: requiredText("Start date"),
     endDate: requiredText("End date"),

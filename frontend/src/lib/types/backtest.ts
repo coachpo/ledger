@@ -80,6 +80,7 @@ export interface BacktestRead {
   templateId: number;
   depositBalanceId: number;
   name: string;
+  orchestrationPatternKey: string;
   status: BacktestStatus;
   frequency: BacktestFrequency;
   startDate: string;
@@ -107,6 +108,7 @@ export interface BacktestCreateInput {
   templateId: number | null;
   createTemplate: boolean;
   templateName: string | null;
+  orchestrationPatternKey: string;
   frequency: BacktestFrequency;
   startDate: string;
   endDate: string;
