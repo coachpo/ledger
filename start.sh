@@ -392,10 +392,6 @@ cleanup() {
     stop_process "$backend_pid"
   fi
 
-  if [[ "$worker_started" -eq 1 ]]; then
-    stop_process "$worker_pid"
-  fi
-
   stop_database
 
   exit "$exit_code"
@@ -411,7 +407,7 @@ PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://${BACKEND_PUBLIC_HOST}:${BACKEND_PORT
 API_BASE_URL="${PUBLIC_BASE_URL}/api/v1"
 RESOLVED_CORS_ALLOWED_ORIGINS="$(build_cors_allowed_origins)"
 
-printf 'Cleaning up ports %s, %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$WORKER_PORT" "$FRONTEND_PORT"
+printf 'Cleaning up ports %s, %s, and %s before startup\n' "$DB_PORT" "$BACKEND_PORT" "$FRONTEND_PORT"
 stop_existing_stack
 
 printf 'Starting database on postgres://%s@%s:%s/%s\n' "$DB_USER" "$DB_HOST" "$DB_PORT" "$DB_NAME"
@@ -440,19 +436,6 @@ if ! wait_for_backend_ready; then
   exit 1
 fi
 
-printf 'Starting TradingAgents worker on http://%s:%s\n' "$(probe_host "$WORKER_HOST")" "$WORKER_PORT"
-(
-  cd "$BACKEND_DIR"
-  exec uv run --frozen uvicorn app.worker.main:app --host "$WORKER_HOST" --port "$WORKER_PORT"
-) &
-worker_pid=$!
-worker_started=1
-
-if ! wait_for_worker_ready; then
-  printf 'TradingAgents worker failed to become ready on port %s.\n' "$WORKER_PORT" >&2
-  exit 1
-fi
-
 printf 'Starting frontend on http://%s:%s\n' "$(probe_host "$FRONTEND_HOST")" "$FRONTEND_PORT"
 (
   cd "$FRONTEND_DIR"
@@ -463,8 +446,7 @@ frontend_pid=$!
 frontend_started=1
 
 printf 'Frontend API base URL: %s\n' "$API_BASE_URL"
-printf 'TradingAgents worker URL: http://%s:%s/api/v1/trading-agents/dispatch\n' "$(probe_host "$WORKER_HOST")" "$WORKER_PORT"
-printf 'Press Ctrl+C to stop the database, backend, worker, and frontend.\n'
+printf 'Press Ctrl+C to stop the database, backend, and frontend.\n'
 
 status=0
 
@@ -472,12 +454,6 @@ while true; do
   if [[ "$backend_started" -eq 1 ]] && ! kill -0 "$backend_pid" 2>/dev/null; then
     wait "$backend_pid" || status=$?
     printf 'Backend exited. Stopping the rest of the stack...\n' >&2
-    break
-  fi
-
-  if [[ "$worker_started" -eq 1 ]] && ! kill -0 "$worker_pid" 2>/dev/null; then
-    wait "$worker_pid" || status=$?
-    printf 'TradingAgents worker exited. Stopping the rest of the stack...\n' >&2
     break
   fi
 

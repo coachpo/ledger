@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import logging
-import threading
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
-import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.core.errors import business_rule_error, not_found_error
+from app.langgraph import BacktestLangGraphRequest, BacktestLangGraphRunner
+from app.langgraph.runner import LiveBacktestSymbolAnalyzer
+from app.langgraph.seeds import build_seeded_langgraph_runner
 from app.models.backtest import Backtest
 from app.schemas.backtest import BacktestStatus, TradeDecision
 from app.schemas.backtest_callback import (
@@ -231,55 +232,16 @@ class BacktestCycleService:
             self._deterministic_cycle(backtest_id, cycle_date, engine, cycle_ctx)
             return
 
-        backtest = self._get_backtest_or_raise(backtest_id)
-        if not getattr(settings, "public_base_url", None):
-            engine._mark_failed(
-                "PUBLIC_BASE_URL is required for webhook backtests so external workers can "
-                "reach report and callback URLs"
-            )
-            self._clear_cycle_status(backtest_id)
-            return
-
-        self._set_cycle_status(
-            backtest_id,
-            BacktestStatus.AWAITING_CALLBACK,
-            cycle_date=cycle_date,
-        )
-
-        payload = {
-            "backtestId": backtest_id,
-            "cycleDate": cycle_date.isoformat(),
-            "totalCycles": backtest.total_cycles,
-            "completedCycles": backtest.completed_cycles,
-            "frequency": backtest.frequency,
-            "reportSlug": cycle_ctx["prompt_report_slug"],
-            "reportDownloadUrl": self._resolve_public_url(
-                settings,
-                f"/api/v1/reports/{cycle_ctx['prompt_report_slug']}/download",
-            ),
-            "callbackBaseUrl": self._resolve_public_url(
-                settings,
-                f"/api/v1/backtests/{backtest_id}/cycles/{cycle_date.isoformat()}",
-            ),
-            "benchmarkSymbols": backtest.benchmark_symbols,
-        }
-
         try:
-            response = httpx.post(backtest.webhook_url, json=payload, timeout=30.0)
-            response.raise_for_status()
+            self._run_internal_cycle(backtest_id, cycle_date, engine, cycle_ctx)
         except Exception as exc:
-            logger.error("Webhook dispatch failed for backtest %d: %s", backtest_id, exc)
-            engine._mark_failed(f"Webhook dispatch failed: {exc}")
+            logger.exception(
+                "Failed to execute internal LangGraph cycle %s for backtest %d",
+                cycle_date,
+                backtest_id,
+            )
+            engine._mark_failed(str(exc))
             self._clear_cycle_status(backtest_id)
-            return
-
-        timer = threading.Timer(
-            backtest.webhook_timeout,
-            self._handle_timeout,
-            args=[backtest_id, cycle_date],
-        )
-        timer.daemon = True
-        timer.start()
 
     def _handle_timeout(self, backtest_id: int, cycle_date: date) -> None:
         with self.session_factory() as session:
@@ -400,6 +362,24 @@ class BacktestCycleService:
             quote_provider=quote_provider,
         )
 
+    def _build_langgraph_runner(self) -> BacktestLangGraphRunner:
+        settings = get_settings()
+        analyzer = LiveBacktestSymbolAnalyzer(
+            model=settings.backtest_agent_model,
+            api_key=settings.backtest_agent_api_key,
+            base_url=settings.backtest_agent_base_url,
+            timeout_seconds=settings.backtest_agent_timeout_seconds,
+            temperature=settings.backtest_agent_temperature,
+            api_mode=cast(Any, settings.backtest_agent_api_mode),
+        )
+        return build_seeded_langgraph_runner(analyzer=analyzer)
+
+    def _load_prompt_report(self, prompt_report_slug: str) -> str:
+        with self.session_factory() as session:
+            report_service = ReportService(session)
+            report = report_service.get_report_model_by_slug(prompt_report_slug)
+            return report.content
+
     def _get_backtest_or_raise(self, backtest_id: int) -> Backtest:
         with self.session_factory() as session:
             backtest = session.get(Backtest, backtest_id)
@@ -462,6 +442,71 @@ class BacktestCycleService:
             return path
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"{public_base_url}{normalized_path}"
+
+    def _run_internal_cycle(
+        self,
+        backtest_id: int,
+        cycle_date: date,
+        engine: BacktestEngine,
+        cycle_ctx: dict[str, Any],
+    ) -> None:
+        prompt_report_slug = str(cycle_ctx["prompt_report_slug"])
+        prompt_report = self._load_prompt_report(prompt_report_slug)
+        runner = self._build_langgraph_runner()
+        result = runner.run_cycle(
+            BacktestLangGraphRequest(
+                backtest_id=backtest_id,
+                cycle_date=cycle_date,
+                prompt_report_slug=prompt_report_slug,
+                prompt_report=prompt_report,
+            )
+        )
+        report_slug = engine._store_cycle_report(cycle_date, result.report_content)
+        trade_results = engine.apply_cycle_trades(
+            cycle_date=cycle_date,
+            decisions=result.decisions,
+            market_data=cycle_ctx["market_data"],
+            report_slug=report_slug,
+        )
+
+        run_state = self._load_run_state(backtest_id)
+        trade_log = list(run_state["trade_log"])
+        trade_log.extend(trade_results)
+        date_str, equity_value = engine.record_cycle_equity(cycle_date, cycle_ctx["market_data"])
+
+        schedule = run_state["schedule"]
+        if cycle_date not in schedule:
+            raise business_rule_error(
+                "invalid_backtest_cycle_date",
+                f"Cycle date {cycle_date.isoformat()} is not part of the backtest schedule",
+            )
+
+        benchmark_history = run_state["benchmark_history"]
+        equity_points = list(run_state["equity_points"])
+        if equity_points and equity_points[-1][0] == date_str:
+            equity_points[-1] = (date_str, equity_value)
+        else:
+            equity_points.append((date_str, equity_value))
+
+        current_index = schedule.index(cycle_date)
+        is_last_cycle = current_index >= len(schedule) - 1
+        if is_last_cycle:
+            engine.finalize(
+                equity_points=equity_points,
+                benchmark_history=benchmark_history,
+                trade_log=trade_log,
+                schedule=schedule,
+            )
+            self._clear_cycle_status(backtest_id)
+            return
+
+        self._update_run_state(
+            backtest_id,
+            equity_points=equity_points,
+            trade_log=trade_log,
+        )
+        next_cycle_date = schedule[current_index + 1]
+        self._dispatch_cycle(backtest_id, next_cycle_date)
 
     def _store_run_state(
         self,

@@ -260,61 +260,137 @@ def test_deterministic_cycle_holds_existing_symbols(monkeypatch: pytest.MonkeyPa
     assert len(engine.finalize_calls) == 1
 
 
-def test_dispatch_cycle_uses_public_base_url_for_report_and_callback_paths(
+def test_dispatch_cycle_runs_internal_langgraph_analysis_without_webhook_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = build_service()
     cycle_date = date(2024, 6, 17)
     captured: dict[str, Any] = {}
 
-    engine = SimpleNamespace(
-        execute_cycle=lambda requested_cycle_date: {
-            "cancelled": False,
-            "prompt_report_slug": "backtest_42_prompt_20240617",
-            "market_data": {},
-            "cycle_date": requested_cycle_date,
-        }
-    )
+    class FakeRunner:
+        def run_cycle(self, request: Any) -> Any:
+            captured["request"] = request
+            return SimpleNamespace(
+                report_content="# LangGraph Analysis",
+                decisions=[],
+            )
 
-    monkeypatch.setattr(service, "_build_engine", lambda backtest_id: cast(BacktestEngine, engine))
+    class FakeEngine:
+        def __init__(self) -> None:
+            self.apply_calls: list[dict[str, Any]] = []
+            self.record_calls: list[tuple[date, dict[str, dict[str, Decimal]]]] = []
+            self.finalize_calls: list[dict[str, Any]] = []
+
+        def execute_cycle(self, requested_cycle_date: date) -> dict[str, Any]:
+            return {
+                "cancelled": False,
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "market_data": {},
+                "cycle_date": requested_cycle_date,
+            }
+
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            captured["stored_report"] = {
+                "cycle_date": requested_cycle_date,
+                "analysis": analysis,
+            }
+            return "langgraph_backtest_42_20240617"
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            self.apply_calls.append(
+                {
+                    "cycle_date": cycle_date,
+                    "decisions": decisions,
+                    "market_data": market_data,
+                    "report_slug": report_slug,
+                }
+            )
+            return []
+
+        def record_cycle_equity(
+            self, requested_cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            self.record_calls.append((requested_cycle_date, market_data))
+            return requested_cycle_date.isoformat(), Decimal("100000.00")
+
+        def finalize(
+            self,
+            *,
+            equity_points: list[tuple[str, Decimal]],
+            benchmark_history: dict[str, list[tuple[str, Decimal]]],
+            trade_log: list[dict[str, Any]],
+            schedule: list[date],
+        ) -> None:
+            self.finalize_calls.append(
+                {
+                    "equity_points": equity_points,
+                    "benchmark_history": benchmark_history,
+                    "trade_log": trade_log,
+                    "schedule": schedule,
+                }
+            )
+
+        def _mark_failed(self, message: str) -> None:
+            raise AssertionError(message)
+
+    engine = FakeEngine()
+
     monkeypatch.setattr(
         service,
-        "_get_backtest_or_raise",
-        lambda backtest_id: SimpleNamespace(
-            total_cycles=10,
-            completed_cycles=2,
-            frequency="DAILY",
-            webhook_url="http://192.168.1.222:8091/webhook/ledger",
-            webhook_timeout=600,
-            benchmark_symbols=["^GSPC"],
-        ),
+        "_build_engine",
+        lambda backtest_id: cast(BacktestEngine, engine),
     )
-    monkeypatch.setattr(service, "_set_cycle_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service, "_build_langgraph_runner", lambda: FakeRunner())
     monkeypatch.setattr(
-        "app.services.backtest_cycle_service.get_settings",
-        lambda: SimpleNamespace(
-            backtest_test_mode=False,
-            public_base_url="http://192.168.1.231:28000",
+        service,
+        "_load_prompt_report",
+        lambda prompt_report_slug: f"prompt content for {prompt_report_slug}",
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(service, "_clear_cycle_status", lambda backtest_id: None)
+
+    monkeypatch.setattr(
+        service,
+        "_resolve_public_url",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy webhook URL resolution should not be used")
         ),
     )
-
-    def fake_post(url: str, json: dict[str, Any], timeout: float):
-        captured["url"] = url
-        captured["json"] = json
-        captured["timeout"] = timeout
-        return SimpleNamespace(raise_for_status=lambda: None)
-
-    monkeypatch.setattr("app.services.backtest_cycle_service.httpx.post", fake_post)
 
     service._dispatch_cycle(backtest_id=42, cycle_date=cycle_date)
 
-    assert captured["url"] == "http://192.168.1.222:8091/webhook/ledger"
-    assert captured["json"]["reportDownloadUrl"] == (
-        "http://192.168.1.231:28000/api/v1/reports/backtest_42_prompt_20240617/download"
-    )
-    assert captured["json"]["callbackBaseUrl"] == (
-        "http://192.168.1.231:28000/api/v1/backtests/42/cycles/2024-06-17"
-    )
+    assert captured["request"].prompt_report_slug == "backtest_42_prompt_20240617"
+    assert captured["request"].prompt_report == "prompt content for backtest_42_prompt_20240617"
+    assert captured["stored_report"] == {
+        "cycle_date": cycle_date,
+        "analysis": "# LangGraph Analysis",
+    }
+    assert engine.apply_calls == [
+        {
+            "cycle_date": cycle_date,
+            "decisions": [],
+            "market_data": {},
+            "report_slug": "langgraph_backtest_42_20240617",
+        }
+    ]
+    assert engine.record_calls == [(cycle_date, {})]
+    assert len(engine.finalize_calls) == 1
 
 
 def test_handle_timeout_ignores_stale_timer_for_previous_cycle(
