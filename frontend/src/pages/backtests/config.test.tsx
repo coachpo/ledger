@@ -84,6 +84,11 @@ describe("BacktestConfigPage", () => {
     render(<BacktestConfigPage />);
 
     expect(screen.getByText(/langgraph internal/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/orchestration pattern/i)).toHaveValue(
+      "seeded_internal_backtest_v1",
+    );
+    expect(screen.getByRole("option", { name: /seeded internal v1/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /analyst reviewer v1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /legacy callback settings/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
 
@@ -144,6 +149,9 @@ describe("BacktestConfigPage", () => {
     fireEvent.change(screen.getByLabelText(/end date/i), {
       target: { value: "2024-12-31" },
     });
+    fireEvent.change(screen.getByLabelText(/orchestration pattern/i), {
+      target: { value: "analyst_reviewer_v1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
     fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
       target: { value: "http://localhost:5678/webhook/backtest" },
@@ -159,7 +167,10 @@ describe("BacktestConfigPage", () => {
       operationType: "DEPOSIT",
     });
     expect(createBacktestMock).toHaveBeenCalledWith(
-      expect.objectContaining({ portfolioId: 12 }),
+      expect.objectContaining({
+        portfolioId: 12,
+        orchestrationPatternKey: "analyst_reviewer_v1",
+      }),
     );
   });
 

@@ -27,6 +27,8 @@ const benchmarkOptions: BenchmarkOption[] = [
   { label: "Dow Jones", symbol: "^DJI" },
 ];
 
+const defaultOrchestrationPatternKey = "seeded_internal_backtest_v1";
+
 const initialValues: BacktestCreateFormValues = {
   name: "",
   portfolioMode: "existing",
@@ -38,6 +40,7 @@ const initialValues: BacktestCreateFormValues = {
   createTemplate: false,
   templateId: "",
   templateName: "",
+  orchestrationPatternKey: defaultOrchestrationPatternKey,
   frequency: "DAILY",
   startDate: "",
   endDate: "",
@@ -121,6 +124,7 @@ export function BacktestConfigPage() {
         templateId: values.createTemplate ? null : Number(values.templateId),
         createTemplate: values.createTemplate,
         templateName: values.createTemplate && values.templateName ? values.templateName : null,
+        orchestrationPatternKey: values.orchestrationPatternKey,
         frequency: values.frequency,
         startDate: values.startDate,
         endDate: values.endDate,
@@ -170,6 +174,23 @@ export function BacktestConfigPage() {
               Ledger now runs backtests through the internal LangGraph flow by default. Use the
               retained callback settings only when you need the legacy compatibility path.
             </p>
+            <div className="space-y-2">
+              <Label htmlFor="orchestration-pattern">Orchestration Pattern</Label>
+              <select
+                id="orchestration-pattern"
+                aria-label="Orchestration Pattern"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value={values.orchestrationPatternKey}
+                onChange={(event) => updateValue("orchestrationPatternKey", event.target.value)}
+              >
+                <option value={defaultOrchestrationPatternKey}>Seeded Internal v1</option>
+                <option value="analyst_reviewer_v1">Analyst Reviewer v1</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Choose the built-in orchestration pattern for this backtest while keeping the
+                selected template as the generic orchestration prompt.
+              </p>
+            </div>
           </section>
 
           <section className="space-y-3">
