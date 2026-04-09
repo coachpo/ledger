@@ -47,6 +47,7 @@ target-version = ["py313"]
 profile = "black"
 line_length = 100
 src_paths = ["app", "tests"]
+known_third_party = ["langgraph"]
 
 [tool.ruff]
 line-length = 100
