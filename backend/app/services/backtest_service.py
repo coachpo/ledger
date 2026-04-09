@@ -5,6 +5,10 @@ import threading
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import business_rule_error, not_found_error
+from app.langgraph.seeds import (
+    DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY,
+    is_supported_backtest_orchestration_pattern_key,
+)
 from app.models.backtest import Backtest
 from app.models.balance import Balance
 from app.repositories.backtest import BacktestRepository
@@ -81,11 +85,15 @@ class BacktestService:
         self.portfolio_service.get_portfolio_model(payload.portfolio_id)
         deposit_balance = self._resolve_deposit_balance(payload.portfolio_id)
         template_id = self._resolve_template_id(payload)
+        orchestration_pattern_key = self._resolve_orchestration_pattern_key(
+            payload.orchestration_pattern_key
+        )
 
         backtest = Backtest(
             portfolio_id=payload.portfolio_id,
             deposit_balance_id=deposit_balance.id,
             name=payload.name,
+            orchestration_pattern_key=orchestration_pattern_key,
             status=BacktestStatus.PENDING.value,
             frequency=payload.frequency.value,
             start_date=payload.start_date,
@@ -173,3 +181,19 @@ class BacktestService:
             )
         )
         return created.id
+
+    def _resolve_orchestration_pattern_key(self, pattern_key: str | None) -> str:
+        if pattern_key is None:
+            return DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY
+
+        normalized = pattern_key.strip()
+        if not normalized:
+            return DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY
+
+        if not is_supported_backtest_orchestration_pattern_key(normalized):
+            raise business_rule_error(
+                "invalid_orchestration_pattern",
+                f"Unknown orchestration pattern: {normalized}",
+            )
+
+        return normalized

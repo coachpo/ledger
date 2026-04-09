@@ -119,10 +119,152 @@ def test_init_db_creates_backtests_table(database_url: str) -> None:
             "deposit_balance_id",
             "status",
             "frequency",
+            "orchestration_pattern_key",
             "benchmark_symbols",
             "recent_activity",
             "results",
         } <= columns
+    finally:
+        engine.dispose()
+
+
+def test_init_db_upgrades_backtests_with_orchestration_pattern_key(database_url: str) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE portfolios (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    slug VARCHAR(100) NOT NULL UNIQUE,
+                    description TEXT,
+                    base_currency VARCHAR(3) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE balances (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                    label VARCHAR(60) NOT NULL,
+                    operation_type VARCHAR NOT NULL,
+                    amount NUMERIC(20, 4) NOT NULL,
+                    currency VARCHAR(3) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE text_templates (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE backtests (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+                    deposit_balance_id INTEGER NOT NULL REFERENCES balances(id) ON DELETE RESTRICT,
+                    name VARCHAR(200) NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    frequency VARCHAR(10) NOT NULL,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    current_cycle_date DATE NULL,
+                    total_cycles INTEGER NOT NULL DEFAULT 0,
+                    completed_cycles INTEGER NOT NULL DEFAULT 0,
+                    template_id INTEGER NOT NULL REFERENCES text_templates(id) ON DELETE RESTRICT,
+                    webhook_url VARCHAR(1000) NOT NULL,
+                    webhook_timeout INTEGER NOT NULL DEFAULT 600,
+                    current_cycle_status VARCHAR(30) NULL,
+                    price_mode VARCHAR(20) NOT NULL,
+                    commission_mode VARCHAR(20) NOT NULL,
+                    commission_value NUMERIC(18, 8) NOT NULL DEFAULT 0,
+                    benchmark_symbols JSONB NOT NULL DEFAULT '[]',
+                    recent_activity JSONB NULL,
+                    results JSONB NULL,
+                    error_message TEXT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO portfolios (name, slug, description, base_currency)
+                VALUES ('Legacy Portfolio', 'legacy_portfolio', NULL, 'USD')
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO balances (portfolio_id, label, operation_type, amount, currency)
+                VALUES (1, 'Cash', 'DEPOSIT', 1000.00, 'USD')
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO text_templates (name, content)
+                VALUES ('Legacy Template', '# Template')
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO backtests (
+                    portfolio_id,
+                    deposit_balance_id,
+                    name,
+                    status,
+                    frequency,
+                    start_date,
+                    end_date,
+                    template_id,
+                    webhook_url,
+                    webhook_timeout,
+                    price_mode,
+                    commission_mode,
+                    commission_value,
+                    benchmark_symbols
+                ) VALUES (
+                    1,
+                    1,
+                    'Legacy Backtest',
+                    'PENDING',
+                    'DAILY',
+                    DATE '2024-01-02',
+                    DATE '2024-01-31',
+                    1,
+                    'http://localhost:5678/webhook/test',
+                    600,
+                    'CLOSING_PRICE',
+                    'ZERO',
+                    0,
+                    '["^GSPC"]'::jsonb
+                )
+                """
+            )
+
+        init_db(database_url)
+
+        columns = {column["name"] for column in inspect(engine).get_columns("backtests")}
+        assert "orchestration_pattern_key" in columns
+
+        with engine.begin() as connection:
+            value = connection.exec_driver_sql(
+                "SELECT orchestration_pattern_key FROM backtests WHERE id = 1"
+            ).scalar_one()
+        assert value == "seeded_internal_backtest_v1"
     finally:
         engine.dispose()
 
@@ -258,6 +400,7 @@ def test_backtest_routes_support_list_get_cancel_and_delete(
     assert list_response.status_code == 200
     assert [item["id"] for item in list_response.json()] == [created["id"]]
     assert list_response.json()[0]["portfolioName"] == portfolio["name"]
+    assert list_response.json()[0]["orchestrationPatternKey"] == "seeded_internal_backtest_v1"
 
     get_response = client.get(f"/api/v1/backtests/{created['id']}")
     assert get_response.status_code == 200
@@ -265,6 +408,7 @@ def test_backtest_routes_support_list_get_cancel_and_delete(
     assert get_response.json()["webhookUrl"] == "http://localhost:5678/webhook/test"
     assert get_response.json()["webhookTimeout"] == 600
     assert get_response.json()["portfolioName"] == portfolio["name"]
+    assert get_response.json()["orchestrationPatternKey"] == "seeded_internal_backtest_v1"
 
     cancel_response = client.post(f"/api/v1/backtests/{created['id']}/cancel")
     assert cancel_response.status_code == 200
@@ -292,6 +436,49 @@ def test_create_backtest_returns_pending_and_submits_engine(
     )
     assert response.status_code == 201, response.json()
     assert response.json()["status"] == "PENDING"
+    assert response.json()["orchestrationPatternKey"] == "seeded_internal_backtest_v1"
+    assert submitted_backtests == [response.json()["id"]]
+
+
+def test_create_backtest_rejects_unknown_orchestration_pattern_key(
+    client: TestClient, submitted_backtests: list[int]
+) -> None:
+    portfolio = create_portfolio(client, name="Unknown Pattern", slug="unknown_pattern")
+    create_balance(client, str(portfolio["id"]), amount="10000.00")
+    template = create_template(client, name="Unknown Pattern Template", content="# Template")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={"orchestrationPatternKey": "unknown_pattern"},
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_orchestration_pattern"
+    assert submitted_backtests == []
+
+
+def test_create_backtest_accepts_second_orchestration_pattern_key(
+    client: TestClient, submitted_backtests: list[int]
+) -> None:
+    portfolio = create_portfolio(client, name="Reviewer Pattern", slug="reviewer_pattern")
+    create_balance(client, str(portfolio["id"]), amount="10000.00")
+    template = create_template(client, name="Reviewer Pattern Template", content="# Template")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={"orchestrationPatternKey": "analyst_reviewer_v1"},
+        ),
+    )
+
+    assert response.status_code == 201, response.json()
+    assert response.json()["orchestrationPatternKey"] == "analyst_reviewer_v1"
     assert submitted_backtests == [response.json()["id"]]
 
 

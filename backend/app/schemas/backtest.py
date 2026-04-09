@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -11,7 +11,7 @@ from app.core.formatting import normalize_symbol, parse_decimal_string
 from app.schemas.common import CamelModel
 
 
-class BacktestStatus(StrEnum):
+class BacktestStatus(str, Enum):  # noqa: UP042
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     AWAITING_CALLBACK = "AWAITING_CALLBACK"
@@ -21,17 +21,17 @@ class BacktestStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
-class BacktestFrequency(StrEnum):
+class BacktestFrequency(str, Enum):  # noqa: UP042
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
     MONTHLY = "MONTHLY"
 
 
-class BacktestPriceMode(StrEnum):
+class BacktestPriceMode(str, Enum):  # noqa: UP042
     CLOSING_PRICE = "CLOSING_PRICE"
 
 
-class BacktestCommissionMode(StrEnum):
+class BacktestCommissionMode(str, Enum):  # noqa: UP042
     ZERO = "ZERO"
     FIXED = "FIXED"
     PERCENTAGE = "PERCENTAGE"
@@ -130,6 +130,7 @@ class BacktestCreate(CamelModel):
     template_id: int | None = None
     create_template: bool = False
     template_name: str | None = Field(default=None, min_length=1, max_length=100)
+    orchestration_pattern_key: str | None = None
     frequency: BacktestFrequency
     start_date: date
     end_date: date
@@ -153,6 +154,16 @@ class BacktestCreate(CamelModel):
     @field_validator("template_name", mode="before")
     @classmethod
     def validate_optional_template_name(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return normalized
+
+    @field_validator("orchestration_pattern_key", mode="before")
+    @classmethod
+    def validate_optional_orchestration_pattern_key(cls, value: object) -> str | None:
         if value is None:
             return None
         normalized = str(value).strip()
@@ -217,6 +228,7 @@ class BacktestRead(CamelModel):
     template_id: int
     deposit_balance_id: int
     name: str
+    orchestration_pattern_key: str = "seeded_internal_backtest_v1"
     status: BacktestStatus
     frequency: BacktestFrequency
     start_date: date

@@ -103,6 +103,23 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                     "ADD COLUMN backtest_id INTEGER REFERENCES backtests(id) ON DELETE CASCADE"
                 )
 
+    if "backtests" in table_names:
+        backtest_columns = {column["name"] for column in inspector.get_columns("backtests")}
+        if "orchestration_pattern_key" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN orchestration_pattern_key "
+                    "VARCHAR(120) DEFAULT 'seeded_internal_backtest_v1'"
+                )
+                connection.exec_driver_sql(
+                    "UPDATE backtests "
+                    "SET orchestration_pattern_key = 'seeded_internal_backtest_v1' "
+                    "WHERE orchestration_pattern_key IS NULL"
+                )
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ALTER COLUMN orchestration_pattern_key SET NOT NULL"
+                )
+
     if "reports" in table_names:
         report_columns = {column["name"] for column in inspector.get_columns("reports")}
         if "slug" not in report_columns:

@@ -28,6 +28,9 @@ class Backtest(IdMixin, TimestampMixin, Base):
         ForeignKey("balances.id", ondelete="RESTRICT"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    orchestration_pattern_key: Mapped[str] = mapped_column(
+        String(120), nullable=False, server_default="seeded_internal_backtest_v1"
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     frequency: Mapped[str] = mapped_column(String(10), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
