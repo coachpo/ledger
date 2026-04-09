@@ -20,7 +20,7 @@
 - `metrics-summary.tsx` formats wire-string numbers through `lib/format` instead of coercing them at the type layer.
 - `equity-curve-chart.tsx` normalizes the portfolio curve to the starting value and keeps benchmark visibility in local UI state only.
 - `trade-log-table.tsx` sorts client-side and uses the shared `ui/table` primitives instead of bespoke table markup.
-- `backtest-status-badge.tsx` is the single source of truth for the full status palette: `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, `PROCESSING_CALLBACK`, `COMPLETED`, `FAILED`, and `CANCELLED`.
+- `backtest-status-badge.tsx` is the single source of truth for the full status palette: `PENDING`, `RUNNING`, retained callback-aware states (`AWAITING_CALLBACK`, `PROCESSING_CALLBACK`), `COMPLETED`, `FAILED`, and `CANCELLED`.
 
 ## ANTI-PATTERNS
 - Do not move backtest-specific chart math or sort behavior into `src/components/ui/`; these widgets are domain components.

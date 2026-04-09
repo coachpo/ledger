@@ -15,9 +15,10 @@
 
 ## CONVENTIONS
 - `get_settings()` is cached; tests reset it with `reset_settings_cache()` when env values change.
-- Runtime config uses env aliases such as `DATABASE_URL`, `TEST_DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT_SECONDS`, `QUOTE_STALE_AFTER_MINUTES`, and `CORS_ALLOWED_ORIGINS`.
+- Runtime config uses env aliases such as `DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT`, `QUOTE_STALE_AFTER_MINUTES`, `CORS_ALLOWED_ORIGINS`, `BACKTEST_AGENT_MODEL`, `BACKTEST_AGENT_BASE_URL`, `BACKTEST_AGENT_API_KEY`, `BACKTEST_AGENT_API_MODE`, `BACKTEST_AGENT_TEMPERATURE`, and `BACKTEST_AGENT_TIMEOUT`.
 - `errors.py` is the single source for domain-level error envelopes and validation-detail shaping.
 - `formatting.py` is the single place for decimal parsing, decimal string serialization, symbol/currency normalization, UTC conversion, and `utcnow()`.
+- `config.py` normalizes `public_base_url`, trims `backtest_agent_base_url`, and restricts `BACKTEST_AGENT_API_MODE` to `auto`, `responses`, or `chat_completions`.
 
 ## ANTI-PATTERNS
 - Do not read env vars directly from routes/services when `Settings` already defines them.
@@ -38,3 +39,4 @@ uv run pytest tests/test_api.py
 ## NOTES
 - Default CORS must allow the local Vite hosts, Playwright hosts, and anything injected by `start.sh`.
 - `extra="ignore"` in settings is only for env loading; request schemas still use `extra="forbid"`.
+- Backtest LangGraph runtime reads all model/provider settings through `Settings`; service and graph code should not access env vars directly.

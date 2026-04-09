@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds the backend's business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, `template_compiler_service.py` resolves the live placeholder contract, the backtest trio spans lifecycle kickoff, cycle/webhook orchestration, and simulation math, and worker-side TradingAgents execution stays in sibling `app/worker/` rather than this package.
+`app/services/` holds the backend's business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, `template_compiler_service.py` resolves the live placeholder contract, the backtest trio spans lifecycle kickoff, cycle orchestration, and simulation math, and the internal LangGraph execution layer lives in sibling `app/langgraph/`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -15,13 +15,13 @@
 | Trading simulation rules | `trading_operation_service.py` | BUY/SELL/DIVIDEND/SPLIT + balance/position effects |
 | Quote/history/cache logic | `market_data_service.py` | `QuoteProvider`, fallback cache, stale/warning behavior |
 | Backtest lifecycle | `backtest_service.py` | create/cancel/delete lifecycle, deposit-balance selection, default-template creation, daemon-thread launch of `BacktestCycleService.start_backtest()` |
-| Backtest cycle orchestration | `backtest_cycle_service.py` | schedule bootstrap, outbound webhook dispatch, callback handling, timeout rules, `_run_state` persistence |
+| Backtest cycle orchestration | `backtest_cycle_service.py` | schedule bootstrap, prompt-report loading, internal LangGraph execution, legacy callback handling, `_run_state` persistence |
 | Backtest engine internals | `backtest_engine.py` | schedule generation, prompt report creation, market-data loading, trade execution, equity tracking, final metrics |
 | Template placeholder resolution | `template_compiler_service.py` | `{{portfolios...}}` and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote provider contract | `quote_provider.py` | provider protocol, DTOs, Yahoo Finance adapter, provider errors |
-| Worker-side execution | `../worker/AGENTS.md` | separate FastAPI worker downloads prompt reports, runs TradingAgents analysis, uploads reports, and posts callbacks |
+| Internal analysis execution | `../langgraph/AGENTS.md`, `../langgraph/runner.py` | internal LangGraph runner returns analysis reports and trade decisions |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
 | Service test hotspots | `../../tests/test_api.py`, `../../tests/test_backtests_api.py`, `../../tests/test_backtest_cycle_service.py`, `../../tests/test_backtest_engine.py` | CRUD, templates, market-data, symbol cache, backtest lifecycle, callback-state rules, engine behavior |
 
@@ -37,10 +37,11 @@
 - `MarketDataService` is best-effort: provider failures become warnings or cached fallbacks when possible.
 - `CsvImportService` preview and commit behavior must stay aligned with `backend/tests/test_api.py`, `frontend/src/lib/api/positions.ts`, and `frontend/src/hooks/use-positions.ts`.
 - `BacktestService` selects the largest deposit balance, optionally creates the default backtest template, persists the `backtests` row, and starts `BacktestCycleService.start_backtest()` on a daemon thread.
-- `BacktestCycleService` is the live execution path: it dispatches cycles to `backtest.webhook_url`, validates ordered callbacks, stores `_run_state` inside `backtest.results`, and marks runs failed when `webhook_timeout` expires.
-- `BACKTEST_TEST_MODE` is set in Playwright and read by `BacktestCycleService`; test mode swaps in `DeterministicQuoteProvider` and deterministic cycle decisions instead of waiting on webhook callbacks.
+- `BacktestCycleService` is the live execution path: it prepares cycle prompt reports, invokes the internal LangGraph runner, stores `_run_state` inside `backtest.results`, and advances or finalizes the run.
+- `BACKTEST_TEST_MODE` is set in Playwright and read by `BacktestCycleService`; test mode swaps in `DeterministicQuoteProvider` and deterministic cycle decisions instead of calling the live LangGraph runner.
 - `BacktestEngine` reuses `TemplateCompilerService`, `ReportService`, and `TradingOperationService` instead of introducing simulation-only report or trade paths; it prepares prompt reports, applies trades, records equity, and computes final metrics.
-- `app/services/` stops at backend-side dispatch/orchestration; `app/worker/` owns TradingAgents graph loading, prompt-report download, analysis-report upload, trade callbacks, and completion callbacks.
+- `app/services/` stops at backend-side orchestration; `app/langgraph/` owns internal prompt analysis and decision generation.
+- Official SDKs own LLM I/O: `app/langgraph/runner.py` uses `ChatOpenAI` and the official `OpenAI` client, while service-layer code should never make raw HTTP model calls itself.
 
 ## ANTI-PATTERNS
 - Do not commit from routers or repositories when a service already owns the workflow.
@@ -50,7 +51,8 @@
 - Do not change template placeholder paths or compile payloads without updating backend tests, frontend types, and the template editor.
 - Do not change report compile/upload/download contracts, slug generation, or `reports.<name>.content` cycle handling without updating backend tests and frontend callers.
 - Do not launch `BacktestEngine` or `BacktestCycleService` directly from routes when `BacktestService` already owns lifecycle validation and kickoff wiring.
-- Do not move TradingAgents worker concerns into this package just because backtests trigger them; keep process-boundary code in `app/worker/`.
+- Do not move LangGraph graph state into persistence-backed service models; keep the graph execution boundary narrow and execution-focused.
+- Do not introduce raw `httpx`/`requests` LLM calling paths in service code; route provider calls through the official SDK boundary in `app/langgraph/`.
 - Do not move symbol, currency, or decimal normalization into ad-hoc service code.
 
 ## VALIDATION
@@ -70,5 +72,5 @@ uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_backtest_
 - `YahooFinanceQuoteProvider` normalizes symbol/currency values before returning provider DTOs and raises `QuoteProviderError` for malformed or failed upstream responses.
 - `BacktestEngine` stores market history to parquet under `settings.market_data_cache_dir`, tags generated reports with `backtest_<id>`, and writes `trading_operations.backtest_id` so cleanup can stay query-driven.
 - `BacktestCycleService` stores internal progress under `results._run_state`; `BacktestRead` hides that internal-only payload until final results are available.
-- Current launched runs always flow through `BacktestCycleService` and, for live webhook mode, across the separate worker dispatch endpoint; verify quote-provider selection, webhook behavior, and callback ordering together when touching backtest execution.
+- Current launched runs flow through `BacktestCycleService` and then into the internal LangGraph runner; verify prompt-report loading, decision translation, and cycle progression together when touching backtest execution.
 - PostgreSQL schema upgrade helpers live in `app/db/upgrades.py`; service code should assume upgraded tables, not perform schema repair.

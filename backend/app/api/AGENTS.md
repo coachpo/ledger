@@ -14,7 +14,7 @@
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD plus symbol lookup |
 | Backtest routes | `backtests.py` | create/list/get/cancel/delete for backtest rows and launch semantics |
-| Backtest callback routes | `backtest_callbacks.py` | cycle report upload, trade execution, and cycle-complete ingress from the external webhook workflow |
+| Backtest callback routes | `backtest_callbacks.py` | cycle report upload, trade execution, and cycle-complete ingress for the retained legacy callback surface |
 | Trading routes | `trading_operations.py` | simulated BUY/SELL/DIVIDEND/SPLIT operations |
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
@@ -30,7 +30,7 @@
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Upload-specific checks such as report file size, markdown file type, and text decoding stay in routes because they are HTTP-layer concerns; validated content then delegates to `ReportService`.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`, upload uses `multipart/form-data` markdown plus optional metadata, and `POST /reports` supports direct external JSON creation.
-- Backtest routes are split by responsibility: `backtests.py` owns CRUD/lifecycle endpoints, while `backtest_callbacks.py` owns `/backtests/{id}/cycles/{date}/report|trades|complete` callback ingress.
+- Backtest routes are split by responsibility: `backtests.py` owns CRUD/lifecycle endpoints, while `backtest_callbacks.py` retains `/backtests/{id}/cycles/{date}/report|trades|complete` compatibility ingress even though the normal execution path is now internal LangGraph.
 - Callback routes accept a numeric backtest id plus cycle date, then delegate to `BacktestCycleService`; they should not embed webhook-state logic inline.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 

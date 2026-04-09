@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers Pydantic schema rules.
 
 ## OVERVIEW
-`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, and the callback payloads used by the backtest webhook loop. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
+`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, and the retained callback payloads used by the legacy backtest callback surface. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -29,7 +29,7 @@
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null/empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
-- Backtest create validation enforces past-only date ranges, benchmark normalization, required `webhook_url`, `webhook_timeout` bounds (30-3600), and percentage commission limits; the template-or-create-default rule is enforced in `BacktestService`, not the schema.
+- Backtest create validation currently still enforces past-only date ranges, benchmark normalization, required `webhook_url`, `webhook_timeout` bounds (30-3600), and percentage commission limits; the template-or-create-default rule is enforced in `BacktestService`, not the schema.
 
 ## ANTI-PATTERNS
 - Do not hand-build camelCase dicts; use `model_validate()` or `.model_dump()`.
@@ -37,7 +37,7 @@
 - Do not use `float` for money or quantity; keep `Decimal`, `int`, or `str` depending on the contract.
 - Do not bypass `CamelModel` aliasing; external JSON must stay camelCase.
 - Do not change template placeholder or compile payload shapes without updating the frontend types and editor.
-- Do not change backtest webhook or callback payload shapes without updating `app/api/backtest_callbacks.py`, `app/services/backtest_cycle_service.py`, frontend backtest types, and regression tests together.
+- Do not change retained backtest webhook/callback payload shapes without updating `app/api/backtest_callbacks.py`, `app/services/backtest_cycle_service.py`, frontend backtest types, and regression tests together.
 
 ## VALIDATION
 ```bash
@@ -51,7 +51,7 @@ uv run pytest tests/test_api.py tests/test_backtests_api.py
 
 ## NOTES
 - Market data schemas include `warnings` lists for degraded-state messaging.
-- Backtest read schemas expose `webhookUrl`, `webhookTimeout`, `currentCycleStatus`, `recentActivity`, `results`, and terminal `errorMessage`; callback request/response DTOs live separately in `backtest_callback.py`.
+- Backtest read schemas still expose `webhookUrl`, `webhookTimeout`, `currentCycleStatus`, `recentActivity`, `results`, and terminal `errorMessage`; callback request/response DTOs live separately in `backtest_callback.py`.
 - `backtest.py` clears `results` when the payload contains only the internal `_run_state` key, so incomplete cycle state does not leak into frontend result detection.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.

@@ -1,11 +1,11 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-07
-**Commit:** 8bd1a96
+**Generated:** 2026-04-09
+**Commit:** f114df2
 **Branch:** main
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked directly in this repository. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation with runtime inputs, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, grouped report browsing, and a backtest workspace whose webhook path now crosses both `BacktestCycleService` and a separate TradingAgents worker app.
+Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked directly in this repository. The live surface spans portfolio CRUD, deposit/withdrawal balances, aggregate positions, delayed market data, CSV imports, symbol-name lookup caching, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring/compilation with runtime inputs, point-in-time report generation/upload/download, `{{reports...}}` placeholder reuse inside templates, grouped report browsing, and a backtest workspace whose analysis path now runs through Ledger-native LangGraph orchestration.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
@@ -13,7 +13,7 @@ Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only init/report-upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries and dependency wiring
 - `backend/app/services/AGENTS.md` — service ownership, template/report workflows, quote-provider wiring
-- `backend/app/worker/AGENTS.md` — TradingAgents worker entrypoint, async dispatch service, adapter, and callback payloads
+- `backend/app/langgraph/AGENTS.md` — internal LangGraph runner, analyzer boundary, and execution rules
 - `backend/app/schemas/AGENTS.md` — Pydantic validation and camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables
 - `backend/app/repositories/AGENTS.md` — query/repository patterns
@@ -42,24 +42,23 @@ ledger/
 ├── backend/              # FastAPI app, SQLAlchemy models, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
 ├── docs/                 # reference specs, requirements, runbooks, and test plans; secondary to live code
-├── skills/               # repo-local task skills and workflows
 ├── .github/workflows/    # CI quality gates, Docker smoke build, image publish/cleanup
-└── start.sh              # local orchestrator: db on 25432, backend on 28000, worker on 8010, frontend on 25173
+└── start.sh              # local orchestrator: db on 25432, backend on 28000, frontend on 25173
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `start.sh` | clone once, then run `uv sync` in `backend/` and `pnpm install` in `frontend/` |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml` | cleans occupied ports, starts Postgres on `25432`, backend on `28000`, worker on `8010`, frontend on `25173` |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml` | cleans occupied ports, starts Postgres on `25432`, backend on `28000`, frontend on `25173`; worker-era port cleanup scaffolding still exists in the script, but no worker process is launched |
 | Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with `BACKTEST_TEST_MODE=1` |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, router composition, DI |
 | Backend template flow | `backend/app/api/templates.py`, `backend/app/services/template_compiler_service.py` | placeholder tree, inline compile, stored-template compile |
 | Backend reports flow | `backend/app/api/reports.py`, `backend/app/services/report_service.py`, `backend/app/schemas/report.py` | compile from template, upload markdown, download by slug |
 | Backend backtests flow | `backend/app/api/backtests.py`, `backend/app/api/backtest_callbacks.py`, `backend/app/services/backtest_service.py`, `backend/app/services/backtest_cycle_service.py`, `backend/app/services/backtest_engine.py` | CRUD lifecycle, cycle dispatch/callback ingress, results aggregation |
-| TradingAgents worker flow | `backend/app/worker/AGENTS.md`, `backend/app/worker/main.py`, `backend/app/worker/service.py`, `backend/app/worker/trading_agents_adapter.py` | separate FastAPI worker accepts dispatches, runs TradingAgents analysis, uploads reports, and sends trade/complete callbacks |
+| LangGraph execution flow | `backend/app/langgraph/AGENTS.md`, `backend/app/langgraph/runner.py`, `backend/app/services/backtest_cycle_service.py` | internal runner analyzes prompt reports and returns report content plus trade decisions |
 | Backend DB upgrades | `backend/app/db/upgrades.py`, `backend/app/db/session.py` | `session.py` composes startup init while `upgrades.py` owns portfolio/report upgrades, balance `operation_type`, market-quote `name`, and obsolete-table cleanup |
-| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_backtests_api.py`, `backend/tests/test_backtest_engine.py`, `backend/tests/test_trading_agents_worker.py`, `backend/tests/test_trading_agents_worker_integration.py` | CRUD, templates, reports, backtests, worker dispatch/callbacks, market-data fallback, cache behavior, legacy-schema upgrades |
+| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_backtests_api.py`, `backend/tests/test_backtest_engine.py`, `backend/tests/test_backtest_cycle_service.py`, `backend/tests/test_langgraph_runner.py` | CRUD, templates, reports, backtests, internal LangGraph execution, market-data fallback, cache behavior, legacy-schema upgrades |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle |
 | Frontend API/type contracts | `frontend/src/lib/api/AGENTS.md`, `frontend/src/lib/types/AGENTS.md` | request helpers, upload/download rules, and shared wire types |
 | Template runtime inputs | `frontend/src/lib/runtime-inputs.ts`, `frontend/src/components/templates/AGENTS.md`, `frontend/src/pages/templates/editor.tsx` | row helpers, editor controls, compile-time parameter flow |
@@ -79,10 +78,9 @@ ledger/
 | `TemplateCompilerService` | `backend/app/services/template_compiler_service.py` | resolves `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholders against live data |
 | `ReportService` | `backend/app/services/report_service.py` | report CRUD, upload validation, unique slug/name generation |
 | `BacktestService` | `backend/app/services/backtest_service.py` | backtest CRUD, deposit-balance selection, optional default-template creation, daemon-thread kickoff |
-| `BacktestCycleService` | `backend/app/services/backtest_cycle_service.py` | live launch path, webhook dispatch, callback validation, timeout handling, run-state persistence, cycle advancement |
-| `BacktestWebhookWorkerService` | `backend/app/worker/service.py` | async TradingAgents dispatch, prompt-report download, analysis-report upload, and trade/complete callbacks |
+| `BacktestCycleService` | `backend/app/services/backtest_cycle_service.py` | live launch path, prompt-report loading, internal LangGraph execution, legacy callback handling, run-state persistence, cycle advancement |
+| `BacktestLangGraphRunner` | `backend/app/langgraph/runner.py` | internal LangGraph runner for prompt parsing, analysis aggregation, report rendering, and decision translation |
 | `BacktestEngine` | `backend/app/services/backtest_engine.py` | schedule generation, prompt report creation, market-data loading, trade application, equity tracking, final metrics |
-| `LiveTradingAgentsAdapter` | `backend/app/worker/trading_agents_adapter.py` | lazy TradingAgents graph loader with environment overrides and decision coercion |
 | `QuoteProvider` / `YahooFinanceQuoteProvider` / `DeterministicQuoteProvider` | `backend/app/services/quote_provider.py` | live and test quote/history providers |
 | `App` | `frontend/src/App.tsx` | query client defaults, router provider, theme provider, toaster, error boundary |
 | `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, and backtests |
@@ -109,7 +107,8 @@ ledger/
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional author/description/tags metadata, direct JSON creation is supported, and all three sources download by slug.
 - Backtests are a live API/UI feature, not a dormant legacy leftover: each run stores the selected deposit balance, webhook URL/timeout, current-cycle callback fields, recent activity, result curves, and terminal errors on the `backtests` row.
 - Backtest execution reuses the existing report and trading infrastructure: prompt and analysis reports are tagged with `backtest_<id>`, simulated trades carry `trading_operations.backtest_id`, `BacktestService` kicks off `BacktestCycleService.start_backtest()` on a daemon thread, and interrupted `PENDING`/`RUNNING`/`AWAITING_CALLBACK`/`PROCESSING_CALLBACK` jobs are marked failed during `init_db()` startup repair.
-- Live webhook backtests cross two FastAPI apps: `BacktestCycleService` dispatches work to `app.worker.main`, and the worker downloads prompt reports plus posts `/report`, `/trades`, and `/complete` callbacks back into Ledger using absolute backend URLs.
+- LangGraph-backed backtests run inside Ledger's backend runtime; `BacktestCycleService` invokes the internal runner directly instead of dispatching to a separate worker process.
+- Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses `ChatOpenAI` and the official `OpenAI` Python client, with `BACKTEST_AGENT_API_MODE=responses` selecting the streamed Responses API path for OpenAI-compatible providers.
 - Backend and frontend are ordinary tracked directories in the root repo; root workflows validate them in separate jobs and share version-sync state through the repository tree.
 
 ## ANTI-PATTERNS
@@ -120,7 +119,8 @@ ledger/
 - Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
 - Do not document backtests as absent, dormant, direct-engine-only, or LLM-local-only; `/api/v1/backtests`, `/api/v1/backtests/{id}/cycles/*`, and `/backtests/*` are live surfaces backed by dedicated services, pages, hooks, and E2E coverage.
 - Do not bypass `BacktestService`, `BacktestCycleService`, `TradingOperationService`, or `ReportService` when changing backtest execution semantics; the current launch path and the callback-oriented path share report, trade-attribution, and cleanup contracts.
-- Do not describe the TradingAgents worker as part of `app.main`; `app.worker.main` is a separate FastAPI app and process with its own dispatch endpoint.
+- Do not reintroduce a second backtest-analysis runtime when the current implementation is intentionally Ledger-native and in-process.
+- Do not add raw `httpx`/`requests` LLM calling paths in application code when an official provider SDK exists.
 - Do not treat `docs/`, `backend/alembic/`, `frontend/dist/`, or cache directories as the source of truth over live code.
 - Do not ignore root workflow and repo-topology state when updating backend/frontend boundaries, CI, or docs.
 
@@ -130,7 +130,6 @@ ledger/
 (cd frontend && pnpm install)
 ./start.sh
 (cd backend && uv run uvicorn app.main:app --reload --port 28000)
-(cd backend && uv run uvicorn app.worker.main:app --port 8010)
 (cd frontend && pnpm dev)
 ```
 
@@ -145,7 +144,7 @@ ledger/
 ```
 
 ## NOTES
-- `start.sh` is the authoritative local orchestrator; unlike the raw backend/frontend dev defaults, it binds backend/worker/frontend to `28000/8010/25173`, injects `VITE_API_BASE_URL`, and exposes the worker dispatch endpoint at `http://127.0.0.1:8010/api/v1/trading-agents/dispatch` unless overridden.
+- `start.sh` is the authoritative local orchestrator; it binds backend/frontend to `28000/25173`, injects `VITE_API_BASE_URL`, and no longer launches a separate backtest worker process even though some worker-era port cleanup scaffolding remains in the script.
 - Supported schema repair is code-based in `backend/app/db/`; `backend/alembic/` is only a placeholder scaffold, not the migration source of truth.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup script also sets `BACKTEST_TEST_MODE=1`, which swaps `BacktestCycleService` into deterministic cycle behavior for E2E and test flows.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.

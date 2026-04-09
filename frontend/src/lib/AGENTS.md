@@ -15,7 +15,7 @@
 | HTTP wrapper / error mapping | `api-client.ts` | `request()`, `ApiRequestError`, `buildUrl()`, CSV form-data helpers |
 | API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, and backtests |
 | Shared wire types | `types/*.ts` | domain-specific type definitions, including text-template and report types |
-| Backtest contracts | `api/backtests.ts`, `types/backtest.ts` | lifecycle endpoints plus webhook fields, callback-aware statuses, result, trade, and curve wire shapes |
+| Backtest contracts | `api/backtests.ts`, `types/backtest.ts` | lifecycle endpoints plus retained webhook fields, callback-aware statuses, result, trade, and curve wire shapes |
 | Query key factory | `query-keys.ts` | hierarchical keys, param normalization, template/report keys, `invalidatePortfolioScope()` |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
@@ -35,7 +35,7 @@
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
 - Backtest flows use `queryKeys.backtests.list()` and `.detail(id)` only; polling policy lives in hooks, but the cache-key contract lives here.
-- Frontend API helpers only call the CRUD backtest endpoints; callback endpoints under `/backtests/{id}/cycles/*` are backend-to-webhook integration surfaces, not browser-facing requests.
+- Frontend API helpers only call the CRUD backtest endpoints; callback endpoints under `/backtests/{id}/cycles/*` remain backend compatibility surfaces, not browser-facing requests.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS

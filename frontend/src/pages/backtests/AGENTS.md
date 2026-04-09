@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/backtests/` contains the routed backtest list, configuration, and detail pages. These routes launch historical simulations, collect webhook settings, poll active callback states, and render result and report follow-up UI.
+`src/pages/backtests/` contains the routed backtest list, configuration, and detail pages. These routes launch historical simulations, still collect legacy webhook settings from the retained backend contract, poll active callback-aware states, and render result and report follow-up UI.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -19,7 +19,7 @@
 ## CONVENTIONS
 - `detail.tsx` relies on `useBacktest()` polling every 5 seconds for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows instead of manual timers in the page.
 - `config.tsx` can create a new portfolio plus an initial `DEPOSIT` balance before calling `createBacktest`, so the route owns the cross-feature launch orchestration.
-- `config.tsx` owns the webhook settings (`webhookUrl`, `webhookTimeout`) and pairs them with benchmark, commission, and template choices before submit.
+- `config.tsx` still owns the legacy webhook settings (`webhookUrl`, `webhookTimeout`) and pairs them with benchmark, commission, and template choices before submit because the current backend schema still requires those fields.
 - Completed runs derive report links from `results.trades[*].reportSlug`; navigation to `/reports/:slug` stays page-level.
 - Validation is intentionally duplicated in two layers: `backtestCreateFormSchema` enforces structural rules, and `buildValidationMessages()` keeps the inline summary readable before submit.
 
@@ -39,3 +39,4 @@ pnpm test:e2e --grep Backtests
 ## NOTES
 - `list.tsx` shows delete only for `COMPLETED`, `FAILED`, and `CANCELLED` rows, matching the backend terminal-state contract.
 - `detail.tsx` shows progress and recent activity while active, including explicit copy for `AWAITING_CALLBACK` vs `PROCESSING_CALLBACK`, then switches to charts and trade history once `results` are available.
+- The UI contract still exposes callback-aware statuses even though the normal backend execution path now runs internal LangGraph.

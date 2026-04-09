@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, a template editor with inline compile preview plus runtime inputs, grouped report list/detail flows, and a backtest workspace that collects webhook settings, surfaces callback-aware statuses from the shared contract, and renders result charts once runs complete.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, a template editor with inline compile preview plus runtime inputs, grouped report list/detail flows, and a backtest workspace that still collects legacy webhook settings and callback-aware statuses from the retained backend contract while rendering LangGraph-produced result charts once runs complete.
 
 ## CHILD DOCS
 - `src/lib/AGENTS.md` — API client, query keys, analytics, formatting, template contracts
@@ -62,7 +62,7 @@ frontend/
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
 - Report content edits intentionally invalidate both report list and slug-scoped detail queries so the detail route stays fresh without a forced navigation round trip.
 - Backtest detail uses numeric ids, not slugs, and `useBacktest()` polls every 5 seconds while status is `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, or `PROCESSING_CALLBACK`.
-- Backtest creation can either use an existing portfolio/template or create a new portfolio plus initial cash balance before launching the run, and the config form now requires `webhookUrl` plus `webhookTimeout` instead of the older provider-specific config fields.
+- Backtest creation can either use an existing portfolio/template or create a new portfolio plus initial cash balance before launching the run, and the current form still requires legacy `webhookUrl` plus `webhookTimeout` because the backend contract has not been trimmed yet even though normal execution is internal LangGraph.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
 - Query keys normalize ids as strings and symbol sets as trimmed uppercase arrays; cache reuse depends on those canonical forms.
 

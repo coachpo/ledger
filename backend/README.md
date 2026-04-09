@@ -7,11 +7,10 @@ FastAPI backend for the portfolio-tracking MVP described in `../docs/`.
 ```bash
 uv sync
 docker compose up -d db
-PUBLIC_BASE_URL=http://127.0.0.1:28000 uv run uvicorn app.main:app --reload --port 28000
-uv run uvicorn app.worker.main:app --port 8010
+BACKTEST_AGENT_MODEL=gpt-5.4-mini BACKTEST_AGENT_API_KEY="$OPENAI_API_KEY" BACKTEST_AGENT_BASE_URL=http://127.0.0.1:8080/v1 uv run uvicorn app.main:app --reload --port 28000
 ```
 
-Copy `.env.example` when you want an explicit local config. The backend now expects PostgreSQL everywhere; the default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`, so local `uv run uvicorn ...` startup requires PostgreSQL already running on that port. CORS is enabled for local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`. When you run webhook backtests against the separate TradingAgents worker, `PUBLIC_BASE_URL` must be set to an absolute backend URL so the worker can resolve report-download and callback endpoints, and the backend environment must include a supported TradingAgents provider credential such as `OPENAI_API_KEY`.
+Copy `.env.example` when you want an explicit local config. The backend now expects PostgreSQL everywhere; the default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`, so local `uv run uvicorn ...` startup requires PostgreSQL already running on that port. CORS is enabled for local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`. LangGraph-backed backtests now run inside the backend process, so there is no separate worker to start; live model calls use the backend's `BACKTEST_AGENT_*` settings.
 
 The test suite creates and drops temporary PostgreSQL databases. Set `TEST_DATABASE_URL` or `DATABASE_URL` to a PostgreSQL connection with permission to connect to `postgres` and create/drop databases when you run `uv run pytest` outside Docker.
 
