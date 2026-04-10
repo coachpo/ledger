@@ -20,10 +20,10 @@ def test_runner_parses_positions_renders_report_and_builds_trade_decisions() -> 
             *,
             symbol: str,
             cycle_date: date,
-            prompt_report: str,
+            prompt_text: str,
             position_quantity: str,
         ) -> LangGraphSymbolAnalysis:
-            _ = (cycle_date, prompt_report)
+            _ = (cycle_date, prompt_text)
             self.calls.append((symbol, position_quantity))
             if symbol == "AAPL":
                 return LangGraphSymbolAnalysis(label="BUY", summary="Momentum is improving.")
@@ -50,6 +50,10 @@ def test_runner_parses_positions_renders_report_and_builds_trade_decisions() -> 
                 "Prior reports:\n"
                 "- None"
             ),
+            authored_entry_prompt_body="# authored entry prompt body",
+            compiled_entry_prompt_body="# compiled entry prompt body",
+            execution_context_body="# execution context body",
+            full_user_prompt="",
         )
     )
 
@@ -75,6 +79,79 @@ def test_runner_parses_positions_renders_report_and_builds_trade_decisions() -> 
     ]
 
 
+def test_runner_rejects_missing_expanded_fields_by_default() -> None:
+    from app.langgraph.runner import BacktestLangGraphRequest
+
+    request = BacktestLangGraphRequest(
+        backtest_id=1,
+        cycle_date=date(2024, 1, 1),
+        prompt_report_slug="slug",
+        prompt_report="# report",
+    )
+
+    assert request.authored_entry_prompt_body == ""
+    assert request.compiled_entry_prompt_body == ""
+    assert request.execution_context_body == ""
+    assert request.full_user_prompt == ""
+
+
+def test_runner_uses_full_user_prompt_as_authoritative_execution_input_when_present() -> None:
+    from app.langgraph.runner import (
+        BacktestLangGraphRequest,
+        BacktestLangGraphRunner,
+        LangGraphSymbolAnalysis,
+    )
+
+    class FakeAnalyzer:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, str]] = []
+
+        def analyze_symbol(
+            self,
+            *,
+            symbol: str,
+            cycle_date: date,
+            prompt_text: str,
+            position_quantity: str,
+        ) -> LangGraphSymbolAnalysis:
+            _ = cycle_date
+            self.calls.append((symbol, prompt_text, position_quantity))
+            return LangGraphSymbolAnalysis(label="HOLD", summary="Use the runtime handoff text.")
+
+    analyzer = FakeAnalyzer()
+    runner = BacktestLangGraphRunner(analyzer=analyzer)
+
+    full_user_prompt = "# Runtime handoff\n\nPositions:\n- NVDA: 3 shares @ 1200.00 USD\n"
+
+    result = runner.run_cycle(
+        BacktestLangGraphRequest(
+            backtest_id=42,
+            cycle_date=date(2024, 6, 17),
+            prompt_report_slug="prompt_report",
+            prompt_report=("Positions:\n- AAPL: 5 shares @ 180.00 USD\n"),
+            authored_entry_prompt_body="# authored entry prompt body",
+            compiled_entry_prompt_body="# compiled entry prompt body",
+            execution_context_body="# execution context body",
+            full_user_prompt=full_user_prompt,
+        )
+    )
+
+    assert result.report_content == (
+        "# LangGraph Analysis\n\n"
+        "- Backtest ID: 42\n"
+        "- Cycle date: 2024-06-17\n"
+        "- Prompt report slug: prompt_report\n\n"
+        "## NVDA\n"
+        "- Label: HOLD\n"
+        "- Held quantity: 3\n"
+        "- Summary: Use the runtime handoff text."
+    )
+    assert [
+        (decision.symbol, decision.action, decision.quantity) for decision in result.decisions
+    ] == [("NVDA", "HOLD", None)]
+    assert analyzer.calls == [("NVDA", full_user_prompt, "3")]
+
+
 def test_seeded_runner_smoke_executes_seeded_agents_and_topology() -> None:
     from app.langgraph.runner import BacktestLangGraphRequest, LangGraphSymbolAnalysis
     from app.langgraph.seeds import (
@@ -89,10 +166,10 @@ def test_seeded_runner_smoke_executes_seeded_agents_and_topology() -> None:
             *,
             symbol: str,
             cycle_date: date,
-            prompt_report: str,
+            prompt_text: str,
             position_quantity: str,
         ) -> LangGraphSymbolAnalysis:
-            _ = (cycle_date, prompt_report, position_quantity)
+            _ = (cycle_date, prompt_text, position_quantity)
             return LangGraphSymbolAnalysis(label="HOLD", summary=f"Keep {symbol} unchanged.")
 
     runner = build_seeded_langgraph_runner(analyzer=FakeAnalyzer())
@@ -138,10 +215,10 @@ def test_analyst_reviewer_pattern_applies_conservative_review_before_decisions()
             *,
             symbol: str,
             cycle_date: date,
-            prompt_report: str,
+            prompt_text: str,
             position_quantity: str,
         ) -> LangGraphSymbolAnalysis:
-            _ = (cycle_date, prompt_report, position_quantity)
+            _ = (cycle_date, prompt_text, position_quantity)
             return LangGraphSymbolAnalysis(label="BUY", summary=f"Add to {symbol}.")
 
     runner = build_backtest_langgraph_runner(
@@ -190,10 +267,10 @@ def test_seeded_and_reviewer_patterns_diverge_on_same_input() -> None:
             *,
             symbol: str,
             cycle_date: date,
-            prompt_report: str,
+            prompt_text: str,
             position_quantity: str,
         ) -> LangGraphSymbolAnalysis:
-            _ = (cycle_date, prompt_report, position_quantity)
+            _ = (cycle_date, prompt_text, position_quantity)
             return LangGraphSymbolAnalysis(label="BUY", summary=f"Add to {symbol}.")
 
     request = BacktestLangGraphRequest(
@@ -236,10 +313,10 @@ def test_analyst_reviewer_pattern_converts_overweight_to_hold() -> None:
             *,
             symbol: str,
             cycle_date: date,
-            prompt_report: str,
+            prompt_text: str,
             position_quantity: str,
         ) -> LangGraphSymbolAnalysis:
-            _ = (symbol, cycle_date, prompt_report, position_quantity)
+            _ = (symbol, cycle_date, prompt_text, position_quantity)
             return LangGraphSymbolAnalysis(label="OVERWEIGHT", summary="Build the position.")
 
     result = build_backtest_langgraph_runner(
@@ -299,7 +376,7 @@ def test_live_analyzer_falls_back_when_structured_output_parser_is_incompatible(
     analysis = analyzer.analyze_symbol(
         symbol="NVDA",
         cycle_date=date(2024, 7, 1),
-        prompt_report="# Prompt",
+        prompt_text="# Prompt",
         position_quantity="3",
     )
 
@@ -366,7 +443,7 @@ def test_live_analyzer_uses_responses_api_with_explicit_input_format(monkeypatch
     analysis = analyzer.analyze_symbol(
         symbol="NVDA",
         cycle_date=date(2024, 7, 1),
-        prompt_report="# Prompt",
+        prompt_text="# Prompt",
         position_quantity="3",
     )
 
@@ -386,7 +463,7 @@ def test_live_analyzer_uses_responses_api_with_explicit_input_format(monkeypatch
                         "type": "input_text",
                         "text": (
                             "You analyze one held portfolio position for a historical backtest. "
-                            "Use only the information provided in the prompt report. "
+                            "Use only the information provided in the execution prompt. "
                             "Do not invent data from after the cycle date. "
                             "Return a normalized label and a concise summary. "
                             'Respond as JSON with keys "label" and "summary".'
@@ -404,7 +481,7 @@ def test_live_analyzer_uses_responses_api_with_explicit_input_format(monkeypatch
                             "Cycle date: 2024-07-01\n"
                             "Held symbol: NVDA\n"
                             "Held quantity: 3\n\n"
-                            "Full prompt report:\n"
+                            "Execution prompt:\n"
                             "# Prompt"
                         ),
                     }
@@ -450,7 +527,7 @@ def test_live_analyzer_normalizes_lowercase_label_from_streamed_responses(monkey
     analysis = analyzer.analyze_symbol(
         symbol="NVDA",
         cycle_date=date(2024, 7, 1),
-        prompt_report="# Prompt",
+        prompt_text="# Prompt",
         position_quantity="3",
     )
 

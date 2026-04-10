@@ -21,6 +21,73 @@ class SeededTopology:
     review_mode: Literal["none", "conservative"] = "none"
 
 
+@dataclass(frozen=True)
+class SeededBuiltinSpec:
+    handle: str
+    canonical_target_id: str
+    display_name: str
+    description: str
+    revision: int
+
+
+@dataclass(frozen=True)
+class PatternMentionPolicy:
+    version: int
+    allow_characters: bool
+    allowed_builtin_handles: tuple[str, ...]
+
+
+SEEDED_BUILTIN_SPECS: tuple[SeededBuiltinSpec, ...] = (
+    SeededBuiltinSpec(
+        handle="librarian",
+        canonical_target_id="builtin:librarian",
+        display_name="Librarian",
+        description="Research and retrieve supporting context for a backtest analysis.",
+        revision=1,
+    ),
+    SeededBuiltinSpec(
+        handle="explore",
+        canonical_target_id="builtin:explore",
+        display_name="Explore",
+        description="Inspect the current backtest context and summarize relevant findings.",
+        revision=1,
+    ),
+)
+
+
+SEEDED_BUILTIN_REGISTRY: dict[str, SeededBuiltinSpec] = {
+    builtin.canonical_target_id: builtin for builtin in SEEDED_BUILTIN_SPECS
+}
+
+
+SEEDED_BUILTIN_HANDLE_REGISTRY: dict[str, SeededBuiltinSpec] = {
+    builtin.handle: builtin for builtin in SEEDED_BUILTIN_SPECS
+}
+
+
+SEEDED_BUILTIN_RESERVED_TARGETS: frozenset[str] = frozenset(
+    (*SEEDED_BUILTIN_HANDLE_REGISTRY, *SEEDED_BUILTIN_REGISTRY)
+)
+
+
+SEED_PATTERN_MENTION_POLICY = PatternMentionPolicy(
+    version=1,
+    allow_characters=False,
+    allowed_builtin_handles=("librarian", "explore"),
+)
+
+
+ANALYST_REVIEWER_PATTERN_MENTION_POLICY = PatternMentionPolicy(
+    version=1,
+    allow_characters=True,
+    allowed_builtin_handles=("librarian", "explore"),
+)
+
+
+def get_seeded_builtin_spec_for_handle(handle: str) -> SeededBuiltinSpec | None:
+    return SEEDED_BUILTIN_HANDLE_REGISTRY.get(handle)
+
+
 SEEDED_AGENT_SPECS: tuple[SeededAgentSpec, ...] = (
     SeededAgentSpec(
         key="position_analyst",

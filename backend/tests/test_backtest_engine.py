@@ -482,7 +482,11 @@ def test_build_prompts_includes_ohlcv_history_and_benchmark_performance(
         lambda symbol, start, end: history_frame,
     )
 
-    _system_prompt, user_prompt = engine._build_prompts(date(2024, 6, 17))
+    prompt_bundle = engine._build_prompts(date(2024, 6, 17))
+    user_prompt = prompt_bundle["full_user_prompt"]
+    assert prompt_bundle["authored_entry_prompt_body"] == "# Template"
+    assert prompt_bundle["compiled_entry_prompt_body"] == "# Template"
+    assert prompt_bundle["execution_context_body"].startswith("Portfolio state")
 
     assert "Benchmark performance" in user_prompt
     assert "2024-06-14" in user_prompt
@@ -583,8 +587,109 @@ def test_execute_cycle_returns_market_data_and_prompt_report(
             select(Report).where(Report.slug == cycle_ctx["prompt_report_slug"])
         )
         assert report is not None
-        assert report.content.startswith("# Cycle Prompt (2024-06-17)")
-        assert "## System\nsystem prompt" in report.content
+    assert report.content.startswith("# Cycle Prompt (2024-06-17)")
+    assert "## System\nsystem prompt" in report.content
+
+
+def test_execute_cycle_returns_prompt_bundle_fields_and_prompt_report_slug(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = build_engine(session_factory)
+    market_data = {
+        "AAPL": {
+            "open": Decimal("183.50"),
+            "high": Decimal("185.00"),
+            "low": Decimal("183.25"),
+            "close": Decimal("184.40"),
+            "volume": Decimal("1000000"),
+        }
+    }
+
+    with session_factory() as session:
+        session.add(
+            Position(
+                portfolio_id=engine.backtest.portfolio_id,
+                symbol="AAPL",
+                name="Apple",
+                quantity=Decimal("5"),
+                average_cost=Decimal("180"),
+                currency="USD",
+                last_source="simulation",
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(engine, "_load_cycle_market_data", lambda symbols, cycle_date: market_data)
+    monkeypatch.setattr(
+        engine,
+        "_build_prompts",
+        lambda cycle_date: {
+            "authored_entry_prompt_body": "authored entry prompt",
+            "compiled_entry_prompt_body": "compiled entry prompt",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "execution context\n\ncompiled entry prompt",
+            "prompt_report_slug": f"backtest_{engine.backtest.id}_prompt_{cycle_date:%Y%m%d}",
+        },
+    )
+
+    cycle_ctx = engine.execute_cycle(date(2024, 6, 17))
+
+    assert cycle_ctx["cancelled"] is False
+    assert cycle_ctx["cycle_date"] == date(2024, 6, 17)
+    assert cycle_ctx["market_data"] == market_data
+    assert cycle_ctx["authored_entry_prompt_body"] == "authored entry prompt"
+    assert cycle_ctx["compiled_entry_prompt_body"] == "compiled entry prompt"
+    assert cycle_ctx["execution_context_body"] == "execution context"
+    assert cycle_ctx["full_user_prompt"] == "execution context\n\ncompiled entry prompt"
+    assert cycle_ctx["prompt_report_slug"] == "backtest_42_prompt_20240617"
+
+
+def test_execute_cycle_keeps_prompt_report_content_and_review_type_unchanged(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = build_engine(session_factory)
+
+    with session_factory() as session:
+        session.add(
+            Position(
+                portfolio_id=engine.backtest.portfolio_id,
+                symbol="AAPL",
+                name="Apple",
+                quantity=Decimal("5"),
+                average_cost=Decimal("180"),
+                currency="USD",
+                last_source="simulation",
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(engine, "_load_cycle_market_data", lambda symbols, cycle_date: {})
+    monkeypatch.setattr(
+        engine,
+        "_build_prompts",
+        lambda cycle_date: {
+            "authored_entry_prompt_body": "authored entry prompt",
+            "compiled_entry_prompt_body": "compiled entry prompt",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "execution context\n\ncompiled entry prompt",
+            "prompt_report_slug": f"backtest_{engine.backtest.id}_prompt_{cycle_date:%Y%m%d}",
+        },
+    )
+
+    cycle_ctx = engine.execute_cycle(date(2024, 6, 17))
+
+    with session_factory() as session:
+        report = session.scalar(
+            select(Report).where(Report.slug == cycle_ctx["prompt_report_slug"])
+        )
+
+    assert report is not None
+    assert report.content.startswith("# Cycle Prompt (2024-06-17)")
+    assert "## System\nToday is 2024-06-17." in report.content
+    assert "## User\nexecution context\n\ncompiled entry prompt" in report.content
+    assert report.metadata_["analysis"]["reviewType"] == "backtest_prompt"
 
 
 def test_execute_cycle_returns_cancelled_when_backtest_is_cancelled(

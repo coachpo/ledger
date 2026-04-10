@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal, Protocol, TypedDict, cast
 
+# pyright: reportMissingImports=false
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from openai import OpenAI
@@ -38,12 +39,45 @@ class PositionAnalysis:
     analysis: LangGraphSymbolAnalysis
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class BacktestLangGraphRequest:
     backtest_id: int
     cycle_date: date
     prompt_report_slug: str
     prompt_report: str
+    authored_entry_prompt_body: str
+    compiled_entry_prompt_body: str
+    execution_context_body: str
+    full_user_prompt: str
+    resolved_mentions: tuple[dict[str, Any], ...]
+    orchestration_pattern_key: str
+    mentioned_target_outputs: tuple[str, ...]
+
+    def __init__(
+        self,
+        backtest_id: int,
+        cycle_date: date,
+        prompt_report_slug: str,
+        prompt_report: str,
+        authored_entry_prompt_body: str = "",
+        compiled_entry_prompt_body: str = "",
+        execution_context_body: str = "",
+        full_user_prompt: str = "",
+        resolved_mentions: tuple[dict[str, Any], ...] = (),
+        orchestration_pattern_key: str = "",
+        mentioned_target_outputs: tuple[str, ...] = (),
+    ) -> None:
+        object.__setattr__(self, "backtest_id", backtest_id)
+        object.__setattr__(self, "cycle_date", cycle_date)
+        object.__setattr__(self, "prompt_report_slug", prompt_report_slug)
+        object.__setattr__(self, "prompt_report", prompt_report)
+        object.__setattr__(self, "authored_entry_prompt_body", authored_entry_prompt_body)
+        object.__setattr__(self, "compiled_entry_prompt_body", compiled_entry_prompt_body)
+        object.__setattr__(self, "execution_context_body", execution_context_body)
+        object.__setattr__(self, "full_user_prompt", full_user_prompt)
+        object.__setattr__(self, "resolved_mentions", resolved_mentions)
+        object.__setattr__(self, "orchestration_pattern_key", orchestration_pattern_key)
+        object.__setattr__(self, "mentioned_target_outputs", mentioned_target_outputs)
 
 
 @dataclass(frozen=True)
@@ -58,7 +92,7 @@ class BacktestSymbolAnalyzer(Protocol):
         *,
         symbol: str,
         cycle_date: date,
-        prompt_report: str,
+        prompt_text: str,
         position_quantity: str,
     ) -> LangGraphSymbolAnalysis: ...
 
@@ -82,6 +116,10 @@ class RunnerState(TypedDict):
     cycle_date: date
     prompt_report_slug: str
     prompt_report: str
+    authored_entry_prompt_body: str
+    compiled_entry_prompt_body: str
+    execution_context_body: str
+    full_user_prompt: str
     positions: list[HeldPosition]
     analyses: list[PositionAnalysis]
     report_content: str
@@ -110,6 +148,10 @@ class BacktestLangGraphRunner:
                 "cycle_date": request.cycle_date,
                 "prompt_report_slug": request.prompt_report_slug,
                 "prompt_report": request.prompt_report,
+                "authored_entry_prompt_body": request.authored_entry_prompt_body,
+                "compiled_entry_prompt_body": request.compiled_entry_prompt_body,
+                "execution_context_body": request.execution_context_body,
+                "full_user_prompt": request.full_user_prompt,
                 "positions": [],
                 "analyses": [],
                 "report_content": "",
@@ -138,16 +180,17 @@ class BacktestLangGraphRunner:
         return workflow.compile()
 
     def _parse_positions(self, state: RunnerState) -> RunnerState:
-        return {**state, "positions": self._extract_positions(state["prompt_report"])}
+        return {**state, "positions": self._extract_positions(self._execution_prompt_text(state))}
 
     def _analyze_positions(self, state: RunnerState) -> RunnerState:
+        prompt_text = self._execution_prompt_text(state)
         analyses = [
             PositionAnalysis(
                 position=position,
                 analysis=self.analyzer.analyze_symbol(
                     symbol=position.symbol,
                     cycle_date=state["cycle_date"],
-                    prompt_report=state["prompt_report"],
+                    prompt_text=prompt_text,
                     position_quantity=position.quantity_text,
                 ),
             )
@@ -188,11 +231,16 @@ class BacktestLangGraphRunner:
 
         return {**state, "analyses": reviewed}
 
-    def _extract_positions(self, prompt_report: str) -> list[HeldPosition]:
+    def _execution_prompt_text(self, state: RunnerState) -> str:
+        if state["full_user_prompt"].strip():
+            return state["full_user_prompt"]
+        return state["prompt_report"]
+
+    def _extract_positions(self, prompt_text: str) -> list[HeldPosition]:
         positions: list[HeldPosition] = []
         in_positions = False
 
-        for raw_line in prompt_report.splitlines():
+        for raw_line in prompt_text.splitlines():
             line = raw_line.strip()
             if line == "Positions:":
                 in_positions = True
@@ -247,7 +295,7 @@ class BacktestLangGraphRunner:
         lines.append("")
 
         if not state["analyses"]:
-            lines.append("No held symbols were found in the prompt report.")
+            lines.append("No held symbols were found in the execution prompt.")
             return "\n".join(lines)
 
         for index, symbol_analysis in enumerate(state["analyses"]):
@@ -332,7 +380,7 @@ class LiveBacktestSymbolAnalyzer:
         *,
         symbol: str,
         cycle_date: date,
-        prompt_report: str,
+        prompt_text: str,
         position_quantity: str,
     ) -> LangGraphSymbolAnalysis:
         if not self.model:
@@ -341,7 +389,7 @@ class LiveBacktestSymbolAnalyzer:
         messages = self._build_messages(
             symbol=symbol,
             cycle_date=cycle_date,
-            prompt_report=prompt_report,
+            prompt_text=prompt_text,
             position_quantity=position_quantity,
         )
 
@@ -361,14 +409,14 @@ class LiveBacktestSymbolAnalyzer:
         *,
         symbol: str,
         cycle_date: date,
-        prompt_report: str,
+        prompt_text: str,
         position_quantity: str,
     ) -> list[tuple[str, str]]:
         return [
             (
                 "system",
                 "You analyze one held portfolio position for a historical backtest. "
-                "Use only the information provided in the prompt report. "
+                "Use only the information provided in the execution prompt. "
                 "Do not invent data from after the cycle date. "
                 "Return a normalized label and a concise summary. "
                 'Respond as JSON with keys "label" and "summary".',
@@ -378,8 +426,8 @@ class LiveBacktestSymbolAnalyzer:
                 f"Cycle date: {cycle_date.isoformat()}\n"
                 f"Held symbol: {symbol}\n"
                 f"Held quantity: {position_quantity}\n\n"
-                "Full prompt report:\n"
-                f"{prompt_report}",
+                "Execution prompt:\n"
+                f"{prompt_text}",
             ),
         ]
 

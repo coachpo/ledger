@@ -118,13 +118,39 @@ class BacktestEngine:
 
         symbols = self._portfolio_symbols()
         market_data = self._load_cycle_market_data(symbols, cycle_date)
-        system_prompt, user_prompt = self._build_prompts(cycle_date)
-        prompt_report_slug = self._store_prompt_report(cycle_date, system_prompt, user_prompt)
+        prompt_bundle = self._build_prompts(cycle_date)
+        if isinstance(prompt_bundle, tuple):
+            system_prompt, full_user_prompt = prompt_bundle
+            prompt_bundle = {
+                "system_prompt": system_prompt,
+                "authored_entry_prompt_body": "",
+                "compiled_entry_prompt_body": full_user_prompt,
+                "execution_context_body": full_user_prompt,
+                "full_user_prompt": full_user_prompt,
+            }
+        else:
+            prompt_bundle = {
+                **prompt_bundle,
+                "system_prompt": (
+                    f"Today is {cycle_date.isoformat()}. Do not use information from after this "
+                    "date. "
+                    "This is an experimental simulation. No investment advice."
+                ),
+            }
+        prompt_report_slug = self._store_prompt_report(
+            cycle_date,
+            prompt_bundle["system_prompt"],
+            prompt_bundle["full_user_prompt"],
+        )
 
         return {
             "cancelled": False,
             "cycle_date": cycle_date,
             "market_data": market_data,
+            "authored_entry_prompt_body": prompt_bundle["authored_entry_prompt_body"],
+            "compiled_entry_prompt_body": prompt_bundle["compiled_entry_prompt_body"],
+            "execution_context_body": prompt_bundle["execution_context_body"],
+            "full_user_prompt": prompt_bundle["full_user_prompt"],
             "prompt_report_slug": prompt_report_slug,
         }
 
@@ -290,7 +316,7 @@ class BacktestEngine:
         frame = frame.loc[:, ~frame.columns.duplicated(keep="last")]
         return frame[["open", "high", "low", "close", "volume"]]
 
-    def _build_prompts(self, cycle_date: date) -> tuple[str, str]:
+    def _build_prompts(self, cycle_date: date) -> dict[str, str]:
         if self.session_factory is None:
             raise RuntimeError("Backtest engine requires a session factory")
 
@@ -317,23 +343,26 @@ class BacktestEngine:
             balances = BalanceRepository(session).list_for_portfolio(backtest.portfolio_id)
             prior_reports = self._load_prior_reports(session, cycle_date)
 
+        authored_entry_prompt_body = template.content
+        compiled_entry_prompt_body = compiled_template
         market_context = self._render_market_context(positions, cycle_date)
         benchmark_context = self._render_benchmark_context(cycle_date)
-
-        system_prompt = (
-            f"Today is {cycle_date.isoformat()}. Do not use information from after this date. "
-            "This is an experimental simulation. No investment advice."
-        )
-        user_prompt = "\n\n".join(
+        execution_context_body = "\n\n".join(
             [
                 self._render_portfolio_state(positions, balances),
                 market_context,
                 benchmark_context,
                 self._render_prior_reports(prior_reports),
-                compiled_template,
             ]
         )
-        return system_prompt, user_prompt
+
+        full_user_prompt = "\n\n".join([execution_context_body, compiled_entry_prompt_body])
+        return {
+            "authored_entry_prompt_body": authored_entry_prompt_body,
+            "compiled_entry_prompt_body": compiled_entry_prompt_body,
+            "execution_context_body": execution_context_body,
+            "full_user_prompt": full_user_prompt,
+        }
 
     def _apply_decisions(
         self,

@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -694,6 +696,92 @@ def test_delete_backtest_requires_terminal_state_and_cleans_reports_and_trades(
             session.scalar(
                 select(func.count(Report.id)).where(
                     Report.slug == f"backtest_{completed_backtest['id']}_20240115"
+                )
+            )
+            == 0
+        )
+
+
+def test_delete_backtest_cascades_orchestration_snapshots(
+    client: TestClient,
+    submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
+) -> None:
+    from app.models.backtest import Backtest
+    from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
+
+    portfolio = create_portfolio(client, name="Snapshot Cleanup", slug="snapshot_cleanup")
+    create_balance(client, str(portfolio["id"]), amount="10000.00")
+    template = create_template(client, name="Snapshot Cleanup Template", content="# Cleanup")
+
+    create_response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={"name": "Snapshot Cleanup Backtest"},
+        ),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    backtest_id = create_response.json()["id"]
+    assert submitted_backtests == [backtest_id]
+
+    with session_factory() as session:
+        backtest = session.get(Backtest, backtest_id)
+        assert backtest is not None
+        backtest.status = "COMPLETED"
+        session.add(
+            BacktestOrchestrationSnapshot(
+                backtest_id=backtest_id,
+                cycle_date=date(2024, 1, 15),
+                prompt_report_slug=f"backtest_{backtest_id}_prompt_20240115",
+                orchestration_pattern_key="analyst_reviewer_v1",
+                pattern_policy_version=1,
+                entry_prompt_hash="1" * 64,
+                full_user_prompt_hash="2" * 64,
+                resolved_mentions=[
+                    {
+                        "original_text": "@analyst",
+                        "handle": "analyst",
+                        "canonical_target_id": "character:analyst",
+                        "target_type": "character",
+                        "role_id": 1,
+                        "role_version": 3,
+                        "character_id": 1,
+                        "character_version": 4,
+                        "mention_order": 0,
+                    }
+                ],
+                mentioned_target_outputs=[
+                    {
+                        "handle": "analyst",
+                        "canonical_target_id": "character:analyst",
+                        "output_markdown": "summary",
+                    }
+                ],
+                resolved_builtin_versions=[],
+                resolved_role_versions=[
+                    {"canonical_target_id": "role:analyst_role", "role_id": 1, "version": 3}
+                ],
+                resolved_character_versions=[
+                    {
+                        "canonical_target_id": "character:analyst",
+                        "character_id": 1,
+                        "version": 4,
+                    }
+                ],
+            )
+        )
+        session.commit()
+
+    delete_response = client.delete(f"/api/v1/backtests/{backtest_id}")
+    assert delete_response.status_code == 204
+
+    with session_factory() as session:
+        assert (
+            session.scalar(
+                select(func.count(BacktestOrchestrationSnapshot.id)).where(
+                    BacktestOrchestrationSnapshot.backtest_id == backtest_id
                 )
             )
             == 0
