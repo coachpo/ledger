@@ -187,8 +187,9 @@ export function BacktestConfigPage() {
                 <option value="analyst_reviewer_v1">Analyst Reviewer v1</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                Choose the built-in orchestration pattern for this backtest while keeping the
-                selected template as the generic orchestration prompt.
+                Choose among the available orchestration patterns for this backtest while keeping
+                the selected template as the generic orchestration prompt; built-in patterns and
+                character-enabled patterns stay separate.
               </p>
             </div>
           </section>

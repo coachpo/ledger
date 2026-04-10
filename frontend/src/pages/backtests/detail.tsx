@@ -8,6 +8,7 @@ import { EquityCurveChart } from "@/components/backtests/equity-curve-chart";
 import { MetricsSummary } from "@/components/backtests/metrics-summary";
 import { TradeLogTable } from "@/components/backtests/trade-log-table";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -144,6 +145,11 @@ export function BacktestDetailPage() {
             </CardContent>
           </Card>
         </div>
+      ) : backtest.status === "FAILED" && backtest.errorMessage ? (
+        <Alert variant="destructive">
+          <AlertTitle>Execution failed</AlertTitle>
+          <AlertDescription>{backtest.errorMessage}</AlertDescription>
+        </Alert>
       ) : backtest.results ? (
         <div className="space-y-4">
           <MetricsSummary portfolio={backtest.results.portfolio} />

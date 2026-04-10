@@ -3,6 +3,7 @@ import { Braces, ChevronDown, Loader2 } from "lucide-react";
 import { PlaceholderGroup, type PlaceholderItem } from "@/components/templates/placeholder-group";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { OrchestrationMentionCatalogItem } from "@/lib/types/orchestration";
 import type { PlaceholderTree } from "@/lib/types/text-template";
 
 type PlaceholderReferenceGroup = {
@@ -107,22 +108,32 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
 
 type TemplatePlaceholderReferenceProps = {
   isLoading: boolean;
+  isLoadingMentions?: boolean;
+  mentionCatalog?: OrchestrationMentionCatalogItem[];
   onClose: () => void;
   onInsert: (path: string) => void;
+  onInsertMention?: (handle: string) => void;
   open: boolean;
   placeholderTree?: PlaceholderTree;
 };
 
 export function TemplatePlaceholderReference({
   isLoading,
+  isLoadingMentions = false,
+  mentionCatalog,
   onClose,
   onInsert,
+  onInsertMention,
   open,
   placeholderTree,
 }: TemplatePlaceholderReferenceProps) {
   if (!open) {
     return null;
   }
+
+  const mentionItems: PlaceholderItem[] =
+    mentionCatalog
+      ?.map((item) => ({ path: `@${item.handle}`, type: item.kind })) ?? [];
 
   return (
     <div className="border-t border-border">
@@ -131,7 +142,9 @@ export function TemplatePlaceholderReference({
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Placeholder Reference
         </span>
-        {isLoading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+        {isLoading || isLoadingMentions ? (
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
@@ -143,6 +156,15 @@ export function TemplatePlaceholderReference({
       </div>
       <ScrollArea className="h-[220px] lg:h-[240px]">
         <div className="flex flex-wrap gap-x-8 gap-y-1 px-4 py-2">
+          {mentionItems.length > 0 ? (
+            <PlaceholderGroup
+              title="Mention Assistance"
+              description="Insert raw orchestration handles directly into the editor. Mentions stay literal in preview output."
+              items={mentionItems}
+              onInsert={(handle) => onInsertMention?.(handle)}
+            />
+          ) : null}
+
           {STATIC_PLACEHOLDER_GROUPS.map((group) => (
             <PlaceholderGroup
               key={group.title}

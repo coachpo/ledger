@@ -26,6 +26,7 @@ import {
   useCompileInline,
   usePlaceholders,
 } from "@/hooks/use-templates";
+import { useOrchestrationMentionCatalog } from "@/hooks/use-orchestration";
 import { useCompileReport } from "@/hooks/use-reports";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatMarkdown } from "@/lib/markdown-format";
@@ -53,6 +54,8 @@ export function TemplateEditorPage() {
 
   const { data: template, isLoading: isLoadingTemplate } = useTemplate(templateId);
   const { data: placeholderTree, isLoading: isLoadingPlaceholders } = usePlaceholders();
+  const { data: mentionCatalog, isLoading: isLoadingMentionCatalog } =
+    useOrchestrationMentionCatalog();
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const { mutate: compileInline, ...compileMutation } = useCompileInline();
@@ -99,7 +102,7 @@ export function TemplateEditorPage() {
     }
   };
 
-  const insertPlaceholder = (placeholder: string) => {
+  const insertText = (textToInsert: string) => {
     if (!textareaRef.current) return;
 
     const start = textareaRef.current.selectionStart;
@@ -107,17 +110,25 @@ export function TemplateEditorPage() {
     const text = textareaRef.current.value;
     const before = text.substring(0, start);
     const after = text.substring(end);
-    const newContent = `${before}{{${placeholder}}}${after}`;
+    const newContent = `${before}${textToInsert}${after}`;
 
     setContent(newContent);
 
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
-        const newCursorPos = start + placeholder.length + 4;
+        const newCursorPos = start + textToInsert.length;
         textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
       }
     }, 0);
+  };
+
+  const insertPlaceholder = (placeholder: string) => {
+    insertText(`{{${placeholder}}}`);
+  };
+
+  const insertMention = (handle: string) => {
+    insertText(handle);
   };
 
   const handleGenerateReport = ({
@@ -377,8 +388,11 @@ export function TemplateEditorPage() {
       <TemplatePlaceholderReference
         open={placeholdersOpen}
         isLoading={isLoadingPlaceholders}
+        isLoadingMentions={isLoadingMentionCatalog}
+        mentionCatalog={mentionCatalog}
         onClose={() => setPlaceholdersOpen(false)}
         onInsert={insertPlaceholder}
+        onInsertMention={insertMention}
         placeholderTree={placeholderTree}
       />
 

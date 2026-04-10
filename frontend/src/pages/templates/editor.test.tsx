@@ -66,6 +66,21 @@ vi.mock("@/hooks/use-reports", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-orchestration", () => ({
+  useOrchestrationMentionCatalog: () => ({
+    data: [
+      {
+        handle: "librarian",
+        canonicalTargetId: "builtin:librarian",
+        displayName: "Librarian",
+        description: "Finds context for orchestration flows.",
+        kind: "builtin",
+      },
+    ],
+    isLoading: false,
+  }),
+}));
+
 describe("TemplateEditorPage", () => {
   beforeEach(() => {
     paramsMock.templateId = undefined;
@@ -131,5 +146,22 @@ describe("TemplateEditorPage", () => {
       },
       expect.any(Object),
     );
+  });
+
+  it("keeps @mentions literal in the preview pipeline and offers raw handle insertion", () => {
+    render(<TemplateEditorPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /mention assistance/i }));
+    fireEvent.click(screen.getByText("@librarian"));
+
+    expect(screen.getByPlaceholderText("Enter template content…")).toHaveValue("@librarian");
+    fireEvent.change(screen.getByPlaceholderText("Enter template content…"), {
+      target: { value: "Need @librarian to review this." },
+    });
+
+    expect(compileInlineMock).toHaveBeenLastCalledWith({
+      content: "Need @librarian to review this.",
+      inputs: {},
+    });
   });
 });

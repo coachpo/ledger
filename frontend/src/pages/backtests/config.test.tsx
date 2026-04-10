@@ -212,4 +212,12 @@ describe("BacktestConfigPage", () => {
     ).toBeInTheDocument();
     expect(createBacktestMock).not.toHaveBeenCalled();
   });
+
+  it("explains that built-in-only patterns stay separate from character-enabled patterns", () => {
+    render(<BacktestConfigPage />);
+
+    expect(screen.getByText(/available orchestration patterns/i)).toBeInTheDocument();
+    expect(screen.getByText(/built-in patterns/i)).toBeInTheDocument();
+    expect(screen.getByText(/character-enabled patterns/i)).toBeInTheDocument();
+  });
 });
