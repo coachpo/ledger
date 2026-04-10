@@ -13,6 +13,7 @@ from app.services.backtest_service import BacktestService
 from app.services.balance_service import BalanceService
 from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService
+from app.services.orchestration_service import OrchestrationService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
 from app.services.quote_provider import QuoteProvider, YahooFinanceQuoteProvider
@@ -80,6 +81,12 @@ def get_report_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ReportService:
     return ReportService(session)
+
+
+def get_orchestration_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> OrchestrationService:
+    return OrchestrationService(session)
 
 
 def get_backtest_service(
