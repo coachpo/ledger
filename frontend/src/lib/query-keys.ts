@@ -92,6 +92,23 @@ const backtestsQueryKeys = {
   list: () => [...apiRoot, "backtests", "list"] as const,
 } as const;
 
+const orchestrationQueryKeys = {
+  all: [...apiRoot, "orchestration"] as const,
+  roles: {
+    all: [...apiRoot, "orchestration", "roles"] as const,
+    detail: (roleId: IdParam) =>
+      [...apiRoot, "orchestration", "roles", "detail", normalizeId(roleId)] as const,
+    list: () => [...apiRoot, "orchestration", "roles", "list"] as const,
+  },
+  characters: {
+    all: [...apiRoot, "orchestration", "characters"] as const,
+    detail: (characterId: IdParam) =>
+      [...apiRoot, "orchestration", "characters", "detail", normalizeId(characterId)] as const,
+    list: () => [...apiRoot, "orchestration", "characters", "list"] as const,
+  },
+  mentionCatalog: () => [...apiRoot, "orchestration", "mentionCatalog"] as const,
+} as const;
+
 export const queryKeys = {
   backtests: backtestsQueryKeys,
   portfolios: portfoliosQueryKeys,
@@ -103,6 +120,7 @@ export const queryKeys = {
   marketHistory: marketHistoryQueryKeys,
   templates: templatesQueryKeys,
   reports: reportsQueryKeys,
+  orchestration: orchestrationQueryKeys,
 } as const;
 
 export function invalidatePortfolioScope(
