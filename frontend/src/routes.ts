@@ -4,6 +4,10 @@ import { BacktestConfigPage } from "./pages/backtests/config";
 import { BacktestDetailPage } from "./pages/backtests/detail";
 import { BacktestListPage } from "./pages/backtests/list";
 import { Dashboard } from "./pages/dashboard";
+import { OrchestrationCharacterEditorPage } from "./pages/orchestration/characters/editor";
+import { OrchestrationCharactersListPage } from "./pages/orchestration/characters/list";
+import { OrchestrationRoleEditorPage } from "./pages/orchestration/roles/editor";
+import { OrchestrationRolesListPage } from "./pages/orchestration/roles/list";
 import { PortfolioDetailPage } from "./pages/portfolios/detail";
 import { PortfolioListPage } from "./pages/portfolios/list";
 import { ReportDetailPage } from "./pages/reports/detail";
@@ -27,6 +31,15 @@ export const router = createBrowserRouter([
       { path: "backtests", Component: BacktestListPage },
       { path: "backtests/new", Component: BacktestConfigPage },
       { path: "backtests/:backtestId", Component: BacktestDetailPage },
+      { path: "orchestration/roles", Component: OrchestrationRolesListPage },
+      { path: "orchestration/roles/new", Component: OrchestrationRoleEditorPage },
+      { path: "orchestration/roles/:roleId/edit", Component: OrchestrationRoleEditorPage },
+      { path: "orchestration/characters", Component: OrchestrationCharactersListPage },
+      { path: "orchestration/characters/new", Component: OrchestrationCharacterEditorPage },
+      {
+        path: "orchestration/characters/:characterId/edit",
+        Component: OrchestrationCharacterEditorPage,
+      },
     ],
   },
 ]);
