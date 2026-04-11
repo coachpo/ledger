@@ -4,6 +4,7 @@ import { BacktestConfigPage } from "./pages/backtests/config";
 import { BacktestDetailPage } from "./pages/backtests/detail";
 import { BacktestListPage } from "./pages/backtests/list";
 import { Dashboard } from "./pages/dashboard";
+import { OrchestrationIndexPage } from "./pages/orchestration/index";
 import { OrchestrationCharacterEditorPage } from "./pages/orchestration/characters/editor";
 import { OrchestrationCharactersListPage } from "./pages/orchestration/characters/list";
 import { OrchestrationRoleEditorPage } from "./pages/orchestration/roles/editor";
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
       { path: "backtests", Component: BacktestListPage },
       { path: "backtests/new", Component: BacktestConfigPage },
       { path: "backtests/:backtestId", Component: BacktestDetailPage },
+      { path: "orchestration", Component: OrchestrationIndexPage },
       { path: "orchestration/roles", Component: OrchestrationRolesListPage },
       { path: "orchestration/roles/new", Component: OrchestrationRoleEditorPage },
       { path: "orchestration/roles/:roleId/edit", Component: OrchestrationRoleEditorPage },

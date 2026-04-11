@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import {
+  Bot,
   Briefcase,
   ClipboardList,
   FileText,
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
   { icon: FileText, label: "Templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", to: "/reports" },
   { icon: TrendingUp, label: "Backtests", to: "/backtests" },
+  { icon: Bot, label: "Orchestration", to: "/orchestration" },
 ];
 
 function isNavItemActive(pathname: string, item: NavItem) {
@@ -87,7 +89,7 @@ function getPageMeta(pathname: string) {
     return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
   }
 
-   if (pathname === "/backtests") {
+  if (pathname === "/backtests") {
     return { section: "Backtests", title: "Backtests" };
   }
 
@@ -97,6 +99,42 @@ function getPageMeta(pathname: string) {
 
   if (pathname.startsWith("/backtests/")) {
     return { section: "Backtests", sectionHref: "/backtests", title: "Backtest Detail" };
+  }
+
+  if (pathname === "/orchestration") {
+    return { section: "Orchestration", title: "Orchestration" };
+  }
+
+  if (pathname === "/orchestration/roles") {
+    return { section: "Orchestration", sectionHref: "/orchestration", title: "Roles" };
+  }
+
+  if (pathname === "/orchestration/roles/new") {
+    return { section: "Orchestration", sectionHref: "/orchestration/roles", title: "New Role" };
+  }
+
+  if (pathname.startsWith("/orchestration/roles/") && pathname.endsWith("/edit")) {
+    return { section: "Orchestration", sectionHref: "/orchestration/roles", title: "Edit Role" };
+  }
+
+  if (pathname === "/orchestration/characters") {
+    return { section: "Orchestration", sectionHref: "/orchestration", title: "Characters" };
+  }
+
+  if (pathname === "/orchestration/characters/new") {
+    return {
+      section: "Orchestration",
+      sectionHref: "/orchestration/characters",
+      title: "New Character",
+    };
+  }
+
+  if (pathname.startsWith("/orchestration/characters/") && pathname.endsWith("/edit")) {
+    return {
+      section: "Orchestration",
+      sectionHref: "/orchestration/characters",
+      title: "Edit Character",
+    };
   }
 
   return { section: "Workspace", title: "Workspace" };
