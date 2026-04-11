@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-11
-**Commit:** 6b21cb2
+**Generated:** 2026-04-12
+**Commit:** d6bc942
 **Branch:** main
 
 ## OVERVIEW
@@ -44,14 +44,14 @@ ledger/
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
 ├── docs/                 # reference specs, requirements, runbooks, and test plans; secondary to live code
 ├── .github/workflows/    # CI quality gates, Docker smoke build, image publish, cleanup
-└── start.sh              # local orchestrator: db on 25432, backend on 28000, frontend on 25173
+└── start.sh              # local orchestrator: defaults to db/backend/frontend on 25432/28000/25173, reuses healthy services, and falls back to 25433/25434, 28001/28002, or 25174 when needed
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then use `./start.sh` unless you need manual startup |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | starts Postgres on `25432`, backend on `28000`, frontend on `25173`; no separate backtest worker process exists |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`, reuses a healthy backend on the requested port, and falls back to `25433/25434`, `28001/28002`, or `25174` when needed; no separate backtest worker process exists |
 | Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001`, frontend `4173`, and `BACKTEST_TEST_MODE=1` |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, router composition, dependency injection |
 | Backend orchestration flow | `backend/app/api/orchestration.py`, `backend/app/services/orchestration_service.py`, `backend/app/schemas/orchestration.py` | roles, characters, mention catalog, versioned updates, validation |
@@ -63,7 +63,7 @@ ledger/
 | Frontend orchestration UI | `frontend/src/pages/orchestration/AGENTS.md`, `frontend/src/hooks/use-orchestration.ts`, `frontend/src/lib/api/orchestration.ts`, `frontend/src/lib/types/orchestration.ts` | roles, characters, mention catalog, route forms |
 | Frontend backtests UI | `frontend/src/pages/backtests/AGENTS.md`, `frontend/src/hooks/use-backtests.ts`, `frontend/src/components/backtests/AGENTS.md` | configuration form, internal-vs-legacy launch mode, 5s polling, charts, trade log |
 | Frontend tests / E2E | `frontend/vite.config.ts`, `frontend/src/test/setup.ts`, `frontend/playwright.config.ts`, `frontend/e2e/*.spec.ts` | jsdom unit setup plus Chromium E2E |
-| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, backend quality, frontend quality, E2E, image publish, cleanup |
+| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version-sync, backend-quality, frontend-quality, frontend-e2e, image publish, cleanup |
 
 ## CODE MAP
 | Symbol / Entry | Location | Role |
@@ -128,8 +128,8 @@ ledger/
 ```
 
 ## NOTES
-- `start.sh` is the authoritative local orchestrator; it binds backend/frontend to `28000/25173`, injects `VITE_API_BASE_URL`, and no longer launches a separate backtest worker process.
+- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, reuses a healthy backend on the requested port, falls back to `25433/25434`, `28001/28002`, or `25174` when needed, injects `VITE_API_BASE_URL`, and no longer launches a separate backtest worker process.
 - Supported schema repair is code-based in `backend/app/db/`; `backend/alembic/` is only a placeholder scaffold, not the migration source of truth.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helpers also set `BACKTEST_TEST_MODE=1`, which swaps `BacktestCycleService` into deterministic cycle behavior for E2E and test flows.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
-- Root CI currently runs version-sync checks, backend quality checks, frontend quality checks, and frontend E2E; Docker image publishing and cleanup live in separate workflows.
+- Root CI currently runs version-sync, backend-quality, frontend-quality, and frontend-e2e checks; Docker image publishing and cleanup live in separate workflows.
