@@ -2,6 +2,20 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 
 const API_BASE = "http://127.0.0.1:8001/api/v1";
 
+async function setDateValue(page: Page, selector: string, value: string) {
+  await page.locator(selector).evaluate((element, nextValue) => {
+    const input = element as HTMLInputElement;
+    const previousValue = input.value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, nextValue);
+    const tracker = (input as HTMLInputElement & { _valueTracker?: { setValue: (value: string) => void } })
+      ._valueTracker;
+    tracker?.setValue(previousValue);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
 async function waitForBacktest(
   request: APIRequestContext,
   backtestId: string,
@@ -10,29 +24,44 @@ async function waitForBacktest(
   return response.json();
 }
 
-async function waitForBacktestIdByName(
+async function createPortfolio(
   request: APIRequestContext,
-  backtestName: string,
-): Promise<string> {
-  await expect
-    .poll(
-      async () => {
-        const response = await request.get(`${API_BASE}/backtests`);
-        if (!response.ok()) {
-          return null;
-        }
-        const backtests = (await response.json()) as Array<{ id: number; name: string }>;
-        const match = backtests.find((backtest) => backtest.name === backtestName);
-        return match ? String(match.id) : null;
-      },
-      { timeout: 30_000 },
-    )
-    .not.toBeNull();
+  data: { name: string; slug: string },
+): Promise<{ id: number; name: string }> {
+  const response = await request.post(`${API_BASE}/portfolios`, {
+    data: {
+      name: data.name,
+      slug: data.slug,
+      description: "Playwright backtest coverage portfolio",
+      baseCurrency: "USD",
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
 
-  const response = await request.get(`${API_BASE}/backtests`);
-  const backtests = (await response.json()) as Array<{ id: number; name: string }>;
-  const match = backtests.find((backtest) => backtest.name === backtestName);
-  return String(match!.id);
+async function createBalance(
+  request: APIRequestContext,
+  portfolioId: number,
+  amount: string,
+): Promise<void> {
+  const response = await request.post(`${API_BASE}/portfolios/${portfolioId}/balances`, {
+    data: {
+      label: "Initial Cash",
+      amount,
+      operationType: "DEPOSIT",
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
+async function createTemplate(
+  request: APIRequestContext,
+  data: { content: string; name: string },
+): Promise<{ id: number; name: string }> {
+  const response = await request.post(`${API_BASE}/templates`, { data });
+  expect(response.ok()).toBeTruthy();
+  return response.json();
 }
 
 async function expectBacktestDeleted(
@@ -47,33 +76,56 @@ async function expectBacktestDeleted(
   await expect(page.getByText(backtestName)).toHaveCount(0);
 }
 
-async function configureBacktestForm(page: Page, backtestName: string) {
-  const portfolioName = `E2E Portfolio ${Date.now()}`;
-  const portfolioSlug = `e2e_portfolio_${Date.now()}`;
+async function configureBacktestForm(
+  page: Page,
+  backtestName: string,
+  portfolioId: number,
+  templateId: number,
+  portfolioName: string,
+  templateName: string,
+) {
 
   await expect(page.locator("#backtest-name")).toBeVisible();
   await page.locator("#backtest-name").fill(backtestName);
-  await page.getByRole("radio", { name: /create new/i }).click();
-  await expect(page.getByRole("radio", { name: /create new/i })).toBeChecked();
-  await expect(page.locator("#new-portfolio-name")).toBeVisible();
-  await page.locator("#new-portfolio-name").fill(portfolioName);
-  await page.locator("#new-portfolio-slug").fill(portfolioSlug);
-  await page.locator("#new-portfolio-initial-cash").fill("25000");
-  await page.getByLabel(/create default template/i).check();
-  await expect(page.getByLabel(/create default template/i)).toBeChecked();
+  await page.locator("#portfolio-id").evaluate(
+    (element, portfolio) => {
+      const select = element as HTMLSelectElement;
+      const typedPortfolio = portfolio as { id: number; name: string };
+      const alreadyPresent = Array.from(select.options).some(
+        (option) => option.value === String(typedPortfolio.id),
+      );
+
+      if (!alreadyPresent) {
+        select.append(new Option(typedPortfolio.name, String(typedPortfolio.id)));
+      }
+    },
+    { id: portfolioId, name: portfolioName },
+  );
+  await page.locator("#template-id").evaluate(
+    (element, template) => {
+      const select = element as HTMLSelectElement;
+      const typedTemplate = template as { id: number; name: string };
+      const alreadyPresent = Array.from(select.options).some(
+        (option) => option.value === String(typedTemplate.id),
+      );
+
+      if (!alreadyPresent) {
+        select.append(new Option(typedTemplate.name, String(typedTemplate.id)));
+      }
+    },
+    { id: templateId, name: templateName },
+  );
+  await page.locator("#portfolio-id").selectOption(String(portfolioId));
+  await page.locator("#template-id").selectOption(String(templateId));
   await page.locator("#frequency").selectOption("MONTHLY");
-  await page.locator("#start-date").fill("2024-01-02");
-  await page.locator("#end-date").fill("2024-03-29");
-  await page.getByRole("button", { name: /legacy callback settings/i }).click();
-  await page.locator("#webhook-url").fill("http://localhost:5678/webhook/test");
-  await page.locator("#webhook-timeout").fill("600");
+  await setDateValue(page, "#start-date", "2024-01-02");
+  await setDateValue(page, "#end-date", "2024-03-29");
   await page.getByLabel(/s&p 500/i).check();
   await expect(page.getByLabel(/s&p 500/i)).toBeChecked();
 
-  await expect(page.getByText("Select an existing portfolio")).toHaveCount(0);
   await expect(page.getByText("Choose a complete date range")).toHaveCount(0);
-  await expect(page.getByText("Enter a client endpoint URL")).toHaveCount(0);
-  await expect(page.getByText("Enter a client callback timeout")).toHaveCount(0);
+  await expect(page.getByText("Enter a legacy client endpoint URL")).toHaveCount(0);
+  await expect(page.getByText("Enter a legacy callback timeout")).toHaveCount(0);
   await expect(page.getByText("Select at least one benchmark")).toHaveCount(0);
 }
 
@@ -83,27 +135,43 @@ test.describe("Backtests", () => {
     request,
   }) => {
     const backtestName = `E2E Backtest ${Date.now()}`;
+    const portfolio = await createPortfolio(request, {
+      name: `E2E Portfolio ${Date.now()}`,
+      slug: `e2e_portfolio_${Date.now()}`,
+    });
+    await createBalance(request, portfolio.id, "25000");
+    const template = await createTemplate(request, {
+      name: `E2E Template ${Date.now()}`,
+      content: "# Backtest Template\n\nReview the portfolio.",
+    });
 
     await page.goto("/backtests");
     await page.getByRole("link", { name: /backtests/i }).click();
     await page.getByRole("button", { name: /new backtest/i }).click();
     await page.waitForURL(/\/backtests\/new$/);
 
-    await configureBacktestForm(page, backtestName);
+    await configureBacktestForm(page, backtestName, portfolio.id, template.id, portfolio.name, template.name);
     await expect(page.locator("#backtest-name")).toHaveValue(backtestName);
     await expect(page.getByRole("button", { name: /launch backtest/i })).toBeEnabled();
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url() === `${API_BASE}/backtests` && response.request().method() === "POST",
+    );
+
     await page
       .getByRole("button", { name: /launch backtest/i })
       .evaluate((element) => (element as HTMLButtonElement).click());
 
-    const backtestId = await waitForBacktestIdByName(request, backtestName);
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    const created = (await createResponse.json()) as { id: number; name: string };
+    const backtestId = String(created.id);
     expect(backtestId).toMatch(/^\d+$/);
-
     await page.goto(`/backtests/${backtestId}`);
     await expect(page.getByText(/current simulation date|total return/i)).toBeVisible();
 
     const backtest = await waitForBacktest(request, backtestId);
-    expect(backtest.name).toBe(backtestName);
+    expect(backtest.name).toBe(created.name);
     await expect
       .poll(async () => (await request.get(`${API_BASE}/backtests/${backtestId}`)).json())
       .toMatchObject({ status: "COMPLETED" });

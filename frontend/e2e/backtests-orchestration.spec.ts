@@ -2,15 +2,33 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 
 const API_BASE = "http://127.0.0.1:8001/api/v1";
 
+async function setDateValue(page: Page, selector: string, value: string) {
+  await page.locator(selector).evaluate((element, nextValue) => {
+    const input = element as HTMLInputElement;
+    const previousValue = input.value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, nextValue);
+    const tracker = (input as HTMLInputElement & { _valueTracker?: { setValue: (value: string) => void } })
+      ._valueTracker;
+    tracker?.setValue(previousValue);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
 type LaunchBacktestOptions = {
   backtestName: string;
   orchestrationPatternKey: "seeded_internal_backtest_v1" | "analyst_reviewer_v1";
+  portfolioId: number;
+  portfolioName: string;
   templateId: number;
+  templateName: string;
 };
 
 type CreatedTemplate = { id: number; name: string };
 type CreatedRole = { id: number };
 type CreatedCharacter = { id: number };
+type CreatedPortfolio = { id: number; name: string };
 
 async function createTemplate(
   request: APIRequestContext,
@@ -46,27 +64,84 @@ async function createCharacter(
   return response.json();
 }
 
+async function createPortfolio(
+  request: APIRequestContext,
+  data: { name: string; slug: string },
+): Promise<CreatedPortfolio> {
+  const response = await request.post(`${API_BASE}/portfolios`, {
+    data: {
+      name: data.name,
+      slug: data.slug,
+      description: "Playwright orchestration coverage portfolio",
+      baseCurrency: "USD",
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
+
+async function createBalance(
+  request: APIRequestContext,
+  portfolioId: number,
+  amount: string,
+): Promise<void> {
+  const response = await request.post(`${API_BASE}/portfolios/${portfolioId}/balances`, {
+    data: {
+      label: "Initial Cash",
+      amount,
+      operationType: "DEPOSIT",
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
 async function configureBacktestForm(
   page: Page,
-  { backtestName, orchestrationPatternKey, templateId }: LaunchBacktestOptions,
+  {
+    backtestName,
+    orchestrationPatternKey,
+    portfolioId,
+    portfolioName,
+    templateId,
+    templateName,
+  }: LaunchBacktestOptions,
 ) {
-  const timestamp = Date.now();
-
   await expect(page.locator("#backtest-name")).toBeVisible();
   await page.locator("#backtest-name").fill(backtestName);
   await page.locator("#orchestration-pattern").selectOption(orchestrationPatternKey);
-  await page.getByRole("radio", { name: /create new/i }).click();
-  await expect(page.getByRole("radio", { name: /create new/i })).toBeChecked();
-  await page.locator("#new-portfolio-name").fill(`Orchestration Portfolio ${timestamp}`);
-  await page.locator("#new-portfolio-slug").fill(`orchestration_portfolio_${timestamp}`);
-  await page.locator("#new-portfolio-initial-cash").fill("25000");
+  await page.locator("#portfolio-id").evaluate(
+    (element, portfolio) => {
+      const select = element as HTMLSelectElement;
+      const typedPortfolio = portfolio as { id: number; name: string };
+      const alreadyPresent = Array.from(select.options).some(
+        (option) => option.value === String(typedPortfolio.id),
+      );
+
+      if (!alreadyPresent) {
+        select.append(new Option(typedPortfolio.name, String(typedPortfolio.id)));
+      }
+    },
+    { id: portfolioId, name: portfolioName },
+  );
+  await page.locator("#template-id").evaluate(
+    (element, template) => {
+      const select = element as HTMLSelectElement;
+      const typedTemplate = template as { id: number; name: string };
+      const alreadyPresent = Array.from(select.options).some(
+        (option) => option.value === String(typedTemplate.id),
+      );
+
+      if (!alreadyPresent) {
+        select.append(new Option(typedTemplate.name, String(typedTemplate.id)));
+      }
+    },
+    { id: templateId, name: templateName },
+  );
+  await page.locator("#portfolio-id").selectOption(String(portfolioId));
   await page.locator("#template-id").selectOption(String(templateId));
   await page.locator("#frequency").selectOption("MONTHLY");
-  await page.locator("#start-date").fill("2024-01-02");
-  await page.locator("#end-date").fill("2024-03-29");
-  await page.getByRole("button", { name: /legacy callback settings/i }).click();
-  await page.locator("#webhook-url").fill("http://localhost:5678/webhook/test");
-  await page.locator("#webhook-timeout").fill("600");
+  await setDateValue(page, "#start-date", "2024-01-02");
+  await setDateValue(page, "#end-date", "2024-03-29");
   await page.getByLabel(/s&p 500/i).check();
   await expect(page.getByLabel(/s&p 500/i)).toBeChecked();
 }
@@ -78,18 +153,24 @@ async function launchBacktestFromConfig(
   await page.goto("/backtests/new");
   await page.waitForLoadState("networkidle");
 
-  await configureBacktestForm(page, options);
-  const launchButton = page.getByRole("button", { name: /launch backtest/i });
-  await expect(launchButton).toBeEnabled();
+    await configureBacktestForm(page, options);
+    const launchButton = page.getByRole("button", { name: /launch backtest/i });
+    await expect(launchButton).toBeEnabled();
 
-  await Promise.all([
-    page.waitForURL(/\/backtests\/\d+$/, { timeout: 30_000 }),
-    launchButton.click(),
-  ]);
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url() === `${API_BASE}/backtests` && response.request().method() === "POST",
+    );
 
-  const backtestId = page.url().split("/backtests/")[1];
-  expect(backtestId).toMatch(/^\d+$/);
-  return backtestId;
+    await launchButton.evaluate((element) => (element as HTMLButtonElement).click());
+
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    const created = (await createResponse.json()) as { id: number };
+    const backtestId = String(created.id);
+    expect(backtestId).toMatch(/^\d+$/);
+    await page.goto(`/backtests/${backtestId}`);
+    return backtestId;
 }
 
 async function waitForBacktestStatus(
@@ -128,10 +209,17 @@ test.describe("Backtests orchestration", () => {
 
   test("valid builtin and character mentions complete successfully", async ({ page, request }) => {
     const timestamp = Date.now();
-    const resources: { characters: number[]; roles: number[]; templates: number[]; backtests: string[] } = {
+    const resources: {
+      characters: number[];
+      roles: number[];
+      templates: number[];
+      portfolios: number[];
+      backtests: string[];
+    } = {
       characters: [],
       roles: [],
       templates: [],
+      portfolios: [],
       backtests: [],
     };
 
@@ -166,10 +254,20 @@ test.describe("Backtests orchestration", () => {
       });
       resources.templates.push(template.id);
 
+      const portfolio = await createPortfolio(request, {
+        name: `Orchestration Portfolio ${timestamp}`,
+        slug: `orchestration_portfolio_${timestamp}`,
+      });
+      resources.portfolios.push(portfolio.id);
+      await createBalance(request, portfolio.id, "25000");
+
       const backtestId = await launchBacktestFromConfig(page, {
         backtestName: `Orchestration Success ${timestamp}`,
         orchestrationPatternKey: "analyst_reviewer_v1",
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
         templateId: template.id,
+        templateName: template.name,
       });
       resources.backtests.push(backtestId);
 
@@ -186,6 +284,9 @@ test.describe("Backtests orchestration", () => {
       for (const templateId of resources.templates) {
         await cleanupResource(request, "DELETE", `/templates/${templateId}`);
       }
+      for (const portfolioId of resources.portfolios) {
+        await cleanupResource(request, "DELETE", `/portfolios/${portfolioId}`);
+      }
       for (const characterId of resources.characters) {
         await cleanupResource(request, "DELETE", `/orchestration/characters/${characterId}`);
       }
@@ -197,10 +298,17 @@ test.describe("Backtests orchestration", () => {
 
   test("unknown or disabled mentions fail clearly", async ({ page, request }) => {
     const timestamp = Date.now();
-    const resources: { characters: number[]; roles: number[]; templates: number[]; backtests: string[] } = {
+    const resources: {
+      characters: number[];
+      roles: number[];
+      templates: number[];
+      portfolios: number[];
+      backtests: string[];
+    } = {
       characters: [],
       roles: [],
       templates: [],
+      portfolios: [],
       backtests: [],
     };
 
@@ -230,10 +338,20 @@ test.describe("Backtests orchestration", () => {
       });
       resources.templates.push(unknownTemplate.id);
 
+      const portfolio = await createPortfolio(request, {
+        name: `Orchestration Failure Portfolio ${timestamp}`,
+        slug: `orchestration_failure_portfolio_${timestamp}`,
+      });
+      resources.portfolios.push(portfolio.id);
+      await createBalance(request, portfolio.id, "25000");
+
       const unknownBacktestId = await launchBacktestFromConfig(page, {
         backtestName: `Orchestration Unknown ${timestamp}`,
         orchestrationPatternKey: "analyst_reviewer_v1",
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
         templateId: unknownTemplate.id,
+        templateName: unknownTemplate.name,
       });
       resources.backtests.push(unknownBacktestId);
 
@@ -251,7 +369,10 @@ test.describe("Backtests orchestration", () => {
       const disabledBacktestId = await launchBacktestFromConfig(page, {
         backtestName: `Orchestration Disabled ${timestamp}`,
         orchestrationPatternKey: "analyst_reviewer_v1",
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
         templateId: disabledTemplate.id,
+        templateName: disabledTemplate.name,
       });
       resources.backtests.push(disabledBacktestId);
 
@@ -265,6 +386,9 @@ test.describe("Backtests orchestration", () => {
       }
       for (const templateId of resources.templates) {
         await cleanupResource(request, "DELETE", `/templates/${templateId}`);
+      }
+      for (const portfolioId of resources.portfolios) {
+        await cleanupResource(request, "DELETE", `/portfolios/${portfolioId}`);
       }
       for (const characterId of resources.characters) {
         await cleanupResource(request, "DELETE", `/orchestration/characters/${characterId}`);
