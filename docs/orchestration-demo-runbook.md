@@ -2,54 +2,74 @@
 
 ## Purpose
 
-This runbook documents how to reset Ledger to a clean local state, start it from `./start.sh`, and demonstrate the full orchestration workflow by interacting only through the UI after the initial root load.
+This runbook captures the current local demo flow for Ledger orchestration. It begins by resetting the container-managed database, uses `./start.sh` as the canonical launcher, and then stays inside the UI after the first root load.
 
-## Scope
+## What this demo covers
 
-The demonstrated workflow covers:
-
-- clean reset of application data
-- backend startup with an OpenAI-compatible LLM configuration
-- creation of orchestration roles and characters
-- creation of a demo portfolio and funding balance
-- creation of an orchestration-aware template using mention assistance
-- launch of an orchestration backtest
-- inspection of a completed backtest result
-- inspection of a generated report from the completed backtest
+- orchestration role and character CRUD
+- portfolio creation with an initial deposit balance
+- template creation with mention assistance and literal handles
+- internal backtest launch with orchestration pattern selection
+- backtest result review
+- generated report review from the Reports surface
 
 ## Preconditions
 
-- Colima or another Docker-compatible daemon is running and reachable by the `docker` CLI
-- `uv`, `pnpm`, and `docker compose` are available
-- the repo root is the working directory
+- Docker and `docker compose` are available
+- `uv` and `pnpm` are installed
+- the repository root is the working directory
 
-## LLM Configuration
+## Runtime provider config
 
-Ledger reads its internal backtest model settings from backend environment variables.
-
-Set these before starting the app:
+Ledger uses runtime provider settings for live LangGraph-backed backtests. For live model-backed backtests, make sure a model ID is available, and provide an API key and base URL when your provider requires them:
 
 ```bash
-export BACKTEST_AGENT_MODEL="gpt-5.4-mini"
-export BACKTEST_AGENT_BASE_URL="http://192.168.1.222:8087/v1"
+export BACKTEST_AGENT_MODEL="<model-id>"
+export BACKTEST_AGENT_BASE_URL="<openai-compatible-base-url>"
 export BACKTEST_AGENT_API_KEY="<your-api-key>"
 ```
 
-Do **not** save real API keys in committed files.
+These are runtime settings, not checked-in secrets.
 
-## Clean Reset
+## Runtime provider proof
 
-From the repo root:
+You can also verify that the running backend inherited your current runtime provider settings.
+
+One concrete local check is to inspect the environment of the backend process currently listening on the selected backend port.
+
+```bash
+pid=$(lsof -tiTCP:<backend-port> -sTCP:LISTEN | head -n 1)
+ps eww -p "$pid"
+```
+
+Expected output includes your current values for:
+
+- `BACKTEST_AGENT_MODEL=...`
+- `BACKTEST_AGENT_BASE_URL=...`
+- `BACKTEST_AGENT_API_KEY=...`
+
+The current code seam for that runtime config is:
+
+- `backend/app/core/config.py`
+- `backend/app/services/backtest_cycle_service.py`
+- `backend/app/langgraph/runner.py`
+
+## Clean reset
+
+From the repo root, reset the container-managed database with:
 
 ```bash
 cd backend
 docker compose down -v
-cd ..
 ```
 
-This removes the local PostgreSQL volume used by Ledger and returns the backend collections to an empty state.
+This removes the local PostgreSQL volume for the container-managed database.
 
-## Startup
+Important caveat: `./start.sh` can reuse an already reachable PostgreSQL endpoint on port `25432` instead of starting the container-managed database. If you need a guaranteed clean demo state, make sure the database `./start.sh` will actually use is the one you reset.
+
+Also make sure `./start.sh` is not reusing an already healthy Ledger backend on the selected backend port unless that reused backend is pointed at the reset database.
+
+## Start the stack
 
 From the repo root:
 
@@ -57,57 +77,29 @@ From the repo root:
 ./start.sh
 ```
 
-Expected ready state:
+`start.sh` is the canonical local launcher. It reuses a healthy backend when one is already listening, falls back to alternate ports when the requested ones are occupied, and wires the frontend to the selected backend base URL.
 
-- frontend at `http://127.0.0.1:25173`
-- backend health endpoint returns `{"status":"ok"}` at `http://127.0.0.1:28000/health`
+Expected local endpoints are usually:
 
-## Runtime LLM Proof
+- frontend, `http://127.0.0.1:25173`
+- backend health, `http://127.0.0.1:28000/health`
 
-The running backend process should include the provided model settings in its process environment.
+## Demo flow
 
-One concrete verification command is:
+Only the initial root load uses a URL. After that, use clicks and form input only.
 
-```bash
-pid=$(lsof -tiTCP:28000 -sTCP:LISTEN | head -n 1)
-ps eww -p "$pid"
-```
+### 1. Open the app shell
 
-Expected output includes:
+Open the frontend URL printed by `./start.sh`.
 
-- `BACKTEST_AGENT_MODEL=gpt-5.4-mini`
-- `BACKTEST_AGENT_BASE_URL=http://192.168.1.222:8087/v1`
-- `BACKTEST_AGENT_API_KEY=...`
+Expected starting state:
 
-Code seam proving the runtime uses those variables:
+- assuming the app is using the reset database, dashboard counts are zero or empty
+- there are no portfolios, templates, backtests, roles, or characters yet
 
-- `backend/app/core/config.py`
-- `backend/app/services/backtest_cycle_service.py`
-- `backend/app/langgraph/runner.py`
+### 2. Create an orchestration role
 
-## Demonstration Flow
-
-Only the initial root load uses a URL. After that, navigate by clicks and form input only.
-
-### 1. Load the root shell
-
-Open `http://127.0.0.1:25173/`.
-
-Expected clean state:
-
-- dashboard counts are zero
-- no portfolios
-- no templates
-- no backtests
-- no roles or characters
-
-### 2. Create a role
-
-Click:
-
-- `Orchestration`
-- `Manage Roles`
-- `Create Role`
+Click `Orchestration`, then `Manage Roles`, then `Create Role`.
 
 Fill:
 
@@ -121,15 +113,11 @@ Save the role.
 Expected result:
 
 - success toast
-- route changes to `/orchestration/roles/<id>/edit`
+- the route changes to `/orchestration/roles/<id>/edit`
 
-### 3. Create a character
+### 3. Create an orchestration character
 
-Click:
-
-- `Orchestration`
-- `Manage Characters`
-- `Create Character`
+Click `Orchestration`, then `Manage Characters`, then `Create Character`.
 
 Fill:
 
@@ -144,14 +132,11 @@ Save the character.
 Expected result:
 
 - success toast
-- route changes to `/orchestration/characters/<id>/edit`
+- the route changes to `/orchestration/characters/<id>/edit`
 
 ### 4. Create and fund a portfolio
 
-Click:
-
-- `Portfolios`
-- `New Portfolio`
+Click `Portfolios`, then `New Portfolio`.
 
 Fill:
 
@@ -162,14 +147,7 @@ Fill:
 
 Save the portfolio.
 
-Expected result:
-
-- route changes to `/portfolios/<id>`
-
-Then click:
-
-- `Balances`
-- `Add Balance`
+Then click `Balances`, then `Add Balance`.
 
 Fill:
 
@@ -181,17 +159,17 @@ Save the balance.
 
 Expected result:
 
-- balance list shows `Initial Cash`
-- portfolio total value and cash balances update from zero
+- the balance list shows `Initial Cash`
+- portfolio cash and total value move off zero
 
-### 5. Add a position for a nontrivial backtest
+### 5. Add a position
 
-On the same portfolio detail page, stay on `Positions` and click `Add Position`.
+Stay on the portfolio detail page, open `Positions`, then `Add Position`.
 
 Fill:
 
 - Symbol: `AAPL`
-- Name: `Apple` (the UI may auto-fill this to `Apple Inc.`)
+- Name: `Apple` or the UI autofill result
 - Quantity: `10`
 - Average Cost: `180`
 
@@ -199,30 +177,27 @@ Save the position.
 
 Expected result:
 
-- positions table shows `AAPL`
-- total value and unrealized P&L are no longer zero
+- `AAPL` appears in the positions table
+- the portfolio now has nonzero exposure for backtest review
 
 ### 6. Create an orchestration-aware template
 
-Click:
+Click `Templates`, then `New Template`.
 
-- `Templates`
-- `New Template`
+Fill the template name:
 
-Fill:
+- `Demo Orchestration Template`
 
-- Template name: `Demo Orchestration Template`
-
-Open `Mention Assistance` and click:
+Use mention assistance to insert the literal handles:
 
 - `@librarian`
 - `@market_researcher`
 
-Open the `Demo Portfolio 1` placeholder section and click:
+Use the portfolio placeholder browser to insert:
 
 - `portfolios.demo_portfolio`
 
-Then continue typing in the editor body:
+Then type this body in the editor:
 
 ```markdown
 
@@ -235,21 +210,18 @@ Save the template.
 
 Expected result:
 
-- route changes to `/templates/<id>/edit`
-- preview shows the portfolio placeholder expanded
-- mention text remains literal (`@librarian`, `@market_researcher`)
+- the route changes to `/templates/<id>/edit`
+- preview expands the portfolio placeholder
+- the mention text stays literal in the editor body
 
-### 7. Launch the orchestration backtest
+### 7. Launch the backtest
 
-Click:
+Click `Backtests`, then `New Backtest`.
 
-- `Backtests`
-- `New Backtest`
-
-Fill/select:
+Fill or select:
 
 - Backtest Name: `Demo Orchestration Backtest With Position`
-- Launch Mode: `Internal` (default)
+- Launch Mode: `Internal`
 - Orchestration Pattern: `Analyst Reviewer v1`
 - Portfolio: `Demo Portfolio`
 - Template: `Demo Orchestration Template`
@@ -258,74 +230,44 @@ Fill/select:
 - End Date: `2024-03-29`
 - Benchmark: `S&P 500`
 
-Then click `Launch Backtest`.
+Launch the backtest.
 
 Expected result:
 
-- route changes to `/backtests/<id>`
+- the route changes to `/backtests/<id>`
 - status eventually becomes `COMPLETED`
 
-### 8. Verify the completed result
+### 8. Review the completed result
 
 On the backtest detail page, verify:
 
-- status badge shows `COMPLETED`
-- metrics summary is visible
+- the status badge shows `COMPLETED`
+- the metrics summary is visible
 - `LangGraph Decision Summary` is visible
-- latest cycle decisions are present for the populated portfolio run
+- latest cycle decisions are visible when the final cycle still has generated decisions
 
 ### 9. Open the generated report
 
-Click:
+Use either of these current paths:
 
-- `Reports`
-- open the report card `backtest_2_20240328`
+- if the backtest detail page shows an `Analysis Reports` section, click one of the generated report links there
+- or click `Reports` and open the new `backtest_<id>_<date>` report created by the completed run
+
+The `Analysis Reports` section is conditional. It only appears when the completed backtest trade log contains report-linked trade entries.
 
 Expected result:
 
-- route changes to `/reports/backtest_2_20240328`
-- report detail shows `LangGraph Analysis`
-- report body includes the run topology and the `AAPL` analysis summary
+- the route changes to `/reports/<generated-backtest-report-slug>`
+- the report detail shows `LangGraph Analysis`
+- the report body includes the run topology and cycle analysis content for the positions held in that report's cycle
 
-## Demo Evidence Summary
+## Validation notes
 
-This runbook was validated against a real local demo with the following successful outcomes:
+This runbook is grounded in the current live app plus the shipped route, API, and E2E coverage around orchestration navigation, backtest orchestration behavior, and report flows.
 
-- one role created
-- one character created
-- one funded portfolio created
-- one orchestration-aware template created
-- one populated orchestration backtest completed successfully
-- one generated report opened successfully from the Reports surface
-- running backend process confirmed to include the provided `BACKTEST_AGENT_*` environment variables
+## Known rerun caveats
 
-## Issues Encountered During Demo
-
-### Environment / startup
-
-1. `start.sh` can partially succeed when Docker is unreachable: the frontend may start even while the database path fails.
-2. Colima/Docker context mismatches can make `docker compose` fail until the local Docker context is corrected.
-
-### UI / product
-
-3. The role create route initially got stuck on `Loading role details...` until the create-mode loading logic was corrected.
-4. The character create route shared the same create-mode loading problem and needed the same fix.
-5. After creating a balance, the balance dialog showed success but did not always disappear immediately; closing or waiting for rerender resolved it.
-6. Position symbol lookup can auto-fill the company name mid-entry, which makes browser automation sensitive to input ordering.
-
-### Browser automation / rerun caveats
-
-7. Long-lived dev servers can become stale; for reliable reruns, restart the stack cleanly rather than trusting an old Vite process.
-8. Browser-native date controls and benchmark checkboxes were more reliable with Playwright than with Chrome DevTools in this repo.
-9. Playwright reruns should avoid stale `4173`/`8001` server reuse; clean server startup produced stable orchestration and backtest E2E results.
-10. The benchmark checkbox accepted Playwright's checkbox-specific interaction (`setChecked`) more reliably than generic click paths.
-
-## Rerun Recommendation
-
-For future reruns, prefer:
-
-1. clean reset with `docker compose down -v`
-2. fresh `./start.sh`
-3. Playwright for the full click/input walkthrough once the root page is loaded
-
-This combination produced the most stable end-to-end results in practice.
+- `start.sh` may reuse an already healthy backend or fall back to alternate ports when the requested ports are occupied.
+- stale Playwright servers can hide app changes, so clean restarts are more reliable for reruns.
+- use Playwright checkbox-specific actions for benchmark selection during browser automation reruns.
+- the README and backend docs still mention `PUBLIC_BASE_URL` in a few places, but the current internal backtest path does not require it.
