@@ -37,6 +37,11 @@ class BacktestCommissionMode(str, Enum):  # noqa: UP042
     PERCENTAGE = "PERCENTAGE"
 
 
+class BacktestLaunchMode(str, Enum):  # noqa: UP042
+    INTERNAL = "internal"
+    LEGACY_CALLBACK = "legacy_callback"
+
+
 class TradeDecision(CamelModel):
     symbol: str
     action: Literal["BUY", "SELL", "HOLD"]
@@ -131,17 +136,18 @@ class BacktestCreate(CamelModel):
     create_template: bool = False
     template_name: str | None = Field(default=None, min_length=1, max_length=100)
     orchestration_pattern_key: str | None = None
+    launch_mode: BacktestLaunchMode = BacktestLaunchMode.INTERNAL
     frequency: BacktestFrequency
     start_date: date
     end_date: date
-    webhook_url: str = Field(min_length=1, max_length=1000)
-    webhook_timeout: int = Field(default=600, ge=30, le=3600)
+    webhook_url: str | None = Field(default=None, min_length=1, max_length=1000)
+    webhook_timeout: int | None = Field(default=None, ge=30, le=3600)
     price_mode: BacktestPriceMode
     commission_mode: BacktestCommissionMode
     commission_value: Decimal = Decimal("0")
     benchmark_symbols: list[str] = Field(min_length=1)
 
-    @field_validator("name", "webhook_url", mode="before")
+    @field_validator("name", mode="before")
     @classmethod
     def validate_required_text(cls, value: object) -> str:
         if value is None:
@@ -154,6 +160,16 @@ class BacktestCreate(CamelModel):
     @field_validator("template_name", mode="before")
     @classmethod
     def validate_optional_template_name(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return normalized
+
+    @field_validator("webhook_url", mode="before")
+    @classmethod
+    def validate_optional_webhook_url(cls, value: object) -> str | None:
         if value is None:
             return None
         normalized = str(value).strip()
@@ -207,6 +223,13 @@ class BacktestCreate(CamelModel):
         today = date.today()
         if self.start_date >= today or self.end_date >= today:
             raise ValueError("Backtest dates must be in the past")
+        if self.launch_mode == BacktestLaunchMode.LEGACY_CALLBACK:
+            if not self.webhook_url:
+                raise ValueError("Legacy callback mode requires a client endpoint URL")
+            if self.webhook_timeout is None:
+                raise ValueError("Legacy callback mode requires a callback timeout")
+        elif self.webhook_timeout is None:
+            self.webhook_timeout = 600
         if self.commission_mode == BacktestCommissionMode.PERCENTAGE:
             if (
                 self.commission_value is None

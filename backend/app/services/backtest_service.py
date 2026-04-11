@@ -56,6 +56,9 @@ Respond in this exact JSON:
 This is an experimental simulation. No investment advice.
 """
 
+_INTERNAL_BACKTEST_WEBHOOK_URL = "internal://ledger"
+_INTERNAL_BACKTEST_WEBHOOK_TIMEOUT = 600
+
 
 class BacktestService:
     def __init__(self, session: Session, session_factory: sessionmaker[Session]) -> None:
@@ -88,6 +91,7 @@ class BacktestService:
         orchestration_pattern_key = self._resolve_orchestration_pattern_key(
             payload.orchestration_pattern_key
         )
+        webhook_url, webhook_timeout = self._resolve_webhook_settings(payload)
 
         backtest = Backtest(
             portfolio_id=payload.portfolio_id,
@@ -101,8 +105,8 @@ class BacktestService:
             total_cycles=0,
             completed_cycles=0,
             template_id=template_id,
-            webhook_url=payload.webhook_url,
-            webhook_timeout=payload.webhook_timeout,
+            webhook_url=webhook_url,
+            webhook_timeout=webhook_timeout,
             price_mode=BacktestPriceMode.CLOSING_PRICE.value,
             commission_mode=payload.commission_mode.value,
             commission_value=payload.commission_value,
@@ -197,3 +201,12 @@ class BacktestService:
             )
 
         return normalized
+
+    def _resolve_webhook_settings(self, payload: BacktestCreate) -> tuple[str, int]:
+        if payload.webhook_url:
+            return (
+                payload.webhook_url,
+                payload.webhook_timeout or _INTERNAL_BACKTEST_WEBHOOK_TIMEOUT,
+            )
+
+        return _INTERNAL_BACKTEST_WEBHOOK_URL, _INTERNAL_BACKTEST_WEBHOOK_TIMEOUT

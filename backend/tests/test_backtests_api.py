@@ -83,6 +83,7 @@ def build_backtest_payload(
         "templateId": template_id,
         "createTemplate": create_template,
         "templateName": template_name,
+        "launchMode": "internal",
         "frequency": "DAILY",
         "startDate": "2024-01-02",
         "endDate": "2024-03-29",
@@ -571,12 +572,58 @@ def test_create_backtest_rejects_null_required_text_fields(client: TestClient) -
             template_name="Null Guard Template",
             overrides={
                 "name": None,
-                "webhookUrl": None,
             },
         ),
     )
 
     assert response.status_code == 422
+
+
+def test_create_backtest_defaults_to_internal_launch_mode_without_callback_fields(
+    client: TestClient, submitted_backtests: list[int]
+) -> None:
+    portfolio = create_portfolio(client, name="Internal Default", slug="internal_default")
+    create_balance(client, str(portfolio["id"]), amount="5000.00")
+    template = create_template(client, name="Internal Default Template", content="# Internal")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={"webhookUrl": None, "webhookTimeout": None},
+        ),
+    )
+
+    assert response.status_code == 201, response.json()
+    created = response.json()
+    assert created["webhookUrl"] == "internal://ledger"
+    assert created["webhookTimeout"] == 600
+    assert submitted_backtests == [created["id"]]
+
+
+def test_create_backtest_requires_callback_fields_only_in_legacy_callback_mode(
+    client: TestClient,
+) -> None:
+    portfolio = create_portfolio(client, name="Legacy Callback", slug="legacy_callback")
+    create_balance(client, str(portfolio["id"]), amount="5000.00")
+    template = create_template(client, name="Legacy Callback Template", content="# Legacy")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={
+                "launchMode": "legacy_callback",
+                "webhookUrl": None,
+                "webhookTimeout": None,
+            },
+        ),
+    )
+
+    assert response.status_code == 422
+    assert "Legacy callback mode requires" in response.text
 
 
 def test_backtest_get_returns_webhook_fields(
