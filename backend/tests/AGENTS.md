@@ -16,7 +16,8 @@
 | Backtest cycle-service coverage | `test_backtest_cycle_service.py` | internal cycle execution, legacy callback-state validation, deterministic cycle behavior |
 | Backtest engine coverage | `test_backtest_engine.py` | NYSE schedule rules, parquet cache reuse, prompt/report handling, trade attribution, results math |
 | Orchestration snapshot coverage | `test_backtest_orchestration_snapshot.py` | snapshot table registration and upgrade conversion from opaque payloads |
-| LangGraph runner coverage | `test_langgraph_runner.py` | prompt parsing, report rendering, decision translation |
+| LangGraph runner coverage | `test_langgraph_runner.py` | seeded/reviewer topology behavior, prompt parsing, Responses-mode streaming/input formatting, report rendering, decision translation |
+| LangGraph seed coverage | `test_langgraph_seeds.py` | seeded builtin registry, mention-policy coverage |
 
 ## CONVENTIONS
 - Tests create an isolated PostgreSQL database per test run, monkeypatch `DATABASE_URL`, then call `init_db(database_url)`.
@@ -27,7 +28,7 @@
 - Quote-provider behavior is exercised through `app.dependency_overrides` on the FastAPI app rather than through real network calls.
 - `test_backtest_engine.py` uses fake history providers and temporary parquet cache directories, while `test_backtest_cycle_service.py` exercises internal cycle execution, legacy callback-state rules, and deterministic cycle advancement with fake engines.
 - `test_backtest_orchestration_snapshot.py` verifies the model is registered on metadata and that legacy snapshot tables upgrade to explicit snapshot columns.
-- `test_langgraph_runner.py` uses fake analyzers/clients and keeps live model calls out of the unit suite while still covering Responses-mode streaming behavior.
+- `test_langgraph_runner.py` uses fake analyzers/clients and keeps live model calls out of the unit suite while still covering seeded/reviewer topology behavior plus Responses-mode streaming and input formatting.
 - `TEST_DATABASE_URL` or `DATABASE_URL` must point to a PostgreSQL server where the test user can connect to `postgres` and create/drop databases.
 
 ## ANTI-PATTERNS
@@ -52,4 +53,5 @@ uv run pytest
 - `test_backtest_cycle_service.py` covers internal cycle execution, callback-state validation for the legacy routes, and deterministic test-mode behavior.
 - `test_backtest_orchestration_snapshot.py` covers the snapshot table definition, legacy table migration, and explicit JSON column replacement.
 - `test_backtest_engine.py` covers schedule generation, parquet cache reuse, prompt report storage, trade attribution, and portfolio/benchmark result aggregation.
-- `test_langgraph_runner.py` covers internal prompt parsing, Responses-mode streaming extraction, label normalization, analysis report rendering, and decision translation.
+- `test_langgraph_runner.py` covers internal prompt parsing, seeded/reviewer topology behavior, Responses-mode streaming extraction, input formatting, label normalization, analysis report rendering, and decision translation.
+- `test_langgraph_seeds.py` covers the seeded builtin registry and mention-policy behavior.
