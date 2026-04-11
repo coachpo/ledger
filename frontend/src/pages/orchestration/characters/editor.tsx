@@ -239,7 +239,7 @@ export function OrchestrationCharacterEditorPage() {
           </Button>
         </div>
 
-        {characterQuery.isPending ? (
+        {isEditing && characterQuery.isPending ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               Loading character details...
@@ -247,7 +247,7 @@ export function OrchestrationCharacterEditorPage() {
           </Card>
         ) : null}
 
-        {characterQuery.isError ? (
+        {isEditing && characterQuery.isError ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               {characterQuery.error instanceof Error
@@ -257,7 +257,7 @@ export function OrchestrationCharacterEditorPage() {
           </Card>
         ) : null}
 
-        {!characterQuery.isPending && !characterQuery.isError ? (
+        {(!isEditing || (!characterQuery.isPending && !characterQuery.isError)) ? (
           <Card>
             <CardHeader>
               <CardTitle>Character details</CardTitle>

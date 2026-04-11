@@ -194,7 +194,7 @@ export function OrchestrationRoleEditorPage() {
           </Button>
         </div>
 
-        {roleQuery.isPending ? (
+        {isEditing && roleQuery.isPending ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               Loading role details...
@@ -202,7 +202,7 @@ export function OrchestrationRoleEditorPage() {
           </Card>
         ) : null}
 
-        {roleQuery.isError ? (
+        {isEditing && roleQuery.isError ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               {roleQuery.error instanceof Error
@@ -212,7 +212,7 @@ export function OrchestrationRoleEditorPage() {
           </Card>
         ) : null}
 
-        {!roleQuery.isPending && !roleQuery.isError ? (
+        {(!isEditing || (!roleQuery.isPending && !roleQuery.isError)) ? (
           <Card>
             <CardHeader>
               <CardTitle>Role details</CardTitle>
