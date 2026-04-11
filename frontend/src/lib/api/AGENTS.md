@@ -15,7 +15,8 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-└── backtests.ts           # list/detail, create, cancel, delete
+├── backtests.ts           # list/detail, create, cancel, delete
+└── orchestration.ts       # roles, characters, mention catalog
 ```
 
 ## WHERE TO LOOK
@@ -25,6 +26,7 @@ src/lib/api/
 | Template contract | `templates.ts` | stored CRUD, inline compile, placeholder tree |
 | Report contract | `reports.ts` | slug-based reads, compile, upload, download helper |
 | Backtest contract | `backtests.ts` | id-based lifecycle endpoints for historical simulations |
+| Orchestration contract | `orchestration.ts` | role/character CRUD plus mention catalog |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Market data endpoints | `market-data.ts` | quotes/history query serialization |
 
@@ -34,6 +36,7 @@ src/lib/api/
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep backtest lifecycle semantics here as well: `POST /backtests`, `POST /backtests/{id}/cancel`, and `DELETE /backtests/{id}` should not be hand-built in hooks or pages.
 - `backtests.ts` mirrors the current backend contract as-is, including retained legacy webhook fields on create/read payloads even though normal execution is now internal LangGraph.
+- `orchestration.ts` mirrors the current backend contract for roles, characters, and mention catalog access; keep hooks/pages thin around it.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
 ## ANTI-PATTERNS
@@ -41,3 +44,4 @@ src/lib/api/
 - Do not mix multiple resource domains into one helper file just because the UI screen uses them together.
 - Do not put toasts, navigation, or React state in this directory.
 - Do not hand-build download paths outside `reports.ts`; keep absolute URL generation centralized.
+- Do not bypass `request()` for orchestration routes or mention-catalog requests.

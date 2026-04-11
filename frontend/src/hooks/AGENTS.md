@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, backtests, and one small UI debounce helper.
+`src/hooks/` wraps the `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, backtests, orchestration, and one small UI debounce helper.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -16,6 +16,8 @@
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Backtest flows | `use-backtests.ts` | list/detail, 5s running-state polling, create, cancel, delete |
+| Orchestration flows | `use-orchestration.ts` | roles, characters, mention catalog, invalidation helpers |
+| Orchestration hook tests | `use-orchestration.test.ts` | orchestration write invalidation coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 
 ## CONVENTIONS
@@ -23,7 +25,8 @@
 - Mutations invalidate either list/detail keys or `invalidatePortfolioScope()`; do not hand-roll cache clearing in components.
 - Template hooks invalidate `queryKeys.templates.list()` and keep placeholder/detail query composition inside the hooks layer.
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
-- `useBacktest()` owns the 5-second `refetchInterval` policy for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows, while create, cancel, and delete invalidate both the list and the affected detail query.
+- `useBacktest()` owns the 5-second `refetchInterval` policy for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows, while create/cancel/delete invalidate both the list and the affected detail query.
+- `useOrchestration*` hooks own role/character cache invalidation and also invalidate the orchestration mention catalog after writes so prompt-time target lists stay current.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
 - The template editor owns the 500 ms debounce for inline compile; hooks expose compile/query primitives but do not debounce internally.
@@ -38,6 +41,7 @@
 - Do not special-case report uploads or downloads in pages when the hooks/API modules already own the request behavior.
 - Do not reimplement backtest polling or terminal-state cleanup in pages when `use-backtests.ts` already models those transitions.
 - Do not move route-local UI state into this layer just because a page is busy.
+- Do not duplicate orchestration invalidation logic in page components.
 
 ## VALIDATION
 ```bash
@@ -51,4 +55,5 @@ pnpm test:run
 - `invalidatePortfolioScope()` is the shared invalidation path for portfolio-scoped mutations.
 - Template hooks keep cache policy intentionally simple: list invalidation on writes, page-level navigation/toasts in the callers.
 - Report hooks keep the same pattern: list invalidation on writes, report-page navigation and toast actions in callers such as the reports list and template editor.
-- Backtest hooks follow the same split: query orchestration and invalidation live here, while launch, cancel, and delete toasts plus route transitions stay in the backtest pages.
+- Backtest hooks follow the same split: query orchestration and invalidation live here, while launch/cancel/delete toasts plus route transitions stay in the backtest pages.
+- Orchestration hooks follow the same split too: cache policy and API wiring live here, while forms and navigation stay in the route family.
