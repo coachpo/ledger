@@ -9,12 +9,12 @@
 | Task | Location | Notes |
 |---|---|---|
 | Inventory management | `list.tsx` | newest-first list, running progress bars, terminal delete, completed summary text |
-| Simulation configuration | `config.tsx` | existing/new portfolio mode, orchestration pattern, optional default template creation, benchmark selection, launch mode, and legacy callback settings |
+| Simulation configuration | `config.tsx` | existing/new portfolio mode, `seeded_internal_backtest_v1` and `analyst_reviewer_v1` pattern selection, optional default template creation, benchmark selection, launch mode, and legacy callback settings |
 | Detail orchestration | `detail.tsx` | 5s polling while active, recent activity, charts, trade log, report links |
 | Query hooks | `../../hooks/use-backtests.ts` | list/detail queries plus create/cancel/delete mutations |
 | Validation rules | `../../components/shared/form-schemas.ts` | `backtestCreateFormSchema` and the page-local validation summary |
 | Result widgets | `../../components/backtests/AGENTS.md` | status badge, KPI cards, equity curve, drawdown, trade log |
-| E2E coverage | `../../../e2e/backtests.spec.ts` | launch flow, polling until completion, result rendering, delete cleanup |
+| E2E coverage | `../../../e2e/backtests.spec.ts`, `../../../e2e/backtests-orchestration.spec.ts` | launch flow, orchestration config coverage, polling until completion, result rendering, delete cleanup |
 
 ## CONVENTIONS
 - `detail.tsx` relies on `useBacktest()` polling every 5 seconds for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows instead of manual timers in the page.
