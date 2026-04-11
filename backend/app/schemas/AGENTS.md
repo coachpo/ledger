@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers Pydantic schema rules.
 
 ## OVERVIEW
-`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, and the retained callback payloads used by the legacy backtest callback surface. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
+`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, orchestration payloads, and the retained callback payloads used by the legacy backtest callback surface. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -12,8 +12,9 @@
 | Balance schemas | `balance.py` | `BalanceCreate`, `BalanceRead`, `BalanceUpdate` |
 | Position schemas | `position.py` | CRUD plus symbol lookup response |
 | Trading operation schemas | `trading_operation.py` | discriminated create union plus read/result models |
-| Backtest schemas | `backtest.py` | create/read payloads, enums, recent activity, curve/result DTOs |
+| Backtest schemas | `backtest.py` | create/read payloads, launch mode, enums, recent activity, curve/result DTOs |
 | Backtest callback schemas | `backtest_callback.py` | cycle report upload, trade decision callback, cycle-complete response |
+| Orchestration schemas | `orchestration.py` | role/character CRUD, mention catalog, versioned updates |
 | Market data schemas | `market_data.py` | quote/history payloads plus warning fields |
 | CSV import schemas | `csv_import.py` | preview and commit payloads |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
@@ -29,7 +30,8 @@
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null/empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
-- Backtest create validation currently still enforces past-only date ranges, benchmark normalization, required `webhook_url`, `webhook_timeout` bounds (30-3600), and percentage commission limits; the template-or-create-default rule is enforced in `BacktestService`, not the schema.
+- Orchestration create schemas normalize keys/handles to stable lowercase identifiers, trim optional text fields, and keep update payloads partial while enforcing immutable handles.
+- `BacktestCreate` keeps `launchMode` defaulted to `internal`, normalizes benchmark symbols and optional fields, requires `webhookUrl`/`webhookTimeout` only for `legacy_callback`, and leaves internal webhook defaults to service-layer resolution.
 
 ## ANTI-PATTERNS
 - Do not hand-build camelCase dicts; use `model_validate()` or `.model_dump()`.
@@ -37,6 +39,7 @@
 - Do not use `float` for money or quantity; keep `Decimal`, `int`, or `str` depending on the contract.
 - Do not bypass `CamelModel` aliasing; external JSON must stay camelCase.
 - Do not change template placeholder or compile payload shapes without updating the frontend types and editor.
+- Do not change orchestration role/character/mention-catalog payload shapes without updating `app/api/orchestration.py`, `app/services/orchestration_service.py`, frontend orchestration callers, and regression tests together.
 - Do not change retained backtest webhook/callback payload shapes without updating `app/api/backtest_callbacks.py`, `app/services/backtest_cycle_service.py`, frontend backtest types, and regression tests together.
 
 ## VALIDATION
@@ -46,7 +49,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_backtests_api.py
+uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_orchestration_api.py
 ```
 
 ## NOTES
@@ -54,5 +57,6 @@ uv run pytest tests/test_api.py tests/test_backtests_api.py
 - Backtest read schemas still expose `webhookUrl`, `webhookTimeout`, `currentCycleStatus`, `recentActivity`, `results`, and terminal `errorMessage`; callback request/response DTOs live separately in `backtest_callback.py`.
 - `backtest.py` clears `results` when the payload contains only the internal `_run_state` key, so incomplete cycle state does not leak into frontend result detection.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
+- `orchestration.py` exposes versioned role/character read models, keeps `roleKey` on character reads, and returns the mention catalog as a first-class response shape.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation.

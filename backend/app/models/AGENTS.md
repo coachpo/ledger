@@ -13,7 +13,10 @@
 | Balance entity | `balance.py` | balance rows scoped to portfolio, including `operation_type` |
 | Position entity | `position.py` | aggregate positions scoped to portfolio |
 | Trading operation entity | `trading_operation.py` | append-only simulated operations |
-| Backtest entity | `backtest.py` | webhook config, callback status, progress, selected deposit balance, results JSONB |
+| Backtest entity | `backtest.py` | internal/legacy callback settings, progress, selected deposit balance, results JSONB |
+| Backtest orchestration snapshot | `backtest_orchestration_snapshot.py` | per-cycle prompt and mention snapshot data |
+| Orchestration role entity | `orchestration_role.py` | stable role keys, names, system prompts, version counters |
+| Orchestration character entity | `orchestration_character.py` | stable handles, role linkage, prompt-append text, version counters |
 | Market quote entity | `market_quote.py` | quote cache rows keyed by provider/symbol/as-of |
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
@@ -24,7 +27,7 @@
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
 - Relationships use `relationship()` only when the code actually needs them.
 - Models should be persistence-oriented: columns, constraints, defaults, and relationships only.
-- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, and quote-cache lookup keys.
+- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, orchestration keys/handles, and quote-cache lookup keys.
 - Use mixins from `base.py` instead of repeating `id`, `created_at`, or `updated_at` columns.
 
 ## ANTI-PATTERNS
@@ -41,14 +44,16 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_backtests_api.py
+uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_orchestration_api.py tests/test_backtest_orchestration_snapshot.py
 ```
 
 ## NOTES
 - `portfolio.py` keeps lightweight relationships for balances, positions, and trading operations so API summary counts stay easy to assemble.
 - `balance.py` persists `operation_type` directly and the DB upgrade helper backfills legacy rows to `DEPOSIT`.
 - `trading_operation.py` is append-only by design to preserve auditability of simulated actions.
-- `backtest.py` keeps per-run webhook config, benchmark symbols, current-cycle fields, recent activity, results, and startup-repairable status fields on a single row linked back to `Portfolio`.
-- `market_quote.py` stores cached quote payloads with `previous_close`, freshness metadata, provider-specific symbol keys, and optional issuer `name`.
+- `backtest.py` keeps per-run callback settings, benchmark symbols, current-cycle fields, recent activity, results, and startup-repairable status fields on a single row linked back to `Portfolio`.
+- `backtest_orchestration_snapshot.py` stores the prompt report slug, orchestration pattern key, policy version, prompt hashes, and resolved mention/version data for each cycle.
+- `orchestration_role.py` stores stable keys, unique names, version counters, and a one-to-many role-to-character relationship.
+- `orchestration_character.py` stores stable handles, display names, prompt append text, version counters, and a required role reference.
 - `report.py` stores unique `name` and `slug`, tracks `source` (`compiled` vs `uploaded`), and keeps optional metadata in JSONB under the `metadata` column.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
