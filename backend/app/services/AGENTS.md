@@ -16,7 +16,7 @@
 | Quote/history/cache logic | `market_data_service.py` | `QuoteProvider`, fallback cache, stale/warning behavior |
 | Orchestration roles and characters | `orchestration_service.py` | versioned role and character CRUD, mention catalog, reserved-handle and disabled-role checks |
 | Backtest lifecycle | `backtest_service.py` | create/cancel/delete lifecycle, deposit-balance selection, default-template creation, daemon-thread launch of `BacktestCycleService.start_backtest()` |
-| Backtest cycle orchestration | `backtest_cycle_service.py` | schedule bootstrap, prompt-report loading, internal LangGraph execution, legacy callback handling, `_run_state` persistence |
+| Backtest cycle orchestration | `backtest_cycle_service.py` | orchestration-pattern-key runner selection, mention-policy enforcement, prompt-report loading, internal LangGraph execution, mentioned-target output assembly, legacy callback handling, `_run_state` persistence |
 | Backtest engine internals | `backtest_engine.py` | schedule generation, prompt report creation, market-data loading, trade execution, equity tracking, final metrics |
 | Template placeholder resolution | `template_compiler_service.py` | `{{portfolios...}}` and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
@@ -38,7 +38,7 @@
 - `OrchestrationService` owns versioned orchestration roles and characters, enforces stable keys and handles, protects reserved builtin targets, and returns the mention catalog used by the public API.
 - `MarketDataService` is best-effort: provider failures become warnings or cached fallbacks when possible.
 - `BacktestService` selects the largest deposit balance, optionally creates the default backtest template, persists the `backtests` row, resolves internal-vs-legacy callback settings, and starts `BacktestCycleService.start_backtest()` on a daemon thread.
-- `BacktestCycleService` is the live execution path: it prepares cycle prompt reports, invokes the internal LangGraph runner, stores `_run_state` inside `backtest.results`, and advances or finalizes the run.
+- `BacktestCycleService` is the live execution path: it selects the runner from the orchestration pattern key, enforces mention policy, prepares cycle prompt reports, invokes the internal LangGraph runner, assembles mentioned-target output, stores `_run_state` inside `backtest.results`, and advances or finalizes the run.
 - `BACKTEST_TEST_MODE` is set in Playwright and read by `BacktestCycleService`; test mode swaps in `DeterministicQuoteProvider` and deterministic cycle decisions instead of calling the live LangGraph runner.
 - `BacktestEngine` reuses `TemplateCompilerService`, `ReportService`, and `TradingOperationService` instead of introducing simulation-only report or trade paths; it prepares prompt reports, applies trades, records equity, and computes final metrics.
 - `app/services/` stops at backend-side orchestration; `app/langgraph/` owns internal prompt analysis and decision generation.
