@@ -3,14 +3,15 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, a template editor with inline compile preview plus runtime inputs, grouped report list/detail flows, and a backtest workspace that still collects legacy webhook settings and callback-aware statuses from the retained backend contract while rendering LangGraph-produced result charts once runs complete.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, backtests, and orchestration, plus shared forms and UI that keep route logic thin.
 
 ## CHILD DOCS
-- `src/lib/AGENTS.md` — API client, query keys, analytics, formatting, template contracts
+- `src/lib/AGENTS.md` — API client, query keys, analytics, formatting, runtime-input helpers, shared types
 - `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and orchestration patterns
+- `src/pages/orchestration/AGENTS.md` — orchestration route family for roles and characters
 - `src/pages/backtests/AGENTS.md` — backtest list/config/detail orchestration and polling behavior
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
@@ -28,23 +29,24 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 frontend/
 ├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
-├── src/pages/          # dashboard, portfolio routes, template/report/backtest routes
+├── src/pages/          # dashboard, portfolio, template, report, backtest, orchestration routes
 ├── src/components/     # layout shell, theme, shared UI, forms, templates, portfolio/backtest feature UI, shadcn primitives
 ├── src/styles/         # fonts, theme tokens, global styles
 ├── src/test/           # Vitest jsdom setup
-├── e2e/                # Playwright smoke, functional, reports, and backtests specs
+├── e2e/                # Playwright smoke, functional, reports, backtests, orchestration specs
 └── scripts/            # Playwright backend/frontend startup helpers
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/components/layout.tsx` | query client, router provider, layout shell, theme toggle |
+| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, and TanStack Query wrappers |
 | Portfolio routes | `src/pages/portfolios/*.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/*.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Backtest routes | `src/pages/backtests/AGENTS.md`, `src/hooks/use-backtests.ts`, `src/lib/api/backtests.ts` | launch simulations, collect webhook settings, poll active callback states, charts, result navigation |
+| Backtest routes | `src/pages/backtests/AGENTS.md`, `src/hooks/use-backtests.ts`, `src/lib/api/backtests.ts` | launch simulations, switch launch modes, poll active callback states, charts, result navigation |
+| Orchestration routes | `src/pages/orchestration/AGENTS.md`, `src/hooks/use-orchestration.ts`, `src/lib/api/orchestration.ts`, `src/lib/types/orchestration.ts` | roles, characters, mention catalog, route forms |
 | Shared components | `src/components/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, dialog forms, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config + browser API mocks |
@@ -52,6 +54,7 @@ frontend/
 
 ## CONVENTIONS
 - Routing stays flat under `Layout`; feature depth lives inside components and hooks, not in nested route trees.
+- `src/routes.ts` is the route source of truth, and `src/components/layout.tsx` owns the shell nav plus breadcrumb labels.
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
@@ -62,9 +65,10 @@ frontend/
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
 - Report content edits intentionally invalidate both report list and slug-scoped detail queries so the detail route stays fresh without a forced navigation round trip.
 - Backtest detail uses numeric ids, not slugs, and `useBacktest()` polls every 5 seconds while status is `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, or `PROCESSING_CALLBACK`.
-- Backtest creation can either use an existing portfolio/template or create a new portfolio plus initial cash balance before launching the run, and the current form still requires legacy `webhookUrl` plus `webhookTimeout` because the backend contract has not been trimmed yet even though normal execution is internal LangGraph.
+- Backtest creation can either use an existing portfolio/template or create a new portfolio plus initial cash balance before launching the run. The form still exposes legacy `webhookUrl`/`webhookTimeout`, but those fields are only required for `launchMode === "legacy_callback"`; internal execution is the default path.
+- Orchestration pages use shared form schemas from `src/components/shared/form-schemas.ts` for role and character CRUD, and `use-orchestration.ts` keeps the query/mutation wiring in one place.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
-- Query keys normalize ids as strings and symbol sets as trimmed uppercase arrays; cache reuse depends on those canonical forms.
+- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and orchestration caches under `queryKeys.orchestration.*`.
 
 ## ANTI-PATTERNS
 - Do not hard-code API URLs or call `fetch` directly from routed screens.
@@ -77,6 +81,7 @@ frontend/
 - Do not bypass `use-backtests.ts` and hand-roll polling, cancel, or delete state in pages or result widgets.
 - Do not move backtest charts or status badges into `src/components/ui/`; they are domain widgets tied to the backtest wire contract.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
+- Do not hide orchestration route ownership inside generic UI folders or stale docs.
 
 ## COMMANDS
 ```bash
@@ -97,5 +102,5 @@ pnpm test:e2e
 ## NOTES
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001`, frontend `4173`, and `BACKTEST_TEST_MODE=1` for deterministic backtest E2E.
-- Current Vitest coverage is still selective, but it now spans `src/lib/` helpers plus targeted backtest hooks, pages, and result widgets; CI gates `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `pnpm test:run` before the separate Playwright job.
-- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, and backtest list/config/detail routes.
+- Current Vitest coverage is still selective, but it now spans `src/lib/` helpers plus targeted backtest and orchestration hooks/pages.
+- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, backtest list/config/detail, and orchestration index/role/character routes.
