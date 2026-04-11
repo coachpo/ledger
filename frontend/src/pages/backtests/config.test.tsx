@@ -80,19 +80,20 @@ describe("BacktestConfigPage", () => {
     });
   });
 
-  it("shows LangGraph Internal as the default engine and tucks legacy callback settings behind a disclosure", () => {
+  it("shows internal mode as the default and reveals callback fields only in legacy mode", () => {
     render(<BacktestConfigPage />);
 
     expect(screen.getByText(/langgraph internal/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^internal$/i)).toBeChecked();
+    expect(screen.getByLabelText(/^legacy callback$/i)).not.toBeChecked();
     expect(screen.getByLabelText(/orchestration pattern/i)).toHaveValue(
       "seeded_internal_backtest_v1",
     );
     expect(screen.getByRole("option", { name: /seeded internal v1/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /analyst reviewer v1/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /legacy callback settings/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
+    fireEvent.click(screen.getByLabelText(/^legacy callback$/i));
 
     expect(screen.getByLabelText(/client endpoint url/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/client callback timeout/i)).toBeInTheDocument();
@@ -109,7 +110,7 @@ describe("BacktestConfigPage", () => {
     expect(createBacktestMock).not.toHaveBeenCalled();
   });
 
-  it("creates a portfolio and deposit balance before launching a backtest", async () => {
+  it("creates a portfolio and deposit balance before launching an internal backtest without callback fields", async () => {
     createPortfolioMock.mockResolvedValue({
       id: 12,
       name: "Sandbox",
@@ -152,10 +153,6 @@ describe("BacktestConfigPage", () => {
     fireEvent.change(screen.getByLabelText(/orchestration pattern/i), {
       target: { value: "analyst_reviewer_v1" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
-    fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
-      target: { value: "http://localhost:5678/webhook/backtest" },
-    });
     fireEvent.click(screen.getByLabelText(/s&p 500/i));
     fireEvent.click(screen.getByLabelText(/create default template/i));
     fireEvent.click(screen.getByRole("button", { name: /launch backtest/i }));
@@ -170,8 +167,10 @@ describe("BacktestConfigPage", () => {
       expect.objectContaining({
         portfolioId: 12,
         orchestrationPatternKey: "analyst_reviewer_v1",
+        launchMode: "internal",
       }),
     );
+    expect(createBacktestMock.mock.calls[0][0]).not.toHaveProperty("webhookUrl");
   });
 
   it("blocks existing portfolios that have no balances and no positions", async () => {
@@ -200,10 +199,6 @@ describe("BacktestConfigPage", () => {
     fireEvent.change(screen.getByLabelText(/end date/i), {
       target: { value: "2024-03-29" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /legacy callback settings/i }));
-    fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
-      target: { value: "http://localhost:5678/webhook/backtest" },
-    });
     fireEvent.click(screen.getByLabelText(/s&p 500/i));
     fireEvent.click(screen.getByRole("button", { name: /launch backtest/i }));
 
@@ -219,5 +214,27 @@ describe("BacktestConfigPage", () => {
     expect(screen.getByText(/available orchestration patterns/i)).toBeInTheDocument();
     expect(screen.getByText(/built-in patterns/i)).toBeInTheDocument();
     expect(screen.getByText(/character-enabled patterns/i)).toBeInTheDocument();
+  });
+
+  it("requires callback fields only when legacy callback mode is selected", async () => {
+    render(<BacktestConfigPage />);
+
+    fireEvent.change(screen.getByLabelText(/backtest name/i), {
+      target: { value: "Legacy Mode Backtest" },
+    });
+    fireEvent.change(screen.getByLabelText(/portfolio/i), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText(/^template$/i), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText(/start date/i), {
+      target: { value: "2024-01-02" },
+    });
+    fireEvent.change(screen.getByLabelText(/end date/i), {
+      target: { value: "2024-03-29" },
+    });
+    fireEvent.click(screen.getByLabelText(/s&p 500/i));
+    fireEvent.click(screen.getByLabelText(/^legacy callback$/i));
+    fireEvent.click(screen.getByRole("button", { name: /launch backtest/i }));
+
+    expect(await screen.findByText(/enter a legacy client endpoint url/i)).toBeInTheDocument();
+    expect(createBacktestMock).not.toHaveBeenCalled();
   });
 });

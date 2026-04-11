@@ -176,6 +176,7 @@ export const tradingOperationFormSchema = z
 export const backtestCreateFormSchema = z
   .object({
     name: requiredText("Backtest name"),
+    launchMode: z.enum(["internal", "legacy_callback"]),
     portfolioMode: z.enum(["existing", "new"]),
     portfolioId: z.string(),
     newPortfolioName: optionalText,
@@ -192,8 +193,8 @@ export const backtestCreateFormSchema = z
     priceMode: z.enum(["CLOSING_PRICE"]),
     commissionMode: z.enum(["ZERO", "FIXED", "PERCENTAGE"]),
     commissionValue: numericText("Commission value"),
-    webhookUrl: requiredText("Legacy client endpoint URL"),
-    webhookTimeout: numericText("Legacy callback timeout"),
+    webhookUrl: optionalText,
+    webhookTimeout: optionalText,
     benchmarkSymbols: z.array(z.string()).min(1, "Select at least one benchmark"),
   })
   .superRefine((value, ctx) => {
@@ -235,6 +236,30 @@ export const backtestCreateFormSchema = z
         message: "Select a template or create a default one",
         path: ["templateId"],
       });
+    }
+
+    if (value.launchMode === "legacy_callback") {
+      if (!value.webhookUrl.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Legacy client endpoint URL is required",
+          path: ["webhookUrl"],
+        });
+      }
+
+      if (!value.webhookTimeout.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Legacy callback timeout is required",
+          path: ["webhookTimeout"],
+        });
+      } else if (!Number.isFinite(Number(value.webhookTimeout))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Legacy callback timeout must be a valid number",
+          path: ["webhookTimeout"],
+        });
+      }
     }
 
 

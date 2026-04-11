@@ -10,6 +10,7 @@ export type BacktestStatus =
 export type BacktestFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
 export type BacktestPriceMode = "CLOSING_PRICE";
 export type BacktestCommissionMode = "ZERO" | "FIXED" | "PERCENTAGE";
+export type BacktestLaunchMode = "internal" | "legacy_callback";
 export type BacktestTradeAction = "BUY" | "SELL" | "HOLD";
 
 export interface BacktestDecisionSummary {
@@ -109,11 +110,12 @@ export interface BacktestCreateInput {
   createTemplate: boolean;
   templateName: string | null;
   orchestrationPatternKey: string;
+  launchMode: BacktestLaunchMode;
   frequency: BacktestFrequency;
   startDate: string;
   endDate: string;
-  webhookUrl: string;
-  webhookTimeout?: number;
+  webhookUrl?: string | null;
+  webhookTimeout?: number | null;
   priceMode: BacktestPriceMode;
   commissionMode: BacktestCommissionMode;
   commissionValue: string;
