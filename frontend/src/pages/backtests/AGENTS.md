@@ -3,13 +3,13 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/backtests/` contains the routed backtest list, configuration, and detail pages. These routes launch historical simulations, still collect legacy webhook settings from the retained backend contract, poll active callback-aware states, and render result and report follow-up UI.
+`src/pages/backtests/` contains the routed backtest list, configuration, and detail pages. These routes launch historical simulations, default to the internal backend execution path, still expose legacy callback settings for compatibility mode, poll active callback-aware states, and render result plus report follow-up UI.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Inventory management | `list.tsx` | newest-first list, running progress bars, terminal delete, completed summary text |
-| Simulation configuration | `config.tsx` | existing/new portfolio mode, optional default template creation, benchmark selection, and webhook URL/timeout settings |
+| Simulation configuration | `config.tsx` | existing/new portfolio mode, orchestration pattern, optional default template creation, benchmark selection, launch mode, and legacy callback settings |
 | Detail orchestration | `detail.tsx` | 5s polling while active, recent activity, charts, trade log, report links |
 | Query hooks | `../../hooks/use-backtests.ts` | list/detail queries plus create/cancel/delete mutations |
 | Validation rules | `../../components/shared/form-schemas.ts` | `backtestCreateFormSchema` and the page-local validation summary |
@@ -19,7 +19,7 @@
 ## CONVENTIONS
 - `detail.tsx` relies on `useBacktest()` polling every 5 seconds for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows instead of manual timers in the page.
 - `config.tsx` can create a new portfolio plus an initial `DEPOSIT` balance before calling `createBacktest`, so the route owns the cross-feature launch orchestration.
-- `config.tsx` still owns the legacy webhook settings (`webhookUrl`, `webhookTimeout`) and pairs them with benchmark, commission, and template choices before submit because the current backend schema still requires those fields.
+- `config.tsx` exposes `launchMode`, and `webhookUrl` / `webhookTimeout` are only required when `launchMode === "legacy_callback"`; internal mode is the default path.
 - Completed runs derive report links from `results.trades[*].reportSlug`; navigation to `/reports/:slug` stays page-level.
 - Validation is intentionally duplicated in two layers: `backtestCreateFormSchema` enforces structural rules, and `buildValidationMessages()` keeps the inline summary readable before submit.
 
@@ -28,6 +28,7 @@
 - Do not bypass `ConfirmDeleteDialog` for terminal deletes or inline destructive buttons without confirmation.
 - Do not hardcode alternative benchmark lists or result-link routes in child components when `config.tsx` and `detail.tsx` already define the live behavior.
 - Do not move backtest launch logic into generic shared components; it depends on portfolio, template, and backtest route state.
+- Do not document legacy callback fields as the default launch path.
 
 ## VALIDATION
 ```bash
