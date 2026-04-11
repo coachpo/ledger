@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, template-editor support components, portfolio-specific UI folders, backtest result widgets, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the report and backtest flows that reuse the shared shell and dialogs.
+`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, template-editor support components, portfolio-specific UI folders, backtest result widgets, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including report, backtest, and orchestration flows that reuse the shared shell and dialogs.
 
 ## STRUCTURE
 ```text
@@ -26,7 +26,7 @@ src/components/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, portfolio/template/report nav, top-level error boundary |
+| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, portfolio/template/report/backtest/orchestration nav, top-level error boundary |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable data tables, metrics, field schemas, and error boundaries |
 | Form components | `forms/AGENTS.md` | shared dialog forms that do not belong in a feature folder |
@@ -52,6 +52,7 @@ src/components/
 - Backtest result widgets stay in `backtests/` because they share a single wire contract, chart stack, and result vocabulary, even when they reuse shared cards or tables.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
 - Report routes currently stay page-centric and reuse shared components such as `ConfirmDeleteDialog` instead of maintaining a dedicated `components/reports/` feature folder.
+- Shared field schemas in `shared/form-schemas.ts` now serve both backtest and orchestration route forms, while the route pages still own submission and navigation logic.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.
 
@@ -64,6 +65,7 @@ src/components/
 - Do not create one-off forms in feature folders when they should live in `forms/` or a shared dialog component.
 - Do not move template-editor-only support widgets into `shared/` just because they render generic inputs or lists.
 - Do not create a `components/reports/` folder just to wrap page-local report markup unless report UI genuinely becomes reusable across routes.
+- Do not hide orchestration route ownership inside generic UI primitives.
 
 ## VALIDATION
 ```bash
@@ -77,5 +79,6 @@ pnpm build
 ## NOTES
 - `Layout` switches between the usual scroll container and a full-height outlet for template editor routes.
 - `Layout` owns the Reports sidebar entry and breadcrumb labels for both `/reports` and `/reports/:slug`.
+- `Layout` also owns the Orchestration sidebar entry and breadcrumb labels for `/orchestration`, `/orchestration/roles`, and `/orchestration/characters`.
 - `layout.tsx` owns route labels and nav composition; `ui/sidebar.tsx` and `ui/sidebar-context.ts` stay generic primitives.
-- Page components stay thin; the real complexity lives in hooks, shared components, forms, and portfolio feature folders.
+- Page components stay thin; the real complexity lives in hooks, shared components, forms, and feature folders.
