@@ -242,6 +242,8 @@ export function TemplateEditorPage() {
               <span>{isEditing ? "Edit" : "New"}</span>
             </div>
             <Input
+              id="template-name"
+              name="templateName"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Template name…"
@@ -343,6 +345,7 @@ export function TemplateEditorPage() {
           <div className="relative min-h-0 flex-1">
             <textarea
               id="content"
+              name="content"
               ref={textareaRef}
               className="h-full w-full resize-none border-none bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
               placeholder="Enter template content…"

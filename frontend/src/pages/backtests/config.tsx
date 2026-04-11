@@ -175,7 +175,7 @@ export function BacktestConfigPage() {
               legacy callback mode only when you need the retained compatibility path.
             </p>
             <div className="space-y-2">
-              <Label>Launch Mode</Label>
+              <p className="text-sm font-medium">Launch Mode</p>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input

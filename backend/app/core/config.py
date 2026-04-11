@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
     cors_allowed_origins: list[str] = Field(
         default=[
+            "http://127.0.0.1:25173",
+            "http://localhost:25173",
+            "http://127.0.0.1:25174",
+            "http://localhost:25174",
             "http://127.0.0.1:4173",
             "http://localhost:4173",
             "http://127.0.0.1:5173",

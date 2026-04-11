@@ -116,25 +116,28 @@ export function GenerateReportDialog({
           <DialogTitle>Generate Report</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <Select
-          value={selectedTemplateId}
-          onValueChange={setSelectedTemplateId}
-          disabled={isPending || lockTemplateSelection}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a template..." />
-          </SelectTrigger>
-          <SelectContent>
-            {templateOptions.map((template) => (
-              <SelectItem key={template.id} value={template.id}>
-                {template.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-2">
+          <Label htmlFor="generate-report-template">Template</Label>
+          <Select
+            value={selectedTemplateId}
+            onValueChange={setSelectedTemplateId}
+            disabled={isPending || lockTemplateSelection}
+          >
+            <SelectTrigger id="generate-report-template" aria-label="Template">
+              <SelectValue placeholder="Select a template..." />
+            </SelectTrigger>
+            <SelectContent>
+              {templateOptions.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Runtime Inputs</Label>
+            <p className="text-sm font-medium">Runtime Inputs</p>
             <Button type="button" variant="outline" size="sm" onClick={addRuntimeInputRow}>
               Add Input
             </Button>
@@ -146,17 +149,21 @@ export function GenerateReportDialog({
           {runtimeInputRows.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">No runtime inputs provided.</p>
           ) : null}
-          {runtimeInputRows.map((row) => (
-            <div key={row.id} className="flex items-center gap-2">
-              <Input
-                value={row.key}
-                onChange={(event) => updateRuntimeInputRow(row.id, "key", event.target.value)}
-                placeholder="ticker"
-              />
-              <Input
-                value={row.value}
-                onChange={(event) => updateRuntimeInputRow(row.id, "value", event.target.value)}
-                placeholder="AAPL"
+            {runtimeInputRows.map((row) => (
+              <div key={row.id} className="flex items-center gap-2">
+                <Input
+                  aria-label={`Runtime input key ${row.id}`}
+                  name={`runtimeInputKey-${row.id}`}
+                  value={row.key}
+                  onChange={(event) => updateRuntimeInputRow(row.id, "key", event.target.value)}
+                  placeholder="ticker"
+                />
+                <Input
+                  aria-label={`Runtime input value ${row.id}`}
+                  name={`runtimeInputValue-${row.id}`}
+                  value={row.value}
+                  onChange={(event) => updateRuntimeInputRow(row.id, "value", event.target.value)}
+                  placeholder="AAPL"
               />
               <Button
                 type="button"

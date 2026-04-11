@@ -175,6 +175,8 @@ export function ReportListPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2 size-4 text-muted-foreground" />
           <Input
+            id="report-search"
+            name="reportSearch"
             placeholder="Search reports..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
