@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+import app.services.backtest_cycle_service as backtest_cycle_service_module
 from app.core.errors import ApiError
+from app.langgraph.runner import BacktestLangGraphToolExecutionError
+from app.langgraph.seeds import (
+    SeededToolSpec,
+    get_backtest_pattern_spec,
+    get_seeded_capability_bundle_spec,
+    get_seeded_connector_spec,
+    get_seeded_tool_spec,
+)
 from app.models.backtest import Backtest
 from app.models.balance import Balance
 from app.models.orchestration_character import OrchestrationCharacter
@@ -130,8 +141,10 @@ def create_orchestration_character(
     role_description: str = "",
     role_system_prompt: str = "Role prompt",
     role_enabled: bool = True,
+    role_capability_bundle_keys: list[str] | None = None,
     character_description: str = "",
     character_prompt_append: str = "",
+    character_capability_bundle_keys: list[str] | None = None,
     character_enabled: bool = True,
 ) -> OrchestrationCharacter:
     with session_factory() as session:
@@ -140,6 +153,7 @@ def create_orchestration_character(
             name=role_name,
             description=role_description or None,
             system_prompt=role_system_prompt,
+            capability_bundle_keys=list(role_capability_bundle_keys or []),
             enabled=role_enabled,
         )
         session.add(role)
@@ -150,6 +164,7 @@ def create_orchestration_character(
             description=character_description or None,
             role_id=role.id,
             prompt_append=character_prompt_append or None,
+            capability_bundle_keys=list(character_capability_bundle_keys or []),
             enabled=character_enabled,
         )
         session.add(character)
@@ -223,7 +238,12 @@ class FakeRunner:
 
     def run_cycle(self, request: Any) -> Any:
         self.requests.append(request)
-        return SimpleNamespace(report_content="", decisions=[])
+        return SimpleNamespace(
+            report_content="",
+            decisions=[],
+            tool_call_trace=[],
+            approval_trace="not_required",
+        )
 
 
 class PromptStoringEngine(FakeEngine):
@@ -431,7 +451,9 @@ def test_run_internal_cycle_passes_expanded_prompt_bundle_fields(
     monkeypatch.setattr(
         service,
         "_get_backtest_or_raise",
-        lambda backtest_id: SimpleNamespace(orchestration_pattern_key="pattern"),
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_v1"
+        ),
     )
 
     captured: dict[str, Any] = {}
@@ -507,7 +529,7 @@ def test_mentions_are_parsed_from_authored_entry_prompt_body_only(
 
     def fake_run_cycle(request: Any) -> Any:
         captured["request"] = request
-        return SimpleNamespace(report_content="", decisions=[])
+        return SimpleNamespace(report_content="", decisions=[], tool_call_trace=[])
 
     runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
 
@@ -567,7 +589,7 @@ def test_invalid_sequences_like_double_at_remain_literal_and_do_not_error(
 
     def fake_run_cycle(request: Any) -> Any:
         captured["request"] = request
-        return SimpleNamespace(report_content="", decisions=[])
+        return SimpleNamespace(report_content="", decisions=[], tool_call_trace=[])
 
     runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
 
@@ -634,7 +656,7 @@ def test_mentions_normalize_handles_ignore_email_text_and_preserve_first_global_
 
     def fake_run_cycle(request: Any) -> Any:
         captured["request"] = request
-        return SimpleNamespace(report_content="", decisions=[])
+        return SimpleNamespace(report_content="", decisions=[], tool_call_trace=[])
 
     runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
 
@@ -742,21 +764,935 @@ def test_builtin_mentions_are_validated_against_pattern_policy_before_dispatch(
     assert runner_called == []
 
 
-def test_snapshot_persists_explicit_builtin_snapshot_fields(
+def test_invalid_orchestration_pattern_fails_cycle_before_runner_execution(
     monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v999"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for invalid orchestration patterns")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match="Unknown orchestration pattern: seeded_internal_backtest_tool_enabled_v999",
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "invalid_orchestration_pattern"
+    assert runner_builds == []
+
+
+def test_unknown_phase1_tool_ids_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    pattern_spec = get_backtest_pattern_spec("seeded_internal_backtest_tool_enabled_v1")
+
+    assert pattern_spec is not None
+    invalid_pattern_spec = replace(pattern_spec, default_tool_ids=("ledger.unknown_tool",))
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            invalid_pattern_spec if pattern_key == invalid_pattern_spec.key else None
+        ),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for unknown phase-1 tools")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match="Capability tool 'ledger.unknown_tool' configured",
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "unknown_capability_tool"
+    assert runner_builds == []
+
+
+def test_disallowed_phase1_tool_ids_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    pattern_spec = get_backtest_pattern_spec("seeded_internal_backtest_tool_enabled_v1")
+    disallowed_tool_spec = SeededToolSpec(
+        tool_id="ledger.phase2_only_lookup",
+        display_name="Phase-2 Only Lookup",
+        description="Synthetic disallowed tool for fail-closed testing.",
+        revision=7,
+    )
+
+    assert pattern_spec is not None
+    invalid_pattern_spec = replace(
+        pattern_spec,
+        default_tool_ids=(disallowed_tool_spec.tool_id,),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            invalid_pattern_spec if pattern_key == invalid_pattern_spec.key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_tool_spec",
+        lambda tool_id: (disallowed_tool_spec if tool_id == disallowed_tool_spec.tool_id else None),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for disallowed phase-1 tools")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match=(
+            "Capability tool ledger.phase2_only_lookup is not allowed for phase-1 "
+            "orchestration pattern seeded_internal_backtest_tool_enabled_v1"
+        ),
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "disallowed_capability_tool"
+    assert runner_builds == []
+
+
+def test_phase2_bundle_resolution_is_deterministic_and_snapshot_audited_before_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = build_service()
+    service.session_factory = session_factory
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    captured: dict[str, Any] = {}
+    snapshot_calls: list[dict[str, Any]] = []
+    call_order: list[str] = []
+    pattern_spec = get_backtest_pattern_spec("analyst_reviewer_tool_enabled_v1")
+
+    assert pattern_spec is not None
+    character = create_orchestration_character(
+        session_factory,
+        handle="analyst",
+        role_key="analyst_role",
+        role_name="Analyst Role",
+        character_description=ANALYST_SUMMARY,
+        role_capability_bundle_keys=["builtin.explore_context"],
+        character_capability_bundle_keys=["builtin.librarian_context", "builtin.explore_context"],
+    )
+    with session_factory() as session:
+        role = session.query(OrchestrationRole).filter_by(key="analyst_role").one()
+        expected_role_version = role.version
+
+    expected_tool_ids = tuple(sorted(set(pattern_spec.default_tool_ids)))
+    expected_resolved_tool_versions: list[dict[str, Any]] = []
+    for tool_id in expected_tool_ids:
+        tool_spec = get_seeded_tool_spec(tool_id)
+        assert tool_spec is not None
+        expected_resolved_tool_versions.append(
+            {"tool_id": tool_spec.tool_id, "revision": tool_spec.revision}
+        )
+
+    expected_bundle_keys = (
+        "builtin.explore_context",
+        "builtin.librarian_context",
+    )
+    expected_resolved_bundle_versions: list[dict[str, Any]] = []
+    for bundle_key in expected_bundle_keys:
+        bundle_spec = get_seeded_capability_bundle_spec(bundle_key)
+        assert bundle_spec is not None
+        expected_resolved_bundle_versions.append(
+            {"bundle_key": bundle_spec.bundle_key, "revision": bundle_spec.revision}
+        )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="analyst_reviewer_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(service, "_clear_cycle_status", lambda backtest_id: None)
+    monkeypatch.setattr(service, "_update_run_state", lambda *args, **kwargs: None)
+
+    def capture_snapshot(**kwargs: Any) -> None:
+        call_order.append("store_snapshot")
+        snapshot_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        capture_snapshot,
+        raising=False,
+    )
+
+    def fake_run_cycle(request: Any) -> Any:
+        call_order.append("runner")
+        captured["request"] = request
+        return SimpleNamespace(report_content="", decisions=[], tool_call_trace=[])
+
+    runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
+
+    librarian_artifact = expected_builtin_artifact(
+        "Research and retrieve supporting context for a backtest analysis.",
+        compiled_entry_prompt_body="compiled body",
+        execution_context_body="execution context",
+    )
+    analyst_artifact = expected_character_artifact(
+        role_name="Analyst Role",
+        role_system_prompt="Role prompt",
+        character_prompt_append=None,
+        compiled_entry_prompt_body="compiled body",
+        execution_context_body="execution context",
+    )
+    explore_artifact = expected_builtin_artifact(
+        "Inspect the current backtest context and summarize relevant findings.",
+        compiled_entry_prompt_body="compiled body",
+        execution_context_body="execution context",
+    )
+    expected_full_user_prompt = (
+        "execution context\n\n## Mentioned Target Outputs\n"
+        f"- librarian: {librarian_artifact}\n"
+        f"- analyst: {analyst_artifact}\n"
+        f"- explore: {explore_artifact}\n\n"
+        "compiled body"
+    )
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "authored_entry_prompt_body": "@librarian @analyst @explore @analyst",
+            "compiled_entry_prompt_body": "compiled body",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "runtime handoff",
+            "market_data": {},
+        },
+    )
+
+    assert snapshot_calls == [
+        {
+            "backtest_id": 42,
+            "cycle_date": cycle_date,
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "orchestration_pattern_key": "analyst_reviewer_tool_enabled_v1",
+            "pattern_policy_version": 1,
+            "entry_prompt_hash": hashlib.sha256(
+                b"@librarian @analyst @explore @analyst"
+            ).hexdigest(),
+            "full_user_prompt_hash": hashlib.sha256(
+                expected_full_user_prompt.encode("utf-8")
+            ).hexdigest(),
+            "execution_mode": "tool_enabled",
+            "resolved_mentions": [
+                {
+                    "original_text": "@librarian",
+                    "handle": "librarian",
+                    "canonical_target_id": "builtin:librarian",
+                    "target_type": "builtin",
+                    "role_id": None,
+                    "role_version": None,
+                    "character_id": None,
+                    "character_version": None,
+                    "mention_order": 0,
+                },
+                {
+                    "original_text": "@analyst",
+                    "handle": "analyst",
+                    "canonical_target_id": "character:analyst",
+                    "target_type": "character",
+                    "role_id": character.role_id,
+                    "role_version": expected_role_version,
+                    "character_id": character.id,
+                    "character_version": character.version,
+                    "mention_order": 1,
+                },
+                {
+                    "original_text": "@explore",
+                    "handle": "explore",
+                    "canonical_target_id": "builtin:explore",
+                    "target_type": "builtin",
+                    "role_id": None,
+                    "role_version": None,
+                    "character_id": None,
+                    "character_version": None,
+                    "mention_order": 2,
+                },
+            ],
+            "mentioned_target_outputs": [
+                {
+                    "handle": "librarian",
+                    "canonical_target_id": "builtin:librarian",
+                    "target_type": "builtin",
+                    "output_markdown": librarian_artifact,
+                },
+                {
+                    "handle": "analyst",
+                    "canonical_target_id": "character:analyst",
+                    "target_type": "character",
+                    "output_markdown": analyst_artifact,
+                },
+                {
+                    "handle": "explore",
+                    "canonical_target_id": "builtin:explore",
+                    "target_type": "builtin",
+                    "output_markdown": explore_artifact,
+                },
+            ],
+            "resolved_builtin_versions": [
+                {
+                    "canonical_target_id": "builtin:librarian",
+                    "handle": "librarian",
+                    "revision": 1,
+                },
+                {
+                    "canonical_target_id": "builtin:explore",
+                    "handle": "explore",
+                    "revision": 1,
+                },
+            ],
+            "resolved_role_versions": [
+                {
+                    "canonical_target_id": "role:analyst_role",
+                    "role_id": character.role_id,
+                    "version": expected_role_version,
+                }
+            ],
+            "resolved_character_versions": [
+                {
+                    "canonical_target_id": "character:analyst",
+                    "character_id": character.id,
+                    "version": character.version,
+                }
+            ],
+            "resolved_bundle_versions": expected_resolved_bundle_versions,
+            "resolved_tool_versions": expected_resolved_tool_versions,
+            "resolved_connector_versions": [],
+            "tool_call_trace": [],
+            "approval_trace": "not_required",
+        }
+    ]
+    request = captured["request"]
+    assert request.full_user_prompt == expected_full_user_prompt
+    assert request.execution_mode == "tool_enabled"
+    assert request.resolved_capability_inputs.tool_ids == expected_tool_ids
+    assert request.resolved_capability_inputs.bundle_keys == expected_bundle_keys
+    assert request.resolved_capability_inputs.connector_ids == ()
+    assert request.tool_runtime.tool_ids == expected_tool_ids
+    assert call_order[:2] == ["store_snapshot", "runner"]
+
+
+def test_phase3_connector_resolution_is_deterministic_and_snapshot_audited_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = build_service()
+    service.session_factory = session_factory
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    captured: dict[str, Any] = {}
+    snapshot_calls: list[dict[str, Any]] = []
+    call_order: list[str] = []
+    pattern_spec = get_backtest_pattern_spec("analyst_reviewer_tool_enabled_v1")
+    explore_bundle = get_seeded_capability_bundle_spec("builtin.explore_context")
+    librarian_bundle = get_seeded_capability_bundle_spec("builtin.librarian_context")
+    market_data_connector = get_seeded_connector_spec("ledger.mcp.market_data")
+    company_filings_connector = get_seeded_connector_spec("ledger.mcp.company_filings")
+
+    assert pattern_spec is not None
+    assert explore_bundle is not None
+    assert librarian_bundle is not None
+    assert market_data_connector is not None
+    assert company_filings_connector is not None
+
+    phase3_pattern_spec = replace(
+        pattern_spec,
+        connector_ids=("ledger.mcp.company_filings", "ledger.mcp.market_data"),
+    )
+    connector_enabled_bundles = {
+        "builtin.explore_context": replace(
+            explore_bundle,
+            connector_ids=("ledger.mcp.market_data", "ledger.mcp.company_filings"),
+        ),
+        "builtin.librarian_context": replace(
+            librarian_bundle,
+            connector_ids=("ledger.mcp.company_filings",),
+        ),
+    }
+    approved_connectors = {
+        "ledger.mcp.market_data": replace(market_data_connector, lifecycle="approved"),
+        "ledger.mcp.company_filings": replace(company_filings_connector, lifecycle="approved"),
+    }
+
+    create_orchestration_character(
+        session_factory,
+        handle="analyst",
+        role_key="analyst_role",
+        role_name="Analyst Role",
+        character_description=ANALYST_SUMMARY,
+        role_capability_bundle_keys=["builtin.explore_context"],
+        character_capability_bundle_keys=["builtin.librarian_context", "builtin.explore_context"],
+    )
+
+    expected_tool_ids = tuple(sorted(set(pattern_spec.default_tool_ids)))
+    expected_connector_ids = (
+        "ledger.mcp.company_filings",
+        "ledger.mcp.market_data",
+    )
+    expected_resolved_connector_versions = [
+        {"connector_id": "ledger.mcp.company_filings", "revision": 1},
+        {"connector_id": "ledger.mcp.market_data", "revision": 1},
+    ]
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="analyst_reviewer_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(service, "_clear_cycle_status", lambda backtest_id: None)
+    monkeypatch.setattr(service, "_update_run_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            phase3_pattern_spec if pattern_key == phase3_pattern_spec.key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_capability_bundle_spec",
+        lambda bundle_key: connector_enabled_bundles.get(bundle_key),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_connector_spec",
+        lambda connector_id: approved_connectors.get(connector_id),
+    )
+
+    def capture_snapshot(**kwargs: Any) -> None:
+        call_order.append("store_snapshot")
+        snapshot_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        capture_snapshot,
+        raising=False,
+    )
+
+    def fake_run_cycle(request: Any) -> Any:
+        call_order.append("runner")
+        captured["request"] = request
+        return SimpleNamespace(
+            report_content="",
+            decisions=[],
+            tool_call_trace=[],
+            approval_trace=[],
+        )
+
+    runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "authored_entry_prompt_body": "@analyst",
+            "compiled_entry_prompt_body": "compiled body",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "runtime handoff",
+            "market_data": {"AAPL": {"close": Decimal("184.40")}},
+        },
+    )
+
+    assert snapshot_calls[0]["resolved_connector_versions"] == expected_resolved_connector_versions
+    assert snapshot_calls[0]["approval_trace"] == []
+    request = captured["request"]
+    assert request.resolved_capability_inputs.connector_ids == expected_connector_ids
+    assert request.tool_runtime.tool_ids == (*expected_tool_ids, *expected_connector_ids)
+    assert call_order[:2] == ["store_snapshot", "runner"]
+
+
+def test_unknown_phase2_bundle_keys_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = build_service()
+    service.session_factory = session_factory
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    snapshot_calls: list[dict[str, Any]] = []
+    trace_updates: list[dict[str, Any]] = []
+
+    create_orchestration_character(
+        session_factory,
+        handle="analyst",
+        role_key="analyst_role",
+        role_name="Analyst Role",
+        character_description=ANALYST_SUMMARY,
+        role_capability_bundle_keys=["builtin.unknown_context"],
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="analyst_reviewer_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: snapshot_calls.append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for unknown phase-2 bundles")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match="Capability bundle key 'builtin.unknown_context' referenced",
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "authored_entry_prompt_body": "@analyst",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "unknown_capability_bundle_key"
+    assert runner_builds == []
+    assert snapshot_calls == []
+    assert trace_updates == []
+
+
+def test_disallowed_phase2_bundle_keys_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = build_service()
+    service.session_factory = session_factory
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    snapshot_calls: list[dict[str, Any]] = []
+    trace_updates: list[dict[str, Any]] = []
+    pattern_spec = get_backtest_pattern_spec("analyst_reviewer_tool_enabled_v1")
+
+    assert pattern_spec is not None
+    restricted_pattern_spec = replace(
+        pattern_spec,
+        allowed_bundle_keys=("builtin.librarian_context",),
+    )
+    create_orchestration_character(
+        session_factory,
+        handle="analyst",
+        role_key="analyst_role",
+        role_name="Analyst Role",
+        character_description=ANALYST_SUMMARY,
+        role_capability_bundle_keys=["builtin.explore_context"],
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="analyst_reviewer_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: snapshot_calls.append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            restricted_pattern_spec if pattern_key == restricted_pattern_spec.key else None
+        ),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for disallowed phase-2 bundles")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match=(
+            "Capability bundle key builtin.explore_context is not allowed for orchestration "
+            "pattern analyst_reviewer_tool_enabled_v1"
+        ),
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "authored_entry_prompt_body": "@analyst",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "disallowed_capability_bundle_key"
+    assert runner_builds == []
+    assert snapshot_calls == []
+    assert trace_updates == []
+
+
+def test_missing_bundle_expanded_tools_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    snapshot_calls: list[dict[str, Any]] = []
+    trace_updates: list[dict[str, Any]] = []
+    bundle_spec = get_seeded_capability_bundle_spec("builtin.librarian_context")
+
+    assert bundle_spec is not None
+    broken_bundle_spec = replace(
+        bundle_spec,
+        tool_ids=("ledger.unknown_tool",),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: snapshot_calls.append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_capability_bundle_spec",
+        lambda bundle_key: (
+            broken_bundle_spec if bundle_key == broken_bundle_spec.bundle_key else None
+        ),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for missing bundle-expanded tools")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match=(
+            "Capability tool 'ledger.unknown_tool' expanded from capability bundle "
+            "builtin.librarian_context"
+        ),
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "authored_entry_prompt_body": "@librarian",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "unknown_capability_tool"
+    assert runner_builds == []
+    assert snapshot_calls == []
+    assert trace_updates == []
+
+
+def test_disallowed_phase3_bundle_connector_ids_fail_before_runner_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner_builds: list[str] = []
+    snapshot_calls: list[dict[str, Any]] = []
+    trace_updates: list[dict[str, Any]] = []
+    pattern_spec = get_backtest_pattern_spec("seeded_internal_backtest_tool_enabled_v1")
+    bundle_spec = get_seeded_capability_bundle_spec("builtin.librarian_context")
+    market_data_connector = get_seeded_connector_spec("ledger.mcp.market_data")
+    company_filings_connector = get_seeded_connector_spec("ledger.mcp.company_filings")
+
+    assert pattern_spec is not None
+    assert bundle_spec is not None
+    assert market_data_connector is not None
+    assert company_filings_connector is not None
+
+    phase3_pattern_spec = replace(
+        pattern_spec,
+        connector_ids=("ledger.mcp.market_data",),
+    )
+    disallowed_bundle_spec = replace(
+        bundle_spec,
+        connector_ids=("ledger.mcp.company_filings",),
+    )
+    approved_connectors = {
+        "ledger.mcp.market_data": replace(market_data_connector, lifecycle="approved"),
+        "ledger.mcp.company_filings": replace(company_filings_connector, lifecycle="approved"),
+    }
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: snapshot_calls.append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            phase3_pattern_spec if pattern_key == phase3_pattern_spec.key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_capability_bundle_spec",
+        lambda bundle_key: (
+            disallowed_bundle_spec if bundle_key == disallowed_bundle_spec.bundle_key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_connector_spec",
+        lambda connector_id: approved_connectors.get(connector_id),
+    )
+
+    def fail_if_runner_built(orchestration_pattern_key: str) -> Any:
+        runner_builds.append(orchestration_pattern_key)
+        raise AssertionError("runner should not be built for disallowed phase-3 connectors")
+
+    monkeypatch.setattr(service, "_build_langgraph_runner", fail_if_runner_built)
+
+    with pytest.raises(
+        ApiError,
+        match=(
+            "Capability connector ledger.mcp.company_filings expanded from capability bundle "
+            "builtin.librarian_context is not allowed"
+        ),
+    ) as exc:
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "authored_entry_prompt_body": "@librarian",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert exc.value.code == "disallowed_capability_connector"
+    assert runner_builds == []
+    assert snapshot_calls == []
+    assert trace_updates == []
+
+
+@pytest.mark.parametrize(
+    "pattern_key",
+    ("seeded_internal_backtest_v1", "analyst_reviewer_v1"),
+)
+def test_structured_output_patterns_do_not_inherit_phase1_tool_runtime_or_trace_updates(
+    monkeypatch: pytest.MonkeyPatch,
+    pattern_key: str,
 ) -> None:
     service = build_service()
     cycle_date = date(2024, 6, 17)
     runner = FakeRunner()
     captured: dict[str, Any] = {}
     snapshot_calls: list[dict[str, Any]] = []
+    trace_updates: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
         service,
         "_get_backtest_or_raise",
-        lambda backtest_id: SimpleNamespace(
-            orchestration_pattern_key="seeded_internal_backtest_v1"
-        ),
+        lambda backtest_id: SimpleNamespace(orchestration_pattern_key=pattern_key),
     )
     monkeypatch.setattr(
         service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
@@ -782,23 +1718,21 @@ def test_snapshot_persists_explicit_builtin_snapshot_fields(
         lambda **kwargs: snapshot_calls.append(kwargs),
         raising=False,
     )
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        lambda **kwargs: trace_updates.append(kwargs),
+    )
 
     def fake_run_cycle(request: Any) -> Any:
         captured["request"] = request
-        return SimpleNamespace(report_content="", decisions=[])
+        return SimpleNamespace(
+            report_content="",
+            decisions=[],
+            tool_call_trace=[{"call_index": 0, "tool_id": "ledger.report_lookup"}],
+        )
 
     runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
-
-    librarian_artifact = expected_builtin_artifact(
-        "Research and retrieve supporting context for a backtest analysis.",
-        compiled_entry_prompt_body="compiled body",
-        execution_context_body="execution context",
-    )
-    expected_full_user_prompt = (
-        "execution context\n\n## Mentioned Target Outputs\n"
-        f"- librarian: {librarian_artifact}\n\n"
-        "compiled body"
-    )
 
     service._run_internal_cycle(
         backtest_id=42,
@@ -806,7 +1740,6 @@ def test_snapshot_persists_explicit_builtin_snapshot_fields(
         engine=cast(BacktestEngine, PromptStoringEngine(["AAPL"])),
         cycle_ctx={
             "prompt_report_slug": "backtest_42_prompt_20240617",
-            "authored_entry_prompt_body": "@librarian",
             "compiled_entry_prompt_body": "compiled body",
             "execution_context_body": "execution context",
             "full_user_prompt": "runtime handoff",
@@ -814,50 +1747,477 @@ def test_snapshot_persists_explicit_builtin_snapshot_fields(
         },
     )
 
+    request = captured["request"]
+    assert request.execution_mode == "structured_output"
+    assert request.resolved_capability_inputs.tool_ids == ()
+    assert request.resolved_capability_inputs.bundle_keys == ()
+    assert request.resolved_capability_inputs.connector_ids == ()
+    assert request.tool_runtime.tool_ids == ()
+    assert request.tool_runtime.adapters == ()
     assert snapshot_calls == [
         {
             "backtest_id": 42,
             "cycle_date": cycle_date,
             "prompt_report_slug": "backtest_42_prompt_20240617",
-            "orchestration_pattern_key": "seeded_internal_backtest_v1",
+            "orchestration_pattern_key": pattern_key,
             "pattern_policy_version": 1,
-            "entry_prompt_hash": hashlib.sha256(b"@librarian").hexdigest(),
-            "full_user_prompt_hash": hashlib.sha256(
-                expected_full_user_prompt.encode("utf-8")
-            ).hexdigest(),
-            "resolved_mentions": [
-                {
-                    "original_text": "@librarian",
-                    "handle": "librarian",
-                    "canonical_target_id": "builtin:librarian",
-                    "target_type": "builtin",
-                    "role_id": None,
-                    "role_version": None,
-                    "character_id": None,
-                    "character_version": None,
-                    "mention_order": 0,
-                }
-            ],
-            "mentioned_target_outputs": [
-                {
-                    "handle": "librarian",
-                    "canonical_target_id": "builtin:librarian",
-                    "target_type": "builtin",
-                    "output_markdown": librarian_artifact,
-                }
-            ],
-            "resolved_builtin_versions": [
-                {
-                    "canonical_target_id": "builtin:librarian",
-                    "handle": "librarian",
-                    "revision": 1,
-                }
-            ],
+            "entry_prompt_hash": hashlib.sha256(b"").hexdigest(),
+            "full_user_prompt_hash": hashlib.sha256(b"runtime handoff").hexdigest(),
+            "execution_mode": "structured_output",
+            "resolved_mentions": [],
+            "mentioned_target_outputs": [],
+            "resolved_builtin_versions": [],
             "resolved_role_versions": [],
             "resolved_character_versions": [],
+            "resolved_bundle_versions": [],
+            "resolved_tool_versions": [],
+            "resolved_connector_versions": [],
+            "tool_call_trace": [],
+            "approval_trace": "not_required",
         }
     ]
-    assert captured["request"].full_user_prompt == expected_full_user_prompt
+    assert trace_updates == []
+
+
+def test_tool_trace_persists_to_existing_snapshot_row_without_rewriting_metadata(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
+
+    backtest_id = create_backtest(
+        session_factory,
+        current_cycle_date=None,
+        current_cycle_status=None,
+    )
+    service = BacktestCycleService(cast(Session, SimpleNamespace()), session_factory)
+    cycle_date = date(2024, 6, 17)
+    tool_call_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.report_lookup",
+            "status": "success",
+            "latency_ms": 4,
+            "argument_hash": "a" * 64,
+            "result_hash": "b" * 64,
+        }
+    ]
+
+    service._store_orchestration_snapshot(
+        backtest_id=backtest_id,
+        cycle_date=cycle_date,
+        prompt_report_slug="backtest_42_prompt_20240617",
+        orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1",
+        pattern_policy_version=1,
+        entry_prompt_hash="c" * 64,
+        full_user_prompt_hash="d" * 64,
+        execution_mode="tool_enabled",
+        resolved_mentions=[],
+        mentioned_target_outputs=[],
+        resolved_builtin_versions=[],
+        resolved_role_versions=[],
+        resolved_character_versions=[],
+        resolved_bundle_versions=[],
+        resolved_tool_versions=[{"tool_id": "ledger.report_lookup", "revision": 1}],
+        resolved_connector_versions=[],
+        tool_call_trace=[],
+        approval_trace="not_required",
+    )
+
+    service._update_orchestration_snapshot_tool_call_trace(
+        backtest_id=backtest_id,
+        cycle_date=cycle_date,
+        tool_call_trace=tool_call_trace,
+    )
+
+    with session_factory() as session:
+        snapshots = session.scalars(
+            select(BacktestOrchestrationSnapshot).where(
+                BacktestOrchestrationSnapshot.backtest_id == backtest_id,
+                BacktestOrchestrationSnapshot.cycle_date == cycle_date,
+            )
+        ).all()
+
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot.prompt_report_slug == "backtest_42_prompt_20240617"
+    assert snapshot.execution_mode == "tool_enabled"
+    assert list(snapshot.resolved_tool_versions) == [
+        {"tool_id": "ledger.report_lookup", "revision": 1}
+    ]
+    assert list(snapshot.tool_call_trace) == tool_call_trace
+    assert snapshot.approval_trace == "not_required"
+
+
+def test_connector_approval_trace_persists_to_existing_snapshot_row_without_rewriting_metadata(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
+
+    backtest_id = create_backtest(
+        session_factory,
+        current_cycle_date=None,
+        current_cycle_status=None,
+    )
+    service = BacktestCycleService(cast(Session, SimpleNamespace()), session_factory)
+    cycle_date = date(2024, 6, 17)
+    connector_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.mcp.market_data",
+            "status": "success",
+            "latency_ms": 5,
+            "argument_hash": "c" * 64,
+            "result_hash": "d" * 64,
+        }
+    ]
+    approval_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.mcp.market_data",
+            "status": "approved",
+            "kind": "connector",
+            "transport": "mcp",
+        }
+    ]
+
+    service._store_orchestration_snapshot(
+        backtest_id=backtest_id,
+        cycle_date=cycle_date,
+        prompt_report_slug="backtest_42_prompt_20240617",
+        orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1",
+        pattern_policy_version=1,
+        entry_prompt_hash="c" * 64,
+        full_user_prompt_hash="d" * 64,
+        execution_mode="tool_enabled",
+        resolved_mentions=[],
+        mentioned_target_outputs=[],
+        resolved_builtin_versions=[],
+        resolved_role_versions=[],
+        resolved_character_versions=[],
+        resolved_bundle_versions=[],
+        resolved_tool_versions=[],
+        resolved_connector_versions=[{"connector_id": "ledger.mcp.market_data", "revision": 1}],
+        tool_call_trace=[],
+        approval_trace=[],
+    )
+
+    service._update_orchestration_snapshot_tool_call_trace(
+        backtest_id=backtest_id,
+        cycle_date=cycle_date,
+        tool_call_trace=connector_trace,
+        approval_trace=approval_trace,
+    )
+
+    with session_factory() as session:
+        snapshot = session.scalar(
+            select(BacktestOrchestrationSnapshot).where(
+                BacktestOrchestrationSnapshot.backtest_id == backtest_id,
+                BacktestOrchestrationSnapshot.cycle_date == cycle_date,
+            )
+        )
+
+    assert snapshot is not None
+    assert list(snapshot.tool_call_trace) == connector_trace
+    assert snapshot.approval_trace == approval_trace
+
+
+def test_tool_trace_persists_before_report_and_trade_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    call_order: list[str] = []
+    trace_updates: list[dict[str, Any]] = []
+    tool_call_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.report_lookup",
+            "status": "success",
+            "latency_ms": 3,
+            "argument_hash": "a" * 64,
+            "result_hash": "b" * 64,
+        }
+    ]
+
+    class RecordingEngine(FakeEngine):
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            call_order.append("store_cycle_report")
+            return "report"
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            call_order.append("apply_cycle_trades")
+            return super().apply_cycle_trades(
+                cycle_date=cycle_date,
+                decisions=decisions,
+                market_data=market_data,
+                report_slug=report_slug,
+            )
+
+        def record_cycle_equity(
+            self, cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            call_order.append("record_cycle_equity")
+            return super().record_cycle_equity(cycle_date, market_data)
+
+        def finalize(
+            self,
+            *,
+            equity_points: list[tuple[str, Decimal]],
+            benchmark_history: dict[str, list[tuple[str, Decimal]]],
+            trade_log: list[dict[str, Any]],
+            schedule: list[date],
+        ) -> None:
+            call_order.append("finalize")
+            return super().finalize(
+                equity_points=equity_points,
+                benchmark_history=benchmark_history,
+                trade_log=trade_log,
+                schedule=schedule,
+            )
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(
+        service, "_clear_cycle_status", lambda backtest_id: call_order.append("clear_cycle_status")
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: call_order.append("store_snapshot"),
+    )
+
+    def capture_trace_update(**kwargs: Any) -> None:
+        call_order.append("update_snapshot_trace")
+        trace_updates.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        capture_trace_update,
+    )
+
+    def fake_run_cycle(request: Any) -> Any:
+        call_order.append("runner")
+        return SimpleNamespace(
+            report_content="# LangGraph Analysis",
+            decisions=[],
+            tool_call_trace=tool_call_trace,
+            approval_trace="not_required",
+        )
+
+    runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, RecordingEngine(["AAPL"])),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "compiled_entry_prompt_body": "compiled body",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "runtime handoff",
+            "market_data": {},
+        },
+    )
+
+    assert trace_updates == [
+        {
+            "backtest_id": 42,
+            "cycle_date": cycle_date,
+            "tool_call_trace": tool_call_trace,
+            "approval_trace": "not_required",
+        }
+    ]
+    assert call_order.index("update_snapshot_trace") < call_order.index("store_cycle_report")
+    assert call_order.index("update_snapshot_trace") < call_order.index("apply_cycle_trades")
+
+
+def test_connector_trace_and_approval_persist_before_report_and_trade_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    pattern_spec = get_backtest_pattern_spec("seeded_internal_backtest_tool_enabled_v1")
+    market_data_connector = get_seeded_connector_spec("ledger.mcp.market_data")
+    call_order: list[str] = []
+    trace_updates: list[dict[str, Any]] = []
+    connector_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.mcp.market_data",
+            "status": "success",
+            "latency_ms": 4,
+            "argument_hash": "e" * 64,
+            "result_hash": "f" * 64,
+        }
+    ]
+    approval_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.mcp.market_data",
+            "status": "approved",
+            "kind": "connector",
+            "transport": "mcp",
+        }
+    ]
+
+    assert pattern_spec is not None
+    assert market_data_connector is not None
+    phase3_pattern_spec = replace(
+        pattern_spec,
+        connector_ids=("ledger.mcp.market_data",),
+    )
+    approved_connector = replace(market_data_connector, lifecycle="approved")
+
+    class RecordingEngine(FakeEngine):
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            call_order.append("store_cycle_report")
+            return "report"
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            call_order.append("apply_cycle_trades")
+            return super().apply_cycle_trades(
+                cycle_date=cycle_date,
+                decisions=decisions,
+                market_data=market_data,
+                report_slug=report_slug,
+            )
+
+        def record_cycle_equity(
+            self, cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            call_order.append("record_cycle_equity")
+            return super().record_cycle_equity(cycle_date, market_data)
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(
+        service, "_clear_cycle_status", lambda backtest_id: call_order.append("clear_cycle_status")
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: call_order.append("store_snapshot"),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            phase3_pattern_spec if pattern_key == phase3_pattern_spec.key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_connector_spec",
+        lambda connector_id: (
+            approved_connector if connector_id == approved_connector.connector_id else None
+        ),
+    )
+
+    def capture_trace_update(**kwargs: Any) -> None:
+        call_order.append("update_snapshot_trace")
+        trace_updates.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        capture_trace_update,
+    )
+
+    def fake_run_cycle(request: Any) -> Any:
+        call_order.append("runner")
+        return SimpleNamespace(
+            report_content="# LangGraph Analysis",
+            decisions=[],
+            tool_call_trace=connector_trace,
+            approval_trace=approval_trace,
+        )
+
+    runner.run_cycle = fake_run_cycle  # type: ignore[assignment]
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, RecordingEngine(["AAPL"])),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "compiled_entry_prompt_body": "compiled body",
+            "execution_context_body": "execution context",
+            "full_user_prompt": "runtime handoff",
+            "market_data": {"AAPL": {"close": Decimal("184.40")}},
+        },
+    )
+
+    assert trace_updates == [
+        {
+            "backtest_id": 42,
+            "cycle_date": cycle_date,
+            "tool_call_trace": connector_trace,
+            "approval_trace": approval_trace,
+        }
+    ]
+    assert call_order.index("update_snapshot_trace") < call_order.index("store_cycle_report")
+    assert call_order.index("update_snapshot_trace") < call_order.index("apply_cycle_trades")
 
 
 def test_character_mentions_resolve_to_canonical_ids_and_dedupe(
@@ -1515,6 +2875,7 @@ def test_snapshot_persists_role_versions_and_character_versions_used_for_cycle(
                 + f"- analyst: {analyst_artifact}\n\n".encode()
                 + b"compiled body"
             ).hexdigest(),
+            "execution_mode": "structured_output",
             "resolved_mentions": [
                 {
                     "original_text": "@analyst",
@@ -1551,6 +2912,11 @@ def test_snapshot_persists_role_versions_and_character_versions_used_for_cycle(
                     "version": expected_character_version,
                 }
             ],
+            "resolved_bundle_versions": [],
+            "resolved_tool_versions": [],
+            "resolved_connector_versions": [],
+            "tool_call_trace": [],
+            "approval_trace": "not_required",
         }
     ]
 
@@ -1632,11 +2998,17 @@ def test_snapshot_row_is_not_rewritten_by_later_role_or_character_edits(
             "pattern_policy_version": snapshot.pattern_policy_version,
             "entry_prompt_hash": snapshot.entry_prompt_hash,
             "full_user_prompt_hash": snapshot.full_user_prompt_hash,
+            "execution_mode": snapshot.execution_mode,
             "resolved_mentions": list(snapshot.resolved_mentions),
             "mentioned_target_outputs": list(snapshot.mentioned_target_outputs),
             "resolved_builtin_versions": list(snapshot.resolved_builtin_versions),
             "resolved_role_versions": list(snapshot.resolved_role_versions),
             "resolved_character_versions": list(snapshot.resolved_character_versions),
+            "resolved_bundle_versions": list(snapshot.resolved_bundle_versions),
+            "resolved_tool_versions": list(snapshot.resolved_tool_versions),
+            "resolved_connector_versions": list(snapshot.resolved_connector_versions),
+            "tool_call_trace": list(snapshot.tool_call_trace),
+            "approval_trace": snapshot.approval_trace,
         }
 
     with session_factory() as session:
@@ -1662,11 +3034,17 @@ def test_snapshot_row_is_not_rewritten_by_later_role_or_character_edits(
             "pattern_policy_version": snapshot.pattern_policy_version,
             "entry_prompt_hash": snapshot.entry_prompt_hash,
             "full_user_prompt_hash": snapshot.full_user_prompt_hash,
+            "execution_mode": snapshot.execution_mode,
             "resolved_mentions": list(snapshot.resolved_mentions),
             "mentioned_target_outputs": list(snapshot.mentioned_target_outputs),
             "resolved_builtin_versions": list(snapshot.resolved_builtin_versions),
             "resolved_role_versions": list(snapshot.resolved_role_versions),
             "resolved_character_versions": list(snapshot.resolved_character_versions),
+            "resolved_bundle_versions": list(snapshot.resolved_bundle_versions),
+            "resolved_tool_versions": list(snapshot.resolved_tool_versions),
+            "resolved_connector_versions": list(snapshot.resolved_connector_versions),
+            "tool_call_trace": list(snapshot.tool_call_trace),
+            "approval_trace": snapshot.approval_trace,
         } == stored_snapshot
 
     assert stored_snapshot["resolved_role_versions"][0]["version"] != refreshed_role_version
@@ -1821,7 +3199,9 @@ def test_run_internal_cycle_defaults_missing_expanded_prompt_fields(
     monkeypatch.setattr(
         service,
         "_get_backtest_or_raise",
-        lambda backtest_id: SimpleNamespace(orchestration_pattern_key="pattern"),
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_v1"
+        ),
     )
 
     captured: dict[str, Any] = {}
@@ -2216,6 +3596,398 @@ def test_run_internal_cycle_uses_stored_orchestration_pattern_key(
     )
 
     assert captured["pattern_key"] == "seeded_internal_backtest_v1"
+
+
+def test_run_internal_cycle_uses_stored_analyst_reviewer_pattern_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    captured: dict[str, Any] = {}
+
+    class FakeRunner:
+        def run_cycle(self, request: Any) -> Any:
+            captured["request"] = request
+            return SimpleNamespace(report_content="# LangGraph Analysis", decisions=[])
+
+    class FakeEngine:
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            return "langgraph_backtest_42_20240617"
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            _ = (cycle_date, decisions, market_data, report_slug)
+            return []
+
+        def record_cycle_equity(
+            self, requested_cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            _ = market_data
+            return requested_cycle_date.isoformat(), Decimal("100000.00")
+
+        def finalize(
+            self,
+            *,
+            equity_points: list[tuple[str, Decimal]],
+            benchmark_history: dict[str, list[tuple[str, Decimal]]],
+            trade_log: list[dict[str, Any]],
+            schedule: list[date],
+        ) -> None:
+            _ = (equity_points, benchmark_history, trade_log, schedule)
+
+    def build_runner(orchestration_pattern_key: str) -> Any:
+        captured["pattern_key"] = orchestration_pattern_key
+        return FakeRunner()
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: cast(
+            Backtest,
+            SimpleNamespace(orchestration_pattern_key="analyst_reviewer_v1"),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_langgraph_runner",
+        build_runner,
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_prompt_report",
+        lambda prompt_report_slug: f"prompt content for {prompt_report_slug}",
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: {
+            "schedule": [cycle_date],
+            "benchmark_history": {},
+            "trade_log": [],
+            "equity_points": [],
+        },
+    )
+    monkeypatch.setattr(service, "_clear_cycle_status", lambda backtest_id: None)
+
+    service._run_internal_cycle(
+        backtest_id=42,
+        cycle_date=cycle_date,
+        engine=cast(BacktestEngine, FakeEngine()),
+        cycle_ctx={
+            "prompt_report_slug": "backtest_42_prompt_20240617",
+            "market_data": {},
+        },
+    )
+
+    assert captured["pattern_key"] == "analyst_reviewer_v1"
+    assert captured["request"].orchestration_pattern_key == "analyst_reviewer_v1"
+    assert captured["request"].mentioned_target_outputs == ()
+
+
+def test_tool_failure_fail_closed_persists_trace_before_domain_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    call_order: list[str] = []
+    trace_updates: list[dict[str, Any]] = []
+    failure_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.report_lookup",
+            "status": "error",
+            "latency_ms": 2,
+            "argument_hash": "e" * 64,
+            "error_code": "not_found",
+        }
+    ]
+
+    class GuardEngine:
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            call_order.append("store_cycle_report")
+            raise AssertionError("cycle report should not be stored after tool failure")
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            _ = (cycle_date, decisions, market_data, report_slug)
+            call_order.append("apply_cycle_trades")
+            raise AssertionError("trades should not be applied after tool failure")
+
+        def record_cycle_equity(
+            self, requested_cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            _ = (requested_cycle_date, market_data)
+            call_order.append("record_cycle_equity")
+            raise AssertionError("equity should not be recorded after tool failure")
+
+        def finalize(
+            self,
+            *,
+            equity_points: list[tuple[str, Decimal]],
+            benchmark_history: dict[str, list[tuple[str, Decimal]]],
+            trade_log: list[dict[str, Any]],
+            schedule: list[date],
+        ) -> None:
+            _ = (equity_points, benchmark_history, trade_log, schedule)
+            call_order.append("finalize")
+            raise AssertionError("finalize should not run after tool failure")
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: (_ for _ in ()).throw(
+            AssertionError("run state should not load after tool failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_run_state",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("run state should not update after tool failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_clear_cycle_status",
+        lambda backtest_id: (_ for _ in ()).throw(
+            AssertionError("cycle status should not clear after tool failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: call_order.append("store_snapshot"),
+    )
+
+    def capture_trace_update(**kwargs: Any) -> None:
+        call_order.append("update_snapshot_trace")
+        trace_updates.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        capture_trace_update,
+    )
+
+    def fail_run_cycle(request: Any) -> Any:
+        _ = request
+        call_order.append("runner")
+        raise BacktestLangGraphToolExecutionError(
+            "Tool ledger.report_lookup failed: missing report",
+            tool_call_trace=failure_trace,
+        )
+
+    runner.run_cycle = fail_run_cycle  # type: ignore[assignment]
+
+    with pytest.raises(
+        BacktestLangGraphToolExecutionError, match="Tool ledger.report_lookup failed"
+    ):
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, GuardEngine()),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert trace_updates == [
+        {
+            "backtest_id": 42,
+            "cycle_date": cycle_date,
+            "tool_call_trace": failure_trace,
+            "approval_trace": "not_required",
+        }
+    ]
+    assert call_order == ["store_snapshot", "runner", "update_snapshot_trace"]
+
+
+def test_connector_failure_fail_closed_persists_trace_and_approval_before_domain_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    runner = FakeRunner()
+    pattern_spec = get_backtest_pattern_spec("seeded_internal_backtest_tool_enabled_v1")
+    market_data_connector = get_seeded_connector_spec("ledger.mcp.market_data")
+    call_order: list[str] = []
+    trace_updates: list[dict[str, Any]] = []
+    approval_trace = [
+        {
+            "call_index": 0,
+            "tool_id": "ledger.mcp.market_data",
+            "status": "denied",
+            "kind": "connector",
+            "transport": "mcp",
+        }
+    ]
+
+    assert pattern_spec is not None
+    assert market_data_connector is not None
+    phase3_pattern_spec = replace(
+        pattern_spec,
+        connector_ids=("ledger.mcp.market_data",),
+    )
+    unapproved_connector = replace(market_data_connector, lifecycle="placeholder")
+
+    class GuardEngine:
+        def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
+            _ = (requested_cycle_date, analysis)
+            call_order.append("store_cycle_report")
+            raise AssertionError("cycle report should not be stored after connector failure")
+
+        def apply_cycle_trades(
+            self,
+            *,
+            cycle_date: date,
+            decisions: list[Any],
+            market_data: dict[str, dict[str, Decimal]],
+            report_slug: str | None = None,
+        ) -> list[dict[str, Any]]:
+            _ = (cycle_date, decisions, market_data, report_slug)
+            call_order.append("apply_cycle_trades")
+            raise AssertionError("trades should not be applied after connector failure")
+
+        def record_cycle_equity(
+            self, requested_cycle_date: date, market_data: dict[str, dict[str, Decimal]]
+        ) -> tuple[str, Decimal]:
+            _ = (requested_cycle_date, market_data)
+            call_order.append("record_cycle_equity")
+            raise AssertionError("equity should not be recorded after connector failure")
+
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: SimpleNamespace(
+            orchestration_pattern_key="seeded_internal_backtest_tool_enabled_v1"
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_build_langgraph_runner", lambda orchestration_pattern_key: runner
+    )
+    monkeypatch.setattr(
+        service, "_load_prompt_report", lambda prompt_report_slug: "# prompt report"
+    )
+    monkeypatch.setattr(
+        service,
+        "_load_run_state",
+        lambda backtest_id: (_ for _ in ()).throw(
+            AssertionError("run state should not load after connector failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_update_run_state",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("run state should not update after connector failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_clear_cycle_status",
+        lambda backtest_id: (_ for _ in ()).throw(
+            AssertionError("cycle status should not clear after connector failure")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_store_orchestration_snapshot",
+        lambda **kwargs: call_order.append("store_snapshot"),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_backtest_pattern_spec",
+        lambda pattern_key: (
+            phase3_pattern_spec if pattern_key == phase3_pattern_spec.key else None
+        ),
+    )
+    monkeypatch.setattr(
+        backtest_cycle_service_module,
+        "get_seeded_connector_spec",
+        lambda connector_id: (
+            unapproved_connector if connector_id == unapproved_connector.connector_id else None
+        ),
+    )
+
+    def capture_trace_update(**kwargs: Any) -> None:
+        call_order.append("update_snapshot_trace")
+        trace_updates.append(kwargs)
+
+    monkeypatch.setattr(
+        service,
+        "_update_orchestration_snapshot_tool_call_trace",
+        capture_trace_update,
+    )
+
+    def fail_run_cycle(request: Any) -> Any:
+        _ = request
+        call_order.append("runner")
+        raise BacktestLangGraphToolExecutionError(
+            "Connector ledger.mcp.market_data is not approved for execution",
+            tool_call_trace=[],
+            approval_trace=approval_trace,
+        )
+
+    runner.run_cycle = fail_run_cycle  # type: ignore[assignment]
+
+    with pytest.raises(
+        BacktestLangGraphToolExecutionError,
+        match="Connector ledger.mcp.market_data is not approved for execution",
+    ):
+        service._run_internal_cycle(
+            backtest_id=42,
+            cycle_date=cycle_date,
+            engine=cast(BacktestEngine, GuardEngine()),
+            cycle_ctx={
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "compiled_entry_prompt_body": "compiled body",
+                "execution_context_body": "execution context",
+                "full_user_prompt": "runtime handoff",
+                "market_data": {},
+            },
+        )
+
+    assert trace_updates == [
+        {
+            "backtest_id": 42,
+            "cycle_date": cycle_date,
+            "tool_call_trace": [],
+            "approval_trace": approval_trace,
+        }
+    ]
+    assert call_order == ["store_snapshot", "runner", "update_snapshot_trace"]
 
 
 def test_handle_timeout_ignores_stale_timer_for_previous_cycle(

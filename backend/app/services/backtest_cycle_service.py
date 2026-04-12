@@ -12,17 +12,29 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.core.errors import business_rule_error, not_found_error
+from app.core.formatting import normalize_symbol
 from app.langgraph.runner import (
+    BacktestExecutionMode,
+    BacktestLangGraphCapabilityInputs,
     BacktestLangGraphRequest,
     BacktestLangGraphRunner,
+    BacktestLangGraphToolAdapter,
+    BacktestLangGraphToolExecutionError,
+    BacktestLangGraphToolRuntime,
     LiveBacktestSymbolAnalyzer,
 )
 from app.langgraph.seeds import (
-    ANALYST_REVIEWER_PATTERN_MENTION_POLICY,
-    SEED_PATTERN_MENTION_POLICY,
+    BacktestPatternSpec,
     PatternMentionPolicy,
+    SeededCapabilityBundleSpec,
+    SeededConnectorSpec,
+    SeededToolSpec,
     build_backtest_langgraph_runner,
+    get_backtest_pattern_spec,
     get_seeded_builtin_spec_for_handle,
+    get_seeded_capability_bundle_spec,
+    get_seeded_connector_spec,
+    get_seeded_tool_spec,
 )
 from app.models.backtest import Backtest
 from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
@@ -37,6 +49,7 @@ from app.schemas.backtest_callback import (
 )
 from app.schemas.report import ReportMetadata
 from app.services.backtest_engine import BacktestEngine
+from app.services.orchestration_service import OrchestrationService
 from app.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
@@ -46,6 +59,58 @@ _TERMINAL_BACKTEST_STATUSES = {
     BacktestStatus.COMPLETED,
     BacktestStatus.FAILED,
     BacktestStatus.CANCELLED,
+}
+_PHASE_1_ALLOWED_TOOL_IDS = frozenset(
+    {
+        "ledger.report_lookup",
+        "ledger.orchestration_catalog_lookup",
+        "ledger.cycle_context_lookup",
+    }
+)
+_PHASE_1_CYCLE_CONTEXT_ARTIFACT_KEYS = (
+    "prompt_report_slug",
+    "prompt_report",
+    "authored_entry_prompt_body",
+    "compiled_entry_prompt_body",
+    "execution_context_body",
+    "full_user_prompt",
+    "resolved_mentions",
+    "mentioned_target_outputs",
+    "mentioned_target_output_ids",
+)
+_REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"slug": {"type": "string"}},
+    "required": ["slug"],
+    "additionalProperties": False,
+}
+_ORCHESTRATION_CATALOG_LOOKUP_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"handle": {"type": "string"}},
+    "additionalProperties": False,
+}
+_CYCLE_CONTEXT_LOOKUP_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "artifact_key": {
+            "type": "string",
+            "enum": list(_PHASE_1_CYCLE_CONTEXT_ARTIFACT_KEYS),
+        }
+    },
+    "required": ["artifact_key"],
+    "additionalProperties": False,
+}
+_MARKET_DATA_CONNECTOR_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"symbol": {"type": "string"}},
+    "required": ["symbol"],
+    "additionalProperties": False,
+}
+_COMPANY_FILINGS_CONNECTOR_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"symbol": {"type": "string"}},
+    "required": ["symbol"],
+    "additionalProperties": False,
 }
 
 
@@ -311,6 +376,17 @@ class BacktestCycleService:
                     compiled_entry_prompt_body=compiled_entry_prompt_body,
                 )
 
+            (
+                execution_mode,
+                resolved_bundle_versions,
+                resolved_tool_versions,
+                resolved_connector_versions,
+                resolved_capability_inputs,
+            ) = self._resolve_phase1_capability_inputs(
+                orchestration_pattern_key=backtest.orchestration_pattern_key,
+                resolved_targets=resolved_targets,
+            )
+
             self._store_orchestration_snapshot(
                 backtest_id=backtest_id,
                 cycle_date=cycle_date,
@@ -319,6 +395,7 @@ class BacktestCycleService:
                 pattern_policy_version=pattern_policy.version,
                 entry_prompt_hash=self._hash_prompt_text(authored_entry_prompt_body),
                 full_user_prompt_hash=self._hash_prompt_text(full_user_prompt),
+                execution_mode=execution_mode,
                 resolved_mentions=self._serialize_resolved_mentions(resolved_targets),
                 mentioned_target_outputs=self._serialize_mentioned_target_outputs(
                     mentioned_target_outputs
@@ -326,6 +403,13 @@ class BacktestCycleService:
                 resolved_builtin_versions=self._serialize_builtin_versions(resolved_targets),
                 resolved_role_versions=self._serialize_role_versions(resolved_targets),
                 resolved_character_versions=self._serialize_character_versions(resolved_targets),
+                resolved_bundle_versions=resolved_bundle_versions,
+                resolved_tool_versions=resolved_tool_versions,
+                resolved_connector_versions=resolved_connector_versions,
+                tool_call_trace=[],
+                approval_trace=self._initial_approval_trace(
+                    connector_ids=resolved_capability_inputs.connector_ids
+                ),
             )
 
         symbols = engine._portfolio_symbols()
@@ -532,6 +616,9 @@ class BacktestCycleService:
             compiled_entry_prompt_body=compiled_entry_prompt_body,
             execution_context_body=execution_context_body,
         )
+        serialized_mentioned_target_outputs = self._serialize_mentioned_target_outputs(
+            mentioned_target_outputs
+        )
         mentioned_target_output_ids = tuple(
             target["canonical_target_id"] for target in resolved_targets
         )
@@ -546,6 +633,32 @@ class BacktestCycleService:
             )
         else:
             full_user_prompt = str(cycle_ctx.get("full_user_prompt", ""))
+        (
+            execution_mode,
+            resolved_bundle_versions,
+            resolved_tool_versions,
+            resolved_connector_versions,
+            resolved_capability_inputs,
+        ) = self._resolve_phase1_capability_inputs(
+            orchestration_pattern_key=backtest.orchestration_pattern_key,
+            resolved_targets=resolved_targets,
+        )
+        tool_runtime: BacktestLangGraphToolRuntime | None = None
+        if execution_mode == "tool_enabled":
+            tool_runtime = self._build_phase1_tool_runtime(
+                tool_ids=resolved_capability_inputs.tool_ids,
+                connector_ids=resolved_capability_inputs.connector_ids,
+                prompt_report_slug=prompt_report_slug,
+                prompt_report=prompt_report,
+                authored_entry_prompt_body=authored_entry_prompt_body,
+                compiled_entry_prompt_body=compiled_entry_prompt_body,
+                execution_context_body=execution_context_body,
+                full_user_prompt=full_user_prompt,
+                resolved_mentions=resolved_mentions,
+                mentioned_target_outputs=serialized_mentioned_target_outputs,
+                mentioned_target_output_ids=mentioned_target_output_ids,
+                cycle_market_data=cast(dict[str, Any], cycle_ctx.get("market_data", {})),
+            )
         self._store_orchestration_snapshot(
             backtest_id=backtest_id,
             cycle_date=cycle_date,
@@ -554,30 +667,55 @@ class BacktestCycleService:
             pattern_policy_version=pattern_policy.version,
             entry_prompt_hash=self._hash_prompt_text(authored_entry_prompt_body),
             full_user_prompt_hash=self._hash_prompt_text(full_user_prompt),
+            execution_mode=execution_mode,
             resolved_mentions=resolved_mentions,
-            mentioned_target_outputs=self._serialize_mentioned_target_outputs(
-                mentioned_target_outputs
-            ),
+            mentioned_target_outputs=serialized_mentioned_target_outputs,
             resolved_builtin_versions=self._serialize_builtin_versions(resolved_targets),
             resolved_role_versions=self._serialize_role_versions(resolved_targets),
             resolved_character_versions=self._serialize_character_versions(resolved_targets),
+            resolved_bundle_versions=resolved_bundle_versions,
+            resolved_tool_versions=resolved_tool_versions,
+            resolved_connector_versions=resolved_connector_versions,
+            tool_call_trace=[],
+            approval_trace=self._initial_approval_trace(
+                connector_ids=resolved_capability_inputs.connector_ids
+            ),
         )
         runner = self._build_langgraph_runner(backtest.orchestration_pattern_key)
-        result = runner.run_cycle(
-            BacktestLangGraphRequest(
+        request = BacktestLangGraphRequest(
+            backtest_id=backtest_id,
+            cycle_date=cycle_date,
+            prompt_report_slug=prompt_report_slug,
+            prompt_report=prompt_report,
+            authored_entry_prompt_body=authored_entry_prompt_body,
+            compiled_entry_prompt_body=compiled_entry_prompt_body,
+            execution_context_body=execution_context_body,
+            full_user_prompt=full_user_prompt,
+            resolved_mentions=tuple(resolved_mentions),
+            orchestration_pattern_key=backtest.orchestration_pattern_key,
+            mentioned_target_outputs=mentioned_target_output_ids,
+            execution_mode=execution_mode,
+            resolved_capability_inputs=resolved_capability_inputs,
+            tool_runtime=tool_runtime,
+        )
+        try:
+            result = runner.run_cycle(request)
+        except BacktestLangGraphToolExecutionError as exc:
+            if execution_mode == "tool_enabled":
+                self._update_orchestration_snapshot_tool_call_trace(
+                    backtest_id=backtest_id,
+                    cycle_date=cycle_date,
+                    tool_call_trace=exc.tool_call_trace,
+                    approval_trace=getattr(exc, "approval_trace", "not_required"),
+                )
+            raise
+        if execution_mode == "tool_enabled":
+            self._update_orchestration_snapshot_tool_call_trace(
                 backtest_id=backtest_id,
                 cycle_date=cycle_date,
-                prompt_report_slug=prompt_report_slug,
-                prompt_report=prompt_report,
-                authored_entry_prompt_body=authored_entry_prompt_body,
-                compiled_entry_prompt_body=compiled_entry_prompt_body,
-                execution_context_body=execution_context_body,
-                full_user_prompt=full_user_prompt,
-                resolved_mentions=tuple(resolved_mentions),
-                orchestration_pattern_key=backtest.orchestration_pattern_key,
-                mentioned_target_outputs=mentioned_target_output_ids,
+                tool_call_trace=result.tool_call_trace,
+                approval_trace=getattr(result, "approval_trace", "not_required"),
             )
-        )
         report_slug = engine._store_cycle_report(cycle_date, result.report_content)
         trade_results = engine.apply_cycle_trades(
             cycle_date=cycle_date,
@@ -627,11 +765,524 @@ class BacktestCycleService:
 
     @staticmethod
     def _resolve_pattern_mention_policy(pattern_key: str) -> PatternMentionPolicy:
-        if pattern_key == "seeded_internal_backtest_v1":
-            return SEED_PATTERN_MENTION_POLICY
-        if pattern_key == "analyst_reviewer_v1":
-            return ANALYST_REVIEWER_PATTERN_MENTION_POLICY
-        return SEED_PATTERN_MENTION_POLICY
+        return BacktestCycleService._get_backtest_pattern_spec_or_raise(pattern_key).mention_policy
+
+    @staticmethod
+    def _get_backtest_pattern_spec_or_raise(pattern_key: str) -> BacktestPatternSpec:
+        pattern_spec = get_backtest_pattern_spec(pattern_key)
+        if pattern_spec is None:
+            raise business_rule_error(
+                "invalid_orchestration_pattern",
+                f"Unknown orchestration pattern: {pattern_key}",
+            )
+        return pattern_spec
+
+    def _resolve_phase1_capability_inputs(
+        self,
+        *,
+        orchestration_pattern_key: str,
+        resolved_targets: list[dict[str, Any]] | None = None,
+    ) -> tuple[
+        BacktestExecutionMode,
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        BacktestLangGraphCapabilityInputs,
+    ]:
+        pattern_spec = self._get_backtest_pattern_spec_or_raise(orchestration_pattern_key)
+        execution_mode = pattern_spec.execution_mode
+        if execution_mode == "structured_output":
+            return execution_mode, [], [], [], BacktestLangGraphCapabilityInputs()
+        if execution_mode != "tool_enabled":
+            raise business_rule_error(
+                "invalid_orchestration_pattern",
+                (
+                    f"Unsupported execution mode {execution_mode} for orchestration pattern "
+                    f"{orchestration_pattern_key}"
+                ),
+            )
+
+        resolved_tool_specs_by_id: dict[str, SeededToolSpec] = {}
+        for configured_tool_id in pattern_spec.default_tool_ids:
+            tool_id = configured_tool_id.strip()
+            if tool_id in resolved_tool_specs_by_id:
+                continue
+
+            tool_spec = self._resolve_tool_spec_or_raise(
+                tool_id=tool_id,
+                orchestration_pattern_key=orchestration_pattern_key,
+            )
+            resolved_tool_specs_by_id[tool_spec.tool_id] = tool_spec
+
+        resolved_bundle_specs = self._resolve_phase2_bundle_specs(
+            orchestration_pattern_key=orchestration_pattern_key,
+            pattern_spec=pattern_spec,
+            resolved_targets=resolved_targets or [],
+        )
+        resolved_connector_specs_by_id: dict[str, SeededConnectorSpec] = {}
+        for configured_connector_id in pattern_spec.connector_ids:
+            connector_id = configured_connector_id.strip()
+            if not connector_id or connector_id in resolved_connector_specs_by_id:
+                continue
+
+            connector_spec = self._resolve_connector_spec_or_raise(
+                connector_id=connector_id,
+                orchestration_pattern_key=orchestration_pattern_key,
+            )
+            resolved_connector_specs_by_id[connector_spec.connector_id] = connector_spec
+
+        allowed_connector_ids = frozenset(resolved_connector_specs_by_id)
+        for bundle_spec in resolved_bundle_specs:
+            for configured_tool_id in bundle_spec.tool_ids:
+                tool_id = configured_tool_id.strip()
+                if tool_id in resolved_tool_specs_by_id:
+                    continue
+
+                tool_spec = self._resolve_tool_spec_or_raise(
+                    tool_id=tool_id,
+                    orchestration_pattern_key=orchestration_pattern_key,
+                    bundle_key=bundle_spec.bundle_key,
+                )
+                resolved_tool_specs_by_id[tool_spec.tool_id] = tool_spec
+            if not allowed_connector_ids:
+                continue
+            for configured_connector_id in bundle_spec.connector_ids:
+                connector_id = configured_connector_id.strip()
+                if not connector_id or connector_id in resolved_connector_specs_by_id:
+                    continue
+
+                connector_spec = self._resolve_connector_spec_or_raise(
+                    connector_id=connector_id,
+                    orchestration_pattern_key=orchestration_pattern_key,
+                    bundle_key=bundle_spec.bundle_key,
+                    allowed_connector_ids=allowed_connector_ids,
+                )
+                resolved_connector_specs_by_id[connector_spec.connector_id] = connector_spec
+
+        resolved_bundle_specs.sort(key=lambda bundle_spec: bundle_spec.bundle_key)
+        resolved_tool_specs = sorted(
+            resolved_tool_specs_by_id.values(),
+            key=lambda tool_spec: tool_spec.tool_id,
+        )
+        resolved_connector_specs = sorted(
+            resolved_connector_specs_by_id.values(),
+            key=lambda connector_spec: connector_spec.connector_id,
+        )
+        resolved_bundle_versions = [
+            {"bundle_key": bundle_spec.bundle_key, "revision": bundle_spec.revision}
+            for bundle_spec in resolved_bundle_specs
+        ]
+        resolved_tool_versions = [
+            {"tool_id": tool_spec.tool_id, "revision": tool_spec.revision}
+            for tool_spec in resolved_tool_specs
+        ]
+        resolved_connector_versions = [
+            {"connector_id": connector_spec.connector_id, "revision": connector_spec.revision}
+            for connector_spec in resolved_connector_specs
+        ]
+        return (
+            execution_mode,
+            resolved_bundle_versions,
+            resolved_tool_versions,
+            resolved_connector_versions,
+            BacktestLangGraphCapabilityInputs(
+                tool_ids=tuple(tool_spec.tool_id for tool_spec in resolved_tool_specs),
+                bundle_keys=tuple(bundle_spec.bundle_key for bundle_spec in resolved_bundle_specs),
+                connector_ids=tuple(
+                    connector_spec.connector_id for connector_spec in resolved_connector_specs
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _resolve_tool_spec_or_raise(
+        *,
+        tool_id: str,
+        orchestration_pattern_key: str,
+        bundle_key: str | None = None,
+    ) -> SeededToolSpec:
+        tool_spec = get_seeded_tool_spec(tool_id)
+        if tool_spec is None:
+            if bundle_key is None:
+                raise business_rule_error(
+                    "unknown_capability_tool",
+                    (
+                        f"Capability tool {tool_id!r} configured for orchestration pattern "
+                        f"{orchestration_pattern_key} was not found"
+                    ),
+                )
+            raise business_rule_error(
+                "unknown_capability_tool",
+                (
+                    f"Capability tool {tool_id!r} expanded from capability bundle {bundle_key} "
+                    f"for orchestration pattern {orchestration_pattern_key} was not found"
+                ),
+            )
+        if tool_spec.tool_id not in _PHASE_1_ALLOWED_TOOL_IDS:
+            if bundle_key is None:
+                raise business_rule_error(
+                    "disallowed_capability_tool",
+                    (
+                        f"Capability tool {tool_spec.tool_id} is not allowed for phase-1 "
+                        f"orchestration pattern {orchestration_pattern_key}"
+                    ),
+                )
+            raise business_rule_error(
+                "disallowed_capability_tool",
+                (
+                    f"Capability tool {tool_spec.tool_id} expanded from capability bundle "
+                    f"{bundle_key} is not allowed for phase-1 orchestration pattern "
+                    f"{orchestration_pattern_key}"
+                ),
+            )
+        return tool_spec
+
+    @staticmethod
+    def _resolve_connector_spec_or_raise(
+        *,
+        connector_id: str,
+        orchestration_pattern_key: str,
+        bundle_key: str | None = None,
+        allowed_connector_ids: frozenset[str] | None = None,
+    ) -> SeededConnectorSpec:
+        connector_spec = get_seeded_connector_spec(connector_id)
+        if connector_spec is None:
+            if bundle_key is None:
+                raise business_rule_error(
+                    "unknown_capability_connector",
+                    (
+                        f"Capability connector {connector_id!r} configured for orchestration "
+                        f"pattern {orchestration_pattern_key} was not found"
+                    ),
+                )
+            raise business_rule_error(
+                "unknown_capability_connector",
+                (
+                    f"Capability connector {connector_id!r} expanded from capability bundle "
+                    f"{bundle_key} for orchestration pattern {orchestration_pattern_key} was "
+                    "not found"
+                ),
+            )
+        if (
+            allowed_connector_ids is not None
+            and connector_spec.connector_id not in allowed_connector_ids
+        ):
+            if bundle_key is None:
+                raise business_rule_error(
+                    "disallowed_capability_connector",
+                    (
+                        f"Capability connector {connector_spec.connector_id} is not allowed for "
+                        f"orchestration pattern {orchestration_pattern_key}"
+                    ),
+                )
+            raise business_rule_error(
+                "disallowed_capability_connector",
+                (
+                    f"Capability connector {connector_spec.connector_id} expanded from capability "
+                    f"bundle {bundle_key} is not allowed for orchestration pattern "
+                    f"{orchestration_pattern_key}"
+                ),
+            )
+        return connector_spec
+
+    @staticmethod
+    def _collect_phase2_bundle_keys(resolved_targets: list[dict[str, Any]]) -> list[str]:
+        bundle_keys: list[str] = []
+        seen: set[str] = set()
+
+        def collect(raw_bundle_keys: Any) -> None:
+            if not isinstance(raw_bundle_keys, (list, tuple)):
+                return
+            for raw_bundle_key in raw_bundle_keys:
+                bundle_key = str(raw_bundle_key).strip()
+                if bundle_key in seen:
+                    continue
+                bundle_keys.append(bundle_key)
+                seen.add(bundle_key)
+
+        for target in resolved_targets:
+            if target["target_type"] == "builtin":
+                collect(target.get("capability_bundle_keys", ()))
+        for target in resolved_targets:
+            if target["target_type"] == "character":
+                collect(target.get("role_capability_bundle_keys", ()))
+        for target in resolved_targets:
+            if target["target_type"] == "character":
+                collect(target.get("character_capability_bundle_keys", ()))
+
+        return bundle_keys
+
+    @staticmethod
+    def _resolve_phase2_bundle_specs(
+        *,
+        orchestration_pattern_key: str,
+        pattern_spec: BacktestPatternSpec,
+        resolved_targets: list[dict[str, Any]],
+    ) -> list[SeededCapabilityBundleSpec]:
+        allowed_bundle_keys = frozenset(pattern_spec.allowed_bundle_keys)
+        resolved_bundle_specs: list[SeededCapabilityBundleSpec] = []
+        for bundle_key in BacktestCycleService._collect_phase2_bundle_keys(resolved_targets):
+            bundle_spec = get_seeded_capability_bundle_spec(bundle_key)
+            if bundle_spec is None:
+                raise business_rule_error(
+                    "unknown_capability_bundle_key",
+                    (
+                        f"Capability bundle key {bundle_key!r} referenced by orchestration "
+                        f"inputs for pattern {orchestration_pattern_key} was not found"
+                    ),
+                )
+            if bundle_key not in allowed_bundle_keys:
+                raise business_rule_error(
+                    "disallowed_capability_bundle_key",
+                    (
+                        f"Capability bundle key {bundle_key} is not allowed for orchestration "
+                        f"pattern {orchestration_pattern_key}"
+                    ),
+                )
+            resolved_bundle_specs.append(bundle_spec)
+        return resolved_bundle_specs
+
+    def _build_phase1_tool_runtime(
+        self,
+        *,
+        tool_ids: tuple[str, ...],
+        connector_ids: tuple[str, ...],
+        prompt_report_slug: str,
+        prompt_report: str,
+        authored_entry_prompt_body: str,
+        compiled_entry_prompt_body: str,
+        execution_context_body: str,
+        full_user_prompt: str,
+        resolved_mentions: list[dict[str, Any]],
+        mentioned_target_outputs: list[dict[str, Any]],
+        mentioned_target_output_ids: tuple[str, ...],
+        cycle_market_data: dict[str, Any],
+    ) -> BacktestLangGraphToolRuntime:
+        cycle_context_payload: dict[str, Any] = {
+            "prompt_report_slug": prompt_report_slug,
+            "prompt_report": prompt_report,
+            "authored_entry_prompt_body": authored_entry_prompt_body,
+            "compiled_entry_prompt_body": compiled_entry_prompt_body,
+            "execution_context_body": execution_context_body,
+            "full_user_prompt": full_user_prompt,
+            "resolved_mentions": resolved_mentions,
+            "mentioned_target_outputs": mentioned_target_outputs,
+            "mentioned_target_output_ids": list(mentioned_target_output_ids),
+        }
+        adapters: list[BacktestLangGraphToolAdapter] = []
+        for tool_id in tool_ids:
+            tool_spec = get_seeded_tool_spec(tool_id)
+            if tool_spec is None:
+                raise business_rule_error(
+                    "unknown_capability_tool",
+                    f"Capability tool {tool_id!r} was not found for tool runtime construction",
+                )
+            if tool_id == "ledger.report_lookup":
+                adapters.append(self._build_phase1_report_lookup_adapter(tool_spec))
+                continue
+            if tool_id == "ledger.orchestration_catalog_lookup":
+                adapters.append(self._build_phase1_orchestration_catalog_lookup_adapter(tool_spec))
+                continue
+            if tool_id == "ledger.cycle_context_lookup":
+                adapters.append(
+                    self._build_phase1_cycle_context_lookup_adapter(
+                        tool_spec,
+                        cycle_context_payload=cycle_context_payload,
+                    )
+                )
+                continue
+            raise business_rule_error(
+                "unknown_capability_tool",
+                f"Capability tool {tool_id!r} is not supported by the phase-1 runtime",
+            )
+        for connector_id in connector_ids:
+            connector_spec = get_seeded_connector_spec(connector_id)
+            if connector_spec is None:
+                raise business_rule_error(
+                    "unknown_capability_connector",
+                    (
+                        f"Capability connector {connector_id!r} was not found for connector "
+                        "runtime construction"
+                    ),
+                )
+            if connector_id == "ledger.mcp.market_data":
+                adapters.append(
+                    self._build_phase3_market_data_connector_adapter(
+                        connector_spec,
+                        cycle_market_data=cycle_market_data,
+                    )
+                )
+                continue
+            if connector_id == "ledger.mcp.company_filings":
+                adapters.append(
+                    self._build_phase3_company_filings_connector_adapter(
+                        connector_spec,
+                        cycle_context_payload=cycle_context_payload,
+                    )
+                )
+                continue
+            raise business_rule_error(
+                "unknown_capability_connector",
+                (f"Capability connector {connector_id!r} is not supported by the phase-3 runtime"),
+            )
+
+        return BacktestLangGraphToolRuntime(adapters=tuple(adapters))
+
+    def _build_phase1_report_lookup_adapter(
+        self, tool_spec: SeededToolSpec
+    ) -> BacktestLangGraphToolAdapter:
+        def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            slug = str(arguments.get("slug", "")).strip()
+            if not slug:
+                raise business_rule_error(
+                    "invalid_tool_arguments",
+                    "Report lookup requires a non-empty slug",
+                )
+            with self.session_factory() as session:
+                report_service = ReportService(session)
+                report = report_service.get_report_by_slug(slug)
+                return report.model_dump(mode="json", by_alias=True)
+
+        return BacktestLangGraphToolAdapter(
+            tool_id=tool_spec.tool_id,
+            description=tool_spec.description,
+            parameters_schema=_REPORT_LOOKUP_PARAMETERS_SCHEMA,
+            invoke=invoke,
+        )
+
+    def _build_phase1_orchestration_catalog_lookup_adapter(
+        self, tool_spec: SeededToolSpec
+    ) -> BacktestLangGraphToolAdapter:
+        def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            handle_value = arguments.get("handle")
+            with self.session_factory() as session:
+                orchestration_service = OrchestrationService(session)
+                catalog = orchestration_service.list_mention_catalog().model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+            if handle_value is None:
+                return catalog
+
+            handle = str(handle_value).strip().lower()
+            if not handle:
+                raise business_rule_error(
+                    "invalid_tool_arguments",
+                    "Orchestration catalog lookup handle must be non-empty when provided",
+                )
+            targets = catalog.get("targets", [])
+            match = next(
+                (
+                    target
+                    for target in targets
+                    if str(target.get("handle", "")).strip().lower() == handle
+                ),
+                None,
+            )
+            if match is None:
+                raise business_rule_error(
+                    "orchestration_catalog_target_not_found",
+                    f"No orchestration catalog target found for handle {handle!r}",
+                )
+            return cast(dict[str, Any], match)
+
+        return BacktestLangGraphToolAdapter(
+            tool_id=tool_spec.tool_id,
+            description=tool_spec.description,
+            parameters_schema=_ORCHESTRATION_CATALOG_LOOKUP_PARAMETERS_SCHEMA,
+            invoke=invoke,
+        )
+
+    def _build_phase1_cycle_context_lookup_adapter(
+        self,
+        tool_spec: SeededToolSpec,
+        *,
+        cycle_context_payload: dict[str, Any],
+    ) -> BacktestLangGraphToolAdapter:
+        def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            artifact_key = str(arguments.get("artifact_key", "")).strip()
+            if artifact_key not in _PHASE_1_CYCLE_CONTEXT_ARTIFACT_KEYS:
+                raise business_rule_error(
+                    "invalid_cycle_context_lookup",
+                    f"Unknown cycle context artifact key {artifact_key!r}",
+                )
+            return {
+                "artifact_key": artifact_key,
+                "value": cycle_context_payload[artifact_key],
+            }
+
+        return BacktestLangGraphToolAdapter(
+            tool_id=tool_spec.tool_id,
+            description=tool_spec.description,
+            parameters_schema=_CYCLE_CONTEXT_LOOKUP_PARAMETERS_SCHEMA,
+            invoke=invoke,
+        )
+
+    def _build_phase3_market_data_connector_adapter(
+        self,
+        connector_spec: SeededConnectorSpec,
+        *,
+        cycle_market_data: dict[str, Any],
+    ) -> BacktestLangGraphToolAdapter:
+        def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            symbol = normalize_symbol(str(arguments.get("symbol", "")).strip())
+            if not symbol:
+                raise business_rule_error(
+                    "invalid_connector_arguments",
+                    "Market data connector requires a non-empty symbol",
+                )
+            payload = cycle_market_data.get(symbol)
+            if not isinstance(payload, dict):
+                raise business_rule_error(
+                    "connector_market_data_not_found",
+                    f"No market data is available for symbol {symbol!r}",
+                )
+            return {
+                "symbol": symbol,
+                "market_data": {
+                    str(key): (str(value) if isinstance(value, Decimal) else value)
+                    for key, value in sorted(payload.items(), key=lambda item: str(item[0]))
+                },
+            }
+
+        return BacktestLangGraphToolAdapter(
+            tool_id=connector_spec.connector_id,
+            description=connector_spec.description,
+            parameters_schema=_MARKET_DATA_CONNECTOR_PARAMETERS_SCHEMA,
+            invoke=invoke,
+            approval_required=True,
+            approval_granted=connector_spec.lifecycle == "approved",
+            approval_metadata={"kind": "connector", "transport": connector_spec.transport},
+        )
+
+    def _build_phase3_company_filings_connector_adapter(
+        self,
+        connector_spec: SeededConnectorSpec,
+        *,
+        cycle_context_payload: dict[str, Any],
+    ) -> BacktestLangGraphToolAdapter:
+        def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            symbol = normalize_symbol(str(arguments.get("symbol", "")).strip())
+            if not symbol:
+                raise business_rule_error(
+                    "invalid_connector_arguments",
+                    "Company filings connector requires a non-empty symbol",
+                )
+            return {
+                "symbol": symbol,
+                "prompt_report_slug": str(cycle_context_payload["prompt_report_slug"]),
+                "filings": [],
+            }
+
+        return BacktestLangGraphToolAdapter(
+            tool_id=connector_spec.connector_id,
+            description=connector_spec.description,
+            parameters_schema=_COMPANY_FILINGS_CONNECTOR_PARAMETERS_SCHEMA,
+            invoke=invoke,
+            approval_required=True,
+            approval_granted=connector_spec.lifecycle == "approved",
+            approval_metadata={"kind": "connector", "transport": connector_spec.transport},
+        )
 
     def _resolve_mentions(
         self,
@@ -665,6 +1316,7 @@ class BacktestCycleService:
                         "character_version": None,
                         "mention_order": len(resolved),
                         "builtin_revision": builtin_spec.revision,
+                        "capability_bundle_keys": tuple(builtin_spec.capability_bundle_keys),
                     }
                 )
                 seen.add(canonical_target_id)
@@ -704,6 +1356,10 @@ class BacktestCycleService:
                     "role_key": role_spec.key,
                     "role_system_prompt": role_spec.system_prompt,
                     "character_prompt_append": character_spec.prompt_append,
+                    "role_capability_bundle_keys": tuple(role_spec.capability_bundle_keys),
+                    "character_capability_bundle_keys": tuple(
+                        character_spec.capability_bundle_keys
+                    ),
                 }
             )
             seen.add(canonical_target_id)
@@ -915,6 +1571,12 @@ class BacktestCycleService:
             return mentioned_outputs
         return f"{normalized_execution_context_body}\n\n{mentioned_outputs}"
 
+    @staticmethod
+    def _initial_approval_trace(*, connector_ids: tuple[str, ...]) -> Any:
+        if connector_ids:
+            return []
+        return "not_required"
+
     def _store_orchestration_snapshot(
         self,
         *,
@@ -925,11 +1587,17 @@ class BacktestCycleService:
         pattern_policy_version: int,
         entry_prompt_hash: str,
         full_user_prompt_hash: str,
+        execution_mode: str,
         resolved_mentions: list[dict[str, Any]],
         mentioned_target_outputs: list[dict[str, Any]],
         resolved_builtin_versions: list[dict[str, Any]],
         resolved_role_versions: list[dict[str, Any]],
         resolved_character_versions: list[dict[str, Any]],
+        resolved_bundle_versions: list[dict[str, Any]],
+        resolved_tool_versions: list[dict[str, Any]],
+        resolved_connector_versions: list[dict[str, Any]],
+        tool_call_trace: list[dict[str, Any]],
+        approval_trace: Any,
     ) -> None:
         if not callable(self.session_factory):
             logger.debug(
@@ -975,17 +1643,70 @@ class BacktestCycleService:
                     pattern_policy_version=pattern_policy_version,
                     entry_prompt_hash=entry_prompt_hash,
                     full_user_prompt_hash=full_user_prompt_hash,
+                    execution_mode=execution_mode,
                     resolved_mentions=resolved_mentions,
                     mentioned_target_outputs=mentioned_target_outputs,
                     resolved_builtin_versions=resolved_builtin_versions,
                     resolved_role_versions=resolved_role_versions,
                     resolved_character_versions=resolved_character_versions,
+                    resolved_bundle_versions=resolved_bundle_versions,
+                    resolved_tool_versions=resolved_tool_versions,
+                    resolved_connector_versions=resolved_connector_versions,
+                    tool_call_trace=tool_call_trace,
+                    approval_trace=approval_trace,
                 )
             )
             session.commit()
 
         logger.debug(
             "Stored orchestration snapshot for backtest %d on %s",
+            backtest_id,
+            cycle_date.isoformat(),
+        )
+
+    def _update_orchestration_snapshot_tool_call_trace(
+        self,
+        *,
+        backtest_id: int,
+        cycle_date: date,
+        tool_call_trace: list[dict[str, Any]],
+        approval_trace: Any = "not_required",
+    ) -> None:
+        if not callable(self.session_factory):
+            logger.debug(
+                (
+                    "Skipping orchestration snapshot trace update for backtest %d on %s "
+                    "without a session factory"
+                ),
+                backtest_id,
+                cycle_date.isoformat(),
+            )
+            return
+
+        with self.session_factory() as session:
+            snapshot = session.scalar(
+                select(BacktestOrchestrationSnapshot).where(
+                    BacktestOrchestrationSnapshot.backtest_id == backtest_id,
+                    BacktestOrchestrationSnapshot.cycle_date == cycle_date,
+                )
+            )
+            if snapshot is None:
+                logger.debug(
+                    "Skipping orchestration snapshot trace update for missing snapshot "
+                    "row %d on %s",
+                    backtest_id,
+                    cycle_date.isoformat(),
+                )
+                return
+
+            snapshot.tool_call_trace = list(tool_call_trace)
+            snapshot.approval_trace = (
+                list(approval_trace) if isinstance(approval_trace, list) else approval_trace
+            )
+            session.commit()
+
+        logger.debug(
+            "Updated orchestration snapshot trace for backtest %d on %s",
             backtest_id,
             cycle_date.isoformat(),
         )
