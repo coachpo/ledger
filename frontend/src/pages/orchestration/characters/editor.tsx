@@ -23,6 +23,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
+type CharacterEditorValues = Omit<OrchestrationCharacterCreateFormValues, "capabilityBundleKeys"> & {
+  capabilityBundleKeys: string;
+};
+
 type LooseRole = {
   id: number;
   key?: string;
@@ -38,6 +42,7 @@ type LooseCharacter = {
   promptAppend?: string | null;
   roleId?: number;
   roleKey?: string;
+  capabilityBundleKeys?: string[] | null;
   enabled?: boolean;
 };
 
@@ -49,14 +54,30 @@ function getAvailableHook<K extends keyof typeof orchestrationHooks>(name: K) {
   return orchestrationHooks[name];
 }
 
-const initialValues: OrchestrationCharacterCreateFormValues = {
+const initialValues: CharacterEditorValues = {
   handle: "",
   name: "",
   description: "",
   role: "",
   promptAppend: "",
+  capabilityBundleKeys: "",
   enabled: true,
 };
+
+function parseCapabilityBundleKeys(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getCharacterCapabilityBundleKeys(character: LooseCharacter | undefined) {
+  if (!Array.isArray(character?.capabilityBundleKeys)) {
+    return [];
+  }
+
+  return character.capabilityBundleKeys;
+}
 
 function getCharacterEnabled(character: LooseCharacter | undefined) {
   return character?.enabled ?? true;
@@ -121,7 +142,7 @@ export function OrchestrationCharacterEditorPage() {
   };
   const createMutation = useCreateCharacterHook?.();
   const updateMutation = useUpdateCharacterHook?.();
-  const [values, setValues] = useState<OrchestrationCharacterCreateFormValues>(initialValues);
+  const [values, setValues] = useState<CharacterEditorValues>(initialValues);
   const roles = useMemo(() => (rolesQuery.data ?? []) as LooseRole[], [rolesQuery.data]);
 
   useEffect(() => {
@@ -137,6 +158,7 @@ export function OrchestrationCharacterEditorPage() {
       description: character.description ?? "",
       role: resolveCharacterRoleValue(character, roles),
       promptAppend: character.promptAppend ?? "",
+      capabilityBundleKeys: getCharacterCapabilityBundleKeys(character).join("\n"),
       enabled: getCharacterEnabled(character),
     };
 
@@ -147,6 +169,7 @@ export function OrchestrationCharacterEditorPage() {
         current.description === nextValues.description &&
         current.role === nextValues.role &&
         current.promptAppend === nextValues.promptAppend &&
+        current.capabilityBundleKeys === nextValues.capabilityBundleKeys &&
         current.enabled === nextValues.enabled
       ) {
         return current;
@@ -159,44 +182,44 @@ export function OrchestrationCharacterEditorPage() {
   const hasRoleOptions = roles.length > 0;
   const isSaving = Boolean(createMutation?.isPending || updateMutation?.isPending);
 
-  const updateValue = <Key extends keyof OrchestrationCharacterCreateFormValues>(
+  const updateValue = <Key extends keyof CharacterEditorValues>(
     key: Key,
-    value: OrchestrationCharacterCreateFormValues[Key],
+    value: CharacterEditorValues[Key],
   ) => {
     setValues((current) => ({ ...current, [key]: value }));
   };
 
   const handleSave = async () => {
-    const parsed = isEditing
-        ? orchestrationCharacterUpdateFormSchema.safeParse({
+    try {
+      if (isEditing && characterId && updateMutation?.mutateAsync) {
+        const parsed = orchestrationCharacterUpdateFormSchema.safeParse({
           description: values.description,
           enabled: values.enabled,
           name: values.name,
           promptAppend: values.promptAppend,
           role: values.role,
-        })
-      : orchestrationCharacterCreateFormSchema.safeParse(values);
+          capabilityBundleKeys: parseCapabilityBundleKeys(values.capabilityBundleKeys),
+        });
 
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Character details are incomplete.");
-      return;
-    }
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Character details are incomplete.");
+          return;
+        }
 
-    const resolvedRoleId = resolveRoleId(values.role.trim(), roles);
-    if (resolvedRoleId == null) {
-      toast.error("Select a role from the orchestration catalog.");
-      return;
-    }
+        const resolvedRoleId = resolveRoleId(parsed.data.role.trim(), roles);
+        if (resolvedRoleId == null) {
+          toast.error("Select a role from the orchestration catalog.");
+          return;
+        }
 
-    try {
-      if (isEditing && characterId && updateMutation?.mutateAsync) {
         await updateMutation.mutateAsync({
           characterId,
-          data: {
-            displayName: values.name.trim(),
-            description: values.description.trim() || null,
-            promptAppend: values.promptAppend.trim() || null,
+          payload: {
+            displayName: parsed.data.name.trim(),
+            description: parsed.data.description.trim() || null,
+            promptAppend: parsed.data.promptAppend.trim() || null,
             roleId: resolvedRoleId,
+            capabilityBundleKeys: parsed.data.capabilityBundleKeys,
             enabled: parsed.data.enabled,
           },
         });
@@ -205,13 +228,30 @@ export function OrchestrationCharacterEditorPage() {
       }
 
       if (createMutation?.mutateAsync) {
+        const parsed = orchestrationCharacterCreateFormSchema.safeParse({
+          ...values,
+          capabilityBundleKeys: parseCapabilityBundleKeys(values.capabilityBundleKeys),
+        });
+
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Character details are incomplete.");
+          return;
+        }
+
+        const resolvedRoleId = resolveRoleId(parsed.data.role.trim(), roles);
+        if (resolvedRoleId == null) {
+          toast.error("Select a role from the orchestration catalog.");
+          return;
+        }
+
         const created = await createMutation.mutateAsync({
-          handle: values.handle.trim(),
-          displayName: values.name.trim(),
-          description: values.description.trim() || null,
-          promptAppend: values.promptAppend.trim() || null,
+          handle: parsed.data.handle,
+          displayName: parsed.data.name,
+          description: parsed.data.description.trim() || null,
+          promptAppend: parsed.data.promptAppend.trim() || null,
           roleId: resolvedRoleId,
-          enabled: values.enabled,
+          capabilityBundleKeys: parsed.data.capabilityBundleKeys,
+          enabled: parsed.data.enabled,
         });
         toast.success("Character created");
         navigate(`/orchestration/characters/${created.id}/edit`);
@@ -346,6 +386,22 @@ export function OrchestrationCharacterEditorPage() {
                   rows={8}
                   value={values.promptAppend}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="character-capability-bundle-keys">Capability Bundle Refs</Label>
+                <Textarea
+                  id="character-capability-bundle-keys"
+                  aria-label="Capability Bundle Refs"
+                  disabled={isSaving}
+                  onChange={(event) => updateValue("capabilityBundleKeys", event.target.value)}
+                  placeholder={"research.context_bundle\nreports.latest_bundle"}
+                  rows={4}
+                  value={values.capabilityBundleKeys}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Add one declarative bundle ref per line.
+                </p>
               </div>
 
               <div className="flex items-center justify-between rounded-md border p-4">
