@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from app.models.backtest import Backtest
 
 
+_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT = "structured_output"
+_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT = "not_required"
+
+
 class BacktestOrchestrationSnapshot(IdMixin, TimestampMixin, Base):
     __tablename__ = "backtest_orchestration_snapshots"
     __table_args__ = (
@@ -32,6 +36,12 @@ class BacktestOrchestrationSnapshot(IdMixin, TimestampMixin, Base):
     pattern_policy_version: Mapped[int] = mapped_column(nullable=False)
     entry_prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     full_user_prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default=_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT,
+        server_default=_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT,
+    )
     resolved_mentions: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
@@ -61,6 +71,36 @@ class BacktestOrchestrationSnapshot(IdMixin, TimestampMixin, Base):
         nullable=False,
         default=list,
         server_default="[]",
+    )
+    resolved_bundle_versions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    resolved_tool_versions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    resolved_connector_versions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    tool_call_trace: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    approval_trace: Mapped[Any] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT,
+        server_default=f'"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}"',
     )
 
     backtest: Mapped[Backtest] = relationship("Backtest")

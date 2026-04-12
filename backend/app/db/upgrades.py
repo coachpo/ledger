@@ -23,6 +23,8 @@ _OBSOLETE_TABLES = (
 )
 _LEGACY_SLUG_INVALID_CHARS_RE = re.compile(r"[^a-z0-9_]+")
 _LEGACY_SLUG_DUPLICATE_UNDERSCORES_RE = re.compile(r"_+")
+_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT = "structured_output"
+_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT = "not_required"
 
 
 def normalize_legacy_portfolio_slug(name: str) -> str:
@@ -69,6 +71,20 @@ def _ensure_json_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _normalize_legacy_snapshot_execution_mode(value: object) -> str:
+    normalized = str(value or "").strip()
+    return normalized or _BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT
+
+
+def _normalize_legacy_snapshot_approval_trace(value: object) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or _BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT
+    return _BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT
+
+
 def _migrate_legacy_builtin_versions(snapshot_payload: dict[str, Any]) -> list[dict[str, Any]]:
     explicit_versions = snapshot_payload.get("resolved_builtin_versions")
     if isinstance(explicit_versions, list):
@@ -100,7 +116,7 @@ def _migrate_legacy_version_entries(
         return []
 
     migrated: list[dict[str, Any]] = []
-    for canonical_target_id, version in value.items():
+    for canonical_target_id, version in sorted(value.items(), key=lambda item: str(item[0])):
         migrated.append(
             {
                 "canonical_target_id": str(canonical_target_id),
@@ -123,11 +139,19 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
         "pattern_policy_version": "INTEGER",
         "entry_prompt_hash": "VARCHAR(64)",
         "full_user_prompt_hash": "VARCHAR(64)",
+        "execution_mode": (f"VARCHAR(40) DEFAULT '{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'"),
         "resolved_mentions": "JSONB DEFAULT '[]'::jsonb",
         "mentioned_target_outputs": "JSONB DEFAULT '[]'::jsonb",
         "resolved_builtin_versions": "JSONB DEFAULT '[]'::jsonb",
         "resolved_role_versions": "JSONB DEFAULT '[]'::jsonb",
         "resolved_character_versions": "JSONB DEFAULT '[]'::jsonb",
+        "resolved_bundle_versions": "JSONB DEFAULT '[]'::jsonb",
+        "resolved_tool_versions": "JSONB DEFAULT '[]'::jsonb",
+        "resolved_connector_versions": "JSONB DEFAULT '[]'::jsonb",
+        "tool_call_trace": "JSONB DEFAULT '[]'::jsonb",
+        "approval_trace": (
+            f"JSONB DEFAULT '\"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}\"'::jsonb"
+        ),
     }
 
     with engine.begin() as connection:
@@ -154,12 +178,20 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
                             pattern_policy_version = :pattern_policy_version,
                             entry_prompt_hash = :entry_prompt_hash,
                             full_user_prompt_hash = :full_user_prompt_hash,
+                            execution_mode = :execution_mode,
                             resolved_mentions = CAST(:resolved_mentions AS JSONB),
                             mentioned_target_outputs = CAST(:mentioned_target_outputs AS JSONB),
                             resolved_builtin_versions = CAST(:resolved_builtin_versions AS JSONB),
                             resolved_role_versions = CAST(:resolved_role_versions AS JSONB),
                             resolved_character_versions =
-                                CAST(:resolved_character_versions AS JSONB)
+                                CAST(:resolved_character_versions AS JSONB),
+                            resolved_bundle_versions =
+                                CAST(:resolved_bundle_versions AS JSONB),
+                            resolved_tool_versions = CAST(:resolved_tool_versions AS JSONB),
+                            resolved_connector_versions =
+                                CAST(:resolved_connector_versions AS JSONB),
+                            tool_call_trace = CAST(:tool_call_trace AS JSONB),
+                            approval_trace = CAST(:approval_trace AS JSONB)
                         WHERE id = :snapshot_id
                         """
                     ),
@@ -176,6 +208,9 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
                         "entry_prompt_hash": str(snapshot_payload.get("entry_prompt_hash") or ""),
                         "full_user_prompt_hash": str(
                             snapshot_payload.get("full_user_prompt_hash") or ""
+                        ),
+                        "execution_mode": _normalize_legacy_snapshot_execution_mode(
+                            snapshot_payload.get("execution_mode")
                         ),
                         "resolved_mentions": json.dumps(
                             _ensure_json_list(snapshot_payload.get("resolved_mentions"))
@@ -198,6 +233,23 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
                                 id_field="character_id",
                             )
                         ),
+                        "resolved_bundle_versions": json.dumps(
+                            _ensure_json_list(snapshot_payload.get("resolved_bundle_versions"))
+                        ),
+                        "resolved_tool_versions": json.dumps(
+                            _ensure_json_list(snapshot_payload.get("resolved_tool_versions"))
+                        ),
+                        "resolved_connector_versions": json.dumps(
+                            _ensure_json_list(snapshot_payload.get("resolved_connector_versions"))
+                        ),
+                        "tool_call_trace": json.dumps(
+                            _ensure_json_list(snapshot_payload.get("tool_call_trace"))
+                        ),
+                        "approval_trace": json.dumps(
+                            _normalize_legacy_snapshot_approval_trace(
+                                snapshot_payload.get("approval_trace")
+                            )
+                        ),
                     },
                 )
 
@@ -210,7 +262,7 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
 
     with engine.begin() as connection:
         connection.exec_driver_sql(
-            """
+            f"""
             UPDATE backtest_orchestration_snapshots
             SET prompt_report_slug = COALESCE(prompt_report_slug, ''),
                 orchestration_pattern_key = COALESCE(
@@ -220,11 +272,26 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
                 pattern_policy_version = COALESCE(pattern_policy_version, 1),
                 entry_prompt_hash = COALESCE(entry_prompt_hash, ''),
                 full_user_prompt_hash = COALESCE(full_user_prompt_hash, ''),
+                execution_mode = COALESCE(
+                    execution_mode,
+                    '{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'
+                ),
                 resolved_mentions = COALESCE(resolved_mentions, '[]'::jsonb),
                 mentioned_target_outputs = COALESCE(mentioned_target_outputs, '[]'::jsonb),
                 resolved_builtin_versions = COALESCE(resolved_builtin_versions, '[]'::jsonb),
                 resolved_role_versions = COALESCE(resolved_role_versions, '[]'::jsonb),
-                resolved_character_versions = COALESCE(resolved_character_versions, '[]'::jsonb)
+                resolved_character_versions = COALESCE(resolved_character_versions, '[]'::jsonb),
+                resolved_bundle_versions = COALESCE(resolved_bundle_versions, '[]'::jsonb),
+                resolved_tool_versions = COALESCE(resolved_tool_versions, '[]'::jsonb),
+                resolved_connector_versions = COALESCE(
+                    resolved_connector_versions,
+                    '[]'::jsonb
+                ),
+                tool_call_trace = COALESCE(tool_call_trace, '[]'::jsonb),
+                approval_trace = COALESCE(
+                    approval_trace,
+                    '"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}"'::jsonb
+                )
             """
         )
         connection.exec_driver_sql(
@@ -239,6 +306,11 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
             "ALTER COLUMN pattern_policy_version SET DEFAULT 1"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN execution_mode SET DEFAULT "
+            f"'{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'"
         )
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
@@ -262,6 +334,27 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
         )
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_bundle_versions SET DEFAULT '[]'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_tool_versions SET DEFAULT '[]'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_connector_versions SET DEFAULT '[]'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN tool_call_trace SET DEFAULT '[]'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN approval_trace SET DEFAULT "
+            f"'\"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}\"'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
             "ALTER COLUMN prompt_report_slug SET NOT NULL"
         )
         connection.exec_driver_sql(
@@ -271,6 +364,9 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
             "ALTER COLUMN pattern_policy_version SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN execution_mode SET NOT NULL"
         )
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
@@ -299,6 +395,24 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE backtest_orchestration_snapshots "
             "ALTER COLUMN resolved_character_versions SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_bundle_versions SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_tool_versions SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots "
+            "ALTER COLUMN resolved_connector_versions SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN tool_call_trace SET NOT NULL"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN approval_trace SET NOT NULL"
         )
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_backtest_orchestration_snapshots_backtest_id "
@@ -455,6 +569,20 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE orchestration_roles ALTER COLUMN version SET NOT NULL"
                 )
+        if "capability_bundle_keys" not in role_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE orchestration_roles ADD COLUMN capability_bundle_keys "
+                    "JSONB DEFAULT '[]'::jsonb"
+                )
+                connection.exec_driver_sql(
+                    "UPDATE orchestration_roles SET capability_bundle_keys = '[]'::jsonb "
+                    "WHERE capability_bundle_keys IS NULL"
+                )
+                connection.exec_driver_sql(
+                    "ALTER TABLE orchestration_roles ALTER COLUMN capability_bundle_keys "
+                    "SET NOT NULL"
+                )
         if "uq_orchestration_roles_name" not in role_unique_constraints:
             with engine.begin() as connection:
                 connection.exec_driver_sql(
@@ -486,6 +614,20 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 )
                 connection.exec_driver_sql(
                     "ALTER TABLE orchestration_characters ALTER COLUMN version SET NOT NULL"
+                )
+        if "capability_bundle_keys" not in character_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE orchestration_characters ADD COLUMN capability_bundle_keys "
+                    "JSONB DEFAULT '[]'::jsonb"
+                )
+                connection.exec_driver_sql(
+                    "UPDATE orchestration_characters SET capability_bundle_keys = '[]'::jsonb "
+                    "WHERE capability_bundle_keys IS NULL"
+                )
+                connection.exec_driver_sql(
+                    "ALTER TABLE orchestration_characters ALTER COLUMN capability_bundle_keys "
+                    "SET NOT NULL"
                 )
 
     obsolete_tables = [table_name for table_name in _OBSOLETE_TABLES if table_name in table_names]
