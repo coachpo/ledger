@@ -22,6 +22,15 @@ const orchestrationHandleText = requiredText("Handle").regex(
   /^[a-z][a-z0-9_]*$/,
   "Handle must start with a letter and use only lowercase letters, numbers, and underscores",
 );
+const capabilityBundleKeyText = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(
+    /^[a-z][a-z0-9_]{0,99}(?:\.[a-z][a-z0-9_]{0,99})+$/,
+    "Capability bundle keys must use dot-separated lowercase identifiers",
+  );
+const capabilityBundleKeysField = z.array(capabilityBundleKeyText).default([]);
 const symbolText = requiredText("Symbol").transform((value) => value.toUpperCase());
 const validDateTimeText = requiredText("Executed at").refine(
   (value) => !Number.isNaN(new Date(value).getTime()),
@@ -33,6 +42,7 @@ export const orchestrationRoleCreateFormSchema = z.object({
   name: requiredText("Role name"),
   description: optionalText,
   systemPrompt: requiredText("System prompt"),
+  capabilityBundleKeys: capabilityBundleKeysField,
   enabled: z.boolean(),
 });
 
@@ -46,6 +56,7 @@ export const orchestrationCharacterCreateFormSchema = z.object({
   description: optionalText,
   role: requiredText("Role"),
   promptAppend: optionalText,
+  capabilityBundleKeys: capabilityBundleKeysField,
   enabled: z.boolean(),
 });
 

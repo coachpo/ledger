@@ -25,12 +25,12 @@ type IdParam = number | string;
 
 type UpdateOrchestrationRoleVariables = {
   roleId: IdParam;
-  data: OrchestrationRoleUpdateInput;
+  payload: OrchestrationRoleUpdateInput;
 };
 
 type UpdateOrchestrationCharacterVariables = {
   characterId: IdParam;
-  data: OrchestrationCharacterUpdateInput;
+  payload: OrchestrationCharacterUpdateInput;
 };
 
 function triggerMockMutationSuccessForHookTests<TResult, TVariables>(mutation: unknown) {
@@ -85,7 +85,7 @@ export function useCreateOrchestrationRole() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (data: OrchestrationRoleCreateInput) => createOrchestrationRole(data),
+    mutationFn: (payload: OrchestrationRoleCreateInput) => createOrchestrationRole(payload),
     onSuccess: async (role) => {
       await invalidateOrchestrationCollections(queryClient);
       if (role) {
@@ -105,8 +105,8 @@ export function useUpdateOrchestrationRole() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ roleId, data }: UpdateOrchestrationRoleVariables) =>
-      updateOrchestrationRole(roleId, data),
+    mutationFn: ({ roleId, payload }: UpdateOrchestrationRoleVariables) =>
+      updateOrchestrationRole(roleId, payload),
     onSuccess: async (role) => {
       await invalidateOrchestrationCollections(queryClient);
       await queryClient.invalidateQueries({
@@ -149,7 +149,8 @@ export function useCreateOrchestrationCharacter() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (data: OrchestrationCharacterCreateInput) => createOrchestrationCharacter(data),
+    mutationFn: (payload: OrchestrationCharacterCreateInput) =>
+      createOrchestrationCharacter(payload),
     onSuccess: async (character) => {
       await invalidateOrchestrationCollections(queryClient);
       if (character) {
@@ -169,8 +170,8 @@ export function useUpdateOrchestrationCharacter() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ characterId, data }: UpdateOrchestrationCharacterVariables) =>
-      updateOrchestrationCharacter(characterId, data),
+    mutationFn: ({ characterId, payload }: UpdateOrchestrationCharacterVariables) =>
+      updateOrchestrationCharacter(characterId, payload),
     onSuccess: async (character) => {
       await invalidateOrchestrationCollections(queryClient);
       await queryClient.invalidateQueries({

@@ -33,11 +33,11 @@ export function getOrchestrationRole(
 }
 
 export function createOrchestrationRole(
-  input: OrchestrationRoleCreateInput,
+  payload: OrchestrationRoleCreateInput,
   signal?: AbortSignal,
 ): Promise<OrchestrationRoleRead> {
   return request<OrchestrationRoleRead>("/orchestration/roles", {
-    body: input,
+    body: payload,
     method: "POST",
     signal,
   });
@@ -45,11 +45,11 @@ export function createOrchestrationRole(
 
 export function updateOrchestrationRole(
   roleId: IdParam,
-  input: OrchestrationRoleUpdateInput,
+  payload: OrchestrationRoleUpdateInput,
   signal?: AbortSignal,
 ): Promise<OrchestrationRoleRead> {
   return request<OrchestrationRoleRead>(orchestrationRolePath(roleId), {
-    body: input,
+    body: payload,
     method: "PATCH",
     signal,
   });
@@ -81,11 +81,11 @@ export function getOrchestrationCharacter(
 }
 
 export function createOrchestrationCharacter(
-  input: OrchestrationCharacterCreateInput,
+  payload: OrchestrationCharacterCreateInput,
   signal?: AbortSignal,
 ): Promise<OrchestrationCharacterRead> {
   return request<OrchestrationCharacterRead>("/orchestration/characters", {
-    body: input,
+    body: payload,
     method: "POST",
     signal,
   });
@@ -93,11 +93,11 @@ export function createOrchestrationCharacter(
 
 export function updateOrchestrationCharacter(
   characterId: IdParam,
-  input: OrchestrationCharacterUpdateInput,
+  payload: OrchestrationCharacterUpdateInput,
   signal?: AbortSignal,
 ): Promise<OrchestrationCharacterRead> {
   return request<OrchestrationCharacterRead>(orchestrationCharacterPath(characterId), {
-    body: input,
+    body: payload,
     method: "PATCH",
     signal,
   });

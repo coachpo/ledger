@@ -6,6 +6,7 @@ export interface OrchestrationRoleRead {
   name: string;
   description: string | null;
   systemPrompt: string;
+  capabilityBundleKeys: string[];
   enabled: boolean;
   version: number;
   createdAt: string;
@@ -17,6 +18,7 @@ export interface OrchestrationRoleCreateInput {
   name: string;
   description?: string | null;
   systemPrompt: string;
+  capabilityBundleKeys?: string[];
   enabled?: boolean;
 }
 
@@ -24,6 +26,7 @@ export interface OrchestrationRoleUpdateInput {
   name?: string;
   description?: string | null;
   systemPrompt?: string;
+  capabilityBundleKeys?: string[];
   enabled?: boolean;
 }
 
@@ -35,6 +38,7 @@ export interface OrchestrationCharacterRead {
   roleId: number;
   roleKey: string;
   promptAppend: string | null;
+  capabilityBundleKeys: string[];
   enabled: boolean;
   version: number;
   createdAt: string;
@@ -47,6 +51,7 @@ export interface OrchestrationCharacterCreateInput {
   description?: string | null;
   roleId: number;
   promptAppend?: string | null;
+  capabilityBundleKeys?: string[];
   enabled?: boolean;
 }
 
@@ -55,6 +60,7 @@ export interface OrchestrationCharacterUpdateInput {
   description?: string | null;
   roleId?: number;
   promptAppend?: string | null;
+  capabilityBundleKeys?: string[];
   enabled?: boolean;
 }
 
