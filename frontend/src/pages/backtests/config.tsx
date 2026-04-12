@@ -19,6 +19,7 @@ import { useTemplates } from "@/hooks/use-templates";
 import type { PortfolioRead } from "@/lib/types/portfolio";
 
 type BenchmarkOption = { label: string; symbol: string };
+type OrchestrationPatternOption = { label: string; value: string };
 
 const benchmarkOptions: BenchmarkOption[] = [
   { label: "S&P 500", symbol: "^GSPC" },
@@ -27,6 +28,19 @@ const benchmarkOptions: BenchmarkOption[] = [
 ];
 
 const defaultOrchestrationPatternKey = "seeded_internal_backtest_v1";
+
+const orchestrationPatternOptions: OrchestrationPatternOption[] = [
+  { label: "Seeded Internal v1", value: defaultOrchestrationPatternKey },
+  { label: "Analyst Reviewer v1", value: "analyst_reviewer_v1" },
+  {
+    label: "Seeded Internal Tool-Enabled v1",
+    value: "seeded_internal_backtest_tool_enabled_v1",
+  },
+  {
+    label: "Analyst Reviewer Tool-Enabled v1",
+    value: "analyst_reviewer_tool_enabled_v1",
+  },
+];
 
 const initialValues: BacktestCreateFormValues = {
   name: "",
@@ -208,8 +222,11 @@ export function BacktestConfigPage() {
                 value={values.orchestrationPatternKey}
                 onChange={(event) => updateValue("orchestrationPatternKey", event.target.value)}
               >
-                <option value={defaultOrchestrationPatternKey}>Seeded Internal v1</option>
-                <option value="analyst_reviewer_v1">Analyst Reviewer v1</option>
+                {orchestrationPatternOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <p className="text-xs text-muted-foreground">
                 Choose among the available orchestration patterns for this backtest while keeping

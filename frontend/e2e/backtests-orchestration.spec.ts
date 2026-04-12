@@ -18,7 +18,11 @@ async function setDateValue(page: Page, selector: string, value: string) {
 
 type LaunchBacktestOptions = {
   backtestName: string;
-  orchestrationPatternKey: "seeded_internal_backtest_v1" | "analyst_reviewer_v1";
+  orchestrationPatternKey:
+    | "seeded_internal_backtest_v1"
+    | "analyst_reviewer_v1"
+    | "seeded_internal_backtest_tool_enabled_v1"
+    | "analyst_reviewer_tool_enabled_v1";
   portfolioId: number;
   portfolioName: string;
   templateId: number;
@@ -152,25 +156,35 @@ async function launchBacktestFromConfig(
 ): Promise<string> {
   await page.goto("/backtests/new");
   await page.waitForLoadState("networkidle");
+  await expect(page.locator("#backtest-name")).toBeVisible();
 
-    await configureBacktestForm(page, options);
-    const launchButton = page.getByRole("button", { name: /launch backtest/i });
-    await expect(launchButton).toBeEnabled();
+  await expect(page.getByLabel(/^internal$/i)).toBeChecked();
+  await expect(page.getByLabel(/^legacy callback$/i)).not.toBeChecked();
+  await expect(page.getByLabel(/client endpoint url/i)).toHaveCount(0);
 
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url() === `${API_BASE}/backtests` && response.request().method() === "POST",
-    );
+  await configureBacktestForm(page, options);
+  await expect(page.locator("#orchestration-pattern")).toHaveValue(options.orchestrationPatternKey);
+  await expect(page.getByLabel(/^internal$/i)).toBeChecked();
+  await expect(page.getByLabel(/^legacy callback$/i)).not.toBeChecked();
+  await expect(page.getByLabel(/client endpoint url/i)).toHaveCount(0);
 
-    await launchButton.evaluate((element) => (element as HTMLButtonElement).click());
+  const launchButton = page.getByRole("button", { name: /launch backtest/i });
+  await expect(launchButton).toBeEnabled();
 
-    const createResponse = await createResponsePromise;
-    expect(createResponse.status()).toBe(201);
-    const created = (await createResponse.json()) as { id: number };
-    const backtestId = String(created.id);
-    expect(backtestId).toMatch(/^\d+$/);
-    await page.goto(`/backtests/${backtestId}`);
-    return backtestId;
+  const createResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url() === `${API_BASE}/backtests` && response.request().method() === "POST",
+  );
+
+  await launchButton.evaluate((element) => (element as HTMLButtonElement).click());
+
+  const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBe(201);
+  const created = (await createResponse.json()) as { id: number };
+  const backtestId = String(created.id);
+  expect(backtestId).toMatch(/^\d+$/);
+  await page.goto(`/backtests/${backtestId}`);
+  return backtestId;
 }
 
 async function waitForBacktestStatus(
@@ -263,7 +277,7 @@ test.describe("Backtests orchestration", () => {
 
       const backtestId = await launchBacktestFromConfig(page, {
         backtestName: `Orchestration Success ${timestamp}`,
-        orchestrationPatternKey: "analyst_reviewer_v1",
+        orchestrationPatternKey: "analyst_reviewer_tool_enabled_v1",
         portfolioId: portfolio.id,
         portfolioName: portfolio.name,
         templateId: template.id,

@@ -91,6 +91,12 @@ describe("BacktestConfigPage", () => {
     );
     expect(screen.getByRole("option", { name: /seeded internal v1/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /analyst reviewer v1/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /seeded internal tool-enabled v1/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /analyst reviewer tool-enabled v1/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/^legacy callback$/i));
@@ -151,7 +157,7 @@ describe("BacktestConfigPage", () => {
       target: { value: "2024-12-31" },
     });
     fireEvent.change(screen.getByLabelText(/orchestration pattern/i), {
-      target: { value: "analyst_reviewer_v1" },
+      target: { value: "analyst_reviewer_tool_enabled_v1" },
     });
     fireEvent.click(screen.getByLabelText(/s&p 500/i));
     fireEvent.click(screen.getByLabelText(/create default template/i));
@@ -166,11 +172,69 @@ describe("BacktestConfigPage", () => {
     expect(createBacktestMock).toHaveBeenCalledWith(
       expect.objectContaining({
         portfolioId: 12,
-        orchestrationPatternKey: "analyst_reviewer_v1",
+        orchestrationPatternKey: "analyst_reviewer_tool_enabled_v1",
         launchMode: "internal",
       }),
     );
     expect(createBacktestMock.mock.calls[0][0]).not.toHaveProperty("webhookUrl");
+  });
+
+  it("keeps orchestration pattern selection independent from launch mode and drops callback fields when switched back to internal", async () => {
+    createBacktestMock.mockResolvedValue({ id: 88, name: "Mode Independence" });
+
+    render(<BacktestConfigPage />);
+
+    fireEvent.change(screen.getByLabelText(/backtest name/i), {
+      target: { value: "Mode Independence" },
+    });
+    fireEvent.change(screen.getByLabelText(/portfolio/i), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText(/^template$/i), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText(/start date/i), {
+      target: { value: "2024-01-02" },
+    });
+    fireEvent.change(screen.getByLabelText(/end date/i), {
+      target: { value: "2024-03-29" },
+    });
+    fireEvent.click(screen.getByLabelText(/s&p 500/i));
+    fireEvent.change(screen.getByLabelText(/orchestration pattern/i), {
+      target: { value: "analyst_reviewer_tool_enabled_v1" },
+    });
+
+    expect(screen.getByLabelText(/^internal$/i)).toBeChecked();
+    expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/^legacy callback$/i));
+    fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
+      target: { value: "http://localhost:8765/webhook/legacy" },
+    });
+    fireEvent.change(screen.getByLabelText(/client callback timeout/i), {
+      target: { value: "900" },
+    });
+
+    expect(screen.getByLabelText(/^legacy callback$/i)).toBeChecked();
+    expect(screen.getByLabelText(/orchestration pattern/i)).toHaveValue(
+      "analyst_reviewer_tool_enabled_v1",
+    );
+
+    fireEvent.click(screen.getByLabelText(/^internal$/i));
+
+    expect(screen.getByLabelText(/^internal$/i)).toBeChecked();
+    expect(screen.getByLabelText(/orchestration pattern/i)).toHaveValue(
+      "analyst_reviewer_tool_enabled_v1",
+    );
+    expect(screen.queryByLabelText(/client endpoint url/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /launch backtest/i }));
+
+    await waitFor(() => expect(createBacktestMock).toHaveBeenCalled());
+    expect(createBacktestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orchestrationPatternKey: "analyst_reviewer_tool_enabled_v1",
+        launchMode: "internal",
+      }),
+    );
+    expect(createBacktestMock.mock.calls[0][0]).not.toHaveProperty("webhookUrl");
+    expect(createBacktestMock.mock.calls[0][0]).not.toHaveProperty("webhookTimeout");
   });
 
   it("blocks existing portfolios that have no balances and no positions", async () => {
@@ -236,5 +300,45 @@ describe("BacktestConfigPage", () => {
 
     expect(await screen.findByText(/enter a legacy client endpoint url/i)).toBeInTheDocument();
     expect(createBacktestMock).not.toHaveBeenCalled();
+  });
+
+  it("submits legacy callback settings without rewriting a selected tool-enabled orchestration pattern", async () => {
+    createBacktestMock.mockResolvedValue({ id: 101, name: "Legacy Compatibility" });
+
+    render(<BacktestConfigPage />);
+
+    fireEvent.change(screen.getByLabelText(/backtest name/i), {
+      target: { value: "Legacy Compatibility" },
+    });
+    fireEvent.change(screen.getByLabelText(/portfolio/i), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText(/^template$/i), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText(/start date/i), {
+      target: { value: "2024-01-02" },
+    });
+    fireEvent.change(screen.getByLabelText(/end date/i), {
+      target: { value: "2024-03-29" },
+    });
+    fireEvent.click(screen.getByLabelText(/s&p 500/i));
+    fireEvent.change(screen.getByLabelText(/orchestration pattern/i), {
+      target: { value: "seeded_internal_backtest_tool_enabled_v1" },
+    });
+    fireEvent.click(screen.getByLabelText(/^legacy callback$/i));
+    fireEvent.change(screen.getByLabelText(/client endpoint url/i), {
+      target: { value: "http://localhost:8765/webhook/legacy" },
+    });
+    fireEvent.change(screen.getByLabelText(/client callback timeout/i), {
+      target: { value: "900" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /launch backtest/i }));
+
+    await waitFor(() => expect(createBacktestMock).toHaveBeenCalled());
+    expect(createBacktestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orchestrationPatternKey: "seeded_internal_backtest_tool_enabled_v1",
+        launchMode: "legacy_callback",
+        webhookUrl: "http://localhost:8765/webhook/legacy",
+        webhookTimeout: 900,
+      }),
+    );
   });
 });
