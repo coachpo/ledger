@@ -23,12 +23,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
+type RoleEditorValues = Omit<OrchestrationRoleCreateFormValues, "capabilityBundleKeys"> & {
+  capabilityBundleKeys: string;
+};
+
 type LooseRole = {
   id: number;
   key?: string;
   name?: string;
   description?: string | null;
   systemPrompt?: string;
+  capabilityBundleKeys?: string[] | null;
   enabled?: boolean;
 };
 
@@ -40,13 +45,21 @@ function getAvailableHook<K extends keyof typeof orchestrationHooks>(name: K) {
   return orchestrationHooks[name];
 }
 
-const initialValues: OrchestrationRoleCreateFormValues = {
+const initialValues: RoleEditorValues = {
   key: "",
   name: "",
   description: "",
   systemPrompt: "",
+  capabilityBundleKeys: "",
   enabled: true,
 };
+
+function parseCapabilityBundleKeys(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 function getRoleKey(role: LooseRole | undefined) {
   if (!role) {
@@ -66,6 +79,14 @@ function getRoleDescription(role: LooseRole | undefined) {
 
 function getRoleSystemPrompt(role: LooseRole | undefined) {
   return role?.systemPrompt ?? "";
+}
+
+function getRoleCapabilityBundleKeys(role: LooseRole | undefined) {
+  if (!Array.isArray(role?.capabilityBundleKeys)) {
+    return [];
+  }
+
+  return role.capabilityBundleKeys;
 }
 
 function getRoleEnabled(role: LooseRole | undefined) {
@@ -89,7 +110,7 @@ export function OrchestrationRoleEditorPage() {
   };
   const createMutation = useCreateRoleHook?.();
   const updateMutation = useUpdateRoleHook?.();
-  const [values, setValues] = useState<OrchestrationRoleCreateFormValues>(initialValues);
+  const [values, setValues] = useState<RoleEditorValues>(initialValues);
 
   useEffect(() => {
     const role = roleQuery.data as LooseRole | undefined;
@@ -103,6 +124,7 @@ export function OrchestrationRoleEditorPage() {
       name: getRoleName(role),
       description: getRoleDescription(role),
       systemPrompt: getRoleSystemPrompt(role),
+      capabilityBundleKeys: getRoleCapabilityBundleKeys(role).join("\n"),
       enabled: getRoleEnabled(role),
     };
 
@@ -112,6 +134,7 @@ export function OrchestrationRoleEditorPage() {
         current.name === nextValues.name &&
         current.description === nextValues.description &&
         current.systemPrompt === nextValues.systemPrompt &&
+        current.capabilityBundleKeys === nextValues.capabilityBundleKeys &&
         current.enabled === nextValues.enabled
       ) {
         return current;
@@ -123,36 +146,36 @@ export function OrchestrationRoleEditorPage() {
 
   const isSaving = Boolean(createMutation?.isPending || updateMutation?.isPending);
 
-  const updateValue = <Key extends keyof OrchestrationRoleCreateFormValues>(
+  const updateValue = <Key extends keyof RoleEditorValues>(
     key: Key,
-    value: OrchestrationRoleCreateFormValues[Key],
+    value: RoleEditorValues[Key],
   ) => {
     setValues((current) => ({ ...current, [key]: value }));
   };
 
   const handleSave = async () => {
-    const parsed = isEditing
-        ? orchestrationRoleUpdateFormSchema.safeParse({
+    try {
+      if (isEditing && roleId && updateMutation?.mutateAsync) {
+        const parsed = orchestrationRoleUpdateFormSchema.safeParse({
           description: values.description,
           enabled: values.enabled,
           name: values.name,
           systemPrompt: values.systemPrompt,
-        })
-      : orchestrationRoleCreateFormSchema.safeParse(values);
+          capabilityBundleKeys: parseCapabilityBundleKeys(values.capabilityBundleKeys),
+        });
 
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Role details are incomplete.");
-      return;
-    }
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Role details are incomplete.");
+          return;
+        }
 
-    try {
-      if (isEditing && roleId && updateMutation?.mutateAsync) {
         await updateMutation.mutateAsync({
           roleId,
-          data: {
+          payload: {
             description: parsed.data.description.trim() || null,
             name: parsed.data.name.trim(),
             systemPrompt: parsed.data.systemPrompt.trim(),
+            capabilityBundleKeys: parsed.data.capabilityBundleKeys,
             enabled: parsed.data.enabled,
           },
         });
@@ -161,12 +184,23 @@ export function OrchestrationRoleEditorPage() {
       }
 
       if (createMutation?.mutateAsync) {
+        const parsed = orchestrationRoleCreateFormSchema.safeParse({
+          ...values,
+          capabilityBundleKeys: parseCapabilityBundleKeys(values.capabilityBundleKeys),
+        });
+
+        if (!parsed.success) {
+          toast.error(parsed.error.issues[0]?.message ?? "Role details are incomplete.");
+          return;
+        }
+
         const created = await createMutation.mutateAsync({
-          key: values.key.trim(),
-          name: values.name.trim(),
-          description: values.description.trim() || null,
-          systemPrompt: values.systemPrompt.trim(),
-          enabled: values.enabled,
+          key: parsed.data.key,
+          name: parsed.data.name,
+          description: parsed.data.description.trim() || null,
+          systemPrompt: parsed.data.systemPrompt,
+          capabilityBundleKeys: parsed.data.capabilityBundleKeys,
+          enabled: parsed.data.enabled,
         });
         toast.success("Role created");
         navigate(`/orchestration/roles/${created.id}/edit`);
@@ -271,6 +305,22 @@ export function OrchestrationRoleEditorPage() {
                   rows={12}
                   value={values.systemPrompt}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="role-capability-bundle-keys">Capability Bundle Refs</Label>
+                <Textarea
+                  id="role-capability-bundle-keys"
+                  aria-label="Capability Bundle Refs"
+                  disabled={isSaving}
+                  onChange={(event) => updateValue("capabilityBundleKeys", event.target.value)}
+                  placeholder={"research.context_bundle\nreports.latest_bundle"}
+                  rows={4}
+                  value={values.capabilityBundleKeys}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Add one declarative bundle ref per line.
+                </p>
               </div>
 
               <div className="flex items-center justify-between rounded-md border p-4">

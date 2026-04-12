@@ -13,6 +13,7 @@ const existingRole = {
   name: "Librarian",
   description: "Investigates macro drivers.",
   systemPrompt: "Research and summarize.",
+   capabilityBundleKeys: ["research.context_bundle", "reports.latest_bundle"],
   enabled: false,
   version: 3,
   createdAt: "2026-04-01T10:00:00Z",
@@ -82,6 +83,9 @@ describe("OrchestrationRoleEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/system prompt/i), {
       target: { value: "Research and summarize." },
     });
+    fireEvent.change(screen.getByLabelText(/capability bundle refs/i), {
+      target: { value: "research.context_bundle\nreports.latest_bundle" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save role/i }));
 
     await waitFor(() => expect(createRoleMock).toHaveBeenCalledTimes(1));
@@ -90,6 +94,7 @@ describe("OrchestrationRoleEditorPage", () => {
       name: "Macro Research",
       description: null,
       systemPrompt: "Research and summarize.",
+      capabilityBundleKeys: ["research.context_bundle", "reports.latest_bundle"],
       enabled: false,
     });
   });
@@ -102,6 +107,9 @@ describe("OrchestrationRoleEditorPage", () => {
 
     const enabledSwitch = screen.getByRole("switch", { name: /enabled/i });
     expect(screen.getByLabelText(/key/i)).toBeDisabled();
+    expect(screen.getByLabelText(/capability bundle refs/i)).toHaveValue(
+      "research.context_bundle\nreports.latest_bundle",
+    );
     expect(enabledSwitch).not.toBeChecked();
 
     fireEvent.click(enabledSwitch);
@@ -110,10 +118,11 @@ describe("OrchestrationRoleEditorPage", () => {
     await waitFor(() => expect(updateRoleMock).toHaveBeenCalledTimes(1));
     expect(updateRoleMock).toHaveBeenCalledWith({
       roleId: "1",
-      data: {
+      payload: {
         name: "Librarian",
         description: "Investigates macro drivers.",
         systemPrompt: "Research and summarize.",
+        capabilityBundleKeys: ["research.context_bundle", "reports.latest_bundle"],
         enabled: true,
       },
     });
