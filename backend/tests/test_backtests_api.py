@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+import datetime as dt
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -18,6 +19,15 @@ from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
 from app.schemas.backtest import BacktestRead
+
+SUPPORTED_BACKTEST_PATTERN_KEYS = (
+    "seeded_internal_backtest_v1",
+    "analyst_reviewer_v1",
+    "seeded_internal_backtest_tool_enabled_v1",
+    "analyst_reviewer_tool_enabled_v1",
+)
+
+SUPPORTED_NON_DEFAULT_BACKTEST_PATTERN_KEYS = SUPPORTED_BACKTEST_PATTERN_KEYS[1:]
 
 
 def create_portfolio(
@@ -455,7 +465,7 @@ def test_create_backtest_rejects_unknown_orchestration_pattern_key(
         json=build_backtest_payload(
             portfolio["id"],
             template_id=template["id"],
-            overrides={"orchestrationPatternKey": "unknown_pattern"},
+            overrides={"orchestrationPatternKey": "seeded_internal_backtest_tool_enabled_v999"},
         ),
     )
 
@@ -464,25 +474,87 @@ def test_create_backtest_rejects_unknown_orchestration_pattern_key(
     assert submitted_backtests == []
 
 
-def test_create_backtest_accepts_second_orchestration_pattern_key(
-    client: TestClient, submitted_backtests: list[int]
+@pytest.mark.parametrize("pattern_key", SUPPORTED_NON_DEFAULT_BACKTEST_PATTERN_KEYS)
+def test_create_backtest_accepts_supported_non_default_orchestration_pattern_keys(
+    client: TestClient,
+    submitted_backtests: list[int],
+    pattern_key: str,
 ) -> None:
-    portfolio = create_portfolio(client, name="Reviewer Pattern", slug="reviewer_pattern")
+    portfolio = create_portfolio(
+        client,
+        name=f"Pattern {pattern_key}",
+        slug=f"pattern_{pattern_key}",
+    )
     create_balance(client, str(portfolio["id"]), amount="10000.00")
-    template = create_template(client, name="Reviewer Pattern Template", content="# Template")
+    template = create_template(client, name=f"Template {pattern_key}", content="# Template")
 
     response = client.post(
         "/api/v1/backtests",
         json=build_backtest_payload(
             portfolio["id"],
             template_id=template["id"],
-            overrides={"orchestrationPatternKey": "analyst_reviewer_v1"},
+            overrides={"orchestrationPatternKey": pattern_key},
         ),
     )
 
     assert response.status_code == 201, response.json()
-    assert response.json()["orchestrationPatternKey"] == "analyst_reviewer_v1"
+    assert response.json()["orchestrationPatternKey"] == pattern_key
     assert submitted_backtests == [response.json()["id"]]
+
+
+@pytest.mark.parametrize(
+    "pattern_key",
+    SUPPORTED_BACKTEST_PATTERN_KEYS,
+)
+def test_create_backtest_accepts_known_orchestration_pattern_keys_in_legacy_callback_mode(
+    client: TestClient,
+    submitted_backtests: list[int],
+    pattern_key: str,
+) -> None:
+    portfolio = create_portfolio(
+        client,
+        name=f"Legacy {pattern_key}",
+        slug=f"legacy_{pattern_key}",
+    )
+    create_balance(client, str(portfolio["id"]), amount="10000.00")
+    template = create_template(client, name=f"Legacy {pattern_key} Template", content="# Template")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={
+                "launchMode": "legacy_callback",
+                "webhookUrl": "http://localhost:8765/webhook/legacy",
+                "webhookTimeout": 90,
+                "orchestrationPatternKey": pattern_key,
+            },
+        ),
+    )
+
+    assert response.status_code == 201, response.json()
+    created = response.json()
+    expected_read_fields = {
+        "id": created["id"],
+        "status": "PENDING",
+        "orchestrationPatternKey": pattern_key,
+        "webhookUrl": "http://localhost:8765/webhook/legacy",
+        "webhookTimeout": 90,
+        "results": None,
+    }
+    assert {key: created[key] for key in expected_read_fields} == expected_read_fields
+    assert submitted_backtests == [created["id"]]
+
+    list_response = client.get("/api/v1/backtests")
+    assert list_response.status_code == 200
+    assert {
+        key: list_response.json()[0][key] for key in expected_read_fields
+    } == expected_read_fields
+
+    get_response = client.get(f"/api/v1/backtests/{created['id']}")
+    assert get_response.status_code == 200
+    assert {key: get_response.json()[key] for key in expected_read_fields} == expected_read_fields
 
 
 def test_create_backtest_uses_largest_deposit_balance(
@@ -654,6 +726,65 @@ def test_backtest_get_returns_webhook_fields(
     assert get_response.json()["webhookTimeout"] == 600
 
 
+def test_backtest_routes_hide_internal_run_state_results_for_tool_enabled_reads(
+    client: TestClient,
+    submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
+) -> None:
+    portfolio = create_portfolio(client, name="Run State Hidden", slug="run_state_hidden")
+    create_balance(client, str(portfolio["id"]), amount="5000.00")
+    template = create_template(client, name="Run State Hidden Template", content="# Hidden")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(
+            portfolio["id"],
+            template_id=template["id"],
+            overrides={"orchestrationPatternKey": "analyst_reviewer_tool_enabled_v1"},
+        ),
+    )
+    assert response.status_code == 201, response.json()
+    created = response.json()
+    assert submitted_backtests == [created["id"]]
+
+    with session_factory() as session:
+        from app.models.backtest import Backtest
+
+        backtest = session.get(Backtest, created["id"])
+        assert backtest is not None
+        backtest.status = "RUNNING"
+        backtest.current_cycle_status = "AWAITING_CALLBACK"
+        backtest.results = {
+            "_run_state": {
+                "schedule": ["2024-01-02", "2024-01-03"],
+                "benchmark_history": {"^GSPC": []},
+                "trade_log": [],
+                "equity_points": [],
+            }
+        }
+        session.commit()
+
+    expected_read_fields = {
+        "id": created["id"],
+        "status": "RUNNING",
+        "currentCycleStatus": "AWAITING_CALLBACK",
+        "orchestrationPatternKey": "analyst_reviewer_tool_enabled_v1",
+        "webhookUrl": "http://localhost:5678/webhook/test",
+        "webhookTimeout": 600,
+        "results": None,
+    }
+
+    list_response = client.get("/api/v1/backtests")
+    assert list_response.status_code == 200
+    assert {
+        key: list_response.json()[0][key] for key in expected_read_fields
+    } == expected_read_fields
+
+    get_response = client.get(f"/api/v1/backtests/{created['id']}")
+    assert get_response.status_code == 200
+    assert {key: get_response.json()[key] for key in expected_read_fields} == expected_read_fields
+
+
 def test_cancel_backtest_marks_running_job_cancelled(
     client: TestClient, submitted_backtests: list[int]
 ) -> None:
@@ -712,7 +843,7 @@ def test_delete_backtest_requires_terminal_state_and_cleans_reports_and_trades(
                 price=Decimal("184.40"),
                 commission=Decimal("0"),
                 currency="USD",
-                executed_at=datetime(2024, 1, 15, 20, 30, tzinfo=UTC),
+                executed_at=datetime(2024, 1, 15, 20, 30, tzinfo=dt.timezone.utc),  # noqa: UP017
             )
         )
         session.add(
@@ -956,8 +1087,8 @@ def test_backtest_read_accepts_failure_reason_in_recent_activity() -> None:
             ],
             "results": None,
             "error_message": "No market data for symbol",
-            "created_at": datetime(2024, 1, 2, 12, 0, tzinfo=UTC),
-            "updated_at": datetime(2024, 1, 2, 12, 5, tzinfo=UTC),
+            "created_at": datetime(2024, 1, 2, 12, 0, tzinfo=dt.timezone.utc),  # noqa: UP017
+            "updated_at": datetime(2024, 1, 2, 12, 5, tzinfo=dt.timezone.utc),  # noqa: UP017
         }
     )
 
@@ -973,6 +1104,7 @@ def test_backtest_read_ignores_internal_run_state_results_payload() -> None:
             "template_id": 2,
             "deposit_balance_id": 3,
             "name": "In Flight Backtest",
+            "orchestration_pattern_key": "analyst_reviewer_v1",
             "status": "AWAITING_CALLBACK",
             "frequency": "DAILY",
             "start_date": date(2024, 1, 2),
@@ -997,9 +1129,123 @@ def test_backtest_read_ignores_internal_run_state_results_payload() -> None:
                 }
             },
             "error_message": None,
-            "created_at": datetime(2024, 1, 2, 12, 0, tzinfo=UTC),
-            "updated_at": datetime(2024, 1, 2, 12, 5, tzinfo=UTC),
+            "created_at": datetime(2024, 1, 2, 12, 0, tzinfo=dt.timezone.utc),  # noqa: UP017
+            "updated_at": datetime(2024, 1, 2, 12, 5, tzinfo=dt.timezone.utc),  # noqa: UP017
         }
     )
 
+    assert read_model.orchestration_pattern_key == "analyst_reviewer_v1"
     assert read_model.results is None
+    assert read_model.model_dump(by_alias=True)["results"] is None
+
+
+def test_backtest_read_preserves_public_results_payload_for_tool_enabled_patterns() -> None:
+    results_payload = {
+        "portfolio": {
+            "starting_value": Decimal("1000.00"),
+            "ending_value": Decimal("1125.00"),
+            "total_return": Decimal("0.125"),
+            "annualized_return": Decimal("0.125"),
+            "max_drawdown": Decimal("-0.05"),
+            "sharpe_ratio": Decimal("1.25"),
+            "total_trades": 1,
+            "win_rate": Decimal("1"),
+            "total_commission": Decimal("0"),
+        },
+        "benchmarks": {
+            "^GSPC": {
+                "starting_price": Decimal("5000.00"),
+                "ending_price": Decimal("5100.00"),
+                "total_return": Decimal("0.02"),
+            }
+        },
+        "equity_curve": [{"date": date(2024, 1, 2), "value": Decimal("1000.00")}],
+        "benchmark_curves": {"^GSPC": [{"date": date(2024, 1, 2), "value": Decimal("5000.00")}]},
+        "drawdown_curve": [{"date": date(2024, 1, 2), "value": Decimal("0")}],
+        "trades": [
+            {
+                "cycle_date": date(2024, 1, 2),
+                "symbol": "AAPL",
+                "side": "BUY",
+                "quantity": Decimal("1"),
+                "requested_price": Decimal("180.00"),
+                "executed_price": Decimal("181.00"),
+                "executed": True,
+                "report_slug": "report-1",
+                "failure_reason": None,
+                "commission": Decimal("0"),
+                "profit": None,
+            }
+        ],
+    }
+
+    read_model = BacktestRead.model_validate(
+        {
+            "id": 9,
+            "portfolio_id": 1,
+            "template_id": 2,
+            "deposit_balance_id": 3,
+            "name": "Completed Tool-Enabled Backtest",
+            "orchestration_pattern_key": "analyst_reviewer_tool_enabled_v1",
+            "status": "COMPLETED",
+            "frequency": "DAILY",
+            "start_date": date(2024, 1, 2),
+            "end_date": date(2024, 1, 3),
+            "current_cycle_date": None,
+            "total_cycles": 2,
+            "completed_cycles": 2,
+            "webhook_url": "http://localhost:5678/webhook/test",
+            "webhook_timeout": 600,
+            "price_mode": "CLOSING_PRICE",
+            "commission_mode": "ZERO",
+            "commission_value": Decimal("0"),
+            "benchmark_symbols": ["^GSPC"],
+            "current_cycle_status": None,
+            "recent_activity": None,
+            "results": results_payload,
+            "error_message": None,
+            "created_at": datetime(2024, 1, 2, 12, 0, tzinfo=dt.timezone.utc),  # noqa: UP017
+            "updated_at": datetime(2024, 1, 2, 12, 5, tzinfo=dt.timezone.utc),  # noqa: UP017
+        }
+    )
+
+    assert read_model.orchestration_pattern_key == "analyst_reviewer_tool_enabled_v1"
+    assert read_model.results is not None
+    assert read_model.model_dump(mode="json", by_alias=True)["results"] == {
+        "portfolio": {
+            "startingValue": "1000.00",
+            "endingValue": "1125.00",
+            "totalReturn": "0.125",
+            "annualizedReturn": "0.125",
+            "maxDrawdown": "-0.05",
+            "sharpeRatio": "1.25",
+            "totalTrades": 1,
+            "winRate": "1",
+            "totalCommission": "0",
+        },
+        "benchmarks": {
+            "^GSPC": {
+                "startingPrice": "5000.00",
+                "endingPrice": "5100.00",
+                "totalReturn": "0.02",
+            }
+        },
+        "equityCurve": [{"date": "2024-01-02", "value": "1000.00"}],
+        "benchmarkCurves": {"^GSPC": [{"date": "2024-01-02", "value": "5000.00"}]},
+        "drawdownCurve": [{"date": "2024-01-02", "value": "0"}],
+        "trades": [
+            {
+                "cycleDate": "2024-01-02",
+                "symbol": "AAPL",
+                "side": "BUY",
+                "quantity": "1",
+                "requestedPrice": "180.00",
+                "executedPrice": "181.00",
+                "executed": True,
+                "reportSlug": "report-1",
+                "failureReason": None,
+                "commission": "0",
+                "profit": None,
+            }
+        ],
+    }

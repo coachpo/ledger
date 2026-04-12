@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import business_rule_error, not_found_error
 from app.langgraph.seeds import (
     DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY,
-    is_supported_backtest_orchestration_pattern_key,
+    get_backtest_pattern_spec,
 )
 from app.models.backtest import Backtest
 from app.models.balance import Balance
@@ -194,13 +194,14 @@ class BacktestService:
         if not normalized:
             return DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY
 
-        if not is_supported_backtest_orchestration_pattern_key(normalized):
+        pattern_spec = get_backtest_pattern_spec(normalized)
+        if pattern_spec is None:
             raise business_rule_error(
                 "invalid_orchestration_pattern",
                 f"Unknown orchestration pattern: {normalized}",
             )
 
-        return normalized
+        return pattern_spec.key
 
     def _resolve_webhook_settings(self, payload: BacktestCreate) -> tuple[str, int]:
         if payload.webhook_url:
