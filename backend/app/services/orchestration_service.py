@@ -4,7 +4,13 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, business_rule_error, not_found_error
-from app.langgraph.seeds import SEEDED_BUILTIN_RESERVED_TARGETS, SEEDED_BUILTIN_SPECS
+from app.langgraph.seeds import (
+    SEEDED_BUILTIN_RESERVED_TARGETS,
+    SEEDED_BUILTIN_SPECS,
+    get_seeded_capability_bundle_spec,
+    get_seeded_connector_spec,
+    get_seeded_tool_spec,
+)
 from app.models.orchestration_character import OrchestrationCharacter
 from app.models.orchestration_role import OrchestrationRole
 from app.repositories.orchestration_character import OrchestrationCharacterRepository
@@ -46,11 +52,13 @@ class OrchestrationService:
                 code="duplicate_role_name",
                 message="Role name already exists",
             )
+        self._validate_capability_bundle_keys(payload.capability_bundle_keys)
         role = OrchestrationRole(
             key=payload.key,
             name=payload.name,
             description=payload.description,
             system_prompt=payload.system_prompt,
+            capability_bundle_keys=payload.capability_bundle_keys,
             enabled=payload.enabled,
         )
         self.role_repo.add(role)
@@ -76,6 +84,10 @@ class OrchestrationService:
             updated = True
         if payload.system_prompt is not None:
             role.system_prompt = payload.system_prompt
+            updated = True
+        if payload.capability_bundle_keys is not None:
+            self._validate_capability_bundle_keys(payload.capability_bundle_keys)
+            role.capability_bundle_keys = payload.capability_bundle_keys
             updated = True
         if payload.enabled is not None:
             role.enabled = payload.enabled
@@ -116,12 +128,14 @@ class OrchestrationService:
                 code="duplicate_character_handle",
                 message="Character handle already exists",
             )
+        self._validate_capability_bundle_keys(payload.capability_bundle_keys)
         character = OrchestrationCharacter(
             handle=payload.handle,
             display_name=payload.display_name,
             description=payload.description,
             role_id=payload.role_id,
             prompt_append=payload.prompt_append,
+            capability_bundle_keys=payload.capability_bundle_keys,
             enabled=payload.enabled,
         )
         self.character_repo.add(character)
@@ -147,6 +161,10 @@ class OrchestrationService:
             updated = True
         if payload.prompt_append is not None or "prompt_append" in payload.model_fields_set:
             character.prompt_append = payload.prompt_append
+            updated = True
+        if payload.capability_bundle_keys is not None:
+            self._validate_capability_bundle_keys(payload.capability_bundle_keys)
+            character.capability_bundle_keys = payload.capability_bundle_keys
             updated = True
         if payload.enabled is not None:
             character.enabled = payload.enabled
@@ -207,3 +225,20 @@ class OrchestrationService:
     def _validate_character_handle(handle: str) -> None:
         if handle in SEEDED_BUILTIN_RESERVED_TARGETS:
             raise business_rule_error("reserved_character_handle", "Character handle is reserved")
+
+    @staticmethod
+    def _validate_capability_bundle_keys(bundle_keys: list[str]) -> None:
+        for bundle_key in bundle_keys:
+            if (
+                get_seeded_tool_spec(bundle_key) is not None
+                or get_seeded_connector_spec(bundle_key) is not None
+            ):
+                raise business_rule_error(
+                    "reserved_capability_bundle_key",
+                    "Capability bundle keys must reference declarative bundle keys",
+                )
+            if get_seeded_capability_bundle_spec(bundle_key) is None:
+                raise business_rule_error(
+                    "unknown_capability_bundle_key",
+                    "Capability bundle key is not supported",
+                )

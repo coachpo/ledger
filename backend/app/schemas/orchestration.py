@@ -9,6 +9,7 @@ from pydantic import AliasPath, Field, field_validator, model_validator
 from app.schemas.common import CamelModel
 
 _STABLE_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
+_CAPABILITY_BUNDLE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,99}(?:\.[a-z][a-z0-9_]{0,99})+$")
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -20,11 +21,22 @@ def _normalize_optional_text(value: str | None) -> str | None:
     return normalized
 
 
+def _normalize_capability_bundle_keys(values: list[str]) -> list[str]:
+    normalized_values: list[str] = []
+    for value in values:
+        normalized = value.strip().lower()
+        if _CAPABILITY_BUNDLE_KEY_RE.fullmatch(normalized) is None:
+            raise ValueError("Capability bundle keys must use dot-separated lowercase identifiers")
+        normalized_values.append(normalized)
+    return normalized_values
+
+
 class OrchestrationRoleCreate(CamelModel):
     key: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     system_prompt: str = Field(min_length=1)
+    capability_bundle_keys: list[str] = Field(default_factory=list)
     enabled: bool = True
 
     @field_validator("key")
@@ -59,12 +71,25 @@ class OrchestrationRoleCreate(CamelModel):
             raise ValueError("System prompt is required")
         return normalized
 
+    @field_validator("capability_bundle_keys")
+    @classmethod
+    def normalize_capability_bundle_keys(cls, value: list[str]) -> list[str]:
+        return _normalize_capability_bundle_keys(value)
+
 
 class OrchestrationRoleUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     system_prompt: str | None = Field(default=None, min_length=1)
+    capability_bundle_keys: list[str] | None = None
     enabled: bool | None = None
+
+    @field_validator("capability_bundle_keys", mode="before")
+    @classmethod
+    def reject_null_capability_bundle_keys(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("Capability bundle keys must be a list")
+        return value
 
     @field_validator("name")
     @classmethod
@@ -91,6 +116,13 @@ class OrchestrationRoleUpdate(CamelModel):
             raise ValueError("System prompt is required")
         return normalized
 
+    @field_validator("capability_bundle_keys")
+    @classmethod
+    def normalize_capability_bundle_keys(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return _normalize_capability_bundle_keys(value)
+
     @model_validator(mode="after")
     def validate_payload(self) -> OrchestrationRoleUpdate:
         if not self.model_fields_set:
@@ -104,6 +136,7 @@ class OrchestrationRoleRead(CamelModel):
     name: str
     description: str | None
     system_prompt: str
+    capability_bundle_keys: list[str]
     enabled: bool
     version: int
     created_at: datetime
@@ -116,6 +149,7 @@ class OrchestrationCharacterCreate(CamelModel):
     description: str | None = None
     role_id: int
     prompt_append: str | None = None
+    capability_bundle_keys: list[str] = Field(default_factory=list)
     enabled: bool = True
 
     @field_validator("handle")
@@ -142,13 +176,26 @@ class OrchestrationCharacterCreate(CamelModel):
     def normalize_optional_fields(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value)
 
+    @field_validator("capability_bundle_keys")
+    @classmethod
+    def normalize_capability_bundle_keys(cls, value: list[str]) -> list[str]:
+        return _normalize_capability_bundle_keys(value)
+
 
 class OrchestrationCharacterUpdate(CamelModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     role_id: int | None = None
     prompt_append: str | None = None
+    capability_bundle_keys: list[str] | None = None
     enabled: bool | None = None
+
+    @field_validator("capability_bundle_keys", mode="before")
+    @classmethod
+    def reject_null_capability_bundle_keys(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("Capability bundle keys must be a list")
+        return value
 
     @field_validator("display_name")
     @classmethod
@@ -164,6 +211,13 @@ class OrchestrationCharacterUpdate(CamelModel):
     @classmethod
     def normalize_optional_fields(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value)
+
+    @field_validator("capability_bundle_keys")
+    @classmethod
+    def normalize_capability_bundle_keys(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return _normalize_capability_bundle_keys(value)
 
     @model_validator(mode="after")
     def validate_payload(self) -> OrchestrationCharacterUpdate:
@@ -182,6 +236,7 @@ class OrchestrationCharacterRead(CamelModel):
     role_id: int
     role_key: str = Field(validation_alias=AliasPath("role", "key"))
     prompt_append: str | None
+    capability_bundle_keys: list[str]
     enabled: bool
     version: int
     created_at: datetime

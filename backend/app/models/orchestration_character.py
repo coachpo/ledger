@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, IdMixin, TimestampMixin
@@ -26,6 +27,12 @@ class OrchestrationCharacter(IdMixin, TimestampMixin, Base):
         ForeignKey("orchestration_roles.id", ondelete="RESTRICT"), nullable=False
     )
     prompt_append: Mapped[str | None] = mapped_column(Text, nullable=True)
+    capability_bundle_keys: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
     version: Mapped[int] = mapped_column(nullable=False, default=1)
 

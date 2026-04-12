@@ -15,17 +15,21 @@ def create_role(
     name: str = "Macro Researcher",
     description: str = "Research macro signals",
     system_prompt: str = "You analyze macro conditions.",
+    capability_bundle_keys: list[str] | None = None,
     enabled: bool = True,
 ) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "key": key,
+        "name": name,
+        "description": description,
+        "systemPrompt": system_prompt,
+        "enabled": enabled,
+    }
+    if capability_bundle_keys is not None:
+        payload["capabilityBundleKeys"] = capability_bundle_keys
     response = client.post(
         "/api/v1/orchestration/roles",
-        json={
-            "key": key,
-            "name": name,
-            "description": description,
-            "systemPrompt": system_prompt,
-            "enabled": enabled,
-        },
+        json=payload,
     )
     assert response.status_code == 201, response.json()
     return response.json()
@@ -39,44 +43,56 @@ def create_character(
     description: str = "Research macro signals",
     role_id: int,
     prompt_append: str = "Focus on catalysts.",
+    capability_bundle_keys: list[str] | None = None,
     enabled: bool = True,
 ) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "handle": handle,
+        "displayName": display_name,
+        "description": description,
+        "roleId": role_id,
+        "promptAppend": prompt_append,
+        "enabled": enabled,
+    }
+    if capability_bundle_keys is not None:
+        payload["capabilityBundleKeys"] = capability_bundle_keys
     response = client.post(
         "/api/v1/orchestration/characters",
-        json={
-            "handle": handle,
-            "displayName": display_name,
-            "description": description,
-            "roleId": role_id,
-            "promptAppend": prompt_append,
-            "enabled": enabled,
-        },
+        json=payload,
     )
     assert response.status_code == 201, response.json()
     return response.json()
 
 
 def test_role_crud_roundtrip(client: TestClient) -> None:
-    created = create_role(client)
+    created = create_role(client, capability_bundle_keys=["builtin.librarian_context"])
 
+    assert created["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert created["version"] == 1
 
     list_response = client.get("/api/v1/orchestration/roles")
     assert list_response.status_code == 200, list_response.json()
     assert list_response.json()[0]["key"] == created["key"]
+    assert list_response.json()[0]["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert list_response.json()[0]["version"] == 1
 
     get_response = client.get(f"/api/v1/orchestration/roles/{created['id']}")
     assert get_response.status_code == 200, get_response.json()
     assert get_response.json()["systemPrompt"] == created["systemPrompt"]
+    assert get_response.json()["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert get_response.json()["version"] == 1
 
     update_response = client.patch(
         f"/api/v1/orchestration/roles/{created['id']}",
-        json={"name": "Macro Strategist", "enabled": False},
+        json={
+            "name": "Macro Strategist",
+            "enabled": False,
+            "capabilityBundleKeys": ["builtin.explore_context"],
+        },
     )
     assert update_response.status_code == 200, update_response.json()
     assert update_response.json()["name"] == "Macro Strategist"
+    assert update_response.json()["capabilityBundleKeys"] == ["builtin.explore_context"]
     assert update_response.json()["enabled"] is False
     assert update_response.json()["version"] == 2
 
@@ -101,30 +117,43 @@ def test_role_delete_rejects_role_in_use(client: TestClient) -> None:
 
 def test_character_crud_roundtrip(client: TestClient) -> None:
     role = create_role(client, key="market_scanner", name="Market Scanner")
-    created = create_character(client, handle="market_scanner", role_id=int(role["id"]))
+    created = create_character(
+        client,
+        handle="market_scanner",
+        role_id=int(role["id"]),
+        capability_bundle_keys=["builtin.librarian_context"],
+    )
 
+    assert created["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert created["roleKey"] == role["key"]
     assert created["version"] == 1
 
     list_response = client.get("/api/v1/orchestration/characters")
     assert list_response.status_code == 200, list_response.json()
     assert list_response.json()[0]["handle"] == created["handle"]
+    assert list_response.json()[0]["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert list_response.json()[0]["roleKey"] == role["key"]
     assert list_response.json()[0]["version"] == 1
 
     get_response = client.get(f"/api/v1/orchestration/characters/{created['id']}")
     assert get_response.status_code == 200, get_response.json()
     assert get_response.json()["displayName"] == created["displayName"]
+    assert get_response.json()["capabilityBundleKeys"] == ["builtin.librarian_context"]
     assert get_response.json()["roleKey"] == role["key"]
     assert get_response.json()["version"] == 1
 
     update_response = client.patch(
         f"/api/v1/orchestration/characters/{created['id']}",
-        json={"displayName": "Market Scout", "promptAppend": "Watch momentum."},
+        json={
+            "displayName": "Market Scout",
+            "promptAppend": "Watch momentum.",
+            "capabilityBundleKeys": ["builtin.explore_context"],
+        },
     )
     assert update_response.status_code == 200, update_response.json()
     assert update_response.json()["displayName"] == "Market Scout"
     assert update_response.json()["promptAppend"] == "Watch momentum."
+    assert update_response.json()["capabilityBundleKeys"] == ["builtin.explore_context"]
     assert update_response.json()["roleKey"] == role["key"]
     assert update_response.json()["version"] == 2
 
@@ -166,6 +195,7 @@ def test_role_key_is_trimmed_and_lowercased_on_create(client: TestClient) -> Non
     assert payload["name"] == "Macro Research Role"
     assert payload["description"] is None
     assert payload["systemPrompt"] == "You analyze macro conditions."
+    assert payload["capabilityBundleKeys"] == []
 
 
 def test_role_create_rejects_invalid_key(client: TestClient) -> None:
@@ -183,6 +213,58 @@ def test_role_create_rejects_invalid_key(client: TestClient) -> None:
     assert response.status_code == 422, response.json()
     assert response.json()["code"] == "validation_error"
     assert response.json()["details"][0]["field"] == "key"
+
+
+def test_role_create_rejects_invalid_capability_bundle_key(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/orchestration/roles",
+        json={
+            "key": "bundle_role",
+            "name": "Bundle Role",
+            "description": "Invalid bundle key",
+            "systemPrompt": "You analyze macro conditions.",
+            "capabilityBundleKeys": ["bad-key"],
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["details"][0]["field"] == "capabilityBundleKeys"
+
+
+def test_role_create_rejects_unknown_capability_bundle_key(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/orchestration/roles",
+        json={
+            "key": "bundle_role",
+            "name": "Bundle Role",
+            "description": "Unknown bundle key",
+            "systemPrompt": "You analyze macro conditions.",
+            "capabilityBundleKeys": ["builtin.unknown_context"],
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "unknown_capability_bundle_key"
+
+
+def test_role_create_rejects_reserved_executable_capability_reference(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/orchestration/roles",
+        json={
+            "key": "bundle_role",
+            "name": "Bundle Role",
+            "description": "Executable capability reference",
+            "systemPrompt": "You analyze macro conditions.",
+            "capabilityBundleKeys": ["ledger.report_lookup"],
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "reserved_capability_bundle_key"
 
 
 def test_role_create_rejects_duplicate_normalized_key(client: TestClient) -> None:
@@ -255,6 +337,7 @@ def test_character_handle_is_trimmed_lowercased_and_role_key_is_exposed(client: 
     assert payload["displayName"] == "Macro Researcher"
     assert payload["description"] is None
     assert payload["promptAppend"] == "Focus on rates."
+    assert payload["capabilityBundleKeys"] == []
     assert payload["roleKey"] == "macro_research_role"
 
 
@@ -276,6 +359,35 @@ def test_character_create_rejects_invalid_handle(client: TestClient) -> None:
     assert response.status_code == 422, response.json()
     assert response.json()["code"] == "validation_error"
     assert response.json()["details"][0]["field"] == "handle"
+
+
+def test_character_update_rejects_invalid_capability_bundle_key(client: TestClient) -> None:
+    role = create_role(client, key="bundle_role", name="Bundle Role")
+    character = create_character(client, handle="bundle_character", role_id=int(role["id"]))
+
+    response = client.patch(
+        f"/api/v1/orchestration/characters/{character['id']}",
+        json={"capabilityBundleKeys": ["bad-key"]},
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["details"][0]["field"] == "capabilityBundleKeys"
+
+
+def test_character_update_rejects_reserved_executable_capability_reference(
+    client: TestClient,
+) -> None:
+    role = create_role(client, key="bundle_role", name="Bundle Role")
+    character = create_character(client, handle="bundle_character", role_id=int(role["id"]))
+
+    response = client.patch(
+        f"/api/v1/orchestration/characters/{character['id']}",
+        json={"capabilityBundleKeys": ["ledger.mcp.market_data"]},
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "reserved_capability_bundle_key"
 
 
 def test_character_create_rejects_duplicate_normalized_handle(client: TestClient) -> None:
@@ -346,6 +458,7 @@ def test_character_create_rejects_disabled_role(client: TestClient) -> None:
             "description": "Should not be creatable",
             "roleId": role["id"],
             "promptAppend": "",
+            "capabilityBundleKeys": ["builtin.librarian_context"],
             "enabled": True,
         },
     )
@@ -362,7 +475,10 @@ def test_character_update_rejects_disabled_role(client: TestClient) -> None:
 
     response = client.patch(
         f"/api/v1/orchestration/characters/{character['id']}",
-        json={"roleId": disabled_role["id"]},
+        json={
+            "roleId": disabled_role["id"],
+            "capabilityBundleKeys": ["builtin.explore_context"],
+        },
     )
     assert response.status_code == 400, response.json()
     assert response.json()["code"] == "disabled_role"
@@ -479,18 +595,32 @@ def test_legacy_orchestration_tables_gain_version_columns(database_url: str) -> 
 
         assert "version" in role_columns
         assert role_columns["version"]["nullable"] is False
+        assert "capability_bundle_keys" in role_columns
+        assert role_columns["capability_bundle_keys"]["nullable"] is False
         assert "version" in character_columns
         assert character_columns["version"]["nullable"] is False
+        assert "capability_bundle_keys" in character_columns
+        assert character_columns["capability_bundle_keys"]["nullable"] is False
 
         with engine.connect() as connection:
             role_version = connection.exec_driver_sql(
                 "SELECT version FROM orchestration_roles WHERE key = 'macro_research_role'"
             ).scalar_one()
+            role_bundle_keys = connection.exec_driver_sql(
+                "SELECT capability_bundle_keys FROM orchestration_roles "
+                "WHERE key = 'macro_research_role'"
+            ).scalar_one()
             character_version = connection.exec_driver_sql(
                 "SELECT version FROM orchestration_characters WHERE handle = 'macro_researcher'"
             ).scalar_one()
+            character_bundle_keys = connection.exec_driver_sql(
+                "SELECT capability_bundle_keys FROM orchestration_characters "
+                "WHERE handle = 'macro_researcher'"
+            ).scalar_one()
 
         assert role_version == 1
+        assert role_bundle_keys == []
         assert character_version == 1
+        assert character_bundle_keys == []
     finally:
         engine.dispose()
