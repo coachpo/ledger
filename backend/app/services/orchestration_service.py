@@ -25,13 +25,22 @@ from app.schemas.orchestration import (
     OrchestrationRoleRead,
     OrchestrationRoleUpdate,
 )
+from app.services.persona_projection_service import PersonaProjectionService
 
 
 class OrchestrationService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        persona_projection_service: PersonaProjectionService | None = None,
+    ) -> None:
         self.session = session
         self.role_repo = OrchestrationRoleRepository(session)
         self.character_repo = OrchestrationCharacterRepository(session)
+        self.persona_projection_service = persona_projection_service or PersonaProjectionService(
+            session
+        )
 
     def list_roles(self) -> list[OrchestrationRoleRead]:
         return [OrchestrationRoleRead.model_validate(role) for role in self.role_repo.list_all()]
@@ -61,8 +70,14 @@ class OrchestrationService:
             capability_bundle_keys=payload.capability_bundle_keys,
             enabled=payload.enabled,
         )
-        self.role_repo.add(role)
-        self.session.commit()
+        try:
+            self.role_repo.add(role)
+            self.session.flush()
+            self.persona_projection_service.project_role(role)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
         self.session.refresh(role)
         return OrchestrationRoleRead.model_validate(role)
 
@@ -94,7 +109,13 @@ class OrchestrationService:
             updated = True
         if updated:
             role.version += 1
-        self.session.commit()
+        try:
+            if updated:
+                self.persona_projection_service.project_role(role)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
         self.session.refresh(role)
         return OrchestrationRoleRead.model_validate(role)
 
@@ -106,8 +127,13 @@ class OrchestrationService:
                 code="role_in_use",
                 message="Role is in use",
             )
-        self.role_repo.delete(role)
-        self.session.commit()
+        try:
+            self.persona_projection_service.archive_role(role)
+            self.role_repo.delete(role)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def list_characters(self) -> list[OrchestrationCharacterRead]:
         return [
@@ -138,8 +164,14 @@ class OrchestrationService:
             capability_bundle_keys=payload.capability_bundle_keys,
             enabled=payload.enabled,
         )
-        self.character_repo.add(character)
-        self.session.commit()
+        try:
+            self.character_repo.add(character)
+            self.session.flush()
+            self.persona_projection_service.project_character(character, role=role)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
         self.session.refresh(character)
         return OrchestrationCharacterRead.model_validate(character)
 
@@ -148,10 +180,12 @@ class OrchestrationService:
     ) -> OrchestrationCharacterRead:
         character = self._get_character_model(character_id)
         updated = False
+        parent_role = character.role
         if payload.role_id is not None:
             role = self._get_role_model(payload.role_id)
             self._ensure_role_enabled(role)
             character.role_id = payload.role_id
+            parent_role = role
             updated = True
         if payload.display_name is not None:
             character.display_name = payload.display_name
@@ -171,14 +205,25 @@ class OrchestrationService:
             updated = True
         if updated:
             character.version += 1
-        self.session.commit()
+        try:
+            if updated:
+                self.persona_projection_service.project_character(character, role=parent_role)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
         self.session.refresh(character)
         return OrchestrationCharacterRead.model_validate(character)
 
     def delete_character(self, character_id: int) -> None:
         character = self._get_character_model(character_id)
-        self.character_repo.delete(character)
-        self.session.commit()
+        try:
+            self.persona_projection_service.archive_character(character)
+            self.character_repo.delete(character)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def list_mention_catalog(self) -> MentionCatalogRead:
         catalog = [
