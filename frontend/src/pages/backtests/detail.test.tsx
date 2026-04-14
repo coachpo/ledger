@@ -57,6 +57,17 @@ const awaitingCallbackBacktest = {
   currentCycleStatus: "AWAITING_CALLBACK",
 };
 
+const waitingApprovalBacktest = {
+  ...runningBacktest,
+  currentCycleStatus: "WAITING_APPROVAL",
+};
+
+const processingCallbackBacktest = {
+  ...runningBacktest,
+  status: "PROCESSING_CALLBACK",
+  currentCycleStatus: "PROCESSING_CALLBACK",
+};
+
 const completedBacktest = {
   ...runningBacktest,
   status: "COMPLETED",
@@ -120,20 +131,39 @@ describe("BacktestDetailPage", () => {
     render(<BacktestDetailPage />);
 
     expect(await screen.findByText(/current simulation date/i)).toBeInTheDocument();
-    expect(screen.getByText(/langgraph internal/i)).toBeInTheDocument();
-    expect(screen.getByText(/running langgraph cycle analysis/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/langgraph internal/i)).toHaveLength(2);
+    expect(screen.getByText(/running the current internal analysis cycle/i)).toBeInTheDocument();
     expect(screen.getByText(/elapsed time/i)).toBeInTheDocument();
     expect(screen.getByText(/35m/i)).toBeInTheDocument();
     expect(screen.getByText(/AAPL/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeEnabled();
   });
 
-  it("reframes awaiting callback states as internal LangGraph progress", async () => {
-    useBacktestMock.mockReturnValue({ data: awaitingCallbackBacktest, isLoading: false });
+  it("renders runtime approval waits distinctly from generic running", async () => {
+    useBacktestMock.mockReturnValue({ data: waitingApprovalBacktest, isLoading: false });
 
     render(<BacktestDetailPage />);
 
-    expect(await screen.findByText(/preparing langgraph cycle analysis/i)).toBeInTheDocument();
+    expect(await screen.findByText(/runtime approval required/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting approval/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for runtime approval before the current cycle can continue/i)).toBeInTheDocument();
+  });
+
+  it("preserves legacy callback-specific wait and processing copy", async () => {
+    useBacktestMock.mockReturnValue({ data: awaitingCallbackBacktest, isLoading: false });
+
+    const { rerender } = render(<BacktestDetailPage />);
+
+    expect(await screen.findByText(/legacy callback pending/i)).toBeInTheDocument();
+    expect(screen.getByText(/awaiting callback/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for the legacy callback response before this cycle can continue/i)).toBeInTheDocument();
+
+    useBacktestMock.mockReturnValue({ data: processingCallbackBacktest, isLoading: false });
+    rerender(<BacktestDetailPage />);
+
+    expect(await screen.findByText(/legacy callback processing/i)).toBeInTheDocument();
+    expect(screen.getByText(/processing callback/i)).toBeInTheDocument();
+    expect(screen.getByText(/applying the legacy callback response for the current cycle/i)).toBeInTheDocument();
   });
 
   it("renders completed backtest metrics alongside a LangGraph decision summary", async () => {

@@ -26,6 +26,18 @@ vi.mock("sonner", () => ({
   },
 }));
 
+vi.mock("@/hooks/use-studio", () => {
+  throw new Error("Studio hooks must not be imported by orchestration role pages.");
+});
+
+vi.mock("@/hooks/use-runtime", () => {
+  throw new Error("Runtime hooks must not be imported by orchestration role pages.");
+});
+
+vi.mock("@/lib/api/studio", () => {
+  throw new Error("Studio API must not be imported by orchestration role pages.");
+});
+
 vi.mock("@/hooks/use-orchestration", () => ({
   useOrchestrationRoles: () => ({
     data: [
@@ -61,6 +73,7 @@ describe("OrchestrationRolesListPage", () => {
     expect(screen.getByText(/librarian/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create role/i })).toBeInTheDocument();
     expect(screen.getByText(/shared system prompts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/studio/i)).not.toBeInTheDocument();
   });
 
   it("routes to the role editor and deletes a role from the list", async () => {

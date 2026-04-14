@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useBacktest, useCancelBacktest, useDeleteBacktest } from "@/hooks/use-backtests";
+import { getBacktestDisplayState, isActiveBacktestStatus } from "@/lib/backtest-display";
 import { formatDate, formatDateTime } from "@/lib/format";
 
 export function BacktestDetailPage() {
@@ -52,11 +53,8 @@ export function BacktestDetailPage() {
 
   const progress =
     backtest.totalCycles > 0 ? (backtest.completedCycles / backtest.totalCycles) * 100 : 0;
-  const isRunning =
-    backtest.status === "PENDING" ||
-    backtest.status === "RUNNING" ||
-    backtest.status === "AWAITING_CALLBACK" ||
-    backtest.status === "PROCESSING_CALLBACK";
+  const displayState = getBacktestDisplayState(backtest);
+  const isRunning = isActiveBacktestStatus(backtest.status);
   const elapsedTime = getElapsedTimeLabel(backtest.createdAt);
   const latestActivity = backtest.recentActivity?.at(-1) ?? null;
   const totalCapturedDecisions = (backtest.recentActivity ?? []).reduce(
@@ -71,7 +69,10 @@ export function BacktestDetailPage() {
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">{backtest.name}</h1>
-            <BacktestStatusBadge status={backtest.status} />
+            <BacktestStatusBadge
+              status={backtest.status}
+              currentCycleStatus={backtest.currentCycleStatus}
+            />
           </div>
           <p className="text-xs text-muted-foreground">
             {backtest.frequency} · {formatDate(backtest.startDate)} - {formatDate(backtest.endDate)}
@@ -96,16 +97,14 @@ export function BacktestDetailPage() {
 
       {isRunning ? (
         <div className="space-y-4">
-          <Card>
-            <CardHeader className="gap-2 p-4 pb-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-base">LangGraph Internal</CardTitle>
-                <Badge variant="secondary">Active engine</Badge>
-              </div>
-              <CardDescription>
-                {getInternalStageLabel(backtest.status, backtest.currentCycleStatus)}
-              </CardDescription>
-            </CardHeader>
+            <Card>
+              <CardHeader className="gap-2 p-4 pb-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-base">{displayState.cardTitle}</CardTitle>
+                  <Badge variant="secondary">{displayState.modeLabel}</Badge>
+                </div>
+                <CardDescription>{displayState.stageLabel}</CardDescription>
+              </CardHeader>
             <CardContent className="space-y-3 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Current simulation date</p>
@@ -281,18 +280,4 @@ function getElapsedTimeLabel(createdAt: string): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
-}
-
-function getInternalStageLabel(status: string, currentCycleStatus: string | null) {
-  if (currentCycleStatus === "AWAITING_CALLBACK" || status === "AWAITING_CALLBACK") {
-    return "Preparing LangGraph cycle analysis...";
-  }
-  if (currentCycleStatus === "PROCESSING_CALLBACK" || status === "PROCESSING_CALLBACK") {
-    return "Applying LangGraph cycle decisions...";
-  }
-  if (status === "PENDING") {
-    return "Queueing LangGraph cycle analysis...";
-  }
-
-  return "Running LangGraph cycle analysis...";
 }

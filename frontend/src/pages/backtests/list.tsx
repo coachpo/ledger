@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useBacktests, useDeleteBacktest } from "@/hooks/use-backtests";
+import { getBacktestDisplayState, isActiveBacktestStatus } from "@/lib/backtest-display";
 import { formatDate, formatPercent } from "@/lib/format";
 import type { BacktestRead } from "@/lib/types/backtest";
 
@@ -42,8 +43,8 @@ export function BacktestListPage() {
         <div className="space-y-0.5">
           <h1 className="text-xl font-semibold tracking-tight">Backtests</h1>
           <p className="text-xs text-muted-foreground">
-            Launch, monitor, and review historical portfolio simulations on Ledger&apos;s internal
-            LangGraph engine.
+            Launch, monitor, and review historical portfolio simulations across Ledger&apos;s
+            internal runtime and retained legacy callback compatibility flow.
           </p>
         </div>
         <Button size="sm" onClick={() => navigate("/backtests/new")}>
@@ -76,11 +77,13 @@ export function BacktestListPage() {
           </Card>
         ) : null}
         {backtests.map((backtest) => {
+          const displayState = getBacktestDisplayState(backtest);
           const progress =
             backtest.totalCycles > 0
               ? (backtest.completedCycles / backtest.totalCycles) * 100
               : 0;
           const isTerminal = ["COMPLETED", "FAILED", "CANCELLED"].includes(backtest.status);
+          const isActive = isActiveBacktestStatus(backtest.status);
 
           return (
             <Card key={backtest.id} className="transition-colors hover:bg-accent/50">
@@ -90,8 +93,11 @@ export function BacktestListPage() {
                     <CardTitle className="text-sm font-medium tracking-tight">
                       {backtest.name}
                     </CardTitle>
-                    <BacktestStatusBadge status={backtest.status} />
-                    <Badge variant="outline">LangGraph Internal</Badge>
+                    <BacktestStatusBadge
+                      status={backtest.status}
+                      currentCycleStatus={backtest.currentCycleStatus}
+                    />
+                    <Badge variant="outline">{displayState.modeLabel}</Badge>
                     <span className="text-xs text-muted-foreground">{backtest.frequency}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -100,9 +106,10 @@ export function BacktestListPage() {
                   <p className="text-xs text-muted-foreground">
                     Portfolio {backtest.portfolioName ?? `#${backtest.portfolioId}`}
                   </p>
-                  {backtest.status === "RUNNING" || backtest.status === "PENDING" ? (
+                  {isActive ? (
                     <div className="space-y-1">
                       <Progress value={progress} />
+                      <p className="text-[11px] text-muted-foreground">{displayState.stageLabel}</p>
                       <p className="text-[11px] text-muted-foreground">
                         {backtest.completedCycles} / {backtest.totalCycles} cycles
                       </p>

@@ -26,6 +26,18 @@ vi.mock("sonner", () => ({
   },
 }));
 
+vi.mock("@/hooks/use-studio", () => {
+  throw new Error("Studio hooks must not be imported by orchestration character pages.");
+});
+
+vi.mock("@/hooks/use-runtime", () => {
+  throw new Error("Runtime hooks must not be imported by orchestration character pages.");
+});
+
+vi.mock("@/lib/api/studio", () => {
+  throw new Error("Studio API must not be imported by orchestration character pages.");
+});
+
 vi.mock("@/hooks/use-orchestration", () => ({
   useOrchestrationCharacters: () => ({
     data: [
@@ -61,6 +73,7 @@ describe("OrchestrationCharactersListPage", () => {
     expect(screen.getByText(/market researcher/i)).toBeInTheDocument();
     expect(screen.getByText(/macro_research_role/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create character/i })).toBeInTheDocument();
+    expect(screen.queryByText(/studio/i)).not.toBeInTheDocument();
   });
 
   it("routes to the character editor and deletes a character from the list", async () => {
