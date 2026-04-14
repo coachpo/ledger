@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, backtests, orchestration, and one small UI debounce helper.
+`src/hooks/` wraps the `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, backtests, orchestration, runtime, Studio, Tryout, and one small UI debounce helper.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -17,6 +17,9 @@
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Backtest flows | `use-backtests.ts` | list/detail, 5s running-state polling, create, cancel, delete |
 | Orchestration flows | `use-orchestration.ts` | roles, characters, mention catalog, invalidation helpers |
+| Runtime flows | `use-runtime.ts` | v2 runtime runs, artifacts, approvals, trace, cancel, and approval actions |
+| Studio flows | `use-studio.ts` | v2 Studio runs plus agent/workflow/persona/capability list/detail and CRUD/status mutations |
+| Tryout flows | `use-tryouts.ts` | v2 Tryout execute/read/persist hooks with runtime/Studio invalidation |
 | Orchestration hook tests | `use-orchestration.test.ts` | orchestration write invalidation coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 
@@ -27,6 +30,9 @@
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
 - `useBacktest()` owns the 5-second `refetchInterval` policy for `PENDING`, `RUNNING`, `AWAITING_CALLBACK`, and `PROCESSING_CALLBACK` rows, while create/cancel/delete invalidate both the list and the affected detail query.
 - `useOrchestration*` hooks own role/character cache invalidation and also invalidate the orchestration mention catalog after writes so prompt-time target lists stay current.
+- `useRuntime*` hooks own runtime/studio cache invalidation after run cancellation or approval actions so Tryout and Studio views stay in sync without page-local cache edits.
+- `useStudio*` hooks own the v2 Studio query/mutation wiring for spec catalogs, runtime run inspection, and related invalidation.
+- `useTryout*` hooks own Tryout execute/persist invalidation across Tryout, runtime, and Studio namespaces so the page only manages draft UI and toasts.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
 - The template editor owns the 500 ms debounce for inline compile; hooks expose compile/query primitives but do not debounce internally.
@@ -57,3 +63,4 @@ pnpm test:run
 - Report hooks keep the same pattern: list invalidation on writes, report-page navigation and toast actions in callers such as the reports list and template editor.
 - Backtest hooks follow the same split: query orchestration and invalidation live here, while launch/cancel/delete toasts plus route transitions stay in the backtest pages.
 - Orchestration hooks follow the same split too: cache policy and API wiring live here, while forms and navigation stay in the route family.
+- Runtime, Studio, and Tryout hooks follow the same pattern: cache keys and cross-surface invalidation live here, while route-level pages own draft state, navigation, and toast feedback.

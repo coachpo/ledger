@@ -113,12 +113,20 @@ Required fields:
 6. `name`
 7. `instructions`
 8. `model_policy`
-9. `default_capability_bundle_keys`
-10. `default_persona_profile_keys`
-11. `created_at`
-12. `updated_at`
+9. `final_output_contract` nullable when the agent cannot run as `execution_kind=single_agent`
+10. `default_capability_bundle_keys`
+11. `default_persona_profile_keys`
+12. `created_at`
+13. `updated_at`
 
 Seeded current agents (`position_analyst`, `risk_reviewer`, `decision_writer`) must appear as immutable `origin=seeded` records.
+
+`agent_specs.final_output_contract` follows the same shape rules as workflow final output contracts.
+
+Single-agent rule:
+
+1. A run with `executionKind=single_agent` requires the selected agent spec to have a non-null `final_output_contract`.
+2. If an agent spec has null `final_output_contract`, it may be used only as a workflow step agent, not as a direct single-agent run target.
 
 ### `workflow_specs`
 
@@ -134,11 +142,11 @@ Persisted fields and derived read metadata:
 8. `graph_definition`
 9. `final_output_contract`
 10. `mention_policy`
-11. `execution_mode`
+11. `execution_mode` nullable; required only for rollback-compatible seeded workflows
 12. `default_tool_ids`
 13. `allowed_capability_bundle_keys`
 14. `connector_ids`
-15. `review_mode`
+15. `review_mode` nullable; required only for rollback-compatible seeded workflows
 16. `approval_policy_overrides`
 17. `created_at`
 18. `updated_at`
@@ -149,6 +157,12 @@ Current supported pattern keys must migrate 1:1 into seeded immutable workflow s
 2. `analyst_reviewer_v1`
 3. `seeded_internal_backtest_tool_enabled_v1`
 4. `analyst_reviewer_tool_enabled_v1`
+
+`final_output_contract` must be a structured object with at least:
+
+1. `kind` (`json_schema | markdown | text`)
+2. `schema` nullable unless `kind=json_schema`
+3. `description`
 
 `mention_policy` must be a structured object with at least:
 
@@ -162,9 +176,13 @@ During migration, seeded workflow `mention_policy` rows must mirror the live `Pa
 
 `execution_mode`, `default_tool_ids`, `allowed_capability_bundle_keys` (mirroring current `allowed_bundle_keys`), `connector_ids`, and `review_mode` must preserve the current `BacktestPatternSpec` and `SeededTopology` values exactly for seeded workflow mirrors.
 
+For rollback-compatible seeded workflows, `execution_mode` currently supports `structured_output | tool_enabled` and remains seeded-compatibility metadata.
+
+For v2-native workflows, `execution_mode` must be null and execution behavior is derived from `graph_definition` plus the frozen step plan.
+
 For rollback-compatible seeded workflows, `review_mode` remains seeded-compatibility metadata and a semantic input to the seeded execution adapter until the rollback window closes.
 
-For v2-native workflows, equivalent reviewer behavior must be expressed only through `graph_definition`.
+For v2-native workflows, `review_mode` must be null and equivalent reviewer behavior must be expressed only through `graph_definition`.
 
 `graph_definition` must store versioned step refs. For workflow execution it must encode, per step:
 
@@ -266,6 +284,26 @@ Delete and archive rule:
 1. Deleting a legacy role or character archives the imported persona profile version during the rollback window.
 2. Archived imported personas remain resolvable for pinned historical runs and traces, but cannot be attached to new workflow specs.
 
+### `persona_projection_events`
+
+Required fields:
+
+1. `id`
+2. `persona_profile_key`
+3. `persona_profile_version`
+4. `legacy_entity_type` (`role | character`)
+5. `legacy_entity_key`
+6. `legacy_source_version`
+7. `operation` (`create | reproject | deprecate | archive`)
+8. `actor`
+9. `note` nullable
+10. `created_at`
+
+Projection audit rule:
+
+1. Every imported-persona create, reproject, deprecate, or archive operation writes one `persona_projection_events` row in the same transaction as the persona version change.
+2. This audit record is the source of truth for imported-persona projection provenance.
+
 ### `capability_registry_entries`
 
 Required fields:
@@ -297,6 +335,12 @@ Seeded records use `version` in the v2 tables, but that version must mirror the 
 2. `capabilityKey`
 3. `capabilityVersion`
 
+Connector lifecycle semantics:
+
+1. Connector lifecycle currently supports `placeholder | approved`.
+2. `placeholder` means the connector remains listed and reviewable but is not granted for execution when selected.
+3. `approved` means the connector is granted for execution when selected, subject to the normal approval contract.
+
 ### `runtime_runs`
 
 Required fields:
@@ -318,8 +362,9 @@ Required fields:
 15. `retention_class` (`ephemeral | persistent`)
 16. `expires_at` nullable
 17. `trace_summary`
-18. `created_at`
-19. `updated_at`
+18. `approval_summary`
+19. `created_at`
+20. `updated_at`
 
 Required uniqueness rules:
 
@@ -328,6 +373,21 @@ Required uniqueness rules:
 3. At most one run in `QUEUED | RUNNING | WAITING_APPROVAL` may exist for a given backtest `(caller_type, caller_id, caller_scope_key)`.
 4. Retrying or rerunning the same backtest cycle must create a new run with `attempt_number + 1`; prior attempts remain immutable.
 5. Non-backtest callers may have multiple concurrent active runs unless a caller-specific policy uses `caller_identity_key` to restrict them.
+
+Canonical `TraceSummary` object:
+
+1. `eventCount`
+2. `toolCallCount`
+3. `warningCount`
+4. `lastEventAt` nullable
+
+Canonical `ApprovalSummary` object:
+
+1. `totalCount`
+2. `pendingCount`
+3. `approvedCount`
+4. `deniedCount`
+5. `expiredCount`
 
 ### `runtime_trace_events`
 
@@ -352,10 +412,16 @@ Required fields:
 3. `step_key`
 4. `capability_key`
 5. `status`
-6. `actor` nullable while status is `PENDING`
-7. `reason`
+6. `actor` nullable while status is `PENDING | EXPIRED`
+7. `reason` nullable while status is `PENDING`
 8. `resolved_at` nullable
 9. `created_at`
+
+Approval row status rules:
+
+1. `PENDING` rows store `actor=null` and `reason=null`.
+2. `APPROVED` and `DENIED` rows require both `actor` and `reason`.
+3. `EXPIRED` rows store `actor=null` and require a system-generated `reason`.
 
 ### `runtime_checkpoints`
 
@@ -449,6 +515,15 @@ Each `capabilityRefs` entry must preserve canonical `CapabilityRef` objects.
 
 `resolved_capabilities` must preserve the flattened effective run-level `CapabilityRef` set after workflow defaults, persona hints, and step selections are intersected.
 
+Native resolved-version shapes:
+
+1. `resolved_builtin_versions` entries use `canonical_target_id`, `handle`, `revision`.
+2. `resolved_role_versions` entries use `canonical_target_id`, `role_id`, `version`.
+3. `resolved_character_versions` entries use `canonical_target_id`, `character_id`, `version`.
+4. `resolved_bundle_versions` entries use `bundle_key`, `revision`.
+5. `resolved_tool_versions` entries use `tool_id`, `revision`.
+6. `resolved_connector_versions` entries use `connector_id`, `revision`.
+
 Pinned-resolution rule:
 
 1. `resolved_builtin_versions`, `resolved_role_versions`, `resolved_character_versions`, `resolved_bundle_versions`, `resolved_tool_versions`, and `resolved_connector_versions` are frozen at run creation.
@@ -478,13 +553,44 @@ Approval precedence rule:
 
 `resolved_mentions` must preserve ordered compatibility objects with at least:
 
-1. `sourceHandle`
-2. `canonicalTargetId`
-3. `mentionOrder`
-4. `personaProfileKey`
-5. `personaProfileVersion`
-6. `legacyRoleVersion` nullable
-7. `legacyCharacterVersion` nullable
+1. `originalText`
+2. `sourceHandle`
+3. `canonicalTargetId`
+4. `targetType`
+5. `mentionOrder`
+6. `personaProfileKey`
+7. `personaProfileVersion`
+8. `legacyRoleId` nullable
+9. `legacyRoleVersion` nullable
+10. `legacyCharacterId` nullable
+11. `legacyCharacterVersion` nullable
+
+Legacy snapshot compatibility rule:
+
+1. `runtime_run_artifacts.resolved_mentions` is a native v2 artifact and is not the same object as snapshot `resolved_mentions`.
+2. The rollback-window snapshot mirror must project into the current legacy snapshot shape, not reuse the native artifact object shape directly.
+3. That projection uses native `originalText`, `sourceHandle`, `canonicalTargetId`, `targetType`, `legacyRoleId`, `legacyRoleVersion`, `legacyCharacterId`, `legacyCharacterVersion`, and `mentionOrder` to synthesize the legacy snapshot row shape without inference.
+
+Snapshot `resolved_mentions` compatibility shape:
+
+1. `original_text`
+2. `handle`
+3. `canonical_target_id`
+4. `target_type`
+5. `role_id` nullable
+6. `role_version` nullable
+7. `character_id` nullable
+8. `character_version` nullable
+9. `mention_order`
+
+Snapshot version-entry compatibility shapes:
+
+1. `resolved_builtin_versions` entries use `canonical_target_id`, `handle`, `revision`.
+2. `resolved_role_versions` entries use `canonical_target_id`, `role_id`, `version`.
+3. `resolved_character_versions` entries use `canonical_target_id`, `character_id`, `version`.
+4. `resolved_bundle_versions` entries use `bundle_key`, `revision`.
+5. `resolved_tool_versions` entries use `tool_id`, `revision`.
+6. `resolved_connector_versions` entries use `connector_id`, `revision`.
 
 ### Compatibility store
 
@@ -504,21 +610,50 @@ Required migration-era fields on `backtests`:
 8. `launch_mode_classification_note` nullable during classification
 9. `execution_owner` nullable during classification
 
+### `runtime_control_flags`
+
+Required fields:
+
+1. `flag_key`
+2. `enabled`
+3. `updated_at`
+
+### `runtime_flag_change_events`
+
+Required fields:
+
+1. `id`
+2. `flag_key`
+3. `old_enabled`
+4. `new_enabled`
+5. `actor`
+6. `reason`
+7. `result` (`applied | rejected`)
+8. `created_at`
+
 Classification rule:
 
 1. New rows created after the schema rollout must persist `launch_mode` directly from `BacktestCreate.launchMode`.
 2. Existing rows are not auto-classified from `webhook_url` alone.
 3. Rows with null `launch_mode` remain compatibility rows and are not eligible for runtime-backed internal execution.
-4. Historical classification is one audited migration job that writes the classification fields above.
-5. For classified internal rows using supported seeded patterns, the job also writes `workflow_spec_key` from the persisted `orchestration_pattern_key` and pins `workflow_spec_version=1`.
-6. Historical rows whose pattern key cannot be mapped to a rollback-compatible seeded workflow remain on the current path and are not eligible for runtime-backed internal execution.
-7. New or classified rows pin `execution_owner` to `legacy_path` or `runtime_v2`.
-8. Once pinned, `execution_owner` remains fixed for the lifetime of that backtest.
+4. Historical classification is one audited migration job that consumes an operator-reviewed manifest keyed by `backtest_id`.
+5. That manifest is the authoritative classification source for `launch_mode` and `execution_owner`.
+6. For classified internal rows using supported seeded patterns, the job also writes `workflow_spec_key` from the persisted `orchestration_pattern_key` and pins `workflow_spec_version=1`.
+7. Historical rows whose pattern key cannot be mapped to a rollback-compatible seeded workflow remain on the current path and are not eligible for runtime-backed internal execution.
+8. New or classified rows pin `execution_owner` to `legacy_path` or `runtime_v2`.
+9. Once pinned, `execution_owner` remains fixed for the lifetime of that backtest.
 
 Routing authority rule:
 
 1. `launch_mode` is the compatibility transport class.
 2. `execution_owner` is the pinned execution-path authority.
+
+Create-time routing matrix:
+
+1. `launchMode=legacy_callback` pins `execution_owner=legacy_path`.
+2. `launchMode=internal` with `AGENT_RUNTIME_V2_BACKTESTS_ENABLED=false` pins `execution_owner=legacy_path`.
+3. `launchMode=internal` with `AGENT_RUNTIME_V2_BACKTESTS_ENABLED=true` pins `execution_owner=runtime_v2` only when the selected or defaulted workflow resolves to a rollback-compatible seeded workflow.
+4. Otherwise `launchMode=internal` pins `execution_owner=legacy_path` during the rollback window.
 
 ## Deterministic resolution rules
 
@@ -537,20 +672,26 @@ Routing authority rule:
 ### Spec APIs
 
 1. `GET /api/v2/studio/agent-specs`
-2. `POST /api/v2/studio/agent-specs`
+2. `POST /api/v2/studio/agent-specs` for `origin=managed` only
 3. `GET /api/v2/studio/agent-specs/{key}/versions`
 4. `GET /api/v2/studio/agent-specs/{key}/versions/{version}`
 5. `PATCH /api/v2/studio/agent-specs/{key}/versions/{version}`
 6. `GET /api/v2/studio/workflow-specs`
-7. `POST /api/v2/studio/workflow-specs`
+7. `POST /api/v2/studio/workflow-specs` for `origin=managed` only
 8. `GET /api/v2/studio/workflow-specs/{key}/versions`
 9. `GET /api/v2/studio/workflow-specs/{key}/versions/{version}`
 10. `PATCH /api/v2/studio/workflow-specs/{key}/versions/{version}`
 11. `GET /api/v2/studio/persona-profiles`
-12. `POST /api/v2/studio/persona-profiles`
+12. `POST /api/v2/studio/persona-profiles` for `origin=managed` only
 13. `GET /api/v2/studio/persona-profiles/{key}/versions`
 14. `GET /api/v2/studio/persona-profiles/{key}/versions/{version}`
 15. `PATCH /api/v2/studio/persona-profiles/{key}/versions/{version}`
+
+Version-history list response contract:
+
+1. `GET .../{key}/versions` returns `{ items }`.
+2. Each item includes `version`, `status`, `origin`, and `createdAt`.
+3. Items are ordered by `version DESC`.
 
 Lifecycle transition actions use:
 
@@ -569,14 +710,22 @@ Lifecycle action rules:
 2. `activate` is valid only for a `DRAFT` version and atomically demotes the current `ACTIVE` version for that key to `DEPRECATED` before promoting the target to `ACTIVE`.
 3. `deprecate` is valid only for the current `ACTIVE` version.
 4. `archive` is valid for `DRAFT` or `DEPRECATED` versions, never for the current `ACTIVE` version.
-5. Generic lifecycle routes reject `origin=imported`; imported versions are created, advanced, or archived only by the audited projection path.
+5. Generic lifecycle routes reject `origin=seeded` and `origin=imported`.
+6. Imported versions are created, advanced, or archived only by the audited projection path.
+7. Generic create and patch routes for agent specs, workflow specs, and persona profiles reject `origin=seeded` and `origin=imported`.
 
 ### Capability APIs
 
 1. `GET /api/v2/studio/capabilities`
-2. `GET /api/v2/studio/capabilities/{key}/versions/{version}`
-3. `POST /api/v2/studio/capabilities` for `origin=managed` only
-4. `PATCH /api/v2/studio/capabilities/{key}/versions/{version}` for `origin=managed` only
+2. `GET /api/v2/studio/capabilities/{key}/versions`
+3. `GET /api/v2/studio/capabilities/{key}/versions/{version}`
+4. `POST /api/v2/studio/capabilities` for `origin=managed` only
+5. `PATCH /api/v2/studio/capabilities/{key}/versions/{version}` for `origin=managed` only
+
+Managed capability lifecycle rule:
+
+1. Managed capabilities use the same draft, activate, deprecate, and archive lifecycle routes as the other versioned Studio resources.
+2. Seeded capabilities remain read-only through Studio mutation routes.
 
 ### Runtime APIs
 
@@ -589,8 +738,101 @@ Lifecycle action rules:
 7. `POST /api/v2/runtime/approvals/{approvalId}/deny`
 8. `GET /api/v2/runtime/runs/{runId}/artifacts`
 9. `GET /api/v2/runtime/approvals/{approvalId}`
+10. `GET /api/v2/runtime/approvals`
+11. `GET /api/v2/runtime/trace-events`
 
-`GET /api/v2/runtime/runs` must support filters for `callerType`, `callerId`, `callerScopeKey`, and `callerIdentityKey`.
+`GET /api/v2/runtime/runs` must support filters for `callerType`, `callerId`, `callerScopeKey`, `callerIdentityKey`, and `workflowSpecKey`.
+
+`GET /api/v2/runtime/approvals` must support filters for `runId`, `callerType`, `callerId`, `workflowSpecKey`, `capabilityKey`, and `status`.
+
+`GET /api/v2/runtime/trace-events` must support filters for `runId`, `callerType`, `callerId`, `workflowSpecKey`, `capabilityKey`, and `eventType`.
+
+`POST /api/v2/runtime/runs` request body must include:
+
+1. `callerType`
+2. `callerId` nullable
+3. `callerScopeKey` nullable
+4. `callerIdentityKey` nullable
+5. `executionKind`
+6. `workflowSpecKey` nullable when `executionKind=single_agent`
+7. `workflowSpecVersion` nullable when `executionKind=single_agent`
+8. `agentSpecKey` nullable when `executionKind=workflow`
+9. `agentSpecVersion` nullable when `executionKind=workflow`
+10. `inputs`
+11. `personaProfileRefs` optional
+12. `persistRun` optional; defaults to `true`
+
+Public create semantics:
+
+1. `POST /api/v2/runtime/runs` creates and starts a run, then returns the current run envelope without waiting for terminal completion.
+2. Callers use `GET /api/v2/runtime/runs/{runId}`, `.../artifacts`, `.../trace`, and approval reads/lists to observe subsequent state.
+3. Public HTTP callers may not create runs with `callerType=backtest`, `callerType=studio`, or `callerType=tryout`; those caller types are reserved for internal services and dedicated APIs.
+
+Rollback-window workflow eligibility rule:
+
+1. Public non-backtest callers may not create rollback-compatible seeded workflow runs during the rollback window.
+2. Those callers may create only v2-native workflow runs or single-agent runs.
+
+Tryout caller reservation rule:
+
+1. `callerType=tryout` is created only by the dedicated tryout APIs.
+2. Public HTTP callers that need ephemeral interactive execution must use `/api/v2/tryouts/*`, not `/api/v2/runtime/runs`.
+
+`POST /api/v2/runtime/runs` response body must include:
+
+1. `runId`
+2. `status`
+3. `expiresAt` nullable
+
+`POST /api/v2/runtime/approvals/{approvalId}/approve` request body must include:
+
+1. `actor`
+2. `reason`
+
+`POST /api/v2/runtime/approvals/{approvalId}/deny` request body must include:
+
+1. `actor`
+2. `reason`
+
+Approval action response body must include:
+
+1. `approvalId`
+2. `status`
+3. `runId`
+4. `resolvedAt`
+5. `runStatus`
+
+Review-list response envelope:
+
+1. List endpoints return `{ items, nextCursor }`.
+2. `nextCursor` is null when no further page exists.
+
+Minimum approval list item fields:
+
+1. `approvalId`
+2. `runId`
+3. `status`
+4. `capabilityKey`
+5. `stepKey`
+6. `callerType`
+7. `callerId`
+8. `createdAt`
+
+Minimum trace-event list item fields:
+
+1. `runId`
+2. `eventIndex`
+3. `eventType`
+4. `stepKey` nullable
+5. `capabilityKey` nullable
+6. `callerType`
+7. `callerId`
+8. `createdAt`
+
+Ordering and pagination rule:
+
+1. Approval lists sort by `createdAt DESC` unless a later API version adds another explicit sort.
+2. Trace-event lists sort by `eventIndex ASC` within a run-filtered result, otherwise by `createdAt DESC`.
 
 Minimum `GET /api/v2/runtime/runs/{runId}` response fields:
 
@@ -604,6 +846,48 @@ Minimum `GET /api/v2/runtime/runs/{runId}` response fields:
 8. `expiresAt` nullable
 9. `finalOutput` nullable
 10. `terminalError` nullable
+11. `traceSummary`
+12. `approvalSummary`
+
+Canonical `TerminalError` object:
+
+1. `code`
+2. `message`
+
+`terminalError` returns the canonical `TerminalError` object for terminal `FAILED` runs and null otherwise.
+
+Minimum `GET /api/v2/runtime/runs/{runId}/artifacts` response fields:
+
+1. `runId`
+2. `finalOutput` nullable
+3. `terminalError` nullable
+4. `reportMarkdown` nullable
+5. `normalizedTradeDecisions` nullable
+6. `entryPromptHash`
+7. `fullUserPromptHash`
+8. `authoredEntryPromptBody` nullable
+9. `compiledEntryPromptBody` nullable
+10. `executionContextBody` nullable
+11. `promptReportSlug` nullable
+12. `rawMentionHandles`
+13. `resolvedMentions`
+14. `mentionedTargetOutputs`
+15. `resolvedPersonaProfileRefs`
+16. `resolvedWorkflowAgentRefs` nullable
+17. `resolvedCapabilities`
+18. `resolvedBuiltinVersions`
+19. `resolvedRoleVersions`
+20. `resolvedCharacterVersions`
+21. `resolvedBundleVersions`
+22. `resolvedToolVersions`
+23. `resolvedConnectorVersions`
+24. `traceSummary`
+25. `approvalSummary`
+
+Artifact summary derivation rule:
+
+1. `traceSummary` and `approvalSummary` on artifact reads are derived from the canonical `runtime_runs.trace_summary` and `runtime_runs.approval_summary` fields.
+2. Artifact reads must not invent an artifact-local summary that disagrees with the run record.
 
 Minimum `GET /api/v2/runtime/approvals/{approvalId}` response fields:
 
@@ -614,12 +898,30 @@ Minimum `GET /api/v2/runtime/approvals/{approvalId}` response fields:
 5. `summary`
 6. `allowedActions`
 
+Approval read field shapes:
+
+1. `summary` is an object with `approvalMode`, `displayName`, and `transport` nullable unless connector.
+2. `allowedActions` is an array drawn from `approve | deny` and is empty once the approval is no longer pending.
+
+`POST /api/v2/runtime/runs/{runId}/cancel` response body must include:
+
+1. `runId`
+2. `status`
+3. `approvalSummary`
+
+Minimum `GET /api/v2/runtime/runs/{runId}/trace` response contract:
+
+1. Returns `{ items }`.
+2. Each item uses the same minimum trace-event list item schema.
+3. Items are ordered by `eventIndex ASC`.
+
 Executor adapter contract:
 
 1. `AgentRuntimeService` must invoke an execution adapter selected by caller type and workflow shape.
 2. `BacktestLangGraphExecutionAdapter` is the v2 adapter that translates a runtime-owned backtest run into the current `BacktestLangGraphRequest` contract.
-3. Tryout and Studio must use a non-backtest adapter contract rather than inventing backtest-only ids or prompt-report fields.
-4. If a non-backtest caller supplies `callerIdentityKey`, create must reject a new run with HTTP 409 when caller policy forbids another active run for the same `(callerType, callerIdentityKey)`.
+3. `GenericWorkflowExecutionAdapter` executes non-backtest workflow runs from `graph_definition` plus the frozen step plan.
+4. `SingleAgentExecutionAdapter` executes `executionKind=single_agent` runs.
+5. If a non-backtest caller supplies `callerIdentityKey`, create must reject a new run with HTTP 409 when caller policy forbids another active run for the same `(callerType, callerIdentityKey)`.
 
 Minimum `ExecutionAdapterRequest` fields:
 
@@ -634,6 +936,15 @@ Minimum `ExecutionAdapterRequest` fields:
 9. `resolvedCapabilities`
 10. `callerContext`
 11. `callerArtifacts`
+12. `resolvedWorkflowAgentRefs` nullable when `executionKind=single_agent`
+
+Executor determinism rule:
+
+1. For workflow execution, adapters must execute from the frozen `resolvedWorkflowAgentRefs` plan.
+2. If an adapter implementation does not receive that plan inline, it must load the same frozen plan by `runId` before execution.
+3. Adapters must not re-read mutable workflow definitions to rebuild step-level capability or approval semantics at execution time.
+4. For workflow execution, step-level capability and approval semantics come from each step's `capabilityRefs` in `resolvedWorkflowAgentRefs`.
+5. `resolvedCapabilities` is the flattened run-level effective set used for preflight checks, inspection, and caller summaries; it is not the authoritative source for step execution order or step-local approval overrides.
 
 `resolvedCapabilities` must be a typed list with at least:
 
@@ -673,11 +984,28 @@ Required response fields:
 
 1. `runId`
 2. `status`
-3. `finalOutput`
+3. `finalOutput` nullable
 4. `reportMarkdown` nullable
 5. `traceSummary`
 6. `approvalSummary`
 7. `expiresAt` when `persistRun=false`
+8. `terminalError` nullable
+
+Tryout paused-run rule:
+
+1. When tryout execution pauses in `WAITING_APPROVAL`, `finalOutput` and `reportMarkdown` are null.
+2. `traceSummary` and `approvalSummary` describe the partial run state up to the pause.
+3. `terminalError` is null while the run remains resumable.
+
+Tryout summary derivation rule:
+
+1. `traceSummary` and `approvalSummary` on tryout execute/read/persist responses are derived from the canonical `runtime_runs` summary fields for that run.
+2. Tryout reads must return the same summary values visible through `GET /api/v2/runtime/runs/{runId}` for the same run.
+
+Tryout rollback-window eligibility rule:
+
+1. During the rollback window, `/api/v2/tryouts/*` may execute only v2-native workflows or single-agent runs.
+2. Rollback-compatible seeded workflow specs are rejected from tryout during the rollback window.
 
 Tryout persistence rules:
 
@@ -686,6 +1014,11 @@ Tryout persistence rules:
 3. `persist` is allowed from terminal states and from `WAITING_APPROVAL`.
 4. If an ephemeral tryout expires while still active or waiting approval, runtime must append an expiration trace event, mark pending approvals `EXPIRED`, transition the run to `CANCELLED`, and then delete ephemeral artifacts on schedule.
 5. `DELETE /api/v2/tryouts/{runId}` must cancel any active ephemeral run, expire pending approvals, and remove ephemeral artifacts.
+
+Tryout read/persist response contract:
+
+1. `GET /api/v2/tryouts/{runId}` returns the same response shape as tryout execute.
+2. `POST /api/v2/tryouts/{runId}/persist` returns the same response shape as tryout execute after clearing `expiresAt`.
 
 ## Runtime state machine
 
@@ -711,6 +1044,7 @@ Approval pause/resume rule:
 3. `DENIED` resumes the run only when the current step defines an `approval_denied` edge.
 4. `DENIED` without an `approval_denied` edge transitions the run to `FAILED`.
 5. Explicit cancel from `WAITING_APPROVAL` transitions the run to `CANCELLED`.
+6. Cancelling a `WAITING_APPROVAL` run expires every still-pending approval for that run before the run is marked `CANCELLED`.
 
 ## Backtest integration rules
 
@@ -738,6 +1072,11 @@ Webhook compatibility rule during mixed mode:
 2. For `launchMode=internal`, omitted values continue to materialize/read as `webhookUrl="internal://ledger"` and `webhookTimeout=600` during the rollback window.
 3. For `launchMode=internal`, supplied values do not influence runtime routing and must round-trip unchanged as compatibility metadata.
 4. For `launchMode=legacy_callback`, current webhook validation and callback delivery behavior remain authoritative.
+
+Legacy callback cancel rule:
+
+1. For `launchMode=legacy_callback`, `POST /api/v1/backtests/{id}/cancel` preserves the current baseline rule and only allows cancellation from `PENDING` or `RUNNING`.
+2. Callback-era `currentCycleStatus` values such as `AWAITING_CALLBACK` or `PROCESSING_CALLBACK` do not independently change that status-based cancel rule.
 
 Retained legacy callback route contract:
 
@@ -768,18 +1107,25 @@ Run-id lifecycle rules:
 
 Backtest compatibility state mapping:
 
-1. For `launchMode=internal`, runtime `QUEUED | RUNNING` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
-2. For `launchMode=internal`, runtime `WAITING_APPROVAL` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
-3. For `launchMode=internal`, runtime cycle success on a non-terminal cycle -> `BacktestRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
-4. For `launchMode=internal`, runtime cycle success on the final cycle -> `BacktestRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
-5. For `launchMode=internal`, runtime `FAILED` -> `BacktestRead.status=FAILED`, `currentCycleStatus=FAILED`.
-6. For `launchMode=internal`, runtime `CANCELLED` -> `BacktestRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
-7. For `launchMode=legacy_callback`, preserve current callback-era `status` semantics.
-8. For `launchMode=legacy_callback`, preserve current callback-era `currentCycleStatus` semantics including `AWAITING_CALLBACK` and `PROCESSING_CALLBACK`.
-9. For `launchMode=null`, preserve current compatibility-path read semantics until explicit classification occurs.
-10. `executionOwner` is the pinned execution-path source of truth for that backtest once classification or create-time routing completes.
+1. For `executionOwner=runtime_v2`, a newly created backtest remains `BacktestRead.status=PENDING` until the first runtime cycle run is created.
+2. For `executionOwner=runtime_v2`, runtime `QUEUED | RUNNING` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
+3. For `executionOwner=runtime_v2`, runtime `WAITING_APPROVAL` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
+4. For `executionOwner=runtime_v2`, runtime cycle success on a non-terminal cycle -> `BacktestRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
+5. For `executionOwner=runtime_v2`, runtime cycle success on the final cycle -> `BacktestRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
+6. For `executionOwner=runtime_v2`, runtime `FAILED` -> `BacktestRead.status=FAILED`, `currentCycleStatus=FAILED`.
+7. For `executionOwner=runtime_v2`, runtime `CANCELLED` -> `BacktestRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
+8. For `launchMode=legacy_callback`, preserve current callback-era `status` semantics.
+9. For `launchMode=legacy_callback`, preserve current callback-era `currentCycleStatus` semantics including `AWAITING_CALLBACK` and `PROCESSING_CALLBACK`.
+10. For `launchMode=null`, preserve current compatibility-path read semantics until explicit classification occurs.
+11. `executionOwner` is the pinned execution-path source of truth for that backtest once classification or create-time routing completes.
 
-`POST /api/v1/backtests/{id}/cancel` must cancel a run in `QUEUED | RUNNING | WAITING_APPROVAL`.
+Pre-run internal `PENDING` rule:
+
+1. If `executionOwner=runtime_v2`, `BacktestRead.status=PENDING`, and `currentRunId=null`, the backtest has not created its first runtime cycle run yet.
+2. In that state, `POST /api/v1/backtests/{id}/cancel` cancels the backtest directly without creating a runtime run.
+3. Startup repair treats that state as a stale pre-run internal backtest and fails it with a restart error rather than leaving it pending.
+
+For `executionOwner=runtime_v2`, `POST /api/v1/backtests/{id}/cancel` must cancel a run in `QUEUED | RUNNING | WAITING_APPROVAL`.
 
 Backtest approval discovery rule:
 
@@ -800,8 +1146,9 @@ Backtest adapter must submit:
 2. `callerId=backtest.id`
 3. `workflowSpecKey` and optional version
 4. `callerScopeKey=cycleDate.isoformat()`
-5. `attemptNumber`
-6. cycle context refs including `portfolioId`, `cycleDate`, `benchmarkSymbols`, and prompt/report context
+5. cycle context refs including `portfolioId`, `cycleDate`, `benchmarkSymbols`, and prompt/report context
+
+The runtime service derives `attemptNumber` for backtest callers from existing run history for the same `(callerType, callerId, callerScopeKey)`.
 
 Runtime must return:
 
@@ -880,7 +1227,7 @@ Handle namespace rule:
 2. When false, current backtest execution remains authoritative.
 3. When true, only `launchMode=internal` backtests submit runtime requests.
 4. `launchMode=legacy_callback` remains on the retained legacy callback compatibility ingress throughout the rollback window.
-5. During this phase, `backtest_orchestration_snapshots` mirrors runtime trace summary for compatibility.
+5. During this phase, `backtest_orchestration_snapshots` mirrors runtime compatibility trace and approval data for backtest detail surfaces.
 6. During this phase, backtest rows must preserve reversible `orchestrationPatternKey` compatibility.
 7. During this phase, backtests may reference only seeded workflow specs whose keys exactly match the current supported pattern keys.
 8. During this phase, backtest runs must use the pinned workflow version resolved at create time.
@@ -904,18 +1251,20 @@ Handle namespace rule:
 3. New or still-unclassified backtests resume the current execution path after rollback.
 4. Reversible mapping from `workflowSpecKey` to current pattern-key contract must remain available throughout the rollback window.
 5. No destructive table removal or irreversible backfill is allowed before the rollback window closes.
-6. Because rollback is blocked until active runtime-backed runs drain or cancel, rollback does not re-home an in-flight `runtime_v2` backtest.
+6. Because rollback is blocked until all non-terminal `runtime_v2` backtests finish or are cancelled, rollback does not re-home any pinned `runtime_v2` backtest.
 
 Rollback precondition:
 
-1. Default policy blocks rollback while runtime-backed backtest runs exist in `QUEUED`, `RUNNING`, or `WAITING_APPROVAL`.
-2. Operators must cancel or let those runs drain before the flag is flipped.
+1. Default policy blocks rollback while any non-terminal `runtime_v2` backtest exists.
+2. Operators must cancel those backtests or let them finish on the runtime path before the flag is flipped.
 
 Rollback guard enforcement:
 
-1. The backtest runtime flag may be changed only through one audited operational control path.
-2. That control path must query for active runtime-backed backtest runs before applying the flag change.
-3. If any such runs exist, the control path exits non-zero and the flag change is rejected.
+1. The effective backtest runtime flag is stored in `runtime_control_flags` under key `AGENT_RUNTIME_V2_BACKTESTS_ENABLED`.
+2. The only write path is one audited operational control path.
+3. That control path must open a transaction, query for non-terminal `runtime_v2` backtests, and reject the change when any such rows exist.
+4. On success, the same transaction updates `runtime_control_flags` and inserts a matching `runtime_flag_change_events` row.
+5. On rejection, the control path inserts a `runtime_flag_change_events` row with `result="rejected"`.
 
 ## Failure semantics
 
@@ -926,11 +1275,20 @@ Rollback guard enforcement:
 5. Resuming a run without a valid checkpoint must fail closed.
 6. Expired ephemeral tryouts must emit `RUN_EXPIRED` and mark pending approvals `EXPIRED` before cleanup.
 
+Startup repair semantics:
+
+1. Application startup must run a runtime repair pass in the same DB initialization phase that currently repairs interrupted backtests.
+2. `runtime_runs` left in `QUEUED` or `RUNNING` are marked `FAILED` with `terminal_error_code="interrupted_runtime"` and a restart message.
+3. `runtime_runs` left in `WAITING_APPROVAL` remain resumable.
+4. Runtime-backed backtests with `execution_owner=runtime_v2`, `status=PENDING`, and `currentRunId=null` are treated as stale pre-run internal backtests and are marked `FAILED` with a restart `errorMessage`.
+5. Other runtime-backed backtests affected by startup repair must update `status=FAILED`, `currentCycleStatus=FAILED`, and a restart `errorMessage`, preserve `_run_state` redaction semantics, clear `currentRunId`, keep `lastCompletedRunId` unchanged, and avoid schedule advancement.
+6. Runtime-backed backtests affected by startup repair must update their compatibility snapshots using the same failure projection rules defined elsewhere in this spec.
+
 ## Runtime-to-snapshot projection rules
 
 When `callerType=backtest` and `workflowSpecKey` is a rollback-compatible seeded workflow key, runtime compatibility projection must populate current snapshot fields as follows:
 
-Initial projection writes prompt-hash and resolved-mention fields after run creation. Terminal projection updates the same unique cycle row after completion or failure with final trace and approval data.
+Initial projection writes prompt-hash and resolved-mention fields after run creation. Terminal projection updates the same unique cycle row after completion, failure, or cancellation with final trace and approval data.
 
 1. `runtime_run_artifacts.prompt_report_slug` -> `backtest_orchestration_snapshots.prompt_report_slug`
 2. `workflowSpecKey` -> `backtest_orchestration_snapshots.orchestration_pattern_key`
@@ -945,9 +1303,22 @@ Initial projection writes prompt-hash and resolved-mention fields after run crea
 11. `runtime_run_artifacts.resolved_tool_versions` -> `backtest_orchestration_snapshots.resolved_tool_versions`
 12. `runtime_run_artifacts.resolved_connector_versions` -> `backtest_orchestration_snapshots.resolved_connector_versions`
 13. `runtime_run_artifacts.mentioned_target_outputs` -> `backtest_orchestration_snapshots.mentioned_target_outputs`
-14. `runtime_run_artifacts.resolved_mentions` -> `backtest_orchestration_snapshots.resolved_mentions`
+14. compatibility projection of `runtime_run_artifacts.resolved_mentions` -> `backtest_orchestration_snapshots.resolved_mentions`
 15. runtime trace projection -> `backtest_orchestration_snapshots.tool_call_trace`
 16. runtime approval projection -> `backtest_orchestration_snapshots.approval_trace`
+
+When a runtime-backed backtest run is cancelled from `WAITING_APPROVAL`, the latest-attempt terminal projection must overwrite `backtest_orchestration_snapshots.approval_trace` with the expired approvals for that cancelled attempt.
+
+Compatibility `approval_trace` shape rule:
+
+1. Snapshot `approval_trace` remains a compatibility mirror using lowercase status values.
+2. Each entry includes at least `call_index`, `tool_id`, `status`, `kind`, and `transport` nullable unless connector metadata is absent.
+3. Cancellation from `WAITING_APPROVAL` updates the latest-attempt mirror so previously terminal approval entries are preserved and still-pending entries become `status="expired"`.
+
+Compatibility `tool_call_trace` shape rule:
+
+1. Snapshot `tool_call_trace` remains a compatibility mirror using snake_case keys.
+2. Each entry includes at least `call_index`, `tool_id`, `status`, `latency_ms`, `argument_hash`, and optional `result_hash` / `error_code`.
 
 ## Acceptance criteria
 
@@ -1022,3 +1393,44 @@ Initial projection writes prompt-hash and resolved-mention fields after run crea
 49. Legacy orchestration validation parity tests for role-in-use delete rejection, disabled-role character writes, and reserved handle rejection.
 50. Persisted `final_output` and terminal-error reload tests for runtime run and artifact reads.
 51. Legacy mention-catalog contract parity tests during migration.
+52. Runtime approval review-list tests filtered by run, caller, workflow, capability, and status.
+53. Runtime trace-event review-list tests filtered by run, caller, workflow, capability, and event type.
+54. Imported persona projection-audit tests covering create, reproject, and archive events.
+55. Single-agent output-contract validation tests for agents with and without `final_output_contract`.
+56. `TerminalError` response-shape tests for run, artifact, and tryout reads.
+57. Version-history list endpoint tests for agents, workflows, personas, and capabilities.
+58. Artifacts endpoint parity tests covering prompt, mention, version-set, and final-output fields.
+59. Runtime run-create request/response contract tests.
+60. Approval approve/deny request/response contract tests.
+61. Cancel-from-`WAITING_APPROVAL` tests proving pending approvals become `EXPIRED` before cancellation completes.
+62. Public create-and-poll semantics tests for `POST /api/v2/runtime/runs`.
+63. Connector lifecycle semantics tests for `placeholder` vs `approved` behavior.
+64. `TraceSummary` and `ApprovalSummary` schema tests for run, artifact, and tryout reads.
+65. Cancel response contract tests for `POST /api/v2/runtime/runs/{runId}/cancel`.
+66. Approval read `summary` and `allowedActions` contract tests.
+67. Approval row status tests for `PENDING`, `APPROVED`, `DENIED`, and `EXPIRED` actor/reason semantics.
+68. Public runtime create rejection tests for reserved internal caller types.
+69. Tryout `GET` and `persist` response-shape tests, including paused `WAITING_APPROVAL` runs.
+70. Cancellation snapshot-projection tests for runtime-backed backtest runs.
+71. Tryout caller-type reservation tests proving `/api/v2/runtime/runs` rejects public `callerType=tryout`.
+72. Summary parity tests proving run, artifact, and tryout reads expose the same canonical summaries for a run.
+73. Snapshot `approval_trace` compatibility-shape tests, including lowercase `expired` entries on cancellation.
+74. Snapshot `resolved_mentions` and resolved-version compatibility-shape tests.
+75. Snapshot `tool_call_trace` compatibility-shape tests with snake_case keys.
+76. Startup repair tests for interrupted `runtime_runs` and runtime-backed backtests.
+77. Runtime flag control-path tests for `runtime_control_flags` and `runtime_flag_change_events` audit rows.
+78. Legacy-callback cancel-eligibility tests preserving current `PENDING`/`RUNNING`-only behavior.
+79. Internal backtest pre-run `PENDING` compatibility tests.
+80. Legacy snapshot `resolved_mentions` projection tests proving exact `role_id` / `character_id` recovery from native runtime artifacts.
+81. Executor step-plan tests proving adapters use `resolvedWorkflowAgentRefs` rather than flattened `resolvedCapabilities` for step-local semantics.
+82. Historical classification manifest tests proving `launch_mode` / `execution_owner` are sourced from an operator-reviewed manifest.
+83. Generic workflow adapter tests for non-backtest workflow execution.
+84. Rollback guard tests for non-terminal pinned `runtime_v2` backtests even when no active runtime run exists.
+85. `execution_mode` nullability tests for v2-native workflows and seeded-only enum parity for rollback-compatible workflows.
+86. `executionOwner`-based backtest state-mapping tests proving legacy-path internal rows do not inherit runtime semantics.
+87. Managed-only create/patch tests for agent specs, workflow specs, and persona profiles.
+88. Non-backtest rollback-window seeded-workflow rejection tests.
+89. Seeded lifecycle-route rejection tests for agent specs, workflow specs, and persona profiles.
+90. Tryout rollback-window seeded-workflow rejection tests.
+91. Create-time routing-matrix tests for `launchMode`, runtime flag state, and workflow selector/default combinations.
+92. Startup repair tests for stale pre-run internal `PENDING` backtests with `execution_owner=runtime_v2` and `currentRunId=null`.

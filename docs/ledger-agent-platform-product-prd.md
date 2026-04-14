@@ -19,17 +19,17 @@ Workflow spec: a versioned execution graph that defines steps, handoffs, step-le
 
 Persona profile: a non-executable authoring profile that carries role-like, character-like, or builtin prompt fragments, display metadata, handles, and default capability hints. It is the long-term landing zone for current roles, characters, and builtin mention targets.
 
-Capability registry: the backend-owned catalog of tools, connectors, bundles, and approval policies. It has two sources: seeded immutable entries and managed entries.
+Capability registry: the backend-owned catalog of tools, connectors, bundles, and approval metadata/override rules. It has two sources: seeded immutable entries and managed entries.
 
 Run: one execution instance owned by the generic runtime.
 
-Trace: the ordered record of runtime events, including steps, tool calls, approvals, warnings, and outputs.
+Trace: the ordered record of runtime trace events, including steps, tool calls, approvals, warnings, and outputs.
 
 Approval policy: the saved rule on a capability or workflow step that determines whether approval is required.
 
 Approval status: the runtime state of one approval request, such as pending, approved, denied, or expired.
 
-Approval trace: the persisted audit trail of approval-related runtime events.
+Approval audit trail: the persisted history of approval-related runtime events, backed by native runtime approval records and mirrored into compatibility traces only where required.
 
 Tryout: a fast execution flow for validating an agent spec or workflow spec against sample inputs. Tryouts are ephemeral by default and retained for 24 hours unless explicitly persisted.
 
@@ -112,8 +112,8 @@ Ledger should have one in-process backend runtime for agent execution. That runt
 
 ### 1. Studio authoring
 
-1. Author or edit agent specs, workflow specs, and persona profiles.
-2. Inspect seeded and managed capability entries.
+1. Author or edit managed agent specs, managed workflow specs, managed persona profiles, and managed capability entries.
+2. Inspect seeded resources and imported personas as read-only surfaces.
 3. View version history and activation status.
 
 ### 2. Tryout
@@ -122,6 +122,7 @@ Ledger should have one in-process backend runtime for agent execution. That runt
 2. Provide sample inputs and optional persona-profile references.
 3. Execute once.
 4. Inspect persisted final output, failure details, trace, approvals, and capability usage without creating a backtest.
+5. During the rollback window, tryout may execute only v2-native workflows or single-agent runs.
 
 ### 3. Backtest execution
 

@@ -3,13 +3,13 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers route modules and dependency wiring in `app/api/`.
 
 ## OVERVIEW
-`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services.
+`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services, and the live app now mounts both the long-lived `/api/v1` surface and an additive `/api/v2` surface from this package.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Router composition | `router.py` | mounts all route modules under `/api/v1` |
-| Service construction | `dependencies.py` | request-scoped session plus CRUD, CSV import, trading, market-data, template, report, orchestration, and quote-provider factories |
+| Router composition | `router.py`, `v2_router.py`, `../main.py` | `router.py` composes `/api/v1`, `v2_router.py` composes `/api/v2`, and `main.py` mounts both |
+| Service construction | `dependencies.py` | request-scoped session plus CRUD, CSV import, trading, market-data, template, report, orchestration, runtime, Studio, Tryout, spec, and quote-provider factories |
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD plus symbol lookup |
@@ -20,10 +20,19 @@
 | Orchestration routes | `orchestration.py` | role CRUD, character CRUD, mention catalog |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
+| Agent spec routes | `agent_specs.py` | `/api/v2` managed/seeded agent-spec list/detail and lifecycle actions |
+| Workflow spec routes | `workflow_specs.py` | `/api/v2` managed/seeded workflow-spec list/detail and lifecycle actions |
+| Capability routes | `capabilities.py` | `/api/v2` capability registry list/detail and lifecycle actions |
+| Persona routes | `personas.py` | `/api/v2` persona profile list/detail reads |
+| Runtime routes | `runtime.py` | `/api/v2` public runtime run create/read/cancel plus approval actions |
+| Runtime control routes | `runtime_control.py` | `/api/v2` runtime feature-flag reads and updates |
+| Studio routes | `studio.py` | `/api/v2` runtime/studio inspection reads for runs, artifacts, approvals, and trace events |
+| Tryout routes | `tryouts.py` | `/api/v2` Tryout execute/read/persist flow |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
 - Each module declares one `APIRouter(prefix=..., tags=[...])`.
+- `main.py` mounts both router families: `/api/v1` via `router.py` and additive `/api/v2` via `v2_router.py`; v2 extends the live API without replacing v1.
 - Route handlers accept integer ids from the path and typed Pydantic bodies, then delegate to a service.
 - Use `Depends(get_...)` factories from `dependencies.py` rather than constructing services inline.
 - Keep routes RESTful: HTTP verbs express intent, and success responses match the declared `response_model`.
@@ -54,5 +63,6 @@ uv run pytest tests/test_api.py tests/test_backtests_api.py tests/test_orchestra
 ```
 
 ## NOTES
-- `router.py` mounts all live routers under `/api/v1`: backtests, backtest callbacks, portfolios, balances, positions, trading operations, market data, orchestration, templates, and reports.
-- `dependencies.py` constructs services with a shared request `Session` and wires `BacktestService`, `BacktestCycleService`, `OrchestrationService`, `CsvImportService`, `TradingOperationService`, `MarketDataService`, `TextTemplateService`, `TemplateCompilerService`, `ReportService`, and `YahooFinanceQuoteProvider` into the live API.
+- `router.py` mounts all live `/api/v1` routers: backtests, backtest callbacks, portfolios, balances, positions, trading operations, market data, orchestration, templates, and reports.
+- `v2_router.py` mounts the additive `/api/v2` routers: agent specs, workflow specs, capabilities, personas, runtime, runtime control, Studio, and Tryouts.
+- `dependencies.py` constructs services with a shared request `Session` and wires both v1 and v2 route families, including `BacktestService`, `BacktestCycleService`, `OrchestrationService`, `CsvImportService`, `TradingOperationService`, `MarketDataService`, `TextTemplateService`, `TemplateCompilerService`, `ReportService`, `AgentRuntimeService`, `StudioQueryService`, `TryoutService`, the v2 spec services, `RuntimeControlService`, and `YahooFinanceQuoteProvider` into the live API.

@@ -80,7 +80,7 @@ It uses the existing LangGraph runner through an adapter boundary rather than re
 
 1. `BacktestRuntimeAdapter`: converts one backtest cycle context into one runtime request and translates runtime output back into current backtest-side persistence operations.
 2. `TryoutService`: builds ephemeral runtime requests from Studio inputs.
-3. `StudioQueryService`: exposes spec, run, trace, approval, and capability inspection read models.
+3. `StudioQueryService`: exposes spec, run, trace, approval, and capability inspection read models, including review by run, caller, workflow, and capability.
 
 ## Ownership boundaries
 
@@ -102,7 +102,20 @@ Recommended runtime flow:
 4. Runtime executes step by step, persisting `runtime_trace_events` as it progresses.
 5. When approval is required, runtime persists a checkpoint row plus a pending approval row, transitions the run to `WAITING_APPROVAL`, and returns control.
 6. Approval endpoints load the latest checkpoint, resolve the pending approval, and resume the same run in-process.
-7. Runtime completes with normalized output and trace summary.
+7. Runtime completes with normalized output plus persisted trace and approval summaries on the runtime run record.
+
+Public-vs-internal execution contract rule:
+
+1. The public `POST /api/v2/runtime/runs` endpoint is an async create-and-poll API.
+2. Rich terminal payloads such as report markdown, trade decisions, final output, and summaries come from internal service contracts or caller-specific convenience APIs, not from the minimal public create response.
+3. `TryoutService` is the synchronous convenience entry point for interactive execution.
+4. `BacktestRuntimeAdapter` uses the internal runtime service contract rather than the minimal public HTTP create contract.
+5. Public HTTP callers do not create `callerType=tryout` runs through `POST /api/v2/runtime/runs`; the dedicated tryout APIs own that caller type.
+
+Summary read rule:
+
+1. `traceSummary` and `approvalSummary` are canonical run-level summaries owned by `runtime_runs`.
+2. Run, artifact, and tryout reads surface those same summaries; they are not independently computed per endpoint.
 
 Approval control-flow rule:
 
@@ -110,17 +123,26 @@ Approval control-flow rule:
 2. Approval `DENIED` resumes the same run only when the current step defines an explicit `approval_denied` edge.
 3. Approval `DENIED` without an `approval_denied` edge fails the run.
 4. Explicit cancel during `WAITING_APPROVAL` cancels the run.
+5. Canceling a `WAITING_APPROVAL` run expires any still-pending approvals before the run is finalized as cancelled.
+6. Public approve/deny endpoints return approval resolution metadata plus the resumed run status; callers poll the run read for terminal payloads.
 
 Backtest compatibility state mapping during migration:
 
-1. Runtime `QUEUED` or `RUNNING` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
-2. Runtime `WAITING_APPROVAL` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
-3. Runtime `SUCCEEDED` on a non-terminal cycle -> `BacktestRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
-4. Runtime `SUCCEEDED` on the final cycle -> `BacktestRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
-5. Runtime `FAILED` -> `BacktestRead.status=FAILED`, `currentCycleStatus=FAILED`.
-6. Runtime `CANCELLED` -> `BacktestRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
+1. A newly created `executionOwner=runtime_v2` backtest remains `BacktestRead.status=PENDING` until its first runtime cycle run is created.
+2. For `executionOwner=runtime_v2`, runtime `QUEUED` or `RUNNING` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
+3. For `executionOwner=runtime_v2`, runtime `WAITING_APPROVAL` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
+4. For `executionOwner=runtime_v2`, runtime `SUCCEEDED` on a non-terminal cycle -> `BacktestRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
+5. For `executionOwner=runtime_v2`, runtime `SUCCEEDED` on the final cycle -> `BacktestRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
+6. For `executionOwner=runtime_v2`, runtime `FAILED` -> `BacktestRead.status=FAILED`, `currentCycleStatus=FAILED`.
+7. For `executionOwner=runtime_v2`, runtime `CANCELLED` -> `BacktestRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
 
-`POST /api/v1/backtests/{id}/cancel` must also be the endpoint that cancels a `WAITING_APPROVAL` runtime-backed cycle during migration.
+`POST /api/v1/backtests/{id}/cancel` must also be the endpoint that cancels a `WAITING_APPROVAL` `executionOwner=runtime_v2` cycle during migration.
+
+Pre-run internal `PENDING` rule:
+
+1. If `executionOwner=runtime_v2`, `BacktestRead.status=PENDING`, and `currentRunId=null`, the backtest has not created its first runtime cycle run yet.
+2. In that state, `POST /api/v1/backtests/{id}/cancel` cancels the backtest directly without creating a runtime run.
+3. Startup repair treats that state like a stale pre-run internal backtest and fails it with a restart error rather than leaving it pending.
 
 ## Roles, characters, and persona profiles
 
@@ -199,12 +221,17 @@ Backtest adapter flow:
 7. Runtime returns report markdown, normalized trade decisions, and trace refs for that cycle.
 8. Backtest service continues report and trade persistence.
 
+Attempt numbering rule:
+
+1. `attemptNumber` is runtime-derived for backtest callers from existing run history for the same `(callerType, callerId, callerScopeKey)`.
+2. Callers do not submit `attemptNumber` in the create request.
+
 Workflow-spec parity rule for seeded backtest patterns:
 
 1. Seeded workflow specs must explicitly carry the current `BacktestPatternSpec` execution contract: topology/agent order, `review_mode`, `execution_mode`, `default_tool_ids`, current `allowed_bundle_keys` mapped into v2 `allowed_capability_bundle_keys`, and `connector_ids`.
 2. In v2, topology order belongs to the workflow graph definition, not to agent specs.
-3. For rollback-compatible seeded workflows, `review_mode` remains seeded-compatibility metadata and a semantic input to the seeded execution adapter until the rollback window closes.
-4. For v2-native workflows, equivalent reviewer behavior must be expressed only through `graph_definition`.
+3. For rollback-compatible seeded workflows, `execution_mode` and `review_mode` remain seeded-compatibility metadata and semantic inputs to the seeded execution adapter until the rollback window closes.
+4. For v2-native workflows, both fields are null and equivalent behavior must be expressed only through `graph_definition`.
 
 Backtest run-id lifecycle during migration:
 
@@ -219,6 +246,13 @@ Execution-owner pinning rule:
 2. `executionOwner=legacy_path` keeps that backtest on the current path for all remaining cycles.
 3. `executionOwner=runtime_v2` keeps that backtest on the runtime path for all remaining cycles.
 4. Flag flips affect only newly created or newly classified eligible backtests; they do not re-home an in-flight backtest.
+
+Create-time routing matrix:
+
+1. `launchMode=legacy_callback` always pins `executionOwner=legacy_path`.
+2. `launchMode=internal` with the runtime flag disabled pins `executionOwner=legacy_path`.
+3. `launchMode=internal` with the runtime flag enabled pins `executionOwner=runtime_v2` only when the selected or defaulted workflow resolves to a rollback-compatible seeded workflow.
+4. Otherwise `launchMode=internal` pins `executionOwner=legacy_path` until the rollback window closes or a later migration step explicitly changes the rule.
 
 Legacy callback coexistence rule:
 
@@ -235,6 +269,11 @@ Mixed-mode webhook compatibility rule:
 3. For `launchMode=internal`, supplied values are compatibility metadata only and do not participate in runtime routing.
 4. For `launchMode=legacy_callback`, existing webhook delivery behavior remains authoritative.
 
+Legacy callback cancel rule:
+
+1. `launchMode=legacy_callback` keeps the current cancel semantics.
+2. `POST /api/v1/backtests/{id}/cancel` remains limited to `PENDING` or `RUNNING` callback-mode backtests during the rollback window.
+
 Retained legacy callback contract:
 
 1. `POST /api/v1/backtests/{backtestId}/cycles/{cycleDate}/report` remains available and accepts `CycleReportUpload` (`name`, `content`, `tags`), returning the created report slug.
@@ -246,16 +285,17 @@ Historical backtest classification rule:
 
 1. New backtests created after the v2 backtest schema rollout persist `launchMode` directly from `BacktestCreate`.
 2. Pre-rollout rows are not auto-classified from `webhook_url` alone.
-3. Pre-rollout rows are classified through one audited migration job, not by inference at read time.
+3. Pre-rollout rows are classified through one audited migration job using an operator-reviewed manifest keyed by `backtest_id`, not by inference at read time.
 4. Mixed-mode cutover applies only to rows with an explicit persisted `launchMode` value.
 
 Historical classification job:
 
 1. Pre-rollout rows are classified through one audited migration job.
-2. Each classification writes `launchMode`, `executionOwner`, `launchModeClassifiedAt`, `launchModeClassifiedBy`, and a classification note.
-3. For classified internal rows using supported seeded patterns, the same job also writes `workflowSpecKey` from the persisted `orchestrationPatternKey` and pins `workflowSpecVersion=1`.
-4. Historical rows whose pattern key cannot be mapped to a rollback-compatible seeded workflow stay on the current path and are not eligible for runtime-backed execution.
-5. Mixed-mode cutover is blocked until all rows targeted for runtime-backed execution have been explicitly classified.
+2. The manifest is the authoritative classification source for `launchMode` and `executionOwner`.
+3. Each classification writes `launchMode`, `executionOwner`, `launchModeClassifiedAt`, `launchModeClassifiedBy`, and a classification note.
+4. For classified internal rows using supported seeded patterns, the same job also writes `workflowSpecKey` from the persisted `orchestrationPatternKey` and pins `workflowSpecVersion=1`.
+5. Historical rows whose pattern key cannot be mapped to a rollback-compatible seeded workflow stay on the current path and are not eligible for runtime-backed execution.
+6. Mixed-mode cutover is blocked until all rows targeted for runtime-backed execution have manifest-backed classifications.
 
 Backtest post-resume hook:
 
@@ -267,16 +307,23 @@ Generic executor adapter boundary:
 
 1. `AgentRuntimeService` executes through caller-aware executor adapters, not by calling `BacktestLangGraphRunner` directly.
 2. `BacktestLangGraphExecutionAdapter` translates runtime-owned backtest runs into the current `BacktestLangGraphRequest` shape.
-3. Non-backtest callers such as tryout or Studio use their own execution adapter contract instead of fabricating backtest-only fields like `backtest_id`, `cycle_date`, or `prompt_report_slug`.
-4. The generic adapter contract is `ExecutionAdapterRequest -> ExecutionAdapterResult`; backtest, tryout, and future callers each implement the translation into that contract.
-5. The adapter request must carry execution kind, pinned spec versions, pinned persona/capability versions, caller context, and caller-scoped artifacts needed before execution.
-6. The adapter result must return final output, trace/approval events, and caller-scoped artifacts without assuming backtest-specific trade/report fields.
+3. `GenericWorkflowExecutionAdapter` executes v2-native workflow runs for non-backtest callers from `graph_definition` plus the frozen step plan.
+4. `SingleAgentExecutionAdapter` executes `executionKind=single_agent` runs for tryout and future generic runtime callers.
+5. The generic adapter contract is `ExecutionAdapterRequest -> ExecutionAdapterResult`; backtest, generic-workflow, and single-agent adapters each implement the translation into that contract.
+6. The adapter request must carry execution kind, pinned spec versions, pinned persona/capability versions, caller context, and caller-scoped artifacts needed before execution.
+7. The adapter result must return final output, trace/approval events, and caller-scoped artifacts without assuming backtest-specific trade/report fields.
+
+Rollback-window non-backtest workflow rule:
+
+1. During the rollback window, non-backtest callers may execute only v2-native workflow specs or single-agent runs.
+2. Rollback-compatible seeded workflow specs are reserved to backtest execution during the rollback window.
 
 Workflow-agent determinism rule:
 
 1. Workflow execution must materialize a step-level resolved agent plan at run creation.
 2. That resolved plan records each step's agent spec key/version plus the pinned persona and capability refs used by that step.
 3. Approval resume, retry, and historical inspection reuse the resolved step plan instead of re-reading the latest workflow definition.
+4. Step execution uses the frozen step-level capability refs from that plan; flattened run-level capability summaries are for preflight and inspection only.
 
 Workflow graph contract:
 
@@ -296,6 +343,7 @@ Workflow graph contract:
 5. `POST /api/v2/tryouts/{runId}/persist` converts an ephemeral tryout into a normal persisted Studio-visible run.
 6. Persist is idempotent and preserves the same `runId`.
 7. Ephemeral tryouts may enter `WAITING_APPROVAL`; persisting them clears the expiry timer and keeps the same run identity.
+8. During the rollback window, tryout may execute only v2-native workflows or single-agent runs.
 
 ### Studio
 
@@ -310,6 +358,12 @@ Recommended route families:
 
 Studio must not become a separate execution engine. It is an authoring and inspection shell over the runtime.
 
+Studio mutability rule:
+
+1. Studio mutates managed resources only.
+2. Seeded resources are inspectable but read-only.
+3. Imported personas are inspectable historical projections and remain read-only.
+
 ## Persistence strategy
 
 New service-owned records should be explicit and queryable:
@@ -323,12 +377,30 @@ New service-owned records should be explicit and queryable:
 7. `runtime_approvals`
 8. `runtime_checkpoints`
 9. `runtime_run_artifacts`
+10. `persona_projection_events`
+11. `runtime_control_flags`
+12. `runtime_flag_change_events`
 
 `backtest_orchestration_snapshots` remains only as a compatibility mirror for backtest callers until migration completes.
 
 `runtime_run_artifacts` is the canonical store for prompt hashes, authored and compiled prompt bodies, explicit persona-profile refs, ordered resolved-mention objects, rendered report markdown, caller-scoped artifacts, resolved version sets, mentioned target outputs, persisted generic final output, terminal failure details, and caller-specific compatibility refs such as `prompt_report_slug`.
 
 It also carries the resolved workflow-agent plan, explicit persona-ref set, flattened effective capability set, persisted generic `finalOutput`, and terminal failure summary needed to replay or inspect a run deterministically.
+
+`traceSummary` and `approvalSummary` are derived from the canonical `runtime_runs` summary fields and surfaced on run, artifact, and tryout reads; they are not separate artifact-local persisted objects.
+
+`runtime_trace_events` and `runtime_approvals` are the canonical native audit stores. `tool_call_trace` and `approval_trace` remain backtest-snapshot compatibility mirrors only.
+
+`persona_projection_events` is the canonical audit store for imported-persona projection activity. Every imported create, reproject, deprecate, or archive operation writes one projection event in the same transaction as the imported persona version change.
+
+Startup repair rule:
+
+1. Application startup runs a runtime repair pass in the same DB initialization phase that currently repairs interrupted backtests.
+2. Runtime-owned runs left in `QUEUED` or `RUNNING` are marked failed with a terminal interruption error.
+3. Runtime-owned runs left in `WAITING_APPROVAL` remain resumable.
+4. Runtime-backed backtests reflect that repair outcome by setting `status=FAILED`, `currentCycleStatus=FAILED`, and a restart error message.
+5. Runtime-backed backtests clear `currentRunId`, keep `lastCompletedRunId` unchanged, preserve `_run_state` redaction behavior, and do not advance the schedule.
+6. Runtime-backed backtests update snapshot mirrors through the same failure projection rules used for ordinary failure.
 
 ## Migration and rollback design
 
@@ -373,17 +445,19 @@ During rollback:
 4. Runtime-created backtests must still have enough persisted compatibility data to resolve a current pattern key.
 5. No destructive schema changes happen before the rollback window closes.
 6. Imported personas remain readable from `persona_profiles`, but legacy orchestration rows remain the writable source until rollback support is no longer required.
-7. Because rollback is blocked until active runtime-backed runs drain or cancel, rollback does not re-home an in-flight `runtime_v2` backtest.
+7. Because rollback is blocked until all non-terminal `runtime_v2` backtests finish or are cancelled, rollback does not re-home any pinned `runtime_v2` backtest.
 
 Rollback quiescence rule:
 
-1. Default policy: do not flip the backtest runtime flag while runtime-backed backtest runs exist in `QUEUED`, `RUNNING`, or `WAITING_APPROVAL`.
-2. Operators must either let those runs drain or cancel them before rollback.
+1. Default policy: do not flip the backtest runtime flag while any non-terminal `runtime_v2` backtest exists.
+2. Operators must either let those backtests finish on the runtime path or cancel them before rollback.
 
 Rollback guard control path:
 
-1. The backtest runtime flag is changed only through one audited operational control path.
-2. That control path checks for active runtime-backed backtest runs before applying the change and rejects the operation when any remain.
+1. The effective backtest runtime flag lives in `runtime_control_flags` under key `AGENT_RUNTIME_V2_BACKTESTS_ENABLED`.
+2. The flag is changed only through one audited operational control path.
+3. That control path checks for non-terminal `runtime_v2` backtests before applying the change and rejects the operation when any remain.
+4. Successful and rejected attempts both write `runtime_flag_change_events` audit rows.
 
 Mixed-mode storage rule:
 
@@ -402,7 +476,7 @@ Snapshot projector change rule:
 1. V2 compatibility projection intentionally changes today’s insert-once snapshot behavior.
 2. Because `backtest_orchestration_snapshots` remains unique by `(backtest_id, cycle_date)`, the projector must update/upsert the existing row for the latest attempt instead of inserting a second row.
 3. The initial projection happens after run creation when prompt hashes and resolved mentions are known.
-4. The terminal projection overwrites the same row after run completion or failure to attach final trace and approval artifacts.
+4. The terminal projection overwrites the same row after run completion, failure, or cancellation to attach final trace and approval artifacts.
 
 Imported persona delete rule:
 

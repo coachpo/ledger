@@ -20,6 +20,16 @@ src/pages/
 │   ├── list.tsx            # backtest inventory and terminal delete flow
 │   ├── config.tsx          # simulation launch form with portfolio/template options
 │   └── detail.tsx          # running-state progress plus completed results
+├── studio/
+│   ├── index.tsx           # Studio landing page for v2 catalog and run entry points
+│   ├── agents/             # agent spec list/editor routes
+│   ├── workflows/          # workflow spec list/editor routes
+│   ├── personas/           # persona profile list/editor-style inspection routes
+│   ├── capabilities/       # capability registry list/editor routes
+│   └── runs/
+│       └── detail.tsx      # Studio runtime run detail route
+├── tryout/
+│   └── index.tsx           # Tryout execute/inspect/persist/approval route
 ├── orchestration/
 │   ├── index.tsx           # orchestration landing page
 │   ├── roles/
@@ -44,6 +54,8 @@ src/pages/
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
 | Backtest routes | `backtests/AGENTS.md` | list/config/detail, 5s polling, charts, and cleanup |
+| Studio routes | `studio/**/*`, `../components/layout.tsx`, `../routes.ts` | `/studio` catalog plus agent/workflow/persona/capability CRUD and run detail routes |
+| Tryout route | `tryout/index.tsx`, `../routes.ts` | `/tryout` execute/inspect/persist flow using runtime and Studio data |
 | Orchestration routes | `orchestration/AGENTS.md` | orchestration landing plus role and character CRUD |
 | Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
 | Report routes | `reports/AGENTS.md` | list/detail, upload/generate, markdown view/edit/download |
@@ -58,6 +70,8 @@ src/pages/
 - Backtest pages keep polling, chart wiring, report-link extraction, and launch-form state at the route level while leaving request details to hooks and API modules.
 - The template editor page uses `useDebounce()`, `useCompileInline()`, and `usePlaceholders()` to keep preview and placeholder browsing responsive without moving that orchestration into the component library.
 - Report pages use `use-reports.ts` for server state, render markdown in read mode, and keep edit-mode textareas local to the route component.
+- Studio pages use the v2 Studio hooks and route params to keep spec CRUD, runtime run inspection, and sidebar/breadcrumb ownership inside the routed page layer.
+- The Tryout page composes `use-tryouts.ts`, `use-runtime.ts`, and `use-studio.ts` for execute/persist/approval flows while keeping request details and cache invalidation in hooks.
 - Orchestration pages use `use-orchestration.ts` plus shared role/character form schemas and keep route transitions/toasts in the page layer.
 - Portfolio detail pages compose portfolio, balance, position, trade, and market-data hooks together; quote enrichment and allocation math stay in shared analytics helpers instead of the page body.
 
@@ -83,4 +97,5 @@ pnpm test:e2e
 ## NOTES
 - Pages are thin orchestration layers; the real complexity lives in hooks, shared components, and feature folders.
 - Portfolio detail pages are routable but not exposed separately in the sidebar.
+- Studio and Tryout are first-class routed surfaces wired through `src/routes.ts` and `src/components/layout.tsx`; Studio exposes the v2 catalog/run workspace, while Tryout exposes the v2 execution/persist/approval flow.
 - Orchestration is a first-class sidebar route group, and its landing page links out to roles and characters.
