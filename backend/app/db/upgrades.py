@@ -25,6 +25,32 @@ _LEGACY_SLUG_INVALID_CHARS_RE = re.compile(r"[^a-z0-9_]+")
 _LEGACY_SLUG_DUPLICATE_UNDERSCORES_RE = re.compile(r"_+")
 _BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT = "structured_output"
 _BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT = "not_required"
+_RUNTIME_V2_TABLE_SPECS = (
+    ("agent_specs", "app.models.agent_spec", "AgentSpec"),
+    ("workflow_specs", "app.models.workflow_spec", "WorkflowSpec"),
+    ("persona_profiles", "app.models.persona_profile", "PersonaProfile"),
+    (
+        "capability_registry_entries",
+        "app.models.capability_registry_entry",
+        "CapabilityRegistryEntry",
+    ),
+    ("runtime_runs", "app.models.runtime_run", "RuntimeRun"),
+    ("runtime_trace_events", "app.models.runtime_trace_event", "RuntimeTraceEvent"),
+    ("runtime_approvals", "app.models.runtime_approval", "RuntimeApproval"),
+    ("runtime_checkpoints", "app.models.runtime_checkpoint", "RuntimeCheckpoint"),
+    ("runtime_run_artifacts", "app.models.runtime_run_artifact", "RuntimeRunArtifact"),
+    (
+        "persona_projection_events",
+        "app.models.persona_projection_event",
+        "PersonaProjectionEvent",
+    ),
+    ("runtime_control_flags", "app.models.runtime_control_flag", "RuntimeControlFlag"),
+    (
+        "runtime_flag_change_events",
+        "app.models.runtime_flag_change_event",
+        "RuntimeFlagChangeEvent",
+    ),
+)
 
 
 def normalize_legacy_portfolio_slug(name: str) -> str:
@@ -253,12 +279,9 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
                     },
                 )
 
-            connection.exec_driver_sql(
-                "ALTER TABLE backtest_orchestration_snapshots DROP COLUMN IF EXISTS snapshot_type"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE backtest_orchestration_snapshots DROP COLUMN IF EXISTS snapshot"
-            )
+            # Keep legacy snapshot columns in place during the rollback window.
+            # The explicit columns become the active compatibility surface, but
+            # destructive cleanup must wait until rollback compatibility is removed.
 
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -436,6 +459,60 @@ def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
             )
 
 
+def _ensure_runtime_v2_tables(engine: Engine, table_names: set[str]) -> None:
+    for table_name, module_path, model_name in _RUNTIME_V2_TABLE_SPECS:
+        if table_name in table_names:
+            continue
+        model = getattr(import_module(module_path), model_name)
+        model.__table__.create(engine, checkfirst=True)
+        table_names.add(table_name)
+
+
+def _upgrade_persona_profiles_table(engine: Engine) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "persona_profiles" not in table_names:
+        return
+
+    persona_columns = {column["name"] for column in inspector.get_columns("persona_profiles")}
+    persona_check_constraints = {
+        constraint.get("name") for constraint in inspector.get_check_constraints("persona_profiles")
+    }
+
+    with engine.begin() as connection:
+        if "legacy_entity_type" not in persona_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE persona_profiles ADD COLUMN legacy_entity_type VARCHAR(20)"
+            )
+        if "legacy_entity_key" not in persona_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE persona_profiles ADD COLUMN legacy_entity_key VARCHAR(120)"
+            )
+
+    if "ck_persona_profiles_legacy_entity_type" not in persona_check_constraints:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE persona_profiles ADD CONSTRAINT "
+                "ck_persona_profiles_legacy_entity_type "
+                "CHECK (legacy_entity_type IS NULL OR legacy_entity_type IN ('role', 'character'))"
+            )
+
+    if "ck_persona_profiles_legacy_entity_pair" not in persona_check_constraints:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE persona_profiles ADD CONSTRAINT "
+                "ck_persona_profiles_legacy_entity_pair "
+                "CHECK ((legacy_entity_type IS NULL AND legacy_entity_key IS NULL) OR "
+                "(legacy_entity_type IS NOT NULL AND legacy_entity_key IS NOT NULL))"
+            )
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_persona_profiles_legacy_entity "
+            "ON persona_profiles (legacy_entity_type, legacy_entity_key)"
+        )
+
+
 def upgrade_legacy_schema(engine: Engine) -> None:
     validate_supported_database_engine(engine)
     inspector = inspect(engine)
@@ -450,6 +527,9 @@ def upgrade_legacy_schema(engine: Engine) -> None:
 
     if "backtest_orchestration_snapshots" in table_names:
         _upgrade_backtest_orchestration_snapshots(engine)
+
+    _ensure_runtime_v2_tables(engine, table_names)
+    _upgrade_persona_profiles_table(engine)
 
     if "portfolios" in table_names:
         portfolio_columns = {column["name"] for column in inspector.get_columns("portfolios")}
@@ -500,6 +580,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
 
     if "backtests" in table_names:
         backtest_columns = {column["name"] for column in inspector.get_columns("backtests")}
+        backtest_indexes = {index["name"] for index in inspector.get_indexes("backtests")}
         if "orchestration_pattern_key" not in backtest_columns:
             with engine.begin() as connection:
                 connection.exec_driver_sql(
@@ -513,6 +594,69 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 )
                 connection.exec_driver_sql(
                     "ALTER TABLE backtests ALTER COLUMN orchestration_pattern_key SET NOT NULL"
+                )
+        if "launch_mode" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN launch_mode VARCHAR(30)"
+                )
+        if "workflow_spec_key" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN workflow_spec_key VARCHAR(120)"
+                )
+        if "workflow_spec_version" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN workflow_spec_version INTEGER"
+                )
+        if "execution_owner" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN execution_owner VARCHAR(20)"
+                )
+        if "current_run_id" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN current_run_id "
+                    "INTEGER REFERENCES runtime_runs(id) ON DELETE SET NULL"
+                )
+        if "last_completed_run_id" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN last_completed_run_id "
+                    "INTEGER REFERENCES runtime_runs(id) ON DELETE SET NULL"
+                )
+        if "launch_mode_classified_at" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN launch_mode_classified_at TIMESTAMPTZ"
+                )
+        if "launch_mode_classified_by" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN launch_mode_classified_by VARCHAR(120)"
+                )
+        if "launch_mode_classification_note" not in backtest_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE backtests ADD COLUMN launch_mode_classification_note TEXT"
+                )
+        if "ix_backtests_execution_owner" not in backtest_indexes:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "CREATE INDEX ix_backtests_execution_owner ON backtests (execution_owner)"
+                )
+        if "ix_backtests_current_run_id" not in backtest_indexes:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "CREATE INDEX ix_backtests_current_run_id ON backtests (current_run_id)"
+                )
+        if "ix_backtests_last_completed_run_id" not in backtest_indexes:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "CREATE INDEX ix_backtests_last_completed_run_id "
+                    "ON backtests (last_completed_run_id)"
                 )
 
     if "reports" in table_names:
@@ -630,10 +774,5 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                     "SET NOT NULL"
                 )
 
-    obsolete_tables = [table_name for table_name in _OBSOLETE_TABLES if table_name in table_names]
-    if not obsolete_tables:
-        return
-
-    with engine.begin() as connection:
-        for table_name in obsolete_tables:
-            connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{table_name}" CASCADE')
+    # Intentionally retain legacy optional tables during the rollback window.
+    # Startup upgrades stay additive/non-destructive until compatibility removal is approved.

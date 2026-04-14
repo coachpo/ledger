@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.api.v2_router import v2_router
 from app.core.config import get_settings
 from app.core.errors import ApiError, request_validation_to_details
 from app.db.session import init_db
@@ -57,6 +58,7 @@ def create_app(*, init_database: bool = True) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(api_router)
+    app.include_router(v2_router)
     return app
 
 

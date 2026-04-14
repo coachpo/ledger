@@ -14,6 +14,8 @@ from app.db.validation import (
     validate_supported_id_schema,
 )
 from app.models.base import Base
+from app.services.runtime_control_service import RuntimeControlService
+from app.services.runtime_seed_bootstrap import bootstrap_runtime_seed_mirrors
 
 
 def init_db(database_url: str | None = None) -> None:
@@ -23,6 +25,11 @@ def init_db(database_url: str | None = None) -> None:
     validate_supported_id_schema(engine)
     Base.metadata.create_all(bind=engine)
     upgrade_legacy_schema(engine)
+    session_factory = get_session_factory(database_url)
+    with session_factory() as session:
+        bootstrap_runtime_seed_mirrors(session)
+        RuntimeControlService(session).ensure_managed_flags()
+        session.commit()
     mark_interrupted_backtests_failed(database_url)
 
 
