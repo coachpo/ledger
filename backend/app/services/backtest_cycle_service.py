@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
@@ -31,15 +30,18 @@ from app.langgraph.seeds import (
     SeededToolSpec,
     build_backtest_langgraph_runner,
     get_backtest_pattern_spec,
-    get_seeded_builtin_spec_for_handle,
     get_seeded_capability_bundle_spec,
     get_seeded_connector_spec,
     get_seeded_tool_spec,
 )
 from app.models.backtest import Backtest
 from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
-from app.repositories.orchestration_character import OrchestrationCharacterRepository
-from app.schemas.backtest import BacktestStatus, TradeDecision
+from app.schemas.backtest import (
+    BacktestExecutionOwner,
+    BacktestLaunchMode,
+    BacktestStatus,
+    TradeDecision,
+)
 from app.schemas.backtest_callback import (
     CycleCompleteResponse,
     CycleReportUpload,
@@ -48,12 +50,23 @@ from app.schemas.backtest_callback import (
     CycleTradesResponse,
 )
 from app.schemas.report import ReportMetadata
+from app.services.backtest_completion_service import BacktestCompletionService
 from app.services.backtest_engine import BacktestEngine
+from app.services.backtest_runtime_mentions import (
+    BacktestRuntimeMentionResolver,
+    append_mentioned_target_outputs,
+    build_runtime_full_user_prompt,
+    resolve_runtime_pattern_mention_policy,
+    serialize_builtin_versions,
+    serialize_character_versions,
+    serialize_mentioned_target_outputs,
+    serialize_resolved_mentions,
+    serialize_role_versions,
+)
 from app.services.orchestration_service import OrchestrationService
 from app.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
-_MENTION_RE = re.compile(r"(?<![@A-Za-z0-9_])@(?P<handle>[A-Za-z][A-Za-z0-9_]*)\b")
 
 _TERMINAL_BACKTEST_STATUSES = {
     BacktestStatus.COMPLETED,
@@ -118,6 +131,13 @@ class BacktestCycleService:
     def __init__(self, session: Session, session_factory: sessionmaker[Session]) -> None:
         self.session = session
         self.session_factory = session_factory
+        self.completion_service = BacktestCompletionService()
+
+    def build_engine(self, backtest_id: int) -> BacktestEngine:
+        return self._build_engine(backtest_id)
+
+    def dispatch_cycle(self, backtest_id: int, cycle_date: date) -> None:
+        self._dispatch_cycle(backtest_id, cycle_date)
 
     def start_backtest(self, backtest_id: int) -> None:
         engine = self._build_engine(backtest_id)
@@ -137,6 +157,7 @@ class BacktestCycleService:
         self, backtest_id: int, cycle_date: date, payload: CycleReportUpload
     ) -> str:
         backtest = self._get_backtest_or_raise(backtest_id)
+        self._ensure_callback_compatible(backtest)
         self._validate_cycle_status(
             backtest,
             cycle_date,
@@ -174,6 +195,7 @@ class BacktestCycleService:
         self, backtest_id: int, cycle_date: date, payload: CycleTradesRequest
     ) -> CycleTradesResponse:
         backtest = self._get_backtest_or_raise(backtest_id)
+        self._ensure_callback_compatible(backtest)
         self._validate_cycle_status(
             backtest,
             cycle_date,
@@ -220,6 +242,7 @@ class BacktestCycleService:
 
     def handle_cycle_complete(self, backtest_id: int, cycle_date: date) -> CycleCompleteResponse:
         backtest = self._get_backtest_or_raise(backtest_id)
+        self._ensure_callback_compatible(backtest)
         self._validate_cycle_status(
             backtest,
             cycle_date,
@@ -236,51 +259,16 @@ class BacktestCycleService:
 
         engine = self._build_engine(backtest_id)
         market_data = engine._load_cycle_market_data(engine._portfolio_symbols(), cycle_date)
-        date_str, equity_value = engine.record_cycle_equity(cycle_date, market_data)
-
-        run_state = self._load_run_state(backtest_id)
-        schedule = run_state["schedule"]
-        if cycle_date not in schedule:
-            raise business_rule_error(
-                "invalid_backtest_cycle_date",
-                f"Cycle date {cycle_date.isoformat()} is not part of the backtest schedule",
-            )
-
-        benchmark_history = run_state["benchmark_history"]
-        trade_log = run_state["trade_log"]
-        equity_points = list(run_state["equity_points"])
-        if equity_points and equity_points[-1][0] == date_str:
-            equity_points[-1] = (date_str, equity_value)
-        else:
-            equity_points.append((date_str, equity_value))
-
-        current_index = schedule.index(cycle_date)
-        is_last_cycle = current_index >= len(schedule) - 1
-        if is_last_cycle:
-            engine.finalize(
-                equity_points=equity_points,
-                benchmark_history=benchmark_history,
-                trade_log=trade_log,
-                schedule=schedule,
-            )
-            self._clear_cycle_status(backtest_id)
-            refreshed = self._get_backtest_or_raise(backtest_id)
-            return CycleCompleteResponse(
-                backtest_id=backtest_id,
-                status=refreshed.status,
-                completed_cycles=refreshed.completed_cycles,
-                total_cycles=refreshed.total_cycles,
-                next_cycle_date=None,
-                finished=True,
-            )
-
-        next_cycle_date = schedule[current_index + 1]
-        self._update_run_state(
-            backtest_id,
-            equity_points=equity_points,
-            trade_log=trade_log,
+        completion = self.completion_service.complete_cycle(
+            backtest_id=backtest_id,
+            cycle_date=cycle_date,
+            engine=engine,
+            market_data=market_data,
+            load_run_state=self._load_run_state,
+            update_run_state=self._update_run_state,
+            clear_cycle_status=self._clear_cycle_status,
+            dispatch_next_cycle=self._dispatch_cycle,
         )
-        self._dispatch_cycle(backtest_id, next_cycle_date)
 
         refreshed = self._get_backtest_or_raise(backtest_id)
         return CycleCompleteResponse(
@@ -288,12 +276,17 @@ class BacktestCycleService:
             status=refreshed.status,
             completed_cycles=refreshed.completed_cycles,
             total_cycles=refreshed.total_cycles,
-            next_cycle_date=next_cycle_date.isoformat(),
-            finished=False,
+            next_cycle_date=(
+                completion.next_cycle_date.isoformat()
+                if completion.next_cycle_date is not None
+                else None
+            ),
+            finished=completion.finished,
         )
 
     def _dispatch_cycle(self, backtest_id: int, cycle_date: date) -> None:
         engine = self._build_engine(backtest_id)
+        backtest = self._get_backtest_or_raise(backtest_id)
 
         try:
             cycle_ctx = engine.execute_cycle(cycle_date)
@@ -305,6 +298,18 @@ class BacktestCycleService:
 
         if cycle_ctx.get("cancelled"):
             self._clear_cycle_status(backtest_id)
+            return
+
+        if getattr(backtest, "execution_owner", None) == BacktestExecutionOwner.RUNTIME_V2.value:
+            try:
+                self._run_runtime_cycle(backtest_id, cycle_date, engine, cycle_ctx)
+            except Exception as exc:
+                logger.exception(
+                    "Failed to execute runtime-backed cycle %s for backtest %d",
+                    cycle_date,
+                    backtest_id,
+                )
+                self._mark_runtime_dispatch_failure(backtest_id, str(exc))
             return
 
         settings = get_settings()
@@ -322,6 +327,18 @@ class BacktestCycleService:
             )
             engine._mark_failed(str(exc))
             self._clear_cycle_status(backtest_id)
+
+    def _ensure_callback_compatible(self, backtest: Backtest) -> None:
+        if backtest.execution_owner == BacktestExecutionOwner.RUNTIME_V2.value:
+            raise business_rule_error(
+                "invalid_backtest_state",
+                "Runtime-backed backtests do not accept legacy callback ingress",
+            )
+        if backtest.launch_mode not in {None, BacktestLaunchMode.LEGACY_CALLBACK.value}:
+            raise business_rule_error(
+                "invalid_backtest_state",
+                "Only legacy callback backtests accept callback ingress",
+            )
 
     def _handle_timeout(self, backtest_id: int, cycle_date: date) -> None:
         with self.session_factory() as session:
@@ -435,49 +452,18 @@ class BacktestCycleService:
                 for symbol in symbols
             ]
 
-        run_state = self._load_run_state(backtest_id)
-        trade_log = list(run_state["trade_log"])
-        cycle_trades = engine.apply_cycle_trades(
+        self.completion_service.complete_cycle(
+            backtest_id=backtest_id,
             cycle_date=cycle_date,
-            decisions=decisions,
+            engine=engine,
             market_data=cycle_ctx["market_data"],
+            load_run_state=self._load_run_state,
+            update_run_state=self._update_run_state,
+            clear_cycle_status=self._clear_cycle_status,
+            dispatch_next_cycle=self._dispatch_cycle,
+            decisions=decisions,
             report_slug=cycle_ctx.get("prompt_report_slug"),
         )
-        trade_log.extend(cycle_trades)
-
-        date_str, equity_value = engine.record_cycle_equity(cycle_date, cycle_ctx["market_data"])
-        equity_points = list(run_state["equity_points"])
-        if equity_points and equity_points[-1][0] == date_str:
-            equity_points[-1] = (date_str, equity_value)
-        else:
-            equity_points.append((date_str, equity_value))
-
-        schedule = run_state["schedule"]
-        if cycle_date not in schedule:
-            engine._mark_failed(
-                f"Cycle date {cycle_date.isoformat()} is not part of the backtest schedule"
-            )
-            self._clear_cycle_status(backtest_id)
-            return
-
-        benchmark_history = run_state["benchmark_history"]
-        current_index = schedule.index(cycle_date)
-        if current_index >= len(schedule) - 1:
-            engine.finalize(
-                equity_points=equity_points,
-                benchmark_history=benchmark_history,
-                trade_log=trade_log,
-                schedule=schedule,
-            )
-            self._clear_cycle_status(backtest_id)
-            return
-
-        self._update_run_state(
-            backtest_id,
-            equity_points=equity_points,
-            trade_log=trade_log,
-        )
-        self._dispatch_cycle(backtest_id, schedule[current_index + 1])
 
     def _build_engine(self, backtest_id: int) -> BacktestEngine:
         from app.services.quote_provider import (
@@ -576,11 +562,38 @@ class BacktestCycleService:
             session.commit()
 
     def _clear_cycle_status(self, backtest_id: int) -> None:
+        self.completion_service.clear_cycle_status(self.session_factory, backtest_id)
+
+    def _run_runtime_cycle(
+        self,
+        backtest_id: int,
+        cycle_date: date,
+        engine: BacktestEngine,
+        cycle_ctx: dict[str, Any],
+    ) -> None:
+        from app.services.backtest_runtime_adapter import BacktestRuntimeAdapter
+
+        adapter = BacktestRuntimeAdapter(self.session, self.session_factory)
+        adapter.execute_cycle(
+            backtest_id=backtest_id,
+            cycle_date=cycle_date,
+            cycle_ctx=cycle_ctx,
+            engine=engine,
+            dispatch_next_cycle=self._dispatch_cycle,
+        )
+
+    def _mark_runtime_dispatch_failure(self, backtest_id: int, error_message: str) -> None:
         with self.session_factory() as session:
             backtest = session.get(Backtest, backtest_id)
             if backtest is None:
                 return
-            backtest.current_cycle_status = None
+            if backtest.current_run_id is not None:
+                return
+            if backtest.status in _TERMINAL_BACKTEST_STATUSES:
+                return
+            backtest.status = BacktestStatus.FAILED.value
+            backtest.current_cycle_status = BacktestStatus.FAILED.value
+            backtest.error_message = error_message
             session.commit()
 
     @staticmethod
@@ -716,56 +729,25 @@ class BacktestCycleService:
                 tool_call_trace=result.tool_call_trace,
                 approval_trace=getattr(result, "approval_trace", "not_required"),
             )
-        report_slug = engine._store_cycle_report(cycle_date, result.report_content)
-        trade_results = engine.apply_cycle_trades(
+        self.completion_service.complete_cycle(
+            backtest_id=backtest_id,
             cycle_date=cycle_date,
-            decisions=result.decisions,
+            engine=engine,
             market_data=cycle_ctx["market_data"],
-            report_slug=report_slug,
+            load_run_state=self._load_run_state,
+            update_run_state=self._update_run_state,
+            clear_cycle_status=self._clear_cycle_status,
+            dispatch_next_cycle=self._dispatch_cycle,
+            decisions=result.decisions,
+            report_markdown=result.report_content,
         )
-
-        run_state = self._load_run_state(backtest_id)
-        trade_log = list(run_state["trade_log"])
-        trade_log.extend(trade_results)
-        date_str, equity_value = engine.record_cycle_equity(cycle_date, cycle_ctx["market_data"])
-
-        schedule = run_state["schedule"]
-        if cycle_date not in schedule:
-            raise business_rule_error(
-                "invalid_backtest_cycle_date",
-                f"Cycle date {cycle_date.isoformat()} is not part of the backtest schedule",
-            )
-
-        benchmark_history = run_state["benchmark_history"]
-        equity_points = list(run_state["equity_points"])
-        if equity_points and equity_points[-1][0] == date_str:
-            equity_points[-1] = (date_str, equity_value)
-        else:
-            equity_points.append((date_str, equity_value))
-
-        current_index = schedule.index(cycle_date)
-        is_last_cycle = current_index >= len(schedule) - 1
-        if is_last_cycle:
-            engine.finalize(
-                equity_points=equity_points,
-                benchmark_history=benchmark_history,
-                trade_log=trade_log,
-                schedule=schedule,
-            )
-            self._clear_cycle_status(backtest_id)
-            return
-
-        self._update_run_state(
-            backtest_id,
-            equity_points=equity_points,
-            trade_log=trade_log,
-        )
-        next_cycle_date = schedule[current_index + 1]
-        self._dispatch_cycle(backtest_id, next_cycle_date)
 
     @staticmethod
     def _resolve_pattern_mention_policy(pattern_key: str) -> PatternMentionPolicy:
-        return BacktestCycleService._get_backtest_pattern_spec_or_raise(pattern_key).mention_policy
+        return resolve_runtime_pattern_mention_policy(pattern_key)
+
+    def _get_runtime_mention_resolver(self) -> BacktestRuntimeMentionResolver:
+        return BacktestRuntimeMentionResolver(self.session_factory)
 
     @staticmethod
     def _get_backtest_pattern_spec_or_raise(pattern_key: str) -> BacktestPatternSpec:
@@ -1291,101 +1273,11 @@ class BacktestCycleService:
         orchestration_pattern_key: str,
         pattern_policy: PatternMentionPolicy,
     ) -> list[dict[str, Any]]:
-        resolved: list[dict[str, Any]] = []
-        seen: set[str] = set()
-
-        for match in _MENTION_RE.finditer(authored_entry_prompt_body):
-            original_text = match.group(0)
-            handle = match.group("handle").lower()
-            builtin_spec = get_seeded_builtin_spec_for_handle(handle)
-            if builtin_spec is not None:
-                canonical_target_id = builtin_spec.canonical_target_id
-                if canonical_target_id in seen:
-                    continue
-                if handle not in pattern_policy.allowed_builtin_handles:
-                    self._raise_mention_not_allowed(handle, orchestration_pattern_key)
-                resolved.append(
-                    {
-                        "original_text": original_text,
-                        "handle": handle,
-                        "canonical_target_id": canonical_target_id,
-                        "target_type": "builtin",
-                        "role_id": None,
-                        "role_version": None,
-                        "character_id": None,
-                        "character_version": None,
-                        "mention_order": len(resolved),
-                        "builtin_revision": builtin_spec.revision,
-                        "capability_bundle_keys": tuple(builtin_spec.capability_bundle_keys),
-                    }
-                )
-                seen.add(canonical_target_id)
-                continue
-
-            canonical_target_id = f"character:{handle}"
-            if canonical_target_id in seen:
-                continue
-            if not pattern_policy.allow_characters:
-                self._raise_mention_not_allowed(handle, orchestration_pattern_key)
-
-            character_record = self._resolve_orchestration_character(handle)
-            character_spec = character_record["character"]
-            role_spec = character_record["role"]
-            if not character_spec.enabled:
-                raise business_rule_error(
-                    "mention_target_disabled",
-                    f"Mention target @{handle} is disabled",
-                )
-            if not role_spec.enabled:
-                raise business_rule_error(
-                    "character_role_disabled",
-                    f"Character role for @{handle} is disabled",
-                )
-            resolved.append(
-                {
-                    "original_text": original_text,
-                    "handle": handle,
-                    "canonical_target_id": canonical_target_id,
-                    "target_type": "character",
-                    "role_id": role_spec.id,
-                    "role_version": role_spec.version,
-                    "character_id": character_spec.id,
-                    "character_version": character_spec.version,
-                    "mention_order": len(resolved),
-                    "role_name": role_spec.name,
-                    "role_key": role_spec.key,
-                    "role_system_prompt": role_spec.system_prompt,
-                    "character_prompt_append": character_spec.prompt_append,
-                    "role_capability_bundle_keys": tuple(role_spec.capability_bundle_keys),
-                    "character_capability_bundle_keys": tuple(
-                        character_spec.capability_bundle_keys
-                    ),
-                }
-            )
-            seen.add(canonical_target_id)
-
-        return resolved
-
-    def _resolve_orchestration_character(self, handle: str) -> Any:
-        with self.session_factory() as session:
-            character = OrchestrationCharacterRepository(session).get_by_handle(handle)
-            if character is None:
-                raise business_rule_error(
-                    "mention_target_not_found",
-                    f"Mention target @{handle} was not found",
-                )
-            session.refresh(character)
-            role = character.role
-            if role is None:
-                raise business_rule_error(
-                    "mention_target_not_found",
-                    f"Mention target @{handle} was not found",
-                )
-            session.refresh(role)
-            return {
-                "character": character,
-                "role": role,
-            }
+        return self._get_runtime_mention_resolver().resolve_targets(
+            authored_entry_prompt_body=authored_entry_prompt_body,
+            orchestration_pattern_key=orchestration_pattern_key,
+            pattern_policy=pattern_policy,
+        )
 
     def _dispatch_mentioned_target_outputs(
         self,
@@ -1394,91 +1286,19 @@ class BacktestCycleService:
         compiled_entry_prompt_body: str,
         execution_context_body: str,
     ) -> list[dict[str, Any]]:
-        mentioned_target_outputs: list[dict[str, Any]] = []
-        for target in resolved_targets:
-            if target["target_type"] == "builtin":
-                output_markdown = self._run_builtin_pre_run_step(
-                    handle=str(target["handle"]),
-                    compiled_entry_prompt_body=compiled_entry_prompt_body,
-                    execution_context_body=execution_context_body,
-                )
-            else:
-                output_markdown = self._run_character_pre_run_step(
-                    target=target,
-                    compiled_entry_prompt_body=compiled_entry_prompt_body,
-                    execution_context_body=execution_context_body,
-                )
-            mentioned_target_outputs.append(
-                {
-                    "handle": target["handle"],
-                    "canonical_target_id": target["canonical_target_id"],
-                    "target_type": target["target_type"],
-                    "output_markdown": output_markdown,
-                }
-            )
-        return mentioned_target_outputs
-
-    def _run_builtin_pre_run_step(
-        self,
-        *,
-        handle: str,
-        compiled_entry_prompt_body: str,
-        execution_context_body: str,
-    ) -> str:
-        builtin_spec = get_seeded_builtin_spec_for_handle(handle)
-        if builtin_spec is None:
-            raise business_rule_error(
-                "mention_target_not_found",
-                f"Mention target @{handle} was not found",
-            )
-        return (
-            f"{builtin_spec.description} Entry prompt focus: "
-            f"{self._compact_artifact_text(compiled_entry_prompt_body)}. "
-            f"Execution context focus: {self._compact_artifact_text(execution_context_body)}."
-        )
-
-    def _run_character_pre_run_step(
-        self,
-        *,
-        target: dict[str, Any],
-        compiled_entry_prompt_body: str,
-        execution_context_body: str,
-    ) -> str:
-        character_guidance = str(target.get("character_prompt_append") or "").strip()
-        guidance_summary = (
-            self._compact_artifact_text(character_guidance)
-            if character_guidance
-            else "No character-specific guidance provided"
-        )
-        return (
-            f"{target['role_name']} execution brief. "
-            f"System prompt: {self._compact_artifact_text(str(target['role_system_prompt']))}. "
-            f"Character guidance: {guidance_summary}. "
-            f"Entry prompt focus: {self._compact_artifact_text(compiled_entry_prompt_body)}. "
-            f"Execution context focus: {self._compact_artifact_text(execution_context_body)}."
-        )
-
-    @staticmethod
-    def _compact_artifact_text(value: str) -> str:
-        normalized = " ".join(value.split())
-        return normalized or "none"
-
-    @staticmethod
-    def _raise_mention_not_allowed(handle: str, orchestration_pattern_key: str) -> None:
-        raise business_rule_error(
-            "mention_target_not_allowed_by_pattern",
-            (
-                f"Mention target @{handle} is not allowed by orchestration pattern "
-                f"{orchestration_pattern_key}"
-            ),
+        return self._get_runtime_mention_resolver().build_mentioned_target_outputs(
+            resolved_targets=resolved_targets,
+            compiled_entry_prompt_body=compiled_entry_prompt_body,
+            execution_context_body=execution_context_body,
         )
 
     @staticmethod
     def _build_full_user_prompt(
         *, execution_context_body: str, compiled_entry_prompt_body: str
     ) -> str:
-        return "\n\n".join(
-            [part for part in (execution_context_body, compiled_entry_prompt_body) if part]
+        return build_runtime_full_user_prompt(
+            execution_context_body=execution_context_body,
+            compiled_entry_prompt_body=compiled_entry_prompt_body,
         )
 
     @staticmethod
@@ -1489,87 +1309,33 @@ class BacktestCycleService:
     def _serialize_resolved_mentions(
         resolved_targets: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        return [
-            {
-                "original_text": target["original_text"],
-                "handle": target["handle"],
-                "canonical_target_id": target["canonical_target_id"],
-                "target_type": target["target_type"],
-                "role_id": target["role_id"],
-                "role_version": target["role_version"],
-                "character_id": target["character_id"],
-                "character_version": target["character_version"],
-                "mention_order": target["mention_order"],
-            }
-            for target in resolved_targets
-        ]
+        return serialize_resolved_mentions(resolved_targets)
 
     @staticmethod
     def _serialize_mentioned_target_outputs(
         mentioned_target_outputs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        return [
-            {
-                "handle": target["handle"],
-                "canonical_target_id": target["canonical_target_id"],
-                "target_type": target["target_type"],
-                "output_markdown": target["output_markdown"],
-            }
-            for target in mentioned_target_outputs
-        ]
+        return serialize_mentioned_target_outputs(mentioned_target_outputs)
 
     @staticmethod
     def _serialize_builtin_versions(resolved_targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {
-                "canonical_target_id": target["canonical_target_id"],
-                "handle": target["handle"],
-                "revision": target["builtin_revision"],
-            }
-            for target in resolved_targets
-            if target["target_type"] == "builtin"
-        ]
+        return serialize_builtin_versions(resolved_targets)
 
     @staticmethod
     def _serialize_role_versions(resolved_targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {
-                "canonical_target_id": f"role:{target['role_key']}",
-                "role_id": target["role_id"],
-                "version": target["role_version"],
-            }
-            for target in resolved_targets
-            if target["target_type"] == "character"
-        ]
+        return serialize_role_versions(resolved_targets)
 
     @staticmethod
     def _serialize_character_versions(
         resolved_targets: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        return [
-            {
-                "canonical_target_id": target["canonical_target_id"],
-                "character_id": target["character_id"],
-                "version": target["character_version"],
-            }
-            for target in resolved_targets
-            if target["target_type"] == "character"
-        ]
+        return serialize_character_versions(resolved_targets)
 
     @staticmethod
     def _append_mentioned_target_outputs(
         execution_context_body: str, mentioned_target_outputs: list[dict[str, Any]]
     ) -> str:
-        if not mentioned_target_outputs:
-            return execution_context_body
-        lines = ["## Mentioned Target Outputs"]
-        for mention in mentioned_target_outputs:
-            lines.append(f"- {mention['handle']}: {mention['output_markdown']}")
-        mentioned_outputs = "\n".join(lines)
-        normalized_execution_context_body = execution_context_body.rstrip("\n")
-        if not normalized_execution_context_body:
-            return mentioned_outputs
-        return f"{normalized_execution_context_body}\n\n{mentioned_outputs}"
+        return append_mentioned_target_outputs(execution_context_body, mentioned_target_outputs)
 
     @staticmethod
     def _initial_approval_trace(*, connector_ids: tuple[str, ...]) -> Any:
@@ -1626,36 +1392,45 @@ class BacktestCycleService:
                     BacktestOrchestrationSnapshot.cycle_date == cycle_date,
                 )
             )
-            if existing is not None:
-                logger.debug(
-                    "Skipping orchestration snapshot rewrite for backtest %d on %s",
-                    backtest_id,
-                    cycle_date.isoformat(),
-                )
-                return
-
-            session.add(
-                BacktestOrchestrationSnapshot(
-                    backtest_id=backtest_id,
-                    cycle_date=cycle_date,
-                    prompt_report_slug=prompt_report_slug,
-                    orchestration_pattern_key=orchestration_pattern_key,
-                    pattern_policy_version=pattern_policy_version,
-                    entry_prompt_hash=entry_prompt_hash,
-                    full_user_prompt_hash=full_user_prompt_hash,
-                    execution_mode=execution_mode,
-                    resolved_mentions=resolved_mentions,
-                    mentioned_target_outputs=mentioned_target_outputs,
-                    resolved_builtin_versions=resolved_builtin_versions,
-                    resolved_role_versions=resolved_role_versions,
-                    resolved_character_versions=resolved_character_versions,
-                    resolved_bundle_versions=resolved_bundle_versions,
-                    resolved_tool_versions=resolved_tool_versions,
-                    resolved_connector_versions=resolved_connector_versions,
-                    tool_call_trace=tool_call_trace,
-                    approval_trace=approval_trace,
-                )
+            snapshot = existing or BacktestOrchestrationSnapshot(
+                backtest_id=backtest_id,
+                cycle_date=cycle_date,
+                prompt_report_slug=prompt_report_slug,
+                orchestration_pattern_key=orchestration_pattern_key,
+                pattern_policy_version=pattern_policy_version,
+                entry_prompt_hash=entry_prompt_hash,
+                full_user_prompt_hash=full_user_prompt_hash,
+                execution_mode=execution_mode,
+                resolved_mentions=resolved_mentions,
+                mentioned_target_outputs=mentioned_target_outputs,
+                resolved_builtin_versions=resolved_builtin_versions,
+                resolved_role_versions=resolved_role_versions,
+                resolved_character_versions=resolved_character_versions,
+                resolved_bundle_versions=resolved_bundle_versions,
+                resolved_tool_versions=resolved_tool_versions,
+                resolved_connector_versions=resolved_connector_versions,
+                tool_call_trace=tool_call_trace,
+                approval_trace=approval_trace,
             )
+            snapshot.prompt_report_slug = prompt_report_slug
+            snapshot.orchestration_pattern_key = orchestration_pattern_key
+            snapshot.pattern_policy_version = pattern_policy_version
+            snapshot.entry_prompt_hash = entry_prompt_hash
+            snapshot.full_user_prompt_hash = full_user_prompt_hash
+            snapshot.execution_mode = execution_mode
+            snapshot.resolved_mentions = list(resolved_mentions)
+            snapshot.mentioned_target_outputs = list(mentioned_target_outputs)
+            snapshot.resolved_builtin_versions = list(resolved_builtin_versions)
+            snapshot.resolved_role_versions = list(resolved_role_versions)
+            snapshot.resolved_character_versions = list(resolved_character_versions)
+            snapshot.resolved_bundle_versions = list(resolved_bundle_versions)
+            snapshot.resolved_tool_versions = list(resolved_tool_versions)
+            snapshot.resolved_connector_versions = list(resolved_connector_versions)
+            snapshot.tool_call_trace = list(tool_call_trace)
+            snapshot.approval_trace = (
+                list(approval_trace) if isinstance(approval_trace, list) else approval_trace
+            )
+            session.add(snapshot)
             session.commit()
 
         logger.debug(
@@ -1735,49 +1510,7 @@ class BacktestCycleService:
             session.commit()
 
     def _load_run_state(self, backtest_id: int) -> dict[str, Any]:
-        with self.session_factory() as session:
-            backtest = session.get(Backtest, backtest_id)
-            raw_results = backtest.results if backtest is not None else None
-
-        if not isinstance(raw_results, dict):
-            return {
-                "schedule": [],
-                "benchmark_history": {},
-                "trade_log": [],
-                "equity_points": [],
-            }
-
-        raw_run_state = raw_results.get("_run_state", {})
-        if not isinstance(raw_run_state, dict):
-            raw_run_state = {}
-
-        raw_benchmark_history = raw_run_state.get("benchmark_history", {})
-        benchmark_history: dict[str, list[tuple[str, Decimal]]] = {}
-        if isinstance(raw_benchmark_history, dict):
-            for symbol, points in raw_benchmark_history.items():
-                if not isinstance(symbol, str) or not isinstance(points, list):
-                    continue
-                benchmark_history[symbol] = [
-                    (str(point_date), Decimal(str(value))) for point_date, value in points
-                ]
-
-        raw_equity_points = raw_run_state.get("equity_points", [])
-        equity_points = [
-            (str(point_date), Decimal(str(value))) for point_date, value in raw_equity_points
-        ]
-
-        raw_trade_log = raw_run_state.get("trade_log", [])
-        trade_log = [item for item in raw_trade_log if isinstance(item, dict)]
-
-        return {
-            "schedule": [
-                date.fromisoformat(str(cycle_date))
-                for cycle_date in raw_run_state.get("schedule", [])
-            ],
-            "benchmark_history": benchmark_history,
-            "trade_log": trade_log,
-            "equity_points": equity_points,
-        }
+        return self.completion_service.load_run_state(self.session_factory, backtest_id)
 
     def _update_run_state(
         self,
@@ -1786,19 +1519,9 @@ class BacktestCycleService:
         equity_points: list[tuple[str, Decimal]],
         trade_log: list[dict[str, Any]],
     ) -> None:
-        with self.session_factory() as session:
-            backtest = session.get(Backtest, backtest_id)
-            if backtest is None:
-                return
-
-            existing_results = backtest.results if isinstance(backtest.results, dict) else {}
-            run_state = existing_results.get("_run_state", {})
-            if not isinstance(run_state, dict):
-                run_state = {}
-
-            run_state["equity_points"] = [
-                (point_date, str(value)) for point_date, value in equity_points
-            ]
-            run_state["trade_log"] = trade_log
-            backtest.results = {**existing_results, "_run_state": run_state}
-            session.commit()
+        self.completion_service.update_run_state(
+            self.session_factory,
+            backtest_id,
+            equity_points=equity_points,
+            trade_log=trade_log,
+        )

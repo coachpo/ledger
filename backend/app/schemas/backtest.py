@@ -42,6 +42,11 @@ class BacktestLaunchMode(str, Enum):  # noqa: UP042
     LEGACY_CALLBACK = "legacy_callback"
 
 
+class BacktestExecutionOwner(str, Enum):  # noqa: UP042
+    LEGACY_PATH = "legacy_path"
+    RUNTIME_V2 = "runtime_v2"
+
+
 class TradeDecision(CamelModel):
     symbol: str
     action: Literal["BUY", "SELL", "HOLD"]

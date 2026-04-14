@@ -183,6 +183,12 @@ class FakeEngine:
     def _portfolio_symbols(self) -> list[str]:
         return self.symbols
 
+    def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+        private_store = getattr(self, "_store_cycle_report", None)
+        if callable(private_store):
+            return cast(str, private_store(cycle_date, analysis))
+        return "report"
+
     def apply_cycle_trades(
         self,
         *,
@@ -3267,6 +3273,9 @@ def test_run_internal_cycle_passes_expanded_prompt_bundle_to_runner(
             self.record_calls: list[tuple[date, dict[str, dict[str, Decimal]]]] = []
             self.finalize_calls: list[dict[str, Any]] = []
 
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             captured["stored_report"] = {
                 "cycle_date": requested_cycle_date,
@@ -3392,6 +3401,9 @@ def test_dispatch_cycle_runs_internal_langgraph_analysis_without_webhook_dispatc
                 "cycle_date": requested_cycle_date,
             }
 
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             captured["stored_report"] = {
                 "cycle_date": requested_cycle_date,
@@ -3508,6 +3520,74 @@ def test_dispatch_cycle_runs_internal_langgraph_analysis_without_webhook_dispatc
     assert len(engine.finalize_calls) == 1
 
 
+def test_dispatch_cycle_routes_runtime_v2_backtests_through_runtime_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service()
+    cycle_date = date(2024, 6, 17)
+    captured: dict[str, Any] = {}
+
+    class FakeEngine:
+        def execute_cycle(self, requested_cycle_date: date) -> dict[str, Any]:
+            return {
+                "cancelled": False,
+                "prompt_report_slug": "backtest_42_prompt_20240617",
+                "market_data": {},
+                "cycle_date": requested_cycle_date,
+            }
+
+    class FakeRuntimeAdapter:
+        def __init__(self, session: Any, session_factory: Any) -> None:
+            assert session is service.session
+            assert session_factory is service.session_factory
+
+        def execute_cycle(self, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            return SimpleNamespace()
+
+    monkeypatch.setattr(
+        service,
+        "_build_engine",
+        lambda backtest_id: cast(BacktestEngine, FakeEngine()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_get_backtest_or_raise",
+        lambda backtest_id: cast(
+            Backtest,
+            SimpleNamespace(
+                execution_owner="runtime_v2",
+                orchestration_pattern_key="seeded_internal_backtest_v1",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.backtest_runtime_adapter.BacktestRuntimeAdapter",
+        FakeRuntimeAdapter,
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_internal_cycle",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy internal cycle should not run for runtime_v2")
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_deterministic_cycle",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("deterministic legacy path should not run for runtime_v2")
+        ),
+    )
+
+    service._dispatch_cycle(backtest_id=42, cycle_date=cycle_date)
+
+    assert captured["backtest_id"] == 42
+    assert captured["cycle_date"] == cycle_date
+    assert captured["cycle_ctx"]["prompt_report_slug"] == "backtest_42_prompt_20240617"
+    assert callable(captured["dispatch_next_cycle"])
+
+
 def test_run_internal_cycle_uses_stored_orchestration_pattern_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3520,6 +3600,9 @@ def test_run_internal_cycle_uses_stored_orchestration_pattern_key(
             return SimpleNamespace(report_content="# LangGraph Analysis", decisions=[])
 
     class FakeEngine:
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             _ = (requested_cycle_date, analysis)
             return "langgraph_backtest_42_20240617"
@@ -3611,6 +3694,9 @@ def test_run_internal_cycle_uses_stored_analyst_reviewer_pattern_key(
             return SimpleNamespace(report_content="# LangGraph Analysis", decisions=[])
 
     class FakeEngine:
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             _ = (requested_cycle_date, analysis)
             return "langgraph_backtest_42_20240617"
@@ -3711,6 +3797,9 @@ def test_tool_failure_fail_closed_persists_trace_before_domain_writes(
     ]
 
     class GuardEngine:
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             _ = (requested_cycle_date, analysis)
             call_order.append("store_cycle_report")
@@ -3863,6 +3952,9 @@ def test_connector_failure_fail_closed_persists_trace_and_approval_before_domain
     unapproved_connector = replace(market_data_connector, lifecycle="placeholder")
 
     class GuardEngine:
+        def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+            return self._store_cycle_report(cycle_date, analysis)
+
         def _store_cycle_report(self, requested_cycle_date: date, analysis: str) -> str:
             _ = (requested_cycle_date, analysis)
             call_order.append("store_cycle_report")

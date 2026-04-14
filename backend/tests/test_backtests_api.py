@@ -13,12 +13,14 @@ from sqlalchemy import create_engine, func, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import get_engine, get_session_factory, init_db
+from app.models.backtest import Backtest
 from app.models.balance import Balance
 from app.models.portfolio import Portfolio
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
 from app.schemas.backtest import BacktestRead
+from app.services.runtime_control_service import RuntimeControlService
 
 SUPPORTED_BACKTEST_PATTERN_KEYS = (
     "seeded_internal_backtest_v1",
@@ -130,6 +132,15 @@ def test_init_db_creates_backtests_table(database_url: str) -> None:
         assert {
             "portfolio_id",
             "deposit_balance_id",
+            "launch_mode",
+            "workflow_spec_key",
+            "workflow_spec_version",
+            "execution_owner",
+            "current_run_id",
+            "last_completed_run_id",
+            "launch_mode_classified_at",
+            "launch_mode_classified_by",
+            "launch_mode_classification_note",
             "status",
             "frequency",
             "orchestration_pattern_key",
@@ -272,12 +283,36 @@ def test_init_db_upgrades_backtests_with_orchestration_pattern_key(database_url:
 
         columns = {column["name"] for column in inspect(engine).get_columns("backtests")}
         assert "orchestration_pattern_key" in columns
+        assert "launch_mode" in columns
+        assert "workflow_spec_key" in columns
+        assert "workflow_spec_version" in columns
+        assert "execution_owner" in columns
+        assert "current_run_id" in columns
+        assert "last_completed_run_id" in columns
+        assert "launch_mode_classified_at" in columns
+        assert "launch_mode_classified_by" in columns
+        assert "launch_mode_classification_note" in columns
 
         with engine.begin() as connection:
-            value = connection.exec_driver_sql(
-                "SELECT orchestration_pattern_key FROM backtests WHERE id = 1"
-            ).scalar_one()
-        assert value == "seeded_internal_backtest_v1"
+            row = connection.exec_driver_sql(
+                "SELECT orchestration_pattern_key, launch_mode, workflow_spec_key, "
+                "workflow_spec_version, execution_owner, current_run_id, "
+                "last_completed_run_id, launch_mode_classified_at, "
+                "launch_mode_classified_by, launch_mode_classification_note "
+                "FROM backtests WHERE id = 1"
+            ).one()
+        assert row == (
+            "seeded_internal_backtest_v1",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
     finally:
         engine.dispose()
 
@@ -437,7 +472,9 @@ def test_backtest_routes_support_list_get_cancel_and_delete(
 
 
 def test_create_backtest_returns_pending_and_submits_engine(
-    client: TestClient, submitted_backtests: list[int]
+    client: TestClient,
+    submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
 ) -> None:
     portfolio = create_portfolio(client)
     create_balance(client, str(portfolio["id"]), amount="10000.00")
@@ -451,6 +488,14 @@ def test_create_backtest_returns_pending_and_submits_engine(
     assert response.json()["status"] == "PENDING"
     assert response.json()["orchestrationPatternKey"] == "seeded_internal_backtest_v1"
     assert submitted_backtests == [response.json()["id"]]
+
+    with session_factory() as session:
+        backtest = session.get(Backtest, response.json()["id"])
+        assert backtest is not None
+        assert backtest.launch_mode == "internal"
+        assert backtest.workflow_spec_key == "seeded_internal_backtest_v1"
+        assert backtest.workflow_spec_version == 1
+        assert backtest.execution_owner == "legacy_path"
 
 
 def test_create_backtest_rejects_unknown_orchestration_pattern_key(
@@ -478,6 +523,7 @@ def test_create_backtest_rejects_unknown_orchestration_pattern_key(
 def test_create_backtest_accepts_supported_non_default_orchestration_pattern_keys(
     client: TestClient,
     submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
     pattern_key: str,
 ) -> None:
     portfolio = create_portfolio(
@@ -501,6 +547,14 @@ def test_create_backtest_accepts_supported_non_default_orchestration_pattern_key
     assert response.json()["orchestrationPatternKey"] == pattern_key
     assert submitted_backtests == [response.json()["id"]]
 
+    with session_factory() as session:
+        backtest = session.get(Backtest, response.json()["id"])
+        assert backtest is not None
+        assert backtest.launch_mode == "internal"
+        assert backtest.workflow_spec_key == pattern_key
+        assert backtest.workflow_spec_version == 1
+        assert backtest.execution_owner == "legacy_path"
+
 
 @pytest.mark.parametrize(
     "pattern_key",
@@ -509,6 +563,7 @@ def test_create_backtest_accepts_supported_non_default_orchestration_pattern_key
 def test_create_backtest_accepts_known_orchestration_pattern_keys_in_legacy_callback_mode(
     client: TestClient,
     submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
     pattern_key: str,
 ) -> None:
     portfolio = create_portfolio(
@@ -555,6 +610,47 @@ def test_create_backtest_accepts_known_orchestration_pattern_keys_in_legacy_call
     get_response = client.get(f"/api/v1/backtests/{created['id']}")
     assert get_response.status_code == 200
     assert {key: get_response.json()[key] for key in expected_read_fields} == expected_read_fields
+
+    with session_factory() as session:
+        backtest = session.get(Backtest, created["id"])
+        assert backtest is not None
+        assert backtest.launch_mode == "legacy_callback"
+        assert backtest.workflow_spec_key is None
+        assert backtest.workflow_spec_version is None
+        assert backtest.execution_owner == "legacy_path"
+
+
+def test_create_backtest_internal_runtime_flag_enabled_pins_runtime_v2_owner(
+    client: TestClient,
+    submitted_backtests: list[int],
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        RuntimeControlService(session).set_backtest_runtime_v2_enabled(
+            enabled=True,
+            actor="test-suite",
+            reason="exercise create-time routing",
+        )
+
+    portfolio = create_portfolio(client, name="Runtime Routed", slug="runtime_routed")
+    create_balance(client, str(portfolio["id"]), amount="10000.00")
+    template = create_template(client, name="Runtime Routed Template", content="# Template")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(portfolio["id"], template_id=template["id"]),
+    )
+
+    assert response.status_code == 201, response.json()
+    assert submitted_backtests == [response.json()["id"]]
+
+    with session_factory() as session:
+        backtest = session.get(Backtest, response.json()["id"])
+        assert backtest is not None
+        assert backtest.launch_mode == "internal"
+        assert backtest.workflow_spec_key == "seeded_internal_backtest_v1"
+        assert backtest.workflow_spec_version == 1
+        assert backtest.execution_owner == "runtime_v2"
 
 
 def test_create_backtest_uses_largest_deposit_balance(
@@ -783,6 +879,44 @@ def test_backtest_routes_hide_internal_run_state_results_for_tool_enabled_reads(
     get_response = client.get(f"/api/v1/backtests/{created['id']}")
     assert get_response.status_code == 200
     assert {key: get_response.json()[key] for key in expected_read_fields} == expected_read_fields
+
+
+def test_backtest_routes_hide_internal_routing_fields_on_reads(
+    client: TestClient,
+    submitted_backtests: list[int],
+) -> None:
+    portfolio = create_portfolio(client, name="Hidden Routing", slug="hidden_routing")
+    create_balance(client, str(portfolio["id"]), amount="5000.00")
+    template = create_template(client, name="Hidden Routing Template", content="# Hidden Routing")
+
+    response = client.post(
+        "/api/v1/backtests",
+        json=build_backtest_payload(portfolio["id"], template_id=template["id"]),
+    )
+    assert response.status_code == 201, response.json()
+    created = response.json()
+    assert submitted_backtests == [created["id"]]
+
+    hidden_fields = {
+        "launchMode",
+        "workflowSpecKey",
+        "workflowSpecVersion",
+        "executionOwner",
+        "currentRunId",
+        "lastCompletedRunId",
+        "launchModeClassifiedAt",
+        "launchModeClassifiedBy",
+        "launchModeClassificationNote",
+    }
+    assert hidden_fields.isdisjoint(created)
+
+    list_response = client.get("/api/v1/backtests")
+    assert list_response.status_code == 200
+    assert hidden_fields.isdisjoint(list_response.json()[0])
+
+    get_response = client.get(f"/api/v1/backtests/{created['id']}")
+    assert get_response.status_code == 200
+    assert hidden_fields.isdisjoint(get_response.json())
 
 
 def test_cancel_backtest_marks_running_job_cancelled(

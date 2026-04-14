@@ -777,6 +777,9 @@ class BacktestEngine:
             session.commit()
         self.backtest = self._refresh_backtest()
 
+    def store_cycle_report(self, cycle_date: date, analysis: str) -> str:
+        return self._store_cycle_report(cycle_date, analysis)
+
     def _store_cycle_report(self, cycle_date: date, analysis: str) -> str:
         if self.session_factory is None:
             raise RuntimeError("Backtest engine requires a session factory")

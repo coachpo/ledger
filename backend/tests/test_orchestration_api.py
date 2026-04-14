@@ -4,8 +4,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import init_db
+from app.models.persona_profile import PersonaProfile
 
 
 def create_role(
@@ -624,3 +626,59 @@ def test_legacy_orchestration_tables_gain_version_columns(database_url: str) -> 
         assert character_bundle_keys == []
     finally:
         engine.dispose()
+
+
+def test_mention_catalog_ignores_runtime_persona_profiles(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    with session_factory() as session:
+        session.add(
+            PersonaProfile(
+                key="managed_only_profile",
+                version=1,
+                origin="managed",
+                status="ACTIVE",
+                kind="managed_persona",
+                display_name="Managed Only Profile",
+                enabled=True,
+                handle="managed_only_profile",
+                canonical_target_id="persona:managed_only_profile",
+                parent_profile_key=None,
+                parent_profile_version=None,
+                legacy_entity_type=None,
+                legacy_entity_key=None,
+                legacy_source_version=None,
+                system_prompt_fragment="System prompt",
+                prompt_append_fragment="Prompt append",
+                default_capability_bundle_keys=[],
+            )
+        )
+        session.add(
+            PersonaProfile(
+                key="imported.character.imported_only_profile",
+                version=1,
+                origin="imported",
+                status="ACTIVE",
+                kind="character_profile",
+                display_name="Imported Only Profile",
+                enabled=True,
+                handle="imported_only_profile",
+                canonical_target_id="character:imported_only_profile",
+                parent_profile_key=None,
+                parent_profile_version=None,
+                legacy_entity_type="character",
+                legacy_entity_key="imported_only_profile",
+                legacy_source_version=1,
+                system_prompt_fragment="",
+                prompt_append_fragment="Imported prompt",
+                default_capability_bundle_keys=[],
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/v1/orchestration/mentions/catalog")
+    assert response.status_code == 200, response.json()
+
+    handles = {item["handle"] for item in response.json()["targets"]}
+    assert "managed_only_profile" not in handles
+    assert "imported_only_profile" not in handles

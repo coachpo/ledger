@@ -1255,7 +1255,7 @@ def test_init_db_rejects_legacy_uuid_backed_schema(database_url: str) -> None:
         engine.dispose()
 
 
-def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
+def test_init_db_upgrades_legacy_balance_schema_without_destructive_obsolete_table_cleanup(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1312,19 +1312,17 @@ def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
         assert operation_type == "DEPOSIT"
 
         table_names = set(inspector.get_table_names())
-        assert table_names.isdisjoint(
-            {
-                "llm_configs",
-                "prompt_templates",
-                "user_snippets",
-                "portfolio_stock_analysis_settings",
-                "stock_analysis_conversations",
-                "stock_analysis_runs",
-                "stock_analysis_requests",
-                "stock_analysis_responses",
-                "stock_analysis_versions",
-            }
-        )
+        assert {
+            "llm_configs",
+            "prompt_templates",
+            "user_snippets",
+            "portfolio_stock_analysis_settings",
+            "stock_analysis_conversations",
+            "stock_analysis_runs",
+            "stock_analysis_requests",
+            "stock_analysis_responses",
+            "stock_analysis_versions",
+        } <= table_names
     finally:
         engine.dispose()
 

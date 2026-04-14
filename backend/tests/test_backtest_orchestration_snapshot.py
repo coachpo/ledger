@@ -266,8 +266,8 @@ def test_upgrade_legacy_snapshot_table_replaces_opaque_payload_with_explicit_col
     columns = {
         column["name"] for column in inspect(engine).get_columns("backtest_orchestration_snapshots")
     }
-    assert "snapshot_type" not in columns
-    assert "snapshot" not in columns
+    assert "snapshot_type" in columns
+    assert "snapshot" in columns
     assert {
         "prompt_report_slug",
         "orchestration_pattern_key",

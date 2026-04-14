@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +19,9 @@ class Backtest(IdMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_backtests_portfolio_id", "portfolio_id"),
         Index("ix_backtests_status", "status"),
+        Index("ix_backtests_execution_owner", "execution_owner"),
+        Index("ix_backtests_current_run_id", "current_run_id"),
+        Index("ix_backtests_last_completed_run_id", "last_completed_run_id"),
     )
 
     portfolio_id: Mapped[int] = mapped_column(
@@ -31,6 +34,10 @@ class Backtest(IdMixin, TimestampMixin, Base):
     orchestration_pattern_key: Mapped[str] = mapped_column(
         String(120), nullable=False, server_default="seeded_internal_backtest_v1"
     )
+    launch_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    workflow_spec_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    workflow_spec_version: Mapped[int | None] = mapped_column(nullable=True)
+    execution_owner: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     frequency: Mapped[str] = mapped_column(String(10), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -44,6 +51,15 @@ class Backtest(IdMixin, TimestampMixin, Base):
     webhook_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     webhook_timeout: Mapped[int] = mapped_column(nullable=False, server_default="600")
     current_cycle_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    current_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runtime_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    last_completed_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runtime_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    launch_mode_classified_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    launch_mode_classified_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    launch_mode_classification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     price_mode: Mapped[str] = mapped_column(String(20), nullable=False)
     commission_mode: Mapped[str] = mapped_column(String(20), nullable=False)
     commission_value: Mapped[Decimal] = mapped_column(

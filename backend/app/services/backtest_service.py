@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import business_rule_error, not_found_error
-from app.langgraph.seeds import (
-    DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY,
-    get_backtest_pattern_spec,
-)
 from app.models.backtest import Backtest
 from app.models.balance import Balance
+from app.models.runtime_run import RuntimeRun
+from app.models.runtime_run_artifact import RuntimeRunArtifact
 from app.repositories.backtest import BacktestRepository
 from app.repositories.balance import BalanceRepository
 from app.repositories.report import ReportRepository
+from app.repositories.runtime_run import RuntimeRunRepository
+from app.repositories.runtime_run_artifact import RuntimeRunArtifactRepository
 from app.repositories.trading_operation import TradingOperationRepository
-from app.schemas.backtest import BacktestCreate, BacktestPriceMode, BacktestRead, BacktestStatus
+from app.schemas.backtest import (
+    BacktestCreate,
+    BacktestExecutionOwner,
+    BacktestPriceMode,
+    BacktestRead,
+    BacktestStatus,
+)
 from app.schemas.text_template import TextTemplateCreate
+from app.services.agent_runtime_service import AgentRuntimeService
+from app.services.backtest_classification_service import BacktestClassificationService
 from app.services.backtest_cycle_service import BacktestCycleService
 from app.services.portfolio_service import PortfolioService
 from app.services.text_template_service import TextTemplateService
@@ -58,6 +67,7 @@ This is an experimental simulation. No investment advice.
 
 _INTERNAL_BACKTEST_WEBHOOK_URL = "internal://ledger"
 _INTERNAL_BACKTEST_WEBHOOK_TIMEOUT = 600
+_RUNTIME_CANCELLABLE_STATUSES = {"QUEUED", "RUNNING", "WAITING_APPROVAL"}
 
 
 class BacktestService:
@@ -67,16 +77,25 @@ class BacktestService:
         self.repository = BacktestRepository(session)
         self.balance_repository = BalanceRepository(session)
         self.report_repository = ReportRepository(session)
+        self.runtime_run_repository = RuntimeRunRepository(session)
+        self.runtime_artifact_repository = RuntimeRunArtifactRepository(session)
         self.template_service = TextTemplateService(session)
         self.portfolio_service = PortfolioService(session)
         self.trading_operation_repository = TradingOperationRepository(session)
+        self.classification_service = BacktestClassificationService(session)
 
     def list_backtests(self) -> list[BacktestRead]:
         backtests = self.repository.list_all()
-        return [BacktestRead.model_validate(backtest) for backtest in backtests]
+        return self._build_backtest_reads(backtests)
 
     def get_backtest(self, backtest_id: int) -> BacktestRead:
-        return BacktestRead.model_validate(self.get_backtest_model(backtest_id))
+        backtest = self.get_backtest_model(backtest_id)
+        runtime_runs, runtime_artifacts = self._load_runtime_projection_records([backtest])
+        return self._build_backtest_read(
+            backtest,
+            runtime_runs=runtime_runs,
+            runtime_artifacts=runtime_artifacts,
+        )
 
     def get_backtest_model(self, backtest_id: int) -> Backtest:
         backtest = self.repository.get(backtest_id)
@@ -88,8 +107,9 @@ class BacktestService:
         self.portfolio_service.get_portfolio_model(payload.portfolio_id)
         deposit_balance = self._resolve_deposit_balance(payload.portfolio_id)
         template_id = self._resolve_template_id(payload)
-        orchestration_pattern_key = self._resolve_orchestration_pattern_key(
-            payload.orchestration_pattern_key
+        routing = self.classification_service.resolve_create_time_routing(
+            launch_mode=payload.launch_mode,
+            requested_pattern_key=payload.orchestration_pattern_key,
         )
         webhook_url, webhook_timeout = self._resolve_webhook_settings(payload)
 
@@ -97,7 +117,11 @@ class BacktestService:
             portfolio_id=payload.portfolio_id,
             deposit_balance_id=deposit_balance.id,
             name=payload.name,
-            orchestration_pattern_key=orchestration_pattern_key,
+            orchestration_pattern_key=routing.orchestration_pattern_key,
+            launch_mode=routing.launch_mode.value,
+            workflow_spec_key=routing.workflow_spec_key,
+            workflow_spec_version=routing.workflow_spec_version,
+            execution_owner=routing.execution_owner.value,
             status=BacktestStatus.PENDING.value,
             frequency=payload.frequency.value,
             start_date=payload.start_date,
@@ -126,15 +150,74 @@ class BacktestService:
 
     def cancel_backtest(self, backtest_id: int) -> BacktestRead:
         backtest = self.get_backtest_model(backtest_id)
+        if backtest.execution_owner == BacktestExecutionOwner.RUNTIME_V2.value:
+            return self._cancel_runtime_backtest(backtest)
+        return self._cancel_legacy_backtest(backtest)
+
+    def _cancel_legacy_backtest(self, backtest: Backtest) -> BacktestRead:
         if backtest.status not in {BacktestStatus.PENDING.value, BacktestStatus.RUNNING.value}:
             raise business_rule_error(
                 "invalid_backtest_state",
                 "Only pending or running backtests can be cancelled",
             )
         backtest.status = BacktestStatus.CANCELLED.value
+        backtest.error_message = None
         self.session.commit()
         self.session.refresh(backtest)
-        return BacktestRead.model_validate(backtest)
+        runtime_runs, runtime_artifacts = self._load_runtime_projection_records([backtest])
+        return self._build_backtest_read(
+            backtest,
+            runtime_runs=runtime_runs,
+            runtime_artifacts=runtime_artifacts,
+        )
+
+    def _cancel_runtime_backtest(self, backtest: Backtest) -> BacktestRead:
+        runtime_runs, runtime_artifacts = self._load_runtime_projection_records([backtest])
+        projection = self._project_runtime_backtest_read(
+            backtest,
+            runtime_runs=runtime_runs,
+            runtime_artifacts=runtime_artifacts,
+        )
+        projected_status = projection["status"] if projection is not None else backtest.status
+
+        runtime_run: RuntimeRun | None = None
+        if backtest.current_run_id is not None:
+            runtime_run = runtime_runs.get(backtest.current_run_id)
+
+        if runtime_run is not None and runtime_run.status in _RUNTIME_CANCELLABLE_STATUSES:
+            AgentRuntimeService(self.session).cancel_run(runtime_run.id, commit=False)
+            backtest.status = BacktestStatus.CANCELLED.value
+            backtest.current_cycle_status = BacktestStatus.CANCELLED.value
+            backtest.current_run_id = None
+            backtest.last_completed_run_id = runtime_run.id
+            backtest.error_message = None
+            self.session.commit()
+            self.session.refresh(backtest)
+            runtime_runs, runtime_artifacts = self._load_runtime_projection_records([backtest])
+            return self._build_backtest_read(
+                backtest,
+                runtime_runs=runtime_runs,
+                runtime_artifacts=runtime_artifacts,
+            )
+
+        if projected_status not in {BacktestStatus.PENDING.value, BacktestStatus.RUNNING.value}:
+            raise business_rule_error(
+                "invalid_backtest_state",
+                "Only pending or running backtests can be cancelled",
+            )
+
+        backtest.status = BacktestStatus.CANCELLED.value
+        backtest.current_cycle_status = BacktestStatus.CANCELLED.value
+        backtest.current_run_id = None
+        backtest.error_message = None
+        self.session.commit()
+        self.session.refresh(backtest)
+        runtime_runs, runtime_artifacts = self._load_runtime_projection_records([backtest])
+        return self._build_backtest_read(
+            backtest,
+            runtime_runs=runtime_runs,
+            runtime_artifacts=runtime_artifacts,
+        )
 
     def delete_backtest(self, backtest_id: int) -> None:
         backtest = self.get_backtest_model(backtest_id)
@@ -187,21 +270,7 @@ class BacktestService:
         return created.id
 
     def _resolve_orchestration_pattern_key(self, pattern_key: str | None) -> str:
-        if pattern_key is None:
-            return DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY
-
-        normalized = pattern_key.strip()
-        if not normalized:
-            return DEFAULT_BACKTEST_ORCHESTRATION_PATTERN_KEY
-
-        pattern_spec = get_backtest_pattern_spec(normalized)
-        if pattern_spec is None:
-            raise business_rule_error(
-                "invalid_orchestration_pattern",
-                f"Unknown orchestration pattern: {normalized}",
-            )
-
-        return pattern_spec.key
+        return self.classification_service._normalize_orchestration_pattern_key(pattern_key)
 
     def _resolve_webhook_settings(self, payload: BacktestCreate) -> tuple[str, int]:
         if payload.webhook_url:
@@ -211,3 +280,152 @@ class BacktestService:
             )
 
         return _INTERNAL_BACKTEST_WEBHOOK_URL, _INTERNAL_BACKTEST_WEBHOOK_TIMEOUT
+
+    def _build_backtest_reads(self, backtests: list[Backtest]) -> list[BacktestRead]:
+        runtime_runs, runtime_artifacts = self._load_runtime_projection_records(backtests)
+        return [
+            self._build_backtest_read(
+                backtest,
+                runtime_runs=runtime_runs,
+                runtime_artifacts=runtime_artifacts,
+            )
+            for backtest in backtests
+        ]
+
+    def _build_backtest_read(
+        self,
+        backtest: Backtest,
+        *,
+        runtime_runs: Mapping[int, RuntimeRun],
+        runtime_artifacts: Mapping[int, RuntimeRunArtifact],
+    ) -> BacktestRead:
+        read_model = BacktestRead.model_validate(backtest)
+        projection = self._project_runtime_backtest_read(
+            backtest,
+            runtime_runs=runtime_runs,
+            runtime_artifacts=runtime_artifacts,
+        )
+        if projection is None:
+            return read_model
+
+        payload = read_model.model_dump(mode="python")
+        payload["status"] = projection["status"]
+        payload["current_cycle_status"] = projection["current_cycle_status"]
+        payload["error_message"] = projection["error_message"]
+        return BacktestRead.model_validate(payload)
+
+    def _load_runtime_projection_records(
+        self, backtests: list[Backtest]
+    ) -> tuple[dict[int, RuntimeRun], dict[int, RuntimeRunArtifact]]:
+        if not backtests:
+            return {}, {}
+
+        run_ids: set[int] = set()
+        for backtest in backtests:
+            if backtest.execution_owner != BacktestExecutionOwner.RUNTIME_V2.value:
+                continue
+            if backtest.current_run_id is not None:
+                run_ids.add(backtest.current_run_id)
+            if backtest.last_completed_run_id is not None:
+                run_ids.add(backtest.last_completed_run_id)
+
+        if not run_ids:
+            return {}, {}
+
+        runtime_runs = {run.id: run for run in self.runtime_run_repository.list_by_ids(run_ids)}
+        runtime_artifacts = {
+            artifact.run_id: artifact
+            for artifact in self.runtime_artifact_repository.list_by_run_ids(run_ids)
+        }
+        return runtime_runs, runtime_artifacts
+
+    def _project_runtime_backtest_read(
+        self,
+        backtest: Backtest,
+        *,
+        runtime_runs: Mapping[int, RuntimeRun],
+        runtime_artifacts: Mapping[int, RuntimeRunArtifact],
+    ) -> dict[str, str | None] | None:
+        if backtest.execution_owner != BacktestExecutionOwner.RUNTIME_V2.value:
+            return None
+
+        selected_run_id = backtest.current_run_id or backtest.last_completed_run_id
+        runtime_run = runtime_runs.get(selected_run_id) if selected_run_id is not None else None
+        runtime_artifact = (
+            runtime_artifacts.get(runtime_run.id) if runtime_run is not None else None
+        )
+
+        if backtest.current_run_id is None:
+            if backtest.status == BacktestStatus.CANCELLED.value:
+                return {
+                    "status": BacktestStatus.CANCELLED.value,
+                    "current_cycle_status": BacktestStatus.CANCELLED.value,
+                    "error_message": None,
+                }
+            if backtest.status == BacktestStatus.FAILED.value:
+                return {
+                    "status": BacktestStatus.FAILED.value,
+                    "current_cycle_status": BacktestStatus.FAILED.value,
+                    "error_message": (
+                        runtime_artifact.terminal_error_message
+                        if runtime_run is not None
+                        and runtime_run.status == "FAILED"
+                        and runtime_artifact is not None
+                        and runtime_artifact.terminal_error_message
+                        else backtest.error_message
+                    ),
+                }
+            if backtest.status == BacktestStatus.COMPLETED.value:
+                return {
+                    "status": BacktestStatus.COMPLETED.value,
+                    "current_cycle_status": BacktestStatus.COMPLETED.value,
+                    "error_message": backtest.error_message,
+                }
+
+        if runtime_run is None:
+            return None
+
+        if runtime_run.status in {"QUEUED", "RUNNING"}:
+            return {
+                "status": BacktestStatus.RUNNING.value,
+                "current_cycle_status": BacktestStatus.RUNNING.value,
+                "error_message": backtest.error_message,
+            }
+        if runtime_run.status == "WAITING_APPROVAL":
+            return {
+                "status": BacktestStatus.RUNNING.value,
+                "current_cycle_status": "WAITING_APPROVAL",
+                "error_message": backtest.error_message,
+            }
+        if runtime_run.status == "SUCCEEDED":
+            additional_completed_cycle = 1 if backtest.current_run_id == runtime_run.id else 0
+            final_cycle_completed = backtest.status == BacktestStatus.COMPLETED.value or (
+                backtest.total_cycles > 0
+                and backtest.completed_cycles + additional_completed_cycle >= backtest.total_cycles
+            )
+            return {
+                "status": (
+                    BacktestStatus.COMPLETED.value
+                    if final_cycle_completed
+                    else BacktestStatus.RUNNING.value
+                ),
+                "current_cycle_status": BacktestStatus.COMPLETED.value,
+                "error_message": backtest.error_message,
+            }
+        if runtime_run.status == "FAILED":
+            return {
+                "status": BacktestStatus.FAILED.value,
+                "current_cycle_status": BacktestStatus.FAILED.value,
+                "error_message": (
+                    runtime_artifact.terminal_error_message
+                    if runtime_artifact is not None and runtime_artifact.terminal_error_message
+                    else backtest.error_message
+                ),
+            }
+        if runtime_run.status == "CANCELLED":
+            return {
+                "status": BacktestStatus.CANCELLED.value,
+                "current_cycle_status": BacktestStatus.CANCELLED.value,
+                "error_message": None,
+            }
+        return None
