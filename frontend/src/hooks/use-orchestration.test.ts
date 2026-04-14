@@ -12,7 +12,25 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
+import { queryKeys } from "@/lib/query-keys";
+
 describe("useOrchestration", () => {
+  it("keeps the v1 orchestration query key shape stable", () => {
+    expect(queryKeys.orchestration.roles.list()).toEqual([
+      "api",
+      "orchestration",
+      "roles",
+      "list",
+    ]);
+    expect(queryKeys.orchestration.characters.detail(7)).toEqual([
+      "api",
+      "orchestration",
+      "characters",
+      "detail",
+      "7",
+    ]);
+  });
+
   it("invalidates the orchestration role and character lists after writes", async () => {
     const { useCreateOrchestrationRole, useCreateOrchestrationCharacter } = await import(
       "./use-orchestration",

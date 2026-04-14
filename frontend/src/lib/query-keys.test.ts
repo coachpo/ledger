@@ -34,4 +34,41 @@ describe("query keys", () => {
   it("normalizes backtest ids to the same detail key", () => {
     expect(queryKeys.backtests.detail("7")).toEqual(queryKeys.backtests.detail(7));
   });
+
+  it("keeps existing v1 query key shapes stable", () => {
+    expect(queryKeys.backtests.list()).toEqual(["api", "backtests", "list"]);
+    expect(queryKeys.orchestration.roles.list()).toEqual([
+      "api",
+      "orchestration",
+      "roles",
+      "list",
+    ]);
+  });
+
+  it("adds isolated v2 query key roots for runtime studio and tryouts", () => {
+    expect(queryKeys.runtime.runs.detail("7")).toEqual(queryKeys.runtime.runs.detail(7));
+    expect(
+      queryKeys.runtime.runs.list({ callerScopeKey: " studio-session ", callerType: "studio" }),
+    ).toEqual([
+      "api",
+      "v2",
+      "runtime",
+      "runs",
+      "list",
+      { callerScopeKey: "studio-session", callerType: "studio" },
+    ]);
+
+    expect(
+      queryKeys.studio.capabilities.list({ origin: "managed", status: "ACTIVE", type: "tool" }),
+    ).toEqual([
+      "api",
+      "v2",
+      "studio",
+      "capabilities",
+      "list",
+      { origin: "managed", status: "ACTIVE", type: "tool" },
+    ]);
+
+    expect(queryKeys.tryouts.detail("12")).toEqual(queryKeys.tryouts.detail(12));
+  });
 });

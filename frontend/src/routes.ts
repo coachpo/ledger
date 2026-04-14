@@ -13,6 +13,17 @@ import { PortfolioDetailPage } from "./pages/portfolios/detail";
 import { PortfolioListPage } from "./pages/portfolios/list";
 import { ReportDetailPage } from "./pages/reports/detail";
 import { ReportListPage } from "./pages/reports/list";
+import { StudioAgentEditorPage } from "./pages/studio/agents/editor";
+import { StudioAgentsListPage } from "./pages/studio/agents/list";
+import { StudioCapabilityEditorPage } from "./pages/studio/capabilities/editor";
+import { StudioCapabilitiesListPage } from "./pages/studio/capabilities/list";
+import { StudioIndexPage } from "./pages/studio/index";
+import { StudioPersonaEditorPage } from "./pages/studio/personas/editor";
+import { StudioPersonasListPage } from "./pages/studio/personas/list";
+import { StudioRunDetailPage } from "./pages/studio/runs/detail";
+import { StudioWorkflowEditorPage } from "./pages/studio/workflows/editor";
+import { StudioWorkflowsListPage } from "./pages/studio/workflows/list";
+import { TryoutPage } from "./pages/tryout/index";
 import { TemplateEditorPage } from "./pages/templates/editor";
 import { TemplateListPage } from "./pages/templates/list";
 
@@ -32,6 +43,21 @@ export const router = createBrowserRouter([
       { path: "backtests", Component: BacktestListPage },
       { path: "backtests/new", Component: BacktestConfigPage },
       { path: "backtests/:backtestId", Component: BacktestDetailPage },
+      { path: "tryout", Component: TryoutPage },
+      { path: "studio", Component: StudioIndexPage },
+      { path: "studio/agents", Component: StudioAgentsListPage },
+      { path: "studio/agents/new", Component: StudioAgentEditorPage },
+      { path: "studio/agents/:agentKey/edit", Component: StudioAgentEditorPage },
+      { path: "studio/workflows", Component: StudioWorkflowsListPage },
+      { path: "studio/workflows/new", Component: StudioWorkflowEditorPage },
+      { path: "studio/workflows/:workflowKey/edit", Component: StudioWorkflowEditorPage },
+      { path: "studio/personas", Component: StudioPersonasListPage },
+      { path: "studio/personas/new", Component: StudioPersonaEditorPage },
+      { path: "studio/personas/:personaKey/edit", Component: StudioPersonaEditorPage },
+      { path: "studio/capabilities", Component: StudioCapabilitiesListPage },
+      { path: "studio/capabilities/new", Component: StudioCapabilityEditorPage },
+      { path: "studio/capabilities/:capabilityKey/edit", Component: StudioCapabilityEditorPage },
+      { path: "studio/runs/:runId", Component: StudioRunDetailPage },
       { path: "orchestration", Component: OrchestrationIndexPage },
       { path: "orchestration/roles", Component: OrchestrationRolesListPage },
       { path: "orchestration/roles/new", Component: OrchestrationRoleEditorPage },

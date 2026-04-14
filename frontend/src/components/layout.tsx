@@ -4,7 +4,9 @@ import {
   Briefcase,
   ClipboardList,
   FileText,
+  FlaskConical,
   LayoutDashboard,
+  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -38,16 +40,19 @@ import { useSidebar } from "./ui/sidebar-context";
 type NavItem = {
   icon: LucideIcon;
   label: string;
+  testId: string;
   to: string;
 };
 
 const navItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", to: "/" },
-  { icon: Briefcase, label: "Portfolios", to: "/portfolios" },
-  { icon: FileText, label: "Templates", to: "/templates" },
-  { icon: ClipboardList, label: "Reports", to: "/reports" },
-  { icon: TrendingUp, label: "Backtests", to: "/backtests" },
-  { icon: Bot, label: "Orchestration", to: "/orchestration" },
+  { icon: LayoutDashboard, label: "Dashboard", testId: "nav-dashboard", to: "/" },
+  { icon: Briefcase, label: "Portfolios", testId: "nav-portfolios", to: "/portfolios" },
+  { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
+  { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
+  { icon: TrendingUp, label: "Backtests", testId: "nav-backtests", to: "/backtests" },
+  { icon: FlaskConical, label: "Tryout", testId: "nav-tryout", to: "/tryout" },
+  { icon: Sparkles, label: "Studio", testId: "nav-studio", to: "/studio" },
+  { icon: Bot, label: "Orchestration", testId: "nav-orchestration", to: "/orchestration" },
 ];
 
 function isNavItemActive(pathname: string, item: NavItem) {
@@ -99,6 +104,66 @@ function getPageMeta(pathname: string) {
 
   if (pathname.startsWith("/backtests/")) {
     return { section: "Backtests", sectionHref: "/backtests", title: "Backtest Detail" };
+  }
+
+  if (pathname === "/tryout") {
+    return { section: "Tryout", title: "Tryout" };
+  }
+
+  if (pathname === "/studio") {
+    return { section: "Studio", title: "Studio" };
+  }
+
+  if (pathname === "/studio/agents") {
+    return { section: "Studio", sectionHref: "/studio", title: "Agents" };
+  }
+
+  if (pathname === "/studio/agents/new") {
+    return { section: "Studio", sectionHref: "/studio/agents", title: "New Agent" };
+  }
+
+  if (pathname.startsWith("/studio/agents/") && pathname.endsWith("/edit")) {
+    return { section: "Studio", sectionHref: "/studio/agents", title: "Edit Agent" };
+  }
+
+  if (pathname === "/studio/workflows") {
+    return { section: "Studio", sectionHref: "/studio", title: "Workflows" };
+  }
+
+  if (pathname === "/studio/workflows/new") {
+    return { section: "Studio", sectionHref: "/studio/workflows", title: "New Workflow" };
+  }
+
+  if (pathname.startsWith("/studio/workflows/") && pathname.endsWith("/edit")) {
+    return { section: "Studio", sectionHref: "/studio/workflows", title: "Edit Workflow" };
+  }
+
+  if (pathname === "/studio/personas") {
+    return { section: "Studio", sectionHref: "/studio", title: "Personas" };
+  }
+
+  if (pathname === "/studio/personas/new") {
+    return { section: "Studio", sectionHref: "/studio/personas", title: "New Persona" };
+  }
+
+  if (pathname.startsWith("/studio/personas/") && pathname.endsWith("/edit")) {
+    return { section: "Studio", sectionHref: "/studio/personas", title: "Inspect Persona" };
+  }
+
+  if (pathname === "/studio/capabilities") {
+    return { section: "Studio", sectionHref: "/studio", title: "Capabilities" };
+  }
+
+  if (pathname === "/studio/capabilities/new") {
+    return { section: "Studio", sectionHref: "/studio/capabilities", title: "New Capability" };
+  }
+
+  if (pathname.startsWith("/studio/capabilities/") && pathname.endsWith("/edit")) {
+    return { section: "Studio", sectionHref: "/studio/capabilities", title: "Edit Capability" };
+  }
+
+  if (pathname.startsWith("/studio/runs/")) {
+    return { section: "Studio", sectionHref: "/studio", title: "Run Detail" };
   }
 
   if (pathname === "/orchestration") {
@@ -174,6 +239,7 @@ function AppSidebar() {
                     tooltip={!showExpandedContent ? item.label : undefined}
                   >
                     <NavLink
+                      data-testid={item.testId}
                       end={item.to === "/"}
                       onClick={() => setOpenMobile(false)}
                       to={item.to}

@@ -22,6 +22,7 @@ export type IdParam = number | string;
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const API_V2_BASE_URL = toVersionedApiBaseUrl(API_BASE_URL, "v2");
 
 export class ApiRequestError extends Error {
   readonly code: string;
@@ -52,9 +53,33 @@ export function toPathSegment(value: IdParam): string {
   return encodeURIComponent(String(value));
 }
 
-export function buildApiUrl(path: string): string {
+function toVersionedApiBaseUrl(baseUrl: string, version: `v${number}`): string {
+  if (/\/api\/v\d+$/.test(baseUrl)) {
+    return baseUrl.replace(/\/api\/v\d+$/, `/api/${version}`);
+  }
+
+  if (baseUrl.endsWith("/api")) {
+    return `${baseUrl}/${version}`;
+  }
+
+  return `${baseUrl}/api/${version}`;
+}
+
+function normalizePath(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE_URL}${normalizedPath}`;
+  return normalizedPath;
+}
+
+function buildApiUrlForBaseUrl(baseUrl: string, path: string): string {
+  return `${baseUrl}${normalizePath(path)}`;
+}
+
+export function buildApiUrl(path: string): string {
+  return buildApiUrlForBaseUrl(API_BASE_URL, path);
+}
+
+export function buildV2ApiUrl(path: string): string {
+  return buildApiUrlForBaseUrl(API_V2_BASE_URL, path);
 }
 
 function buildQueryString(query?: Record<string, RequestQueryValue>): string {
@@ -75,15 +100,19 @@ function buildQueryString(query?: Record<string, RequestQueryValue>): string {
   return searchParams.toString();
 }
 
-function buildUrl(path: string, query?: Record<string, RequestQueryValue>): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+function buildUrlForBaseUrl(
+  baseUrl: string,
+  path: string,
+  query?: Record<string, RequestQueryValue>,
+): string {
+  const normalizedPath = normalizePath(path);
   const queryString = buildQueryString(query);
 
   if (!queryString) {
-    return `${API_BASE_URL}${normalizedPath}`;
+    return `${baseUrl}${normalizedPath}`;
   }
 
-  return `${API_BASE_URL}${normalizedPath}?${queryString}`;
+  return `${baseUrl}${normalizedPath}?${queryString}`;
 }
 
 function isApiErrorDetail(value: unknown): value is ApiErrorDetail {
@@ -130,7 +159,11 @@ async function toApiRequestError(response: Response): Promise<ApiRequestError> {
   });
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function requestWithBaseUrl<T>(
+  baseUrl: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const headers = new Headers(options.headers);
   const method = options.method ?? "GET";
   let body: BodyInit | undefined;
@@ -148,7 +181,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     headers.set("Accept", "application/json");
   }
 
-  const response = await fetch(buildUrl(path, options.query), {
+  const response = await fetch(buildUrlForBaseUrl(baseUrl, path, options.query), {
     body,
     headers,
     method,
@@ -170,6 +203,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   return JSON.parse(text) as T;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return requestWithBaseUrl<T>(API_BASE_URL, path, options);
+}
+
+export async function requestV2<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return requestWithBaseUrl<T>(API_V2_BASE_URL, path, options);
 }
 
 export function createCsvFormData(file: File): FormData {
