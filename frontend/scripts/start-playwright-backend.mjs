@@ -10,7 +10,7 @@ const child = spawn(
   ["run", "--frozen", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"],
   {
     cwd: backendDir,
-    env: { ...process.env, BACKTEST_TEST_MODE: "1" },
+    env: process.env,
     stdio: "inherit",
   }
 );

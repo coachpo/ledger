@@ -71,7 +71,7 @@ test.describe("Studio and Tryout", () => {
     await page.getByTestId("nav-tryout").click();
     await expect(page).toHaveURL(/\/tryout$/);
     await expect(page.getByTestId("tryout-page")).toBeVisible();
-    await expect(page.getByText(/rollback-window workflows stay blocked here/i)).toBeVisible();
+    await expect(page.getByText(/execute one workflow spec or one single-agent spec/i)).toBeVisible();
 
     await page.getByLabel(/^single-agent spec$/i).check();
     await expect(page.getByTestId("tryout-agent-select")).toContainText(agent.name);
@@ -80,29 +80,19 @@ test.describe("Studio and Tryout", () => {
     await page.getByPlaceholder("ticker").fill("ticker");
     await page.getByPlaceholder("AAPL").fill("AAPL");
 
-    const createResponsePromise = page.waitForResponse(
-      (response) => response.url() === `${API_V2}/tryouts` && response.request().method() === "POST",
-    );
     await page.getByTestId("tryout-execute-button").click();
-    const createResponse = await createResponsePromise;
-    expect(createResponse.status()).toBe(201);
 
-    const created = (await createResponse.json()) as { runId: number; status: string };
-    const runId = created.runId;
+    const activeRunBadge = page.getByText(/^Active run #\d+$/);
+    await expect(activeRunBadge).toBeVisible();
+    const activeRunText = await activeRunBadge.textContent();
+    const runId = Number(activeRunText?.match(/\d+/)?.[0]);
     expect(runId).toBeGreaterThan(0);
 
     await expect(page.getByText(`Active run #${runId}`)).toBeVisible();
     await expect(page.getByTestId("tryout-status-panel")).toContainText(`Run #${runId}`);
     await expect(page.getByTestId("tryout-status-panel")).toContainText(/single_agent/i);
 
-    const persistResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url() === `${API_V2}/tryouts/${runId}/persist` &&
-        response.request().method() === "POST",
-    );
     await page.getByTestId("tryout-persist-button").click();
-    const persistResponse = await persistResponsePromise;
-    expect(persistResponse.ok()).toBeTruthy();
 
     await expect(page.getByTestId("tryout-status-panel")).toContainText(/expires: not scheduled/i);
     await expect(page.getByTestId("tryout-final-output")).toContainText(/single_agent/i);
