@@ -11,12 +11,12 @@
 | Error containment | `error-boundary.tsx`, `error-boundary-fallback.tsx` | route-safe fallback UI |
 | Generic tables | `data-table.tsx`, `data-table-column-header.tsx` | reusable TanStack table wrappers |
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
-| Shared field logic | `form-schemas.ts` | reusable Zod validation snippets, including backtest and orchestration rules |
+| Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for shared orchestration and trading rules |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
 
 ## CONVENTIONS
 - Keep components generic enough to serve multiple features; pass feature-specific labels, callbacks, and columns from callers.
-- Shared validation snippets belong in `form-schemas.ts` when they are reused across dialogs or routes; `backtestCreateFormSchema` and the orchestration role/character schemas are the current multi-route examples.
+- Shared validation snippets belong in `form-schemas.ts` when they are reused across dialogs or routes; the orchestration role/character schemas are the current multi-route examples.
 - Error-boundary components stay UI-focused; logging or recovery policy belongs in higher-level app code.
 - Orchestration forms use the shared role/character schemas here so route pages stay aligned on required fields and naming.
 

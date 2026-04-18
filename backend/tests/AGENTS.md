@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `backend/tests/`.
 
 ## OVERVIEW
-`backend/tests/` is the behavioral spec for the live API surface: portfolio CRUD, balances, positions, templates, reports, symbol lookup caching, market-data fallback, trading operations, orchestration, backtests, callback-state validation, report-placeholder recursion, snapshot persistence, and legacy-schema upgrades. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
+`backend/tests/` is the behavioral spec for the live API surface: portfolio CRUD, balances, positions, templates, reports, symbol lookup caching, market-data fallback, trading operations, orchestration, simulations, callback-state validation, report-placeholder recursion, snapshot persistence, and legacy-schema upgrades. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -11,31 +11,31 @@
 | Fixture setup | `conftest.py` | isolated PostgreSQL `DATABASE_URL`, `init_db()`, `TestClient`, dependency override cleanup |
 | API regression coverage | `test_api.py` | CRUD, templates, CSV import, trading rules, market-data fallback, DB upgrades |
 | Orchestration API coverage | `test_orchestration_api.py` | role/character CRUD, mention catalog, validation, versioning |
-| Backtest API coverage | `test_backtests_api.py` | schema upgrades, CRUD, cancellation, cleanup, deterministic launch wiring |
-| Backtest service coverage | `test_backtest_service.py` | verifies cycle-service kickoff wiring |
-| Backtest cycle-service coverage | `test_backtest_cycle_service.py` | internal cycle execution, legacy callback-state validation, deterministic cycle behavior |
-| Backtest engine coverage | `test_backtest_engine.py` | NYSE schedule rules, parquet cache reuse, prompt/report handling, trade attribution, results math |
-| Orchestration snapshot coverage | `test_backtest_orchestration_snapshot.py` | snapshot table registration and upgrade conversion from opaque payloads |
-| LangGraph runner coverage | `test_langgraph_runner.py` | seeded/reviewer topology behavior, prompt parsing, Responses-mode streaming/input formatting, report rendering, decision translation |
-| LangGraph seed coverage | `test_langgraph_seeds.py` | seeded builtin registry, mention-policy coverage |
+| Tryout API coverage | `test_tryouts_api.py` | execute/read/persist flows through the public v2 Tryout surface |
+| Tryout service coverage | `test_tryout_service.py` | service-level execute/read/persist behavior and runtime row lifecycle |
+| Runtime artifact coverage | `test_runtime_artifacts.py` | persisted artifact reads, trace summaries, and approval summaries |
+| Runtime adapter coverage | `test_runtime_execution_adapters.py` | frozen execution behavior, retries, and approval waits |
+| Runtime model coverage | `test_runtime_models.py` | runtime metadata registration plus uniqueness/index expectations |
+| Runtime seed coverage | `test_runtime_seed_bootstrap.py` | seeded mirror bootstrap, no-seeded-workflow behavior, and drift detection |
+| Workflow-spec coverage | `test_workflow_specs_api.py` | managed workflow lifecycle and seeded-visibility rules |
 
 ## CONVENTIONS
 - Tests create an isolated PostgreSQL database per test run, monkeypatch `DATABASE_URL`, then call `init_db(database_url)`.
 - The app fixture uses `create_app(init_database=False)` so fixtures, not app startup, control DB initialization.
 - Helper functions inside `test_api.py` create portfolios, balances, positions, templates, and report-producing fixtures instead of relying on opaque fixtures.
-- `test_backtests_api.py` follows the same explicit-helper style and monkeypatches `BacktestService.run_backtest()` so create flows stay deterministic.
+- `test_tryouts_api.py` follows the same explicit-helper style and asserts the public v2 Tryout create/read/persist flow without opaque fixtures.
 - Orchestration tests build roles/characters through the public API and assert versioning, reserved-handle rules, disabled-role checks, and mention-catalog behavior.
 - Quote-provider behavior is exercised through `app.dependency_overrides` on the FastAPI app rather than through real network calls.
-- `test_backtest_engine.py` uses fake history providers and temporary parquet cache directories, while `test_backtest_cycle_service.py` exercises internal cycle execution, legacy callback-state rules, and deterministic cycle advancement with fake engines.
-- `test_backtest_orchestration_snapshot.py` verifies the model is registered on metadata and that legacy snapshot tables upgrade to explicit snapshot columns.
-- `test_langgraph_runner.py` uses fake analyzers/clients and keeps live model calls out of the unit suite while still covering seeded/reviewer topology behavior plus Responses-mode streaming and input formatting.
+- `test_runtime_artifacts.py` and `test_runtime_execution_adapters.py` keep persisted artifact reads and frozen execution behavior deterministic with fake runtime inputs and adapters.
+- `test_runtime_models.py` verifies runtime metadata registration plus current uniqueness/index expectations.
+- `test_runtime_seed_bootstrap.py` proves startup bootstrap keeps seeded runtime mirrors aligned without recreating legacy workflow-spec rows.
 - `TEST_DATABASE_URL` or `DATABASE_URL` must point to a PostgreSQL server where the test user can connect to `postgres` and create/drop databases.
 
 ## ANTI-PATTERNS
 - Do not rely on shared DB state across tests.
 - Do not hit real provider APIs or network services from this suite.
-- Do not change CSV, template, report, symbol-lookup, market-data, orchestration, backtest, snapshot, or DB-upgrade contracts without updating the corresponding regression files.
-- Do not change internal prompt parsing, report rendering, or decision translation behavior without updating `test_langgraph_runner.py` and the cycle-service tests.
+- Do not change CSV, template, report, symbol-lookup, market-data, orchestration, simulation, snapshot, or DB-upgrade contracts without updating the corresponding regression files.
+- Do not change workflow-spec visibility, runtime seed compatibility, or upgrade behavior without updating `test_workflow_specs_api.py`, `test_runtime_seed_bootstrap.py`, and `test_runtime_db_upgrades.py`.
 - Do not leave dependency overrides behind after a test; `conftest.py` clears them for a reason.
 
 ## VALIDATION
@@ -48,10 +48,9 @@ uv run pytest
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` currently covers template CRUD/compile flow, quote-backed template metrics, report compile/upload/external-create/download flows, report filters, `reports.*` exact-name and dynamic-selector behavior with cycle detection, trading operations, cached quote fallback, symbol-name cache behavior, and supported legacy DB upgrades.
 - `test_orchestration_api.py` covers role/character CRUD plus duplicate, reserved, disabled, and mention-catalog behavior, and it verifies version bump expectations.
-- `test_backtests_api.py` covers backtest CRUD plus `trading_operations.backtest_id` upgrades, largest-deposit selection, default-template creation, cancellation/delete rules, webhook field serialization, startup repair, and the regression that hides internal `_run_state` payloads from API reads.
-- `test_backtest_service.py` verifies that `BacktestService.run_backtest()` initializes `BacktestCycleService` and launches execution in a background thread.
-- `test_backtest_cycle_service.py` covers internal cycle execution, callback-state validation for the legacy routes, and deterministic test-mode behavior.
-- `test_backtest_orchestration_snapshot.py` covers the snapshot table definition, legacy table migration, and explicit JSON column replacement.
-- `test_backtest_engine.py` covers schedule generation, parquet cache reuse, prompt report storage, trade attribution, and portfolio/benchmark result aggregation.
-- `test_langgraph_runner.py` covers internal prompt parsing, seeded/reviewer topology behavior, Responses-mode streaming extraction, input formatting, label normalization, analysis report rendering, and decision translation.
-- `test_langgraph_seeds.py` covers the seeded builtin registry and mention-policy behavior.
+- `test_tryouts_api.py` covers Tryout execute/read/persist flows, while `test_tryout_service.py` exercises the same lifecycle at the service boundary.
+- `test_runtime_artifacts.py` covers normalized artifact payload reads, summary passthrough, and multi-attempt history behavior.
+- `test_runtime_execution_adapters.py` covers frozen execution adapters, retries, and approval waits.
+- `test_runtime_models.py` covers the runtime table definition, metadata registration, and current uniqueness/index behavior.
+- `test_runtime_seed_bootstrap.py` covers seeded mirror bootstrap invariants, including the absence of seeded workflow-spec rows.
+- `test_workflow_specs_api.py` covers managed workflow listing defaults and the Studio-facing seeded-visibility contract.

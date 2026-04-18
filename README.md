@@ -1,6 +1,6 @@
 # Ledger
 
-Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, report generation, template compilation, and a backtest workspace.
+Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, report generation, template compilation, and a simulation workspace.
 
 ## Repository Layout
 
@@ -18,7 +18,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 - uv
 - lsof
 - Docker with `docker compose`
-- An LLM provider key if you want to run live LangGraph-backed backtests
+- An LLM provider key if you want to run live LangGraph-backed simulations
 
 ## Run the Full Stack Locally (101 Guide)
 
@@ -46,18 +46,18 @@ If any of those are missing, re-clone or restore the full repository checkout fi
 (cd frontend && pnpm install)
 ```
 
-### Step 4: Export LangGraph backtest settings if you want live AI-backed backtests
+### Step 4: Export LangGraph simulation settings if you want live AI-backed simulations
 
 If you only want the UI, backend, and local stack up, you can skip this step.
 
-If you want the internal LangGraph backtest runner to make real model calls, export the provider settings before startup:
+If you want the internal LangGraph simulation runner to make real model calls, export the provider settings before startup:
 
 ```bash
 export OPENAI_API_KEY="your-provider-key"
-export BACKTEST_AGENT_API_KEY="$OPENAI_API_KEY"
-export BACKTEST_AGENT_MODEL="gpt-5.4-mini"
-export BACKTEST_AGENT_BASE_URL="http://192.168.1.222:8087/v1"    # optional override
-export BACKTEST_AGENT_TEMPERATURE="0"
+export RUNTIME_AGENT_API_KEY="$OPENAI_API_KEY"
+export RUNTIME_AGENT_MODEL="gpt-5.4-mini"
+export RUNTIME_AGENT_BASE_URL="http://192.168.1.222:8087/v1"    # optional override
+export RUNTIME_AGENT_TEMPERATURE="0"
 ```
 
 ### Step 5: Start everything with the local helper
@@ -86,12 +86,12 @@ Once startup finishes, open:
 
 Press `Ctrl+C` in the terminal running `./start.sh`.
 
-## Important LangGraph Backtest Notes
+## Important LangGraph Simulation Notes
 
-- LangGraph backtests now run inside Ledger's backend runtime; there is no separate worker process to start.
-- `PUBLIC_BASE_URL` is no longer required for the normal internal backtest path, but leaving it set is harmless.
+- LangGraph simulations now run inside Ledger's backend runtime; there is no separate worker process to start.
+- `PUBLIC_BASE_URL` is no longer required for the normal internal simulation path, but leaving it set is harmless.
 - If you need the backend reachable from another machine, set `BACKEND_HOST=0.0.0.0`, `BACKEND_PUBLIC_HOST=<your-lan-ip>`, and `PUBLIC_BASE_URL=http://<your-lan-ip>:28000` before running `./start.sh`.
-- The LangGraph runner inherits its model settings from the backend process, so `BACKTEST_AGENT_*` variables must be exported before you start the backend if you want live model calls.
+- The LangGraph runner inherits its model settings from the backend process, so `RUNTIME_AGENT_*` variables must be exported before you start the backend if you want live model calls.
 
 ## Manual Startup (without `start.sh`)
 
@@ -119,11 +119,8 @@ Use this path only if you do not want `./start.sh` managing the stack for you.
 
 Visit `http://127.0.0.1:25173/`.
 
-### 5. Know what is required vs optional for LangGraph backtests
+### 5. Know what is required vs optional for local development
 
-- `BACKTEST_AGENT_MODEL` is required for live LangGraph-backed analysis.
-- `BACKTEST_AGENT_API_KEY` (or `OPENAI_API_KEY` if you mirror it) is typically required for live model calls.
-- `BACKTEST_AGENT_BASE_URL` is an optional override when you want a custom OpenAI-compatible endpoint.
 - When you run the frontend manually on `25173`, the backend must allow that origin via `CORS_ALLOWED_ORIGINS`, which is why the backend command above includes it explicitly.
 
 See `backend/README.md` for backend-specific local development details.

@@ -9,8 +9,8 @@ This runbook captures the current local demo flow for Ledger orchestration. It b
 - orchestration role and character CRUD
 - portfolio creation with an initial deposit balance
 - template creation with mention assistance and literal handles
-- internal backtest launch with orchestration pattern selection
-- backtest result review
+- internal simulation launch with orchestration pattern selection
+- simulation result review
 - generated report review from the Reports surface
 
 ## Preconditions
@@ -21,12 +21,12 @@ This runbook captures the current local demo flow for Ledger orchestration. It b
 
 ## Runtime provider config
 
-Ledger uses runtime provider settings for live LangGraph-backed backtests. For live model-backed backtests, make sure a model ID is available, and provide an API key and base URL when your provider requires them:
+Ledger uses runtime provider settings for live LangGraph-backed simulations. For live model-backed simulations, make sure a model ID is available, and provide an API key and base URL when your provider requires them:
 
 ```bash
-export BACKTEST_AGENT_MODEL="<model-id>"
-export BACKTEST_AGENT_BASE_URL="<openai-compatible-base-url>"
-export BACKTEST_AGENT_API_KEY="<your-api-key>"
+export RUNTIME_AGENT_MODEL="<model-id>"
+export RUNTIME_AGENT_BASE_URL="<openai-compatible-base-url>"
+export RUNTIME_AGENT_API_KEY="<your-api-key>"
 ```
 
 These are runtime settings, not checked-in secrets.
@@ -44,15 +44,15 @@ ps eww -p "$pid"
 
 Expected output includes your current values for:
 
-- `BACKTEST_AGENT_MODEL=...`
-- `BACKTEST_AGENT_BASE_URL=...`
-- `BACKTEST_AGENT_API_KEY=...`
+- `RUNTIME_AGENT_MODEL=...`
+- `RUNTIME_AGENT_BASE_URL=...`
+- `RUNTIME_AGENT_API_KEY=...`
 
 The current code seam for that runtime config is:
 
 - `backend/app/core/config.py`
-- `backend/app/services/backtest_cycle_service.py`
-- `backend/app/langgraph/runner.py`
+- `backend/app/services/agent_runtime_service.py`
+- `backend/app/services/execution_adapters/generic_workflow.py`
 
 ## Clean reset
 
@@ -95,7 +95,7 @@ Open the frontend URL printed by `./start.sh`.
 Expected starting state:
 
 - assuming the app is using the reset database, dashboard counts are zero or empty
-- there are no portfolios, templates, backtests, roles, or characters yet
+- there are no portfolios, templates, simulations, roles, or characters yet
 
 ### 2. Create an orchestration role
 
@@ -178,7 +178,7 @@ Save the position.
 Expected result:
 
 - `AAPL` appears in the positions table
-- the portfolio now has nonzero exposure for backtest review
+- the portfolio now has nonzero exposure for simulation review
 
 ### 6. Create an orchestration-aware template
 
@@ -214,13 +214,13 @@ Expected result:
 - preview expands the portfolio placeholder
 - the mention text stays literal in the editor body
 
-### 7. Launch the backtest
+### 7. Launch the simulation
 
-Click `Backtests`, then `New Backtest`.
+Click `Simulations`, then `New Simulation`.
 
 Fill or select:
 
-- Backtest Name: `Demo Orchestration Backtest With Position`
+- Simulation Name: `Demo Orchestration Simulation With Position`
 - Launch Mode: `Internal`
 - Orchestration Pattern: `Analyst Reviewer v1`
 - Portfolio: `Demo Portfolio`
@@ -230,16 +230,16 @@ Fill or select:
 - End Date: `2024-03-29`
 - Benchmark: `S&P 500`
 
-Launch the backtest.
+Launch the simulation.
 
 Expected result:
 
-- the route changes to `/backtests/<id>`
+- the route changes to `/simulations/<id>`
 - status eventually becomes `COMPLETED`
 
 ### 8. Review the completed result
 
-On the backtest detail page, verify:
+On the simulation detail page, verify:
 
 - the status badge shows `COMPLETED`
 - the metrics summary is visible
@@ -250,24 +250,25 @@ On the backtest detail page, verify:
 
 Use either of these current paths:
 
-- if the backtest detail page shows an `Analysis Reports` section, click one of the generated report links there
-- or click `Reports` and open the new `backtest_<id>_<date>` report created by the completed run
+- if the simulation detail page shows an `Analysis Reports` section, click one of the generated report links there
+- or click `Reports` and open the new `simulation_<id>_<date>` report created by the completed run
 
-The `Analysis Reports` section is conditional. It only appears when the completed backtest trade log contains report-linked trade entries.
+The `Analysis Reports` section is conditional. It only appears when the completed simulation trade log contains report-linked trade entries.
 
 Expected result:
 
-- the route changes to `/reports/<generated-backtest-report-slug>`
+- the route changes to `/reports/<generated-simulation-report-slug>`
 - the report detail shows `LangGraph Analysis`
 - the report body includes the run topology and cycle analysis content for the positions held in that report's cycle
 
 ## Validation notes
 
-This runbook is grounded in the current live app plus the shipped route, API, and E2E coverage around orchestration navigation, backtest orchestration behavior, and report flows.
+This runbook is grounded in the current live app plus the shipped route, API, and E2E coverage around orchestration navigation and report flows.
 
 ## Known rerun caveats
 
 - `start.sh` may reuse an already healthy backend or fall back to alternate ports when the requested ports are occupied.
 - stale Playwright servers can hide app changes, so clean restarts are more reliable for reruns.
 - use Playwright checkbox-specific actions for benchmark selection during browser automation reruns.
-- the README and backend docs still mention `PUBLIC_BASE_URL` in a few places, but the current internal backtest path does not require it.
+- the README and backend docs still mention `PUBLIC_BASE_URL` in a few places, but the current internal simulation path does not require it.
+h does not require it.

@@ -4,12 +4,12 @@
 
 Status: Draft
 Supersedes: previous contents of `docs/ledger-agent-platform-product-spec.md`
-References: `docs/ledger-orchestration-product-spec.md`, `docs/ledger-orchestration-product-prd.md`, `docs/ledger-orchestration-product-design.md`, `docs/orchestration-demo-runbook.md`, `backend/app/services/backtest_service.py`, `backend/app/services/backtest_cycle_service.py`, `backend/app/services/backtest_engine.py`, `backend/app/services/orchestration_service.py`, `backend/app/langgraph/seeds.py`, `backend/app/langgraph/runner.py`, `backend/app/models/backtest_orchestration_snapshot.py`, `backend/app/schemas/backtest.py`, `backend/app/schemas/orchestration.py`
+References: `docs/ledger-orchestration-product-spec.md`, `docs/ledger-orchestration-product-prd.md`, `docs/ledger-orchestration-product-design.md`, `docs/orchestration-demo-runbook.md`, `backend/app/services/orchestration_service.py`, `backend/app/services/workflow_spec_service.py`, `backend/app/services/agent_runtime_service.py`, `backend/app/services/runtime_seed_catalog.py`, `backend/app/services/runtime_seed_bootstrap.py`, `backend/app/db/upgrades.py`, `backend/app/schemas/runtime.py`, `backend/app/schemas/orchestration.py`
 Source of truth notes: this spec defines the implementation-ready v2 target. When current code and this target disagree, current code still defines shipped behavior until cutover gates are passed.
 
 ## Scope
 
-This spec defines the BC-breaking v2 contract for runtime-owned execution, versioned agent and workflow specs, persona profiles, capability registry, tryout, Studio, approval lifecycle, trace lifecycle, and backtest integration.
+This spec defines the BC-breaking v2 contract for runtime-owned execution, versioned agent and workflow specs, persona profiles, capability registry, tryout, Studio, approval lifecycle, trace lifecycle, and simulation integration.
 
 Naming rule:
 
@@ -41,7 +41,7 @@ Version lifecycle rules:
 
 ### Run caller type
 
-`backtest | tryout | studio | api`
+`simulation | tryout | studio | api`
 
 ### Run execution kind
 
@@ -63,11 +63,11 @@ Version lifecycle rules:
 
 `RUN_CREATED | STEP_STARTED | STEP_COMPLETED | TOOL_CALLED | TOOL_RETURNED | APPROVAL_REQUESTED | APPROVAL_RESOLVED | RUN_COMPLETED | RUN_FAILED | RUN_CANCELLED | RUN_EXPIRED | WARNING_EMITTED`
 
-### Backtest compatibility cycle status
+### Simulation compatibility cycle status
 
 `RUNNING | WAITING_APPROVAL | COMPLETED | FAILED | CANCELLED`
 
-### Backtest execution owner
+### Simulation execution owner
 
 `legacy_path | runtime_v2`
 
@@ -75,10 +75,10 @@ Version lifecycle rules:
 
 ### Shipped baseline
 
-1. Backtests own execution through `BacktestService`, `BacktestCycleService`, and `BacktestEngine`.
+1. Simulations own execution through `SimulationService`, `SimulationCycleService`, and `SimulationEngine`.
 2. Orchestration roles and characters are prompt/config and mention surfaces.
-3. `BacktestRead` still exposes `orchestrationPatternKey`, callback-aware statuses, and `_run_state` redaction semantics.
-4. `backtest_orchestration_snapshots` is the cycle-level orchestration audit store.
+3. `SimulationRead` still exposes `orchestrationPatternKey`, callback-aware statuses, and `_run_state` redaction semantics.
+4. `simulation_orchestration_snapshots` is the cycle-level orchestration audit store.
 
 ### Already-present v2-adjacent code
 
@@ -91,13 +91,13 @@ These four facts are migration inputs, not future ideas.
 
 ## Required v2 invariants
 
-1. Runtime, not backtests, owns execution state.
+1. Runtime, not simulations, owns execution state.
 2. Agent specs and workflow specs are versioned and validated before execution.
 3. Capability resolution is deterministic and backend-owned.
 4. Approval state is explicit, queryable, and persisted.
 5. Tryout defaults to ephemeral execution.
 6. Studio is a client of the runtime, not a second engine.
-7. Backtests invoke one runtime run per cycle.
+7. Simulations invoke one runtime run per cycle.
 
 ## Data model contract
 
@@ -142,21 +142,19 @@ Persisted fields and derived read metadata:
 8. `graph_definition`
 9. `final_output_contract`
 10. `mention_policy`
-11. `execution_mode` nullable; required only for rollback-compatible seeded workflows
+11. `execution_mode` nullable; required only for historical-compatibility seeded workflows
 12. `default_tool_ids`
 13. `allowed_capability_bundle_keys`
 14. `connector_ids`
-15. `review_mode` nullable; required only for rollback-compatible seeded workflows
+15. `review_mode` nullable; required only for historical-compatibility seeded workflows
 16. `approval_policy_overrides`
 17. `created_at`
 18. `updated_at`
 
 Current supported pattern keys must migrate 1:1 into seeded immutable workflow specs:
 
-1. `seeded_internal_backtest_v1`
-2. `analyst_reviewer_v1`
-3. `seeded_internal_backtest_tool_enabled_v1`
-4. `analyst_reviewer_tool_enabled_v1`
+1. `seeded_internal_simulation_v1`
+2. `seeded_internal_simulation_tool_enabled_v1`
 
 `final_output_contract` must be a structured object with at least:
 
@@ -172,15 +170,15 @@ Current supported pattern keys must migrate 1:1 into seeded immutable workflow s
 
 During migration, seeded workflow `mention_policy` rows must mirror the live `PatternMentionPolicy(version, allow_characters, allowed_builtin_handles)` semantics exactly.
 
-`graph_definition` must explicitly encode topology order. For seeded backtest mirrors, it must preserve the current seeded topology `agent_order` exactly.
+`graph_definition` must explicitly encode topology order. For seeded simulation mirrors, it must preserve the current seeded topology `agent_order` exactly.
 
-`execution_mode`, `default_tool_ids`, `allowed_capability_bundle_keys` (mirroring current `allowed_bundle_keys`), `connector_ids`, and `review_mode` must preserve the current `BacktestPatternSpec` and `SeededTopology` values exactly for seeded workflow mirrors.
+`execution_mode`, `default_tool_ids`, `allowed_capability_bundle_keys` (mirroring current `allowed_bundle_keys`), `connector_ids`, and `review_mode` must preserve the current `SimulationPatternSpec` and `SeededTopology` values exactly for seeded workflow mirrors.
 
-For rollback-compatible seeded workflows, `execution_mode` currently supports `structured_output | tool_enabled` and remains seeded-compatibility metadata.
+For historical-compatibility seeded workflows, `execution_mode` currently supports `structured_output | tool_enabled` and remains seeded-compatibility metadata.
 
 For v2-native workflows, `execution_mode` must be null and execution behavior is derived from `graph_definition` plus the frozen step plan.
 
-For rollback-compatible seeded workflows, `review_mode` remains seeded-compatibility metadata and a semantic input to the seeded execution adapter until the rollback window closes.
+For historical-compatibility seeded workflows, `review_mode` remains seeded-compatibility metadata and a semantic input to the seeded execution adapter until the historical migration phase closes.
 
 For v2-native workflows, `review_mode` must be null and equivalent reviewer behavior must be expressed only through `graph_definition`.
 
@@ -213,7 +211,7 @@ Supported edge outcomes must include at least:
 Seeded workflow version source:
 
 1. Initial seeded workflow mirror rows use `version=1`.
-2. Rollback-window backtests may reference only seeded workflow rows pinned to that version.
+2. Historical-migration simulations may reference only seeded workflow rows pinned to that version.
 
 Seeded agent version source:
 
@@ -281,7 +279,7 @@ Imported projection path rule:
 
 Delete and archive rule:
 
-1. Deleting a legacy role or character archives the imported persona profile version during the rollback window.
+1. Deleting a legacy role or character archives the imported persona profile version during the historical migration phase.
 2. Archived imported personas remain resolvable for pinned historical runs and traces, but cannot be attached to new workflow specs.
 
 ### `persona_projection_events`
@@ -353,8 +351,8 @@ Required fields:
 6. `workflow_spec_version` nullable when `execution_kind=single_agent`
 7. `agent_spec_key` nullable when `execution_kind=workflow`
 8. `agent_spec_version` nullable when `execution_kind=workflow`
-9. `caller_scope_key` nullable; for backtests this must be `cycle_date.isoformat()`
-10. `caller_identity_key` nullable; required only when a non-backtest caller uses caller-scoped concurrency or listing
+9. `caller_scope_key` nullable; for simulations this must be `cycle_date.isoformat()`
+10. `caller_identity_key` nullable; required only when a non-simulation caller uses caller-scoped concurrency or listing
 11. `attempt_number`
 12. `status`
 13. `input_hash`
@@ -368,11 +366,11 @@ Required fields:
 
 Required uniqueness rules:
 
-1. `caller_type=backtest` requires `caller_id`, `caller_scope_key`, and `attempt_number`.
+1. `caller_type=simulation` requires `caller_id`, `caller_scope_key`, and `attempt_number`.
 2. `(caller_type, caller_id, caller_scope_key, attempt_number)` must be unique.
-3. At most one run in `QUEUED | RUNNING | WAITING_APPROVAL` may exist for a given backtest `(caller_type, caller_id, caller_scope_key)`.
-4. Retrying or rerunning the same backtest cycle must create a new run with `attempt_number + 1`; prior attempts remain immutable.
-5. Non-backtest callers may have multiple concurrent active runs unless a caller-specific policy uses `caller_identity_key` to restrict them.
+3. At most one run in `QUEUED | RUNNING | WAITING_APPROVAL` may exist for a given simulation `(caller_type, caller_id, caller_scope_key)`.
+4. Retrying or rerunning the same simulation cycle must create a new run with `attempt_number + 1`; prior attempts remain immutable.
+5. Non-simulation callers may have multiple concurrent active runs unless a caller-specific policy uses `caller_identity_key` to restrict them.
 
 Canonical `TraceSummary` object:
 
@@ -467,7 +465,7 @@ Required fields:
 
 Caller-scoped artifact rule:
 
-1. `normalized_trade_decisions` is required only for backtest callers.
+1. `normalized_trade_decisions` is required only for simulation callers.
 2. `prompt_report_slug` is required only for callers that generate a prompt report.
 3. Tryout and Studio callers may leave caller-specific artifact fields null when they do not apply.
 4. `final_output` is required for terminal `SUCCEEDED` runs across all caller types.
@@ -594,11 +592,11 @@ Snapshot version-entry compatibility shapes:
 
 ### Compatibility store
 
-`backtest_orchestration_snapshots` remains available during migration as a compatibility mirror for backtest callers. It is not the long-term runtime store.
+`simulation_orchestration_snapshots` remains available during migration as a compatibility mirror for simulation callers. It is not the long-term runtime store.
 
-### `backtests` migration additions
+### `simulations` migration additions
 
-Required migration-era fields on `backtests`:
+Required migration-era fields on `simulations`:
 
 1. `launch_mode` nullable during classification
 2. `workflow_spec_key` nullable during migration
@@ -610,38 +608,17 @@ Required migration-era fields on `backtests`:
 8. `launch_mode_classification_note` nullable during classification
 9. `execution_owner` nullable during classification
 
-### `runtime_control_flags`
-
-Required fields:
-
-1. `flag_key`
-2. `enabled`
-3. `updated_at`
-
-### `runtime_flag_change_events`
-
-Required fields:
-
-1. `id`
-2. `flag_key`
-3. `old_enabled`
-4. `new_enabled`
-5. `actor`
-6. `reason`
-7. `result` (`applied | rejected`)
-8. `created_at`
-
 Classification rule:
 
-1. New rows created after the schema rollout must persist `launch_mode` directly from `BacktestCreate.launchMode`.
+1. New rows created after the schema rollout must persist `launch_mode` directly from `SimulationCreate.launchMode`.
 2. Existing rows are not auto-classified from `webhook_url` alone.
 3. Rows with null `launch_mode` remain compatibility rows and are not eligible for runtime-backed internal execution.
-4. Historical classification is one audited migration job that consumes an operator-reviewed manifest keyed by `backtest_id`.
+4. Historical classification is one audited migration job that consumes an operator-reviewed manifest keyed by `simulation_id`.
 5. That manifest is the authoritative classification source for `launch_mode` and `execution_owner`.
 6. For classified internal rows using supported seeded patterns, the job also writes `workflow_spec_key` from the persisted `orchestration_pattern_key` and pins `workflow_spec_version=1`.
-7. Historical rows whose pattern key cannot be mapped to a rollback-compatible seeded workflow remain on the current path and are not eligible for runtime-backed internal execution.
+7. Historical rows whose pattern key cannot be mapped to a historical-compatibility seeded workflow remain on the current path and are not eligible for runtime-backed internal execution.
 8. New or classified rows pin `execution_owner` to `legacy_path` or `runtime_v2`.
-9. Once pinned, `execution_owner` remains fixed for the lifetime of that backtest.
+9. Once pinned, `execution_owner` remains fixed for the lifetime of that simulation.
 
 Routing authority rule:
 
@@ -651,9 +628,9 @@ Routing authority rule:
 Create-time routing matrix:
 
 1. `launchMode=legacy_callback` pins `execution_owner=legacy_path`.
-2. `launchMode=internal` with `AGENT_RUNTIME_V2_BACKTESTS_ENABLED=false` pins `execution_owner=legacy_path`.
-3. `launchMode=internal` with `AGENT_RUNTIME_V2_BACKTESTS_ENABLED=true` pins `execution_owner=runtime_v2` only when the selected or defaulted workflow resolves to a rollback-compatible seeded workflow.
-4. Otherwise `launchMode=internal` pins `execution_owner=legacy_path` during the rollback window.
+2. `launchMode=internal` with `historical simulation cutover flag=false` pins `execution_owner=legacy_path`.
+3. `launchMode=internal` with `historical simulation cutover flag=true` pins `execution_owner=runtime_v2` only when the selected or defaulted workflow resolves to a historical-compatibility seeded workflow.
+4. Otherwise `launchMode=internal` pins `execution_owner=legacy_path` during the historical migration phase.
 
 ## Deterministic resolution rules
 
@@ -766,11 +743,11 @@ Public create semantics:
 
 1. `POST /api/v2/runtime/runs` creates and starts a run, then returns the current run envelope without waiting for terminal completion.
 2. Callers use `GET /api/v2/runtime/runs/{runId}`, `.../artifacts`, `.../trace`, and approval reads/lists to observe subsequent state.
-3. Public HTTP callers may not create runs with `callerType=backtest`, `callerType=studio`, or `callerType=tryout`; those caller types are reserved for internal services and dedicated APIs.
+3. Public HTTP callers may not create runs with `callerType=simulation`, `callerType=studio`, or `callerType=tryout`; those caller types are reserved for internal services and dedicated APIs.
 
-Rollback-window workflow eligibility rule:
+Historical-migration workflow eligibility rule:
 
-1. Public non-backtest callers may not create rollback-compatible seeded workflow runs during the rollback window.
+1. Public non-simulation callers may not create historical-compatibility seeded workflow runs during the historical migration phase.
 2. Those callers may create only v2-native workflow runs or single-agent runs.
 
 Tryout caller reservation rule:
@@ -918,10 +895,10 @@ Minimum `GET /api/v2/runtime/runs/{runId}/trace` response contract:
 Executor adapter contract:
 
 1. `AgentRuntimeService` must invoke an execution adapter selected by caller type and workflow shape.
-2. `BacktestLangGraphExecutionAdapter` is the v2 adapter that translates a runtime-owned backtest run into the current `BacktestLangGraphRequest` contract.
-3. `GenericWorkflowExecutionAdapter` executes non-backtest workflow runs from `graph_definition` plus the frozen step plan.
+2. `SimulationLangGraphExecutionAdapter` is the v2 adapter that translates a runtime-owned simulation run into the current `SimulationLangGraphRequest` contract.
+3. `GenericWorkflowExecutionAdapter` executes non-simulation workflow runs from `graph_definition` plus the frozen step plan.
 4. `SingleAgentExecutionAdapter` executes `executionKind=single_agent` runs.
-5. If a non-backtest caller supplies `callerIdentityKey`, create must reject a new run with HTTP 409 when caller policy forbids another active run for the same `(callerType, callerIdentityKey)`.
+5. If a non-simulation caller supplies `callerIdentityKey`, create must reject a new run with HTTP 409 when caller policy forbids another active run for the same `(callerType, callerIdentityKey)`.
 
 Minimum `ExecutionAdapterRequest` fields:
 
@@ -1004,8 +981,8 @@ Tryout summary derivation rule:
 
 Tryout rollback-window eligibility rule:
 
-1. During the rollback window, `/api/v2/tryouts/*` may execute only v2-native workflows or single-agent runs.
-2. Rollback-compatible seeded workflow specs are rejected from tryout during the rollback window.
+1. During the historical migration phase, `/api/v2/tryouts/*` may execute only v2-native workflows or single-agent runs.
+2. Historical-compatibility seeded workflow specs are rejected from tryout during the historical migration phase.
 
 Tryout persistence rules:
 
@@ -1046,11 +1023,11 @@ Approval pause/resume rule:
 5. Explicit cancel from `WAITING_APPROVAL` transitions the run to `CANCELLED`.
 6. Cancelling a `WAITING_APPROVAL` run expires every still-pending approval for that run before the run is marked `CANCELLED`.
 
-## Backtest integration rules
+## Simulation integration rules
 
 ### Breaking target contract
 
-During migration, `BacktestCreate` accepts both:
+During migration, `SimulationCreate` accepts both:
 
 1. `orchestrationPatternKey` as the v1 compatibility field
 2. `workflowSpecKey` plus optional `workflowSpecVersion` as the v2 field
@@ -1059,33 +1036,33 @@ During migration, `BacktestCreate` accepts both:
 Canonicalization rule:
 
 1. If only `orchestrationPatternKey` is provided, service must map it to the identical seeded workflow spec key.
-2. If only `workflowSpecKey` is provided, it must be a rollback-compatible seeded workflow key and service must persist a reversible compatibility mapping to the current pattern-key field until the rollback window closes.
+2. If only `workflowSpecKey` is provided, it must be a historical-compatibility seeded workflow key and service must persist a reversible compatibility mapping to the current pattern-key field until the historical migration phase closes.
 3. If both are provided, they must resolve to the same seeded workflow key or validation fails.
-4. `workflowSpecVersion` must be resolved and pinned at backtest creation time; all cycles in that backtest reuse the pinned version.
+4. `workflowSpecVersion` must be resolved and pinned at simulation creation time; all cycles in that simulation reuse the pinned version.
 5. If `launchMode=legacy_callback`, `workflowSpecKey` and `workflowSpecVersion` must be omitted or validation fails.
-6. During the rollback window, a rollback-compatible seeded internal backtest that omits `workflowSpecVersion` must pin `workflowSpecVersion=1` even if a newer seeded version is `ACTIVE`.
-7. If both selector families are omitted, compatibility defaulting resolves `orchestrationPatternKey="seeded_internal_backtest_v1"`; internal runtime-backed creation maps that default to `workflowSpecKey="seeded_internal_backtest_v1"` and pins `workflowSpecVersion=1` during the rollback window.
+6. During the historical migration phase, a historical-compatibility seeded internal simulation that omits `workflowSpecVersion` must pin `workflowSpecVersion=1` even if a newer seeded version is `ACTIVE`.
+7. If both selector families are omitted, compatibility defaulting resolves `orchestrationPatternKey="seeded_internal_simulation_v1"`; internal runtime-backed creation maps that default to `workflowSpecKey="seeded_internal_simulation_v1"` and pins `workflowSpecVersion=1` during the historical migration phase.
 
 Webhook compatibility rule during mixed mode:
 
-1. Existing `webhookUrl` and `webhookTimeout` request/read fields remain part of the backtest compatibility surface during the rollback window.
-2. For `launchMode=internal`, omitted values continue to materialize/read as `webhookUrl="internal://ledger"` and `webhookTimeout=600` during the rollback window.
+1. Existing `webhookUrl` and `webhookTimeout` request/read fields remain part of the simulation compatibility surface during the historical migration phase.
+2. For `launchMode=internal`, omitted values continue to materialize/read as `webhookUrl="internal://ledger"` and `webhookTimeout=600` during the historical migration phase.
 3. For `launchMode=internal`, supplied values do not influence runtime routing and must round-trip unchanged as compatibility metadata.
 4. For `launchMode=legacy_callback`, current webhook validation and callback delivery behavior remain authoritative.
 
 Legacy callback cancel rule:
 
-1. For `launchMode=legacy_callback`, `POST /api/v1/backtests/{id}/cancel` preserves the current baseline rule and only allows cancellation from `PENDING` or `RUNNING`.
+1. For `launchMode=legacy_callback`, `POST /api/v1/simulations/{id}/cancel` preserves the current baseline rule and only allows cancellation from `PENDING` or `RUNNING`.
 2. Callback-era `currentCycleStatus` values such as `AWAITING_CALLBACK` or `PROCESSING_CALLBACK` do not independently change that status-based cancel rule.
 
 Retained legacy callback route contract:
 
-1. `POST /api/v1/backtests/{backtestId}/cycles/{cycleDate}/report` accepts `CycleReportUpload` with `name`, `content`, and `tags`, and returns the created report slug.
-2. `POST /api/v1/backtests/{backtestId}/cycles/{cycleDate}/trades` accepts `CycleTradesRequest` with `decisions` and optional `reportSlug`, and returns trade execution results.
-3. `POST /api/v1/backtests/{backtestId}/cycles/{cycleDate}/complete` returns completion status, cycle counts, and next-cycle metadata.
-4. These routes remain compatibility ingress throughout the rollback window and are not the default browser-driven launch path.
+1. `POST /api/v1/simulations/{simulationId}/cycles/{cycleDate}/report` accepts `CycleReportUpload` with `name`, `content`, and `tags`, and returns the created report slug.
+2. `POST /api/v1/simulations/{simulationId}/cycles/{cycleDate}/trades` accepts `CycleTradesRequest` with `decisions` and optional `reportSlug`, and returns trade execution results.
+3. `POST /api/v1/simulations/{simulationId}/cycles/{cycleDate}/complete` returns completion status, cycle counts, and next-cycle metadata.
+4. These routes remain compatibility ingress throughout the historical migration phase and are not the default browser-driven launch path.
 
-`BacktestRead` adds:
+`SimulationRead` adds:
 
 1. `currentRunId` nullable during migration
 2. `lastCompletedRunId` nullable
@@ -1096,7 +1073,7 @@ Retained legacy callback route contract:
 7. `launchModeClassifiedBy` nullable during classification
 8. `executionOwner` nullable during classification
 
-Existing `webhookUrl` and `webhookTimeout` fields remain on the compatibility read surface during the rollback window.
+Existing `webhookUrl` and `webhookTimeout` fields remain on the compatibility read surface during the historical migration phase.
 
 Run-id lifecycle rules:
 
@@ -1105,50 +1082,50 @@ Run-id lifecycle rules:
 3. When a cycle run reaches `SUCCEEDED | FAILED | CANCELLED`, `lastCompletedRunId` is updated to that terminal run id.
 4. `currentRunId` is cleared after a terminal run unless the next cycle run has already been created.
 
-Backtest compatibility state mapping:
+Simulation compatibility state mapping:
 
-1. For `executionOwner=runtime_v2`, a newly created backtest remains `BacktestRead.status=PENDING` until the first runtime cycle run is created.
-2. For `executionOwner=runtime_v2`, runtime `QUEUED | RUNNING` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
-3. For `executionOwner=runtime_v2`, runtime `WAITING_APPROVAL` -> `BacktestRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
-4. For `executionOwner=runtime_v2`, runtime cycle success on a non-terminal cycle -> `BacktestRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
-5. For `executionOwner=runtime_v2`, runtime cycle success on the final cycle -> `BacktestRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
-6. For `executionOwner=runtime_v2`, runtime `FAILED` -> `BacktestRead.status=FAILED`, `currentCycleStatus=FAILED`.
-7. For `executionOwner=runtime_v2`, runtime `CANCELLED` -> `BacktestRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
+1. For `executionOwner=runtime_v2`, a newly created simulation remains `SimulationRead.status=PENDING` until the first runtime cycle run is created.
+2. For `executionOwner=runtime_v2`, runtime `QUEUED | RUNNING` -> `SimulationRead.status=RUNNING`, `currentCycleStatus=RUNNING`.
+3. For `executionOwner=runtime_v2`, runtime `WAITING_APPROVAL` -> `SimulationRead.status=RUNNING`, `currentCycleStatus=WAITING_APPROVAL`.
+4. For `executionOwner=runtime_v2`, runtime cycle success on a non-terminal cycle -> `SimulationRead.status=RUNNING`, `currentCycleStatus=COMPLETED` until the next cycle begins.
+5. For `executionOwner=runtime_v2`, runtime cycle success on the final cycle -> `SimulationRead.status=COMPLETED`, `currentCycleStatus=COMPLETED`.
+6. For `executionOwner=runtime_v2`, runtime `FAILED` -> `SimulationRead.status=FAILED`, `currentCycleStatus=FAILED`.
+7. For `executionOwner=runtime_v2`, runtime `CANCELLED` -> `SimulationRead.status=CANCELLED`, `currentCycleStatus=CANCELLED`.
 8. For `launchMode=legacy_callback`, preserve current callback-era `status` semantics.
 9. For `launchMode=legacy_callback`, preserve current callback-era `currentCycleStatus` semantics including `AWAITING_CALLBACK` and `PROCESSING_CALLBACK`.
 10. For `launchMode=null`, preserve current compatibility-path read semantics until explicit classification occurs.
-11. `executionOwner` is the pinned execution-path source of truth for that backtest once classification or create-time routing completes.
+11. `executionOwner` is the pinned execution-path source of truth for that simulation once classification or create-time routing completes.
 
 Pre-run internal `PENDING` rule:
 
-1. If `executionOwner=runtime_v2`, `BacktestRead.status=PENDING`, and `currentRunId=null`, the backtest has not created its first runtime cycle run yet.
-2. In that state, `POST /api/v1/backtests/{id}/cancel` cancels the backtest directly without creating a runtime run.
-3. Startup repair treats that state as a stale pre-run internal backtest and fails it with a restart error rather than leaving it pending.
+1. If `executionOwner=runtime_v2`, `SimulationRead.status=PENDING`, and `currentRunId=null`, the simulation has not created its first runtime cycle run yet.
+2. In that state, `POST /api/v1/simulations/{id}/cancel` cancels the simulation directly without creating a runtime run.
+3. Startup repair treats that state as a stale pre-run internal simulation and fails it with a restart error rather than leaving it pending.
 
-For `executionOwner=runtime_v2`, `POST /api/v1/backtests/{id}/cancel` must cancel a run in `QUEUED | RUNNING | WAITING_APPROVAL`.
+For `executionOwner=runtime_v2`, `POST /api/v1/simulations/{id}/cancel` must cancel a run in `QUEUED | RUNNING | WAITING_APPROVAL`.
 
-Backtest approval discovery rule:
+Simulation approval discovery rule:
 
 1. When `currentCycleStatus=WAITING_APPROVAL`, `currentRunId` must be non-null.
 2. Runtime run read must expose `pendingApprovalIds` for that run.
-3. Backtest detail uses those ids to load approval reads and render actions.
+3. Simulation detail uses those ids to load approval reads and render actions.
 
-Backtest post-resume completion rule:
+Simulation post-resume completion rule:
 
-1. When an approval resolves a backtest-owned runtime run to success, `BacktestRuntimeAdapter.completeCycle(...)` must store the cycle report, apply trade decisions, update `_run_state`, update `currentRunId` / `lastCompletedRunId`, and advance or finalize the schedule.
+1. When an approval resolves a simulation-owned runtime run to success, `SimulationRuntimeAdapter.completeCycle(...)` must store the cycle report, apply trade decisions, update `_run_state`, update `currentRunId` / `lastCompletedRunId`, and advance or finalize the schedule.
 2. This completion hook is required for both first-pass success and approval-resumed success.
 
 ### Runtime handoff contract
 
-Backtest adapter must submit:
+Simulation adapter must submit:
 
-1. `callerType=backtest`
-2. `callerId=backtest.id`
+1. `callerType=simulation`
+2. `callerId=simulation.id`
 3. `workflowSpecKey` and optional version
 4. `callerScopeKey=cycleDate.isoformat()`
 5. cycle context refs including `portfolioId`, `cycleDate`, `benchmarkSymbols`, and prompt/report context
 
-The runtime service derives `attemptNumber` for backtest callers from existing run history for the same `(callerType, callerId, callerScopeKey)`.
+The runtime service derives `attemptNumber` for simulation callers from existing run history for the same `(callerType, callerId, callerScopeKey)`.
 
 Runtime must return:
 
@@ -1160,7 +1137,7 @@ Runtime must return:
 6. `traceSummary`
 7. `approvalSummary`
 
-Backtest-side services remain responsible for storing reports, applying trades, and preserving current read semantics such as `_run_state` redaction.
+Simulation-side services remain responsible for storing reports, applying trades, and preserving current read semantics such as `_run_state` redaction.
 
 ## Roles, characters, and mention compatibility rules
 
@@ -1180,7 +1157,7 @@ Legacy mention catalog compatibility rule:
 1. `GET /api/v1/orchestration/mentions/catalog` remains the compatibility read contract during migration.
 2. It continues to return seeded builtin targets plus imported characters that are enabled and whose imported parent roles are enabled.
 3. Managed personas do not appear in this legacy catalog.
-4. Legacy response shape and canonical target ids remain frozen throughout the rollback window.
+4. Legacy response shape and canonical target ids remain frozen throughout the historical migration phase.
 
 Legacy orchestration validation parity rules:
 
@@ -1193,7 +1170,7 @@ Builtin and mention-policy migration rules:
 1. Seeded builtins `librarian` and `explore` must preserve their handles and bundle refs exactly during migration.
 2. Seeded workflow specs must preserve current mention-policy behavior, including allowed builtin handles and whether character-style persona refs are allowed.
 3. Imported personas preserve upstream legacy role or character version in `legacy_source_version` while persona `version` remains the append-only projection version.
-4. Deleting a legacy role or character archives the imported persona version rather than hard-deleting it during the rollback window.
+4. Deleting a legacy role or character archives the imported persona version rather than hard-deleting it during the historical migration phase.
 
 Handle namespace rule:
 
@@ -1211,103 +1188,100 @@ Handle namespace rule:
 4. Add read-only Studio listing endpoints.
 5. Materialize imported persona profiles from current roles and characters.
 6. Materialize seeded builtin persona profiles from builtin seeds.
-7. Add explicit compatibility projections from runtime artifacts into `backtest_orchestration_snapshots`.
+7. Add explicit compatibility projections from runtime artifacts into `simulation_orchestration_snapshots`.
 
 ### Phase 1: Studio and tryout
 
 1. Ship Studio authoring and inspection.
 2. Ship tryout execution.
-3. Leave backtests on the current path.
+3. Leave simulations on the current path.
 4. Retain ephemeral tryouts for 24 hours by default; `persist` converts them into normal runtime runs.
 5. Studio may author managed personas in this phase, but imported personas remain permanently read-only historical projections.
 
-### Phase 2: backtest cutover
+### Phase 2: simulation cutover
 
-1. Add `AGENT_RUNTIME_V2_BACKTESTS_ENABLED` feature flag.
-2. When false, current backtest execution remains authoritative.
-3. When true, only `launchMode=internal` backtests submit runtime requests.
-4. `launchMode=legacy_callback` remains on the retained legacy callback compatibility ingress throughout the rollback window.
-5. During this phase, `backtest_orchestration_snapshots` mirrors runtime compatibility trace and approval data for backtest detail surfaces.
-6. During this phase, backtest rows must preserve reversible `orchestrationPatternKey` compatibility.
-7. During this phase, backtests may reference only seeded workflow specs whose keys exactly match the current supported pattern keys.
-8. During this phase, backtest runs must use the pinned workflow version resolved at create time.
-9. During this phase, runtime compatibility mirror writes must overwrite the existing snapshot row for the same `(backtest_id, cycle_date)` with the latest attempt projection.
+1. Add `historical simulation cutover flag` feature flag.
+2. When false, current simulation execution remains authoritative.
+3. When true, only `launchMode=internal` simulations submit runtime requests.
+4. `launchMode=legacy_callback` remains on the retained legacy callback compatibility ingress throughout the historical migration phase.
+5. During this phase, `simulation_orchestration_snapshots` mirrors runtime compatibility trace and approval data for simulation detail surfaces.
+6. During this phase, simulation rows must preserve reversible `orchestrationPatternKey` compatibility.
+7. During this phase, simulations may reference only seeded workflow specs whose keys exactly match the current supported pattern keys.
+8. During this phase, simulation runs must use the pinned workflow version resolved at create time.
+9. During this phase, runtime compatibility mirror writes must overwrite the existing snapshot row for the same `(simulation_id, cycle_date)` with the latest attempt projection.
 10. Existing rows must be explicitly classified before mixed-mode cutover; `webhook_url` alone is not a safe classifier.
 11. Rows that remain unclassified stay on the current path until explicitly migrated or recreated.
 12. The latest-attempt mirror policy must be implemented as an update/upsert of the existing unique cycle row.
 13. The audited classification job must be exercised in migration tests and audited in the DB upgrade path.
-14. Existing or newly created backtests pin `execution_owner`, and enabling the runtime flag applies only to backtests pinned to `runtime_v2` after the flag state is observed.
+14. Existing or newly created simulations pin `execution_owner`, and enabling the runtime flag applies only to simulations pinned to `runtime_v2` after the flag state is observed.
 
 ### Phase 3: cleanup
 
 1. Remove raw mention-based execution semantics from runtime.
-2. Deprecate backtest-owned execution internals after rollback window closes.
-3. Remove `orchestrationPatternKey` from the public create contract only after rollback window closes and all reversible mappings are no longer required.
+2. Deprecate simulation-owned execution internals after historical migration phase closes.
+3. Remove `orchestrationPatternKey` from the public create contract only after historical migration phase closes and all reversible mappings are no longer required.
 
-## Rollback rules
+## Historical fallback rules
 
-1. Rollback flips `AGENT_RUNTIME_V2_BACKTESTS_ENABLED` to false.
+1. Historical fallback flips `historical simulation cutover flag` to false.
 2. Existing runtime tables remain intact and readable.
-3. New or still-unclassified backtests resume the current execution path after rollback.
-4. Reversible mapping from `workflowSpecKey` to current pattern-key contract must remain available throughout the rollback window.
-5. No destructive table removal or irreversible backfill is allowed before the rollback window closes.
-6. Because rollback is blocked until all non-terminal `runtime_v2` backtests finish or are cancelled, rollback does not re-home any pinned `runtime_v2` backtest.
+3. New or still-unclassified simulations resume the current execution path after rollback.
+4. Reversible mapping from `workflowSpecKey` to current pattern-key contract must remain available throughout the historical migration phase.
+5. No destructive table removal or irreversible backfill is allowed before the historical migration phase closes.
+6. Because rollback is blocked until all non-terminal `runtime_v2` simulations finish or are cancelled, rollback does not re-home any pinned `runtime_v2` simulation.
 
-Rollback precondition:
+Historical fallback precondition:
 
-1. Default policy blocks rollback while any non-terminal `runtime_v2` backtest exists.
-2. Operators must cancel those backtests or let them finish on the runtime path before the flag is flipped.
+1. Default policy blocks rollback while any non-terminal `runtime_v2` simulation exists.
+2. Operators must cancel those simulations or let them finish on the runtime path before the flag is flipped.
 
-Rollback guard enforcement:
+Historical fallback guard note:
 
-1. The effective backtest runtime flag is stored in `runtime_control_flags` under key `AGENT_RUNTIME_V2_BACKTESTS_ENABLED`.
-2. The only write path is one audited operational control path.
-3. That control path must open a transaction, query for non-terminal `runtime_v2` backtests, and reject the change when any such rows exist.
-4. On success, the same transaction updates `runtime_control_flags` and inserts a matching `runtime_flag_change_events` row.
-5. On rejection, the control path inserts a `runtime_flag_change_events` row with `result="rejected"`.
+1. The archived cutover plan assumed operators would block fallback while non-terminal `runtime_v2` simulations remained active.
+2. That safeguard is historical migration context, not an enduring runtime API or table contract.
 
 ## Failure semantics
 
 1. Unknown workflow spec, agent spec, persona profile, or capability key fails before execution starts.
 2. Approval denial fails the pending step and the run unless the workflow explicitly defines a recoverable branch.
 3. Tryout with `persistRun=false` must still expose trace and approval data until TTL expiry.
-4. Backtest adapter failures must preserve current `FAILED` behavior and error-message reporting.
+4. Simulation adapter failures must preserve current `FAILED` behavior and error-message reporting.
 5. Resuming a run without a valid checkpoint must fail closed.
 6. Expired ephemeral tryouts must emit `RUN_EXPIRED` and mark pending approvals `EXPIRED` before cleanup.
 
 Startup repair semantics:
 
-1. Application startup must run a runtime repair pass in the same DB initialization phase that currently repairs interrupted backtests.
+1. Application startup must run a runtime repair pass in the same DB initialization phase that currently repairs interrupted simulations.
 2. `runtime_runs` left in `QUEUED` or `RUNNING` are marked `FAILED` with `terminal_error_code="interrupted_runtime"` and a restart message.
 3. `runtime_runs` left in `WAITING_APPROVAL` remain resumable.
-4. Runtime-backed backtests with `execution_owner=runtime_v2`, `status=PENDING`, and `currentRunId=null` are treated as stale pre-run internal backtests and are marked `FAILED` with a restart `errorMessage`.
-5. Other runtime-backed backtests affected by startup repair must update `status=FAILED`, `currentCycleStatus=FAILED`, and a restart `errorMessage`, preserve `_run_state` redaction semantics, clear `currentRunId`, keep `lastCompletedRunId` unchanged, and avoid schedule advancement.
-6. Runtime-backed backtests affected by startup repair must update their compatibility snapshots using the same failure projection rules defined elsewhere in this spec.
+4. Runtime-backed simulations with `execution_owner=runtime_v2`, `status=PENDING`, and `currentRunId=null` are treated as stale pre-run internal simulations and are marked `FAILED` with a restart `errorMessage`.
+5. Other runtime-backed simulations affected by startup repair must update `status=FAILED`, `currentCycleStatus=FAILED`, and a restart `errorMessage`, preserve `_run_state` redaction semantics, clear `currentRunId`, keep `lastCompletedRunId` unchanged, and avoid schedule advancement.
+6. Runtime-backed simulations affected by startup repair must update their compatibility snapshots using the same failure projection rules defined elsewhere in this spec.
 
 ## Runtime-to-snapshot projection rules
 
-When `callerType=backtest` and `workflowSpecKey` is a rollback-compatible seeded workflow key, runtime compatibility projection must populate current snapshot fields as follows:
+When `callerType=simulation` and `workflowSpecKey` is a historical-compatibility seeded workflow key, runtime compatibility projection must populate current snapshot fields as follows:
 
 Initial projection writes prompt-hash and resolved-mention fields after run creation. Terminal projection updates the same unique cycle row after completion, failure, or cancellation with final trace and approval data.
 
-1. `runtime_run_artifacts.prompt_report_slug` -> `backtest_orchestration_snapshots.prompt_report_slug`
-2. `workflowSpecKey` -> `backtest_orchestration_snapshots.orchestration_pattern_key`
-3. `workflow_specs.mention_policy.version` -> `backtest_orchestration_snapshots.pattern_policy_version`
-4. `runtime_run_artifacts.entry_prompt_hash` -> `backtest_orchestration_snapshots.entry_prompt_hash`
-5. `runtime_run_artifacts.full_user_prompt_hash` -> `backtest_orchestration_snapshots.full_user_prompt_hash`
-6. runtime execution mode -> `backtest_orchestration_snapshots.execution_mode`
-7. `runtime_run_artifacts.resolved_builtin_versions` -> `backtest_orchestration_snapshots.resolved_builtin_versions`
-8. `runtime_run_artifacts.resolved_role_versions` -> `backtest_orchestration_snapshots.resolved_role_versions`
-9. `runtime_run_artifacts.resolved_character_versions` -> `backtest_orchestration_snapshots.resolved_character_versions`
-10. `runtime_run_artifacts.resolved_bundle_versions` -> `backtest_orchestration_snapshots.resolved_bundle_versions`
-11. `runtime_run_artifacts.resolved_tool_versions` -> `backtest_orchestration_snapshots.resolved_tool_versions`
-12. `runtime_run_artifacts.resolved_connector_versions` -> `backtest_orchestration_snapshots.resolved_connector_versions`
-13. `runtime_run_artifacts.mentioned_target_outputs` -> `backtest_orchestration_snapshots.mentioned_target_outputs`
-14. compatibility projection of `runtime_run_artifacts.resolved_mentions` -> `backtest_orchestration_snapshots.resolved_mentions`
-15. runtime trace projection -> `backtest_orchestration_snapshots.tool_call_trace`
-16. runtime approval projection -> `backtest_orchestration_snapshots.approval_trace`
+1. `runtime_run_artifacts.prompt_report_slug` -> `simulation_orchestration_snapshots.prompt_report_slug`
+2. `workflowSpecKey` -> `simulation_orchestration_snapshots.orchestration_pattern_key`
+3. `workflow_specs.mention_policy.version` -> `simulation_orchestration_snapshots.pattern_policy_version`
+4. `runtime_run_artifacts.entry_prompt_hash` -> `simulation_orchestration_snapshots.entry_prompt_hash`
+5. `runtime_run_artifacts.full_user_prompt_hash` -> `simulation_orchestration_snapshots.full_user_prompt_hash`
+6. runtime execution mode -> `simulation_orchestration_snapshots.execution_mode`
+7. `runtime_run_artifacts.resolved_builtin_versions` -> `simulation_orchestration_snapshots.resolved_builtin_versions`
+8. `runtime_run_artifacts.resolved_role_versions` -> `simulation_orchestration_snapshots.resolved_role_versions`
+9. `runtime_run_artifacts.resolved_character_versions` -> `simulation_orchestration_snapshots.resolved_character_versions`
+10. `runtime_run_artifacts.resolved_bundle_versions` -> `simulation_orchestration_snapshots.resolved_bundle_versions`
+11. `runtime_run_artifacts.resolved_tool_versions` -> `simulation_orchestration_snapshots.resolved_tool_versions`
+12. `runtime_run_artifacts.resolved_connector_versions` -> `simulation_orchestration_snapshots.resolved_connector_versions`
+13. `runtime_run_artifacts.mentioned_target_outputs` -> `simulation_orchestration_snapshots.mentioned_target_outputs`
+14. compatibility projection of `runtime_run_artifacts.resolved_mentions` -> `simulation_orchestration_snapshots.resolved_mentions`
+15. runtime trace projection -> `simulation_orchestration_snapshots.tool_call_trace`
+16. runtime approval projection -> `simulation_orchestration_snapshots.approval_trace`
 
-When a runtime-backed backtest run is cancelled from `WAITING_APPROVAL`, the latest-attempt terminal projection must overwrite `backtest_orchestration_snapshots.approval_trace` with the expired approvals for that cancelled attempt.
+When a runtime-backed simulation run is cancelled from `WAITING_APPROVAL`, the latest-attempt terminal projection must overwrite `simulation_orchestration_snapshots.approval_trace` with the expired approvals for that cancelled attempt.
 
 Compatibility `approval_trace` shape rule:
 
@@ -1322,23 +1296,23 @@ Compatibility `tool_call_trace` shape rule:
 
 ## Acceptance criteria
 
-1. A runtime run can be created, traced, approved, and inspected without a backtest row.
+1. A runtime run can be created, traced, approved, and inspected without a simulation row.
 2. Current seeded pattern keys have a documented and tested 1:1 mapping to seeded workflow specs.
-3. A backtest can invoke the runtime and still preserve current report, trade, and `_run_state`-redaction behavior.
+3. A simulation can invoke the runtime and still preserve current report, trade, and `_run_state`-redaction behavior.
 4. Raw `@handle` execution is no longer the canonical runtime contract after cutover.
-5. Rollback from runtime-backed backtests to current backtest execution is provably reversible during the rollback window.
-6. Template-driven backtests preserve current prompt/report compilation semantics through explicit runtime artifacts and compatibility projection.
+5. Historical fallback from runtime-backed simulations to current simulation execution is provably reversible during the historical migration phase.
+6. Template-driven simulations preserve current prompt/report compilation semantics through explicit runtime artifacts and compatibility projection.
 
 ## Test mapping
 
 ### Current parity coverage that must stay green
 
 1. `backend/tests/test_orchestration_api.py` for role/character compatibility and catalog behavior.
-2. `backend/tests/test_backtests_api.py` for callback-aware statuses, read compatibility, and `_run_state` redaction.
-3. `backend/tests/test_backtest_cycle_service.py` for baseline execution behavior, mention policy, deterministic capability resolution, and approval behavior.
-4. `backend/tests/test_backtest_orchestration_snapshot.py` for snapshot compatibility and upgrade behavior.
-5. `backend/tests/test_langgraph_runner.py` and `backend/tests/test_langgraph_seeds.py` for runner and seeded-registry behavior.
-6. Upgrade-path tests in the code-based DB upgrade suite for seeded-spec materialization and persona-profile imports.
+2. `backend/tests/test_workflow_specs_api.py` for Studio/Tryout workflow inventory and managed lifecycle behavior.
+3. `backend/tests/test_runtime_seed_bootstrap.py` for seeded-registry and no-seeded-workflow bootstrap behavior.
+4. `backend/tests/test_runtime_db_upgrades.py` for upgraded-database cleanup and compatibility behavior.
+5. `backend/tests/test_runtime_api.py` and `backend/tests/test_runtime_artifacts.py` for runtime read compatibility and persisted artifact behavior.
+6. Upgrade-path tests in the code-based DB upgrade suite for seeded-spec cleanup and persona-profile imports.
 
 ### New v2 coverage required
 
@@ -1350,27 +1324,27 @@ Compatibility `tool_call_trace` shape rule:
 6. Approval-request, approve, deny, and expiry tests.
 7. Tryout ephemerality and explicit-save tests.
 8. Snapshot-to-runtime-trace equivalence tests during migration.
-9. Backtest cutover tests with feature flag on and off.
-10. Rollback tests that prove the current path still works after reverting the flag.
+9. Simulation cutover tests with feature flag on and off.
+10. Historical fallback tests that prove the current path still works after reverting the flag.
 11. Code-based upgrade tests for seeded spec reseeding, idempotent migrations, and mixed v1/v2 data.
-12. Backtest `WAITING_APPROVAL` polling and cancel tests.
+12. Simulation `WAITING_APPROVAL` polling and cancel tests.
 13. Per-cycle run uniqueness, lookup, and rerun-attempt tests.
 14. Template compile to persona-ref compatibility pipeline tests.
 15. Tryout TTL expiry and persist-idempotency tests.
 16. Snapshot latest-attempt overwrite policy tests.
 17. Workflow-version pinning and rollback-window seeded-version restriction tests.
-18. Approval discovery read-contract tests for backtest detail.
+18. Approval discovery read-contract tests for simulation detail.
 19. Seeded workflow parity tests for `execution_mode`, `default_tool_ids`, `connector_ids`, and topology order.
 20. `launchMode` classification and mixed-mode read-contract tests.
-21. Approval-resumed backtest completion-hook tests.
+21. Approval-resumed simulation completion-hook tests.
 22. Imported persona archive-on-delete tests.
 23. Seeded workflow parity tests for current `allowed_bundle_keys` -> v2 `allowed_capability_bundle_keys` mapping and conservative `review_mode`.
 24. Historical-row classification tests proving `webhook_url` alone does not determine `launchMode`.
-25. Non-backtest executor-adapter contract tests.
+25. Non-simulation executor-adapter contract tests.
 26. Connector transport/lifecycle registry tests.
 27. Nullable historical `launchMode` read-contract tests.
 28. Snapshot projector update/upsert tests for existing unique cycle rows.
-29. Concurrent non-backtest run tests covering nullable caller ids and `caller_identity_key` policies.
+29. Concurrent non-simulation run tests covering nullable caller ids and `caller_identity_key` policies.
 30. Approval-resume tests proving pinned persona/capability versions do not drift after run creation.
 31. Workflow step agent-version pinning tests.
 32. Explicit persona-ref shape and version reuse tests.
@@ -1379,15 +1353,15 @@ Compatibility `tool_call_trace` shape rule:
 35. Workflow graph edge and terminal-behavior tests.
 36. Step-level capability precedence tests.
 37. Approval override precedence tests for registry default vs workflow override vs step effective mode.
-38. Rollback guard tests proving flag flip is blocked while runtime-backed backtest runs remain active.
+38. Historical fallback guard tests proving flag flip is blocked while runtime-backed simulation runs remain active.
 39. Version lifecycle tests for append-only non-`DRAFT` versions and single-`ACTIVE` resolution.
 40. Imported persona lineage tests covering versioned parent linkage and role reassignment.
-41. Mixed-mode webhook compatibility tests for internal vs legacy-callback backtests.
+41. Mixed-mode webhook compatibility tests for internal vs legacy-callback simulations.
 42. Approval-denied edge vs fail-run state transition tests.
-43. Execution-owner pinning tests proving flag flips do not re-home in-flight backtests.
+43. Execution-owner pinning tests proving flag flips do not re-home in-flight simulations.
 44. Global mentionable-handle uniqueness and reserved-builtin-handle tests.
 45. Imported enabled-parity tests for disabled roles, disabled characters, and mention catalog eligibility.
-46. Omitted-selector compatibility-default tests for `seeded_internal_backtest_v1`.
+46. Omitted-selector compatibility-default tests for `seeded_internal_simulation_v1`.
 47. Imported projection ordering tests for role update before dependent character reprojection.
 48. Legacy callback route-contract tests for `/report`, `/trades`, and `/complete` compatibility ingress.
 49. Legacy orchestration validation parity tests for role-in-use delete rejection, disabled-role character writes, and reserved handle rejection.
@@ -1411,26 +1385,26 @@ Compatibility `tool_call_trace` shape rule:
 67. Approval row status tests for `PENDING`, `APPROVED`, `DENIED`, and `EXPIRED` actor/reason semantics.
 68. Public runtime create rejection tests for reserved internal caller types.
 69. Tryout `GET` and `persist` response-shape tests, including paused `WAITING_APPROVAL` runs.
-70. Cancellation snapshot-projection tests for runtime-backed backtest runs.
+70. Cancellation snapshot-projection tests for runtime-backed simulation runs.
 71. Tryout caller-type reservation tests proving `/api/v2/runtime/runs` rejects public `callerType=tryout`.
 72. Summary parity tests proving run, artifact, and tryout reads expose the same canonical summaries for a run.
 73. Snapshot `approval_trace` compatibility-shape tests, including lowercase `expired` entries on cancellation.
 74. Snapshot `resolved_mentions` and resolved-version compatibility-shape tests.
 75. Snapshot `tool_call_trace` compatibility-shape tests with snake_case keys.
-76. Startup repair tests for interrupted `runtime_runs` and runtime-backed backtests.
-77. Runtime flag control-path tests for `runtime_control_flags` and `runtime_flag_change_events` audit rows.
+76. Startup repair tests for interrupted `runtime_runs` and runtime-backed simulations.
+77. Historical fallback guard tests for the archived non-terminal `runtime_v2` safeguard assumption.
 78. Legacy-callback cancel-eligibility tests preserving current `PENDING`/`RUNNING`-only behavior.
-79. Internal backtest pre-run `PENDING` compatibility tests.
+79. Internal simulation pre-run `PENDING` compatibility tests.
 80. Legacy snapshot `resolved_mentions` projection tests proving exact `role_id` / `character_id` recovery from native runtime artifacts.
 81. Executor step-plan tests proving adapters use `resolvedWorkflowAgentRefs` rather than flattened `resolvedCapabilities` for step-local semantics.
 82. Historical classification manifest tests proving `launch_mode` / `execution_owner` are sourced from an operator-reviewed manifest.
-83. Generic workflow adapter tests for non-backtest workflow execution.
-84. Rollback guard tests for non-terminal pinned `runtime_v2` backtests even when no active runtime run exists.
-85. `execution_mode` nullability tests for v2-native workflows and seeded-only enum parity for rollback-compatible workflows.
-86. `executionOwner`-based backtest state-mapping tests proving legacy-path internal rows do not inherit runtime semantics.
+83. Generic workflow adapter tests for non-simulation workflow execution.
+84. Historical fallback guard tests for non-terminal pinned `runtime_v2` simulations even when no active runtime run exists.
+85. `execution_mode` nullability tests for v2-native workflows and seeded-only enum parity for historical-compatibility workflows.
+86. `executionOwner`-based simulation state-mapping tests proving legacy-path internal rows do not inherit runtime semantics.
 87. Managed-only create/patch tests for agent specs, workflow specs, and persona profiles.
-88. Non-backtest rollback-window seeded-workflow rejection tests.
+88. Non-simulation seeded-workflow rejection tests during the historical migration phase.
 89. Seeded lifecycle-route rejection tests for agent specs, workflow specs, and persona profiles.
-90. Tryout rollback-window seeded-workflow rejection tests.
-91. Create-time routing-matrix tests for `launchMode`, runtime flag state, and workflow selector/default combinations.
-92. Startup repair tests for stale pre-run internal `PENDING` backtests with `execution_owner=runtime_v2` and `currentRunId=null`.
+90. Tryout seeded-workflow rejection tests during the historical migration phase.
+91. Create-time routing-matrix tests for `launchMode` and workflow selector/default combinations.
+92. Startup repair tests for stale pre-run internal `PENDING` simulations with `execution_owner=runtime_v2` and `currentRunId=null`.

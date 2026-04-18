@@ -3,14 +3,14 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, backtests, and orchestration. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, simulations, and orchestration. Treat these files as the shared schema boundary between frontend UI and backend API.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Portfolio/balance/position types | `portfolio.ts`, `balance.ts`, `position.ts` | CRUD payloads plus read models |
 | Trading payload unions | `trading.ts` | BUY/SELL/DIVIDEND/SPLIT request shapes |
-| Backtest contracts | `backtest.ts` | status/frequency/launch-mode unions, callback-aware statuses, recent activity, curves, trade log, and results |
+| Simulation contracts | `simulation.ts` | status/frequency/launch-mode unions, callback-aware statuses, recent activity, curves, trade log, and results |
 | Orchestration contracts | `orchestration.ts` | role/character read models, create/update inputs, mention catalog items |
 | Market data types | `market-data.ts` | quote/history payloads and warnings |
 | Template contract | `text-template.ts` | template CRUD, compile, runtime-input maps, placeholder tree |
@@ -20,23 +20,23 @@
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.
 - Money, quantities, market values, and similar numeric payloads stay as strings on the wire; conversion belongs in shared formatting/analytics helpers, not in the type layer.
-- Model enum-like values as exact string unions so invalid report sources, trading sides, backtest launch modes, orchestration mention kinds, or operation types fail at compile time.
+- Model enum-like values as exact string unions so invalid report sources, trading sides, simulation launch modes, orchestration mention kinds, or operation types fail at compile time.
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
-- Backtest wire contracts must mirror the current backend contract exactly, including retained `AWAITING_CALLBACK` / `PROCESSING_CALLBACK` states plus `webhookUrl`, `webhookTimeout`, and `currentCycleStatus` on reads.
-- Backtest result types intentionally omit backend-only `_run_state` bookkeeping; frontend `results` should model final user-facing output only.
+- Simulation wire contracts must mirror the current backend contract exactly, including retained `AWAITING_CALLBACK` / `PROCESSING_CALLBACK` states plus `webhookUrl`, `webhookTimeout`, and `currentCycleStatus` on reads.
+- Simulation result types intentionally omit backend-only `_run_state` bookkeeping; frontend `results` should model final user-facing output only.
 - Orchestration types should mirror backend role/character schemas exactly, including mention catalog items and role linkage.
 
 ## ANTI-PATTERNS
 - Do not declare ad-hoc wire types inside hooks or page components.
 - Do not collapse backend distinctions such as slug-based report lookup vs numeric portfolio ids.
-- Do not collapse the distinction between slug-based report routes and numeric backtest ids when building shared route contracts.
-- Do not collapse callback-aware backtest statuses into a generic `RUNNING` type; polling and status-badge logic depend on the explicit union values.
+- Do not collapse the distinction between slug-based report routes and numeric simulation ids when building shared route contracts.
+- Do not collapse callback-aware simulation statuses into a generic `RUNNING` type; polling and status-badge logic depend on the explicit union values.
 - Do not convert decimal strings to numbers at the type layer.
 - Do not change template/report placeholder tree shapes without coordinating backend schemas, hooks, and tests.
 - Do not expose backend-only `_run_state` internals in frontend result contracts.
 - Do not loosen orchestration identifiers or mention-catalog types just to make forms easier.
 
 ## NOTES
-- The orchestration schema is separate from backtests; it supports reusable role/character configuration, not execution state.
+- The orchestration schema is separate from simulations; it supports reusable role/character configuration, not execution state.
 - Keep route forms, hook inputs, and shared type names in sync when orchestration fields change.

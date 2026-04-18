@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers routed page components in `src/pages/`.
 
 ## CHILD DOCS
-- `backtests/AGENTS.md` — backtest list/config/detail orchestration and running-state polling rules
+- `simulations/AGENTS.md` — simulation list/config/detail orchestration and running-state polling rules
 - `orchestration/AGENTS.md` — orchestration index, role, and character route family
 - `portfolios/AGENTS.md` — portfolio list/detail route orchestration and quote-enriched workspace rules
 - `templates/AGENTS.md` — template list/editor orchestration, debounce preview, and placeholder rules
@@ -16,8 +16,8 @@
 ```text
 src/pages/
 ├── dashboard.tsx           # home route summary
-├── backtests/
-│   ├── list.tsx            # backtest inventory and terminal delete flow
+├── simulations/
+│   ├── list.tsx            # simulation inventory and terminal delete flow
 │   ├── config.tsx          # simulation launch form with portfolio/template options
 │   └── detail.tsx          # running-state progress plus completed results
 ├── studio/
@@ -53,7 +53,7 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
-| Backtest routes | `backtests/AGENTS.md` | list/config/detail, 5s polling, charts, and cleanup |
+| Simulation routes | `simulations/AGENTS.md` | list/config/detail, 5s polling, charts, and cleanup |
 | Studio routes | `studio/**/*`, `../components/layout.tsx`, `../routes.ts` | `/studio` catalog plus agent/workflow/persona/capability CRUD and run detail routes |
 | Tryout route | `tryout/index.tsx`, `../routes.ts` | `/tryout` execute/inspect/persist flow using runtime and Studio data |
 | Orchestration routes | `orchestration/AGENTS.md` | orchestration landing plus role and character CRUD |
@@ -67,7 +67,7 @@ src/pages/
 - Pages compose hooks from `src/hooks/`, shared components from `src/components/shared/`, and feature components from the relevant feature folders.
 - Pages handle top-level data fetching, mutation feedback (toasts), and route-level error states.
 - Pages should not contain business logic; delegate to hooks or feature-specific components.
-- Backtest pages keep polling, chart wiring, report-link extraction, and launch-form state at the route level while leaving request details to hooks and API modules.
+- Simulation pages keep polling, chart wiring, report-link extraction, and launch-form state at the route level while leaving request details to hooks and API modules.
 - The template editor page uses `useDebounce()`, `useCompileInline()`, and `usePlaceholders()` to keep preview and placeholder browsing responsive without moving that orchestration into the component library.
 - Report pages use `use-reports.ts` for server state, render markdown in read mode, and keep edit-mode textareas local to the route component.
 - Studio pages use the v2 Studio hooks and route params to keep spec CRUD, runtime run inspection, and sidebar/breadcrumb ownership inside the routed page layer.

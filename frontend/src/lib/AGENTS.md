@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolio, market-data, CSV, template, report, backtest, and orchestration flows.
+`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolio, market-data, CSV, template, report, simulation, and orchestration flows.
 
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
@@ -13,9 +13,9 @@
 | Task | Location | Notes |
 |---|---|---|
 | HTTP wrapper / error mapping | `api-client.ts` | `request()`, `ApiRequestError`, `buildUrl()`, CSV form-data helpers |
-| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, backtests, and orchestration |
-| Shared wire types | `types/*.ts` | domain-specific type definitions, including text-template, report, backtest, and orchestration types |
-| Backtest contracts | `api/backtests.ts`, `types/backtest.ts` | lifecycle endpoints, launch mode, callback-aware statuses, result, trade, and curve wire shapes |
+| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, simulations, and orchestration |
+| Shared wire types | `types/*.ts` | domain-specific type definitions, including text-template, report, simulation, and orchestration types |
+| Simulation contracts | `api/simulations.ts`, `types/simulation.ts` | lifecycle endpoints, launch mode, callback-aware statuses, result, trade, and curve wire shapes |
 | Orchestration contracts | `api/orchestration.ts`, `types/orchestration.ts` | role/character CRUD plus mention catalog support |
 | Query key factory | `query-keys.ts` | hierarchical keys, param normalization, template/report/orchestration keys, `invalidatePortfolioScope()` |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
@@ -35,9 +35,8 @@
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
-- Backtest flows use `queryKeys.backtests.list()` and `.detail(id)` only; polling policy lives in hooks, but the cache-key contract lives here.
 - Orchestration flows use `queryKeys.orchestration.*` for role, character, and mention-catalog caches, and their route forms consume the shared orchestration types defined here.
-- Frontend API helpers only call the CRUD backtest endpoints; callback endpoints under `/backtests/{id}/cycles/*` remain backend compatibility surfaces, not browser-facing requests.
+- Frontend API helpers should stay scoped to live browser-facing resource surfaces; keep route-specific polling or mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS
@@ -48,7 +47,7 @@
 - Do not duplicate backend contract types when `types/*.ts` already exposes them.
 - Do not change template, CSV, or error-envelope shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change report, upload-metadata, or placeholder-tree shapes here without updating the backend contract and the calling hooks/pages.
-- Do not change backtest request or result shapes here without updating `backend/app/schemas/backtest.py`, hooks, pages, and tests together.
+- Do not change simulation request or result shapes here without updating `backend/app/schemas/simulation.py`, hooks, pages, and tests together.
 - Do not change orchestration request or mention-catalog shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change `api/` helpers or `types/` contracts in isolation; keep request helpers and wire shapes in sync.
 - Do not mix presentation-only formatting into API wrapper code.

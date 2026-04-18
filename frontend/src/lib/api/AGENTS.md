@@ -15,7 +15,7 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-├── backtests.ts           # list/detail, create, cancel, delete
+├── simulations.ts           # list/detail, create, cancel, delete
 └── orchestration.ts       # roles, characters, mention catalog
 ```
 
@@ -25,7 +25,7 @@ src/lib/api/
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding |
 | Template contract | `templates.ts` | stored CRUD, inline compile, placeholder tree |
 | Report contract | `reports.ts` | slug-based reads, compile, upload, download helper |
-| Backtest contract | `backtests.ts` | id-based lifecycle endpoints for historical simulations |
+| Simulation contract | `simulations.ts` | id-based lifecycle endpoints for historical simulations |
 | Orchestration contract | `orchestration.ts` | role/character CRUD plus mention catalog |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Market data endpoints | `market-data.ts` | quotes/history query serialization |
@@ -34,8 +34,8 @@ src/lib/api/
 - One module per backend resource family; keep path helpers and request bodies close to that resource.
 - Always route network calls through `request()` or `buildUrl()` from `api-client.ts`.
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
-- Keep backtest lifecycle semantics here as well: `POST /backtests`, `POST /backtests/{id}/cancel`, and `DELETE /backtests/{id}` should not be hand-built in hooks or pages.
-- `backtests.ts` mirrors the current backend contract as-is, including retained legacy webhook fields on create/read payloads even though normal execution is now internal LangGraph.
+- Keep simulation lifecycle semantics here as well: `POST /simulations`, `POST /simulations/{id}/cancel`, and `DELETE /simulations/{id}` should not be hand-built in hooks or pages.
+- `simulations.ts` mirrors the current backend contract as-is, including retained legacy webhook fields on create/read payloads even though normal execution is now internal LangGraph.
 - `orchestration.ts` mirrors the current backend contract for roles, characters, and mention catalog access; keep hooks/pages thin around it.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
