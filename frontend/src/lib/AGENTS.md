@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolio, market-data, CSV, template, report, simulation, and orchestration flows.
+`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolio, market-data, CSV, template, report, orchestration, runtime, Studio, and Tryout flows.
 
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
@@ -12,12 +12,13 @@
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| HTTP wrapper / error mapping | `api-client.ts` | `request()`, `ApiRequestError`, `buildUrl()`, CSV form-data helpers |
-| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, simulations, and orchestration |
-| Shared wire types | `types/*.ts` | domain-specific type definitions, including text-template, report, simulation, and orchestration types |
-| Simulation contracts | `api/simulations.ts`, `types/simulation.ts` | lifecycle endpoints, launch mode, callback-aware statuses, result, trade, and curve wire shapes |
+| HTTP wrapper / error mapping | `api-client.ts` | `request()`, `requestV2()`, `ApiRequestError`, `buildUrl()`, CSV form-data helpers |
+| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, orchestration, runtime, Studio, Tryout, workflow specs, agent specs, capabilities, and personas |
+| Shared wire types | `types/*.ts` | domain-specific type definitions, including text-template, report, orchestration, runtime, Studio, and Tryout types |
 | Orchestration contracts | `api/orchestration.ts`, `types/orchestration.ts` | role/character CRUD plus mention catalog support |
-| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, template/report/orchestration keys, `invalidatePortfolioScope()` |
+| Runtime and Tryout contracts | `api/runtime.ts`, `api/tryouts.ts`, `types/runtime.ts`, `types/tryout.ts` | runtime runs, approvals, trace, and Tryout execute/read/persist shapes |
+| Studio catalog contracts | `api/studio.ts`, `api/workflow-specs.ts`, `api/agent-specs.ts`, `api/capabilities.ts`, `api/personas.ts`, `types/studio.ts` | v2 catalog reads and lifecycle actions |
+| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, template/report/orchestration/runtime/Studio/Tryout namespaces, `invalidatePortfolioScope()` |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
 | Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
@@ -28,27 +29,26 @@
 ## CONVENTIONS
 - `api-client.ts` is the only place that should know the base URL, query-string encoding, and error-envelope parsing.
 - `api-client.ts` falls back to `http://127.0.0.1:8000/api/v1` only when `VITE_API_BASE_URL` is absent; `start.sh` and Playwright override that value for real runs.
-- Domain-specific API functions live in `api/*.ts` modules, organized by resource type.
+- Domain-specific API functions live in `api/*.ts` modules, organized by resource type and API version.
 - Wire decimals remain strings until shared format/analytics helpers convert them for display math.
 - `query-keys.ts` normalizes ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
-- `invalidatePortfolioScope()` is the default invalidation path for portfolio-scoped mutations; templates, reports, and orchestration use their own namespaces.
+- `invalidatePortfolioScope()` is the default invalidation path for portfolio-scoped mutations; reports, orchestration, runtime, Studio, and Tryout use their own namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
 - Orchestration flows use `queryKeys.orchestration.*` for role, character, and mention-catalog caches, and their route forms consume the shared orchestration types defined here.
-- Frontend API helpers should stay scoped to live browser-facing resource surfaces; keep route-specific polling or mutation policy in hooks rather than embedding it in pages.
+- Runtime, Studio, and Tryout flows use `requestV2()`-backed helpers and dedicated query-key namespaces; keep route-specific polling or mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS
-- Do not hard-code endpoint paths or duplicate `request()` behavior in hooks/components.
+- Do not hard-code endpoint paths or duplicate `request()` / `requestV2()` behavior in hooks/components.
 - Do not bypass `api-client.ts` and call `fetch` directly.
 - Do not create API functions outside the `api/*.ts` domain modules.
 - Do not invent new query-key shapes outside `query-keys.ts`.
 - Do not duplicate backend contract types when `types/*.ts` already exposes them.
 - Do not change template, CSV, or error-envelope shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change report, upload-metadata, or placeholder-tree shapes here without updating the backend contract and the calling hooks/pages.
-- Do not change simulation request or result shapes here without updating `backend/app/schemas/simulation.py`, hooks, pages, and tests together.
-- Do not change orchestration request or mention-catalog shapes here without updating the backend contract and the calling hooks/pages.
+- Do not change orchestration, runtime, Studio, or Tryout request/result shapes here without updating backend schemas, hooks, pages, and tests together.
 - Do not change `api/` helpers or `types/` contracts in isolation; keep request helpers and wire shapes in sync.
 - Do not mix presentation-only formatting into API wrapper code.
 
@@ -65,5 +65,5 @@ pnpm build
 - Route code should import direct modules from `api/*` and `types/*` instead of relying on barrel re-exports.
 - `markdown-format.ts` centralizes Prettier-based markdown cleanup so the template editor does not embed formatter setup inline.
 - `runtime-inputs.ts` is shared by `TemplateEditorPage` and `GenerateReportDialog`; keep those flows aligned when changing row semantics.
-- Current unit tests in this folder are helper/API focused; routed and feature-heavy behavior is covered primarily by Playwright flows.
+- Current unit tests in this folder are helper/API focused; routed and feature-heavy behavior is covered primarily by Playwright and targeted page tests.
 - `portfolio-analytics.ts` is where quote-enriched position math belongs, not in routed screens.
