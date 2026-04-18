@@ -18,7 +18,7 @@ export function OrchestrationIndexPage() {
           <h1 className="text-xl font-semibold tracking-tight">Orchestration</h1>
           <p className="text-sm text-muted-foreground">
             Configure reusable roles and characters for orchestration-aware templates and
-            backtests.
+            workflows.
           </p>
         </div>
 

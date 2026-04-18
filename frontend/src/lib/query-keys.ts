@@ -175,13 +175,6 @@ const reportsQueryKeys = {
   list: () => [...apiRoot, "reports", "list"] as const,
 } as const;
 
-const backtestsQueryKeys = {
-  all: [...apiRoot, "backtests"] as const,
-  detail: (backtestId: IdParam) =>
-    [...apiRoot, "backtests", "detail", normalizeId(backtestId)] as const,
-  list: () => [...apiRoot, "backtests", "list"] as const,
-} as const;
-
 const orchestrationQueryKeys = {
   all: [...apiRoot, "orchestration"] as const,
   roles: {
@@ -326,7 +319,6 @@ const tryoutsQueryKeys = {
 } as const;
 
 export const queryKeys = {
-  backtests: backtestsQueryKeys,
   portfolios: portfoliosQueryKeys,
   balances: balancesQueryKeys,
   positions: positionsQueryKeys,

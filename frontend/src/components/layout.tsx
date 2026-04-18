@@ -7,7 +7,6 @@ import {
   FlaskConical,
   LayoutDashboard,
   Sparkles,
-  TrendingUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -49,7 +48,6 @@ const navItems: NavItem[] = [
   { icon: Briefcase, label: "Portfolios", testId: "nav-portfolios", to: "/portfolios" },
   { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
-  { icon: TrendingUp, label: "Backtests", testId: "nav-backtests", to: "/backtests" },
   { icon: FlaskConical, label: "Tryout", testId: "nav-tryout", to: "/tryout" },
   { icon: Sparkles, label: "Studio", testId: "nav-studio", to: "/studio" },
   { icon: Bot, label: "Orchestration", testId: "nav-orchestration", to: "/orchestration" },
@@ -92,18 +90,6 @@ function getPageMeta(pathname: string) {
 
   if (pathname.startsWith("/reports/")) {
     return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
-  }
-
-  if (pathname === "/backtests") {
-    return { section: "Backtests", title: "Backtests" };
-  }
-
-  if (pathname === "/backtests/new") {
-    return { section: "Backtests", sectionHref: "/backtests", title: "New Backtest" };
-  }
-
-  if (pathname.startsWith("/backtests/")) {
-    return { section: "Backtests", sectionHref: "/backtests", title: "Backtest Detail" };
   }
 
   if (pathname === "/tryout") {

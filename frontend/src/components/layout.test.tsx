@@ -16,7 +16,7 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 describe("Layout", () => {
-  it("shows an orchestration entry in the root shell navigation", () => {
+  it("shows orchestration in the root shell navigation without a backtests entry", () => {
     render(
       <ThemeProvider>
         <MemoryRouter initialEntries={["/"]}>
@@ -30,5 +30,6 @@ describe("Layout", () => {
     );
 
     expect(screen.getByRole("link", { name: /orchestration/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /backtests/i })).not.toBeInTheDocument();
   });
 });

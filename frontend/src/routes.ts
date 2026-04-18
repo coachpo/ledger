@@ -1,8 +1,5 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
-import { BacktestConfigPage } from "./pages/backtests/config";
-import { BacktestDetailPage } from "./pages/backtests/detail";
-import { BacktestListPage } from "./pages/backtests/list";
 import { Dashboard } from "./pages/dashboard";
 import { OrchestrationIndexPage } from "./pages/orchestration/index";
 import { OrchestrationCharacterEditorPage } from "./pages/orchestration/characters/editor";
@@ -40,9 +37,6 @@ export const router = createBrowserRouter([
       { path: "templates/:templateId/edit", Component: TemplateEditorPage },
       { path: "reports", Component: ReportListPage },
       { path: "reports/:slug", Component: ReportDetailPage },
-      { path: "backtests", Component: BacktestListPage },
-      { path: "backtests/new", Component: BacktestConfigPage },
-      { path: "backtests/:backtestId", Component: BacktestDetailPage },
       { path: "tryout", Component: TryoutPage },
       { path: "studio", Component: StudioIndexPage },
       { path: "studio/agents", Component: StudioAgentsListPage },

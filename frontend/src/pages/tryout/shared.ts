@@ -14,13 +14,6 @@ import type {
   WorkflowSpecRead,
 } from "@/lib/types/studio";
 
-export const DISALLOWED_WORKFLOW_KEYS = new Set([
-  "seeded_internal_backtest_v1",
-  "analyst_reviewer_v1",
-  "seeded_internal_backtest_tool_enabled_v1",
-  "analyst_reviewer_tool_enabled_v1",
-]);
-
 export type TryoutTargetKind = "workflow" | "single_agent";
 
 export type TryoutDraft = {
@@ -84,27 +77,15 @@ export function toPersonaRef(persona: PersonaProfileRead): PersonaProfileRef {
 }
 
 export function buildValidationMessages(params: {
-  allowedWorkflowCount: number;
   agentSpec: AgentSpecRead | undefined;
-  blockedWorkflowCount: number;
   selectedTargetKind: TryoutTargetKind;
   workflowSpec: WorkflowSpecRead | undefined;
 }) {
-  const {
-    agentSpec,
-    allowedWorkflowCount,
-    blockedWorkflowCount,
-    selectedTargetKind,
-    workflowSpec,
-  } = params;
+  const { agentSpec, selectedTargetKind, workflowSpec } = params;
   const messages: string[] = [];
 
   if (selectedTargetKind === "workflow") {
-    if (workflowSpec && DISALLOWED_WORKFLOW_KEYS.has(workflowSpec.key)) {
-      messages.push("Rollback-window seeded backtest workflows cannot run in Tryout.");
-    } else if (!workflowSpec && blockedWorkflowCount > 0 && allowedWorkflowCount === 0) {
-      messages.push("Rollback-window seeded backtest workflows cannot run in Tryout.");
-    } else if (!workflowSpec) {
+    if (!workflowSpec) {
       messages.push("Select a workflow spec to execute the Tryout flow.");
     }
   }

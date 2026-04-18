@@ -27,9 +27,8 @@ function textResponse(body: string, status: number): Response {
 async function loadApiModule(baseUrl: string = "") {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
-  const [apiClient, backtestsApi, marketDataApi, portfoliosApi, positionsApi] = await Promise.all([
+  const [apiClient, marketDataApi, portfoliosApi, positionsApi] = await Promise.all([
     import("./api-client"),
-    import("./api/backtests"),
     import("./api/market-data"),
     import("./api/portfolios"),
     import("./api/positions"),
@@ -37,7 +36,6 @@ async function loadApiModule(baseUrl: string = "") {
 
   return {
     ...apiClient,
-    ...backtestsApi,
     ...marketDataApi,
     ...portfoliosApi,
     ...positionsApi,
@@ -227,16 +225,4 @@ describe("api client", () => {
     );
   });
 
-  it("sends a successful GET request for listBacktests", async () => {
-    const { listBacktests } = await loadApiModule();
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([{ id: 1, name: "Daily Backtest", status: "RUNNING" }], 200),
-    );
-
-    await expect(listBacktests()).resolves.toHaveLength(1);
-
-    const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(`${DEFAULT_API_BASE_URL}/backtests`);
-    expect(init?.method).toBe("GET");
-  });
 });

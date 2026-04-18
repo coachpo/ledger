@@ -10,7 +10,9 @@ export type PersonaProfileKind =
 export type CapabilityType = "tool" | "connector" | "bundle";
 export type ApprovalMode = "not_required" | "required";
 
-export type RuntimeCallerType = "backtest" | "tryout" | "studio" | "api";
+export type RuntimeCallerType = "tryout" | "studio" | "api";
+export type ArchivedRuntimeCallerType = "backtest";
+export type RuntimeRunCallerType = RuntimeCallerType | ArchivedRuntimeCallerType;
 export type RuntimeExecutionKind = "workflow" | "single_agent";
 export type RuntimeRunStatus =
   | "QUEUED"
@@ -170,7 +172,7 @@ export interface RuntimeRunCreated {
 export interface RuntimeRunListItem {
   runId: number;
   status: RuntimeRunStatus;
-  callerType: RuntimeCallerType;
+  callerType: RuntimeRunCallerType;
   callerId: number | null;
   callerScopeKey: string | null;
   callerIdentityKey: string | null;
@@ -238,7 +240,7 @@ export interface RuntimeApprovalListItem {
   status: RuntimeApprovalStatus;
   capabilityKey: string;
   stepKey: string;
-  callerType: RuntimeCallerType;
+  callerType: RuntimeRunCallerType;
   callerId: number | null;
   createdAt: string;
 }
@@ -278,7 +280,7 @@ export interface RuntimeTraceEventRead {
   eventType: RuntimeTraceEventType;
   stepKey: string | null;
   capabilityKey: string | null;
-  callerType: RuntimeCallerType;
+  callerType: RuntimeRunCallerType;
   callerId: number | null;
   createdAt: string;
   approvalId: number | null;

@@ -32,7 +32,6 @@ import { TryoutApprovalCard } from "./approval-card";
 import {
   buildRuntimeInputMap,
   buildValidationMessages,
-  DISALLOWED_WORKFLOW_KEYS,
   formatDateTimeOrFallback,
   getTargetSummary,
   sortByKey,
@@ -70,14 +69,6 @@ export function TryoutPage() {
     () => sortByKey(workflowsQuery.data?.items ?? []),
     [workflowsQuery.data?.items],
   );
-  const blockedWorkflowSpecs = useMemo(
-    () => workflowSpecs.filter((workflow) => DISALLOWED_WORKFLOW_KEYS.has(workflow.key)),
-    [workflowSpecs],
-  );
-  const allowedWorkflowSpecs = useMemo(
-    () => workflowSpecs.filter((workflow) => !DISALLOWED_WORKFLOW_KEYS.has(workflow.key)),
-    [workflowSpecs],
-  );
   const agentSpecs = useMemo(
     () => sortByKey(agentsQuery.data?.items ?? []),
     [agentsQuery.data?.items],
@@ -93,15 +84,15 @@ export function TryoutPage() {
     setDraft((current) => {
       const nextWorkflowSpecId =
         current.workflowSpecId &&
-        allowedWorkflowSpecs.some((workflow) => String(workflow.id) === current.workflowSpecId)
+        workflowSpecs.some((workflow) => String(workflow.id) === current.workflowSpecId)
           ? current.workflowSpecId
-          : (allowedWorkflowSpecs[0] ? String(allowedWorkflowSpecs[0].id) : "");
+          : (workflowSpecs[0] ? String(workflowSpecs[0].id) : "");
 
       return nextWorkflowSpecId === current.workflowSpecId
         ? current
         : { ...current, workflowSpecId: nextWorkflowSpecId };
     });
-  }, [allowedWorkflowSpecs, setDraft]);
+  }, [setDraft, workflowSpecs]);
 
   useEffect(() => {
     setDraft((current) => {
@@ -157,9 +148,7 @@ export function TryoutPage() {
 
   const handleExecute = async () => {
     const validationMessages = buildValidationMessages({
-      allowedWorkflowCount: allowedWorkflowSpecs.length,
       agentSpec: selectedAgentSpec,
-      blockedWorkflowCount: blockedWorkflowSpecs.length,
       selectedTargetKind: draft.targetKind,
       workflowSpec: selectedWorkflowSpec,
     });
@@ -220,17 +209,6 @@ export function TryoutPage() {
           and resolve approval gates without leaving the main shell.
         </p>
       </div>
-
-      {blockedWorkflowSpecs.length > 0 ? (
-        <Alert>
-          <ShieldAlert />
-          <AlertTitle>Rollback-window workflows stay blocked here</AlertTitle>
-          <AlertDescription>
-            Tryout excludes rollback-window seeded backtest workflows. Current blocked keys: {" "}
-            {blockedWorkflowSpecs.map((workflow) => workflow.key).join(", ")}.
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       {messages.length > 0 ? (
         <Alert variant="destructive">
@@ -294,15 +272,15 @@ export function TryoutPage() {
                         ? "Loading workflow specs..."
                         : "Select a workflow spec"}
                     </option>
-                    {allowedWorkflowSpecs.map((workflow) => (
+                    {workflowSpecs.map((workflow) => (
                       <option key={workflow.id} value={String(workflow.id)}>
                         {workflow.name} ({workflow.key} · v{workflow.version})
                       </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Only Tryout-safe workflow specs remain selectable. Seeded rollback-window
-                    backtest workflows stay blocked even if they exist in the catalog.
+                    Workflow Tryout runs pin the selected workflow key and version at execution
+                    time.
                   </p>
                 </div>
               ) : (

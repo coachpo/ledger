@@ -67,26 +67,6 @@ const state = vi.hoisted(() => ({
       updatedAt: "2026-04-14T09:00:00Z",
       entryAgentKey: "growth_analyst",
     },
-    {
-      id: 202,
-      key: "seeded_internal_backtest_v1",
-      version: 1,
-      origin: "seeded",
-      status: "ACTIVE",
-      name: "Blocked seeded workflow",
-      graphDefinition: {},
-      finalOutputContract: {},
-      mentionPolicy: { version: 1, allowCharacterPersonas: true, allowedBuiltinHandles: [] },
-      executionMode: null,
-      defaultToolIds: [],
-      allowedCapabilityBundleKeys: [],
-      connectorIds: [],
-      reviewMode: null,
-      approvalPolicyOverrides: [],
-      createdAt: "2026-04-14T09:00:00Z",
-      updatedAt: "2026-04-14T09:00:00Z",
-      entryAgentKey: "growth_analyst",
-    },
   ],
   agentSpecs: [
     {
@@ -381,26 +361,6 @@ describe("TryoutPage", () => {
         updatedAt: "2026-04-14T09:00:00Z",
         entryAgentKey: "growth_analyst",
       },
-      {
-        id: 202,
-        key: "seeded_internal_backtest_v1",
-        version: 1,
-        origin: "seeded",
-        status: "ACTIVE",
-        name: "Blocked seeded workflow",
-        graphDefinition: {},
-        finalOutputContract: {},
-        mentionPolicy: { version: 1, allowCharacterPersonas: true, allowedBuiltinHandles: [] },
-        executionMode: null,
-        defaultToolIds: [],
-        allowedCapabilityBundleKeys: [],
-        connectorIds: [],
-        reviewMode: null,
-        approvalPolicyOverrides: [],
-        createdAt: "2026-04-14T09:00:00Z",
-        updatedAt: "2026-04-14T09:00:00Z",
-        entryAgentKey: "growth_analyst",
-      },
     );
 
     state.toastErrorMock.mockReset();
@@ -482,14 +442,14 @@ describe("TryoutPage", () => {
     expect(screen.getByTestId("tryout-trace-row-3")).toBeInTheDocument();
   });
 
-  it("filters blocked rollback-window workflows from selection and blocks submit when only blocked options exist", async () => {
+  it("keeps every workflow spec selectable, including seeded workflow entries", async () => {
     state.workflowSpecs.splice(0, state.workflowSpecs.length, {
       id: 202,
-      key: "seeded_internal_backtest_v1",
+      key: "seeded_review_workflow_v1",
       version: 1,
       origin: "seeded",
       status: "ACTIVE",
-      name: "Blocked seeded workflow",
+      name: "Seeded review workflow",
       graphDefinition: {},
       finalOutputContract: {},
       mentionPolicy: { version: 1, allowCharacterPersonas: true, allowedBuiltinHandles: [] },
@@ -503,18 +463,21 @@ describe("TryoutPage", () => {
       updatedAt: "2026-04-14T09:00:00Z",
       entryAgentKey: "growth_analyst",
     });
+    state.createTryoutMock.mockResolvedValue({ runId: 502, status: "QUEUED", expiresAt: null });
 
     render(<TryoutPage />);
 
-    expect(screen.getByTestId("tryout-workflow-select")).not.toHaveTextContent(/growth workflow/i);
-    expect(screen.getByTestId("tryout-workflow-select")).not.toHaveTextContent(/blocked seeded workflow/i);
+    expect(screen.getByTestId("tryout-workflow-select")).toHaveTextContent(/seeded review workflow/i);
 
     fireEvent.click(screen.getByTestId("tryout-execute-button"));
 
-    expect(
-      await screen.findByText(/rollback-window seeded backtest workflows cannot run in tryout/i),
-    ).toBeInTheDocument();
-    expect(state.createTryoutMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(state.createTryoutMock).toHaveBeenCalled());
+    expect(state.createTryoutMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowSpecKey: "seeded_review_workflow_v1",
+        workflowSpecVersion: 1,
+      }),
+    );
   });
 
   it("renders the approval panel and actions for waiting-approval runs", async () => {

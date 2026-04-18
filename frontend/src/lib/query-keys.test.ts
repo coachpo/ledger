@@ -31,12 +31,8 @@ describe("query keys", () => {
     );
   });
 
-  it("normalizes backtest ids to the same detail key", () => {
-    expect(queryKeys.backtests.detail("7")).toEqual(queryKeys.backtests.detail(7));
-  });
-
   it("keeps existing v1 query key shapes stable", () => {
-    expect(queryKeys.backtests.list()).toEqual(["api", "backtests", "list"]);
+    expect(queryKeys.portfolios.list()).toEqual(["api", "portfolios", "list"]);
     expect(queryKeys.orchestration.roles.list()).toEqual([
       "api",
       "orchestration",
