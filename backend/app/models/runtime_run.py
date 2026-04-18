@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import CheckConstraint, Index, Integer, String, UniqueConstraint
-from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,7 +42,7 @@ class RuntimeRun(IdMixin, TimestampMixin, Base):
     __tablename__ = "runtime_runs"
     __table_args__ = (
         CheckConstraint(
-            "caller_type IN ('backtest', 'tryout', 'studio', 'api')",
+            "caller_type IN ('tryout', 'studio', 'api')",
             name="ck_runtime_runs_caller_type",
         ),
         CheckConstraint(
@@ -66,10 +65,6 @@ class RuntimeRun(IdMixin, TimestampMixin, Base):
             name="ck_runtime_runs_attempt_number_positive",
         ),
         CheckConstraint(
-            "caller_type <> 'backtest' OR (caller_id IS NOT NULL AND caller_scope_key IS NOT NULL)",
-            name="ck_runtime_runs_backtest_scope_required",
-        ),
-        CheckConstraint(
             "(execution_kind = 'workflow' AND workflow_spec_key IS NOT NULL AND "
             "workflow_spec_version IS NOT NULL AND agent_spec_key IS NULL AND "
             "agent_spec_version IS NULL) OR "
@@ -90,16 +85,6 @@ class RuntimeRun(IdMixin, TimestampMixin, Base):
         Index("ix_runtime_runs_workflow", "workflow_spec_key", "workflow_spec_version"),
         Index("ix_runtime_runs_agent", "agent_spec_key", "agent_spec_version"),
         Index("ix_runtime_runs_caller_identity_key", "caller_identity_key"),
-        Index(
-            "uq_runtime_runs_active_backtest_cycle",
-            "caller_type",
-            "caller_id",
-            "caller_scope_key",
-            unique=True,
-            postgresql_where=sql_text(
-                "caller_type = 'backtest' AND status IN ('QUEUED', 'RUNNING', 'WAITING_APPROVAL')"
-            ),
-        ),
     )
 
     caller_type: Mapped[str] = mapped_column(String(20), nullable=False)
