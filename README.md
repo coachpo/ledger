@@ -1,14 +1,20 @@
 # Ledger
 
-Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, report generation, template compilation, and a simulation workspace.
+Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, orchestration roles and characters, and v2 runtime, Studio, and Tryout surfaces.
 
 ## Repository Layout
 
 - `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
-- `docs/` — project docs and test-plan references
+- `docs/` — orchestration design, PRD, and spec notes; secondary to live code
 - `.github/workflows/` — root CI, Docker image, and cleanup workflows
-- `start.sh` — local full-stack startup helper
+- `start.sh` — local full-stack startup helper with backend/frontend/db fallback logic
+
+## What Ships
+
+- Frontend routes for `portfolios`, `templates`, `reports`, `tryout`, `studio`, and `orchestration`
+- Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, reports, and orchestration
+- Backend `/api/v2` routes for runtime runs, approvals, Studio inspection reads, Tryout execution, and spec catalogs
 
 ## Prerequisites
 
@@ -18,82 +24,65 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 - uv
 - lsof
 - Docker with `docker compose`
-- An LLM provider key if you want to run live LangGraph-backed simulations
+- An LLM provider key if you want live model-backed runtime and Tryout execution
 
-## Run the Full Stack Locally (101 Guide)
+## Run the Full Stack Locally
 
-### Step 1: Make sure you have a full source checkout
-
-Before you run anything, make sure your checkout includes the real source files and helper scripts that the commands below rely on.
-
-At minimum, you should have these paths:
-
-- `start.sh`
-- `backend/pyproject.toml`
-- `frontend/package.json`
-
-If any of those are missing, re-clone or restore the full repository checkout first.
-
-### Step 2: Install backend dependencies
+### 1. Install backend dependencies
 
 ```bash
 (cd backend && uv sync)
 ```
 
-### Step 3: Install frontend dependencies
+### 2. Install frontend dependencies
 
 ```bash
 (cd frontend && pnpm install)
 ```
 
-### Step 4: Export LangGraph simulation settings if you want live AI-backed simulations
+### 3. Optionally export runtime provider settings
 
-If you only want the UI, backend, and local stack up, you can skip this step.
+If you only want the UI, API, and local database running, skip this step.
 
-If you want the internal LangGraph simulation runner to make real model calls, export the provider settings before startup:
+If you want live model-backed runtime or Tryout execution, export the provider settings before startup:
 
 ```bash
 export OPENAI_API_KEY="your-provider-key"
 export RUNTIME_AGENT_API_KEY="$OPENAI_API_KEY"
 export RUNTIME_AGENT_MODEL="gpt-5.4-mini"
-export RUNTIME_AGENT_BASE_URL="http://192.168.1.222:8087/v1"    # optional override
+export RUNTIME_AGENT_BASE_URL="http://127.0.0.1:8080/v1"   # optional override
 export RUNTIME_AGENT_TEMPERATURE="0"
 ```
 
-### Step 5: Start everything with the local helper
+### 4. Start everything with the local helper
 
 ```bash
 ./start.sh
 ```
 
-`start.sh` is the source of truth for local development. It syncs the backend environment, starts PostgreSQL on `25432`, the backend on `28000`, and the frontend on `25173`.
+`start.sh` is the source of truth for local development.
 
-It also:
+It will:
 
-- sets `DATABASE_URL` for the backend,
-- derives `VITE_API_BASE_URL` for the frontend,
-- sets `PUBLIC_BASE_URL` for the backend if you do not provide one,
-- and stops listeners or Docker containers already using ports `25432`, `28000`, or `25173` before startup.
+- prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
+- prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-Ledger service
+- prefer the frontend on `25173`, then fall back to `25174` if needed
+- reuse a healthy Ledger backend already listening on the requested backend port
+- derive `DATABASE_URL` for backend startup when you do not provide one
+- derive `VITE_API_BASE_URL` for frontend startup
 
-### Step 6: Open the app and verify the stack
+### 5. Open the app and verify the stack
 
 Once startup finishes, open:
 
-- Frontend: `http://127.0.0.1:25173/`
-- Backend health: `http://127.0.0.1:28000/health`
+- Frontend: `http://127.0.0.1:25173/` or the fallback port printed by `start.sh`
+- Backend health: `http://127.0.0.1:28000/health` or the fallback backend port printed by `start.sh`
 
-### Step 7: Stop the stack
+### 6. Stop the stack
 
 Press `Ctrl+C` in the terminal running `./start.sh`.
 
-## Important LangGraph Simulation Notes
-
-- LangGraph simulations now run inside Ledger's backend runtime; there is no separate worker process to start.
-- `PUBLIC_BASE_URL` is no longer required for the normal internal simulation path, but leaving it set is harmless.
-- If you need the backend reachable from another machine, set `BACKEND_HOST=0.0.0.0`, `BACKEND_PUBLIC_HOST=<your-lan-ip>`, and `PUBLIC_BASE_URL=http://<your-lan-ip>:28000` before running `./start.sh`.
-- The LangGraph runner inherits its model settings from the backend process, so `RUNTIME_AGENT_*` variables must be exported before you start the backend if you want live model calls.
-
-## Manual Startup (without `start.sh`)
+## Manual Startup
 
 Use this path only if you do not want `./start.sh` managing the stack for you.
 
@@ -106,8 +95,10 @@ Use this path only if you do not want `./start.sh` managing the stack for you.
 ### 2. Start the backend
 
 ```bash
-(cd backend && CORS_ALLOWED_ORIGINS=http://127.0.0.1:25173,http://localhost:25173 PUBLIC_BASE_URL=http://127.0.0.1:28000 uv run uvicorn app.main:app --reload --port 28000)
+(cd backend && uv run uvicorn app.main:app --reload --port 28000)
 ```
+
+The default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`. If you run the frontend on `25173`, keep backend CORS aligned with that origin through `CORS_ALLOWED_ORIGINS` when you need overrides.
 
 ### 3. Start the frontend
 
@@ -119,11 +110,12 @@ Use this path only if you do not want `./start.sh` managing the stack for you.
 
 Visit `http://127.0.0.1:25173/`.
 
-### 5. Know what is required vs optional for local development
+## Runtime Notes
 
-- When you run the frontend manually on `25173`, the backend must allow that origin via `CORS_ALLOWED_ORIGINS`, which is why the backend command above includes it explicitly.
-
-See `backend/README.md` for backend-specific local development details.
+- The normal browser-facing execution surfaces are `Tryout`, `Studio`, and the backend v2 runtime APIs.
+- Runtime execution inherits its provider settings from the backend process, so export `RUNTIME_AGENT_*` variables before starting the backend if you want live model calls.
+- Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
+- `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
 
 ## Validation
 
@@ -133,7 +125,7 @@ See `backend/README.md` for backend-specific local development details.
 
 # Frontend
 (cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm test:run)
-(cd frontend && pnpm test:e2e)
+(cd frontend && pnpm exec playwright install --with-deps chromium && pnpm test:e2e)
 ```
 
 ## CI/CD Workflows
@@ -150,3 +142,9 @@ See `backend/README.md` for backend-specific local development details.
 - `frontend/VERSION` must mirror the frontend package version
 
 The VERSION files are lightweight mirrors used for repository-level checks; this repo does not add a separate release system here.
+
+## More Detail
+
+- `backend/README.md` covers backend-specific development details
+- `AGENTS.md` maps the repo’s live surfaces and nested documentation hierarchy
+- `docs/ledger-orchestration-product-design.md`, `docs/ledger-orchestration-product-prd.md`, and `docs/ledger-orchestration-product-spec.md` capture the current orchestration-oriented product notes

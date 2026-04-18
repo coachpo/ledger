@@ -1,37 +1,37 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-12
-**Commit:** d6bc942
-**Branch:** main
+**Generated:** 2026-04-18
+**Commit:** 500880e
+**Branch:** agents
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked directly in this repository. The live surface spans portfolio CRUD, deposit and withdrawal balances, aggregate positions, delayed market data, CSV imports, simulated BUY/SELL/DIVIDEND/SPLIT workflows, text-template authoring and compilation with runtime inputs, point-in-time report generation and upload/download, orchestration roles and characters, and historical simulations whose analysis path now runs inside Ledger via LangGraph.
+Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, orchestration roles and characters, plus v2 runtime, Studio, and Tryout workflows.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
 - `backend/app/core/AGENTS.md` — config, error envelope, normalization helpers
-- `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only init/report-upgrade rules
-- `backend/app/api/AGENTS.md` — route handler boundaries, orchestration endpoints, and dependency wiring
-- `backend/app/services/AGENTS.md` — service ownership, orchestration, template/report workflows, and quote-provider wiring
-- `backend/app/schemas/AGENTS.md` — Pydantic validation, simulation launch semantics, and camelCase aliasing
-- `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, and orchestration snapshots
-- `backend/app/repositories/AGENTS.md` — query/repository patterns, orchestration lookups, and cleanup helpers
+- `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
+- `backend/app/api/AGENTS.md` — v1/v2 route handler boundaries and dependency wiring
+- `backend/app/services/AGENTS.md` — service ownership, orchestration, runtime execution, and quote-provider wiring
+- `backend/app/schemas/AGENTS.md` — Pydantic validation, runtime payloads, and camelCase aliasing
+- `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, and runtime metadata
+- `backend/app/repositories/AGENTS.md` — query/repository patterns and runtime lookups
 - `backend/tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, and regression coverage
-- `frontend/AGENTS.md` — frontend architecture, router shell, orchestration workspace, and validation workflow
-- `frontend/src/lib/AGENTS.md` — API client, query keys, analytics, formatting, runtime-input helpers, and shared contracts
-- `frontend/src/lib/api/AGENTS.md` — domain API modules, upload/download boundaries, and route-path helpers
-- `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, simulations, orchestration, and trading
+- `frontend/AGENTS.md` — frontend architecture, router shell, Studio/Tryout surfaces, and validation workflow
+- `frontend/src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, and shared contracts
+- `frontend/src/lib/api/AGENTS.md` — domain API modules, v1/v2 request helpers, upload/download boundaries
+- `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, orchestration, runtime, Studio, and Tryout
 - `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
 - `frontend/src/components/AGENTS.md` — layout shell, theme system, shared components, forms, and feature UI
 - `frontend/src/components/forms/AGENTS.md` — cross-route dialog forms for portfolios and report generation
 - `frontend/src/components/templates/AGENTS.md` — template-editor placeholder and runtime-input components
-- `frontend/src/components/simulations/AGENTS.md` — simulation result widgets, charts, badges, and trade-log tables
 - `frontend/src/components/ui/AGENTS.md` — shadcn/ui primitives, sidebar context, and shared variant helpers
 - `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
-- `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, simulation, and orchestration routes
+- `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, Studio, Tryout, and orchestration routes
+- `frontend/src/pages/studio/AGENTS.md` — Studio catalog, editors, and run-detail routes
+- `frontend/src/pages/tryout/AGENTS.md` — Tryout execute, inspect, persist, and approval flow
 - `frontend/src/pages/orchestration/AGENTS.md` — orchestration index plus role and character CRUD routes
-- `frontend/src/pages/simulations/AGENTS.md` — simulation list/config/detail orchestration and polling behavior
 - `frontend/src/pages/portfolios/AGENTS.md` — portfolio list/detail orchestration and quote-enriched workspace rules
 - `frontend/src/pages/templates/AGENTS.md` — template list/editor flows, debounce preview, runtime inputs, and placeholder browser rules
 - `frontend/src/pages/reports/AGENTS.md` — report list/detail flows, grouping, markdown render/edit/download behavior
@@ -41,55 +41,53 @@ Ledger is a dual-stack portfolio tracker with `backend/` and `frontend/` tracked
 ledger/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # reference specs, requirements, runbooks, and test plans; secondary to live code
-├── .github/workflows/    # CI quality gates, Docker smoke build, image publish, cleanup
-└── start.sh              # local orchestrator: defaults to db/backend/frontend on 25432/28000/25173, reuses healthy services, and falls back to 25433/25434, 28001/28002, or 25174 when needed
+├── docs/                 # orchestration design, PRD, and spec notes; secondary to live code
+├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
+└── start.sh              # local orchestrator with backend/frontend/db reuse and fallback ports
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then use `./start.sh` unless you need manual startup |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`, reuses a healthy backend on the requested port, and falls back to `25433/25434`, `28001/28002`, or `25174` when needed; no separate simulation worker process exists |
-| Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001`, frontend `4173`, and `RUNTIME_TEST_MODE=1` |
-| Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/dependencies.py` | app factory, router composition, dependency injection |
+| Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; may reuse a healthy backend or fall back to `25433/25434`, `28001/28002`, or `25174` |
+| Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
+| Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/v2_router.py` | app factory plus `/api/v1` and `/api/v2` composition |
 | Backend orchestration flow | `backend/app/api/orchestration.py`, `backend/app/services/orchestration_service.py`, `backend/app/schemas/orchestration.py` | roles, characters, mention catalog, versioned updates, validation |
-| Backend report/runtime flow | `backend/app/api/reports.py`, `backend/app/api/workflow_specs.py`, `backend/app/services/report_service.py`, `backend/app/services/workflow_spec_service.py`, `backend/app/services/agent_runtime_service.py` | report CRUD, runtime workflow catalog, and execution entry points |
-| Backend DB upgrades | `backend/app/db/upgrades.py`, `backend/app/db/session.py` | startup init plus supported legacy-schema repair and interrupted-simulation cleanup |
-| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_specs_api.py`, `backend/tests/test_orchestration_api.py`, `backend/tests/test_runtime_db_upgrades.py` | CRUD, runtime catalog visibility, orchestration, and upgrade regressions |
+| Backend runtime and Studio flow | `backend/app/api/runtime.py`, `backend/app/api/studio.py`, `backend/app/api/workflow_specs.py`, `backend/app/services/agent_runtime_service.py`, `backend/app/services/workflow_spec_service.py` | runtime runs, approvals, artifacts, trace, workflow catalogs |
+| Backend Tryout flow | `backend/app/api/tryouts.py`, `backend/app/services/tryout_service.py`, `backend/app/schemas/tryout.py` | execute, inspect, and persist a runtime-backed Tryout |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
-| Frontend API/type contracts | `frontend/src/lib/api/AGENTS.md`, `frontend/src/lib/types/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | request helpers, query keys, wire types, and TanStack Query wrappers |
-| Frontend orchestration UI | `frontend/src/pages/orchestration/AGENTS.md`, `frontend/src/hooks/use-orchestration.ts`, `frontend/src/lib/api/orchestration.ts`, `frontend/src/lib/types/orchestration.ts` | roles, characters, mention catalog, route forms |
-| Frontend simulations UI | `frontend/src/pages/simulations/AGENTS.md`, `frontend/src/hooks/use-simulations.ts`, `frontend/src/components/simulations/AGENTS.md` | configuration form, internal-vs-legacy launch mode, 5s polling, charts, trade log |
-| Frontend tests / E2E | `frontend/vite.config.ts`, `frontend/src/test/setup.ts`, `frontend/playwright.config.ts`, `frontend/e2e/*.spec.ts` | jsdom unit setup plus Chromium E2E |
-| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version-sync, backend-quality, frontend-quality, frontend-e2e, image publish, cleanup |
+| Frontend Studio and Tryout UI | `frontend/src/pages/studio/AGENTS.md`, `frontend/src/pages/tryout/AGENTS.md`, `frontend/src/hooks/use-studio.ts`, `frontend/src/hooks/use-tryouts.ts` | v2 catalog/editor routes plus Tryout execute/persist flow |
+| Frontend orchestration UI | `frontend/src/pages/orchestration/AGENTS.md`, `frontend/src/hooks/use-orchestration.ts`, `frontend/src/lib/api/orchestration.ts` | roles, characters, mention catalog, route forms |
+| Frontend reports and templates | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts` | markdown reports, compile preview, runtime input maps |
+| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_orchestration_api.py`, `backend/tests/test_runtime_api.py`, `backend/tests/test_tryouts_api.py`, `backend/tests/test_workflow_specs_api.py` | live v1 CRUD plus v2 runtime/studio/tryout coverage |
+| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, backend quality, frontend quality, frontend E2E, image publish, cleanup |
 
 ## CODE MAP
 | Symbol / Entry | Location | Role |
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
-| `api_router` | `backend/app/api/router.py` | mounts all `/api/v1` routers, including orchestration, templates, reports, and simulations |
-| `init_db` | `backend/app/db/session.py` | composes table creation, validation, legacy upgrades, and interrupted-simulation repair |
+| `api_router` | `backend/app/api/router.py` | mounts live `/api/v1` routers for portfolios, balances, positions, trading, market data, orchestration, templates, and reports |
+| `v2_router` | `backend/app/api/v2_router.py` | mounts additive `/api/v2` routers for specs, personas, runtime, Studio, and Tryouts |
 | `OrchestrationService` | `backend/app/services/orchestration_service.py` | versioned role/character CRUD and mention-catalog assembly |
-| `TemplateCompilerService` | `backend/app/services/template_compiler_service.py` | resolves `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholders against live data |
-| `ReportService` | `backend/app/services/report_service.py` | report CRUD, upload validation, unique slug/name generation |
-| `WorkflowSpecService` | `backend/app/services/workflow_spec_service.py` | workflow listing defaults, managed lifecycle actions, and Studio/Tryout visibility rules |
-| `AgentRuntimeService` | `backend/app/services/agent_runtime_service.py` | runtime run creation, execution dispatch, approvals, retries, and artifact reads |
-| `RuntimeSeedBootstrap` | `backend/app/services/runtime_seed_bootstrap.py` | seeded mirror bootstrap for agents, personas, tools, bundles, and connectors |
-| `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, simulations, and orchestration |
-| `queryKeys` | `frontend/src/lib/query-keys.ts` | canonical cache naming, portfolio invalidation helpers, orchestration namespaces |
+| `WorkflowSpecService` | `backend/app/services/workflow_spec_service.py` | workflow listing defaults and managed lifecycle actions |
+| `AgentRuntimeService` | `backend/app/services/agent_runtime_service.py` | runtime run creation, execution dispatch, approvals, retries, and artifact writes |
+| `StudioQueryService` | `backend/app/services/studio_query_service.py` | Studio-facing reads for runs, approvals, artifacts, and trace events |
+| `TryoutService` | `backend/app/services/tryout_service.py` | Tryout execute/read/persist flow over runtime primitives |
+| `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, Tryout, Studio, and orchestration |
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template-editor full-height layout |
-| `GenerateReportDialog` | `frontend/src/components/forms/generate-report-dialog.tsx` | shared report-generation dialog with runtime inputs |
+| `TryoutPage` | `frontend/src/pages/tryout/index.tsx` | execute one workflow or agent spec, inspect output, persist, and resolve approvals |
+| `StudioIndexPage` | `frontend/src/pages/studio/index.tsx` | v2 catalog landing for agents, workflows, personas, capabilities, and run detail |
 
 ## CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
 - Backend error envelopes are `{code, message, details[]}`; frontend `ApiRequestError` parsing depends on that exact shape.
 - Money, quantities, and market values cross the API as strings; backend parsing lives in `backend/app/core/formatting.py`, while frontend conversion lives in shared formatting and analytics helpers.
-- Balance records carry `operationType` (`DEPOSIT` or `WITHDRAWAL`); `BUY`, `SELL`, and `DIVIDEND` operations can only use deposit balances, `SPLIT` uses no balance, and portfolio cash calculations subtract withdrawal balances.
-- Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; ids are normalized to strings, symbol lists are trimmed/deduplicated/sorted where relevant, and orchestration caches live under `queryKeys.orchestration.*`.
+- Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; ids are normalized to strings, and runtime, Studio, Tryout, and orchestration caches live under dedicated namespaces.
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; compiled reports derive timestamped snake_case names from templates, uploaded reports accept optional metadata, and all report sources download by slug.
 - Orchestration is a live cross-stack feature, not a hidden prototype: the frontend exposes `/orchestration` routes, the backend exposes `/api/v1/orchestration/*`, and role/character contracts live in dedicated hooks, API modules, types, schemas, models, and repositories.
+- Runtime, Studio, and Tryout are additive `/api/v2` and frontend route families; keep docs and client helpers aligned with those live surfaces rather than retired simulation pages.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses `ChatOpenAI` and the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS
@@ -98,10 +96,8 @@ ledger/
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, template compile payloads, or runtime-input flow without updating backend tests and frontend callers together.
 - Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
-- Do not hide shipped orchestration surfaces behind direct URLs or stale docs; the orchestration workspace is a first-class route family and API surface.
-- Do not document legacy callback mode as the default simulation path or require callback fields for normal internal execution.
-- Do not bypass `SimulationService`, `SimulationCycleService`, `TradingOperationService`, or `ReportService` when changing simulation execution semantics.
-- Do not reintroduce a second simulation-analysis runtime when the current implementation is intentionally Ledger-native and in-process.
+- Do not hide shipped Studio, Tryout, or orchestration surfaces behind stale docs or direct URLs.
+- Do not document frontend `simulations` pages or `backend/app/api/simulations.py` as live shipped surfaces; those paths are no longer part of the current browser-facing product.
 - Do not add raw `httpx`/`requests` LLM calling paths in application code when an official provider SDK exists.
 - Do not treat `docs/`, `backend/alembic/`, `frontend/dist/`, or cache directories as the source of truth over live code.
 
@@ -125,8 +121,9 @@ ledger/
 ```
 
 ## NOTES
-- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, reuses a healthy backend on the requested port, falls back to `25433/25434`, `28001/28002`, or `25174` when needed, injects `VITE_API_BASE_URL`, and no longer launches a separate simulation worker process.
+- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, may reuse a healthy backend, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
 - Supported schema repair is code-based in `backend/app/db/`; `backend/alembic/` is only a placeholder scaffold, not the migration source of truth.
-- Playwright runs against backend `8001` and frontend `4173`; the backend startup helpers also set `RUNTIME_TEST_MODE=1`, which swaps `SimulationCycleService` into deterministic cycle behavior for E2E and test flows.
+- Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
-- Root CI currently runs version-sync, backend-quality, frontend-quality, and frontend-e2e checks; Docker image publishing and cleanup live in separate workflows.
+- Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
+- `docs/` currently contains three orchestration-focused reference docs; keep them aligned with live `studio`, `tryout`, `runtime`, and `orchestration` code, not retired simulation routes.
