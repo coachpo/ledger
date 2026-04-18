@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import utcnow
 from app.db.engine import get_session_factory
-from app.langgraph.seeds import get_backtest_pattern_spec
 from app.models.agent_spec import AgentSpec
 from app.models.persona_profile import PersonaProfile
 from app.models.runtime_approval import RuntimeApproval
@@ -142,7 +141,9 @@ class AgentRuntimeService:
         retention_class = (
             shell_options.retention_class
             if shell_options is not None and shell_options.retention_class is not None
-            else "persistent" if payload.persist_run else "ephemeral"
+            else "persistent"
+            if payload.persist_run
+            else "ephemeral"
         )
         return self._create_run_shell(
             dispatch_mode="start",
@@ -195,7 +196,7 @@ class AgentRuntimeService:
         def _run() -> None:
             with self.session_factory() as session:
                 service = AgentRuntimeService(session, self.session_factory)
-                adapter = service._build_non_backtest_execution_adapter(
+                adapter = service._build_runtime_execution_adapter(
                     prepared.snapshot.execution_kind
                 )
                 try:
@@ -976,7 +977,7 @@ class AgentRuntimeService:
             else:
                 resumed_run = self.resume_run(
                     run.id,
-                    self._build_non_backtest_execution_adapter(run.execution_kind),
+                    self._build_runtime_execution_adapter(run.execution_kind),
                 )
         return RuntimeApprovalActionRead.model_validate(
             {
@@ -1037,9 +1038,9 @@ class AgentRuntimeService:
         self,
         payload: RuntimeRunCreate,
     ) -> ExecutionAdapter:
-        return self._build_non_backtest_execution_adapter(payload.execution_kind)
+        return self._build_runtime_execution_adapter(payload.execution_kind)
 
-    def _build_non_backtest_execution_adapter(
+    def _build_runtime_execution_adapter(
         self,
         execution_kind: str,
     ) -> ExecutionAdapter:
@@ -1059,7 +1060,7 @@ class AgentRuntimeService:
                 "runtime_public_caller_type_not_allowed",
                 (
                     "Public runtime create only supports callerType=api; "
-                    "use dedicated caller APIs for backtest, studio, and tryout runs."
+                    "use the dedicated Studio or Tryout surfaces for non-api runs."
                 ),
             )
 
@@ -1078,7 +1079,11 @@ class AgentRuntimeService:
                 "runtime_workflow_not_found",
                 f"Workflow spec {payload.workflow_spec_key!r} was not found",
             )
-        self._validate_non_backtest_workflow_target(payload, workflow)
+        if payload.caller_type == RuntimeCallerType.API and workflow.status != "ACTIVE":
+            raise business_rule_error(
+                "runtime_public_workflow_not_active",
+                "Public runtime create only supports active workflow specs.",
+            )
 
         workflow_default_refs = self._workflow_default_capability_refs(workflow)
         approval_overrides = cast(Sequence[dict[str, Any]], workflow.approval_policy_overrides)
@@ -1223,27 +1228,6 @@ class AgentRuntimeService:
             resolved_connector_versions=tuple(
                 sorted(resolved_connector_versions.values(), key=lambda item: item.connector_id)
             ),
-        )
-
-    @staticmethod
-    def _validate_non_backtest_workflow_target(
-        payload: RuntimeRunCreate,
-        workflow: WorkflowSpec,
-    ) -> None:
-        if payload.caller_type == RuntimeCallerType.BACKTEST:
-            return
-        if workflow.origin != SpecOrigin.SEEDED:
-            return
-        if get_backtest_pattern_spec(workflow.key) is None:
-            return
-        if payload.caller_type == RuntimeCallerType.TRYOUT:
-            raise business_rule_error(
-                "tryout_seeded_backtest_workflow_not_allowed",
-                "Tryout workflow execution cannot use rollback-window seeded backtest workflows.",
-            )
-        raise business_rule_error(
-            "runtime_seeded_backtest_workflow_not_allowed",
-            "Non-backtest callers cannot execute rollback-window seeded backtest workflows.",
         )
 
     def _load_frozen_snapshot(self, run_id: int) -> FrozenExecutionSnapshot:

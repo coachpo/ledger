@@ -18,8 +18,6 @@ RUNTIME_V2_TABLE_NAMES = {
     "runtime_checkpoints",
     "runtime_run_artifacts",
     "persona_projection_events",
-    "runtime_control_flags",
-    "runtime_flag_change_events",
 }
 
 
@@ -40,12 +38,12 @@ def _build_agent_spec(*, key: str, version: int, status: str) -> AgentSpec:
 
 def _build_runtime_run(*, attempt_number: int, status: str) -> RuntimeRun:
     return RuntimeRun(
-        caller_type="backtest",
+        caller_type="studio",
         caller_id=42,
         execution_kind="workflow",
-        workflow_spec_key="seeded_internal_backtest_v1",
+        workflow_spec_key="alpha_workflow",
         workflow_spec_version=1,
-        caller_scope_key="2026-01-06",
+        caller_scope_key="studio-session-42",
         caller_identity_key=None,
         attempt_number=attempt_number,
         status=status,
@@ -65,7 +63,7 @@ def test_runtime_v2_tables_are_registered_on_metadata() -> None:
         "uq_agent_specs_active_key",
         "uq_agent_specs_draft_key",
     } <= {index.name for index in agent_spec_table.indexes}
-    assert "uq_runtime_runs_active_backtest_cycle" in {
+    assert "uq_runtime_runs_active_backtest_cycle" not in {
         index.name for index in runtime_runs_table.indexes
     }
     assert "uq_runtime_runs_caller_scope_attempt" in {
@@ -91,9 +89,7 @@ def test_agent_specs_enforce_single_active_and_single_draft_versions(session_fac
             session.commit()
 
 
-def test_runtime_runs_enforce_unique_attempts_and_single_active_backtest_cycle(
-    session_factory,
-) -> None:
+def test_runtime_runs_enforce_unique_attempts_per_caller_scope(session_factory) -> None:
     with session_factory() as session:
         session.add(_build_runtime_run(attempt_number=1, status="RUNNING"))
         session.commit()
@@ -104,15 +100,4 @@ def test_runtime_runs_enforce_unique_attempts_and_single_active_backtest_cycle(
         session.rollback()
 
         session.add(_build_runtime_run(attempt_number=2, status="WAITING_APPROVAL"))
-        with pytest.raises(IntegrityError):
-            session.commit()
-        session.rollback()
-
-        run = session.get(RuntimeRun, 1)
-        assert run is not None
-        run.status = "SUCCEEDED"
-        run.output_hash = "f" * 64
-        session.commit()
-
-        session.add(_build_runtime_run(attempt_number=2, status="QUEUED"))
         session.commit()

@@ -4,13 +4,6 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, business_rule_error, not_found_error
-from app.langgraph.seeds import (
-    SEEDED_BUILTIN_RESERVED_TARGETS,
-    SEEDED_BUILTIN_SPECS,
-    get_seeded_capability_bundle_spec,
-    get_seeded_connector_spec,
-    get_seeded_tool_spec,
-)
 from app.models.orchestration_character import OrchestrationCharacter
 from app.models.orchestration_role import OrchestrationRole
 from app.repositories.orchestration_character import OrchestrationCharacterRepository
@@ -26,6 +19,13 @@ from app.schemas.orchestration import (
     OrchestrationRoleUpdate,
 )
 from app.services.persona_projection_service import PersonaProjectionService
+from app.services.runtime_seed_catalog import (
+    SEEDED_BUILTIN_RESERVED_TARGETS,
+    SEEDED_BUILTIN_SPECS,
+    get_seeded_capability_bundle_spec,
+    get_seeded_connector_spec,
+    get_seeded_tool_spec,
+)
 
 
 class OrchestrationService:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.db.backtest_repair import mark_interrupted_backtests_failed
 from app.db.engine import get_db_session, get_engine, get_session_factory, reset_db_caches
 from app.db.upgrades import (
     build_unique_legacy_portfolio_slug,
@@ -14,7 +13,6 @@ from app.db.validation import (
     validate_supported_id_schema,
 )
 from app.models.base import Base
-from app.services.runtime_control_service import RuntimeControlService
 from app.services.runtime_seed_bootstrap import bootstrap_runtime_seed_mirrors
 
 
@@ -28,9 +26,7 @@ def init_db(database_url: str | None = None) -> None:
     session_factory = get_session_factory(database_url)
     with session_factory() as session:
         bootstrap_runtime_seed_mirrors(session)
-        RuntimeControlService(session).ensure_managed_flags()
         session.commit()
-    mark_interrupted_backtests_failed(database_url)
 
 
 __all__ = [
@@ -41,7 +37,6 @@ __all__ = [
     "get_engine",
     "get_session_factory",
     "init_db",
-    "mark_interrupted_backtests_failed",
     "normalize_legacy_portfolio_slug",
     "reset_db_caches",
     "upgrade_legacy_schema",

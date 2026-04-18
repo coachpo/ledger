@@ -13,12 +13,9 @@ from app.repositories.agent_spec import AgentSpecRepository
 from app.repositories.capability_registry_entry import CapabilityRegistryEntryRepository
 from app.repositories.persona_profile import PersonaProfileRepository
 from app.repositories.runtime_approval import RuntimeApprovalRepository
-from app.repositories.runtime_control_flag import RuntimeControlFlagRepository
-from app.repositories.runtime_flag_change_event import RuntimeFlagChangeEventRepository
 from app.repositories.runtime_run import RuntimeRunRepository
 from app.repositories.runtime_run_artifact import RuntimeRunArtifactRepository
 from app.repositories.workflow_spec import WorkflowSpecRepository
-from app.services.runtime_control_service import RuntimeControlService
 
 
 def _build_agent_spec(*, key: str, version: int, status: str) -> AgentSpec:
@@ -193,10 +190,10 @@ def test_runtime_repositories_filter_by_caller_scope_and_artifact_contracts(
 ) -> None:
     with session_factory() as session:
         first_run = _build_runtime_run(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            caller_scope_key="2026-01-06",
-            workflow_spec_key="seeded_internal_backtest_v1",
+            caller_scope_key="studio-session-42",
+            workflow_spec_key="alpha_workflow",
             workflow_spec_version=1,
             agent_spec_key=None,
             agent_spec_version=None,
@@ -205,10 +202,10 @@ def test_runtime_repositories_filter_by_caller_scope_and_artifact_contracts(
             input_hash_seed="1",
         )
         second_run = _build_runtime_run(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            caller_scope_key="2026-01-06",
-            workflow_spec_key="seeded_internal_backtest_v1",
+            caller_scope_key="studio-session-42",
+            workflow_spec_key="alpha_workflow",
             workflow_spec_version=1,
             agent_spec_key=None,
             agent_spec_version=None,
@@ -272,33 +269,25 @@ def test_runtime_repositories_filter_by_caller_scope_and_artifact_contracts(
         )
         session.commit()
 
-        RuntimeControlService(session).set_backtest_runtime_v2_enabled(
-            enabled=True,
-            actor="system",
-            reason="rollout",
-        )
-
         run_repo = RuntimeRunRepository(session)
         approval_repo = RuntimeApprovalRepository(session)
         artifact_repo = RuntimeRunArtifactRepository(session)
-        control_flag_repo = RuntimeControlFlagRepository(session)
-        flag_event_repo = RuntimeFlagChangeEventRepository(session)
 
         scoped_runs = run_repo.list_for_caller(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            caller_scope_key="2026-01-06",
+            caller_scope_key="studio-session-42",
         )
         assert [run.attempt_number for run in scoped_runs] == [2, 1]
         latest_attempt = run_repo.get_latest_attempt(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            caller_scope_key="2026-01-06",
+            caller_scope_key="studio-session-42",
         )
         active_run = run_repo.get_active_for_caller(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            caller_scope_key="2026-01-06",
+            caller_scope_key="studio-session-42",
         )
         assert latest_attempt is not None
         assert latest_attempt.attempt_number == 2
@@ -307,27 +296,19 @@ def test_runtime_repositories_filter_by_caller_scope_and_artifact_contracts(
         assert [run.caller_type for run in run_repo.list_tryouts()] == ["tryout"]
 
         filtered_approvals = approval_repo.list_all(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            workflow_spec_key="seeded_internal_backtest_v1",
+            workflow_spec_key="alpha_workflow",
             capability_key="tool.alpha",
             status="PENDING",
         )
         assert [item.id for item in filtered_approvals] == [approval.id]
 
         filtered_artifacts = artifact_repo.list_all(
-            caller_type="backtest",
+            caller_type="studio",
             caller_id=42,
-            workflow_spec_key="seeded_internal_backtest_v1",
+            workflow_spec_key="alpha_workflow",
             persona_profile_key="alpha_persona",
             capability_key="tool.alpha",
         )
         assert [item.run_id for item in filtered_artifacts] == [second_run.id]
-
-        flag = control_flag_repo.get_by_key("AGENT_RUNTIME_V2_BACKTESTS_ENABLED")
-        assert flag is not None
-        assert flag.enabled is True
-        assert [
-            event.result
-            for event in flag_event_repo.list_for_flag("AGENT_RUNTIME_V2_BACKTESTS_ENABLED")
-        ] == ["applied"]

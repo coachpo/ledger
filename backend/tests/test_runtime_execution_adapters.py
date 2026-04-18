@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.langgraph.runner import BacktestLangGraphResult, BacktestLangGraphToolRuntime
 from app.models.agent_spec import AgentSpec
 from app.models.workflow_spec import WorkflowSpec
-from app.schemas.backtest import TradeDecision
 from app.schemas.runtime import (
     ApprovalMode,
     ApprovalSummary,
@@ -20,17 +17,12 @@ from app.schemas.runtime import (
     PersonaProfileKind,
     PersonaProfileRef,
     ResolvedCapabilityRead,
-    ResolvedConnectorVersionRead,
-    ResolvedToolVersionRead,
     RuntimeCheckpointRead,
     SpecOrigin,
     TraceSummary,
     WorkflowAgentRef,
 )
-from app.services.backtest_cycle_service import BacktestCycleService
-from app.services.backtest_engine import BacktestEngine
 from app.services.execution_adapters import (
-    BacktestLangGraphExecutionAdapter,
     ExecutionAdapterRequest,
     ExecutionApprovalState,
     FrozenExecutionSnapshot,
@@ -90,8 +82,8 @@ def _persona_ref(key: str, version: int = 1) -> PersonaProfileRef:
         persona_profile_key=key,
         persona_profile_version=version,
         canonical_target_id=f"persona:{key}",
-        persona_kind=PersonaProfileKind.MANAGED_PERSONA,
-        origin=SpecOrigin.MANAGED,
+        persona_kind=cast(Any, PersonaProfileKind.MANAGED_PERSONA),
+        origin=cast(Any, SpecOrigin.MANAGED),
         selection_source="test",
     )
 
@@ -100,16 +92,16 @@ def _capability_ref(
     key: str,
     *,
     version: int = 1,
-    capability_type: CapabilityType,
-    approval_mode: ApprovalMode,
+    capability_type: CapabilityType | str,
+    approval_mode: ApprovalMode | str,
     selection_source: str = "test",
 ) -> CapabilityRef:
     return CapabilityRef(
         capability_key=key,
         capability_version=version,
-        capability_type=capability_type,
+        capability_type=_normalize_capability_type(capability_type),
         selection_source=selection_source,
-        effective_approval_mode=approval_mode,
+        effective_approval_mode=_normalize_approval_mode(approval_mode),
         effective_config={},
     )
 
@@ -118,19 +110,31 @@ def _resolved_capability(
     key: str,
     *,
     version: int = 1,
-    capability_type: CapabilityType,
-    approval_mode: ApprovalMode,
+    capability_type: CapabilityType | str,
+    approval_mode: ApprovalMode | str,
     transport: str | None = None,
 ) -> ResolvedCapabilityRead:
     return ResolvedCapabilityRead(
         capability_key=key,
         capability_version=version,
-        capability_type=capability_type,
-        approval_mode=approval_mode,
+        capability_type=_normalize_capability_type(capability_type),
+        approval_mode=_normalize_approval_mode(approval_mode),
         transport=transport,
         lifecycle=None,
         effective_config={},
     )
+
+
+def _normalize_capability_type(value: CapabilityType | str) -> CapabilityType:
+    if isinstance(value, CapabilityType):
+        return value
+    return CapabilityType(value)
+
+
+def _normalize_approval_mode(value: ApprovalMode | str) -> ApprovalMode:
+    if isinstance(value, ApprovalMode):
+        return value
+    return ApprovalMode(value)
 
 
 def _workflow_step(
@@ -230,284 +234,6 @@ def _request(
         current_checkpoint=current_checkpoint,
         approvals=approvals,
     )
-
-
-class RecordingRunner:
-    def __init__(self, result: BacktestLangGraphResult) -> None:
-        self.result = result
-        self.requests: list[Any] = []
-
-    def run_cycle(self, request: Any) -> BacktestLangGraphResult:
-        self.requests.append(request)
-        return self.result
-
-
-def test_backtest_adapter_translates_to_runner_boundary_and_avoids_side_effects(
-    session_factory: sessionmaker[Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with session_factory() as session:
-        session.add_all(
-            [
-                _build_agent_spec(key="backtest_agent", version=1),
-                _build_workflow_spec(
-                    key="backtest_runtime_flow",
-                    version=1,
-                    execution_mode="structured_output",
-                    graph_definition={
-                        "entryStepKey": "analysis",
-                        "steps": [
-                            {
-                                "stepKey": "analysis",
-                                "agentSpecKey": "backtest_agent",
-                                "agentSpecVersion": 1,
-                            }
-                        ],
-                    },
-                ),
-            ]
-        )
-        session.commit()
-
-        monkeypatch.setattr(
-            session,
-            "commit",
-            lambda: (_ for _ in ()).throw(AssertionError("adapter must not commit")),
-        )
-        monkeypatch.setattr(
-            BacktestEngine,
-            "apply_cycle_trades",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("adapter must not apply trades")
-            ),
-        )
-        monkeypatch.setattr(
-            BacktestEngine,
-            "finalize",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("adapter must not finalize backtests")
-            ),
-        )
-        monkeypatch.setattr(
-            BacktestCycleService,
-            "_store_orchestration_snapshot",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("adapter must not write snapshot rows")
-            ),
-        )
-
-        runner = RecordingRunner(
-            BacktestLangGraphResult(
-                report_content="# Analysis\n\nUse the frozen prompt report.",
-                decisions=[
-                    TradeDecision(
-                        symbol="AAPL",
-                        action="BUY",
-                        quantity=1,
-                        reasoning="Momentum is improving.",
-                    )
-                ],
-                tool_call_trace=[
-                    {
-                        "call_index": 0,
-                        "tool_id": "ledger.report_lookup",
-                        "status": "success",
-                        "latency_ms": 4,
-                        "argument_hash": "a" * 64,
-                        "result_hash": "b" * 64,
-                    }
-                ],
-                approval_trace="not_required",
-            )
-        )
-        adapter = BacktestLangGraphExecutionAdapter(
-            session,
-            runner_factory=lambda _: cast(Any, runner),
-        )
-        snapshot = FrozenExecutionSnapshot(
-            execution_kind="workflow",
-            workflow_spec_key="backtest_runtime_flow",
-            workflow_spec_version=1,
-            agent_spec_key=None,
-            agent_spec_version=None,
-            inputs={
-                "prompt_report_slug": "prompt-77",
-                "prompt_report": "# Prompt\n\nPositions:\n- AAPL: 5 shares @ 180.00 USD\n",
-                "authored_entry_prompt_body": "# authored",
-                "compiled_entry_prompt_body": "# compiled",
-                "execution_context_body": "# context",
-                "full_user_prompt": "# full prompt",
-                "resolved_mentions_json": "[]",
-                "mentioned_target_outputs_json": "[]",
-                "cycle_market_data_json": "{}",
-            },
-            resolved_workflow_agent_refs=(
-                _workflow_step("analysis", "backtest_agent", agent_version=1),
-            ),
-            resolved_persona_profile_refs=(_persona_ref("persona.alpha"),),
-            resolved_capabilities=(
-                _resolved_capability(
-                    "ledger.report_lookup",
-                    capability_type=CapabilityType.TOOL,
-                    approval_mode=ApprovalMode.NOT_REQUIRED,
-                ),
-            ),
-            resolved_tool_versions=(
-                ResolvedToolVersionRead(tool_id="ledger.report_lookup", revision=1),
-            ),
-        )
-
-        result = adapter.execute(
-            _request(
-                snapshot,
-                caller_type="backtest",
-                caller_id=77,
-                caller_scope_key="2024-07-01",
-            )
-        )
-
-        runner_request = runner.requests[0]
-        assert runner_request.backtest_id == 77
-        assert runner_request.cycle_date == date(2024, 7, 1)
-        assert runner_request.prompt_report_slug == "prompt-77"
-        assert runner_request.authored_entry_prompt_body == "# authored"
-        assert runner_request.execution_mode == "structured_output"
-        assert isinstance(runner_request.tool_runtime, BacktestLangGraphToolRuntime)
-        assert runner_request.tool_runtime.tool_ids == ("ledger.report_lookup",)
-        assert result.status == "SUCCEEDED"
-        assert result.artifact_patch is not None
-        assert (
-            result.artifact_patch.report_markdown == "# Analysis\n\nUse the frozen prompt report."
-        )
-        assert result.artifact_patch.final_output == {
-            "analysis_report": "# Analysis\n\nUse the frozen prompt report.",
-            "trade_decisions": [
-                {
-                    "symbol": "AAPL",
-                    "action": "BUY",
-                    "quantity": 1,
-                    "targetPrice": None,
-                    "reasoning": "Momentum is improving.",
-                }
-            ],
-        }
-        assert result.trace_events[0].event_type == "STEP_STARTED"
-        assert result.trace_events[1].event_type == "TOOL_CALLED"
-        assert result.trace_events[-1].event_type == "STEP_COMPLETED"
-
-
-def test_backtest_adapter_waits_for_required_connector_and_resume_reuses_checkpoint(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        session.add_all(
-            [
-                _build_agent_spec(key="backtest_agent", version=1),
-                _build_workflow_spec(
-                    key="backtest_tool_flow",
-                    version=1,
-                    execution_mode="tool_enabled",
-                    graph_definition={
-                        "entryStepKey": "analysis",
-                        "steps": [
-                            {
-                                "stepKey": "analysis",
-                                "agentSpecKey": "backtest_agent",
-                                "agentSpecVersion": 1,
-                            }
-                        ],
-                    },
-                ),
-            ]
-        )
-        session.commit()
-
-        runner = RecordingRunner(
-            BacktestLangGraphResult(
-                report_content="# Approved",
-                decisions=[],
-                tool_call_trace=[],
-                approval_trace=[
-                    {
-                        "call_index": 0,
-                        "tool_id": "ledger.mcp.market_data",
-                        "status": "approved",
-                        "kind": "connector",
-                        "transport": "mcp",
-                    }
-                ],
-            )
-        )
-        adapter = BacktestLangGraphExecutionAdapter(
-            session,
-            runner_factory=lambda _: cast(Any, runner),
-        )
-        snapshot = FrozenExecutionSnapshot(
-            execution_kind="workflow",
-            workflow_spec_key="backtest_tool_flow",
-            workflow_spec_version=1,
-            agent_spec_key=None,
-            agent_spec_version=None,
-            inputs={
-                "prompt_report_slug": "prompt-88",
-                "prompt_report": "# Prompt\n\nPositions:\n- NVDA: 3 shares @ 1200.00 USD\n",
-                "cycle_market_data_json": json.dumps({"NVDA": {"close": "1200.00"}}),
-            },
-            resolved_workflow_agent_refs=(
-                _workflow_step("analysis", "backtest_agent", agent_version=1),
-            ),
-            resolved_capabilities=(
-                _resolved_capability(
-                    "ledger.mcp.market_data",
-                    capability_type=CapabilityType.CONNECTOR,
-                    approval_mode=ApprovalMode.REQUIRED,
-                    transport="mcp",
-                ),
-            ),
-            resolved_connector_versions=(
-                ResolvedConnectorVersionRead(connector_id="ledger.mcp.market_data", revision=1),
-            ),
-        )
-
-        waiting = adapter.execute(
-            _request(
-                snapshot,
-                caller_type="backtest",
-                caller_id=88,
-                caller_scope_key="2024-07-08",
-            )
-        )
-
-        assert waiting.status == "WAITING_APPROVAL"
-        assert runner.requests == []
-        assert waiting.approval_requests[0].step_key == "tool_runtime"
-        assert waiting.approval_requests[0].capability_key == "ledger.mcp.market_data"
-        checkpoint = _checkpoint(
-            waiting.checkpoints[0].step_key,
-            waiting.checkpoints[0].serialized_state,
-        )
-        resumed = adapter.execute(
-            _request(
-                snapshot,
-                dispatch_mode="resume",
-                caller_type="backtest",
-                caller_id=88,
-                caller_scope_key="2024-07-08",
-                approvals=(_approved_approval("tool_runtime", "ledger.mcp.market_data"),),
-                checkpoints=(checkpoint,),
-                current_checkpoint=checkpoint,
-                approval_summary=_approval_summary(total_count=1, approved_count=1),
-            )
-        )
-
-        runner_request = runner.requests[0]
-        connector_adapter = runner_request.tool_runtime.adapters[0]
-        assert connector_adapter.tool_id == "ledger.mcp.market_data"
-        assert connector_adapter.approval_required is True
-        assert connector_adapter.approval_granted is True
-        assert resumed.status == "SUCCEEDED"
-        assert resumed.artifact_patch is not None
-        assert resumed.artifact_patch.report_markdown == "# Approved"
 
 
 def test_generic_workflow_adapter_executes_from_frozen_step_plan_only(

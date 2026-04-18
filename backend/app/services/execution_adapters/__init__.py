@@ -1,4 +1,3 @@
-from app.services.execution_adapters.backtest_langgraph import BacktestLangGraphExecutionAdapter
 from app.services.execution_adapters.contracts import (
     ExecutionAdapter,
     ExecutionAdapterDispatchMode,
@@ -15,7 +14,6 @@ from app.services.execution_adapters.generic_workflow import GenericWorkflowExec
 from app.services.execution_adapters.single_agent import SingleAgentExecutionAdapter
 
 __all__ = [
-    "BacktestLangGraphExecutionAdapter",
     "ExecutionAdapter",
     "ExecutionAdapterDispatchMode",
     "ExecutionAdapterRequest",

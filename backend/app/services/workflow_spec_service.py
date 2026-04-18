@@ -27,7 +27,7 @@ class WorkflowSpecService:
         status_filter: SpecLifecycleStatus | None = None,
     ) -> WorkflowSpecListRead:
         items = self.repository.list_latest_versions(
-            origin=origin.value if origin is not None else None,
+            origin=origin.value if origin is not None else SpecOrigin.MANAGED.value,
             status=status_filter.value if status_filter is not None else None,
         )
         return WorkflowSpecListRead(items=[WorkflowSpecRead.model_validate(item) for item in items])

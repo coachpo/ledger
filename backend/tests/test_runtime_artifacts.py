@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
-from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.backtest import Backtest
-from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
-from app.models.balance import Balance
-from app.models.portfolio import Portfolio
 from app.models.runtime_approval import RuntimeApproval
 from app.models.runtime_run import RuntimeRun
 from app.models.runtime_run_artifact import RuntimeRunArtifact
 from app.models.runtime_trace_event import RuntimeTraceEvent
-from app.models.text_template import TextTemplate
-from app.schemas.runtime import RuntimeTraceEventType
 from app.services.agent_runtime_service import AgentRuntimeService
 from app.services.tryout_service import TryoutService
 
@@ -176,47 +168,6 @@ def _build_artifact(
     )
 
 
-def _create_backtest(session: Session, *, name: str) -> Backtest:
-    portfolio = Portfolio(name=f"{name} Portfolio", slug=f"{name}_portfolio", base_currency="USD")
-    session.add(portfolio)
-    session.flush()
-
-    balance = Balance(
-        portfolio_id=portfolio.id,
-        label="Cash",
-        operation_type="DEPOSIT",
-        amount=Decimal("1000.00"),
-        currency="USD",
-    )
-    template = TextTemplate(name=f"{name} Template", content="# Runtime Artifact Test")
-    session.add_all([balance, template])
-    session.flush()
-
-    backtest = Backtest(
-        portfolio_id=portfolio.id,
-        deposit_balance_id=balance.id,
-        name=name,
-        orchestration_pattern_key="seeded_internal_backtest_v1",
-        execution_owner="runtime_v2",
-        status="RUNNING",
-        frequency="DAILY",
-        start_date=date(2024, 1, 2),
-        end_date=date(2024, 1, 31),
-        total_cycles=5,
-        completed_cycles=0,
-        template_id=template.id,
-        webhook_url="internal://ledger",
-        webhook_timeout=600,
-        price_mode="CLOSING_PRICE",
-        commission_mode="ZERO",
-        commission_value=Decimal("0"),
-        benchmark_symbols=["^GSPC"],
-    )
-    session.add(backtest)
-    session.flush()
-    return backtest
-
-
 def test_runtime_artifact_and_tryout_reads_share_canonical_runtime_run_summaries(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -359,7 +310,7 @@ def test_runtime_artifact_and_tryout_reads_share_canonical_runtime_run_summaries
         params={
             "runId": run.id,
             "capabilityKey": "connector.tryout_review",
-            "eventType": RuntimeTraceEventType.APPROVAL_REQUESTED.value,
+            "eventType": "APPROVAL_REQUESTED",
         },
     )
     assert trace_events_response.status_code == 200, trace_events_response.json()
@@ -379,23 +330,22 @@ def test_runtime_artifact_and_tryout_reads_share_canonical_runtime_run_summaries
     ]
 
 
-def test_runtime_artifact_reads_stay_native_in_multi_attempt_backtest_history(
+def test_runtime_artifact_reads_stay_native_in_multi_attempt_history_for_studio_callers(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     cycle_scope_key = "2026-04-13"
+    caller_id = 4242
 
     with session_factory() as session:
-        backtest = _create_backtest(session, name="runtime_attempts")
-
         first_run = _build_workflow_run(
-            caller_type="backtest",
-            caller_id=backtest.id,
+            caller_type="studio",
+            caller_id=caller_id,
             caller_scope_key=cycle_scope_key,
             attempt_number=1,
             status="FAILED",
             input_hash_seed="i",
-            workflow_spec_key="seeded_internal_backtest_v1",
+            workflow_spec_key="alpha_workflow",
             trace_summary={
                 "eventCount": 7,
                 "toolCallCount": 2,
@@ -411,13 +361,13 @@ def test_runtime_artifact_reads_stay_native_in_multi_attempt_backtest_history(
             },
         )
         second_run = _build_workflow_run(
-            caller_type="backtest",
-            caller_id=backtest.id,
+            caller_type="studio",
+            caller_id=caller_id,
             caller_scope_key=cycle_scope_key,
             attempt_number=2,
             status="SUCCEEDED",
             input_hash_seed="j",
-            workflow_spec_key="seeded_internal_backtest_v1",
+            workflow_spec_key="alpha_workflow",
             trace_summary={
                 "eventCount": 19,
                 "toolCallCount": 6,
@@ -458,53 +408,6 @@ def test_runtime_artifact_reads_stay_native_in_multi_attempt_backtest_history(
                     final_output={"attempt": "two", "result": "buy"},
                     terminal_error_code=None,
                     terminal_error_message=None,
-                ),
-                BacktestOrchestrationSnapshot(
-                    backtest_id=backtest.id,
-                    cycle_date=date.fromisoformat(cycle_scope_key),
-                    prompt_report_slug="snapshot-report",
-                    orchestration_pattern_key="seeded_internal_backtest_v1",
-                    pattern_policy_version=1,
-                    entry_prompt_hash="m" * 64,
-                    full_user_prompt_hash="n" * 64,
-                    execution_mode="structured_output",
-                    resolved_mentions=[
-                        {
-                            "original_text": "@legacy_snapshot",
-                            "handle": "legacy_snapshot",
-                            "canonical_target_id": "character:legacy_snapshot",
-                            "target_type": "character",
-                            "role_id": 31,
-                            "role_version": 2,
-                            "character_id": 44,
-                            "character_version": 7,
-                            "mention_order": 0,
-                        }
-                    ],
-                    mentioned_target_outputs=[
-                        {
-                            "handle": "legacy_snapshot",
-                            "canonical_target_id": "character:legacy_snapshot",
-                            "target_type": "character",
-                            "output_markdown": "Legacy snapshot output",
-                        }
-                    ],
-                    resolved_builtin_versions=[],
-                    resolved_role_versions=[
-                        {"canonical_target_id": "role:legacy", "role_id": 31, "version": 2}
-                    ],
-                    resolved_character_versions=[
-                        {
-                            "canonical_target_id": "character:legacy_snapshot",
-                            "character_id": 44,
-                            "version": 7,
-                        }
-                    ],
-                    resolved_bundle_versions=[],
-                    resolved_tool_versions=[],
-                    resolved_connector_versions=[],
-                    tool_call_trace=[{"tool": "legacy.lookup"}],
-                    approval_trace=[{"status": "approved"}],
                 ),
             ]
         )

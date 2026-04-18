@@ -11,6 +11,7 @@ from app.schemas.runtime import (
     RuntimeArtifactRead,
     RuntimeCallerType,
     RuntimeExecutionKind,
+    RuntimeRunCallerType,
     RuntimeRunCreate,
     RuntimeRunCreated,
     RuntimeRunRead,
@@ -97,7 +98,7 @@ class TryoutService:
 
     @staticmethod
     def _ensure_tryout_run(run: RuntimeRunRead) -> None:
-        if run.caller_type != RuntimeCallerType.TRYOUT:
+        if run.caller_type != RuntimeRunCallerType.TRYOUT:
             raise not_found_error("Tryout")
 
     @staticmethod

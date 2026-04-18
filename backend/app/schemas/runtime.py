@@ -59,6 +59,12 @@ class ApprovalMode(StrEnum):
 
 
 class RuntimeCallerType(StrEnum):
+    TRYOUT = "tryout"
+    STUDIO = "studio"
+    API = "api"
+
+
+class RuntimeRunCallerType(StrEnum):
     BACKTEST = "backtest"
     TRYOUT = "tryout"
     STUDIO = "studio"
@@ -104,11 +110,6 @@ class RuntimeTraceEventType(StrEnum):
     RUN_CANCELLED = "RUN_CANCELLED"
     RUN_EXPIRED = "RUN_EXPIRED"
     WARNING_EMITTED = "WARNING_EMITTED"
-
-
-class RuntimeFlagChangeResult(StrEnum):
-    APPLIED = "applied"
-    REJECTED = "rejected"
 
 
 class TraceSummary(CamelModel):
@@ -347,7 +348,7 @@ class RuntimeRunCreated(CamelModel):
 class RuntimeRunListItem(CamelModel):
     run_id: int = Field(validation_alias=AliasChoices("run_id", "runId", "id"), ge=1)
     status: RuntimeRunStatus
-    caller_type: RuntimeCallerType
+    caller_type: RuntimeRunCallerType
     caller_id: int | None = None
     caller_scope_key: str | None = None
     caller_identity_key: str | None = None
@@ -476,7 +477,7 @@ class RuntimeApprovalListItem(CamelModel):
     status: RuntimeApprovalStatus
     capability_key: str
     step_key: str
-    caller_type: RuntimeCallerType
+    caller_type: RuntimeRunCallerType
     caller_id: int | None = None
     created_at: datetime
 
@@ -536,7 +537,7 @@ class RuntimeTraceEventListItem(CamelModel):
     event_type: RuntimeTraceEventType
     step_key: str | None = None
     capability_key: str | None = None
-    caller_type: RuntimeCallerType
+    caller_type: RuntimeRunCallerType
     caller_id: int | None = None
     created_at: datetime
 
@@ -582,63 +583,6 @@ class RuntimeCheckpointRead(CamelModel):
     @classmethod
     def validate_datetimes(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
-
-
-class RuntimeControlFlagRead(CamelModel):
-    flag_key: str
-    enabled: bool
-    updated_at: datetime
-
-    @field_validator("flag_key", mode="before")
-    @classmethod
-    def validate_flag_key(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Flag key")
-
-    @field_validator("updated_at")
-    @classmethod
-    def validate_updated_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RuntimeControlFlagListRead(CamelModel):
-    items: list[RuntimeControlFlagRead]
-
-
-class RuntimeControlFlagUpdateRequest(CamelModel):
-    enabled: bool
-    actor: str
-    reason: str
-
-    @field_validator("actor", "reason", mode="before")
-    @classmethod
-    def validate_required_text(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Value")
-
-
-class RuntimeFlagChangeEventRead(CamelModel):
-    event_id: int = Field(validation_alias=AliasChoices("event_id", "eventId", "id"), ge=1)
-    flag_key: str
-    old_enabled: bool
-    new_enabled: bool
-    actor: str
-    reason: str
-    result: RuntimeFlagChangeResult
-    created_at: datetime
-
-    @field_validator("flag_key", "actor", "reason", mode="before")
-    @classmethod
-    def validate_required_text(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Value")
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RuntimeFlagChangeEventListRead(CamelModel):
-    items: list[RuntimeFlagChangeEventRead]
-    next_cursor: str | None = None
 
 
 PersonaProfileRef.model_rebuild()

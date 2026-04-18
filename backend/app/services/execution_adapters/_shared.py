@@ -201,7 +201,7 @@ def require_text_input(inputs: Mapping[str, str], field_name: str) -> str:
     if value:
         return value
     raise business_rule_error(
-        "runtime_backtest_input_missing",
+        "runtime_input_missing",
         f"Frozen runtime input {field_name!r} is required",
     )
 
@@ -223,7 +223,7 @@ def load_json_input(
         return json.loads(raw_value)
     except json.JSONDecodeError as exc:
         raise business_rule_error(
-            "runtime_backtest_input_invalid",
+            "runtime_input_invalid",
             f"Frozen runtime input {field_name!r} must be valid JSON",
         ) from exc
 

@@ -181,7 +181,11 @@ def test_workflow_spec_activate_demotes_existing_active_without_duplicate_active
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    created = create_workflow_spec_draft(client, key="seeded_internal_backtest_v1")
+    with session_factory() as session:
+        session.add(_build_workflow_spec(key="workflow_reactivation", version=1, status="ACTIVE"))
+        session.commit()
+
+    created = create_workflow_spec_draft(client, key="workflow_reactivation")
 
     response = client.post(f"/api/v2/workflow-specs/{created['id']}/activate")
     assert response.status_code == 200, response.json()
@@ -191,12 +195,12 @@ def test_workflow_spec_activate_demotes_existing_active_without_duplicate_active
     with session_factory() as session:
         rows = session.scalars(
             select(WorkflowSpec)
-            .where(WorkflowSpec.key == "seeded_internal_backtest_v1")
+            .where(WorkflowSpec.key == "workflow_reactivation")
             .order_by(WorkflowSpec.version.asc())
         ).all()
 
     assert [(row.origin, row.version, row.status) for row in rows] == [
-        ("seeded", 1, "DEPRECATED"),
+        ("managed", 1, "DEPRECATED"),
         ("managed", 2, "ACTIVE"),
     ]
 
@@ -258,3 +262,39 @@ def test_workflow_spec_deprecate_and_archive_transitions(
     archive_response = client.post(f"/api/v2/workflow-specs/{spec_id}/archive")
     assert archive_response.status_code == 200, archive_response.json()
     assert archive_response.json()["status"] == "ARCHIVED"
+
+
+def test_workflow_spec_list_defaults_hide_seeded_specs_but_explicit_origin_can_read_them(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        session.add_all(
+            [
+                _build_workflow_spec(
+                    key="legacy_seeded_workflow",
+                    version=1,
+                    origin="seeded",
+                    status="ARCHIVED",
+                ),
+                _build_workflow_spec(
+                    key="managed_visible_workflow",
+                    version=1,
+                    origin="managed",
+                    status="ACTIVE",
+                ),
+            ]
+        )
+        session.commit()
+
+    default_list_response = client.get("/api/v2/workflow-specs")
+    assert default_list_response.status_code == 200, default_list_response.json()
+    assert [item["key"] for item in default_list_response.json()["items"]] == [
+        "managed_visible_workflow"
+    ]
+
+    seeded_list_response = client.get("/api/v2/workflow-specs", params={"origin": "seeded"})
+    assert seeded_list_response.status_code == 200, seeded_list_response.json()
+    assert [item["key"] for item in seeded_list_response.json()["items"]] == [
+        "legacy_seeded_workflow"
+    ]

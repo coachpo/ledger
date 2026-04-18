@@ -3,11 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import ApiError
 from app.core.formatting import utcnow
 from app.models.agent_spec import AgentSpec
 from app.models.runtime_approval import RuntimeApproval
@@ -15,6 +13,7 @@ from app.models.runtime_checkpoint import RuntimeCheckpoint
 from app.models.runtime_run import RuntimeRun
 from app.models.runtime_run_artifact import RuntimeRunArtifact
 from app.models.runtime_trace_event import RuntimeTraceEvent
+from app.models.workflow_spec import WorkflowSpec
 from app.schemas.tryout import TryoutExecute
 from app.services.tryout_service import TryoutService
 
@@ -73,6 +72,34 @@ def _build_tryout_run(
             "deniedCount": 0,
             "expiredCount": 0,
         },
+    )
+
+
+def _build_workflow_spec(
+    *,
+    key: str,
+    version: int = 1,
+    origin: str = "managed",
+    status: str = "ACTIVE",
+) -> WorkflowSpec:
+    return WorkflowSpec(
+        key=key,
+        version=version,
+        origin=origin,
+        status=status,
+        name=f"{key}-{version}",
+        graph_definition={
+            "entryStepKey": "analysis",
+            "steps": [{"stepKey": "analysis", "agentSpecKey": "position_analyst"}],
+        },
+        final_output_contract={"kind": "json", "schema": None, "description": "Output"},
+        mention_policy={"version": 1, "allowCharacterPersonas": True, "allowedBuiltinHandles": []},
+        execution_mode="structured_output",
+        default_tool_ids=[],
+        allowed_capability_bundle_keys=[],
+        connector_ids=[],
+        review_mode=None,
+        approval_policy_overrides=[],
     )
 
 
@@ -283,25 +310,27 @@ def test_persist_tryout_waiting_approval_keeps_same_identity_and_attached_state(
         )
 
 
-def test_create_tryout_rejects_seeded_backtest_workflow_before_runtime_rows_exist(
+def test_create_tryout_accepts_matching_managed_workflow_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
+        session.add(_build_workflow_spec(key="tryout_workflow", origin="managed"))
+        session.commit()
+
         service = TryoutService(session)
         assert _runtime_row_counts(session) == (0, 0, 0)
 
-        with pytest.raises(ApiError, match="rollback-window seeded backtest workflows") as exc_info:
-            service.create_tryout(
-                TryoutExecute.model_validate(
-                    {
-                        "workflowSpecKey": "seeded_internal_backtest_v1",
-                        "inputs": {"ticker": "AAPL"},
-                    }
-                )
+        created = service.create_tryout(
+            TryoutExecute.model_validate(
+                {
+                    "workflowSpecKey": "tryout_workflow",
+                    "inputs": {"ticker": "AAPL"},
+                }
             )
+        )
 
-        assert exc_info.value.code == "tryout_seeded_backtest_workflow_not_allowed"
-        assert _runtime_row_counts(session) == (0, 0, 0)
+        assert created.status == "SUCCEEDED"
+        assert _runtime_row_counts(session) == (1, 1, 4)
 
 
 def test_persist_tryout_is_idempotent(session_factory: sessionmaker[Session]) -> None:

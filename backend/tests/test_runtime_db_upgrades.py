@@ -1,31 +1,22 @@
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
-
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 
 from app.db.session import init_db
 from app.db.upgrades import upgrade_legacy_schema
-from app.langgraph.seeds import (
-    BACKTEST_PATTERN_SPECS,
+from app.models.agent_spec import AgentSpec
+from app.models.capability_registry_entry import CapabilityRegistryEntry
+from app.models.persona_profile import PersonaProfile
+from app.models.runtime_run import RuntimeRun
+from app.models.workflow_spec import WorkflowSpec
+from app.services.runtime_seed_catalog import (
     SEEDED_AGENT_SPECS,
     SEEDED_BUILTIN_SPECS,
     SEEDED_CAPABILITY_BUNDLE_SPECS,
     SEEDED_CONNECTOR_SPECS,
     SEEDED_TOOL_SPECS,
 )
-from app.models.agent_spec import AgentSpec
-from app.models.backtest import Backtest
-from app.models.backtest_orchestration_snapshot import BacktestOrchestrationSnapshot
-from app.models.balance import Balance
-from app.models.capability_registry_entry import CapabilityRegistryEntry
-from app.models.persona_profile import PersonaProfile
-from app.models.portfolio import Portfolio
-from app.models.text_template import TextTemplate
-from app.models.workflow_spec import WorkflowSpec
-from app.services.runtime_control_service import RuntimeControlService
 
 RUNTIME_V2_TABLE_NAMES = {
     "agent_specs",
@@ -38,9 +29,26 @@ RUNTIME_V2_TABLE_NAMES = {
     "runtime_checkpoints",
     "runtime_run_artifacts",
     "persona_projection_events",
-    "runtime_control_flags",
-    "runtime_flag_change_events",
 }
+
+_SEEDED_BUILTIN_BY_KEY = {
+    builtin.canonical_target_id: builtin.description for builtin in SEEDED_BUILTIN_SPECS
+}
+
+_SEEDED_CAPABILITY_BY_KEY = {
+    **{tool.tool_id: tool.description for tool in SEEDED_TOOL_SPECS},
+    **{bundle.bundle_key: bundle.description for bundle in SEEDED_CAPABILITY_BUNDLE_SPECS},
+    **{connector.connector_id: connector.description for connector in SEEDED_CONNECTOR_SPECS},
+}
+
+_DECISION_WRITER_LEGACY_BACKTEST_INSTRUCTIONS = (
+    "Render the final backtest analysis report and translate reviewed analyses into "
+    "Ledger trade decisions."
+)
+_CYCLE_CONTEXT_LOOKUP_LEGACY_DESCRIPTION = (
+    "Read prepared cycle prompt and runtime artifacts from the historical "
+    "simulation execution path."
+)
 
 
 def test_init_db_creates_runtime_v2_tables_and_indexes(database_url: str) -> None:
@@ -59,19 +67,11 @@ def test_init_db_creates_runtime_v2_tables_and_indexes(database_url: str) -> Non
                     "WHERE schemaname = current_schema() AND tablename = 'agent_specs'"
                 )
             }
-            runtime_run_indexes = {
-                row[0]
-                for row in connection.exec_driver_sql(
-                    "SELECT indexname FROM pg_indexes "
-                    "WHERE schemaname = current_schema() AND tablename = 'runtime_runs'"
-                )
-            }
 
         assert {
             "uq_agent_specs_active_key",
             "uq_agent_specs_draft_key",
         } <= agent_spec_indexes
-        assert "uq_runtime_runs_active_backtest_cycle" in runtime_run_indexes
         assert {
             constraint["name"] for constraint in inspector.get_unique_constraints("runtime_runs")
         } >= {"uq_runtime_runs_caller_scope_attempt"}
@@ -92,7 +92,72 @@ def test_upgrade_legacy_schema_recreates_missing_runtime_v2_tables(session_facto
     assert RUNTIME_V2_TABLE_NAMES <= table_names
 
 
-def test_init_db_is_idempotent_and_preserves_existing_runtime_and_snapshot_rows(
+def test_init_db_archives_legacy_seeded_workflow_specs(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    WorkflowSpec(
+                        key="seeded_internal_backtest_v1",
+                        version=1,
+                        origin="seeded",
+                        status="ACTIVE",
+                        name="Legacy seeded backtest workflow",
+                        graph_definition={"steps": []},
+                        final_output_contract={"kind": "json", "schema": {}, "description": ""},
+                        mention_policy={
+                            "version": 1,
+                            "allowCharacterPersonas": False,
+                            "allowedBuiltinHandles": [],
+                        },
+                        execution_mode="structured_output",
+                        default_tool_ids=[],
+                        allowed_capability_bundle_keys=[],
+                        connector_ids=[],
+                        review_mode=None,
+                        approval_policy_overrides=[],
+                    ),
+                    WorkflowSpec(
+                        key="managed_runtime_workflow",
+                        version=1,
+                        origin="managed",
+                        status="ACTIVE",
+                        name="Managed runtime workflow",
+                        graph_definition={"steps": []},
+                        final_output_contract={"kind": "json", "schema": {}, "description": ""},
+                        mention_policy={
+                            "version": 1,
+                            "allowCharacterPersonas": True,
+                            "allowedBuiltinHandles": [],
+                        },
+                        execution_mode="structured_output",
+                        default_tool_ids=[],
+                        allowed_capability_bundle_keys=[],
+                        connector_ids=[],
+                        review_mode=None,
+                        approval_policy_overrides=[],
+                    ),
+                ]
+            )
+            session.commit()
+
+        init_db(database_url)
+
+        with Session(engine) as session:
+            rows = session.scalars(select(WorkflowSpec).order_by(WorkflowSpec.key.asc())).all()
+
+        assert [(row.key, row.origin, row.status) for row in rows] == [
+            ("managed_runtime_workflow", "managed", "ACTIVE"),
+            ("seeded_internal_backtest_v1", "seeded", "ARCHIVED"),
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_init_db_is_idempotent_and_preserves_existing_runtime_rows(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -118,76 +183,25 @@ def test_init_db_is_idempotent_and_preserves_existing_runtime_and_snapshot_rows(
                     default_persona_profile_keys=[],
                 )
             )
-
-            portfolio = Portfolio(
-                name="Idempotent Portfolio",
-                slug="idempotent_portfolio",
-                base_currency="USD",
-            )
-            session.add(portfolio)
-            session.flush()
-
-            balance = Balance(
-                portfolio_id=portfolio.id,
-                label="Cash",
-                operation_type="DEPOSIT",
-                amount=Decimal("1000.00"),
-                currency="USD",
-            )
-            template = TextTemplate(name="Idempotent Template", content="# Snapshot")
-            session.add_all([balance, template])
-            session.flush()
-
-            backtest = Backtest(
-                portfolio_id=portfolio.id,
-                deposit_balance_id=balance.id,
-                name="Idempotent Backtest",
-                status="RUNNING",
-                frequency="DAILY",
-                start_date=date(2024, 1, 2),
-                end_date=date(2024, 1, 31),
-                total_cycles=5,
-                completed_cycles=1,
-                template_id=template.id,
-                webhook_url="http://localhost:5678/webhook/idempotent",
-                webhook_timeout=600,
-                price_mode="CLOSING_PRICE",
-                commission_mode="ZERO",
-                commission_value=Decimal("0"),
-                benchmark_symbols=["^GSPC"],
-            )
-            session.add(backtest)
-            session.flush()
-
             session.add(
-                BacktestOrchestrationSnapshot(
-                    backtest_id=backtest.id,
-                    cycle_date=date(2024, 6, 21),
-                    prompt_report_slug="backtest_1_prompt_20240621",
-                    orchestration_pattern_key="seeded_internal_backtest_v1",
-                    pattern_policy_version=1,
-                    entry_prompt_hash="1" * 64,
-                    full_user_prompt_hash="2" * 64,
-                    execution_mode="structured_output",
-                    resolved_mentions=[{"handle": "librarian"}],
-                    mentioned_target_outputs=[],
-                    resolved_builtin_versions=[],
-                    resolved_role_versions=[],
-                    resolved_character_versions=[],
-                    resolved_bundle_versions=[],
-                    resolved_tool_versions=[],
-                    resolved_connector_versions=[],
-                    tool_call_trace=[],
-                    approval_trace="not_required",
+                RuntimeRun(
+                    caller_type="tryout",
+                    caller_id=None,
+                    execution_kind="workflow",
+                    workflow_spec_key="runtime_idempotent_workflow",
+                    workflow_spec_version=1,
+                    agent_spec_key=None,
+                    agent_spec_version=None,
+                    caller_scope_key=None,
+                    caller_identity_key=None,
+                    attempt_number=1,
+                    status="QUEUED",
+                    input_hash="a" * 64,
+                    output_hash=None,
+                    retention_class="persistent",
                 )
             )
             session.commit()
-
-            RuntimeControlService(session).set_backtest_runtime_v2_enabled(
-                enabled=True,
-                actor="test",
-                reason="preserve enabled runtime flag across init",
-            )
 
         init_db(database_url)
 
@@ -196,28 +210,74 @@ def test_init_db_is_idempotent_and_preserves_existing_runtime_and_snapshot_rows(
                 "SELECT "
                 "(SELECT COUNT(*) FROM agent_specs WHERE origin = 'managed'), "
                 "(SELECT COUNT(*) FROM agent_specs WHERE origin = 'seeded'), "
-                "(SELECT COUNT(*) FROM runtime_control_flags), "
-                "(SELECT COUNT(*) FROM backtest_orchestration_snapshots), "
-                "(SELECT enabled FROM runtime_control_flags "
-                "WHERE flag_key = 'AGENT_RUNTIME_V2_BACKTESTS_ENABLED'), "
+                "(SELECT COUNT(*) FROM runtime_runs), "
                 "(SELECT COUNT(*) FROM pg_indexes "
                 "WHERE schemaname = current_schema() "
-                "AND indexname = 'uq_runtime_runs_active_backtest_cycle')"
-            ).one()
-            snapshot_row = connection.exec_driver_sql(
-                "SELECT prompt_report_slug, orchestration_pattern_key, approval_trace "
-                "FROM backtest_orchestration_snapshots "
-                "WHERE cycle_date = DATE '2024-06-21'"
+                "AND indexname = 'uq_runtime_runs_caller_scope_attempt')"
             ).one()
 
-        assert counts == (1, len(SEEDED_AGENT_SPECS), 1, 1, True, 1)
-        assert snapshot_row == (
-            "backtest_1_prompt_20240621",
-            "seeded_internal_backtest_v1",
-            "not_required",
-        )
+        assert counts == (1, len(SEEDED_AGENT_SPECS), 1, 1)
     finally:
         engine.dispose()
+
+
+def test_init_db_rewrites_known_legacy_seeded_runtime_text_drift(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        decision_writer = next(
+            agent for agent in SEEDED_AGENT_SPECS if agent.key == "decision_writer"
+        )
+
+        with Session(engine) as session:
+            seeded_agent_row = session.scalar(
+                select(AgentSpec).where(
+                    AgentSpec.key == decision_writer.key,
+                    AgentSpec.version == 1,
+                    AgentSpec.origin == "seeded",
+                )
+            )
+            seeded_capability_row = session.scalar(
+                select(CapabilityRegistryEntry).where(
+                    CapabilityRegistryEntry.key == "ledger.cycle_context_lookup",
+                    CapabilityRegistryEntry.version == 1,
+                    CapabilityRegistryEntry.origin == "seeded",
+                )
+            )
+            assert seeded_agent_row is not None
+            assert seeded_capability_row is not None
+            seeded_agent_row.instructions = _DECISION_WRITER_LEGACY_BACKTEST_INSTRUCTIONS
+            seeded_capability_row.description = _CYCLE_CONTEXT_LOOKUP_LEGACY_DESCRIPTION
+            session.commit()
+
+        init_db(database_url)
+
+        with Session(engine) as session:
+            rewritten_agent_row = session.scalar(
+                select(AgentSpec).where(
+                    AgentSpec.key == decision_writer.key,
+                    AgentSpec.version == 1,
+                    AgentSpec.origin == "seeded",
+                )
+            )
+            rewritten_capability_row = session.scalar(
+                select(CapabilityRegistryEntry).where(
+                    CapabilityRegistryEntry.key == "ledger.cycle_context_lookup",
+                    CapabilityRegistryEntry.version == 1,
+                    CapabilityRegistryEntry.origin == "seeded",
+                )
+            )
+            assert rewritten_agent_row is not None
+            assert rewritten_capability_row is not None
+            assert rewritten_agent_row.instructions == decision_writer.system_prompt
+            assert (
+                rewritten_capability_row.description
+                == _SEEDED_CAPABILITY_BY_KEY["ledger.cycle_context_lookup"]
+            )
+    finally:
+        engine.dispose()
+
 
 
 def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
@@ -227,7 +287,6 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
     engine = create_engine(database_url, future=True)
 
     seeded_agent = SEEDED_AGENT_SPECS[0]
-    seeded_workflow = BACKTEST_PATTERN_SPECS[0]
     seeded_builtin = SEEDED_BUILTIN_SPECS[0]
     seeded_connector = SEEDED_CONNECTOR_SPECS[0]
 
@@ -252,11 +311,11 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
                         default_persona_profile_keys=[],
                     ),
                     WorkflowSpec(
-                        key=seeded_workflow.key,
+                        key="managed_runtime_workflow",
                         version=2,
                         origin="managed",
                         status="DRAFT",
-                        name="Managed seeded workflow draft",
+                        name="Managed runtime workflow draft",
                         graph_definition={
                             "kind": "managed_workflow",
                             "steps": [
@@ -273,7 +332,7 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
                             "description": "Managed draft contract",
                         },
                         mention_policy={
-                            "version": seeded_workflow.mention_policy.version,
+                            "version": 1,
                             "allow_characters": True,
                             "allowed_builtin_handles": ["librarian"],
                         },
@@ -351,9 +410,14 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
             assert len(
                 session.scalars(select(AgentSpec).where(AgentSpec.origin == "seeded")).all()
             ) == len(SEEDED_AGENT_SPECS)
-            assert len(
-                session.scalars(select(WorkflowSpec).where(WorkflowSpec.origin == "seeded")).all()
-            ) == len(BACKTEST_PATTERN_SPECS)
+            assert (
+                len(
+                    session.scalars(
+                        select(WorkflowSpec).where(WorkflowSpec.origin == "seeded")
+                    ).all()
+                )
+                == 0
+            )
             assert len(
                 session.scalars(
                     select(PersonaProfile).where(PersonaProfile.origin == "seeded")
@@ -378,7 +442,7 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
             ).all()
             workflow_rows = session.scalars(
                 select(WorkflowSpec)
-                .where(WorkflowSpec.key == seeded_workflow.key)
+                .where(WorkflowSpec.key == "managed_runtime_workflow")
                 .order_by(WorkflowSpec.version.asc())
             ).all()
             persona_rows = session.scalars(
@@ -400,10 +464,9 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
         assert agent_rows[1].model_policy == {"model": "gpt-5.4-mini"}
 
         assert [(row.version, row.origin, row.status) for row in workflow_rows] == [
-            (1, "seeded", "ACTIVE"),
             (2, "managed", "DRAFT"),
         ]
-        assert workflow_rows[1].graph_definition == {
+        assert workflow_rows[0].graph_definition == {
             "kind": "managed_workflow",
             "steps": [
                 {
@@ -413,8 +476,8 @@ def test_init_db_replay_preserves_seeded_and_managed_runtime_seed_mirror_rows(
                 }
             ],
         }
-        assert workflow_rows[1].mention_policy == {
-            "version": seeded_workflow.mention_policy.version,
+        assert workflow_rows[0].mention_policy == {
+            "version": 1,
             "allow_characters": True,
             "allowed_builtin_handles": ["librarian"],
         }

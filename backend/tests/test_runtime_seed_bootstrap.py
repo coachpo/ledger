@@ -3,14 +3,6 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.langgraph.seeds import (
-    BACKTEST_PATTERN_SPECS,
-    SEEDED_AGENT_SPECS,
-    SEEDED_BUILTIN_SPECS,
-    SEEDED_CAPABILITY_BUNDLE_SPECS,
-    SEEDED_CONNECTOR_SPECS,
-    SEEDED_TOOL_SPECS,
-)
 from app.models.agent_spec import AgentSpec
 from app.models.capability_registry_entry import CapabilityRegistryEntry
 from app.models.persona_profile import PersonaProfile
@@ -18,8 +10,13 @@ from app.models.workflow_spec import WorkflowSpec
 from app.services.runtime_seed_bootstrap import (
     RuntimeSeedBootstrapDriftError,
     bootstrap_runtime_seed_mirrors,
-    get_seeded_workflow_spec,
-    resolve_rollback_window_workflow_pin,
+)
+from app.services.runtime_seed_catalog import (
+    SEEDED_AGENT_SPECS,
+    SEEDED_BUILTIN_SPECS,
+    SEEDED_CAPABILITY_BUNDLE_SPECS,
+    SEEDED_CONNECTOR_SPECS,
+    SEEDED_TOOL_SPECS,
 )
 
 
@@ -58,40 +55,7 @@ def test_runtime_seed_bootstrap_materializes_seeded_runtime_mirrors(session_fact
             )
         }
 
-        assert set(workflows) == {pattern.key for pattern in BACKTEST_PATTERN_SPECS}
-        for pattern in BACKTEST_PATTERN_SPECS:
-            workflow = workflows[pattern.key]
-            assert workflow.version == 1
-            assert workflow.origin == "seeded"
-            assert workflow.status == "ACTIVE"
-            assert workflow.name == pattern.description
-            assert workflow.graph_definition == {
-                "kind": "seeded_langgraph_topology",
-                "topology_key": pattern.topology.key,
-                "entry_agent_key": pattern.topology.agent_order[0],
-                "agent_order": list(pattern.topology.agent_order),
-                "review_mode": pattern.topology.review_mode,
-            }
-            assert workflow.final_output_contract == {
-                "type": "object",
-                "required": ["analysis_report", "trade_decisions"],
-                "properties": {
-                    "analysis_report": {"type": "string"},
-                    "trade_decisions": {"type": "array"},
-                },
-                "additionalProperties": False,
-            }
-            assert workflow.mention_policy == {
-                "version": pattern.mention_policy.version,
-                "allow_characters": pattern.mention_policy.allow_characters,
-                "allowed_builtin_handles": list(pattern.mention_policy.allowed_builtin_handles),
-            }
-            assert workflow.execution_mode == pattern.execution_mode
-            assert workflow.default_tool_ids == list(pattern.default_tool_ids)
-            assert workflow.allowed_capability_bundle_keys == list(pattern.allowed_bundle_keys)
-            assert workflow.connector_ids == list(pattern.connector_ids)
-            assert workflow.review_mode == pattern.topology.review_mode
-            assert workflow.approval_policy_overrides == []
+        assert workflows == {}
 
         assert set(agents) == {agent.key for agent in SEEDED_AGENT_SPECS}
         for seeded_agent in SEEDED_AGENT_SPECS:
@@ -244,7 +208,7 @@ def test_runtime_seed_bootstrap_is_idempotent_on_repeat_calls(session_factory) -
         assert result.agent_specs_inserted == 0
         assert result.persona_profiles_inserted == 0
         assert result.capability_registry_entries_inserted == 0
-        assert workflow_count == len(BACKTEST_PATTERN_SPECS)
+        assert workflow_count == 0
         assert agent_count == len(SEEDED_AGENT_SPECS)
         assert persona_count == len(SEEDED_BUILTIN_SPECS)
         assert capability_count == (
@@ -252,20 +216,6 @@ def test_runtime_seed_bootstrap_is_idempotent_on_repeat_calls(session_factory) -
             + len(SEEDED_CAPABILITY_BUNDLE_SPECS)
             + len(SEEDED_CONNECTOR_SPECS)
         )
-
-
-def test_runtime_seed_bootstrap_drift_is_rejected_for_mutated_seeded_row(session_factory) -> None:
-    with session_factory() as session:
-        workflow = get_seeded_workflow_spec(session, "seeded_internal_backtest_v1")
-        workflow.name = "Mutated workflow"
-        session.commit()
-
-    with session_factory() as session:
-        with pytest.raises(
-            RuntimeSeedBootstrapDriftError,
-            match=r"Seed drift detected for workflow_specs 'seeded_internal_backtest_v1' v1",
-        ):
-            bootstrap_runtime_seed_mirrors(session)
 
 
 def test_runtime_seed_bootstrap_drift_is_rejected_for_unexpected_seeded_history_row(
@@ -305,36 +255,3 @@ def test_runtime_seed_bootstrap_drift_is_rejected_for_unexpected_seeded_history_
             ),
         ):
             bootstrap_runtime_seed_mirrors(session)
-
-
-def test_resolve_rollback_window_workflow_pin_stays_on_seeded_version_one(session_factory) -> None:
-    with session_factory() as session:
-        seeded_workflow = get_seeded_workflow_spec(session, "seeded_internal_backtest_v1")
-        session.add(
-            WorkflowSpec(
-                key=seeded_workflow.key,
-                version=2,
-                origin="managed",
-                status="DEPRECATED",
-                name="Managed seeded_internal_backtest_v1 v2",
-                graph_definition=seeded_workflow.graph_definition,
-                final_output_contract=seeded_workflow.final_output_contract,
-                mention_policy=seeded_workflow.mention_policy,
-                execution_mode=seeded_workflow.execution_mode,
-                default_tool_ids=seeded_workflow.default_tool_ids,
-                allowed_capability_bundle_keys=seeded_workflow.allowed_capability_bundle_keys,
-                connector_ids=seeded_workflow.connector_ids,
-                review_mode=seeded_workflow.review_mode,
-                approval_policy_overrides=seeded_workflow.approval_policy_overrides,
-            )
-        )
-        session.commit()
-
-    with session_factory() as session:
-        assert resolve_rollback_window_workflow_pin(session, "seeded_internal_backtest_v1") == (
-            "seeded_internal_backtest_v1",
-            1,
-        )
-        pinned = get_seeded_workflow_spec(session, "seeded_internal_backtest_v1")
-        assert pinned.origin == "seeded"
-        assert pinned.version == 1

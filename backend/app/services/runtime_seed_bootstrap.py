@@ -8,21 +8,18 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.langgraph.seeds import (
-    BACKTEST_PATTERN_SPECS,
+from app.models.agent_spec import AgentSpec
+from app.models.capability_registry_entry import CapabilityRegistryEntry
+from app.models.persona_profile import PersonaProfile
+from app.services.runtime_seed_catalog import (
     SEEDED_AGENT_SPECS,
     SEEDED_BUILTIN_SPECS,
     SEEDED_CAPABILITY_BUNDLE_SPECS,
     SEEDED_CONNECTOR_SPECS,
     SEEDED_TOOL_SPECS,
-    get_backtest_pattern_spec,
     get_seeded_connector_spec,
     get_seeded_tool_spec,
 )
-from app.models.agent_spec import AgentSpec
-from app.models.capability_registry_entry import CapabilityRegistryEntry
-from app.models.persona_profile import PersonaProfile
-from app.models.workflow_spec import WorkflowSpec
 
 _SEEDED_ORIGIN = "seeded"
 _ACTIVE_STATUS = "ACTIVE"
@@ -70,41 +67,16 @@ class _SeedMirrorTableSpec:
 
 
 def bootstrap_runtime_seed_mirrors(session: Session) -> RuntimeSeedBootstrapResult:
-    workflow_specs_inserted = _sync_seeded_rows(session, _WORKFLOW_TABLE_SPEC)
     agent_specs_inserted = _sync_seeded_rows(session, _AGENT_TABLE_SPEC)
     persona_profiles_inserted = _sync_seeded_rows(session, _PERSONA_TABLE_SPEC)
     capability_registry_entries_inserted = _sync_seeded_rows(session, _CAPABILITY_TABLE_SPEC)
     session.flush()
     return RuntimeSeedBootstrapResult(
-        workflow_specs_inserted=workflow_specs_inserted,
+        workflow_specs_inserted=0,
         agent_specs_inserted=agent_specs_inserted,
         persona_profiles_inserted=persona_profiles_inserted,
         capability_registry_entries_inserted=capability_registry_entries_inserted,
     )
-
-
-def resolve_rollback_window_workflow_pin(session: Session, pattern_key: str) -> tuple[str, int]:
-    workflow_spec = get_seeded_workflow_spec(session, pattern_key)
-    return workflow_spec.key, workflow_spec.version
-
-
-def get_seeded_workflow_spec(session: Session, pattern_key: str) -> WorkflowSpec:
-    if get_backtest_pattern_spec(pattern_key) is None:
-        raise ValueError(f"Unknown seeded workflow pattern: {pattern_key}")
-
-    workflow_spec = session.scalar(
-        select(WorkflowSpec).where(
-            WorkflowSpec.key == pattern_key,
-            WorkflowSpec.version == _SEEDED_RUNTIME_VERSION,
-            WorkflowSpec.origin == _SEEDED_ORIGIN,
-        )
-    )
-    if workflow_spec is None:
-        raise RuntimeSeedBootstrapDriftError(
-            "Missing persisted seeded workflow mirror for "
-            f"{pattern_key!r} version {_SEEDED_RUNTIME_VERSION}"
-        )
-    return workflow_spec
 
 
 def _sync_seeded_rows(session: Session, table_spec: _SeedMirrorTableSpec) -> int:
@@ -164,38 +136,6 @@ def _build_insert_payload(model: type[Any], payload: dict[str, Any]) -> dict[str
 
 def _to_canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _build_expected_workflow_payloads() -> dict[tuple[str, int], dict[str, Any]]:
-    return {
-        (pattern.key, _SEEDED_RUNTIME_VERSION): {
-            "key": pattern.key,
-            "version": _SEEDED_RUNTIME_VERSION,
-            "origin": _SEEDED_ORIGIN,
-            "status": _ACTIVE_STATUS,
-            "name": pattern.description,
-            "graph_definition": {
-                "kind": "seeded_langgraph_topology",
-                "topology_key": pattern.topology.key,
-                "entry_agent_key": pattern.topology.agent_order[0],
-                "agent_order": list(pattern.topology.agent_order),
-                "review_mode": pattern.topology.review_mode,
-            },
-            "final_output_contract": _build_workflow_final_output_contract(),
-            "mention_policy": {
-                "version": pattern.mention_policy.version,
-                "allow_characters": pattern.mention_policy.allow_characters,
-                "allowed_builtin_handles": list(pattern.mention_policy.allowed_builtin_handles),
-            },
-            "execution_mode": pattern.execution_mode,
-            "default_tool_ids": list(pattern.default_tool_ids),
-            "allowed_capability_bundle_keys": list(pattern.allowed_bundle_keys),
-            "connector_ids": list(pattern.connector_ids),
-            "review_mode": pattern.topology.review_mode,
-            "approval_policy_overrides": [],
-        }
-        for pattern in BACKTEST_PATTERN_SPECS
-    }
 
 
 def _build_expected_agent_payloads() -> dict[tuple[str, int], dict[str, Any]]:
@@ -318,18 +258,6 @@ def _build_bundle_members(
     return members
 
 
-def _build_workflow_final_output_contract() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "required": ["analysis_report", "trade_decisions"],
-        "properties": {
-            "analysis_report": {"type": "string"},
-            "trade_decisions": {"type": "array"},
-        },
-        "additionalProperties": False,
-    }
-
-
 def _build_tool_config_schema(tool_id: str) -> dict[str, Any]:
     if tool_id == "ledger.report_lookup":
         return {
@@ -370,22 +298,6 @@ def _build_connector_config_schema(connector_id: str) -> dict[str, Any]:
     raise ValueError(f"Unknown seeded connector id {connector_id!r}")
 
 
-_WORKFLOW_FIELDS = (
-    "key",
-    "version",
-    "origin",
-    "status",
-    "name",
-    "graph_definition",
-    "final_output_contract",
-    "mention_policy",
-    "execution_mode",
-    "default_tool_ids",
-    "allowed_capability_bundle_keys",
-    "connector_ids",
-    "review_mode",
-    "approval_policy_overrides",
-)
 _AGENT_FIELDS = (
     "key",
     "version",
@@ -433,12 +345,6 @@ _CAPABILITY_FIELDS = (
     "lifecycle",
 )
 
-_WORKFLOW_TABLE_SPEC = _SeedMirrorTableSpec(
-    entity_name="workflow_specs",
-    model=WorkflowSpec,
-    fields=_WORKFLOW_FIELDS,
-    build_expected=_build_expected_workflow_payloads,
-)
 _AGENT_TABLE_SPEC = _SeedMirrorTableSpec(
     entity_name="agent_specs",
     model=AgentSpec,
@@ -463,6 +369,4 @@ __all__ = [
     "RuntimeSeedBootstrapDriftError",
     "RuntimeSeedBootstrapResult",
     "bootstrap_runtime_seed_mirrors",
-    "get_seeded_workflow_spec",
-    "resolve_rollback_window_workflow_pin",
 ]

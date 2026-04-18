@@ -14,6 +14,7 @@ from app.models.runtime_checkpoint import RuntimeCheckpoint
 from app.models.runtime_run import RuntimeRun
 from app.models.runtime_run_artifact import RuntimeRunArtifact
 from app.models.runtime_trace_event import RuntimeTraceEvent
+from app.models.workflow_spec import WorkflowSpec
 
 
 def _build_agent_spec(*, key: str, version: int = 1, status: str = "ACTIVE") -> AgentSpec:
@@ -70,6 +71,34 @@ def _build_tryout_run(
             "deniedCount": 0,
             "expiredCount": 0,
         },
+    )
+
+
+def _build_workflow_spec(
+    *,
+    key: str,
+    version: int = 1,
+    origin: str = "managed",
+    status: str = "ACTIVE",
+) -> WorkflowSpec:
+    return WorkflowSpec(
+        key=key,
+        version=version,
+        origin=origin,
+        status=status,
+        name=f"{key}-{version}",
+        graph_definition={
+            "entryStepKey": "analysis",
+            "steps": [{"stepKey": "analysis", "agentSpecKey": "position_analyst"}],
+        },
+        final_output_contract={"kind": "json", "schema": None, "description": "Output"},
+        mention_policy={"version": 1, "allowCharacterPersonas": True, "allowedBuiltinHandles": []},
+        execution_mode="structured_output",
+        default_tool_ids=[],
+        allowed_capability_bundle_keys=[],
+        connector_ids=[],
+        review_mode=None,
+        approval_policy_overrides=[],
     )
 
 
@@ -265,25 +294,26 @@ def test_tryout_persist_waiting_approval_keeps_same_run_id_and_attached_state(
         )
 
 
-def test_tryout_create_rejects_seeded_backtest_workflow_without_runtime_rows(
+def test_tryout_create_accepts_matching_workflow_keys_without_runtime_rows(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
+        session.add(_build_workflow_spec(key="tryout_workflow", origin="managed"))
+        session.commit()
         assert _runtime_row_counts(session) == (0, 0, 0)
 
     response = client.post(
         "/api/v2/tryouts",
         json={
-            "workflowSpecKey": "seeded_internal_backtest_v1",
+            "workflowSpecKey": "tryout_workflow",
             "inputs": {"ticker": "AAPL"},
         },
     )
-    assert response.status_code == 400, response.json()
-    assert response.json()["code"] == "tryout_seeded_backtest_workflow_not_allowed"
+    assert response.status_code == 201, response.json()
 
     with session_factory() as session:
-        assert _runtime_row_counts(session) == (0, 0, 0)
+        assert _runtime_row_counts(session) == (1, 1, 4)
 
 
 def test_tryout_persist_is_idempotent(

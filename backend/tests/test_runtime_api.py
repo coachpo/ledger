@@ -9,6 +9,7 @@ from app.models.agent_spec import AgentSpec
 from app.models.runtime_approval import RuntimeApproval
 from app.models.runtime_run import RuntimeRun
 from app.models.runtime_run_artifact import RuntimeRunArtifact
+from app.models.workflow_spec import WorkflowSpec
 from app.repositories.runtime_trace_event import RuntimeTraceEventRepository
 from app.schemas.runtime import RuntimeCallerType
 from app.services.agent_runtime_service import AgentRuntimeService
@@ -104,6 +105,28 @@ def _build_artifact(
     )
 
 
+def _build_workflow_spec(*, key: str, version: int = 1, origin: str, status: str) -> WorkflowSpec:
+    return WorkflowSpec(
+        key=key,
+        version=version,
+        origin=origin,
+        status=status,
+        name=f"{key}-{version}",
+        graph_definition={
+            "entryStepKey": "analysis",
+            "steps": [{"stepKey": "analysis", "agentSpecKey": "position_analyst"}],
+        },
+        final_output_contract={"kind": "json", "schema": None, "description": "Output"},
+        mention_policy={"version": 1, "allowCharacterPersonas": True, "allowedBuiltinHandles": []},
+        execution_mode="structured_output",
+        default_tool_ids=[],
+        allowed_capability_bundle_keys=[],
+        connector_ids=[],
+        review_mode=None,
+        approval_policy_overrides=[],
+    )
+
+
 def test_runtime_create_returns_minimal_contract_and_rejects_reserved_public_caller_types(
     client: TestClient,
     monkeypatch,
@@ -160,7 +183,6 @@ def test_runtime_create_returns_minimal_contract_and_rejects_reserved_public_cal
     for caller_type, caller_id, caller_scope_key in [
         ("tryout", None, None),
         ("studio", None, "studio-session"),
-        ("backtest", 41, "2026-04-13"),
     ]:
         invalid_response = client.post(
             "/api/v2/runtime/runs",
@@ -175,6 +197,47 @@ def test_runtime_create_returns_minimal_contract_and_rejects_reserved_public_cal
         )
         assert invalid_response.status_code == 400, invalid_response.json()
         assert invalid_response.json()["code"] == "runtime_public_caller_type_not_allowed"
+
+
+def test_runtime_create_rejects_pinned_archived_workflow_specs(
+    client: TestClient,
+    monkeypatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    dispatched_run_ids: list[int] = []
+
+    monkeypatch.setattr(
+        AgentRuntimeService,
+        "_dispatch_prepared_run_in_background",
+        lambda self, prepared: dispatched_run_ids.append(prepared.run_id),
+    )
+
+    with session_factory() as session:
+        session.add(
+            _build_workflow_spec(
+                key="archived_runtime_workflow",
+                origin="seeded",
+                status="ARCHIVED",
+            )
+        )
+        session.commit()
+
+    response = client.post(
+        "/api/v2/runtime/runs",
+        json={
+            "callerType": "api",
+            "callerId": 9,
+            "callerScopeKey": "adhoc-runtime-create",
+            "executionKind": "workflow",
+            "workflowSpecKey": "archived_runtime_workflow",
+            "workflowSpecVersion": 1,
+            "inputs": {"ticker": "MSFT"},
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "runtime_public_workflow_not_active"
+    assert dispatched_run_ids == []
 
 
 def test_runtime_and_studio_run_reads_reuse_canonical_run_models_and_filtered_lists(

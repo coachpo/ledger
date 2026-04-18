@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import json
 import re
 from importlib import import_module
-from typing import Any
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from app.db.validation import validate_supported_database_engine
+from app.services.runtime_seed_catalog import (
+    SEEDED_AGENT_SPECS,
+    SEEDED_BUILTIN_SPECS,
+    SEEDED_CAPABILITY_BUNDLE_SPECS,
+    SEEDED_CONNECTOR_SPECS,
+    SEEDED_TOOL_SPECS,
+)
 
 _OBSOLETE_TABLES = (
     "stock_analysis_versions",
@@ -23,8 +28,7 @@ _OBSOLETE_TABLES = (
 )
 _LEGACY_SLUG_INVALID_CHARS_RE = re.compile(r"[^a-z0-9_]+")
 _LEGACY_SLUG_DUPLICATE_UNDERSCORES_RE = re.compile(r"_+")
-_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT = "structured_output"
-_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT = "not_required"
+_SEEDED_RUNTIME_VERSION = 1
 _RUNTIME_V2_TABLE_SPECS = (
     ("agent_specs", "app.models.agent_spec", "AgentSpec"),
     ("workflow_specs", "app.models.workflow_spec", "WorkflowSpec"),
@@ -44,13 +48,65 @@ _RUNTIME_V2_TABLE_SPECS = (
         "app.models.persona_projection_event",
         "PersonaProjectionEvent",
     ),
-    ("runtime_control_flags", "app.models.runtime_control_flag", "RuntimeControlFlag"),
-    (
-        "runtime_flag_change_events",
-        "app.models.runtime_flag_change_event",
-        "RuntimeFlagChangeEvent",
-    ),
 )
+
+_LEGACY_SEEDED_AGENT_INSTRUCTION_COMPATIBILITY: dict[str, tuple[str, ...]] = {
+    "decision_writer": (
+        "Render the final backtest analysis report and translate reviewed "
+        "analyses into Ledger trade decisions.",
+    ),
+}
+
+_SEEDED_AGENT_INSTRUCTION_BY_KEY: dict[str, str] = {
+    agent.key: agent.system_prompt for agent in SEEDED_AGENT_SPECS
+}
+
+_LEGACY_SEEDED_PERSONA_DESCRIPTION_COMPATIBILITY: dict[str, tuple[str, ...]] = {
+    "builtin:librarian": ("Research and retrieve supporting context for a backtest analysis.",),
+    "builtin:explore": (
+        "Inspect the current backtest state and summarize relevant findings.",
+        "Inspect the current backtest context and summarize relevant findings.",
+    ),
+}
+
+_SEEDED_BUILTIN_DESCRIPTION_BY_KEY: dict[str, str] = {
+    builtin.canonical_target_id: builtin.description for builtin in SEEDED_BUILTIN_SPECS
+}
+
+_LEGACY_SEEDED_CAPABILITY_DESCRIPTION_COMPATIBILITY: dict[str, tuple[str, ...]] = {
+    "ledger.report_lookup": (
+        "Read report content by exact slug.",
+        "Read frozen report content by slug.",
+    ),
+    "ledger.orchestration_catalog_lookup": (
+        "Read orchestration catalog data.",
+        "Read frozen orchestration catalog data.",
+    ),
+    "ledger.cycle_context_lookup": (
+        "Read prepared cycle context artifacts.",
+        "Read frozen cycle context artifacts.",
+        "Read prepared cycle prompt and runtime artifacts from the historical "
+        "simulation execution path.",
+    ),
+    "builtin.librarian_context": ("Seed-owned bundle ref for backtest research context lookups.",),
+    "builtin.explore_context": (
+        "Seed-owned bundle ref for backtest-oriented cycle context lookups.",
+    ),
+    "ledger.mcp.market_data": (
+        "Phase-3 placeholder for a backtest-owned market-data MCP connector.",
+        "Read trusted market data connector output.",
+    ),
+    "ledger.mcp.company_filings": (
+        "Phase-3 placeholder for a backtest-owned filings MCP connector.",
+        "Read trusted company filings connector output.",
+    ),
+}
+
+_SEEDED_CAPABILITY_DESCRIPTION_BY_KEY: dict[str, str] = {
+    **{tool.tool_id: tool.description for tool in SEEDED_TOOL_SPECS},
+    **{bundle.bundle_key: bundle.description for bundle in SEEDED_CAPABILITY_BUNDLE_SPECS},
+    **{connector.connector_id: connector.description for connector in SEEDED_CONNECTOR_SPECS},
+}
 
 
 def normalize_legacy_portfolio_slug(name: str) -> str:
@@ -82,381 +138,88 @@ def build_unique_legacy_portfolio_slug(base_slug: str, used_slugs: set[str]) -> 
         sequence += 1
 
 
-def _normalize_legacy_snapshot_version(value: object) -> int:
-    if isinstance(value, int):
-        return value if value > 0 else 1
-
-    digits = re.sub(r"\D", "", str(value or "").strip())
-    if not digits:
-        return 1
-    normalized = int(digits)
-    return normalized if normalized > 0 else 1
-
-
-def _ensure_json_list(value: object) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _normalize_legacy_snapshot_execution_mode(value: object) -> str:
-    normalized = str(value or "").strip()
-    return normalized or _BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT
-
-
-def _normalize_legacy_snapshot_approval_trace(value: object) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip()
-        return normalized or _BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT
-    return _BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT
-
-
-def _migrate_legacy_builtin_versions(snapshot_payload: dict[str, Any]) -> list[dict[str, Any]]:
-    explicit_versions = snapshot_payload.get("resolved_builtin_versions")
-    if isinstance(explicit_versions, list):
-        return explicit_versions
-
-    migrated: list[dict[str, Any]] = []
-    for item in _ensure_json_list(snapshot_payload.get("built_in_revisions")):
-        if not isinstance(item, str):
-            continue
-        canonical_target_id = item if item.startswith("builtin:") else f"builtin:{item}"
-        migrated.append(
-            {
-                "canonical_target_id": canonical_target_id,
-                "handle": canonical_target_id.split(":", 1)[1],
-                "revision": 1,
-            }
-        )
-    return migrated
-
-
-def _migrate_legacy_version_entries(
-    value: object,
-    *,
-    id_field: str,
-) -> list[dict[str, Any]]:
-    if isinstance(value, list):
-        return value
-    if not isinstance(value, dict):
-        return []
-
-    migrated: list[dict[str, Any]] = []
-    for canonical_target_id, version in sorted(value.items(), key=lambda item: str(item[0])):
-        migrated.append(
-            {
-                "canonical_target_id": str(canonical_target_id),
-                id_field: None,
-                "version": _normalize_legacy_snapshot_version(version),
-            }
-        )
-    return migrated
-
-
-def _upgrade_backtest_orchestration_snapshots(engine: Engine) -> None:
+def _upgrade_runtime_seed_description_compatibility(engine: Engine) -> None:
     inspector = inspect(engine)
-    columns = {
-        column["name"] for column in inspector.get_columns("backtest_orchestration_snapshots")
-    }
-
-    required_columns = {
-        "prompt_report_slug": "VARCHAR(200)",
-        "orchestration_pattern_key": "VARCHAR(120)",
-        "pattern_policy_version": "INTEGER",
-        "entry_prompt_hash": "VARCHAR(64)",
-        "full_user_prompt_hash": "VARCHAR(64)",
-        "execution_mode": (f"VARCHAR(40) DEFAULT '{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'"),
-        "resolved_mentions": "JSONB DEFAULT '[]'::jsonb",
-        "mentioned_target_outputs": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_builtin_versions": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_role_versions": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_character_versions": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_bundle_versions": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_tool_versions": "JSONB DEFAULT '[]'::jsonb",
-        "resolved_connector_versions": "JSONB DEFAULT '[]'::jsonb",
-        "tool_call_trace": "JSONB DEFAULT '[]'::jsonb",
-        "approval_trace": (
-            f"JSONB DEFAULT '\"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}\"'::jsonb"
-        ),
-    }
+    table_names = set(inspector.get_table_names())
 
     with engine.begin() as connection:
-        for column_name, column_ddl in required_columns.items():
-            if column_name not in columns:
-                connection.exec_driver_sql(
-                    f"ALTER TABLE backtest_orchestration_snapshots ADD COLUMN {column_name} "
-                    f"{column_ddl}"
-                )
+        if "agent_specs" in table_names:
+            for (
+                key,
+                legacy_instructions,
+            ) in _LEGACY_SEEDED_AGENT_INSTRUCTION_COMPATIBILITY.items():
+                expected_instruction = _SEEDED_AGENT_INSTRUCTION_BY_KEY[key]
+                for legacy_instruction in legacy_instructions:
+                    connection.execute(
+                        text(
+                            """
+                            UPDATE agent_specs
+                            SET instructions = :expected_instruction
+                            WHERE key = :key
+                              AND version = :version
+                              AND origin = 'seeded'
+                              AND instructions = :legacy_instruction
+                            """
+                        ),
+                        {
+                            "key": key,
+                            "version": _SEEDED_RUNTIME_VERSION,
+                            "expected_instruction": expected_instruction,
+                            "legacy_instruction": legacy_instruction,
+                        },
+                    )
 
-    if "snapshot" in columns:
-        with engine.begin() as connection:
-            rows = connection.execute(
-                text("SELECT id, snapshot FROM backtest_orchestration_snapshots ORDER BY id")
-            ).mappings()
-            for row in rows:
-                snapshot_payload = row["snapshot"] if isinstance(row["snapshot"], dict) else {}
-                connection.execute(
-                    text(
-                        """
-                        UPDATE backtest_orchestration_snapshots
-                        SET prompt_report_slug = :prompt_report_slug,
-                            orchestration_pattern_key = :orchestration_pattern_key,
-                            pattern_policy_version = :pattern_policy_version,
-                            entry_prompt_hash = :entry_prompt_hash,
-                            full_user_prompt_hash = :full_user_prompt_hash,
-                            execution_mode = :execution_mode,
-                            resolved_mentions = CAST(:resolved_mentions AS JSONB),
-                            mentioned_target_outputs = CAST(:mentioned_target_outputs AS JSONB),
-                            resolved_builtin_versions = CAST(:resolved_builtin_versions AS JSONB),
-                            resolved_role_versions = CAST(:resolved_role_versions AS JSONB),
-                            resolved_character_versions =
-                                CAST(:resolved_character_versions AS JSONB),
-                            resolved_bundle_versions =
-                                CAST(:resolved_bundle_versions AS JSONB),
-                            resolved_tool_versions = CAST(:resolved_tool_versions AS JSONB),
-                            resolved_connector_versions =
-                                CAST(:resolved_connector_versions AS JSONB),
-                            tool_call_trace = CAST(:tool_call_trace AS JSONB),
-                            approval_trace = CAST(:approval_trace AS JSONB)
-                        WHERE id = :snapshot_id
-                        """
-                    ),
-                    {
-                        "snapshot_id": row["id"],
-                        "prompt_report_slug": str(snapshot_payload.get("prompt_report_slug") or ""),
-                        "orchestration_pattern_key": str(
-                            snapshot_payload.get("orchestration_pattern_key")
-                            or "seeded_internal_backtest_v1"
+        if "persona_profiles" in table_names:
+            for (
+                key,
+                legacy_descriptions,
+            ) in _LEGACY_SEEDED_PERSONA_DESCRIPTION_COMPATIBILITY.items():
+                expected_description = _SEEDED_BUILTIN_DESCRIPTION_BY_KEY[key]
+                for legacy_description in legacy_descriptions:
+                    connection.execute(
+                        text(
+                            """
+                            UPDATE persona_profiles
+                            SET system_prompt_fragment = :expected_description
+                            WHERE key = :key
+                              AND version = :version
+                              AND origin = 'seeded'
+                              AND system_prompt_fragment = :legacy_description
+                            """
                         ),
-                        "pattern_policy_version": _normalize_legacy_snapshot_version(
-                            snapshot_payload.get("pattern_policy_version")
-                        ),
-                        "entry_prompt_hash": str(snapshot_payload.get("entry_prompt_hash") or ""),
-                        "full_user_prompt_hash": str(
-                            snapshot_payload.get("full_user_prompt_hash") or ""
-                        ),
-                        "execution_mode": _normalize_legacy_snapshot_execution_mode(
-                            snapshot_payload.get("execution_mode")
-                        ),
-                        "resolved_mentions": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("resolved_mentions"))
-                        ),
-                        "mentioned_target_outputs": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("mentioned_target_outputs"))
-                        ),
-                        "resolved_builtin_versions": json.dumps(
-                            _migrate_legacy_builtin_versions(snapshot_payload)
-                        ),
-                        "resolved_role_versions": json.dumps(
-                            _migrate_legacy_version_entries(
-                                snapshot_payload.get("resolved_role_versions"),
-                                id_field="role_id",
-                            )
-                        ),
-                        "resolved_character_versions": json.dumps(
-                            _migrate_legacy_version_entries(
-                                snapshot_payload.get("resolved_character_versions"),
-                                id_field="character_id",
-                            )
-                        ),
-                        "resolved_bundle_versions": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("resolved_bundle_versions"))
-                        ),
-                        "resolved_tool_versions": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("resolved_tool_versions"))
-                        ),
-                        "resolved_connector_versions": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("resolved_connector_versions"))
-                        ),
-                        "tool_call_trace": json.dumps(
-                            _ensure_json_list(snapshot_payload.get("tool_call_trace"))
-                        ),
-                        "approval_trace": json.dumps(
-                            _normalize_legacy_snapshot_approval_trace(
-                                snapshot_payload.get("approval_trace")
-                            )
-                        ),
-                    },
-                )
+                        {
+                            "key": key,
+                            "version": _SEEDED_RUNTIME_VERSION,
+                            "expected_description": expected_description,
+                            "legacy_description": legacy_description,
+                        },
+                    )
 
-            # Keep legacy snapshot columns in place during the rollback window.
-            # The explicit columns become the active compatibility surface, but
-            # destructive cleanup must wait until rollback compatibility is removed.
-
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            f"""
-            UPDATE backtest_orchestration_snapshots
-            SET prompt_report_slug = COALESCE(prompt_report_slug, ''),
-                orchestration_pattern_key = COALESCE(
-                    orchestration_pattern_key,
-                    'seeded_internal_backtest_v1'
-                ),
-                pattern_policy_version = COALESCE(pattern_policy_version, 1),
-                entry_prompt_hash = COALESCE(entry_prompt_hash, ''),
-                full_user_prompt_hash = COALESCE(full_user_prompt_hash, ''),
-                execution_mode = COALESCE(
-                    execution_mode,
-                    '{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'
-                ),
-                resolved_mentions = COALESCE(resolved_mentions, '[]'::jsonb),
-                mentioned_target_outputs = COALESCE(mentioned_target_outputs, '[]'::jsonb),
-                resolved_builtin_versions = COALESCE(resolved_builtin_versions, '[]'::jsonb),
-                resolved_role_versions = COALESCE(resolved_role_versions, '[]'::jsonb),
-                resolved_character_versions = COALESCE(resolved_character_versions, '[]'::jsonb),
-                resolved_bundle_versions = COALESCE(resolved_bundle_versions, '[]'::jsonb),
-                resolved_tool_versions = COALESCE(resolved_tool_versions, '[]'::jsonb),
-                resolved_connector_versions = COALESCE(
-                    resolved_connector_versions,
-                    '[]'::jsonb
-                ),
-                tool_call_trace = COALESCE(tool_call_trace, '[]'::jsonb),
-                approval_trace = COALESCE(
-                    approval_trace,
-                    '"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}"'::jsonb
-                )
-            """
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN prompt_report_slug SET DEFAULT ''"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN orchestration_pattern_key SET DEFAULT "
-            "'seeded_internal_backtest_v1'"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN pattern_policy_version SET DEFAULT 1"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN execution_mode SET DEFAULT "
-            f"'{_BACKTEST_SNAPSHOT_EXECUTION_MODE_DEFAULT}'"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_mentions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN mentioned_target_outputs SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_builtin_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_role_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_character_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_bundle_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_tool_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_connector_versions SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN tool_call_trace SET DEFAULT '[]'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN approval_trace SET DEFAULT "
-            f"'\"{_BACKTEST_SNAPSHOT_APPROVAL_TRACE_DEFAULT}\"'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN prompt_report_slug SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN orchestration_pattern_key SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN pattern_policy_version SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN execution_mode SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN entry_prompt_hash SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN full_user_prompt_hash SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_mentions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN mentioned_target_outputs SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_builtin_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_role_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_character_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_bundle_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_tool_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots "
-            "ALTER COLUMN resolved_connector_versions SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN tool_call_trace SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE backtest_orchestration_snapshots ALTER COLUMN approval_trace SET NOT NULL"
-        )
-        connection.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS ix_backtest_orchestration_snapshots_backtest_id "
-            "ON backtest_orchestration_snapshots (backtest_id)"
-        )
-        connection.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS ix_backtest_orchestration_snapshots_cycle_date "
-            "ON backtest_orchestration_snapshots (cycle_date)"
-        )
-
-    unique_constraints = {
-        constraint["name"]
-        for constraint in inspect(engine).get_unique_constraints("backtest_orchestration_snapshots")
-    }
-    if "uq_backtest_orchestration_snapshots_cycle" not in unique_constraints:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "ALTER TABLE backtest_orchestration_snapshots "
-                "ADD CONSTRAINT uq_backtest_orchestration_snapshots_cycle "
-                "UNIQUE (backtest_id, cycle_date)"
-            )
+        if "capability_registry_entries" in table_names:
+            for (
+                key,
+                legacy_descriptions,
+            ) in _LEGACY_SEEDED_CAPABILITY_DESCRIPTION_COMPATIBILITY.items():
+                expected_description = _SEEDED_CAPABILITY_DESCRIPTION_BY_KEY[key]
+                for legacy_description in legacy_descriptions:
+                    connection.execute(
+                        text(
+                            """
+                            UPDATE capability_registry_entries
+                            SET description = :expected_description
+                            WHERE key = :key
+                              AND version = :version
+                              AND origin = 'seeded'
+                              AND description = :legacy_description
+                            """
+                        ),
+                        {
+                            "key": key,
+                            "version": _SEEDED_RUNTIME_VERSION,
+                            "expected_description": expected_description,
+                            "legacy_description": legacy_description,
+                        },
+                    )
 
 
 def _ensure_runtime_v2_tables(engine: Engine, table_names: set[str]) -> None:
@@ -466,6 +229,25 @@ def _ensure_runtime_v2_tables(engine: Engine, table_names: set[str]) -> None:
         model = getattr(import_module(module_path), model_name)
         model.__table__.create(engine, checkfirst=True)
         table_names.add(table_name)
+
+
+def _archive_legacy_seeded_workflow_specs(engine: Engine) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "workflow_specs" not in table_names:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE workflow_specs
+                SET status = 'ARCHIVED'
+                WHERE origin = 'seeded'
+                  AND status <> 'ARCHIVED'
+                """
+            )
+        )
 
 
 def _upgrade_persona_profiles_table(engine: Engine) -> None:
@@ -518,18 +300,10 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
 
-    if "backtest_orchestration_snapshots" not in table_names:
-        BacktestOrchestrationSnapshot = import_module(
-            "app.models.backtest_orchestration_snapshot"
-        ).BacktestOrchestrationSnapshot
-        BacktestOrchestrationSnapshot.__table__.create(engine, checkfirst=True)
-        table_names.add("backtest_orchestration_snapshots")
-
-    if "backtest_orchestration_snapshots" in table_names:
-        _upgrade_backtest_orchestration_snapshots(engine)
-
     _ensure_runtime_v2_tables(engine, table_names)
+    _archive_legacy_seeded_workflow_specs(engine)
     _upgrade_persona_profiles_table(engine)
+    _upgrade_runtime_seed_description_compatibility(engine)
 
     if "portfolios" in table_names:
         portfolio_columns = {column["name"] for column in inspector.get_columns("portfolios")}
@@ -565,98 +339,6 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 )
                 connection.exec_driver_sql(
                     "ALTER TABLE balances ALTER COLUMN operation_type SET NOT NULL"
-                )
-
-    if "trading_operations" in table_names:
-        trading_operation_columns = {
-            column["name"] for column in inspector.get_columns("trading_operations")
-        }
-        if "backtest_id" not in trading_operation_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE trading_operations "
-                    "ADD COLUMN backtest_id INTEGER REFERENCES backtests(id) ON DELETE CASCADE"
-                )
-
-    if "backtests" in table_names:
-        backtest_columns = {column["name"] for column in inspector.get_columns("backtests")}
-        backtest_indexes = {index["name"] for index in inspector.get_indexes("backtests")}
-        if "orchestration_pattern_key" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN orchestration_pattern_key "
-                    "VARCHAR(120) DEFAULT 'seeded_internal_backtest_v1'"
-                )
-                connection.exec_driver_sql(
-                    "UPDATE backtests "
-                    "SET orchestration_pattern_key = 'seeded_internal_backtest_v1' "
-                    "WHERE orchestration_pattern_key IS NULL"
-                )
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ALTER COLUMN orchestration_pattern_key SET NOT NULL"
-                )
-        if "launch_mode" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN launch_mode VARCHAR(30)"
-                )
-        if "workflow_spec_key" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN workflow_spec_key VARCHAR(120)"
-                )
-        if "workflow_spec_version" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN workflow_spec_version INTEGER"
-                )
-        if "execution_owner" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN execution_owner VARCHAR(20)"
-                )
-        if "current_run_id" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN current_run_id "
-                    "INTEGER REFERENCES runtime_runs(id) ON DELETE SET NULL"
-                )
-        if "last_completed_run_id" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN last_completed_run_id "
-                    "INTEGER REFERENCES runtime_runs(id) ON DELETE SET NULL"
-                )
-        if "launch_mode_classified_at" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN launch_mode_classified_at TIMESTAMPTZ"
-                )
-        if "launch_mode_classified_by" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN launch_mode_classified_by VARCHAR(120)"
-                )
-        if "launch_mode_classification_note" not in backtest_columns:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE backtests ADD COLUMN launch_mode_classification_note TEXT"
-                )
-        if "ix_backtests_execution_owner" not in backtest_indexes:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "CREATE INDEX ix_backtests_execution_owner ON backtests (execution_owner)"
-                )
-        if "ix_backtests_current_run_id" not in backtest_indexes:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "CREATE INDEX ix_backtests_current_run_id ON backtests (current_run_id)"
-                )
-        if "ix_backtests_last_completed_run_id" not in backtest_indexes:
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "CREATE INDEX ix_backtests_last_completed_run_id "
-                    "ON backtests (last_completed_run_id)"
                 )
 
     if "reports" in table_names:
