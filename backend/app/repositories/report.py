@@ -56,14 +56,3 @@ class ReportRepository(BaseRepository[Report]):
         statement = select(self.model).where(self.model.slug == slug)
         return self._get_by_statement(statement)
 
-    def list_for_backtest_tag(self, tag: str) -> list[Report]:
-        statement = (
-            select(self.model)
-            .where(self.model.metadata_.contains({"tags": [tag]}))
-            .order_by(self.model.created_at.desc(), self.model.id.desc())
-        )
-        return self._list(statement)
-
-    def delete_for_backtest_tag(self, tag: str) -> None:
-        for report in self.list_for_backtest_tag(tag):
-            self.delete(report)

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, IdMixin, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.models.backtest import Backtest
     from app.models.balance import Balance
     from app.models.position import Position
     from app.models.trading_operation import TradingOperation
@@ -40,12 +39,6 @@ class Portfolio(IdMixin, TimestampMixin, Base):
     )
     trading_operations: Mapped[list[TradingOperation]] = relationship(
         "TradingOperation",
-        back_populates="portfolio",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-    backtests: Mapped[list[Backtest]] = relationship(
-        "Backtest",
         back_populates="portfolio",
         cascade="all, delete-orphan",
         passive_deletes=True,

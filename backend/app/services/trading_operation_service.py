@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import portfolio_cash_total, utcnow
+from app.models.balance import Balance
 from app.models.position import Position
 from app.models.trading_operation import TradingOperation
 from app.repositories.balance import BalanceRepository
@@ -47,34 +48,18 @@ class TradingOperationService:
         self,
         portfolio_id: int,
         payload: TradingOperationCreate,
-        backtest_id: int | None = None,
     ) -> TradingOperationResult:
         portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
-        balance = None
-        if payload.side != TradingSide.SPLIT:
-            cash_payload: BuyOperationCreate | SellOperationCreate | DividendOperationCreate = (
-                payload
-            )
-            balance = self.balance_repository.get_for_portfolio(
-                portfolio_id, cash_payload.balance_id
-            )
-            if balance is None:
-                raise not_found_error("Balance")
-            if balance.operation_type != OperationType.DEPOSIT:
-                raise business_rule_error(
-                    "invalid_operation_balance",
-                    "Trading operations require a deposit balance",
-                )
-
         portfolio_cash_total = self._portfolio_cash_total(portfolio_id)
-
         position = self.position_repository.get_by_symbol(portfolio_id, payload.symbol)
+
+        balance: Balance | None = None
         updated_position: Position | None
 
         try:
             if payload.side == TradingSide.BUY:
-                if balance is None:
-                    raise RuntimeError("Deposit balance is required for buy operations")
+                assert isinstance(payload, BuyOperationCreate)
+                balance = self._get_required_deposit_balance(portfolio_id, payload.balance_id)
                 updated_position = self._apply_buy(
                     portfolio_id=portfolio.id,
                     currency=portfolio.base_currency,
@@ -87,8 +72,8 @@ class TradingOperationService:
                 if position is None:
                     self.position_repository.add(updated_position)
             elif payload.side == TradingSide.SELL:
-                if balance is None:
-                    raise RuntimeError("Deposit balance is required for sell operations")
+                assert isinstance(payload, SellOperationCreate)
+                balance = self._get_required_deposit_balance(portfolio_id, payload.balance_id)
                 updated_position = self._apply_sell(
                     position=position,
                     balance_amount=balance.amount,
@@ -98,14 +83,14 @@ class TradingOperationService:
                 if updated_position is None and position is not None:
                     self.position_repository.delete(position)
             elif payload.side == TradingSide.DIVIDEND:
-                if balance is None:
-                    raise RuntimeError("Deposit balance is required for dividend operations")
+                assert isinstance(payload, DividendOperationCreate)
+                balance = self._get_required_deposit_balance(portfolio_id, payload.balance_id)
                 if position is None:
                     raise business_rule_error(
                         "no_position_for_dividend",
                         "Cannot apply dividend to non-existent position",
                     )
-                updated_position = position  # Dividend doesn't change position
+                updated_position = position
                 if balance.amount + self._dividend_cash_impact(payload) < Decimal("0"):
                     raise business_rule_error(
                         "insufficient_balance",
@@ -113,6 +98,7 @@ class TradingOperationService:
                     )
                 balance.amount += self._dividend_cash_impact(payload)
             elif payload.side == TradingSide.SPLIT:
+                assert isinstance(payload, SplitOperationCreate)
                 updated_position = self._apply_split(
                     position=position,
                     payload=payload,
@@ -123,7 +109,6 @@ class TradingOperationService:
             operation = self._build_operation_record(
                 portfolio_id=portfolio.id,
                 balance_id=balance.id if balance is not None else None,
-                backtest_id=backtest_id,
                 balance_label=balance.label if balance is not None else "Not Applicable",
                 currency=portfolio.base_currency,
                 payload=payload,
@@ -151,6 +136,17 @@ class TradingOperationService:
                 BalanceCompactRead.model_validate(balance) if balance is not None else None
             ),
         )
+
+    def _get_required_deposit_balance(self, portfolio_id: int, balance_id: int) -> Balance:
+        balance = self.balance_repository.get_for_portfolio(portfolio_id, balance_id)
+        if balance is None:
+            raise not_found_error("Balance")
+        if balance.operation_type != OperationType.DEPOSIT:
+            raise business_rule_error(
+                "invalid_operation_balance",
+                "Trading operations require a deposit balance",
+            )
+        return balance
 
     def _apply_buy(
         self,
@@ -228,7 +224,6 @@ class TradingOperationService:
         *,
         portfolio_id: int,
         balance_id: int | None,
-        backtest_id: int | None,
         balance_label: str,
         currency: str,
         payload: TradingOperationCreate,
@@ -236,7 +231,6 @@ class TradingOperationService:
         operation_data: dict[str, object] = {
             "portfolio_id": portfolio_id,
             "balance_id": balance_id,
-            "backtest_id": backtest_id,
             "balance_label": balance_label,
             "symbol": payload.symbol,
             "side": payload.side.value,
@@ -246,17 +240,21 @@ class TradingOperationService:
         }
 
         if payload.side == TradingSide.BUY:
+            assert isinstance(payload, BuyOperationCreate)
             operation_data["commission"] = payload.commission
             operation_data["quantity"] = payload.quantity
             operation_data["price"] = payload.price
         elif payload.side == TradingSide.SELL:
+            assert isinstance(payload, SellOperationCreate)
             operation_data["commission"] = payload.commission
             operation_data["quantity"] = payload.quantity
             operation_data["price"] = payload.price
         elif payload.side == TradingSide.DIVIDEND:
+            assert isinstance(payload, DividendOperationCreate)
             operation_data["commission"] = payload.commission
             operation_data["dividend_amount"] = payload.dividend_amount
         else:
+            assert isinstance(payload, SplitOperationCreate)
             operation_data["split_ratio"] = payload.split_ratio
 
         return TradingOperation(**operation_data)
@@ -284,7 +282,6 @@ class TradingOperationService:
                 "no_position_for_split",
                 "Cannot apply split to non-existent position",
             )
-        # Apply split ratio to quantity and adjust average cost
         position.quantity = position.quantity * payload.split_ratio
         position.average_cost = position.average_cost / payload.split_ratio
         position.last_source = "simulation"

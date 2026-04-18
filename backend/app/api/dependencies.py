@@ -10,8 +10,6 @@ from app.core.config import get_settings
 from app.db.session import get_db_session, get_session_factory
 from app.services.agent_runtime_service import AgentRuntimeService
 from app.services.agent_spec_service import AgentSpecService
-from app.services.backtest_cycle_service import BacktestCycleService
-from app.services.backtest_service import BacktestService
 from app.services.balance_service import BalanceService
 from app.services.capability_registry_service import CapabilityRegistryService
 from app.services.csv_import_service import CsvImportService
@@ -22,7 +20,6 @@ from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
 from app.services.quote_provider import QuoteProvider, YahooFinanceQuoteProvider
 from app.services.report_service import ReportService
-from app.services.runtime_control_service import RuntimeControlService
 from app.services.studio_query_service import StudioQueryService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
@@ -137,24 +134,6 @@ def get_tryout_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> TryoutService:
     return TryoutService(session)
-
-
-def get_backtest_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> BacktestService:
-    return BacktestService(session, get_session_factory())
-
-
-def get_backtest_cycle_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> BacktestCycleService:
-    return BacktestCycleService(session, get_session_factory())
-
-
-def get_runtime_control_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> RuntimeControlService:
-    return RuntimeControlService(session)
 
 
 def get_template_compiler_service(

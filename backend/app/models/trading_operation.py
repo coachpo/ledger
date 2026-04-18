@@ -11,7 +11,6 @@ from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin
 
 if TYPE_CHECKING:
-    from app.models.backtest import Backtest
     from app.models.balance import Balance
     from app.models.portfolio import Portfolio
 
@@ -36,9 +35,6 @@ class TradingOperation(IdMixin, Base):
     balance_id: Mapped[int | None] = mapped_column(
         ForeignKey("balances.id", ondelete="SET NULL"), nullable=True
     )
-    backtest_id: Mapped[int | None] = mapped_column(
-        ForeignKey("backtests.id", ondelete="CASCADE"), nullable=True
-    )
     balance_label: Mapped[str] = mapped_column(String(60), nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     side: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -53,4 +49,3 @@ class TradingOperation(IdMixin, Base):
 
     portfolio: Mapped[Portfolio] = relationship("Portfolio", back_populates="trading_operations")
     balance: Mapped[Balance | None] = relationship("Balance", back_populates="trading_operations")
-    backtest: Mapped[Backtest | None] = relationship("Backtest")
