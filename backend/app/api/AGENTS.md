@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers route modules and dependency wiring in `app/api/`.
 
 ## OVERVIEW
-`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services, and the live app now mounts both the long-lived `/api/v1` surface and an additive `/api/v2` surface from this package.
+`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services, and the live app mounts both the long-lived `/api/v1` surface and an additive `/api/v2` surface from this package.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -13,8 +13,6 @@
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD plus symbol lookup |
-| Simulation routes | `simulations.py` | create/list/get/cancel/delete for simulation rows and launch semantics |
-| Workflow spec routes | `workflow_specs.py` | `/api/v2` workflow-spec list/detail and lifecycle actions that feed Studio and Tryout selectors |
 | Trading routes | `trading_operations.py` | simulated BUY/SELL/DIVIDEND/SPLIT operations |
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Orchestration routes | `orchestration.py` | role CRUD, character CRUD, mention catalog |
@@ -23,16 +21,16 @@
 | Agent spec routes | `agent_specs.py` | `/api/v2` managed/seeded agent-spec list/detail and lifecycle actions |
 | Workflow spec routes | `workflow_specs.py` | `/api/v2` managed/seeded workflow-spec list/detail and lifecycle actions |
 | Capability routes | `capabilities.py` | `/api/v2` capability registry list/detail and lifecycle actions |
-| Persona routes | `personas.py` | `/api/v2` persona profile list/detail reads |
-| Runtime routes | `runtime.py` | `/api/v2` public runtime run create/read/cancel plus approval actions |
-| Studio routes | `studio.py` | `/api/v2` runtime/studio inspection reads for runs, artifacts, approvals, and trace events |
+| Persona routes | `personas.py` | `/api/v2` persona profile list/detail reads plus Studio persona projections |
+| Runtime routes | `runtime.py` | `/api/v2` public runtime run create/read/cancel plus approval and trace actions |
+| Studio routes | `studio.py` | `/api/v2` Studio reads for runs, artifacts, approvals, and trace events |
 | Tryout routes | `tryouts.py` | `/api/v2` Tryout execute/read/persist flow |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
 - Each module declares one `APIRouter(prefix=..., tags=[...])`.
 - `main.py` mounts both router families: `/api/v1` via `router.py` and additive `/api/v2` via `v2_router.py`; v2 extends the live API without replacing v1.
-- Route handlers accept integer ids from the path and typed Pydantic bodies, then delegate to a service.
+- Route handlers accept integer ids from the path and typed Pydantic bodies where applicable, then delegate to a service.
 - Use `Depends(get_...)` factories from `dependencies.py` rather than constructing services inline.
 - Keep routes RESTful: HTTP verbs express intent, and success responses match the declared `response_model`.
 - Routes should let service-layer `ApiError` exceptions and request-validation failures bubble to the handlers in `app/main.py`.
@@ -40,13 +38,14 @@
 - Upload-specific checks such as report file size, markdown file type, and text decoding stay in routes because they are HTTP-layer concerns; validated content then delegates to `ReportService`.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`, upload uses `multipart/form-data` markdown plus optional metadata, and `POST /reports` supports direct external JSON creation.
 - Orchestration routes expose versioned role and character CRUD plus the mention catalog used by prompt-time orchestration surfaces.
+- Runtime, Studio, and Tryout routes are v2 surfaces. Keep browser-facing docs aligned with those live paths rather than a removed `simulations.py` module.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.
 - Do not instantiate `Session()` or repositories directly in routes.
 - Do not swallow `ApiError` exceptions just to remap status codes manually.
-- Do not bypass dependencies when wiring services, template helpers, orchestration helpers, or quote providers.
+- Do not bypass dependencies when wiring services, template helpers, orchestration helpers, runtime helpers, or quote providers.
 - Do not duplicate request validation already captured by schemas.
 
 ## VALIDATION
@@ -56,7 +55,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_tryouts_api.py tests/test_orchestration_api.py
+uv run pytest tests/test_api.py tests/test_orchestration_api.py tests/test_runtime_api.py tests/test_tryouts_api.py tests/test_workflow_specs_api.py
 ```
 
 ## NOTES
