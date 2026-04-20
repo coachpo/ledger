@@ -42,7 +42,6 @@ from tests.agent_platform_stock_analysis import (
     trading_decision_schema,
 )
 
-
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 _TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
 
@@ -214,7 +213,9 @@ def _seed_stock_analysis_workflow(
     session.add_all(created_agents)
     session.commit()
     return WorkflowService(session).create_workflow(
-        WorkflowCreate.model_validate(stock_analysis_workflow_payload(optional_agents=optional_keys))
+        WorkflowCreate.model_validate(
+            stock_analysis_workflow_payload(optional_agents=optional_keys)
+        )
     )
 
 
@@ -498,9 +499,7 @@ def test_agent_platform_workflow_validation_rejects_optional_slots_for_required_
                                     {
                                         "agentKey": "research_agent",
                                         "slot": "analysis",
-                                        "wiring": {
-                                            "ticker": {"from": "input", "path": "ticker"}
-                                        },
+                                        "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                                         "optional": True,
                                     }
                                 ],
@@ -1167,7 +1166,6 @@ def test_agent_platform_stock_analysis_real_skills_executes_reference_workflow(
     assert detail["perStepOutputs"]["2"][0]["agentKey"] == STOCK_ANALYSIS_SYNTHESIZER_KEY
 
 
-
 def test_agent_platform_stock_analysis_missing_dependency_reports_mcp_failure(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -1202,7 +1200,6 @@ def test_agent_platform_stock_analysis_missing_dependency_reports_mcp_failure(
     assert "2" not in detail["perStepOutputs"]
 
 
-
 def test_agent_platform_stock_analysis_budget_failure_is_reported_deterministically(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -1234,7 +1231,6 @@ def test_agent_platform_stock_analysis_budget_failure_is_reported_deterministica
     assert step_one_entries["price_analyst"]["error"]["code"] == "agent_budget_exceeded"
     assert step_one_entries["financials_analyst"]["status"] == "succeeded"
     assert "2" not in detail["perStepOutputs"]
-
 
 
 def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceeded(

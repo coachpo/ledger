@@ -810,5 +810,3 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
         assert stored_run.finished_at == finished_at
         assert stored_run.created_at is not None
         assert stored_run.updated_at is not None
-
-

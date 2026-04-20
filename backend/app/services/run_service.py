@@ -541,8 +541,7 @@ class RunService:
                             {
                                 "field": f"{agent_field_prefix}.{target_name}",
                                 "issue": (
-                                    "Optional slot failure cannot satisfy a required "
-                                    "input field"
+                                    "Optional slot failure cannot satisfy a required " "input field"
                                 ),
                             }
                         ],
@@ -732,9 +731,11 @@ class RunService:
                     output=reference_result["output"],
                     tokens=int(reference_result.get("tokens", 0) or 0),
                     cost_usd=parse_decimal_string(reference_result.get("costUsd", "0")),
-                    duration_ms=int(reference_result["durationMs"])
-                    if reference_result.get("durationMs") is not None
-                    else None,
+                    duration_ms=(
+                        int(reference_result["durationMs"])
+                        if reference_result.get("durationMs") is not None
+                        else None
+                    ),
                     trace_span_id=(
                         None
                         if reference_result.get("traceSpanId") is None

@@ -736,8 +736,7 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
     assert created["status"] == "published"
     assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
     assert (
-        cast(dict[str, object], created["outputSchema"])["id"]
-        == dependencies["outputSchema"]["id"]
+        cast(dict[str, object], created["outputSchema"])["id"] == dependencies["outputSchema"]["id"]
     )
     assert cast(dict[str, object], created["outputSchema"])["version"] == 1
     assert cast(list[dict[str, object]], created["skills"])[0]["id"] == dependencies["skill"]["id"]

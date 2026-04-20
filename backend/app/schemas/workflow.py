@@ -115,11 +115,7 @@ class WorkflowWireSource(CamelModel):
         handler: SerializerFunctionWrapHandler,
     ) -> dict[str, Any]:
         serialized = handler(self)
-        return {
-            key: value
-            for key, value in serialized.items()
-            if value is not None
-        }
+        return {key: value for key, value in serialized.items() if value is not None}
 
 
 class WorkflowStepAgentWrite(CamelModel):
@@ -272,6 +268,7 @@ class WorkflowCreate(WorkflowVersionBase):
     @classmethod
     def validate_key(cls, value: object) -> str:
         return _normalize_workflow_key(value)
+
 
 class WorkflowUpdate(WorkflowVersionBase):
     pass

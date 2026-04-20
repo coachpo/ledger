@@ -181,8 +181,7 @@ class StockAnalysisReferenceService:
             }
         return {
             "summary": (
-                f"No persisted Ledger reports were found for {ticker} "
-                f"across {horizon_days}d"
+                f"No persisted Ledger reports were found for {ticker} " f"across {horizon_days}d"
             ),
             "signal": "cautious",
         }

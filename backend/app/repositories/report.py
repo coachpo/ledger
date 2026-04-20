@@ -55,4 +55,3 @@ class ReportRepository(BaseRepository[Report]):
     def get_by_slug(self, slug: str) -> Report | None:
         statement = select(self.model).where(self.model.slug == slug)
         return self._get_by_statement(statement)
-

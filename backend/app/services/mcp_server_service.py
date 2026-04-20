@@ -181,11 +181,7 @@ class McpServerService:
     ) -> dict[str, Any]:
         fields = payload.model_fields_set
         next_transport = payload.transport or McpServerTransport(server.transport)
-        description = (
-            payload.description or ""
-            if "description" in fields
-            else server.description
-        )
+        description = payload.description or "" if "description" in fields else server.description
         return self._validate_state(
             name=payload.name or server.name,
             description=description,
@@ -271,9 +267,7 @@ class McpServerService:
                 [
                     {
                         "field": "status",
-                        "issue": (
-                            f"Only {expected.value} MCP servers can be used for {action}"
-                        ),
+                        "issue": (f"Only {expected.value} MCP servers can be used for {action}"),
                     }
                 ],
             )

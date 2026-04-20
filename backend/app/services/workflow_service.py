@@ -562,9 +562,7 @@ class WorkflowService:
 
     @staticmethod
     def _primitive_kind_compatible(source_kind: str, target_kind: str) -> bool:
-        return source_kind == target_kind or (
-            source_kind == "integer" and target_kind == "number"
-        )
+        return source_kind == target_kind or (source_kind == "integer" and target_kind == "number")
 
     def _dereference_node(self, node: SchemaNode) -> SchemaNode:
         current = node

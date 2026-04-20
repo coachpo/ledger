@@ -34,6 +34,7 @@ LEGACY_BACKEND_FILES = (
     "app/schemas/runtime.py",
 )
 
+
 @pytest.mark.parametrize("path", LEGACY_ROUTE_PATHS)
 def test_legacy_backend_routes_return_404(client: TestClient, path: str) -> None:
     response = client.get(path)

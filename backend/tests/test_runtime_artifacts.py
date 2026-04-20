@@ -17,7 +17,6 @@ from app.schemas.workflow import WorkflowCreate
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
 
-
 _TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
 
 
@@ -156,6 +155,7 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
         }
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+
     def raise_missing_trace(*, run, workflow):
         raise RuntimeError("logfire missing")
 

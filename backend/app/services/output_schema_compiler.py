@@ -132,6 +132,7 @@ SchemaNode = (
     | SchemaDiscriminatedUnion
 )
 
+
 @dataclass
 class PreparedOutputSchema:
     json_schema: dict[str, Any]
@@ -193,9 +194,9 @@ class OutputSchemaCompiler:
         node = self._node_from_json_schema(
             schema.json_schema,
             path="jsonSchema",
-            seen_refs=(RegistryTarget(schema.key, schema.version),)
-            if schema.kind == "shared"
-            else (),
+            seen_refs=(
+                (RegistryTarget(schema.key, schema.version),) if schema.kind == "shared" else ()
+            ),
             issues=issues,
         )
         if issues:
@@ -228,9 +229,9 @@ class OutputSchemaCompiler:
         node = self._node_from_json_schema(
             schema.json_schema,
             path=f"outputSchema[{schema.key}@{schema.version}]",
-            seen_refs=(RegistryTarget(schema.key, schema.version),)
-            if schema.kind == "shared"
-            else (),
+            seen_refs=(
+                (RegistryTarget(schema.key, schema.version),) if schema.kind == "shared" else ()
+            ),
             issues=issues,
         )
         if issues:
@@ -247,9 +248,9 @@ class OutputSchemaCompiler:
         node = self._node_from_json_schema(
             schema.json_schema,
             path=f"outputSchema[{schema.key}@{schema.version}]",
-            seen_refs=(RegistryTarget(schema.key, schema.version),)
-            if schema.kind == "shared"
-            else (),
+            seen_refs=(
+                (RegistryTarget(schema.key, schema.version),) if schema.kind == "shared" else ()
+            ),
             issues=issues,
         )
         if issues:

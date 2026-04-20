@@ -18,9 +18,7 @@ STOCK_ANALYSIS_NOTE_SCHEMA_KEY = "stock_analysis_note"
 TRADING_DECISION_SCHEMA_KEY = "trading_decision"
 STOCK_ANALYSIS_SKILL_KEY = "stock_analysis_tools"
 STOCK_ANALYSIS_MCP_SERVER_KEY = "stock_analysis_data"
-STOCK_ANALYSIS_REFERENCE_MCP_COMMAND = (
-    "python3 -m app.agents.mcp.stock_analysis_reference_server"
-)
+STOCK_ANALYSIS_REFERENCE_MCP_COMMAND = "python3 -m app.agents.mcp.stock_analysis_reference_server"
 STOCK_ANALYSIS_REFERENCE_TOOL_KEYS = (
     "ledger.stock_analysis.market_snapshot",
     "ledger.stock_analysis.price_history",
@@ -89,9 +87,7 @@ def stock_analysis_synthesizer_input_schema(
         "properties": {
             key: stock_analysis_note_schema() for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
         },
-        "required": [
-            key for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS if key not in optional_keys
-        ],
+        "required": [key for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS if key not in optional_keys],
         "additionalProperties": False,
     }
 
@@ -175,9 +171,7 @@ def stock_analysis_workflow_payload(*, optional_agents: Iterable[str] = ()) -> d
     }
 
 
-def build_stock_analysis_note(
-    *, agent_key: str, ticker: str, horizon_days: int
-) -> dict[str, Any]:
+def build_stock_analysis_note(*, agent_key: str, ticker: str, horizon_days: int) -> dict[str, Any]:
     return {
         "summary": f"{agent_key} stub summary for {ticker} over {horizon_days}d",
         "signal": _STOCK_ANALYSIS_SIGNAL_BY_AGENT[agent_key],
@@ -188,9 +182,7 @@ def build_trading_decision(
     analyses: Mapping[str, dict[str, Any]],
 ) -> dict[str, Any]:
     bullish_signals = sum(
-        1
-        for analysis in analyses.values()
-        if analysis.get("signal") in {"bullish", "supportive"}
+        1 for analysis in analyses.values() if analysis.get("signal") in {"bullish", "supportive"}
     )
     action = "buy" if bullish_signals >= 5 else "hold"
     ordered_summaries = [analyses[key]["summary"] for key in sorted(analyses)]

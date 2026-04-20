@@ -30,7 +30,6 @@ def _normalize_optional_text(value: object) -> str | None:
     return normalized
 
 
-
 def _normalize_skill_key(value: object) -> str:
     normalized = _normalize_required_text(value, field_name="Key").lower()
     if re.fullmatch(_STABLE_SKILL_KEY_RE, normalized) is None:

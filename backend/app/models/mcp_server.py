@@ -65,6 +65,7 @@ def _encrypt_auth_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "mac": _encode_bytes(mac),
     }
 
+
 def _is_encrypted_auth_envelope(payload: object) -> bool:
     return isinstance(payload, dict) and bool(payload.get(_AUTH_ENVELOPE_MARKER))
 

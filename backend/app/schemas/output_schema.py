@@ -62,6 +62,7 @@ class OutputSchemaStatus(str, Enum):  # noqa: UP042
     DEPRECATED = "deprecated"
     ARCHIVED = "archived"
 
+
 class OutputSchemaKind(str, Enum):  # noqa: UP042
     STANDALONE = "standalone"
     SHARED = "shared"
@@ -260,6 +261,7 @@ class OutputSchemaRead(CamelModel):
     @classmethod
     def validate_timestamps(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
+
 
 class OutputSchemaListRead(CamelModel):
     items: list[OutputSchemaRead]
