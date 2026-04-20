@@ -14,6 +14,7 @@ from app.schemas.output_schema import OutputSchemaRead
 from app.schemas.skill import SkillRead
 
 _STABLE_AGENT_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
+_STABLE_MCP_SERVER_KEY_RE = r"^[a-z][a-z0-9_-]{0,119}$"
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -43,6 +44,16 @@ def _normalize_agent_key(value: object) -> str:
     return normalized
 
 
+def _normalize_mcp_server_key(value: object) -> str:
+    normalized = _normalize_required_text(value, field_name="MCP server key").lower()
+    if re.fullmatch(_STABLE_MCP_SERVER_KEY_RE, normalized) is None:
+        raise ValueError(
+            "MCP server key must start with a letter and use only lowercase letters, "
+            "numbers, underscores, and hyphens"
+        )
+    return normalized
+
+
 class AgentStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -67,7 +78,7 @@ class AgentMcpServerRefWrite(CamelModel):
     @field_validator("mcp_server_key", mode="before")
     @classmethod
     def validate_mcp_server_key(cls, value: object) -> str:
-        return _normalize_agent_key(value)
+        return _normalize_mcp_server_key(value)
 
 
 class AgentVersionBase(CamelModel):

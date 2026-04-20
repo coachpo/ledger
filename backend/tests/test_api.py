@@ -626,6 +626,48 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
     assert archive_response.json()["status"] == "archived"
 
 
+def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
+    client: TestClient,
+) -> None:
+    created = create_mcp_server(
+        client,
+        payload={
+            "key": "sequential-thinking",
+            "name": "Sequential Thinking",
+            "transport": "stdio",
+            "command": "npx -y @modelcontextprotocol/server-sequential-thinking",
+            "enabled": True,
+        },
+    )
+    assert created["key"] == "sequential-thinking"
+    assert created["command"] == "npx -y @modelcontextprotocol/server-sequential-thinking"
+
+    activated_server = activate_mcp_server(client, cast(int, created["id"]))
+    seeded = _seed_agent_platform_agent_dependencies(client)
+    agent = create_agent(
+        client,
+        payload={
+            "key": "hyphenated_mcp_agent",
+            "name": "Hyphenated MCP Agent",
+            "description": "Uses a hyphenated MCP server key.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Summarize the market state.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+                "additionalProperties": False,
+            },
+            "outputSchemaKey": seeded["outputSchema"]["key"],
+            "skills": [{"skillKey": seeded["skill"]["key"]}],
+            "mcpServers": [{"mcpServerKey": activated_server["key"]}],
+            "budgetUsd": "0.50000000",
+            "streaming": False,
+        },
+    )
+    assert cast(list[dict[str, object]], agent["mcpServers"])[0]["key"] == "sequential-thinking"
+
+
 def test_agent_platform_mcp_invalid_transport_and_auth_return_field_errors(
     client: TestClient,
 ) -> None:

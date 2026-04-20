@@ -9,7 +9,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
 
-_STABLE_MCP_SERVER_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
+_STABLE_MCP_SERVER_KEY_RE = r"^[a-z][a-z0-9_-]{0,119}$"
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -34,7 +34,8 @@ def _normalize_mcp_server_key(value: object) -> str:
     normalized = _normalize_required_text(value, field_name="Key").lower()
     if re.fullmatch(_STABLE_MCP_SERVER_KEY_RE, normalized) is None:
         raise ValueError(
-            "Key must start with a letter and use only lowercase letters, numbers, and underscores"
+            "Key must start with a letter and use only lowercase letters, "
+            "numbers, underscores, and hyphens"
         )
     return normalized
 
