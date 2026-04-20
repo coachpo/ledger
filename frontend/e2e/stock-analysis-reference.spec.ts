@@ -104,6 +104,23 @@ async function postJson<T>(request: APIRequestContext, url: string, data: unknow
   return (await response.json()) as T;
 }
 
+async function waitForRunToFinish(
+  request: APIRequestContext,
+  runId: number,
+  expectedStatus: "succeeded" | "failed",
+) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await request.get(`${PLATFORM_API}/runs/${runId}`);
+    await expectOk(response, `GET runs/${runId}`);
+    const body = (await response.json()) as { status: string };
+    if (body.status === expectedStatus) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Run ${runId} did not reach ${expectedStatus} in time.`);
+}
+
 async function createAndActivateOutputSchema(
   request: APIRequestContext,
   key: string,
@@ -296,12 +313,17 @@ test("runs the real stock-analysis reference workflow through the UI", async ({ 
     },
   });
 
-  const workflow = await postJson<WorkflowRead>(request, `${PLATFORM_API}/workflows`, workflowPayload(`stock_analysis_reference_${suffix}`));
+  const workflow = await postJson<WorkflowRead>(
+    request,
+    `${PLATFORM_API}/workflows`,
+    workflowPayload(`stock_analysis_reference_${suffix}`),
+  );
   const run = await postJson<{ id: number }>(
     request,
     `${PLATFORM_API}/workflows/${workflow.id}/runs`,
     { ticker: "NVDA", horizon_days: 30 },
   );
+  await waitForRunToFinish(request, run.id, "succeeded");
 
   await page.goto(`/runs/${run.id}`);
   await expect(page.getByTestId("runs-detail-status")).toContainText(/succeeded/i, {

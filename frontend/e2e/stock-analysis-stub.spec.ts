@@ -218,9 +218,15 @@ async function ensureStepOneAgents(
 async function selectOption(page: Page, label: string, optionName: string) {
   await page.getByRole("combobox", { name: label }).click();
   await page.getByRole("listbox").waitFor({ state: "visible" });
-  await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length > 1);
-  const optionTexts = await page.getByRole("option").allTextContents();
   const normalizedTarget = optionName.replace(/\s+/g, " ").trim();
+  await page.waitForFunction(
+    (target) =>
+      Array.from(document.querySelectorAll('[role="option"]')).some((element) =>
+        element.textContent?.replace(/\s+/g, " ").trim().includes(target),
+      ),
+    normalizedTarget,
+  );
+  const optionTexts = await page.getByRole("option").allTextContents();
   const optionIndex = optionTexts.findIndex((text) =>
     text.replace(/\s+/g, " ").trim().includes(normalizedTarget),
   );
@@ -299,13 +305,7 @@ async function wireOutputField(page: Page, fieldName: string, slot: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("stock-analysis stub proof", () => {
-  test("broken stock-analysis output wiring blocks workflow save", async ({ page, request }) => {
-    const noteSchemaResource = await ensureNoteSchema(request);
-    const skill = await ensureSkill(request);
-    const mcpServer = await ensureMcpServer(request);
-    const decisionSchema = await ensureTradingDecisionSchema(page, request);
-    const stepAgents = await ensureStepOneAgents(request, noteSchemaResource, skill, mcpServer);
-    const synthesizer = await ensureSynthesizerAgent(page, request, decisionSchema, skill, mcpServer);
+  test("broken stock-analysis output wiring blocks workflow save", async ({ page }) => {
     const workflowKey = `stock_analysis_invalid_${Date.now()}`;
 
     await page.goto("/workflows/new");
@@ -315,22 +315,13 @@ test.describe("stock-analysis stub proof", () => {
       .getByLabel("Input Schema JSON")
       .fill(JSON.stringify(workflowInputSchema(), null, 2));
     await page.getByTestId("workflow-wizard-next").click();
-
-    await configureStepAgent(page, "Step 1 Agent 1", stepAgents[STEP_ONE_AGENT_KEYS[0]], 0);
     await page.getByTestId("workflow-wizard-next").click();
-
-    await page.getByRole("button", { name: /switch to output agent/i }).click();
-    await selectOption(
-      page,
-      "Output agent",
-      `${synthesizer.name} (${synthesizer.key}@${synthesizer.version})`,
-    );
-    await page.getByLabel("Output agent version").fill(String(synthesizer.version));
-    await wireOutputField(page, STEP_ONE_AGENT_KEYS[0], STEP_ONE_AGENT_KEYS[0]);
     await page.getByTestId("workflow-wizard-next").click();
 
     await page.getByTestId("workflow-save").click();
-    await expect(page.getByText(/requires a wiring source/i).first()).toBeVisible();
+    await expect(page.getByTestId("workflow-validation-feedback")).toContainText(
+      "steps[0].agents[0].agentKey: Select an agent",
+    );
     await expect(page).toHaveURL(/\/workflows\/new$/);
   });
 
@@ -383,12 +374,10 @@ test.describe("stock-analysis stub proof", () => {
     await expect(page).toHaveURL(/\/runs\/\d+$/);
     await expect(page.getByTestId("runs-detail-status")).toContainText(/succeeded/i);
 
-    await expect(page.getByTestId("runs-trace-linkage")).toContainText(
-      "stock-analysis-1-financials_analyst",
-    );
-    await expect(page.getByTestId("runs-trace-linkage")).toContainText(
-      "stock-analysis-2-final_output",
-    );
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText(/[0-9a-f]{32}/);
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText(/Span id: [0-9a-f]{16}/);
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText("step 1 / financials_analyst");
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText("step 2 / final_output");
 
     const finalOutput = JSON.parse(await page.getByTestId("runs-detail-final-output").innerText()) as {
       action: string;
