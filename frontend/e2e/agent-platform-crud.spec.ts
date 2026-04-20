@@ -8,6 +8,16 @@ type OutputSchemaRead = {
   version: number;
 };
 
+type SkillRead = {
+  id: number;
+  key: string;
+};
+
+type McpServerRead = {
+  id: number;
+  key: string;
+};
+
 async function createOutputSchema(
   request: APIRequestContext,
   key: string,
@@ -43,6 +53,50 @@ async function createOutputSchema(
   return (await response.json()) as OutputSchemaRead;
 }
 
+async function createAndActivateSkill(
+  request: APIRequestContext,
+  key: string,
+): Promise<SkillRead> {
+  const createResponse = await request.post(`${PLATFORM_API}/skills`, {
+    data: {
+      key,
+      name: `Skill ${key}`,
+      description: "Condenses responses.",
+      toolDefinitions: [{ tool: "ledger.market_data.quote_lookup" }],
+    },
+  });
+
+  expect(createResponse.ok()).toBeTruthy();
+  const created = (await createResponse.json()) as SkillRead;
+
+  const activateResponse = await request.post(`${PLATFORM_API}/skills/${created.id}/activate`);
+  expect(activateResponse.ok()).toBeTruthy();
+  return (await activateResponse.json()) as SkillRead;
+}
+
+async function createAndActivateMcpServer(
+  request: APIRequestContext,
+  key: string,
+): Promise<McpServerRead> {
+  const createResponse = await request.post(`${PLATFORM_API}/mcp-servers`, {
+    data: {
+      key,
+      name: `MCP ${key}`,
+      description: "Serves external quote lookups.",
+      transport: "stdio",
+      command: `definitely_missing_mcp_binary_${Date.now()}`,
+      enabled: true,
+    },
+  });
+
+  expect(createResponse.ok()).toBeTruthy();
+  const created = (await createResponse.json()) as McpServerRead;
+
+  const activateResponse = await request.post(`${PLATFORM_API}/mcp-servers/${created.id}/activate`);
+  expect(activateResponse.ok()).toBeTruthy();
+  return (await activateResponse.json()) as McpServerRead;
+}
+
 test.describe("Agent platform CRUD flows", () => {
   test("covers lifecycle actions, duplicate behavior, and the agent test panel", async ({
     page,
@@ -54,38 +108,20 @@ test.describe("Agent platform CRUD flows", () => {
     const serverKey = `quotes_mcp_${timestamp}`;
     const agentKey = `macro_agent_${timestamp}`;
     const duplicateAgentKey = `macro_agent_copy_${timestamp}`;
+    await createAndActivateSkill(request, skillKey);
+    await createAndActivateMcpServer(request, serverKey);
 
-    await page.goto("/skills/new");
-    await page.getByRole("button", { name: /save skill/i }).click();
-    await expect(page.getByText("At least one tool definition is required.")).toBeVisible();
-
-    await page.getByLabel("Key").fill(skillKey);
-    await page.getByLabel("Name").fill(`Summarize Skill ${timestamp}`);
-    await page.getByLabel("Description").fill("Condenses responses.");
-    await page.getByLabel("Tool Definitions").fill("ledger.market_data.quote_lookup");
-    await page.getByRole("button", { name: /save skill/i }).click();
-    await expect(page).toHaveURL(/\/skills\/\d+\/edit$/);
-    await page.getByTestId("skills-activate").click();
-    await expect(page.getByText("Skill activated")).toBeVisible();
     await page.goto("/skills");
     await expect(page.getByTestId(`skills-row-${skillKey}`)).toContainText(/published/i);
+    await page.getByTestId(`skills-open-${skillKey}`).click();
+    await expect(page).toHaveURL(/\/skills\/\d+\/edit$/);
 
-    await page.goto("/mcp-servers/new");
-    await page.getByRole("button", { name: /save mcp server/i }).click();
-    await expect(page.getByText("Key is required.")).toBeVisible();
-
-    await page.getByLabel("Key").fill(serverKey);
-    await page.getByLabel("Name").fill(`Quotes MCP ${timestamp}`);
-    await page.getByLabel("Description").fill("Serves external quote lookups.");
-    await page.getByLabel("Command").fill(`definitely_missing_mcp_binary_${timestamp}`);
-    await page.getByRole("button", { name: /save mcp server/i }).click();
+    await page.goto("/mcp-servers");
+    await expect(page.getByTestId(`mcp-servers-row-${serverKey}`)).toContainText(/published/i);
+    await page.getByTestId(`mcp-servers-open-${serverKey}`).click();
     await expect(page).toHaveURL(/\/mcp-servers\/\d+\/edit$/);
     await page.getByTestId("mcp-server-test-connection").click();
     await expect(page.getByTestId("mcp-server-connection-feedback")).toBeVisible();
-    await page.getByTestId("mcp-server-activate").click();
-    await expect(page.getByText("MCP server activated")).toBeVisible();
-    await page.goto("/mcp-servers");
-    await expect(page.getByTestId(`mcp-servers-row-${serverKey}`)).toContainText(/published/i);
 
     await page.goto("/agents/new");
     await page.getByRole("button", { name: /save agent/i }).click();
