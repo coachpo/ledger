@@ -4,10 +4,13 @@ import { describe, expect, it } from "vitest";
 import { router } from "./routes";
 
 describe("router", () => {
-  it("registers a discoverable orchestration hub route", () => {
-    expect(matchRoutes(router.routes, "/orchestration")).not.toBeNull();
-    expect(matchRoutes(router.routes, "/orchestration/roles")).not.toBeNull();
-    expect(matchRoutes(router.routes, "/orchestration/characters")).not.toBeNull();
+  it("does not register removed legacy route families", () => {
+    expect(matchRoutes(router.routes, "/tryout")).toBeNull();
+    expect(matchRoutes(router.routes, "/studio")).toBeNull();
+    expect(matchRoutes(router.routes, "/studio/agents")).toBeNull();
+    expect(matchRoutes(router.routes, "/orchestration")).toBeNull();
+    expect(matchRoutes(router.routes, "/orchestration/roles")).toBeNull();
+    expect(matchRoutes(router.routes, "/orchestration/characters")).toBeNull();
   });
 
   it("does not register the removed backtests route family", () => {

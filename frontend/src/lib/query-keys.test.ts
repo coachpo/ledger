@@ -33,38 +33,47 @@ describe("query keys", () => {
 
   it("keeps existing v1 query key shapes stable", () => {
     expect(queryKeys.portfolios.list()).toEqual(["api", "portfolios", "list"]);
-    expect(queryKeys.orchestration.roles.list()).toEqual([
+    expect(queryKeys.reports.list()).toEqual(["api", "reports", "list"]);
+  });
+
+  it("adds an isolated unversioned platform namespace", () => {
+    expect(queryKeys.platform.agents.detail("7")).toEqual(queryKeys.platform.agents.detail(7));
+    expect(
+      queryKeys.platform.agents.list({ model: " openai:gpt-5.4-mini ", status: "published" }),
+    ).toEqual([
       "api",
-      "orchestration",
-      "roles",
+      "platform",
+      "agents",
       "list",
+      { model: "openai:gpt-5.4-mini", status: "published" },
+    ]);
+
+    expect(queryKeys.platform.workflows.detail("9", 2)).toEqual(
+      queryKeys.platform.workflows.detail(9, 2),
+    );
+    expect(queryKeys.platform.workflows.detail(9, 2)).toEqual([
+      "api",
+      "platform",
+      "workflows",
+      "detail",
+      "9",
+      { version: 2 },
+    ]);
+
+    expect(
+      queryKeys.platform.runs.list({ offset: 0, status: "succeeded", workflowKey: " stock_analysis " }),
+    ).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "list",
+      { offset: 0, status: "succeeded", workflowKey: "stock_analysis" },
     ]);
   });
 
-  it("adds isolated v2 query key roots for runtime studio and tryouts", () => {
-    expect(queryKeys.runtime.runs.detail("7")).toEqual(queryKeys.runtime.runs.detail(7));
-    expect(
-      queryKeys.runtime.runs.list({ callerScopeKey: " studio-session ", callerType: "studio" }),
-    ).toEqual([
-      "api",
-      "v2",
-      "runtime",
-      "runs",
-      "list",
-      { callerScopeKey: "studio-session", callerType: "studio" },
-    ]);
-
-    expect(
-      queryKeys.studio.capabilities.list({ origin: "managed", status: "ACTIVE", type: "tool" }),
-    ).toEqual([
-      "api",
-      "v2",
-      "studio",
-      "capabilities",
-      "list",
-      { origin: "managed", status: "ACTIVE", type: "tool" },
-    ]);
-
-    expect(queryKeys.tryouts.detail("12")).toEqual(queryKeys.tryouts.detail(12));
+  it("keeps platform keys separate from preserved v1 resources", () => {
+    expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
+    expect(queryKeys.platform.agents.all).not.toEqual(queryKeys.portfolios.all);
+    expect(queryKeys.platform.runs.all).not.toEqual(queryKeys.templates.all);
   });
 });

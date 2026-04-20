@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers the data access layer.
 
 ## OVERVIEW
-`app/repositories/` owns database queries: CRUD operations, filtering, aggregate lookups, quote-cache access, symbol-name cache access, stored-template lookup, orchestration lookup, runtime persistence reads, and Studio catalog queries. Repositories abstract SQLAlchemy queries from services.
+`app/repositories/` owns database queries: CRUD operations, filtering, aggregate lookups, quote-cache access, symbol-name cache access, stored-template and report lookup, and the current agent-platform config and run persistence reads. Repositories abstract SQLAlchemy queries from services.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -14,13 +14,10 @@
 | Trading operation queries | `trading_operation.py` | list_for_portfolio, historical attribution helpers, add |
 | Market quote cache queries | `market_quote.py` | get_latest, get_by_provider_symbol_as_of, add |
 | Symbol-name cache queries | `symbol_name_cache.py` | symbol lookup plus `insert_if_missing()` |
-| Orchestration role queries | `orchestration_role.py` | list_all, get_by_key, get_by_name |
-| Orchestration character queries | `orchestration_character.py` | list_all, get_by_handle, enabled catalog query |
-| Runtime run queries | `runtime_run.py`, `runtime_run_artifact.py`, `runtime_approval.py`, `runtime_trace_event.py`, `runtime_checkpoint.py` | execution state, artifact, approval, trace, and checkpoint lookups |
-| Studio catalog queries | `agent_spec.py`, `workflow_spec.py`, `capability_registry_entry.py`, `persona_profile.py` | managed catalog and persona-version reads |
 | Text-template queries | `text_template.py` | list_all, get_by_name |
 | Report queries | `report.py` | newest-first listing, slug lookup, and name lookup |
-
+| Platform config queries | `skill.py`, `mcp_server.py`, `output_schema.py` | versioned catalog reads and lifecycle lookups |
+| Platform execution queries | `agent.py`, `workflow.py`, `run.py` | version pinning, workflow reads, and run list/detail helpers |
 ## CONVENTIONS
 - Each repository is constructed with a `Session` and exposes query methods.
 - Methods return ORM objects, not Pydantic schemas; services handle conversion.
@@ -35,7 +32,7 @@
 - Do not return Pydantic schemas; return ORM objects.
 - Do not bypass repositories in services when an existing repository method fits.
 - Do not use raw SQL unless SQLAlchemy cannot express the query cleanly.
-- Do not change cache, orchestration, runtime, Studio catalog, or template lookup semantics without updating the service and test layers together.
+- Do not change cache, preserved product lookup semantics, or current agent-platform persistence behavior without updating the service and test layers together.
 
 ## VALIDATION
 ```bash
@@ -44,13 +41,11 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_runtime_repositories.py tests/test_orchestration_api.py
+uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 ```
 
 ## NOTES
 - Repositories are instantiated directly inside service constructors with the shared `Session`.
-- `ReportRepository` keeps slug/name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
-- Runtime repositories back the active v2 execution surface and support both public runtime routes and Studio inspection reads.
+- `ReportRepository` keeps slug and name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
+- `RunRepository` backs the current run list/detail surfaces and keeps persisted workflow-run lookup behavior centralized.
 - `TradingOperationRepository` retains historical attribution helpers where preserved legacy columns still matter, but there is no active `SimulationRepository` in the shipped package.
-- `MarketQuoteRepository` stores cache entries keyed by `(provider, symbol, as_of)` and lets services decide whether to reuse or insert.
-- `OrchestrationRoleRepository` and `OrchestrationCharacterRepository` keep lookup/catalog queries narrow, leaving version checks and business rules to `OrchestrationService`.

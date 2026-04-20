@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from decimal import Decimal
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
@@ -75,14 +75,14 @@ class ErrorEnvelope(CamelModel):
     details: list[dict[str, Any]]
 
 
-class TradingSide(StrEnum):
+class TradingSide(str, Enum):  # noqa: UP042
     BUY = "BUY"
     SELL = "SELL"
     DIVIDEND = "DIVIDEND"
     SPLIT = "SPLIT"
 
 
-class OperationType(StrEnum):
+class OperationType(str, Enum):  # noqa: UP042
     DEPOSIT = "DEPOSIT"
     WITHDRAWAL = "WITHDRAWAL"
 
@@ -108,4 +108,4 @@ class CurrencyMixin(CamelModel):
 def ensure_timezone(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("Timestamp must include timezone information")
-    return value.astimezone(UTC)
+    return value.astimezone(timezone.utc)  # noqa: UP017

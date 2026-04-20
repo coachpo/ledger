@@ -1,20 +1,20 @@
 # Ledger
 
-Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, orchestration roles and characters, and v2 runtime, Studio, and Tryout surfaces.
+Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, and the current agent-platform surfaces.
 
 ## Repository Layout
 
 - `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
-- `docs/` — orchestration design, PRD, and spec notes; secondary to live code
+- `docs/` — agent-platform design, UI, migration, and retained cutover-reference notes; secondary to live code
 - `.github/workflows/` — root CI, Docker image, and cleanup workflows
 - `start.sh` — local full-stack startup helper with backend/frontend/db fallback logic
 
 ## What Ships
 
-- Frontend routes for `portfolios`, `templates`, `reports`, `tryout`, `studio`, and `orchestration`
-- Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, reports, and orchestration
-- Backend `/api/v2` routes for runtime runs, approvals, Studio inspection reads, Tryout execution, and spec catalogs
+- Frontend routes for `portfolios`, `templates`, `reports`, and the agent-platform routes for `agents`, `skills`, `mcp-servers`, `output-schemas`, `workflows`, and `runs`
+- Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
+- Backend `/api/*` platform routes for agents, skills, MCP servers, output schemas, workflows, and runs
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 - uv
 - lsof
 - Docker with `docker compose`
-- An LLM provider key if you want live model-backed runtime and Tryout execution
+- An LLM provider key if you want live model-backed agent-platform execution
 
 ## Run the Full Stack Locally
 
@@ -44,7 +44,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 If you only want the UI, API, and local database running, skip this step.
 
-If you want live model-backed runtime or Tryout execution, export the provider settings before startup:
+If you want live model-backed agent-platform execution, export the provider settings before startup:
 
 ```bash
 export OPENAI_API_KEY="your-provider-key"
@@ -112,7 +112,7 @@ Visit `http://127.0.0.1:25173/`.
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are `Tryout`, `Studio`, and the backend v2 runtime APIs.
+- The normal browser-facing execution surfaces are the agent-platform routes for agents, skills, MCP servers, output schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
 - Runtime execution inherits its provider settings from the backend process, so export `RUNTIME_AGENT_*` variables before starting the backend if you want live model calls.
 - Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
@@ -147,4 +147,4 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 
 - `backend/README.md` covers backend-specific development details
 - `AGENTS.md` maps the repo’s live surfaces and nested documentation hierarchy
-- `docs/ledger-orchestration-product-design.md`, `docs/ledger-orchestration-product-prd.md`, and `docs/ledger-orchestration-product-spec.md` capture the current orchestration-oriented product notes
+- `docs/ledger-agent-platform-prd.md`, `docs/ledger-agent-platform-spec.md`, `docs/ledger-agent-platform-design.md`, `docs/ledger-agent-platform-ui.md`, and `docs/ledger-agent-platform-migration.md` capture the current agent-platform design, UI, and cutover notes

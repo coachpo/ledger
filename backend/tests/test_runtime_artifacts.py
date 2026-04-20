@@ -1,461 +1,358 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+import time
+from decimal import Decimal
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.runtime_approval import RuntimeApproval
-from app.models.runtime_run import RuntimeRun
-from app.models.runtime_run_artifact import RuntimeRunArtifact
-from app.models.runtime_trace_event import RuntimeTraceEvent
-from app.services.agent_runtime_service import AgentRuntimeService
-from app.services.tryout_service import TryoutService
+from app.models.agent import Agent
+from app.models.mcp_server import McpServer
+from app.models.output_schema import OutputSchema
+from app.models.skill import Skill
+from app.schemas.workflow import WorkflowCreate
+from app.services.run_service import RunService
+from app.services.workflow_service import WorkflowService
 
 
-def _build_workflow_run(
-    *,
-    caller_type: str,
-    caller_id: int | None,
-    caller_scope_key: str | None,
-    attempt_number: int,
-    status: str,
-    input_hash_seed: str,
-    workflow_spec_key: str,
-    trace_summary: Mapping[str, object],
-    approval_summary: Mapping[str, object],
-) -> RuntimeRun:
-    return RuntimeRun(
-        caller_type=caller_type,
-        caller_id=caller_id,
-        execution_kind="workflow",
-        workflow_spec_key=workflow_spec_key,
-        workflow_spec_version=1,
-        agent_spec_key=None,
-        agent_spec_version=None,
-        caller_scope_key=caller_scope_key,
-        caller_identity_key=None,
-        attempt_number=attempt_number,
+_TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
+
+
+def _assert_logfire_span_id(value: object) -> None:
+    assert isinstance(value, str)
+    assert _TRACE_SPAN_ID_PATTERN.fullmatch(value) is not None
+
+
+def _build_agent_platform_output_schema(*, key: str, version: int, status: str) -> OutputSchema:
+    return OutputSchema(
+        key=key,
+        version=version,
         status=status,
-        input_hash=input_hash_seed * 64,
-        output_hash=None,
-        retention_class="persistent",
-        expires_at=None,
-        trace_summary=dict(trace_summary),
-        approval_summary=dict(approval_summary),
+        kind="standalone",
+        name=f"{key}-{version}",
+        description="Structured output schema",
+        json_schema={
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+        },
+        registry_refs=[],
     )
 
 
-def _build_artifact(
+def _build_agent_platform_skill(*, key: str, version: int, status: str) -> Skill:
+    return Skill(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="Skill toolset",
+        tool_definitions=[{"tool": "ledger.market_data.quote_lookup"}],
+    )
+
+
+def _build_agent_platform_mcp_server(*, key: str, version: int, status: str) -> McpServer:
+    return McpServer(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="MCP server",
+        transport="http-sse",
+        command=None,
+        url="https://example.com/mcp",
+        auth={"header": "Authorization", "apiKey": "Bearer secret-token"},
+        enabled=True,
+    )
+
+
+def _build_agent_platform_agent(
     *,
+    key: str,
+    version: int,
+    status: str,
+    output_schema: OutputSchema,
+    skill: Skill,
+    mcp_server: McpServer,
+    input_schema: dict[str, Any] | None = None,
+    budget_usd: Decimal = Decimal("1.00000000"),
+) -> Agent:
+    return Agent(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="Agent configuration",
+        model="openai:gpt-5.4-mini",
+        system_prompt="Analyze the ticker and return a typed result.",
+        input_schema=input_schema
+        or {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+        },
+        output_schema_id=output_schema.id,
+        output_schema_version=output_schema.version,
+        skills=[{"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}],
+        mcp_servers=[
+            {
+                "mcpServerId": mcp_server.id,
+                "mcpServerKey": mcp_server.key,
+                "mcpServerVersion": mcp_server.version,
+            }
+        ],
+        temperature=0.2,
+        max_tool_rounds=2,
+        budget_usd=budget_usd,
+        streaming=True,
+    )
+
+
+def _wait_for_agent_platform_run_detail(
+    client: TestClient,
     run_id: int,
-    prompt_seed: str,
-    persona_profile_key: str,
-    capability_key: str,
-    capability_display_name: str,
-    source_handle: str,
-    final_output: object | None,
-    terminal_error_code: str | None,
-    terminal_error_message: str | None,
-) -> RuntimeRunArtifact:
-    return RuntimeRunArtifact(
-        run_id=run_id,
-        entry_prompt_hash=prompt_seed * 64,
-        full_user_prompt_hash=(prompt_seed.upper()) * 64,
-        authored_entry_prompt_body="Authored entry prompt.",
-        compiled_entry_prompt_body="Compiled entry prompt.",
-        execution_context_body="Execution context body.",
-        prompt_report_slug=f"prompt-{run_id}",
-        raw_mention_handles=[source_handle, "risk_team"],
-        resolved_mentions=[
-            {
-                "originalText": f"@{source_handle}",
-                "sourceHandle": source_handle,
-                "canonicalTargetId": f"builtin:{source_handle}",
-                "targetType": "builtin",
-                "mentionOrder": 0,
-                "personaProfileKey": f"builtin.{source_handle}",
-                "personaProfileVersion": 1,
-            },
-            {
-                "originalText": "@risk_team",
-                "sourceHandle": "risk_team",
-                "canonicalTargetId": "character:risk_team",
-                "targetType": "character",
-                "mentionOrder": 1,
-                "personaProfileKey": "imported.character.risk_team",
-                "personaProfileVersion": 5,
-                "legacyRoleId": 3,
-                "legacyRoleVersion": 4,
-                "legacyCharacterId": 7,
-                "legacyCharacterVersion": 8,
-            },
-        ],
-        mentioned_target_outputs=[
-            {
-                "handle": source_handle,
-                "canonical_target_id": f"builtin:{source_handle}",
-                "target_type": "builtin",
-                "output_markdown": "Artifact mention output",
-            }
-        ],
-        resolved_persona_profile_refs=[
-            {
-                "personaProfileKey": persona_profile_key,
-                "personaProfileVersion": 2,
-                "canonicalTargetId": f"persona:{persona_profile_key}",
-                "personaKind": "managed_persona",
-                "origin": "managed",
-                "selectionSource": "workflow_default",
-            }
-        ],
-        report_markdown="# Runtime Artifact",
-        normalized_trade_decisions=None,
-        resolved_builtin_versions=[
-            {
-                "canonicalTargetId": f"builtin:{source_handle}",
-                "handle": source_handle,
-                "revision": 1,
-            }
-        ],
-        resolved_role_versions=[],
-        resolved_character_versions=[],
-        resolved_bundle_versions=[{"bundleKey": "bundle.runtime", "revision": 2}],
-        resolved_tool_versions=[],
-        resolved_connector_versions=[{"connectorId": capability_key, "revision": 4}],
-        resolved_workflow_agent_refs=[
-            {
-                "stepKey": "analysis",
-                "agentSpecKey": "runtime_agent",
-                "agentSpecVersion": 3,
-                "personaProfileRefs": [
-                    {
-                        "personaProfileKey": persona_profile_key,
-                        "personaProfileVersion": 2,
-                        "canonicalTargetId": f"persona:{persona_profile_key}",
-                        "personaKind": "managed_persona",
-                        "origin": "managed",
-                        "selectionSource": "step_config",
-                    }
-                ],
-                "capabilityRefs": [
-                    {
-                        "capabilityKey": capability_key,
-                        "capabilityVersion": 4,
-                        "capabilityType": "connector",
-                        "selectionSource": "step_config",
-                        "effectiveApprovalMode": "required",
-                        "effectiveConfig": {"scope": "runtime"},
-                    }
-                ],
-            }
-        ],
-        resolved_capabilities=[
-            {
-                "capabilityKey": capability_key,
-                "capabilityVersion": 4,
-                "capabilityType": "connector",
-                "approvalMode": "required",
-                "displayName": capability_display_name,
-                "transport": "mcp",
-                "lifecycle": "approved",
-                "effectiveConfig": {"scope": "runtime"},
-            }
-        ],
-        final_output=final_output,
-        terminal_error_code=terminal_error_code,
-        terminal_error_message=terminal_error_message,
-    )
+    *,
+    timeout: float = 3.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_body: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert isinstance(body, dict)
+        last_body = body
+        if body["status"] != "running":
+            return body
+        time.sleep(0.02)
+    assert last_body is not None
+    raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
 
 
-def test_runtime_artifact_and_tryout_reads_share_canonical_runtime_run_summaries(
+def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    trace_summary = {
-        "eventCount": 13,
-        "toolCallCount": 5,
-        "warningCount": 2,
-        "lastEventAt": None,
-    }
-    approval_summary = {
-        "totalCount": 4,
-        "pendingCount": 1,
-        "approvedCount": 1,
-        "deniedCount": 1,
-        "expiredCount": 1,
-    }
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        return {
+            "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
+            "tokens": 9,
+            "costUsd": "0.01000000",
+            "durationMs": 7,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    def raise_missing_trace(*, run, workflow):
+        raise RuntimeError("logfire missing")
+
+    monkeypatch.setattr(
+        RunService,
+        "_start_trace_session",
+        staticmethod(raise_missing_trace),
+    )
 
     with session_factory() as session:
-        run = _build_workflow_run(
-            caller_type="tryout",
-            caller_id=None,
-            caller_scope_key=None,
-            attempt_number=1,
-            status="WAITING_APPROVAL",
-            input_hash_seed="g",
-            workflow_spec_key="tryout_workflow",
-            trace_summary=trace_summary,
-            approval_summary=approval_summary,
+        output_schema = _build_agent_platform_output_schema(
+            key="trace_schema",
+            version=1,
+            status="published",
         )
-        session.add(run)
+        skill = _build_agent_platform_skill(key="trace_skill", version=1, status="published")
+        mcp_server = _build_agent_platform_mcp_server(
+            key="trace_server",
+            version=1,
+            status="published",
+        )
+        session.add_all([output_schema, skill, mcp_server])
         session.flush()
-
-        approval = RuntimeApproval(
-            run_id=run.id,
-            step_key="analysis",
-            capability_key="connector.tryout_review",
-            status="PENDING",
+        trace_agent = _build_agent_platform_agent(
+            key="trace_agent",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            skill=skill,
+            mcp_server=mcp_server,
         )
-        session.add_all(
-            [
-                _build_artifact(
-                    run_id=run.id,
-                    prompt_seed="h",
-                    persona_profile_key="persona.tryout",
-                    capability_key="connector.tryout_review",
-                    capability_display_name="Tryout Review Connector",
-                    source_handle="librarian",
-                    final_output=None,
-                    terminal_error_code=None,
-                    terminal_error_message=None,
-                ),
-                approval,
-            ]
-        )
-        session.flush()
-        session.add_all(
-            [
-                RuntimeTraceEvent(
-                    run_id=run.id,
-                    event_index=0,
-                    event_type="RUN_CREATED",
-                    payload={"stage": "created"},
-                ),
-                RuntimeTraceEvent(
-                    run_id=run.id,
-                    event_index=1,
-                    event_type="APPROVAL_REQUESTED",
-                    step_key="analysis",
-                    capability_key="connector.tryout_review",
-                    approval_id=approval.id,
-                    payload={"approvalId": approval.id, "status": "PENDING"},
-                ),
-            ]
-        )
+        session.add(trace_agent)
         session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreate.model_validate(
+                {
+                    "key": "trace_workflow",
+                    "name": "Trace Workflow",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ticker": {"type": "string"}},
+                        "required": ["ticker"],
+                    },
+                    "steps": [
+                        {
+                            "index": 1,
+                            "agents": [
+                                {
+                                    "agentKey": "trace_agent",
+                                    "slot": "analysis",
+                                    "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                                }
+                            ],
+                        }
+                    ],
+                    "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+                }
+            )
+        )
 
-        runtime_service = AgentRuntimeService(session)
-        tryout_service = TryoutService(session)
-        run_read = runtime_service.get_run(run.id)
-        artifact_read = runtime_service.get_artifact(run.id)
-        tryout_read = tryout_service.get_tryout(run.id)
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "SHOP"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run_detail(client, trigger.json()["id"])
 
-        assert run_read.trace_summary.model_dump(by_alias=True) == trace_summary
-        assert run_read.approval_summary.model_dump(by_alias=True) == approval_summary
-        assert artifact_read.trace_summary.model_dump(by_alias=True) == trace_summary
-        assert artifact_read.approval_summary.model_dump(by_alias=True) == approval_summary
-        assert tryout_read.trace_summary.model_dump(by_alias=True) == trace_summary
-        assert tryout_read.approval_summary.model_dump(by_alias=True) == approval_summary
-        assert artifact_read.resolved_mentions[0].source_handle == "librarian"
-        assert artifact_read.resolved_workflow_agent_refs is not None
-        assert artifact_read.resolved_workflow_agent_refs[0].step_key == "analysis"
-        assert artifact_read.resolved_capabilities[0].display_name == "Tryout Review Connector"
-
-    runtime_run_response = client.get(f"/api/v2/runtime/runs/{run.id}")
-    assert runtime_run_response.status_code == 200, runtime_run_response.json()
-    assert runtime_run_response.json()["traceSummary"] == trace_summary
-    assert runtime_run_response.json()["approvalSummary"] == approval_summary
-
-    runtime_artifact_response = client.get(f"/api/v2/runtime/runs/{run.id}/artifacts")
-    assert runtime_artifact_response.status_code == 200, runtime_artifact_response.json()
-    assert runtime_artifact_response.json()["traceSummary"] == trace_summary
-    assert runtime_artifact_response.json()["approvalSummary"] == approval_summary
-    assert runtime_artifact_response.json()["resolvedMentions"][0]["sourceHandle"] == "librarian"
-    assert runtime_artifact_response.json()["resolvedWorkflowAgentRefs"][0]["stepKey"] == "analysis"
-    assert (
-        runtime_artifact_response.json()["resolvedCapabilities"][0]["displayName"]
-        == "Tryout Review Connector"
-    )
-
-    tryout_response = client.get(f"/api/v2/tryouts/{run.id}")
-    assert tryout_response.status_code == 200, tryout_response.json()
-    assert tryout_response.json()["traceSummary"] == trace_summary
-    assert tryout_response.json()["approvalSummary"] == approval_summary
-
-    approvals_response = client.get(
-        "/api/v2/runtime/approvals",
-        params={
-            "runId": run.id,
-            "capabilityKey": "connector.tryout_review",
-            "status": "PENDING",
-        },
-    )
-    assert approvals_response.status_code == 200, approvals_response.json()
-    assert approvals_response.json()["items"] == [
-        {
-            "approvalId": approval.id,
-            "runId": run.id,
-            "status": "PENDING",
-            "capabilityKey": "connector.tryout_review",
-            "stepKey": "analysis",
-            "callerType": "tryout",
-            "callerId": None,
-            "createdAt": approvals_response.json()["items"][0]["createdAt"],
-        }
-    ]
-
-    trace_events_response = client.get(
-        "/api/v2/runtime/trace-events",
-        params={
-            "runId": run.id,
-            "capabilityKey": "connector.tryout_review",
-            "eventType": "APPROVAL_REQUESTED",
-        },
-    )
-    assert trace_events_response.status_code == 200, trace_events_response.json()
-    assert trace_events_response.json()["items"] == [
-        {
-            "runId": run.id,
-            "eventIndex": 1,
-            "eventType": "APPROVAL_REQUESTED",
-            "stepKey": "analysis",
-            "capabilityKey": "connector.tryout_review",
-            "callerType": "tryout",
-            "callerId": None,
-            "createdAt": trace_events_response.json()["items"][0]["createdAt"],
-            "approvalId": approval.id,
-            "payload": {"approvalId": approval.id, "status": "PENDING"},
-        }
-    ]
+    assert detail["status"] == "succeeded"
+    assert detail["traceId"] is None
+    assert detail["perStepOutputs"]["1"][0]["traceSpanId"] is None
+    assert detail["finalOutput"] == {"summary": "trace_agent:SHOP"}
 
 
-def test_runtime_artifact_reads_stay_native_in_multi_attempt_history_for_studio_callers(
+def test_agent_platform_step_persistence_retains_completed_steps_when_later_step_fails(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    cycle_scope_key = "2026-04-13"
-    caller_id = 4242
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        if slot == "analysis":
+            return {
+                "output": {"summary": f"analysis:{resolved_input['ticker']}"},
+                "tokens": 10,
+                "costUsd": "0.01000000",
+                "durationMs": 10,
+                "traceSpanId": None,
+            }
+        raise RuntimeError("decision synthesis failed")
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
 
     with session_factory() as session:
-        first_run = _build_workflow_run(
-            caller_type="studio",
-            caller_id=caller_id,
-            caller_scope_key=cycle_scope_key,
-            attempt_number=1,
-            status="FAILED",
-            input_hash_seed="i",
-            workflow_spec_key="alpha_workflow",
-            trace_summary={
-                "eventCount": 7,
-                "toolCallCount": 2,
-                "warningCount": 1,
-                "lastEventAt": None,
-            },
-            approval_summary={
-                "totalCount": 1,
-                "pendingCount": 0,
-                "approvedCount": 0,
-                "deniedCount": 1,
-                "expiredCount": 0,
-            },
+        output_schema = _build_agent_platform_output_schema(
+            key="step_persistence_schema",
+            version=1,
+            status="published",
         )
-        second_run = _build_workflow_run(
-            caller_type="studio",
-            caller_id=caller_id,
-            caller_scope_key=cycle_scope_key,
-            attempt_number=2,
-            status="SUCCEEDED",
-            input_hash_seed="j",
-            workflow_spec_key="alpha_workflow",
-            trace_summary={
-                "eventCount": 19,
-                "toolCallCount": 6,
-                "warningCount": 0,
-                "lastEventAt": None,
-            },
-            approval_summary={
-                "totalCount": 2,
-                "pendingCount": 0,
-                "approvedCount": 2,
-                "deniedCount": 0,
-                "expiredCount": 0,
-            },
+        skill = _build_agent_platform_skill(
+            key="step_persistence_skill",
+            version=1,
+            status="published",
         )
-        session.add_all([first_run, second_run])
+        mcp_server = _build_agent_platform_mcp_server(
+            key="step_persistence_server",
+            version=1,
+            status="published",
+        )
+        session.add_all([output_schema, skill, mcp_server])
         session.flush()
-
-        session.add_all(
-            [
-                _build_artifact(
-                    run_id=first_run.id,
-                    prompt_seed="k",
-                    persona_profile_key="persona.backtest.first",
-                    capability_key="connector.market_data",
-                    capability_display_name="Attempt One Connector",
-                    source_handle="legacy_review",
-                    final_output=None,
-                    terminal_error_code="approval_denied",
-                    terminal_error_message="Attempt one denied",
-                ),
-                _build_artifact(
-                    run_id=second_run.id,
-                    prompt_seed="l",
-                    persona_profile_key="persona.backtest.second",
-                    capability_key="connector.market_data",
-                    capability_display_name="Attempt Two Connector",
-                    source_handle="researcher",
-                    final_output={"attempt": "two", "result": "buy"},
-                    terminal_error_code=None,
-                    terminal_error_message=None,
-                ),
-            ]
+        first_agent = _build_agent_platform_agent(
+            key="step_agent_a",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            skill=skill,
+            mcp_server=mcp_server,
         )
+        second_agent = _build_agent_platform_agent(
+            key="step_agent_b",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            skill=skill,
+            mcp_server=mcp_server,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "analysis": {
+                        "type": "object",
+                        "properties": {"summary": {"type": "string"}},
+                        "required": ["summary"],
+                    }
+                },
+                "required": ["analysis"],
+            },
+        )
+        session.add_all([first_agent, second_agent])
         session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreate.model_validate(
+                {
+                    "key": "step_persistence_workflow",
+                    "name": "Step Persistence Workflow",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ticker": {"type": "string"}},
+                        "required": ["ticker"],
+                    },
+                    "steps": [
+                        {
+                            "index": 1,
+                            "agents": [
+                                {
+                                    "agentKey": "step_agent_a",
+                                    "slot": "analysis",
+                                    "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                                }
+                            ],
+                        },
+                        {
+                            "index": 2,
+                            "agents": [
+                                {
+                                    "agentKey": "step_agent_b",
+                                    "slot": "decision",
+                                    "wiring": {
+                                        "analysis": {
+                                            "from": "step",
+                                            "stepIndex": 1,
+                                            "slot": "analysis",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                    "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
+                }
+            )
+        )
 
-        service = AgentRuntimeService(session)
-        first_artifact = service.get_artifact(first_run.id)
-        second_artifact = service.get_artifact(second_run.id)
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "INTC"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run_detail(client, trigger.json()["id"])
 
-        assert first_artifact.model_dump(mode="json", by_alias=True)["terminalError"] == {
-            "code": "approval_denied",
-            "message": "Attempt one denied",
-        }
-        assert second_artifact.final_output == {"attempt": "two", "result": "buy"}
-        assert second_artifact.resolved_mentions[0].source_handle == "researcher"
-        assert second_artifact.resolved_capabilities[0].display_name == "Attempt Two Connector"
-        assert second_artifact.resolved_workflow_agent_refs is not None
-        assert second_artifact.resolved_workflow_agent_refs[0].step_key == "analysis"
-
-    first_response = client.get(f"/api/v2/runtime/runs/{first_run.id}/artifacts")
-    assert first_response.status_code == 200, first_response.json()
-    assert first_response.json()["terminalError"] == {
-        "code": "approval_denied",
-        "message": "Attempt one denied",
-    }
-
-    second_response = client.get(f"/api/v2/runtime/runs/{second_run.id}/artifacts")
-    assert second_response.status_code == 200, second_response.json()
-    assert second_response.json()["finalOutput"] == {"attempt": "two", "result": "buy"}
-    assert second_response.json()["traceSummary"] == {
-        "eventCount": 19,
-        "toolCallCount": 6,
-        "warningCount": 0,
-        "lastEventAt": None,
-    }
-    assert second_response.json()["approvalSummary"] == {
-        "totalCount": 2,
-        "pendingCount": 0,
-        "approvedCount": 2,
-        "deniedCount": 0,
-        "expiredCount": 0,
-    }
-    assert second_response.json()["resolvedMentions"][0]["sourceHandle"] == "researcher"
-    assert "handle" not in second_response.json()["resolvedMentions"][0]
-    assert (
-        second_response.json()["resolvedCapabilities"][0]["displayName"] == "Attempt Two Connector"
-    )
-    assert second_response.json()["resolvedWorkflowAgentRefs"][0]["stepKey"] == "analysis"
-    assert "toolCallTrace" not in second_response.json()
-    assert "approvalTrace" not in second_response.json()
-    assert second_response.json()["finalOutput"] != first_response.json().get("finalOutput")
+    assert detail["status"] == "failed"
+    assert detail["traceId"] is None
+    assert detail["perStepOutputs"]["1"][0]["status"] == "succeeded"
+    assert detail["perStepOutputs"]["1"][0]["output"] == {"summary": "analysis:INTC"}
+    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
+    assert detail["perStepOutputs"]["2"][0]["status"] == "failed"
+    assert detail["perStepOutputs"]["2"][0]["output"] is None
+    _assert_logfire_span_id(detail["perStepOutputs"]["2"][0]["traceSpanId"])
+    assert detail["perStepOutputs"]["2"][0]["error"]["code"] == "agent_execution_failed"

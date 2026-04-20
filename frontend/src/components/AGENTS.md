@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including report, Studio, Tryout, and orchestration flows that reuse the shared shell and dialogs.
+`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the preserved portfolio/template/report routes and the current agent-platform routes.
 
 ## STRUCTURE
 ```text
@@ -25,7 +25,7 @@ src/components/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, portfolio/template/report/Tryout/Studio/orchestration nav, top-level error boundary |
+| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell for dashboard, preserved product routes, and agent-platform routes |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable data tables, metrics, field schemas, and error boundaries |
 | Form components | `forms/AGENTS.md` | shared dialog forms that do not belong in a feature folder |
@@ -41,14 +41,14 @@ src/components/
 - `ui/AGENTS.md` — presentational shadcn/ui wrappers, sidebar context, and shared style helpers
 
 ## CONVENTIONS
-- Routed page components live in `src/pages/` and are thin orchestration layers.
+- Routed page components live in `src/pages/` and are thin route-layer components.
 - Shared components in `shared/` are reusable across multiple features and should not contain portfolio-specific request logic.
 - `shared/` is where the app keeps reusable data tables, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
 - `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing and shared report-generation dialogs.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
-- Report, Studio, Tryout, and orchestration routes stay page-centric and reuse shared components instead of maintaining dedicated component folders unless UI becomes genuinely reusable across multiple routes.
-- Shared field schemas in `shared/form-schemas.ts` serve route forms such as orchestration CRUD; the route pages still own submission and navigation logic.
+- Preserved product and agent-platform routes stay page-centric and reuse shared components instead of maintaining extra feature folders unless UI becomes genuinely reusable across multiple routes.
+- Shared field schemas in `shared/form-schemas.ts` should stay aligned with the current routed forms that consume them.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.
 
@@ -59,8 +59,7 @@ src/components/
 - Do not move feature-rich components into `ui/` just because they render cards or forms.
 - Do not create one-off forms in feature folders when they should live in `forms/` or a shared dialog component.
 - Do not move template-editor-only support widgets into `shared/` just because they render generic inputs or lists.
-- Do not create feature folders just to wrap page-local Studio, Tryout, or report markup unless those widgets become reusable across route families.
-- Do not hide orchestration route ownership inside generic UI primitives.
+- Do not hide current route ownership inside generic UI primitives.
 
 ## VALIDATION
 ```bash
@@ -73,6 +72,6 @@ pnpm build
 
 ## NOTES
 - `Layout` switches between the usual scroll container and a full-height outlet for template editor routes.
-- `Layout` owns the Reports, Tryout, Studio, and Orchestration sidebar entries plus their breadcrumb labels.
+- `Layout` owns the current sidebar entries and breadcrumb labels for dashboard, preserved product routes, and agent-platform routes.
 - `layout.tsx` owns route labels and nav composition; `ui/sidebar.tsx` and `ui/sidebar-context.ts` stay generic primitives.
 - Page components stay thin; the real complexity lives in hooks, shared components, forms, and feature folders.

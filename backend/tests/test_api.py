@@ -1,26 +1,54 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import re
+import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.dependencies import get_quote_provider
+from app.agents.mcp import McpClientBoundary, McpConnectionTestResult
+from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
 from app.db.session import init_db, validate_supported_database_engine
 from app.models.market_quote import MarketQuote
 from app.models.symbol_name_cache import SymbolNameCache
-from app.services.market_data_service import (
+from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
     ProviderQuote,
     QuoteProviderError,
 )
+from app.services.run_service import RunService
+from tests.agent_platform_stock_analysis import (
+    STOCK_ANALYSIS_MCP_SERVER_KEY,
+    STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
+    STOCK_ANALYSIS_SKILL_KEY,
+    STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
+    TRADING_DECISION_SCHEMA_KEY,
+    build_stock_analysis_note,
+    build_trading_decision,
+    make_stock_analysis_stub_invoke,
+    stock_analysis_agent_payload,
+    stock_analysis_note_schema,
+    stock_analysis_synthesizer_payload,
+    stock_analysis_workflow_payload,
+    trading_decision_schema,
+)
+
+UTC_TZ = timezone.utc  # noqa: UP017
+_TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+
+
+def _assert_logfire_trace_id(value: object) -> None:
+    assert isinstance(value, str)
+    assert _TRACE_ID_PATTERN.fullmatch(value) is not None
 
 
 class UnsupportedEngine:
@@ -101,6 +129,1470 @@ def create_template(
     )
     assert response.status_code == 201, response.json()
     return response.json()
+
+
+def create_output_schema(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/output-schemas", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def activate_output_schema(client: TestClient, schema_id: int | str) -> dict[str, object]:
+    response = client.post(f"/api/output-schemas/{schema_id}/activate")
+    assert response.status_code == 200, response.json()
+    return response.json()
+
+
+class _FakeMcpConnectionTester:
+    def __init__(self, *, ok: bool = True, message: str = "connection ok") -> None:
+        self.ok = ok
+        self.message = message
+        self.boundaries: list[McpClientBoundary] = []
+
+    def test(self, boundary: McpClientBoundary) -> McpConnectionTestResult:
+        self.boundaries.append(boundary)
+        return McpConnectionTestResult(ok=self.ok, message=self.message)
+
+
+def create_skill(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/skills", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def activate_skill(client: TestClient, skill_id: int | str) -> dict[str, object]:
+    response = client.post(f"/api/skills/{skill_id}/activate")
+    assert response.status_code == 200, response.json()
+    return response.json()
+
+
+def create_mcp_server(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/mcp-servers", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def activate_mcp_server(client: TestClient, server_id: int | str) -> dict[str, object]:
+    response = client.post(f"/api/mcp-servers/{server_id}/activate")
+    assert response.status_code == 200, response.json()
+    return response.json()
+
+
+def create_agent(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/agents", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def create_workflow(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/workflows", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def _wait_for_agent_platform_run(
+    client: TestClient,
+    run_id: int,
+    *,
+    timeout: float = 3.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_body: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert isinstance(body, dict)
+        last_body = body
+        if body["status"] != "running":
+            return body
+        time.sleep(0.02)
+    assert last_body is not None
+    raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
+
+
+def _seed_stock_analysis_platform(
+    client: TestClient,
+    *,
+    optional_agents: set[str] | None = None,
+) -> None:
+    created_note_schema = create_output_schema(
+        client,
+        payload={
+            "key": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
+            "name": "Stock Analysis Note",
+            "jsonSchema": stock_analysis_note_schema(),
+        },
+    )
+    activate_output_schema(client, cast(int, created_note_schema["id"]))
+    created_decision_schema = create_output_schema(
+        client,
+        payload={
+            "key": TRADING_DECISION_SCHEMA_KEY,
+            "name": "TradingDecision",
+            "jsonSchema": trading_decision_schema(),
+        },
+    )
+    activate_output_schema(client, cast(int, created_decision_schema["id"]))
+    created_skill = create_skill(
+        client,
+        payload={
+            "key": STOCK_ANALYSIS_SKILL_KEY,
+            "name": "Stock Analysis Tools",
+            "toolDefinitions": [
+                {"tool": "ledger.market_data.quote_lookup"},
+                {"tool": "ledger.market_data.history_lookup"},
+            ],
+        },
+    )
+    activate_skill(client, cast(int, created_skill["id"]))
+    created_mcp_server = create_mcp_server(
+        client,
+        payload={
+            "key": STOCK_ANALYSIS_MCP_SERVER_KEY,
+            "name": "Stock Analysis Data",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
+            "enabled": True,
+        },
+    )
+    activate_mcp_server(client, cast(int, created_mcp_server["id"]))
+    for agent_key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS:
+        create_agent(client, payload=stock_analysis_agent_payload(agent_key))
+    create_agent(
+        client,
+        payload=stock_analysis_synthesizer_payload(optional_agents=optional_agents or set()),
+    )
+
+
+def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) -> None:
+    route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+
+    assert {
+        "/api/agents",
+        "/api/agents/{agent_id}",
+        "/api/agents/{agent_id}/test-panel",
+        "/api/skills",
+        "/api/skills/{skill_id}",
+        "/api/skills/{skill_id}/activate",
+        "/api/mcp-servers",
+        "/api/mcp-servers/{server_id}",
+        "/api/mcp-servers/{server_id}/activate",
+        "/api/mcp-servers/{server_id}/connection-test",
+        "/api/output-schemas",
+        "/api/output-schemas/{schema_id}",
+        "/api/output-schemas/{schema_id}/activate",
+        "/api/workflows",
+        "/api/workflows/{workflow_id}",
+        "/api/workflows/{workflow_id}/runs",
+        "/api/runs",
+        "/api/runs/{run_id}",
+    } <= route_paths
+    assert not any(path.startswith("/api/v3") for path in route_paths)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/agents",
+        "/api/skills",
+        "/api/mcp-servers",
+        "/api/output-schemas",
+        "/api/workflows",
+        "/api/runs",
+    ],
+)
+def test_agent_platform_routes_list_endpoints_return_camel_case_contracts(
+    client: TestClient,
+    path: str,
+) -> None:
+    response = client.get(path)
+
+    assert response.status_code == 200, response.json()
+    assert response.json() == {"items": []}
+    assert "total_count" not in response.json()
+
+
+def test_agent_platform_routes_validation_errors_preserve_shared_error_envelope(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/workflows/not-an-int")
+
+    assert response.status_code == 422, response.json()
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    assert body["details"] == [
+        {
+            "field": "workflow_id",
+            "issue": body["details"][0]["issue"],
+        }
+    ]
+    assert "valid integer" in body["details"][0]["issue"]
+
+
+def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_registry_refs(
+    client: TestClient,
+) -> None:
+    shared_action = create_output_schema(
+        client,
+        payload={
+            "key": "action_type",
+            "kind": "shared",
+            "name": "Action Type",
+            "jsonSchema": {
+                "type": "string",
+                "enum": ["buy", "hold", "sell"],
+            },
+        },
+    )
+    activated_action = activate_output_schema(client, str(shared_action["id"]))
+    assert activated_action["status"] == "published"
+
+    created = create_output_schema(
+        client,
+        payload={
+            "key": "trading_decision",
+            "name": "Trading Decision",
+            "description": "Decision payload",
+            "builder": {
+                "kind": "object",
+                "fields": [
+                    {"name": "summary", "required": True, "schema": {"kind": "string"}},
+                    {
+                        "name": "action",
+                        "required": True,
+                        "schema": {"kind": "ref", "schemaKey": "action_type"},
+                    },
+                ],
+            },
+            "jsonSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "action": {"$ref": "registry://action_type"},
+                },
+                "required": ["summary", "action"],
+            },
+        },
+    )
+
+    assert created["status"] == "draft"
+    assert created["kind"] == "standalone"
+    assert created["registryRefs"] == ["action_type"]
+
+    created_json_schema = cast(dict[str, object], created["jsonSchema"])
+    created_properties = cast(dict[str, object], created_json_schema["properties"])
+    created_action_property = cast(dict[str, object], created_properties["action"])
+    assert created_json_schema["additionalProperties"] is False
+    assert created_action_property["$ref"] == "registry://action_type@1"
+
+    created_builder = cast(dict[str, object], created["builder"])
+    created_fields = cast(list[dict[str, object]], created_builder["fields"])
+    action_field = next(field for field in created_fields if field["name"] == "action")
+    action_field_schema = cast(dict[str, object], action_field["schema"])
+    assert action_field_schema["kind"] == "ref"
+    assert action_field_schema["schemaKey"] == "action_type"
+    assert action_field_schema["schemaVersion"] == 1
+
+    fetched = client.get(f"/api/output-schemas/{created['id']}")
+    assert fetched.status_code == 200
+
+    fetched_body = fetched.json()
+    fetched_json_schema = cast(dict[str, object], fetched_body["jsonSchema"])
+    assert cast(dict[str, object], fetched_json_schema["properties"]) == created_properties
+    assert sorted(cast(list[str], fetched_json_schema["required"])) == sorted(
+        cast(list[str], created_json_schema["required"])
+    )
+    assert fetched_json_schema["additionalProperties"] is False
+
+    fetched_builder = cast(dict[str, object], fetched_body["builder"])
+    fetched_fields = cast(list[dict[str, object]], fetched_builder["fields"])
+    fetched_field_map = {field["name"]: field for field in fetched_fields}
+    created_field_map = {field["name"]: field for field in created_fields}
+    assert fetched_builder["kind"] == created_builder["kind"]
+    assert fetched_builder["allowAdditionalProperties"] is False
+    assert fetched_field_map == created_field_map
+
+
+@pytest.mark.parametrize(
+    ("json_schema", "expected_field", "expected_issue"),
+    [
+        (
+            {"allOf": [{"type": "string"}, {"type": "integer"}]},
+            "jsonSchema.allOf",
+            "allOf is not supported",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {},
+                "patternProperties": {"^x": {"type": "string"}},
+            },
+            "jsonSchema.patternProperties",
+            "patternProperties is not supported",
+        ),
+        (
+            {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+            "jsonSchema.anyOf",
+            "Undiscriminated unions are not supported",
+        ),
+    ],
+)
+def test_agent_platform_output_schema_invalid_unsupported_keywords_return_field_errors(
+    client: TestClient,
+    json_schema: dict[str, object],
+    expected_field: str,
+    expected_issue: str,
+) -> None:
+    response = client.post(
+        "/api/output-schemas",
+        json={
+            "key": "invalid_schema",
+            "name": "Invalid Schema",
+            "jsonSchema": json_schema,
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert any(
+        detail["field"] == expected_field and expected_issue in detail["issue"]
+        for detail in body["details"]
+    )
+
+
+def test_agent_platform_skill_crud_routes_resolve_server_declared_tool_metadata(
+    client: TestClient,
+) -> None:
+    created = create_skill(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research",
+            "description": "Server-declared research toolset.",
+            "toolDefinitions": [
+                {"tool": "ledger.market_data.quote_lookup"},
+                {"tool": "ledger.reports.lookup"},
+            ],
+        },
+    )
+
+    assert created["status"] == "draft"
+    assert created["version"] == 1
+    created_tool_definitions = cast(list[dict[str, object]], created["toolDefinitions"])
+    assert [item["tool"] for item in created_tool_definitions] == [
+        "ledger.market_data.quote_lookup",
+        "ledger.reports.lookup",
+    ]
+    assert created_tool_definitions[0]["displayName"] == "Market Data Quote Lookup"
+
+    update_response = client.patch(
+        f"/api/skills/{created['id']}",
+        json={
+            "name": "Market Research v2",
+            "toolDefinitions": [
+                {"tool": "ledger.market_data.history_lookup"},
+                {"tool": "ledger.reports.lookup"},
+            ],
+        },
+    )
+    assert update_response.status_code == 200, update_response.json()
+    updated = update_response.json()
+    assert updated["id"] != created["id"]
+    assert updated["version"] == 2
+    assert updated["name"] == "Market Research v2"
+    assert [item["tool"] for item in updated["toolDefinitions"]] == [
+        "ledger.market_data.history_lookup",
+        "ledger.reports.lookup",
+    ]
+
+    original_detail = client.get(f"/api/skills/{created['id']}")
+    assert original_detail.status_code == 200, original_detail.json()
+    assert original_detail.json()["status"] == "archived"
+    assert original_detail.json()["version"] == 1
+
+    get_response = client.get(f"/api/skills/{updated['id']}")
+    assert get_response.status_code == 200, get_response.json()
+    assert get_response.json() == updated
+
+    list_response = client.get("/api/skills", params={"status": "draft"})
+    assert list_response.status_code == 200, list_response.json()
+    assert list_response.json()["items"] == [updated]
+
+    activated = activate_skill(client, str(updated["id"]))
+    assert activated["status"] == "published"
+
+    archive_response = client.delete(f"/api/skills/{updated['id']}")
+    assert archive_response.status_code == 200, archive_response.json()
+    assert archive_response.json()["status"] == "archived"
+
+
+def test_agent_platform_mcp_crud_routes_and_connection_test(
+    client: TestClient,
+    app: FastAPI,
+) -> None:
+    tester = _FakeMcpConnectionTester(message="mcp boundary ok")
+    app.dependency_overrides[get_mcp_connection_tester] = lambda: tester
+
+    created = create_mcp_server(
+        client,
+        payload={
+            "key": "market_data",
+            "name": "Market Data MCP",
+            "description": "Reads trusted market data through HTTP/SSE.",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
+            "enabled": True,
+        },
+    )
+
+    assert created["status"] == "draft"
+    assert created["version"] == 1
+    assert created["transport"] == "http-sse"
+    assert created["auth"] == {"header": "Authorization", "apiKey": "Bearer secret-token"}
+
+    update_response = client.patch(
+        f"/api/mcp-servers/{created['id']}",
+        json={
+            "description": "Updated market data MCP.",
+            "url": "https://example.com/mcp/v2",
+            "auth": {"headers": {"Authorization": "Bearer secret-token"}},
+        },
+    )
+    assert update_response.status_code == 200, update_response.json()
+    updated = update_response.json()
+    assert updated["id"] != created["id"]
+    assert updated["version"] == 2
+    assert updated["description"] == "Updated market data MCP."
+    assert updated["url"] == "https://example.com/mcp/v2"
+
+    original_detail = client.get(f"/api/mcp-servers/{created['id']}")
+    assert original_detail.status_code == 200, original_detail.json()
+    assert original_detail.json()["status"] == "archived"
+    assert original_detail.json()["version"] == 1
+
+    get_response = client.get(f"/api/mcp-servers/{updated['id']}")
+    assert get_response.status_code == 200, get_response.json()
+    assert get_response.json() == updated
+
+    list_response = client.get("/api/mcp-servers", params={"transport": "http-sse"})
+    assert list_response.status_code == 200, list_response.json()
+    assert list_response.json()["items"] == [updated]
+
+    activated = activate_mcp_server(client, str(updated["id"]))
+    assert activated["status"] == "published"
+
+    connection_test_response = client.post(f"/api/mcp-servers/{updated['id']}/connection-test")
+    assert connection_test_response.status_code == 200, connection_test_response.json()
+    connection_test = connection_test_response.json()
+    assert connection_test["ok"] is True
+    assert connection_test["message"] == "mcp boundary ok"
+    assert connection_test["boundary"] == {
+        "transport": "http-sse",
+        "command": None,
+        "url": "https://example.com/mcp/v2",
+        "headerNames": ["Authorization"],
+        "envKeys": [],
+        "enabled": True,
+    }
+    assert tester.boundaries[-1].headers == {"Authorization": "Bearer secret-token"}
+
+    archive_response = client.delete(f"/api/mcp-servers/{updated['id']}")
+    assert archive_response.status_code == 200, archive_response.json()
+    assert archive_response.json()["status"] == "archived"
+
+
+def test_agent_platform_mcp_invalid_transport_and_auth_return_field_errors(
+    client: TestClient,
+) -> None:
+    invalid_transport = client.post(
+        "/api/mcp-servers",
+        json={
+            "key": "broken_stdio",
+            "name": "Broken Stdio",
+            "transport": "stdio",
+            "url": "https://example.com/mcp",
+        },
+    )
+    assert invalid_transport.status_code == 422, invalid_transport.json()
+    assert invalid_transport.json()["code"] == "validation_error"
+    assert {detail["field"] for detail in invalid_transport.json()["details"]} == {"command"}
+
+    invalid_auth = client.post(
+        "/api/mcp-servers",
+        json={
+            "key": "broken_auth",
+            "name": "Broken Auth",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "auth": {"header": "Authorization"},
+        },
+    )
+    assert invalid_auth.status_code == 422, invalid_auth.json()
+    assert invalid_auth.json()["code"] == "validation_error"
+    assert {detail["field"] for detail in invalid_auth.json()["details"]} == {"auth.apiKey"}
+
+
+def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dict[str, object]]:
+    created_output_schema = create_output_schema(
+        client,
+        payload={
+            "key": "decision_schema",
+            "name": "Decision Schema",
+            "jsonSchema": {
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            },
+        },
+    )
+    output_schema = activate_output_schema(client, cast(int, created_output_schema["id"]))
+
+    created_skill = create_skill(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research",
+            "toolDefinitions": [{"tool": "ledger.market_data.quote_lookup"}],
+        },
+    )
+    skill = activate_skill(client, cast(int, created_skill["id"]))
+
+    created_mcp_server = create_mcp_server(
+        client,
+        payload={
+            "key": "market_data",
+            "name": "Market Data MCP",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
+            "enabled": True,
+        },
+    )
+    mcp_server = activate_mcp_server(client, cast(int, created_mcp_server["id"]))
+    return {
+        "outputSchema": output_schema,
+        "skill": skill,
+        "mcpServer": mcp_server,
+    }
+
+
+def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved_dependencies(
+    client: TestClient,
+) -> None:
+    dependencies = _seed_agent_platform_agent_dependencies(client)
+
+    created = create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+            "temperature": 0.2,
+            "maxToolRounds": 2,
+            "budgetUsd": "1.25000000",
+            "streaming": True,
+        },
+    )
+
+    assert created["version"] == 1
+    assert created["status"] == "published"
+    assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
+    assert (
+        cast(dict[str, object], created["outputSchema"])["id"]
+        == dependencies["outputSchema"]["id"]
+    )
+    assert cast(dict[str, object], created["outputSchema"])["version"] == 1
+    assert cast(list[dict[str, object]], created["skills"])[0]["id"] == dependencies["skill"]["id"]
+    assert cast(list[dict[str, object]], created["skills"])[0]["version"] == 1
+    assert (
+        cast(list[dict[str, object]], created["mcpServers"])[0]["id"]
+        == dependencies["mcpServer"]["id"]
+    )
+    assert cast(list[dict[str, object]], created["mcpServers"])[0]["boundary"] == {
+        "transport": "http-sse",
+        "command": None,
+        "url": "https://example.com/mcp",
+        "headerNames": ["Authorization"],
+        "envKeys": [],
+        "enabled": True,
+    }
+
+    get_response = client.get(f"/api/agents/{created['id']}")
+    assert get_response.status_code == 200, get_response.json()
+    assert get_response.json()["version"] == 1
+
+    list_response = client.get("/api/agents", params={"status": "published"})
+    assert list_response.status_code == 200, list_response.json()
+    assert [item["id"] for item in list_response.json()["items"]] == [created["id"]]
+
+
+def test_agent_platform_agent_update_version_creates_new_immutable_row(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    created = create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    output_schema_v2 = create_output_schema(
+        client,
+        payload={
+            "key": "decision_schema",
+            "name": "Decision Schema v2",
+            "jsonSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["summary", "confidence"],
+            },
+        },
+    )
+    skill_v2 = create_skill(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research v2",
+            "toolDefinitions": [{"tool": "ledger.market_data.history_lookup"}],
+        },
+    )
+    mcp_server_v2 = create_mcp_server(
+        client,
+        payload={
+            "key": "market_data",
+            "name": "Market Data MCP v2",
+            "transport": "stdio",
+            "command": "python -m ledger_market_data",
+            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
+            "enabled": True,
+        },
+    )
+
+    update_response = client.post(
+        f"/api/agents/{created['id']}",
+        json={
+            "name": "Research Agent v2",
+            "description": "Uses explicit pinned dependency versions.",
+            "model": "openai:gpt-5.4",
+            "systemPrompt": "Use the pinned dependencies and return the richer schema.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker", "horizonDays"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "outputSchemaVersion": 2,
+            "skills": [{"skillKey": "market_research", "skillVersion": 2}],
+            "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
+            "temperature": 0.4,
+            "maxToolRounds": 3,
+            "budgetUsd": "2.50000000",
+            "streaming": False,
+        },
+    )
+    assert update_response.status_code == 200, update_response.json()
+    updated = update_response.json()
+
+    assert updated["id"] != created["id"]
+    assert updated["version"] == 2
+    assert updated["status"] == "published"
+    assert updated["name"] == "Research Agent v2"
+    assert cast(dict[str, object], updated["outputSchema"])["id"] == output_schema_v2["id"]
+    assert cast(dict[str, object], updated["outputSchema"])["version"] == 2
+    assert cast(list[dict[str, object]], updated["skills"])[0]["id"] == skill_v2["id"]
+    assert cast(list[dict[str, object]], updated["skills"])[0]["version"] == 2
+    assert cast(list[dict[str, object]], updated["mcpServers"])[0]["id"] == mcp_server_v2["id"]
+    assert cast(list[dict[str, object]], updated["mcpServers"])[0]["transport"] == "stdio"
+
+    previous_version = client.get(f"/api/agents/{updated['id']}", params={"version": 1})
+    assert previous_version.status_code == 200, previous_version.json()
+    previous = previous_version.json()
+    assert previous["id"] == created["id"]
+    assert previous["version"] == 1
+    assert previous["status"] == "deprecated"
+    assert cast(dict[str, object], previous["outputSchema"])["version"] == 1
+    assert cast(list[dict[str, object]], previous["skills"])[0]["version"] == 1
+    assert cast(list[dict[str, object]], previous["mcpServers"])[0]["version"] == 1
+
+
+def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    created = create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+    updated = client.post(
+        f"/api/agents/{created['id']}",
+        json={
+            "name": "Research Agent v2",
+            "description": "Version 2 for archive coverage.",
+            "model": "openai:gpt-5.4",
+            "systemPrompt": "Use version 2 for archive coverage.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+    assert updated.status_code == 200, updated.json()
+    updated_body = updated.json()
+
+    archive_response = client.delete(f"/api/agents/{updated_body['id']}")
+    assert archive_response.status_code == 200, archive_response.json()
+    assert archive_response.json()["status"] == "archived"
+
+    current_response = client.get(f"/api/agents/{updated_body['id']}")
+    assert current_response.status_code == 200, current_response.json()
+    assert current_response.json()["status"] == "archived"
+    assert current_response.json()["version"] == 2
+
+    historical_response = client.get(f"/api/agents/{updated_body['id']}", params={"version": 1})
+    assert historical_response.status_code == 200, historical_response.json()
+    assert historical_response.json()["id"] == created["id"]
+    assert historical_response.json()["version"] == 1
+    assert historical_response.json()["status"] == "deprecated"
+
+    archived_list = client.get("/api/agents", params={"status": "archived"})
+    assert archived_list.status_code == 200, archived_list.json()
+    assert [item["id"] for item in archived_list.json()["items"]] == [updated_body["id"]]
+
+
+def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+
+    response = client.post(
+        "/api/agents",
+        json={
+            "key": "invalid_agent",
+            "name": "Invalid Agent",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "This save should fail.",
+            "inputSchema": {
+                "allOf": [{"type": "object"}, {"type": "string"}],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert any(
+        detail["field"] == "inputSchema.allOf" and "allOf is not supported" in detail["issue"]
+        for detail in response.json()["details"]
+    )
+
+
+def test_agent_platform_agent_missing_output_schema_returns_field_errors(
+    client: TestClient,
+) -> None:
+    create_skill(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research",
+            "toolDefinitions": [{"tool": "ledger.market_data.quote_lookup"}],
+        },
+    )
+    create_mcp_server(
+        client,
+        payload={
+            "key": "market_data",
+            "name": "Market Data MCP",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
+            "enabled": True,
+        },
+    )
+
+    response = client.post(
+        "/api/agents",
+        json={
+            "key": "broken_agent",
+            "name": "Broken Agent",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "This save should fail.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "missing_schema",
+            "skills": [{"skillKey": "market_research", "skillVersion": 1}],
+            "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["details"] == [
+        {"field": "outputSchemaKey", "issue": "Output schema 'missing_schema' was not found"}
+    ]
+
+
+def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resolved_structure(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+            "budgetUsd": "1.25000000",
+        },
+    )
+
+    created = create_workflow(
+        client,
+        payload={
+            "key": "market_review",
+            "name": "Market Review",
+            "description": "Runs research before producing the final slot output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {
+                                "ticker": {"from": "input", "path": "ticker"},
+                            },
+                            "optional": False,
+                        }
+                    ],
+                }
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    created_steps = cast(list[dict[str, object]], created["steps"])
+    step_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
+    step_agent = step_agents[0]
+    output_spec = cast(dict[str, object], created["outputSpec"])
+
+    assert created["version"] == 1
+    assert created["status"] == "published"
+    assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
+    assert step_agent["agentVersion"] == 1
+    assert step_agent["outputSchemaVersion"] == 1
+    assert step_agent["budgetUsd"] == "1.25000000"
+    assert step_agent["wiring"] == {"ticker": {"from": "input", "path": "ticker"}}
+    assert output_spec["kind"] == "slot"
+    assert output_spec["stepIndex"] == 1
+    assert output_spec["slot"] == "analysis"
+    assert output_spec["agentVersion"] == 1
+    assert output_spec["outputSchemaVersion"] == 1
+    assert created["aggregateBudgetUsd"] == "1.25000000"
+
+    get_response = client.get(f"/api/workflows/{created['id']}")
+    assert get_response.status_code == 200, get_response.json()
+    assert get_response.json()["version"] == 1
+
+    list_response = client.get("/api/workflows", params={"status": "published"})
+    assert list_response.status_code == 200, list_response.json()
+    assert [item["id"] for item in list_response.json()["items"]] == [created["id"]]
+
+
+def test_agent_platform_workflow_update_version_pins_current_agent_versions_immutably(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    created_agent = create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+            "budgetUsd": "1.25000000",
+        },
+    )
+    created_workflow = create_workflow(
+        client,
+        payload={
+            "key": "market_review",
+            "name": "Market Review",
+            "description": "Version one workflow.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {
+                                "ticker": {"from": "input", "path": "ticker"},
+                            },
+                        }
+                    ],
+                }
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    create_output_schema(
+        client,
+        payload={
+            "key": "decision_schema",
+            "name": "Decision Schema v2",
+            "jsonSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["summary", "confidence"],
+            },
+        },
+    )
+    update_agent_response = client.post(
+        f"/api/agents/{created_agent['id']}",
+        json={
+            "name": "Research Agent v2",
+            "description": "Publishes a richer schema.",
+            "model": "openai:gpt-5.4",
+            "systemPrompt": "Use the richer output schema.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker", "horizonDays"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "outputSchemaVersion": 2,
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+            "budgetUsd": "2.50000000",
+        },
+    )
+    assert update_agent_response.status_code == 200, update_agent_response.json()
+
+    update_workflow_response = client.post(
+        f"/api/workflows/{created_workflow['id']}",
+        json={
+            "name": "Market Review v2",
+            "description": "Pins the currently published agent version.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string"},
+                    "horizonDays": {"type": "integer"},
+                },
+                "required": ["ticker", "horizonDays"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {
+                                "ticker": {"from": "input", "path": "ticker"},
+                                "horizonDays": {"from": "input", "path": "horizonDays"},
+                            },
+                        }
+                    ],
+                }
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+    assert update_workflow_response.status_code == 200, update_workflow_response.json()
+    updated = update_workflow_response.json()
+
+    updated_steps = cast(list[dict[str, object]], updated["steps"])
+    updated_step_agents = cast(list[dict[str, object]], updated_steps[0]["agents"])
+    updated_step_agent = updated_step_agents[0]
+    assert updated["id"] != created_workflow["id"]
+    assert updated["version"] == 2
+    assert updated["status"] == "published"
+    assert updated_step_agent["agentVersion"] == 2
+    assert updated_step_agent["outputSchemaVersion"] == 2
+    assert updated["aggregateBudgetUsd"] == "2.50000000"
+
+    previous_version = client.get(f"/api/workflows/{updated['id']}", params={"version": 1})
+    assert previous_version.status_code == 200, previous_version.json()
+    previous = previous_version.json()
+    previous_steps = cast(list[dict[str, object]], previous["steps"])
+    previous_step_agents = cast(list[dict[str, object]], previous_steps[0]["agents"])
+    previous_step_agent = previous_step_agents[0]
+    assert previous["id"] == created_workflow["id"]
+    assert previous["version"] == 1
+    assert previous["status"] == "deprecated"
+    assert previous_step_agent["agentVersion"] == 1
+    assert previous_step_agent["outputSchemaVersion"] == 1
+
+
+def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    response = client.post(
+        "/api/workflows",
+        json={
+            "key": "duplicate_slots_workflow",
+            "name": "Duplicate Slots Workflow",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        },
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        },
+                    ],
+                }
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["details"] == [
+        {
+            "field": "steps[0].agents[1].slot",
+            "issue": "Duplicate slot name within the same step",
+        }
+    ]
+
+
+def test_agent_platform_workflow_wiring_rejects_unresolved_slots(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    response = client.post(
+        "/api/workflows",
+        json={
+            "key": "missing_slot_workflow",
+            "name": "Missing Slot Workflow",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        }
+                    ],
+                },
+                {
+                    "index": 2,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "review",
+                            "wiring": {
+                                "ticker": {
+                                    "from": "step",
+                                    "stepIndex": 1,
+                                    "slot": "missing_slot",
+                                }
+                            },
+                        }
+                    ],
+                },
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["details"] == [
+        {
+            "field": "steps[1].agents[0].wiring.ticker",
+            "issue": "Slot 'missing_slot' was not found on step 1",
+        }
+    ]
+
+
+def test_agent_platform_workflow_wiring_rejects_forward_step_references(
+    client: TestClient,
+) -> None:
+    _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    response = client.post(
+        "/api/workflows",
+        json={
+            "key": "forward_reference_workflow",
+            "name": "Forward Reference Workflow",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {
+                                "ticker": {
+                                    "from": "step",
+                                    "stepIndex": 2,
+                                    "slot": "review",
+                                }
+                            },
+                        }
+                    ],
+                },
+                {
+                    "index": 2,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "review",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        }
+                    ],
+                },
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "review"},
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["details"] == [
+        {
+            "field": "steps[0].agents[0].wiring.ticker",
+            "issue": "Slot references must point to an earlier step",
+        }
+    ]
+
+
+def test_agent_platform_workflow_wiring_rejects_type_mismatches(
+    client: TestClient,
+) -> None:
+    dependencies = _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload={
+            "key": "research_agent",
+            "name": "Research Agent",
+            "description": "Analyzes a ticker.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Analyze the requested ticker and return a typed result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchemaKey": "decision_schema",
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+    create_agent(
+        client,
+        payload={
+            "key": "score_agent",
+            "name": "Score Agent",
+            "description": "Requires an integer score.",
+            "model": "openai:gpt-5.4-mini",
+            "systemPrompt": "Use the integer score.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"score": {"type": "integer"}},
+                "required": ["score"],
+            },
+            "outputSchemaKey": cast(str, dependencies["outputSchema"]["key"]),
+            "skills": [{"skillKey": "market_research"}],
+            "mcpServers": [{"mcpServerKey": "market_data"}],
+        },
+    )
+
+    response = client.post(
+        "/api/workflows",
+        json={
+            "key": "type_mismatch_workflow",
+            "name": "Type Mismatch Workflow",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        }
+                    ],
+                },
+                {
+                    "index": 2,
+                    "agents": [
+                        {
+                            "agentKey": "score_agent",
+                            "slot": "scored",
+                            "wiring": {
+                                "score": {
+                                    "from": "step",
+                                    "stepIndex": 1,
+                                    "slot": "analysis",
+                                    "path": "summary",
+                                }
+                            },
+                        }
+                    ],
+                },
+            ],
+            "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["details"] == [
+        {
+            "field": "steps[1].agents[0].wiring.score",
+            "issue": "Wired source type is not compatible with the target field schema",
+        }
+    ]
+
+
+def test_agent_platform_stock_analysis_success_runs_stub_workflow_without_live_services(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(RunService, "_invoke_agent", make_stock_analysis_stub_invoke())
+    _seed_stock_analysis_platform(client)
+
+    created_workflow = create_workflow(client, payload=stock_analysis_workflow_payload())
+    created_steps = cast(list[dict[str, object]], created_workflow["steps"])
+    created_step_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
+    output_spec = cast(dict[str, object], created_workflow["outputSpec"])
+
+    assert [agent["agentKey"] for agent in created_step_agents] == list(
+        STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+    )
+    assert output_spec["kind"] == "agent"
+    assert output_spec["agentKey"] == "decision_synthesizer"
+    assert created_workflow["aggregateBudgetUsd"] == "0.50000000"
+
+    trigger = client.post(
+        f"/api/workflows/{created_workflow['id']}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, cast(int, trigger.json()["id"]))
+    expected_step_outputs = {
+        key: build_stock_analysis_note(agent_key=key, ticker="NVDA", horizon_days=30)
+        for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+    }
+
+    assert detail["status"] == "succeeded"
+    _assert_logfire_trace_id(detail["traceId"])
+    assert detail["finalOutput"] == build_trading_decision(expected_step_outputs)
+    assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == list(
+        STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+    )
+    assert detail["perStepOutputs"]["2"][0]["agentKey"] == "decision_synthesizer"
+    assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == expected_step_outputs
+    assert detail["perStepOutputs"]["2"][0]["status"] == "succeeded"
 
 
 def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
@@ -920,6 +2412,48 @@ class BrokenQuoteProvider:
         raise QuoteProviderError(f"Unavailable for {symbol}")
 
 
+def _build_provider_quote(
+    *,
+    symbol: str,
+    price: Decimal,
+    previous_close: Decimal | None,
+    currency: str,
+    provider: str,
+    as_of: datetime | None,
+) -> ProviderQuote:
+    quote = cast(ProviderQuote, object.__new__(ProviderQuote))
+    quote.symbol = symbol
+    quote.price = price
+    quote.previous_close = previous_close
+    quote.currency = currency
+    quote.provider = provider
+    quote.as_of = as_of
+    quote.name = None
+    return quote
+
+
+def _build_provider_history_point(*, at: datetime, close: Decimal) -> ProviderHistoryPoint:
+    point = cast(ProviderHistoryPoint, object.__new__(ProviderHistoryPoint))
+    point.at = at
+    point.close = close
+    return point
+
+
+def _build_provider_history_series(
+    *,
+    symbol: str,
+    currency: str | None,
+    provider: str,
+    points: list[ProviderHistoryPoint],
+) -> ProviderHistorySeries:
+    series = cast(ProviderHistorySeries, object.__new__(ProviderHistorySeries))
+    series.symbol = symbol
+    series.currency = currency
+    series.provider = provider
+    series.points = points
+    return series
+
+
 class StableQuoteProvider:
     def fetch_symbol_name(self, symbol: str) -> str | None:
         if symbol.upper() == "AAPL":
@@ -928,13 +2462,13 @@ class StableQuoteProvider:
 
     def fetch_quote(self, symbol: str) -> ProviderQuote:
         normalized_symbol = symbol.upper()
-        return ProviderQuote(
+        return _build_provider_quote(
             symbol=normalized_symbol,
             price=Decimal("191.24"),
             previous_close=Decimal("189.10"),
             currency="USD",
             provider="stub_feed",
-            as_of=datetime(2026, 3, 10, 13, 55, tzinfo=UTC),
+            as_of=datetime(2026, 3, 10, 13, 55, tzinfo=UTC_TZ),
         )
 
     def fetch_history(
@@ -945,21 +2479,20 @@ class StableQuoteProvider:
 
         normalized_symbol = symbol.upper()
         base_price = Decimal("100.00") if normalized_symbol == "AAPL" else Decimal("90.00")
-        return ProviderHistorySeries(
+        return _build_provider_history_series(
             symbol=normalized_symbol,
             currency="USD",
             provider="stub_feed",
             points=[
-                ProviderHistoryPoint(
-                    at=datetime(2026, 1, 5, 14, 30, tzinfo=UTC),
-                    close=base_price,
+                _build_provider_history_point(
+                    at=datetime(2026, 1, 5, 14, 30, tzinfo=UTC_TZ), close=base_price
                 ),
-                ProviderHistoryPoint(
-                    at=datetime(2026, 2, 5, 14, 30, tzinfo=UTC),
+                _build_provider_history_point(
+                    at=datetime(2026, 2, 5, 14, 30, tzinfo=UTC_TZ),
                     close=base_price + Decimal("8.50"),
                 ),
-                ProviderHistoryPoint(
-                    at=datetime(2026, 3, 5, 14, 30, tzinfo=UTC),
+                _build_provider_history_point(
+                    at=datetime(2026, 3, 5, 14, 30, tzinfo=UTC_TZ),
                     close=base_price + Decimal("12.00"),
                 ),
             ],
@@ -1102,7 +2635,7 @@ def test_market_data_falls_back_to_cached_quote(
 ) -> None:
     portfolio = create_portfolio(client)
     portfolio_id = str(portfolio["id"])
-    as_of = datetime(2026, 3, 10, 13, 55, tzinfo=UTC)
+    as_of = datetime(2026, 3, 10, 13, 55, tzinfo=UTC_TZ)
 
     with session_factory() as session:
         session.add(
@@ -1137,7 +2670,7 @@ def test_market_data_recomputes_cached_quote_staleness_on_fallback(
 ) -> None:
     portfolio = create_portfolio(client)
     portfolio_id = str(portfolio["id"])
-    as_of = datetime.now(UTC) - timedelta(minutes=30)
+    as_of = datetime.now(UTC_TZ) - timedelta(minutes=30)
 
     with session_factory() as session:
         cached_quote = MarketQuote(
@@ -1255,7 +2788,7 @@ def test_init_db_rejects_legacy_uuid_backed_schema(database_url: str) -> None:
         engine.dispose()
 
 
-def test_init_db_upgrades_legacy_balance_schema_without_destructive_obsolete_table_cleanup(
+def test_init_db_upgrades_legacy_balance_schema_and_drops_obsolete_tables(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1322,7 +2855,7 @@ def test_init_db_upgrades_legacy_balance_schema_without_destructive_obsolete_tab
             "stock_analysis_requests",
             "stock_analysis_responses",
             "stock_analysis_versions",
-        } <= table_names
+        }.isdisjoint(table_names)
     finally:
         engine.dispose()
 
@@ -1504,7 +3037,7 @@ def test_report_compile_nonexistent_template(client: TestClient) -> None:
 def test_report_name_generation_and_uniqueness(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fixed_now = datetime(2026, 3, 18, 10, 56, 51, tzinfo=UTC)
+    fixed_now = datetime(2026, 3, 18, 10, 56, 51, tzinfo=UTC_TZ)
     monkeypatch.setattr("app.services.report_service.utcnow", lambda: fixed_now)
 
     template = create_template(

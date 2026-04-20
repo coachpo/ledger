@@ -1,12 +1,15 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import {
   Bot,
+  Braces,
   Briefcase,
   ClipboardList,
   FileText,
-  FlaskConical,
   LayoutDashboard,
+  PlayCircle,
+  Server,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -48,9 +51,17 @@ const navItems: NavItem[] = [
   { icon: Briefcase, label: "Portfolios", testId: "nav-portfolios", to: "/portfolios" },
   { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
-  { icon: FlaskConical, label: "Tryout", testId: "nav-tryout", to: "/tryout" },
-  { icon: Sparkles, label: "Studio", testId: "nav-studio", to: "/studio" },
-  { icon: Bot, label: "Orchestration", testId: "nav-orchestration", to: "/orchestration" },
+  { icon: Bot, label: "Agents", testId: "nav-agents", to: "/agents" },
+  { icon: Sparkles, label: "Skills", testId: "nav-skills", to: "/skills" },
+  { icon: Server, label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
+  {
+    icon: Braces,
+    label: "Output Schemas",
+    testId: "nav-output-schemas",
+    to: "/output-schemas",
+  },
+  { icon: Workflow, label: "Workflows", testId: "nav-workflows", to: "/workflows" },
+  { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
 ];
 
 function isNavItemActive(pathname: string, item: NavItem) {
@@ -92,100 +103,48 @@ function getPageMeta(pathname: string) {
     return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
   }
 
-  if (pathname === "/tryout") {
-    return { section: "Tryout", title: "Tryout" };
+  if (pathname === "/agents") {
+    return { section: "Agents", title: "Agents" };
   }
 
-  if (pathname === "/studio") {
-    return { section: "Studio", title: "Studio" };
+  if (pathname === "/skills") {
+    return { section: "Skills", title: "Skills" };
   }
 
-  if (pathname === "/studio/agents") {
-    return { section: "Studio", sectionHref: "/studio", title: "Agents" };
+  if (pathname === "/mcp-servers") {
+    return { section: "MCP Servers", title: "MCP Servers" };
   }
 
-  if (pathname === "/studio/agents/new") {
-    return { section: "Studio", sectionHref: "/studio/agents", title: "New Agent" };
+  if (pathname === "/output-schemas") {
+    return { section: "Output Schemas", title: "Output Schemas" };
   }
 
-  if (pathname.startsWith("/studio/agents/") && pathname.endsWith("/edit")) {
-    return { section: "Studio", sectionHref: "/studio/agents", title: "Edit Agent" };
+  if (pathname === "/output-schemas/new") {
+    return { section: "Output Schemas", sectionHref: "/output-schemas", title: "New Output Schema" };
   }
 
-  if (pathname === "/studio/workflows") {
-    return { section: "Studio", sectionHref: "/studio", title: "Workflows" };
+  if (pathname.startsWith("/output-schemas/") && pathname.endsWith("/edit")) {
+    return { section: "Output Schemas", sectionHref: "/output-schemas", title: "Edit Output Schema" };
   }
 
-  if (pathname === "/studio/workflows/new") {
-    return { section: "Studio", sectionHref: "/studio/workflows", title: "New Workflow" };
+  if (pathname === "/workflows") {
+    return { section: "Workflows", title: "Workflows" };
   }
 
-  if (pathname.startsWith("/studio/workflows/") && pathname.endsWith("/edit")) {
-    return { section: "Studio", sectionHref: "/studio/workflows", title: "Edit Workflow" };
+  if (pathname === "/workflows/new") {
+    return { section: "Workflows", sectionHref: "/workflows", title: "New Workflow" };
   }
 
-  if (pathname === "/studio/personas") {
-    return { section: "Studio", sectionHref: "/studio", title: "Personas" };
+  if (pathname.startsWith("/workflows/") && pathname.endsWith("/edit")) {
+    return { section: "Workflows", sectionHref: "/workflows", title: "Edit Workflow" };
   }
 
-  if (pathname === "/studio/personas/new") {
-    return { section: "Studio", sectionHref: "/studio/personas", title: "New Persona" };
+  if (pathname === "/runs") {
+    return { section: "Runs", title: "Runs" };
   }
 
-  if (pathname.startsWith("/studio/personas/") && pathname.endsWith("/edit")) {
-    return { section: "Studio", sectionHref: "/studio/personas", title: "Inspect Persona" };
-  }
-
-  if (pathname === "/studio/capabilities") {
-    return { section: "Studio", sectionHref: "/studio", title: "Capabilities" };
-  }
-
-  if (pathname === "/studio/capabilities/new") {
-    return { section: "Studio", sectionHref: "/studio/capabilities", title: "New Capability" };
-  }
-
-  if (pathname.startsWith("/studio/capabilities/") && pathname.endsWith("/edit")) {
-    return { section: "Studio", sectionHref: "/studio/capabilities", title: "Edit Capability" };
-  }
-
-  if (pathname.startsWith("/studio/runs/")) {
-    return { section: "Studio", sectionHref: "/studio", title: "Run Detail" };
-  }
-
-  if (pathname === "/orchestration") {
-    return { section: "Orchestration", title: "Orchestration" };
-  }
-
-  if (pathname === "/orchestration/roles") {
-    return { section: "Orchestration", sectionHref: "/orchestration", title: "Roles" };
-  }
-
-  if (pathname === "/orchestration/roles/new") {
-    return { section: "Orchestration", sectionHref: "/orchestration/roles", title: "New Role" };
-  }
-
-  if (pathname.startsWith("/orchestration/roles/") && pathname.endsWith("/edit")) {
-    return { section: "Orchestration", sectionHref: "/orchestration/roles", title: "Edit Role" };
-  }
-
-  if (pathname === "/orchestration/characters") {
-    return { section: "Orchestration", sectionHref: "/orchestration", title: "Characters" };
-  }
-
-  if (pathname === "/orchestration/characters/new") {
-    return {
-      section: "Orchestration",
-      sectionHref: "/orchestration/characters",
-      title: "New Character",
-    };
-  }
-
-  if (pathname.startsWith("/orchestration/characters/") && pathname.endsWith("/edit")) {
-    return {
-      section: "Orchestration",
-      sectionHref: "/orchestration/characters",
-      title: "Edit Character",
-    };
+  if (pathname.startsWith("/runs/")) {
+    return { section: "Runs", sectionHref: "/runs", title: "Run Detail" };
   }
 
   return { section: "Workspace", title: "Workspace" };
@@ -206,7 +165,7 @@ function AppSidebar() {
           {showExpandedContent ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold tracking-tight">Ledger</p>
-              <p className="text-xs text-muted-foreground">Portfolio workspace</p>
+              <p className="text-xs text-muted-foreground">Portfolio + agent workspace</p>
             </div>
           ) : null}
         </div>

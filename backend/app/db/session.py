@@ -13,20 +13,17 @@ from app.db.validation import (
     validate_supported_id_schema,
 )
 from app.models.base import Base
-from app.services.runtime_seed_bootstrap import bootstrap_runtime_seed_mirrors
 
 
 def init_db(database_url: str | None = None) -> None:
+    """Initialize the startup-owned schema and compatibility repairs."""
+
     __import__("app.models")
     engine = get_engine(database_url)
     validate_supported_database_engine(engine)
     validate_supported_id_schema(engine)
     Base.metadata.create_all(bind=engine)
     upgrade_legacy_schema(engine)
-    session_factory = get_session_factory(database_url)
-    with session_factory() as session:
-        bootstrap_runtime_seed_mirrors(session)
-        session.commit()
 
 
 __all__ = [

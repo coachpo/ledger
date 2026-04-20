@@ -27,14 +27,17 @@ function textResponse(body: string, status: number): Response {
 async function loadApiModule(baseUrl: string = "") {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
-  const [apiClient, marketDataApi, portfoliosApi, positionsApi] = await Promise.all([
-    import("./api-client"),
-    import("./api/market-data"),
-    import("./api/portfolios"),
-    import("./api/positions"),
-  ]);
+  const [apiClient, agentsApi, marketDataApi, portfoliosApi, positionsApi] =
+    await Promise.all([
+      import("./api-client"),
+      import("./api/agents"),
+      import("./api/market-data"),
+      import("./api/portfolios"),
+      import("./api/positions"),
+    ]);
 
   return {
+    ...agentsApi,
     ...apiClient,
     ...marketDataApi,
     ...portfoliosApi,
@@ -43,7 +46,6 @@ async function loadApiModule(baseUrl: string = "") {
 }
 
 function getLastFetchCall(fetchMock: ReturnType<typeof createFetchMock>): {
-
   init: RequestInit | undefined;
   url: string;
 } {
@@ -79,7 +81,6 @@ const portfolioInput: PortfolioWriteInput = {
 let fetchMock = createFetchMock();
 
 beforeEach(() => {
-
   fetchMock = createFetchMock();
   globalThis.fetch = fetchMock as typeof fetch;
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", "");
@@ -195,25 +196,28 @@ describe("api client", () => {
     });
   });
 
-  it("encodes path segments and query parameters against a configured base URL", async () => {
-    const { getMarketQuotes } = await loadApiModule("https://ledger.example.com/api/v2/");
-    fetchMock.mockResolvedValueOnce(jsonResponse([], 200));
+  it("derives v1 and platform URLs from a configured versioned base", async () => {
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule("https://ledger.example.com/api/v2/");
 
-    await expect(
-      getMarketQuotes("portfolio with/slash", {
-        symbols: ["BRK/B", "AAPL"],
-      }),
-    ).resolves.toEqual([]);
-
-    const { url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(
-      "https://ledger.example.com/api/v2/portfolios/portfolio%20with%2Fslash/market-data/quotes?symbols=BRK%2FB%2CAAPL",
-    );
+    expect(buildApiUrl("/portfolios")).toBe("https://ledger.example.com/api/v1/portfolios");
+    expect(buildPlatformApiUrl("/agents")).toBe("https://ledger.example.com/api/agents");
   });
 
-  it("encodes symbol lookup requests against the configured base URL", async () => {
-    const { getPositionSymbolLookup } = await loadApiModule("https://ledger.example.com/api/v2/");
-    fetchMock.mockResolvedValueOnce(jsonResponse({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." }, 200));
+  it("routes platform modules through the unversioned api base", async () => {
+    const { listAgents } = await loadApiModule("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
+
+    await expect(listAgents()).resolves.toEqual({ items: [] });
+
+    const { url } = getLastFetchCall(fetchMock);
+    expect(url).toBe("https://ledger.example.com/api/agents");
+  });
+
+  it("encodes symbol lookup requests against the derived v1 base URL", async () => {
+    const { getPositionSymbolLookup } = await loadApiModule("https://ledger.example.com/api/");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." }, 200),
+    );
 
     await expect(
       getPositionSymbolLookup("portfolio with/slash", "BRK/B"),
@@ -221,8 +225,7 @@ describe("api client", () => {
 
     const { url } = getLastFetchCall(fetchMock);
     expect(url).toBe(
-      "https://ledger.example.com/api/v2/portfolios/portfolio%20with%2Fslash/positions/lookup?symbol=BRK%2FB",
+      "https://ledger.example.com/api/v1/portfolios/portfolio%20with%2Fslash/positions/lookup?symbol=BRK%2FB",
     );
   });
-
 });

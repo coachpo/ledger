@@ -26,7 +26,6 @@ import {
   useCompileInline,
   usePlaceholders,
 } from "@/hooks/use-templates";
-import { useOrchestrationMentionCatalog } from "@/hooks/use-orchestration";
 import { useCompileReport } from "@/hooks/use-reports";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatMarkdown } from "@/lib/markdown-format";
@@ -54,8 +53,6 @@ export function TemplateEditorPage() {
 
   const { data: template, isLoading: isLoadingTemplate } = useTemplate(templateId);
   const { data: placeholderTree, isLoading: isLoadingPlaceholders } = usePlaceholders();
-  const { data: mentionCatalog, isLoading: isLoadingMentionCatalog } =
-    useOrchestrationMentionCatalog();
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const { mutate: compileInline, ...compileMutation } = useCompileInline();
@@ -125,10 +122,6 @@ export function TemplateEditorPage() {
 
   const insertPlaceholder = (placeholder: string) => {
     insertText(`{{${placeholder}}}`);
-  };
-
-  const insertMention = (handle: string) => {
-    insertText(handle);
   };
 
   const handleGenerateReport = ({
@@ -391,11 +384,8 @@ export function TemplateEditorPage() {
       <TemplatePlaceholderReference
         open={placeholdersOpen}
         isLoading={isLoadingPlaceholders}
-        isLoadingMentions={isLoadingMentionCatalog}
-        mentionCatalog={mentionCatalog}
         onClose={() => setPlaceholdersOpen(false)}
         onInsert={insertPlaceholder}
-        onInsertMention={insertMention}
         placeholderTree={placeholderTree}
       />
 

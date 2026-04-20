@@ -16,7 +16,7 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 describe("Layout", () => {
-  it("shows orchestration in the root shell navigation without a backtests entry", () => {
+  it("shows the primary platform shell navigation and hides legacy shell entries", () => {
     render(
       <ThemeProvider>
         <MemoryRouter initialEntries={["/"]}>
@@ -29,7 +29,16 @@ describe("Layout", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole("link", { name: /orchestration/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /agents/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /skills/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /mcp servers/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /output schemas/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /workflows/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /runs/i })).toBeInTheDocument();
+
+    expect(screen.queryByRole("link", { name: /tryout/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /studio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /orchestration/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /backtests/i })).not.toBeInTheDocument();
   });
 });

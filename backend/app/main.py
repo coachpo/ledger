@@ -9,10 +9,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.platform_router import platform_router
 from app.api.router import api_router
-from app.api.v2_router import v2_router
 from app.core.config import get_settings
 from app.core.errors import ApiError, request_validation_to_details
+from app.core.telemetry import configure_logfire
 from app.db.session import init_db
 
 
@@ -24,6 +25,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app(*, init_database: bool = True) -> FastAPI:
     settings = get_settings()
+    configure_logfire()
     app = FastAPI(
         title="Ledger Backend", version="0.1.0", lifespan=lifespan if init_database else None
     )
@@ -57,8 +59,8 @@ def create_app(*, init_database: bool = True) -> FastAPI:
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(platform_router)
     app.include_router(api_router)
-    app.include_router(v2_router)
     return app
 
 

@@ -6,26 +6,30 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.agents import SkillRegistry, get_default_skill_registry
+from app.agents.mcp import DefaultMcpConnectionTester, McpConnectionTester
 from app.core.config import get_settings
 from app.db.session import get_db_session, get_session_factory
-from app.services.agent_runtime_service import AgentRuntimeService
-from app.services.agent_spec_service import AgentSpecService
+from app.services.agent_service import AgentService
 from app.services.balance_service import BalanceService
-from app.services.capability_registry_service import CapabilityRegistryService
 from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService
-from app.services.orchestration_service import OrchestrationService
-from app.services.persona_profile_service import PersonaProfileService
+from app.services.mcp_server_service import McpServerService
+from app.services.output_schema_service import OutputSchemaService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
-from app.services.quote_provider import QuoteProvider, YahooFinanceQuoteProvider
+from app.services.quote_provider import (
+    DeterministicQuoteProvider,
+    QuoteProvider,
+    YahooFinanceQuoteProvider,
+)
 from app.services.report_service import ReportService
-from app.services.studio_query_service import StudioQueryService
+from app.services.run_service import RunService
+from app.services.skill_service import SkillService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 from app.services.trading_operation_service import TradingOperationService
-from app.services.tryout_service import TryoutService
-from app.services.workflow_spec_service import WorkflowSpecService
+from app.services.workflow_service import WorkflowService
 
 
 def get_session() -> Iterator[Session]:
@@ -46,6 +50,8 @@ def get_balance_service(
 
 def get_quote_provider() -> QuoteProvider:
     settings = get_settings()
+    if settings.quote_provider_backend == "deterministic":
+        return DeterministicQuoteProvider()
     return YahooFinanceQuoteProvider(timeout=settings.quote_provider_timeout_seconds)
 
 
@@ -88,52 +94,52 @@ def get_report_service(
     return ReportService(session)
 
 
-def get_orchestration_service(
+def get_skill_registry() -> SkillRegistry:
+    return get_default_skill_registry()
+
+
+def get_skill_service(
     session: Annotated[Session, Depends(get_session)],
-) -> OrchestrationService:
-    return OrchestrationService(session)
+    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
+) -> SkillService:
+    return SkillService(session, skill_registry)
 
 
-def get_persona_profile_service(
+def get_mcp_connection_tester() -> McpConnectionTester:
+    return DefaultMcpConnectionTester()
+
+
+def get_mcp_server_service(
     session: Annotated[Session, Depends(get_session)],
-) -> PersonaProfileService:
-    return PersonaProfileService(session)
+    connection_tester: Annotated[McpConnectionTester, Depends(get_mcp_connection_tester)],
+) -> McpServerService:
+    return McpServerService(session, connection_tester)
 
 
-def get_agent_spec_service(
+def get_output_schema_service(
     session: Annotated[Session, Depends(get_session)],
-) -> AgentSpecService:
-    return AgentSpecService(session)
+) -> OutputSchemaService:
+    return OutputSchemaService(session)
 
 
-def get_workflow_spec_service(
+def get_agent_service(
     session: Annotated[Session, Depends(get_session)],
-) -> WorkflowSpecService:
-    return WorkflowSpecService(session)
+    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
+    connection_tester: Annotated[McpConnectionTester, Depends(get_mcp_connection_tester)],
+) -> AgentService:
+    return AgentService(session, skill_registry, connection_tester)
 
 
-def get_capability_registry_service(
+def get_workflow_service(
     session: Annotated[Session, Depends(get_session)],
-) -> CapabilityRegistryService:
-    return CapabilityRegistryService(session)
+) -> WorkflowService:
+    return WorkflowService(session)
 
 
-def get_agent_runtime_service(
+def get_run_service(
     session: Annotated[Session, Depends(get_session)],
-) -> AgentRuntimeService:
-    return AgentRuntimeService(session, get_session_factory())
-
-
-def get_studio_query_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> StudioQueryService:
-    return StudioQueryService(session)
-
-
-def get_tryout_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> TryoutService:
-    return TryoutService(session)
+) -> RunService:
+    return RunService(session, get_session_factory())
 
 
 def get_template_compiler_service(

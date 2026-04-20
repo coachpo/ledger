@@ -24,13 +24,13 @@ export default defineConfig({
     {
       command: `node scripts/start-playwright-backend.mjs`,
       port: BACKEND_PORT,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
     },
     {
       command: `node scripts/start-playwright-frontend.mjs`,
       port: FRONTEND_PORT,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 15_000,
     },
   ],

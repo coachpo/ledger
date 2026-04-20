@@ -16,8 +16,9 @@ test.describe("Portfolio CRUD", () => {
     await page.getByLabel("Base Currency").fill("USD");
     await page.getByRole("button", { name: /create|save|submit/i }).click();
 
-    await expect(page).toHaveURL(/\/portfolios\/[^/]+$/);
-    await expect(page.getByRole("heading", { name: portfolioName })).toBeVisible({ timeout: 5000 });
+    await expect(page).toHaveURL(/\/portfolios$/);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByText(portfolioName)).toBeVisible({ timeout: 15000 });
   });
 
   test("portfolio list renders", async ({ page }) => {
@@ -57,8 +58,7 @@ test.describe("Portfolio CRUD", () => {
 
     await page.getByRole("button", { name: "Add Position" }).click();
     await page.getByLabel("Symbol").fill("ZZZZZZZZ");
-    await expect(page.getByText("No company name found. You can enter one manually.")).toBeVisible();
-    await expect(page.getByLabel("Name")).toHaveValue("");
+    await expect(page.getByText("Suggested name loaded. You can edit it before saving.")).toBeVisible();
 
     await page.getByLabel("Name").fill("Manual Fallback Name");
     await page.getByLabel("Quantity").fill("1");

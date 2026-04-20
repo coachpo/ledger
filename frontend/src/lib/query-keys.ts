@@ -1,19 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
-import type {
-  RuntimeApprovalListParams,
-  RuntimeRunListParams,
-  RuntimeTraceEventListParams,
-} from "./types/runtime";
-import type {
-  CapabilityListParams,
-  PersonaProfileListParams,
-  StudioArtifactListParams,
-  StudioSpecListParams,
-} from "./types/studio";
+import type { AgentListParams } from "./types/agent";
+import type { McpServerListParams } from "./types/mcp-server";
+import type { OutputSchemaListParams } from "./types/output-schema";
+import type { RunListParams } from "./types/run";
+import type { SkillListParams } from "./types/skill";
+import type { WorkflowListParams } from "./types/workflow";
 
 const apiRoot = ["api"] as const;
-const v2ApiRoot = [...apiRoot, "v2"] as const;
+const platformApiRoot = [...apiRoot, "platform"] as const;
 type IdParam = number | string;
 
 function normalizeId(id: IdParam) {
@@ -37,10 +32,32 @@ function normalizeOptionalText(value: string | null | undefined) {
   return normalized ? normalized : undefined;
 }
 
+function normalizeOptionalVersion(value: number | string | null | undefined) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  return Number(value);
+}
+
 function omitUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as Partial<T>;
+}
+
+function buildVersionedPlatformDetailKey(
+  resourceRoot: readonly unknown[],
+  id: IdParam,
+  version?: number | string,
+) {
+  const normalizedVersion = normalizeOptionalVersion(version);
+
+  if (normalizedVersion === undefined) {
+    return [...resourceRoot, "detail", normalizeId(id)] as const;
+  }
+
+  return [...resourceRoot, "detail", normalizeId(id), { version: normalizedVersion }] as const;
 }
 
 function normalizeHistoryParams(params: GetMarketHistoryParams) {
@@ -50,70 +67,48 @@ function normalizeHistoryParams(params: GetMarketHistoryParams) {
   };
 }
 
-function normalizeRuntimeRunParams(params: RuntimeRunListParams = {}) {
+function normalizeAgentListParams(params: AgentListParams = {}) {
   return omitUndefined({
-    callerId: params.callerId,
-    callerIdentityKey: normalizeOptionalText(params.callerIdentityKey),
-    callerScopeKey: normalizeOptionalText(params.callerScopeKey),
-    callerType: params.callerType,
-    workflowSpecKey: normalizeOptionalText(params.workflowSpecKey),
-  });
-}
-
-function normalizeRuntimeApprovalParams(params: RuntimeApprovalListParams = {}) {
-  return omitUndefined({
-    callerId: params.callerId,
-    callerType: params.callerType,
-    capabilityKey: normalizeOptionalText(params.capabilityKey),
-    runId: params.runId,
-    status: params.status,
-    workflowSpecKey: normalizeOptionalText(params.workflowSpecKey),
-  });
-}
-
-function normalizeRuntimeTraceEventParams(params: RuntimeTraceEventListParams = {}) {
-  return omitUndefined({
-    callerId: params.callerId,
-    callerType: params.callerType,
-    capabilityKey: normalizeOptionalText(params.capabilityKey),
-    eventType: params.eventType,
-    runId: params.runId,
-    workflowSpecKey: normalizeOptionalText(params.workflowSpecKey),
-  });
-}
-
-function normalizeStudioArtifactParams(params: StudioArtifactListParams = {}) {
-  return omitUndefined({
-    callerId: params.callerId,
-    callerType: params.callerType,
-    capabilityKey: normalizeOptionalText(params.capabilityKey),
-    personaProfileKey: normalizeOptionalText(params.personaProfileKey),
-    runId: params.runId,
-    workflowSpecKey: normalizeOptionalText(params.workflowSpecKey),
-  });
-}
-
-function normalizeStudioSpecListParams(params: StudioSpecListParams = {}) {
-  return omitUndefined({
-    origin: params.origin,
+    model: normalizeOptionalText(params.model),
     status: params.status,
   });
 }
 
-function normalizeCapabilityListParams(params: CapabilityListParams = {}) {
+function normalizeSkillListParams(params: SkillListParams = {}) {
   return omitUndefined({
-    origin: params.origin,
     status: params.status,
-    type: params.type,
   });
 }
 
-function normalizePersonaListParams(params: PersonaProfileListParams = {}) {
+function normalizeMcpServerListParams(params: McpServerListParams = {}) {
   return omitUndefined({
     enabled: params.enabled,
-    kind: params.kind,
-    origin: params.origin,
     status: params.status,
+    transport: params.transport,
+  });
+}
+
+function normalizeOutputSchemaListParams(params: OutputSchemaListParams = {}) {
+  return omitUndefined({
+    kind: params.kind,
+    status: params.status,
+  });
+}
+
+function normalizeWorkflowListParams(params: WorkflowListParams = {}) {
+  return omitUndefined({
+    status: params.status,
+  });
+}
+
+function normalizeRunListParams(params: RunListParams = {}) {
+  return omitUndefined({
+    limit: params.limit,
+    offset: params.offset ?? 0,
+    status: params.status,
+    workflowId: params.workflowId,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+    workflowVersion: params.workflowVersion,
   });
 }
 
@@ -170,152 +165,58 @@ const templatesQueryKeys = {
 
 const reportsQueryKeys = {
   all: [...apiRoot, "reports"] as const,
-  detail: (reportId: IdParam) =>
-    [...apiRoot, "reports", "detail", normalizeId(reportId)] as const,
+  detail: (reportId: IdParam) => [...apiRoot, "reports", "detail", normalizeId(reportId)] as const,
   list: () => [...apiRoot, "reports", "list"] as const,
 } as const;
 
-const orchestrationQueryKeys = {
-  all: [...apiRoot, "orchestration"] as const,
-  roles: {
-    all: [...apiRoot, "orchestration", "roles"] as const,
-    detail: (roleId: IdParam) =>
-      [...apiRoot, "orchestration", "roles", "detail", normalizeId(roleId)] as const,
-    list: () => [...apiRoot, "orchestration", "roles", "list"] as const,
+const platformQueryKeys = {
+  all: [...platformApiRoot] as const,
+  agents: {
+    all: [...platformApiRoot, "agents"] as const,
+    detail: (agentId: IdParam, version?: number | string) =>
+      buildVersionedPlatformDetailKey([...platformApiRoot, "agents"] as const, agentId, version),
+    list: (params: AgentListParams = {}) =>
+      [...platformApiRoot, "agents", "list", normalizeAgentListParams(params)] as const,
   },
-  characters: {
-    all: [...apiRoot, "orchestration", "characters"] as const,
-    detail: (characterId: IdParam) =>
-      [...apiRoot, "orchestration", "characters", "detail", normalizeId(characterId)] as const,
-    list: () => [...apiRoot, "orchestration", "characters", "list"] as const,
+  skills: {
+    all: [...platformApiRoot, "skills"] as const,
+    detail: (skillId: IdParam) =>
+      [...platformApiRoot, "skills", "detail", normalizeId(skillId)] as const,
+    list: (params: SkillListParams = {}) =>
+      [...platformApiRoot, "skills", "list", normalizeSkillListParams(params)] as const,
   },
-  mentionCatalog: () => [...apiRoot, "orchestration", "mentionCatalog"] as const,
-} as const;
-
-const runtimeQueryKeys = {
-  all: [...v2ApiRoot, "runtime"] as const,
+  mcpServers: {
+    all: [...platformApiRoot, "mcpServers"] as const,
+    detail: (serverId: IdParam) =>
+      [...platformApiRoot, "mcpServers", "detail", normalizeId(serverId)] as const,
+    list: (params: McpServerListParams = {}) =>
+      [...platformApiRoot, "mcpServers", "list", normalizeMcpServerListParams(params)] as const,
+  },
+  outputSchemas: {
+    all: [...platformApiRoot, "outputSchemas"] as const,
+    detail: (schemaId: IdParam) =>
+      [...platformApiRoot, "outputSchemas", "detail", normalizeId(schemaId)] as const,
+    list: (params: OutputSchemaListParams = {}) =>
+      [...platformApiRoot, "outputSchemas", "list", normalizeOutputSchemaListParams(params)] as const,
+  },
+  workflows: {
+    all: [...platformApiRoot, "workflows"] as const,
+    detail: (workflowId: IdParam, version?: number | string) =>
+      buildVersionedPlatformDetailKey(
+        [...platformApiRoot, "workflows"] as const,
+        workflowId,
+        version,
+      ),
+    list: (params: WorkflowListParams = {}) =>
+      [...platformApiRoot, "workflows", "list", normalizeWorkflowListParams(params)] as const,
+  },
   runs: {
-    all: [...v2ApiRoot, "runtime", "runs"] as const,
-    artifact: (runId: IdParam) =>
-      [...v2ApiRoot, "runtime", "runs", "artifact", normalizeId(runId)] as const,
+    all: [...platformApiRoot, "runs"] as const,
     detail: (runId: IdParam) =>
-      [...v2ApiRoot, "runtime", "runs", "detail", normalizeId(runId)] as const,
-    list: (params: RuntimeRunListParams = {}) =>
-      [...v2ApiRoot, "runtime", "runs", "list", normalizeRuntimeRunParams(params)] as const,
-    trace: (runId: IdParam) =>
-      [...v2ApiRoot, "runtime", "runs", "trace", normalizeId(runId)] as const,
+      [...platformApiRoot, "runs", "detail", normalizeId(runId)] as const,
+    list: (params: RunListParams = {}) =>
+      [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
   },
-  approvals: {
-    all: [...v2ApiRoot, "runtime", "approvals"] as const,
-    detail: (approvalId: IdParam) =>
-      [...v2ApiRoot, "runtime", "approvals", "detail", normalizeId(approvalId)] as const,
-    list: (params: RuntimeApprovalListParams = {}) =>
-      [
-        ...v2ApiRoot,
-        "runtime",
-        "approvals",
-        "list",
-        normalizeRuntimeApprovalParams(params),
-      ] as const,
-  },
-  traceEvents: {
-    all: [...v2ApiRoot, "runtime", "traceEvents"] as const,
-    list: (params: RuntimeTraceEventListParams = {}) =>
-      [
-        ...v2ApiRoot,
-        "runtime",
-        "traceEvents",
-        "list",
-        normalizeRuntimeTraceEventParams(params),
-      ] as const,
-  },
-} as const;
-
-const studioQueryKeys = {
-  all: [...v2ApiRoot, "studio"] as const,
-  runs: {
-    all: [...v2ApiRoot, "studio", "runs"] as const,
-    artifact: (runId: IdParam) =>
-      [...v2ApiRoot, "studio", "runs", "artifact", normalizeId(runId)] as const,
-    detail: (runId: IdParam) =>
-      [...v2ApiRoot, "studio", "runs", "detail", normalizeId(runId)] as const,
-    list: (params: RuntimeRunListParams = {}) =>
-      [...v2ApiRoot, "studio", "runs", "list", normalizeRuntimeRunParams(params)] as const,
-    trace: (runId: IdParam) =>
-      [...v2ApiRoot, "studio", "runs", "trace", normalizeId(runId)] as const,
-  },
-  artifacts: {
-    all: [...v2ApiRoot, "studio", "artifacts"] as const,
-    list: (params: StudioArtifactListParams = {}) =>
-      [...v2ApiRoot, "studio", "artifacts", "list", normalizeStudioArtifactParams(params)] as const,
-  },
-  approvals: {
-    all: [...v2ApiRoot, "studio", "approvals"] as const,
-    detail: (approvalId: IdParam) =>
-      [...v2ApiRoot, "studio", "approvals", "detail", normalizeId(approvalId)] as const,
-    list: (params: RuntimeApprovalListParams = {}) =>
-      [
-        ...v2ApiRoot,
-        "studio",
-        "approvals",
-        "list",
-        normalizeRuntimeApprovalParams(params),
-      ] as const,
-  },
-  traceEvents: {
-    all: [...v2ApiRoot, "studio", "traceEvents"] as const,
-    list: (params: RuntimeTraceEventListParams = {}) =>
-      [
-        ...v2ApiRoot,
-        "studio",
-        "traceEvents",
-        "list",
-        normalizeRuntimeTraceEventParams(params),
-      ] as const,
-  },
-  agentSpecs: {
-    all: [...v2ApiRoot, "studio", "agentSpecs"] as const,
-    detail: (specId: IdParam) =>
-      [...v2ApiRoot, "studio", "agentSpecs", "detail", normalizeId(specId)] as const,
-    list: (params: StudioSpecListParams = {}) =>
-      [...v2ApiRoot, "studio", "agentSpecs", "list", normalizeStudioSpecListParams(params)] as const,
-  },
-  workflowSpecs: {
-    all: [...v2ApiRoot, "studio", "workflowSpecs"] as const,
-    detail: (specId: IdParam) =>
-      [...v2ApiRoot, "studio", "workflowSpecs", "detail", normalizeId(specId)] as const,
-    list: (params: StudioSpecListParams = {}) =>
-      [
-        ...v2ApiRoot,
-        "studio",
-        "workflowSpecs",
-        "list",
-        normalizeStudioSpecListParams(params),
-      ] as const,
-  },
-   personas: {
-     all: [...v2ApiRoot, "studio", "personas"] as const,
-     detail: (personaKey: IdParam) =>
-       [...v2ApiRoot, "studio", "personas", "detail", normalizeId(personaKey)] as const,
-     list: (params: PersonaProfileListParams = {}) =>
-       [...v2ApiRoot, "studio", "personas", "list", normalizePersonaListParams(params)] as const,
-     version: (personaKey: IdParam, version: number | string) =>
-       [...v2ApiRoot, "studio", "personas", "version", normalizeId(personaKey), String(version)] as const,
-     versions: (personaKey: IdParam) =>
-       [...v2ApiRoot, "studio", "personas", "versions", normalizeId(personaKey)] as const,
-   },
-  capabilities: {
-    all: [...v2ApiRoot, "studio", "capabilities"] as const,
-    detail: (specId: IdParam) =>
-      [...v2ApiRoot, "studio", "capabilities", "detail", normalizeId(specId)] as const,
-    list: (params: CapabilityListParams = {}) =>
-      [...v2ApiRoot, "studio", "capabilities", "list", normalizeCapabilityListParams(params)] as const,
-  },
-} as const;
-
-const tryoutsQueryKeys = {
-  all: [...v2ApiRoot, "tryouts"] as const,
-  detail: (runId: IdParam) => [...v2ApiRoot, "tryouts", "detail", normalizeId(runId)] as const,
 } as const;
 
 export const queryKeys = {
@@ -328,10 +229,7 @@ export const queryKeys = {
   marketHistory: marketHistoryQueryKeys,
   templates: templatesQueryKeys,
   reports: reportsQueryKeys,
-  orchestration: orchestrationQueryKeys,
-  runtime: runtimeQueryKeys,
-  studio: studioQueryKeys,
-  tryouts: tryoutsQueryKeys,
+  platform: platformQueryKeys,
 } as const;
 
 export function invalidatePortfolioScope(

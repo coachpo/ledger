@@ -18,52 +18,11 @@ const portfolioSlugText = requiredText("Slug").regex(
   /^[a-z][a-z0-9_]*$/,
   "Slug must start with a letter and use only lowercase letters, numbers, and underscores",
 );
-const orchestrationHandleText = requiredText("Handle").regex(
-  /^[a-z][a-z0-9_]*$/,
-  "Handle must start with a letter and use only lowercase letters, numbers, and underscores",
-);
-const capabilityBundleKeyText = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .regex(
-    /^[a-z][a-z0-9_]{0,99}(?:\.[a-z][a-z0-9_]{0,99})+$/,
-    "Capability bundle keys must use dot-separated lowercase identifiers",
-  );
-const capabilityBundleKeysField = z.array(capabilityBundleKeyText).default([]);
 const symbolText = requiredText("Symbol").transform((value) => value.toUpperCase());
 const validDateTimeText = requiredText("Executed at").refine(
   (value) => !Number.isNaN(new Date(value).getTime()),
   "Executed at must be a valid date",
 );
-
-export const orchestrationRoleCreateFormSchema = z.object({
-  key: orchestrationHandleText,
-  name: requiredText("Role name"),
-  description: optionalText,
-  systemPrompt: requiredText("System prompt"),
-  capabilityBundleKeys: capabilityBundleKeysField,
-  enabled: z.boolean(),
-});
-
-export const orchestrationRoleUpdateFormSchema = orchestrationRoleCreateFormSchema.omit({
-  key: true,
-});
-
-export const orchestrationCharacterCreateFormSchema = z.object({
-  handle: orchestrationHandleText,
-  name: requiredText("Character name"),
-  description: optionalText,
-  role: requiredText("Role"),
-  promptAppend: optionalText,
-  capabilityBundleKeys: capabilityBundleKeysField,
-  enabled: z.boolean(),
-});
-
-export const orchestrationCharacterUpdateFormSchema =
-  orchestrationCharacterCreateFormSchema.omit({
-    handle: true,
-  });
 
 export const balanceFormSchema = z.object({
   amount: numericText("Amount"),
@@ -185,18 +144,6 @@ export const tradingOperationFormSchema = z
   });
 
 export type BalanceFormValues = z.infer<typeof balanceFormSchema>;
-export type OrchestrationCharacterCreateFormValues = z.infer<
-  typeof orchestrationCharacterCreateFormSchema
->;
-export type OrchestrationCharacterUpdateFormValues = z.infer<
-  typeof orchestrationCharacterUpdateFormSchema
->;
-export type OrchestrationRoleCreateFormValues = z.infer<
-  typeof orchestrationRoleCreateFormSchema
->;
-export type OrchestrationRoleUpdateFormValues = z.infer<
-  typeof orchestrationRoleUpdateFormSchema
->;
 export type PortfolioCreateFormValues = z.infer<typeof portfolioCreateFormSchema>;
 export type PortfolioUpdateFormValues = z.infer<typeof portfolioUpdateFormSchema>;
 export type PositionCreateFormValues = z.infer<typeof positionCreateFormSchema>;

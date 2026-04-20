@@ -80,6 +80,26 @@ class MarketDataService:
         self, portfolio_id: int, symbols: list[str], range_value: str
     ) -> MarketHistoryRead:
         self.portfolio_service.get_portfolio_model(portfolio_id)
+        return self._build_history_read(symbols, range_value)
+
+    def get_quote_snapshot(
+        self, symbol: str, *, base_currency: str = "USD"
+    ) -> tuple[MarketQuoteRead | None, list[str]]:
+        normalized_symbol = normalize_symbol(symbol)
+        if not normalized_symbol:
+            return None, ["Symbol is required"]
+        quote, warning, was_updated = self._resolve_quote(normalized_symbol, base_currency)
+        if was_updated:
+            self.session.commit()
+        return quote, ([warning] if warning is not None else [])
+
+    def get_history_snapshot(self, symbol: str, range_value: str) -> MarketHistoryRead:
+        normalized_symbol = normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise QuoteProviderError("Symbol is required")
+        return self._build_history_read([normalized_symbol], range_value)
+
+    def _build_history_read(self, symbols: list[str], range_value: str) -> MarketHistoryRead:
         interval = self.history_interval_by_range.get(range_value)
         if interval is None:
             raise QuoteProviderError(f"Unsupported history range {range_value}")

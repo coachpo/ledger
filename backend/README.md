@@ -1,6 +1,6 @@
 # Ledger Backend
 
-FastAPI backend for Ledger’s portfolio, report, orchestration, runtime, Studio, and Tryout surfaces.
+FastAPI backend for Ledger’s portfolio, report, and current agent-platform surfaces.
 
 ## Local Development
 
@@ -18,7 +18,7 @@ The backend expects PostgreSQL everywhere. The default local connection is `post
 
 ## Optional Runtime Provider Settings
 
-If you want live model-backed runtime or Tryout execution, export provider settings before startup:
+If you want live model-backed platform execution, export provider settings before startup:
 
 ```bash
 export OPENAI_API_KEY="your-provider-key"
@@ -31,8 +31,8 @@ export RUNTIME_AGENT_TEMPERATURE="0"
 ## Live API Surfaces
 
 - `/health` for backend health
-- `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, reports, and orchestration
-- `/api/v2` for runtime, Studio, Tryout, workflow specs, agent specs, capabilities, and persona profiles
+- `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
+- `/api/*` for agents, skills, MCP servers, output schemas, workflows, and runs
 
 ## Tests
 
@@ -68,3 +68,4 @@ docker compose down -v
 - `app/db/upgrades.py` is the supported schema-repair path; `alembic/` is scaffolding only.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs` and forwards the current environment into that process.
 - For repo-wide setup, validation, and frontend wiring, see the root `README.md`.
+e the root `README.md`.

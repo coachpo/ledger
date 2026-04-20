@@ -1,314 +1,537 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
+
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.agent_spec import AgentSpec
-from app.models.capability_registry_entry import CapabilityRegistryEntry
-from app.models.persona_profile import PersonaProfile
-from app.models.runtime_approval import RuntimeApproval
-from app.models.runtime_run import RuntimeRun
-from app.models.runtime_run_artifact import RuntimeRunArtifact
-from app.models.workflow_spec import WorkflowSpec
-from app.repositories.agent_spec import AgentSpecRepository
-from app.repositories.capability_registry_entry import CapabilityRegistryEntryRepository
-from app.repositories.persona_profile import PersonaProfileRepository
-from app.repositories.runtime_approval import RuntimeApprovalRepository
-from app.repositories.runtime_run import RuntimeRunRepository
-from app.repositories.runtime_run_artifact import RuntimeRunArtifactRepository
-from app.repositories.workflow_spec import WorkflowSpecRepository
+from app.models.agent import Agent
+from app.models.mcp_server import McpServer
+from app.models.output_schema import OutputSchema
+from app.models.run import Run
+from app.models.skill import Skill
+from app.models.workflow import Workflow
+from app.repositories.agent import AgentRepository
+from app.repositories.mcp_server import McpServerRepository
+from app.repositories.output_schema import OutputSchemaRepository
+from app.repositories.run import RunRepository
+from app.repositories.skill import SkillRepository
+from app.repositories.workflow import WorkflowRepository
+
+UTC_TZ = timezone.utc  # noqa: UP017
 
 
-def _build_agent_spec(*, key: str, version: int, status: str) -> AgentSpec:
-    return AgentSpec(
+def _build_skill(*, key: str, version: int, status: str) -> Skill:
+    return Skill(
         key=key,
         version=version,
-        origin="managed",
         status=status,
         name=f"{key}-{version}",
-        instructions="Follow the workflow.",
-        model_policy={"model": "gpt-5.4-mini"},
-        final_output_contract={"kind": "text", "schema": None, "description": "Output"},
-        default_capability_bundle_keys=[],
-        default_persona_profile_keys=[],
+        description="Skill description",
+        tool_definitions=[{"tool": f"{key}.lookup"}],
     )
 
 
-def _build_workflow_spec(*, key: str, version: int, status: str) -> WorkflowSpec:
-    return WorkflowSpec(
-        key=key,
-        version=version,
-        origin="managed",
-        status=status,
-        name=f"{key}-{version}",
-        graph_definition={
-            "entryStepKey": "step-1",
-            "steps": [{"stepKey": "step-1", "agentSpecKey": "alpha_agent"}],
-        },
-        final_output_contract={"kind": "markdown", "schema": None, "description": "Output"},
-        mention_policy={"version": 1, "allowCharacterPersonas": False, "allowedBuiltinHandles": []},
-        execution_mode=None,
-        default_tool_ids=[],
-        allowed_capability_bundle_keys=[],
-        connector_ids=[],
-        review_mode=None,
-        approval_policy_overrides=[],
-    )
-
-
-def _build_persona_profile(*, key: str, version: int, status: str) -> PersonaProfile:
-    return PersonaProfile(
-        key=key,
-        version=version,
-        origin="managed",
-        status=status,
-        kind="managed_persona",
-        display_name=f"{key}-{version}",
-        enabled=True,
-        handle=None,
-        canonical_target_id=f"persona:{key}",
-        parent_profile_key=None,
-        parent_profile_version=None,
-        legacy_source_version=None,
-        system_prompt_fragment="System prompt",
-        prompt_append_fragment="Prompt append",
-        default_capability_bundle_keys=[],
-    )
-
-
-def _build_capability_entry(*, key: str, version: int, status: str) -> CapabilityRegistryEntry:
-    return CapabilityRegistryEntry(
-        key=key,
-        version=version,
-        origin="managed",
-        status=status,
-        type="tool",
-        display_name=f"{key}-{version}",
-        description="Capability description",
-        approval_mode="not_required",
-        adapter_key=key,
-        config_schema={"type": "object"},
-        transport=None,
-        lifecycle=None,
-    )
-
-
-def _build_runtime_run(
+def _build_output_schema(
     *,
-    caller_type: str,
-    caller_id: int | None,
-    caller_scope_key: str | None,
-    workflow_spec_key: str | None,
-    workflow_spec_version: int | None,
-    agent_spec_key: str | None,
-    agent_spec_version: int | None,
-    attempt_number: int,
+    key: str,
+    version: int,
     status: str,
-    input_hash_seed: str,
-) -> RuntimeRun:
-    return RuntimeRun(
-        caller_type=caller_type,
-        caller_id=caller_id,
-        execution_kind="workflow" if workflow_spec_key is not None else "single_agent",
-        workflow_spec_key=workflow_spec_key,
-        workflow_spec_version=workflow_spec_version,
-        agent_spec_key=agent_spec_key,
-        agent_spec_version=agent_spec_version,
-        caller_scope_key=caller_scope_key,
-        caller_identity_key=None,
-        attempt_number=attempt_number,
+    kind: str = "standalone",
+    registry_refs: list[str] | None = None,
+) -> OutputSchema:
+    return OutputSchema(
+        key=key,
+        version=version,
         status=status,
-        input_hash=input_hash_seed * 64,
-        output_hash=None,
-        retention_class="persistent",
+        kind=kind,
+        name=f"{key}-{version}",
+        description="Output schema description",
+        json_schema={"type": "object", "properties": {"headline": {"type": "string"}}},
+        registry_refs=list(registry_refs or []),
     )
 
 
-def _seed_versioned_rows(session: Session) -> None:
+def _build_mcp_server(
+    *,
+    key: str,
+    version: int,
+    status: str,
+    transport: str,
+    enabled: bool = True,
+) -> McpServer:
+    return McpServer(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="MCP server description",
+        transport=transport,
+        command="python -m market_data" if transport == "stdio" else None,
+        url="https://example.com/mcp" if transport == "http-sse" else None,
+        auth={"apiKey": f"token-{version}"},
+        enabled=enabled,
+    )
+
+
+def _build_agent(
+    *,
+    key: str,
+    version: int,
+    status: str,
+    output_schema: OutputSchema,
+    skills: list[Skill],
+    mcp_servers: list[McpServer],
+    budget_usd: Decimal,
+) -> Agent:
+    return Agent(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="Agent description",
+        model="openai:gpt-5.4-mini",
+        system_prompt="Assess the input and return a typed result.",
+        input_schema={"type": "object", "required": ["ticker"]},
+        output_schema_id=output_schema.id,
+        output_schema_version=output_schema.version,
+        skills=[
+            {"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}
+            for skill in skills
+        ],
+        mcp_servers=[
+            {
+                "mcpServerId": server.id,
+                "mcpServerKey": server.key,
+                "mcpServerVersion": server.version,
+            }
+            for server in mcp_servers
+        ],
+        temperature=0.2,
+        max_tool_rounds=2,
+        budget_usd=budget_usd,
+        streaming=True,
+    )
+
+
+def _build_workflow(
+    *,
+    key: str,
+    version: int,
+    status: str,
+    agent: Agent,
+    aggregate_budget_usd: Decimal,
+) -> Workflow:
+    return Workflow(
+        key=key,
+        version=version,
+        status=status,
+        name=f"{key}-{version}",
+        description="Workflow description",
+        input_schema={"type": "object", "required": ["ticker"]},
+        steps=[
+            {
+                "index": 1,
+                "agents": [
+                    {
+                        "slot": "analysis",
+                        "agentId": agent.id,
+                        "agentKey": agent.key,
+                        "agentVersion": agent.version,
+                        "outputSchemaId": agent.output_schema_id,
+                        "outputSchemaVersion": agent.output_schema_version,
+                        "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        "optional": False,
+                        "budgetUsd": str(agent.budget_usd),
+                    }
+                ],
+            }
+        ],
+        output_spec={
+            "kind": "agent",
+            "slot": "analysis",
+            "agentId": agent.id,
+            "agentKey": agent.key,
+            "agentVersion": agent.version,
+            "outputSchemaId": agent.output_schema_id,
+            "outputSchemaVersion": agent.output_schema_version,
+            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+        },
+        aggregate_budget_usd=aggregate_budget_usd,
+    )
+
+
+def _build_agent_platform_run(
+    *,
+    workflow: Workflow,
+    status: str,
+    total_tokens: int,
+    total_cost_usd: Decimal,
+    started_at: datetime,
+    finished_at: datetime | None,
+    trace_id: str | None,
+    per_step_outputs: dict[str, list[dict[str, object]]],
+    final_output: object | None,
+) -> Run:
+    return Run(
+        workflow_id=workflow.id,
+        workflow_key=workflow.key,
+        workflow_version=workflow.version,
+        input={"ticker": "NVDA", "horizonDays": 30},
+        per_step_outputs=per_step_outputs,
+        final_output=final_output,
+        status=status,
+        total_tokens=total_tokens,
+        total_cost_usd=total_cost_usd,
+        trace_id=trace_id,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+
+
+def _seed_agent_platform_versioned_rows(session: Session) -> None:
     session.add_all(
         [
-            _build_agent_spec(key="alpha_agent", version=1, status="ACTIVE"),
-            _build_agent_spec(key="alpha_agent", version=2, status="DRAFT"),
-            _build_agent_spec(key="beta_agent", version=1, status="ACTIVE"),
-            _build_workflow_spec(key="alpha_workflow", version=1, status="ACTIVE"),
-            _build_workflow_spec(key="alpha_workflow", version=2, status="DRAFT"),
-            _build_persona_profile(key="alpha_persona", version=1, status="ACTIVE"),
-            _build_persona_profile(key="alpha_persona", version=2, status="DRAFT"),
-            _build_capability_entry(key="tool.alpha", version=1, status="ACTIVE"),
-            _build_capability_entry(key="tool.alpha", version=2, status="DRAFT"),
+            _build_skill(key="research_skill", version=1, status="published"),
+            _build_skill(key="research_skill", version=2, status="draft"),
+            _build_skill(key="summarize_skill", version=1, status="published"),
+            _build_output_schema(
+                key="decision_schema",
+                version=1,
+                status="published",
+                registry_refs=["Action"],
+            ),
+            _build_output_schema(
+                key="decision_schema",
+                version=2,
+                status="draft",
+                registry_refs=["Action", "PriceTarget"],
+            ),
+            _build_output_schema(
+                key="action_type",
+                version=1,
+                status="published",
+                kind="shared",
+            ),
+            _build_output_schema(
+                key="action_type",
+                version=2,
+                status="draft",
+                kind="shared",
+                registry_refs=["PriceTarget"],
+            ),
+            _build_mcp_server(
+                key="market_data",
+                version=1,
+                status="published",
+                transport="http-sse",
+                enabled=True,
+            ),
+            _build_mcp_server(
+                key="market_data",
+                version=2,
+                status="draft",
+                transport="stdio",
+                enabled=False,
+            ),
+            _build_mcp_server(
+                key="filings",
+                version=1,
+                status="published",
+                transport="http-sse",
+                enabled=False,
+            ),
         ]
     )
     session.commit()
 
 
-def test_versioned_repositories_resolve_active_versions_and_latest_rows(
+def test_agent_platform_skill_repository_resolves_published_versions_and_latest_rows(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        _seed_versioned_rows(session)
+        _seed_agent_platform_versioned_rows(session)
 
-        agent_repo = AgentSpecRepository(session)
-        workflow_repo = WorkflowSpecRepository(session)
-        persona_repo = PersonaProfileRepository(session)
-        capability_repo = CapabilityRegistryEntryRepository(session)
+        skill_repo = SkillRepository(session)
 
-        active_agent = agent_repo.resolve_version("alpha_agent", None)
-        draft_agent = agent_repo.resolve_version("alpha_agent", 2)
-        assert active_agent is not None
-        assert active_agent.version == 1
-        assert draft_agent is not None
-        assert draft_agent.status == "DRAFT"
-        assert [item.version for item in agent_repo.list_versions("alpha_agent")] == [2, 1]
-        assert [item.key for item in agent_repo.list_latest_versions(origin="managed")] == [
-            "alpha_agent",
-            "beta_agent",
+        published_skill = skill_repo.resolve_version("research_skill", None)
+        draft_skill = skill_repo.resolve_version("research_skill", 2)
+        assert published_skill is not None
+        assert published_skill.version == 1
+        assert draft_skill is not None
+        assert draft_skill.status == "draft"
+        assert [item.version for item in skill_repo.list_versions("research_skill")] == [2, 1]
+        assert [(item.key, item.version) for item in skill_repo.list_latest_versions()] == [
+            ("research_skill", 2),
+            ("summarize_skill", 1),
+        ]
+        assert [
+            (item.key, item.version) for item in skill_repo.list_latest_versions(status="published")
+        ] == [
+            ("research_skill", 1),
+            ("summarize_skill", 1),
         ]
 
-        active_workflow = workflow_repo.get_active_by_key("alpha_workflow")
-        draft_workflow = workflow_repo.get_draft_by_key("alpha_workflow")
-        assert active_workflow is not None
-        assert active_workflow.version == 1
-        assert draft_workflow is not None
-        assert draft_workflow.version == 2
 
-        active_persona = persona_repo.get_active_by_key("alpha_persona")
-        draft_persona = persona_repo.get_draft_by_key("alpha_persona")
-        assert active_persona is not None
-        assert active_persona.version == 1
-        assert draft_persona is not None
-        assert draft_persona.version == 2
-
-        active_capability = capability_repo.get_active_by_key("tool.alpha")
-        draft_capability = capability_repo.get_draft_by_key("tool.alpha")
-        assert active_capability is not None
-        assert active_capability.version == 1
-        assert draft_capability is not None
-        assert draft_capability.version == 2
-
-
-def test_runtime_repositories_filter_by_caller_scope_and_artifact_contracts(
+def test_agent_platform_output_schema_repository_resolves_registry_refs_and_versions(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        first_run = _build_runtime_run(
-            caller_type="studio",
-            caller_id=42,
-            caller_scope_key="studio-session-42",
-            workflow_spec_key="alpha_workflow",
-            workflow_spec_version=1,
-            agent_spec_key=None,
-            agent_spec_version=None,
-            attempt_number=1,
-            status="FAILED",
-            input_hash_seed="1",
+        _seed_agent_platform_versioned_rows(session)
+
+        output_schema_repo = OutputSchemaRepository(session)
+
+        published_schema = output_schema_repo.resolve_version("decision_schema", None)
+        draft_schema = output_schema_repo.get_draft_by_key("decision_schema")
+        published_registry_entry = output_schema_repo.resolve_registry_ref("action_type")
+        draft_registry_entry = output_schema_repo.resolve_registry_ref("action_type", 2)
+
+        assert published_schema is not None
+        assert published_schema.version == 1
+        assert draft_schema is not None
+        assert draft_schema.registry_refs == ["Action", "PriceTarget"]
+        assert published_registry_entry is not None
+        assert published_registry_entry.kind == "shared"
+        assert published_registry_entry.version == 1
+        assert draft_registry_entry is not None
+        assert draft_registry_entry.registry_refs == ["PriceTarget"]
+        assert [item.key for item in output_schema_repo.list_registry_entries()] == ["action_type"]
+
+
+def test_agent_platform_mcp_repository_filters_enabled_servers_and_versions(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _seed_agent_platform_versioned_rows(session)
+
+        mcp_repo = McpServerRepository(session)
+
+        published_server = mcp_repo.resolve_version("market_data", None, enabled=True)
+        draft_server = mcp_repo.get_draft_by_key("market_data")
+        enabled_latest = mcp_repo.list_latest_versions(enabled=True)
+        published_enabled = mcp_repo.list_latest_versions(status="published", enabled=True)
+        http_sse_servers = mcp_repo.list_latest_versions(transport="http-sse")
+
+        assert published_server is not None
+        assert published_server.version == 1
+        assert draft_server is not None
+        assert draft_server.transport == "stdio"
+        assert draft_server.enabled is False
+        assert [(item.key, item.version) for item in enabled_latest] == [("market_data", 1)]
+        assert [(item.key, item.version) for item in published_enabled] == [("market_data", 1)]
+        assert [(item.key, item.version) for item in http_sse_servers] == [
+            ("filings", 1),
+            ("market_data", 1),
+        ]
+
+
+def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_versions(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_schema = _build_output_schema(
+            key="decision_schema",
+            version=1,
+            status="published",
         )
-        second_run = _build_runtime_run(
-            caller_type="studio",
-            caller_id=42,
-            caller_scope_key="studio-session-42",
-            workflow_spec_key="alpha_workflow",
-            workflow_spec_version=1,
-            agent_spec_key=None,
-            agent_spec_version=None,
-            attempt_number=2,
-            status="RUNNING",
-            input_hash_seed="2",
+        published_server = _build_mcp_server(
+            key="market_data",
+            version=1,
+            status="published",
+            transport="http-sse",
         )
-        tryout_run = _build_runtime_run(
-            caller_type="tryout",
-            caller_id=None,
-            caller_scope_key=None,
-            workflow_spec_key=None,
-            workflow_spec_version=None,
-            agent_spec_key="alpha_agent",
-            agent_spec_version=1,
-            attempt_number=1,
-            status="WAITING_APPROVAL",
-            input_hash_seed="3",
+        session.add_all([published_skill, published_schema, published_server])
+        session.flush()
+
+        published_agent = _build_agent(
+            key="research_agent",
+            version=1,
+            status="published",
+            output_schema=published_schema,
+            skills=[published_skill],
+            mcp_servers=[published_server],
+            budget_usd=Decimal("1.50000000"),
         )
-        session.add_all([first_run, second_run, tryout_run])
+        session.add(published_agent)
+        session.flush()
+        published_workflow = _build_workflow(
+            key="market_review",
+            version=1,
+            status="published",
+            agent=published_agent,
+            aggregate_budget_usd=Decimal("1.50000000"),
+        )
+        session.add(published_workflow)
+        session.flush()
+
+        draft_schema = _build_output_schema(
+            key="decision_schema",
+            version=2,
+            status="draft",
+        )
+        session.add(draft_schema)
+        session.flush()
+        draft_agent = _build_agent(
+            key="research_agent",
+            version=2,
+            status="draft",
+            output_schema=draft_schema,
+            skills=[published_skill],
+            mcp_servers=[published_server],
+            budget_usd=Decimal("2.75000000"),
+        )
+        session.add(draft_agent)
+        session.flush()
+        draft_workflow = _build_workflow(
+            key="market_review",
+            version=2,
+            status="draft",
+            agent=draft_agent,
+            aggregate_budget_usd=Decimal("2.75000000"),
+        )
+        session.add(draft_workflow)
         session.commit()
 
-        approval = RuntimeApproval(
-            run_id=second_run.id,
-            step_key="review",
-            capability_key="tool.alpha",
-            status="PENDING",
+        agent_repo = AgentRepository(session)
+        workflow_repo = WorkflowRepository(session)
+
+        published_agent_row = agent_repo.resolve_version("research_agent", None)
+        draft_agent_row = agent_repo.resolve_version("research_agent", 2)
+        published_workflow_row = workflow_repo.resolve_version("market_review", 1)
+        draft_workflow_row = workflow_repo.resolve_version("market_review", 2)
+
+        assert published_agent_row is not None
+        assert published_agent_row.output_schema_version == 1
+        assert draft_agent_row is not None
+        assert draft_agent_row.output_schema_version == 2
+        assert published_workflow_row is not None
+        assert published_workflow_row.steps[0]["agents"][0]["agentVersion"] == 1
+        assert published_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 1
+        assert published_workflow_row.output_spec["agentVersion"] == 1
+        assert published_workflow_row.aggregate_budget_usd == Decimal("1.50000000")
+        assert draft_workflow_row is not None
+        assert draft_workflow_row.steps[0]["agents"][0]["agentVersion"] == 2
+        assert draft_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 2
+        assert [(item.key, item.version) for item in workflow_repo.list_latest_versions()] == [
+            ("market_review", 2)
+        ]
+
+
+def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_schema = _build_output_schema(
+            key="decision_schema",
+            version=1,
+            status="published",
         )
-        session.add(approval)
-        session.add(
-            RuntimeRunArtifact(
-                run_id=second_run.id,
-                entry_prompt_hash="a" * 64,
-                full_user_prompt_hash="b" * 64,
-                raw_mention_handles=["@librarian"],
-                resolved_persona_profile_refs=[
-                    {
-                        "personaProfileKey": "alpha_persona",
-                        "personaProfileVersion": 1,
-                        "canonicalTargetId": "persona:alpha_persona",
-                    }
-                ],
-                resolved_builtin_versions=[],
-                resolved_role_versions=[],
-                resolved_character_versions=[],
-                resolved_bundle_versions=[],
-                resolved_tool_versions=[],
-                resolved_connector_versions=[],
-                mentioned_target_outputs=[],
-                resolved_mentions=[],
-                resolved_capabilities=[
-                    {
-                        "capabilityKey": "tool.alpha",
-                        "capabilityVersion": 1,
-                        "capabilityType": "tool",
-                        "approvalMode": "not_required",
-                        "effectiveConfig": {},
-                    }
-                ],
-            )
+        published_server = _build_mcp_server(
+            key="market_data",
+            version=1,
+            status="published",
+            transport="http-sse",
         )
+        session.add_all([published_skill, published_schema, published_server])
+        session.flush()
+
+        published_agent = _build_agent(
+            key="research_agent",
+            version=1,
+            status="published",
+            output_schema=published_schema,
+            skills=[published_skill],
+            mcp_servers=[published_server],
+            budget_usd=Decimal("1.25000000"),
+        )
+        session.add(published_agent)
+        session.flush()
+        workflow = _build_workflow(
+            key="market_review",
+            version=1,
+            status="published",
+            agent=published_agent,
+            aggregate_budget_usd=Decimal("1.25000000"),
+        )
+        session.add(workflow)
+        session.flush()
+
+        earlier_run = _build_agent_platform_run(
+            workflow=workflow,
+            status="failed",
+            total_tokens=120,
+            total_cost_usd=Decimal("0.05000000"),
+            started_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC_TZ),
+            finished_at=datetime(2026, 4, 19, 9, 1, tzinfo=UTC_TZ),
+            trace_id="trace-older",
+            per_step_outputs={
+                "1": [
+                    {
+                        "slot": "analysis",
+                        "agentVersion": 1,
+                        "resolvedInput": {"ticker": "NVDA"},
+                        "output": None,
+                        "error": {"message": "timeout"},
+                        "status": "failed",
+                        "tokens": 120,
+                        "costUsd": "0.05000000",
+                        "durationMs": 61000,
+                        "traceSpanId": "span-older",
+                    }
+                ]
+            },
+            final_output=None,
+        )
+        latest_run = _build_agent_platform_run(
+            workflow=workflow,
+            status="succeeded",
+            total_tokens=321,
+            total_cost_usd=Decimal("0.15000000"),
+            started_at=datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ),
+            finished_at=datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ),
+            trace_id="trace-latest",
+            per_step_outputs={
+                "1": [
+                    {
+                        "slot": "analysis",
+                        "agentId": published_agent.id,
+                        "agentKey": published_agent.key,
+                        "agentVersion": published_agent.version,
+                        "outputSchemaId": published_agent.output_schema_id,
+                        "outputSchemaVersion": published_agent.output_schema_version,
+                        "resolvedInput": {"ticker": "NVDA"},
+                        "output": {"headline": "Buy"},
+                        "error": None,
+                        "status": "succeeded",
+                        "tokens": 321,
+                        "costUsd": "0.15000000",
+                        "durationMs": 1450,
+                        "traceSpanId": "span-latest",
+                    }
+                ]
+            },
+            final_output={"headline": "Buy"},
+        )
+        session.add_all([earlier_run, latest_run])
         session.commit()
 
-        run_repo = RuntimeRunRepository(session)
-        approval_repo = RuntimeApprovalRepository(session)
-        artifact_repo = RuntimeRunArtifactRepository(session)
+        run_repo = RunRepository(session)
 
-        scoped_runs = run_repo.list_for_caller(
-            caller_type="studio",
-            caller_id=42,
-            caller_scope_key="studio-session-42",
-        )
-        assert [run.attempt_number for run in scoped_runs] == [2, 1]
-        latest_attempt = run_repo.get_latest_attempt(
-            caller_type="studio",
-            caller_id=42,
-            caller_scope_key="studio-session-42",
-        )
-        active_run = run_repo.get_active_for_caller(
-            caller_type="studio",
-            caller_id=42,
-            caller_scope_key="studio-session-42",
-        )
-        assert latest_attempt is not None
-        assert latest_attempt.attempt_number == 2
-        assert active_run is not None
-        assert active_run.status == "RUNNING"
-        assert [run.caller_type for run in run_repo.list_tryouts()] == ["tryout"]
+        run_detail = run_repo.get_detail(latest_run.id)
+        listed_runs = run_repo.list_for_workflow(workflow_key="market_review")
+        filtered_runs = run_repo.list_all(workflow_key="market_review", status="succeeded")
+        latest_for_workflow = run_repo.get_latest_for_workflow(workflow_key="market_review")
 
-        filtered_approvals = approval_repo.list_all(
-            caller_type="studio",
-            caller_id=42,
-            workflow_spec_key="alpha_workflow",
-            capability_key="tool.alpha",
-            status="PENDING",
-        )
-        assert [item.id for item in filtered_approvals] == [approval.id]
-
-        filtered_artifacts = artifact_repo.list_all(
-            caller_type="studio",
-            caller_id=42,
-            workflow_spec_key="alpha_workflow",
-            persona_profile_key="alpha_persona",
-            capability_key="tool.alpha",
-        )
-        assert [item.run_id for item in filtered_artifacts] == [second_run.id]
+        assert run_detail is not None
+        assert run_detail.per_step_outputs["1"][0]["traceSpanId"] == "span-latest"
+        assert run_detail.per_step_outputs["1"][0]["resolvedInput"] == {"ticker": "NVDA"}
+        assert run_detail.total_tokens == 321
+        assert run_detail.total_cost_usd == Decimal("0.15000000")
+        assert run_detail.trace_id == "trace-latest"
+        assert run_detail.final_output == {"headline": "Buy"}
+        assert [run.id for run in listed_runs] == [latest_run.id, earlier_run.id]
+        assert [run.id for run in filtered_runs] == [latest_run.id]
+        assert latest_for_workflow is not None
+        assert latest_for_workflow.id == latest_run.id

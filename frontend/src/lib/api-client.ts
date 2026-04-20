@@ -20,9 +20,10 @@ export interface ApiRequestErrorOptions {
 
 export type IdParam = number | string;
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
-const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
-const API_V2_BASE_URL = toVersionedApiBaseUrl(API_BASE_URL, "v2");
+const DEFAULT_API_V1_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const CONFIGURED_API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const API_BASE_URL = toVersionedApiBaseUrl(CONFIGURED_API_BASE_URL, "v1");
+const PLATFORM_API_BASE_URL = toPlatformApiBaseUrl(CONFIGURED_API_BASE_URL);
 
 export class ApiRequestError extends Error {
   readonly code: string;
@@ -43,7 +44,7 @@ function normalizeApiBaseUrl(value: string | undefined): string {
   const normalized = value?.trim();
 
   if (!normalized) {
-    return DEFAULT_API_BASE_URL;
+    return DEFAULT_API_V1_BASE_URL;
   }
 
   return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
@@ -53,21 +54,24 @@ export function toPathSegment(value: IdParam): string {
   return encodeURIComponent(String(value));
 }
 
-function toVersionedApiBaseUrl(baseUrl: string, version: `v${number}`): string {
+function toPlatformApiBaseUrl(baseUrl: string): string {
   if (/\/api\/v\d+$/.test(baseUrl)) {
-    return baseUrl.replace(/\/api\/v\d+$/, `/api/${version}`);
+    return baseUrl.replace(/\/api\/v\d+$/, "/api");
   }
 
   if (baseUrl.endsWith("/api")) {
-    return `${baseUrl}/${version}`;
+    return baseUrl;
   }
 
-  return `${baseUrl}/api/${version}`;
+  return `${baseUrl}/api`;
+}
+
+function toVersionedApiBaseUrl(baseUrl: string, version: `v${number}`): string {
+  return `${toPlatformApiBaseUrl(baseUrl)}/${version}`;
 }
 
 function normalizePath(path: string): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return normalizedPath;
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 function buildApiUrlForBaseUrl(baseUrl: string, path: string): string {
@@ -78,8 +82,14 @@ export function buildApiUrl(path: string): string {
   return buildApiUrlForBaseUrl(API_BASE_URL, path);
 }
 
-export function buildV2ApiUrl(path: string): string {
-  return buildApiUrlForBaseUrl(API_V2_BASE_URL, path);
+export function buildPlatformApiUrl(path: string): string {
+  return buildApiUrlForBaseUrl(PLATFORM_API_BASE_URL, path);
+}
+
+export function toQueryRecord<T extends object>(
+  params?: T,
+): Record<string, RequestQueryValue> | undefined {
+  return params as Record<string, RequestQueryValue> | undefined;
 }
 
 function buildQueryString(query?: Record<string, RequestQueryValue>): string {
@@ -209,8 +219,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return requestWithBaseUrl<T>(API_BASE_URL, path, options);
 }
 
-export async function requestV2<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  return requestWithBaseUrl<T>(API_V2_BASE_URL, path, options);
+export async function requestPlatform<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  return requestWithBaseUrl<T>(PLATFORM_API_BASE_URL, path, options);
 }
 
 export function createCsvFormData(file: File): FormData {

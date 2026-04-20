@@ -3,17 +3,20 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, Studio, Tryout, and orchestration, plus shared forms and UI that keep route logic thin.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, and the current agent-platform routes, plus shared forms and UI that keep route logic thin.
 
 ## CHILD DOCS
 - `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, shared types
-- `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and v1/v2 route helpers
+- `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/studio/AGENTS.md` — Studio catalog, editor, and run-detail routes
-- `src/pages/tryout/AGENTS.md` — Tryout execute/inspect/persist route flow
-- `src/pages/orchestration/AGENTS.md` — orchestration route family for roles and characters
+- `src/pages/agents/AGENTS.md` — agents list and editor routes
+- `src/pages/skills/AGENTS.md` — skills list and editor routes
+- `src/pages/mcp-servers/AGENTS.md` — MCP servers list and editor routes
+- `src/pages/output-schemas/AGENTS.md` — output schemas list and editor routes
+- `src/pages/workflows/AGENTS.md` — workflows list, editor, and run-launch routes
+- `src/pages/runs/AGENTS.md` — runs list and detail routes
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
@@ -29,7 +32,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 frontend/
 ├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
-├── src/pages/          # dashboard, portfolio, template, report, Studio, Tryout, orchestration routes
+├── src/pages/          # dashboard, portfolio, template, report, and agent-platform routes
 ├── src/components/     # layout shell, theme, shared UI, forms, templates, portfolio feature UI, shadcn primitives
 ├── src/styles/         # fonts, theme tokens, global styles
 ├── src/test/           # Vitest jsdom setup
@@ -45,9 +48,8 @@ frontend/
 | Portfolio routes | `src/pages/portfolios/*.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/*.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Studio routes | `src/pages/studio/AGENTS.md`, `src/hooks/use-studio.ts`, `src/lib/api/studio.ts`, `src/lib/api/workflow-specs.ts` | `/studio` catalog plus agent/workflow/persona/capability CRUD and run detail routes |
-| Tryout route | `src/pages/tryout/AGENTS.md`, `src/hooks/use-tryouts.ts`, `src/hooks/use-runtime.ts` | `/tryout` execute/inspect/persist flow using runtime and Studio data |
-| Orchestration routes | `src/pages/orchestration/AGENTS.md`, `src/hooks/use-orchestration.ts`, `src/lib/api/orchestration.ts`, `src/lib/types/orchestration.ts` | roles, characters, mention catalog, route forms |
+| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/skills/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, skills, MCP servers, output schemas, workflows, runs |
+| Preserved product routes | `src/pages/portfolios/AGENTS.md`, `src/pages/templates/AGENTS.md`, `src/pages/reports/AGENTS.md` | portfolio, template, and report routes |
 | Shared components | `src/components/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, dialog forms, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
@@ -64,11 +66,9 @@ frontend/
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
-- Studio pages use the v2 Studio hooks and route params to keep spec CRUD, catalog reads, and runtime run inspection inside the routed page layer.
-- The Tryout page composes `use-tryouts.ts`, `use-runtime.ts`, and `use-studio.ts` for execute/persist/approval flows while keeping request details and cache invalidation in hooks.
-- Orchestration pages use shared form schemas from `src/components/shared/form-schemas.ts` for role and character CRUD, and `use-orchestration.ts` keeps the query/mutation wiring in one place.
+- Agent-platform pages use dedicated hooks and route params to keep CRUD, catalog reads, and run inspection inside the routed page layer.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
-- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and orchestration, runtime, Studio, and Tryout caches under dedicated namespaces.
+- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
 
 ## ANTI-PATTERNS
 - Do not hard-code API URLs or call `fetch` directly from routed screens.
@@ -78,9 +78,8 @@ frontend/
 - Do not change template route, placeholder, or query-key shapes without updating hooks, types, and tests together.
 - Do not change runtime-input row behavior, `inputs.*` expectations, or generation-dialog wiring without updating the editor, shared dialog, hooks, and backend compile contract together.
 - Do not change report route, slug, upload/download, or query-key shapes without updating hooks, types, and tests together.
-- Do not bypass `use-runtime.ts`, `use-studio.ts`, or `use-tryouts.ts` and hand-roll v2 cache policy in pages or result widgets.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
-- Do not hide Studio, Tryout, or orchestration route ownership inside generic UI folders or stale docs.
+- Do not hide agent-platform route ownership inside generic UI folders or stale docs.
 
 ## COMMANDS
 ```bash
@@ -101,5 +100,5 @@ pnpm test:e2e
 ## NOTES
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001` and frontend `4173`.
-- Current Vitest coverage spans `src/lib/` helpers plus targeted Studio, Tryout, orchestration, template-editor, and layout pages.
-- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, Tryout, Studio catalog/editor routes, Studio run detail, and orchestration index/role/character routes.
+- Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, template-editor, and layout pages.
+- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, and the current agent-platform routes.

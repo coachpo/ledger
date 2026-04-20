@@ -39,4 +39,4 @@ uv run pytest tests/test_api.py
 ## NOTES
 - Default CORS must allow the local Vite hosts, Playwright hosts, and anything injected by `start.sh`.
 - `extra="ignore"` in settings is only for env loading; request schemas still use `extra="forbid"`.
-- Simulation LangGraph runtime reads all model/provider settings through `Settings`; service and graph code should not access env vars directly.
+- Current platform execution reads model/provider settings through `Settings`; service code should not access env vars directly.

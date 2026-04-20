@@ -32,7 +32,7 @@ function runBuild() {
 async function main() {
   await runBuild();
 
-  const child = spawn("npx", ["vite", "preview", "--port", "4173", "--host", "127.0.0.1"], {
+  const child = spawn("npx", ["vite", "preview", "--port", "4173", "--strictPort", "--host", "127.0.0.1"], {
     cwd: frontendDir,
     env: {
       ...process.env,
