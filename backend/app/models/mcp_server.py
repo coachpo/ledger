@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from sqlalchemy import CheckConstraint, Index, String, UniqueConstraint
@@ -91,6 +92,79 @@ def _decrypt_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return decoded_payload
 
 
+def flatten_mcp_server_config(config: object, *, key: str) -> dict[str, Any] | None:
+    if not isinstance(config, Mapping):
+        return {}
+
+    raw_config = dict(config)
+    if "mcpServers" not in raw_config:
+        return raw_config
+
+    raw_servers = raw_config.get("mcpServers")
+    if not isinstance(raw_servers, Mapping):
+        return None
+
+    raw_entry = raw_servers.get(key)
+    if not isinstance(raw_entry, Mapping):
+        return None
+    return dict(raw_entry)
+
+
+def flatten_mcp_server_storage_payload(
+    payload: object,
+    *,
+    key: str,
+) -> tuple[dict[str, Any], bool] | None:
+    if not isinstance(payload, Mapping):
+        return None
+
+    raw_payload = dict(payload)
+    decrypted_payload = (
+        _decrypt_payload(raw_payload) if _is_encrypted_payload(raw_payload) else raw_payload
+    )
+    flattened_payload = flatten_mcp_server_config(decrypted_payload, key=key)
+    if flattened_payload is None:
+        return None
+    if flattened_payload == decrypted_payload:
+        return raw_payload, False
+    if _is_encrypted_payload(raw_payload):
+        return _encrypt_payload(flattened_payload), True
+    return flattened_payload, True
+
+
+def _normalize_string_sequence(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes, bytearray)):
+        normalized = str(value).strip()
+        return [normalized] if normalized else []
+    if not isinstance(value, Sequence):
+        return []
+    return [str(entry).strip() for entry in value if str(entry).strip()]
+
+
+def _normalize_string_mapping(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        normalized_key = str(raw_key).strip()
+        normalized_value = str(raw_value).strip() if raw_value is not None else ""
+        if normalized_key and normalized_value:
+            normalized[normalized_key] = normalized_value
+    return normalized
+
+
+def _legacy_auth_to_headers(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    header_name = str(value.get("header", "")).strip()
+    api_key = str(value.get("apiKey", "")).strip()
+    if not header_name or not api_key:
+        return {}
+    return {header_name: api_key}
+
+
 class EncryptedJSONB(TypeDecorator[dict[str, Any]]):
     impl = JSONB
     cache_ok = True
@@ -162,60 +236,122 @@ class McpServer(IdMixin, TimestampMixin, Base):
         server_default=sql_text("'{}'::jsonb"),
     )
 
-    @property
-    def config_entry(self) -> dict[str, Any]:
-        raw_servers = self.config.get("mcpServers") if isinstance(self.config, dict) else None
-        if not isinstance(raw_servers, dict):
+    def _flat_config_key(self) -> str:
+        raw_key = getattr(self, "key", "")
+        return str(raw_key).strip()
+
+    def _mutable_flat_config(self) -> dict[str, Any]:
+        raw_config = self.config if isinstance(self.config, dict) else {}
+        flattened_config = flatten_mcp_server_config(raw_config, key=self._flat_config_key())
+        if flattened_config is None:
             return {}
-        raw_entry = raw_servers.get(self.key)
-        return raw_entry if isinstance(raw_entry, dict) else {}
+        return dict(flattened_config)
+
+    def _set_flat_field(self, field_name: str, value: object) -> None:
+        next_config = self._mutable_flat_config()
+        if value is None:
+            next_config.pop(field_name, None)
+        else:
+            next_config[field_name] = value
+        self.config = next_config
+
+    @property
+    def flat_config(self) -> dict[str, Any]:
+        flattened_config = flatten_mcp_server_config(self.config, key=self._flat_config_key())
+        return flattened_config if flattened_config is not None else {}
 
     @property
     def name(self) -> str:
-        return str(self.config_entry.get("name", ""))
+        return str(self.flat_config.get("name", ""))
+
+    @name.setter
+    def name(self, value: object) -> None:
+        self._set_flat_field("name", "" if value is None else str(value))
 
     @property
     def description(self) -> str:
-        return str(self.config_entry.get("description", ""))
+        return str(self.flat_config.get("description", ""))
+
+    @description.setter
+    def description(self, value: object) -> None:
+        self._set_flat_field("description", "" if value is None else str(value))
 
     @property
     def transport(self) -> str:
-        return str(self.config_entry.get("transport", ""))
+        return str(self.flat_config.get("transport", ""))
+
+    @transport.setter
+    def transport(self, value: object) -> None:
+        self._set_flat_field("transport", None if value is None else str(value))
 
     @property
     def enabled(self) -> bool:
-        return bool(self.config_entry.get("enabled", False))
+        return bool(self.flat_config.get("enabled", False))
+
+    @enabled.setter
+    def enabled(self, value: object) -> None:
+        self._set_flat_field("enabled", bool(value))
 
     @property
     def command(self) -> str | None:
-        raw_command = self.config_entry.get("command")
+        raw_command = self.flat_config.get("command")
         return str(raw_command) if raw_command is not None else None
+
+    @command.setter
+    def command(self, value: object) -> None:
+        normalized = str(value).strip() if value is not None else ""
+        self._set_flat_field("command", normalized or None)
 
     @property
     def args(self) -> list[str]:
-        raw_args = self.config_entry.get("args")
-        if not isinstance(raw_args, list):
-            return []
-        return [str(entry) for entry in raw_args if str(entry).strip()]
+        return _normalize_string_sequence(self.flat_config.get("args"))
+
+    @args.setter
+    def args(self, value: object) -> None:
+        self._set_flat_field("args", _normalize_string_sequence(value))
 
     @property
     def env(self) -> dict[str, str]:
-        raw_env = self.config_entry.get("env")
-        if not isinstance(raw_env, dict):
-            return {}
-        return {str(key): str(value) for key, value in raw_env.items()}
+        return _normalize_string_mapping(self.flat_config.get("env"))
+
+    @env.setter
+    def env(self, value: object) -> None:
+        self._set_flat_field("env", _normalize_string_mapping(value))
 
     @property
     def url(self) -> str | None:
-        raw_url = self.config_entry.get("url")
+        raw_url = self.flat_config.get("url")
         return str(raw_url) if raw_url is not None else None
+
+    @url.setter
+    def url(self, value: object) -> None:
+        normalized = str(value).strip() if value is not None else ""
+        self._set_flat_field("url", normalized or None)
 
     @property
     def headers(self) -> dict[str, str]:
-        raw_headers = self.config_entry.get("headers")
-        if not isinstance(raw_headers, dict):
+        return _normalize_string_mapping(self.flat_config.get("headers"))
+
+    @headers.setter
+    def headers(self, value: object) -> None:
+        self._set_flat_field("headers", _normalize_string_mapping(value))
+
+    @property
+    def auth(self) -> dict[str, str]:
+        headers = self.headers
+        if not headers:
             return {}
-        return {str(key): str(value) for key, value in raw_headers.items()}
+        header_name, api_key = next(iter(headers.items()))
+        return {"header": header_name, "apiKey": api_key}
+
+    @auth.setter
+    def auth(self, value: object) -> None:
+        self.headers = _legacy_auth_to_headers(value)
 
 
-__all__ = ["EncryptedJSONB", "McpServer"]
+__all__ = [
+    "EncryptedJSONB",
+    "McpServer",
+    "flatten_mcp_server_config",
+    "flatten_mcp_server_storage_payload",
+]

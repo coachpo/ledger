@@ -236,7 +236,8 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert {"uq_output_schemas_published_key", "uq_output_schemas_draft_key"} <= {
         index.name for index in output_schema_table.indexes
     }
-    assert "ck_mcp_servers_target" in {
+    assert "config" in mcp_server_table.c
+    assert "ck_mcp_servers_target" not in {
         constraint.name for constraint in mcp_server_table.constraints if constraint.name
     }
 
@@ -591,15 +592,16 @@ def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_
         session.commit()
         session.refresh(server)
 
-        raw_auth_payload = session.execute(
-            text("SELECT auth::text FROM mcp_servers WHERE id = :id"),
+        raw_config_payload = session.execute(
+            text("SELECT config::text FROM mcp_servers WHERE id = :id"),
             {"id": server.id},
         ).scalar_one()
-        assert "secret-token" not in raw_auth_payload
-        assert "Authorization" not in raw_auth_payload
+        assert "secret-token" not in raw_config_payload
+        assert "Authorization" not in raw_config_payload
 
         stored_server = session.get(McpServer, server.id)
         assert stored_server is not None
+        assert stored_server.headers == {"Authorization": "secret-token"}
         assert stored_server.auth == {"apiKey": "secret-token", "header": "Authorization"}
 
         session.add(
@@ -614,23 +616,31 @@ def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_
             session.commit()
         session.rollback()
 
-        session.add(
-            McpServer(
-                key="invalid_target",
-                version=1,
-                status="draft",
-                name="invalid-target",
-                description="Invalid MCP target",
-                transport="stdio",
-                command=None,
-                url="https://example.com/mcp",
-                auth={"apiKey": "broken"},
-                enabled=True,
-            )
+        compatibility_server = McpServer(
+            key="stdio_market_data",
+            version=1,
+            status="draft",
+            name="stdio-market-data",
+            description="Direct constructor compatibility",
+            transport="stdio",
+            command="python",
+            args=["-m", "market_data"],
+            env={"LEDGER_MODE": "test"},
+            enabled=False,
         )
-        with pytest.raises(IntegrityError):
-            session.commit()
-        session.rollback()
+        session.add(compatibility_server)
+        session.commit()
+        session.refresh(compatibility_server)
+
+        assert compatibility_server.config == {
+            "name": "stdio-market-data",
+            "description": "Direct constructor compatibility",
+            "enabled": False,
+            "transport": "stdio",
+            "command": "python",
+            "args": ["-m", "market_data"],
+            "env": {"LEDGER_MODE": "test"},
+        }
 
 
 def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_budget(

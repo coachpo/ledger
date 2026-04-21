@@ -97,7 +97,7 @@ class DefaultMcpConnectionTester:
 
 def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
     details: list[dict[str, str]] = []
-    config = server.config_entry
+    config = server.flat_config
     transport = _normalize_transport(config.get("transport"), details)
     command = _normalize_command(config, transport, details)
     url = _normalize_url(config, transport, details)
@@ -126,7 +126,7 @@ def _normalize_transport(raw_transport: object, details: list[dict[str, str]]) -
     if normalized_transport not in {"stdio", "http-sse"}:
         details.append(
             {
-                "field": "mcpServers",
+                "field": "transport",
                 "issue": "Server transport must be either 'stdio' or 'http-sse'",
             }
         )
@@ -140,14 +140,14 @@ def _normalize_command(
 ) -> tuple[str, ...] | None:
     if transport != "stdio":
         if "command" in config:
-            details.append(
-                {"field": "command", "issue": "command is only supported for stdio"}
-            )
+            details.append({"field": "command", "issue": "command is only supported for stdio"})
         if "args" in config:
             details.append({"field": "args", "issue": "args is only supported for stdio"})
         return None
 
-    normalized_command = str(config.get("command")).strip() if config.get("command") is not None else ""
+    normalized_command = (
+        str(config.get("command")).strip() if config.get("command") is not None else ""
+    )
     if not normalized_command:
         details.append({"field": "command", "issue": "Stdio transport requires a command"})
         return None
@@ -232,7 +232,10 @@ def _normalize_string_mapping(
             continue
         if not normalized_value:
             details.append(
-                {"field": f"{field_name}.{normalized_key}", "issue": "Values must be non-empty strings"}
+                {
+                    "field": f"{field_name}.{normalized_key}",
+                    "issue": "Values must be non-empty strings",
+                }
             )
             continue
         normalized[normalized_key] = normalized_value
