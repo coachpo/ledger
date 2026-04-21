@@ -1,0 +1,35 @@
+# FRONTEND RUNS PAGES GUIDE
+
+> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+
+## OVERVIEW
+`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail page exposes progress, usage, trace linkage, and per-agent accordion drilldowns.
+
+## WHERE TO LOOK
+| Task | Location | Notes |
+|---|---|---|
+| Run inventory | `list.tsx` | filters, polling monitor, progress, token, and cost summary |
+| Run detail | `detail.tsx` | progress cards, trace linkage, final output, and per-agent accordion |
+| Run hooks | `../../hooks/use-runs.ts` | list/detail queries and refetch intervals |
+| Shared formatting | `../../lib/format.ts`, `../platform-resource-shared.tsx` | timestamps and JSON helpers |
+| Run types | `../../lib/types/run.ts` | run status, step-agent reads, and trace fields |
+
+## CONVENTIONS
+- `list.tsx` keeps workflow-key and status filters local to the page and refetches on a timer.
+- `detail.tsx` computes progress from step outputs and keeps trace linkage visible even when the top-level trace id is missing.
+- Per-agent details stay inside the accordion so the page can expose the full run without flattening the layout.
+- Hooks own the polling query behavior, while the page owns presentation, filters, and trace summaries.
+
+## ANTI-PATTERNS
+- Do not move polling controls out of the list page.
+- Do not hide trace linkage behind a single summary string when span references exist.
+- Do not bypass the hook layer for run reads.
+- Do not collapse per-agent detail into a single monolithic block.
+
+## VALIDATION
+```bash
+cd frontend
+pnpm lint
+pnpm typecheck
+pnpm test:run
+```
