@@ -67,7 +67,7 @@ It will:
 - prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
 - prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-Ledger service
 - prefer the frontend on `25173`, then fall back to `25174` if needed
-- reuse a healthy Ledger backend already listening on the requested backend port
+- stop previously running Ledger backend, frontend, and local Docker database instances before starting fresh ones
 - derive `DATABASE_URL` for backend startup when you do not provide one
 - derive `VITE_API_BASE_URL` for frontend startup
 

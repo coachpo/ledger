@@ -53,7 +53,7 @@ ledger/
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; may reuse a healthy backend or fall back to `25433/25434`, `28001/28002`, or `25174` |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; stops prior Ledger instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
 | Cross-app E2E startup | `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus preserved `/api/v1` and current `/api/*` composition |
 | Backend agent-platform flow | `backend/app/api/agents.py`, `backend/app/api/skills.py`, `backend/app/api/mcp_servers.py`, `backend/app/api/output_schemas.py`, `backend/app/api/workflows.py`, `backend/app/api/runs.py` | agents, skills, MCP servers, output schemas, workflows, and runs |
@@ -115,7 +115,7 @@ ledger/
 ```
 
 ## NOTES
-- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, may reuse a healthy backend, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
+- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior Ledger instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
 - Supported schema repair is code-based in `backend/app/db/`; `backend/alembic/` is only a placeholder scaffold, not the migration source of truth.
 - Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
