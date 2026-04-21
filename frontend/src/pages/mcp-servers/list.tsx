@@ -38,7 +38,7 @@ export function McpServersListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">MCP Servers</h1>
           <p className="text-sm text-muted-foreground">
-            Manage external MCP server definitions and validate their connection settings.
+            Manage external MCP server definitions backed by the canonical MCP JSON contract.
           </p>
         </div>
         <Button data-testid="mcp-servers-new" size="sm" onClick={() => navigate("/mcp-servers/new")}>
@@ -123,7 +123,9 @@ export function McpServersListPage() {
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 <p>{server.description || "No description provided."}</p>
                 <p>
-                  {server.transport === "stdio" ? server.command || "No command configured." : server.url || "No URL configured."}
+                  {server.transport === "stdio"
+                    ? "Configured for stdio command + args transport."
+                    : "Configured for HTTP/SSE URL + headers transport."}
                 </p>
               </CardContent>
             </Card>

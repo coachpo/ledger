@@ -14,16 +14,22 @@ const toastSuccessMock = vi.fn();
 
 const existingServer = {
   id: 4,
-  auth: { token: "abc" },
-  command: "quotesd",
-  description: "Serves quotes.",
-  enabled: true,
   key: "quotes_mcp",
-  name: "Quotes MCP",
-  status: "draft",
-  transport: "stdio",
-  url: null,
   version: 6,
+  status: "draft",
+  config: {
+    mcpServers: {
+      quotes_mcp: {
+        name: "Quotes MCP",
+        description: "Serves quotes.",
+        enabled: true,
+        transport: "stdio",
+        command: "quotesd",
+        args: ["--mode", "stdio"],
+        env: { TOKEN: "abc" },
+      },
+    },
+  },
 };
 
 vi.mock("react-router", () => ({
@@ -61,19 +67,50 @@ describe("McpServersEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("shows invalid-save feedback on create", async () => {
+  it("blocks save on malformed JSON", async () => {
     render(<McpServersEditorPage />);
 
+    fireEvent.change(screen.getByLabelText(/config json/i), { target: { value: "{" } });
     fireEvent.click(screen.getByRole("button", { name: /save mcp server/i }));
 
-    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Key is required."));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Config JSON must be valid JSON."));
   });
 
-  it("hydrates edit mode, saves through the update hook, and navigates to the new version", async () => {
-    paramsMock.serverId = "4";
-    updateServerMock.mockResolvedValue({ id: 9 });
-
+  it("submits canonical JSON generated from form edits on create", async () => {
+    createServerMock.mockResolvedValue({ id: 9 });
     render(<McpServersEditorPage />);
+
+    fireEvent.change(screen.getByLabelText(/key/i), { target: { value: "market_data" } });
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Market Data MCP" } });
+    fireEvent.change(screen.getByLabelText(/args json/i), {
+      target: { value: '["-m", "app.agents.mcp.stock_analysis_reference_server"]' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save mcp server/i }));
+
+    await waitFor(() => expect(createServerMock).toHaveBeenCalledTimes(1));
+    expect(createServerMock).toHaveBeenCalledWith({
+      mcpServers: {
+        market_data: {
+          args: ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+          command: "python3",
+          description: "",
+          enabled: true,
+          env: {},
+          name: "Market Data MCP",
+          transport: "stdio",
+        },
+      },
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/mcp-servers/9/edit");
+  });
+
+  it("backfills form from canonical JSON detail response and saves a full update envelope", async () => {
+    paramsMock.serverId = "4";
+    updateServerMock.mockResolvedValue({ id: 10 });
+    render(<McpServersEditorPage />);
+
+    expect(screen.getByLabelText(/name/i)).toHaveValue("Quotes MCP");
+    expect(screen.getByLabelText(/args json/i)).toHaveValue(JSON.stringify(["--mode", "stdio"], null, 2));
 
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Updated Quotes MCP" } });
     fireEvent.click(screen.getByRole("button", { name: /save mcp server/i }));
@@ -81,17 +118,21 @@ describe("McpServersEditorPage", () => {
     await waitFor(() => expect(updateServerMock).toHaveBeenCalledTimes(1));
     expect(updateServerMock).toHaveBeenCalledWith({
       payload: {
-        auth: { token: "abc" },
-        command: "quotesd",
-        description: "Serves quotes.",
-        enabled: true,
-        name: "Updated Quotes MCP",
-        transport: "stdio",
-        url: null,
+        mcpServers: {
+          quotes_mcp: {
+            args: ["--mode", "stdio"],
+            command: "quotesd",
+            description: "Serves quotes.",
+            enabled: true,
+            env: { TOKEN: "abc" },
+            name: "Updated Quotes MCP",
+            transport: "stdio",
+          },
+        },
       },
       serverId: "4",
     });
-    expect(navigateMock).toHaveBeenCalledWith("/mcp-servers/9/edit");
+    expect(navigateMock).toHaveBeenCalledWith("/mcp-servers/10/edit");
   });
 
   it("activates a draft MCP server", async () => {
@@ -107,10 +148,7 @@ describe("McpServersEditorPage", () => {
 
   it("surfaces successful connection feedback inline", async () => {
     paramsMock.serverId = "4";
-    testConnectionMock.mockResolvedValue({
-      ok: true,
-      message: "Connection OK",
-    });
+    testConnectionMock.mockResolvedValue({ ok: true, message: "Connection OK" });
 
     render(<McpServersEditorPage />);
     fireEvent.click(screen.getByTestId("mcp-server-test-connection"));

@@ -10,7 +10,12 @@ import {
   useTestMcpServerConnection,
   useUpdateMcpServer,
 } from "@/hooks/use-mcp-servers";
-import type { McpServerCreateInput, McpServerUpdateInput } from "@/lib/types/mcp-server";
+import type {
+  McpServerConfig,
+  McpServerConfigEnvelope,
+  McpServerCreateInput,
+  McpServerUpdateInput,
+} from "@/lib/types/mcp-server";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +35,7 @@ import {
   parseJsonValue,
   parseRequiredText,
   PlatformResourceBadges,
+  stringifyJson,
 } from "../platform-resource-shared";
 
 type ConnectionFeedback = {
@@ -39,26 +45,94 @@ type ConnectionFeedback = {
 };
 
 type McpServerEditorValues = {
-  auth: string;
+  args: string;
   command: string;
+  configText: string;
   description: string;
   enabled: boolean;
+  env: string;
+  headers: string;
   key: string;
+  jsonError: string | null;
   name: string;
   transport: "stdio" | "http-sse";
   url: string;
 };
 
 const initialValues: McpServerEditorValues = {
-  auth: "{}",
-  command: "",
+  args: "[\n  \"-m\",\n  \"app.agents.mcp.stock_analysis_reference_server\"\n]",
+  command: "python3",
+  configText: "",
   description: "",
   enabled: true,
+  env: "{}",
+  headers: "{}",
+  jsonError: null,
   key: "",
   name: "",
   transport: "stdio",
   url: "",
 };
+
+function readEnvelopeEntry(envelope: McpServerConfigEnvelope): [string, McpServerConfig] {
+  const entries = Object.entries(envelope.mcpServers);
+  if (entries.length !== 1) {
+    throw new Error("MCP config must contain exactly one server entry.");
+  }
+  return entries[0] as [string, McpServerConfig];
+}
+
+function buildEnvelopeFromValues(values: McpServerEditorValues): McpServerConfigEnvelope {
+  const key = parseRequiredText("Key", values.key).toLowerCase();
+  const common = {
+    description: values.description.trim(),
+    enabled: values.enabled,
+    name: parseRequiredText("Name", values.name),
+  };
+
+  if (values.transport === "stdio") {
+    return {
+      mcpServers: {
+        [key]: {
+          ...common,
+          args: parseJsonValue<string[]>("Args", values.args, []),
+          command: parseRequiredText("Command", values.command),
+          env: parseJsonValue<Record<string, string>>("Env", values.env, {}),
+          transport: "stdio",
+        },
+      },
+    };
+  }
+
+  return {
+    mcpServers: {
+      [key]: {
+        ...common,
+        headers: parseJsonValue<Record<string, string>>("Headers", values.headers, {}),
+        transport: "http-sse",
+        url: parseRequiredText("URL", values.url),
+      },
+    },
+  };
+}
+
+function buildValuesFromEnvelope(envelope: McpServerConfigEnvelope): McpServerEditorValues {
+  const [key, config] = readEnvelopeEntry(envelope);
+  return {
+    args: stringifyJson(config.transport === "stdio" ? config.args : []),
+    command: config.transport === "stdio" ? config.command : "",
+    configText: stringifyJson(envelope),
+    description: config.description ?? "",
+    enabled: config.enabled,
+    env: stringifyJson(config.transport === "stdio" ? config.env : {}),
+    headers: stringifyJson(config.transport === "http-sse" ? config.headers : {}),
+    jsonError: null,
+    key,
+    name: config.name,
+    transport: config.transport,
+    url: config.transport === "http-sse" ? config.url : "",
+  };
+}
 
 export function McpServersEditorPage() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -76,17 +150,7 @@ export function McpServersEditorPage() {
     if (!serverQuery.data) {
       return;
     }
-
-    setValues({
-      auth: JSON.stringify(serverQuery.data.auth ?? {}, null, 2),
-      command: serverQuery.data.command ?? "",
-      description: serverQuery.data.description ?? "",
-      enabled: serverQuery.data.enabled,
-      key: serverQuery.data.key,
-      name: serverQuery.data.name,
-      transport: serverQuery.data.transport,
-      url: serverQuery.data.url ?? "",
-    });
+    setValues(buildValuesFromEnvelope(serverQuery.data.config));
     setConnectionFeedback(null);
   }, [serverQuery.data]);
 
@@ -98,45 +162,48 @@ export function McpServersEditorPage() {
     key: Key,
     value: McpServerEditorValues[Key],
   ) => {
-    setValues((current) => ({ ...current, [key]: value }));
+    setValues((current) => {
+      const nextValues = { ...current, [key]: value };
+      try {
+        const envelope = buildEnvelopeFromValues(nextValues);
+        return { ...nextValues, configText: stringifyJson(envelope), jsonError: null };
+      } catch {
+        return { ...nextValues, jsonError: null };
+      }
+    });
   };
 
-  const buildPayload = (): McpServerCreateInput | McpServerUpdateInput => {
-    const payload = {
-      auth: parseJsonValue("Auth", values.auth, {}),
-      command: values.command.trim() || null,
-      description: values.description.trim() || undefined,
-      enabled: values.enabled,
-      key: parseRequiredText("Key", values.key).toLowerCase(),
-      name: parseRequiredText("Name", values.name),
-      transport: values.transport,
-      url: values.url.trim() || null,
-    };
+  const handleConfigChange = (nextConfigText: string) => {
+    setValues((current) => {
+      const nextValues = { ...current, configText: nextConfigText };
+      try {
+        return buildValuesFromEnvelope(parseJsonValue("Config JSON", nextConfigText, { mcpServers: {} }));
+      } catch (error) {
+        return {
+          ...nextValues,
+          jsonError: error instanceof Error ? error.message : "Config JSON must be valid JSON.",
+        };
+      }
+    });
+  };
 
-    if (payload.transport === "stdio" && !payload.command) {
-      throw new Error("Command is required for stdio servers.");
+  const parseEnvelopeForSubmit = (): McpServerCreateInput | McpServerUpdateInput => {
+    if (values.jsonError) {
+      throw new Error(values.jsonError);
     }
-
-    if (payload.transport === "http-sse" && !payload.url) {
-      throw new Error("URL is required for HTTP SSE servers.");
-    }
-
-    return payload;
+    return parseJsonValue<McpServerConfigEnvelope>("Config JSON", values.configText, { mcpServers: {} });
   };
 
   const handleSave = async () => {
     try {
-      const payload = buildPayload();
-
+      const payload = parseEnvelopeForSubmit();
       if (isEditing && serverId) {
-        const { key: _ignored, ...updatePayload } = payload as McpServerCreateInput;
-        const updated = await updateMutation.mutateAsync({ payload: updatePayload, serverId });
+        const updated = await updateMutation.mutateAsync({ payload, serverId });
         toast.success("MCP server updated");
         navigate(`/mcp-servers/${updated.id}/edit`);
         return;
       }
-
-      const created = await createMutation.mutateAsync(payload as McpServerCreateInput);
+      const created = await createMutation.mutateAsync(payload);
       toast.success("MCP server created");
       navigate(`/mcp-servers/${created.id}/edit`);
     } catch (error) {
@@ -177,7 +244,6 @@ export function McpServersEditorPage() {
     if (!serverId) {
       return;
     }
-
     try {
       await activateMutation.mutateAsync(serverId);
       toast.success("MCP server activated");
@@ -189,7 +255,6 @@ export function McpServersEditorPage() {
   if (isEditing && serverQuery.isPending) {
     return <div className="p-4 text-sm text-muted-foreground">Loading MCP server details...</div>;
   }
-
   if (isEditing && serverQuery.isError) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
@@ -218,13 +283,7 @@ export function McpServersEditorPage() {
               Activate MCP Server
             </Button>
           ) : null}
-          <Button
-            data-testid="mcp-server-test-connection"
-            disabled={testConnectionMutation.isPending}
-            size="sm"
-            variant="outline"
-            onClick={() => void handleTestConnection()}
-          >
+          <Button data-testid="mcp-server-test-connection" disabled={testConnectionMutation.isPending} size="sm" variant="outline" onClick={() => void handleTestConnection()}>
             <PlugZap data-icon="inline-start" />
             Test Connection
           </Button>
@@ -236,10 +295,7 @@ export function McpServersEditorPage() {
       </div>
 
       {connectionFeedback ? (
-        <Alert
-          data-testid="mcp-server-connection-feedback"
-          variant={connectionFeedback.variant}
-        >
+        <Alert data-testid="mcp-server-connection-feedback" variant={connectionFeedback.variant}>
           {connectionFeedback.variant === "default" ? <CheckCircle2 /> : <XCircle />}
           <AlertTitle>{connectionFeedback.title}</AlertTitle>
           <AlertDescription>{connectionFeedback.message}</AlertDescription>
@@ -250,53 +306,30 @@ export function McpServersEditorPage() {
         <CardHeader>
           <CardTitle>MCP server details</CardTitle>
           <CardDescription>
-            Keys are immutable after creation. Choose a transport and provide the matching connection settings.
+            Form edits regenerate the canonical JSON. Save always submits the JSON envelope.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="mcp-server-key">Key</Label>
-              <Input
-                id="mcp-server-key"
-                aria-label="Key"
-                disabled={isEditing || isSaving}
-                value={values.key}
-                onChange={(event) => updateValue("key", event.target.value)}
-              />
+              <Input id="mcp-server-key" aria-label="Key" disabled={isEditing || isSaving} value={values.key} onChange={(event) => updateValue("key", event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="mcp-server-name">Name</Label>
-              <Input
-                id="mcp-server-name"
-                aria-label="Name"
-                disabled={isSaving}
-                value={values.name}
-                onChange={(event) => updateValue("name", event.target.value)}
-              />
+              <Input id="mcp-server-name" aria-label="Name" disabled={isSaving} value={values.name} onChange={(event) => updateValue("name", event.target.value)} />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="mcp-server-description">Description</Label>
-            <Textarea
-              id="mcp-server-description"
-              aria-label="Description"
-              disabled={isSaving}
-              rows={3}
-              value={values.description}
-              onChange={(event) => updateValue("description", event.target.value)}
-            />
+            <Textarea id="mcp-server-description" aria-label="Description" disabled={isSaving} rows={3} value={values.description} onChange={(event) => updateValue("description", event.target.value)} />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="mcp-server-transport">Transport</Label>
-              <Select
-                value={values.transport}
-                disabled={isSaving}
-                onValueChange={(value: "stdio" | "http-sse") => updateValue("transport", value)}
-              >
+              <Select value={values.transport} disabled={isSaving} onValueChange={(value: "stdio" | "http-sse") => updateValue("transport", value)}>
                 <SelectTrigger id="mcp-server-transport" aria-label="Transport">
                   <SelectValue />
                 </SelectTrigger>
@@ -311,50 +344,42 @@ export function McpServersEditorPage() {
                 <Label htmlFor="mcp-server-enabled">Enabled</Label>
                 <p className="text-sm text-muted-foreground">Disable a server without removing its configuration.</p>
               </div>
-              <Switch
-                id="mcp-server-enabled"
-                aria-label="Enabled"
-                checked={values.enabled}
-                disabled={isSaving}
-                onCheckedChange={(checked) => updateValue("enabled", checked)}
-              />
+              <Switch id="mcp-server-enabled" aria-label="Enabled" checked={values.enabled} disabled={isSaving} onCheckedChange={(checked) => updateValue("enabled", checked)} />
             </div>
           </div>
 
           {values.transport === "stdio" ? (
-            <div className="space-y-2">
-              <Label htmlFor="mcp-server-command">Command</Label>
-              <Input
-                id="mcp-server-command"
-                aria-label="Command"
-                disabled={isSaving}
-                value={values.command}
-                onChange={(event) => updateValue("command", event.target.value)}
-              />
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-server-command">Command</Label>
+                <Input id="mcp-server-command" aria-label="Command" disabled={isSaving} value={values.command} onChange={(event) => updateValue("command", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-server-args">Args JSON</Label>
+                <Textarea id="mcp-server-args" aria-label="Args JSON" disabled={isSaving} rows={5} value={values.args} onChange={(event) => updateValue("args", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-server-env">Env JSON</Label>
+                <Textarea id="mcp-server-env" aria-label="Env JSON" disabled={isSaving} rows={5} value={values.env} onChange={(event) => updateValue("env", event.target.value)} />
+              </div>
+            </>
           ) : (
-            <div className="space-y-2">
-              <Label htmlFor="mcp-server-url">URL</Label>
-              <Input
-                id="mcp-server-url"
-                aria-label="URL"
-                disabled={isSaving}
-                value={values.url}
-                onChange={(event) => updateValue("url", event.target.value)}
-              />
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-server-url">URL</Label>
+                <Input id="mcp-server-url" aria-label="URL" disabled={isSaving} value={values.url} onChange={(event) => updateValue("url", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-server-headers">Headers JSON</Label>
+                <Textarea id="mcp-server-headers" aria-label="Headers JSON" disabled={isSaving} rows={5} value={values.headers} onChange={(event) => updateValue("headers", event.target.value)} />
+              </div>
+            </>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="mcp-server-auth">Auth JSON</Label>
-            <Textarea
-              id="mcp-server-auth"
-              aria-label="Auth JSON"
-              disabled={isSaving}
-              rows={8}
-              value={values.auth}
-              onChange={(event) => updateValue("auth", event.target.value)}
-            />
+            <Label htmlFor="mcp-server-config">Config JSON</Label>
+            <Textarea id="mcp-server-config" aria-label="Config JSON" disabled={isSaving} rows={14} value={values.configText} onChange={(event) => handleConfigChange(event.target.value)} />
+            {values.jsonError ? <p className="text-sm text-destructive">{values.jsonError}</p> : null}
           </div>
         </CardContent>
       </Card>

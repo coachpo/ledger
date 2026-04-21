@@ -48,7 +48,6 @@ describe("McpServersListPage", () => {
             name: "Quotes MCP",
             description: "Serves quotes.",
             transport: "stdio",
-            command: "quotesd",
             enabled: true,
             status: "draft",
             version: 6,
@@ -67,7 +66,7 @@ describe("McpServersListPage", () => {
     render(<McpServersListPage />);
 
     expect(screen.getByTestId("mcp-servers-row-quotes_mcp")).toBeVisible();
-    expect(screen.getByText(/quotesd/i)).toBeVisible();
+    expect(screen.getByText(/configured for stdio command \+ args transport\./i)).toBeVisible();
 
     fireEvent.click(screen.getByTestId("mcp-servers-archive-quotes_mcp"));
     await waitFor(() => expect(archiveMcpServerMock).toHaveBeenCalledWith(4));
