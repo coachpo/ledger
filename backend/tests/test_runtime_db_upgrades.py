@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine, inspect
+import json
+
+from sqlalchemy import create_engine, inspect, text
 
 from app.db.session import init_db
 from app.db.upgrades import upgrade_legacy_schema
+from app.models.mcp_server import McpServer
 
 AGENT_PLATFORM_TABLE_NAMES = {
     "agents",
@@ -89,3 +92,82 @@ def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_f
 
     table_names = set(inspect(engine).get_table_names())
     assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+
+
+def test_upgrade_legacy_schema_flattens_wrapped_mcp_rows(session_factory) -> None:
+    flat_config = {
+        "name": "Market Data",
+        "description": "Published MCP server",
+        "enabled": True,
+        "transport": "http-sse",
+        "url": "https://example.com/mcp",
+        "headers": {"Authorization": "Bearer secret-token"},
+    }
+
+    with session_factory() as session:
+        engine = session.get_bind()
+        session.add(
+            McpServer(
+                key="market_data",
+                version=1,
+                status="draft",
+                config={"mcpServers": {"market_data": flat_config}},
+            )
+        )
+        session.commit()
+
+    upgrade_legacy_schema(engine)
+
+    with session_factory() as session:
+        stored = session.query(McpServer).filter_by(key="market_data", version=1).one()
+        assert stored.config == flat_config
+        assert stored.flat_config == flat_config
+        assert stored.transport == "http-sse"
+        assert stored.enabled is True
+
+
+def test_upgrade_legacy_schema_leaves_mismatched_wrapped_mcp_rows_unchanged(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    legacy_payload = {
+        "mcpServers": {
+            "other_key": {
+                "name": "Market Data",
+                "description": "Mismatched wrapper key",
+                "enabled": True,
+                "transport": "http-sse",
+                "url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer secret-token"},
+            }
+        }
+    }
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO mcp_servers (key, version, status, config, created_at, "
+                    "updated_at) "
+                    "VALUES (:key, :version, :status, CAST(:config AS jsonb), NOW(), NOW())"
+                ),
+                {
+                    "key": "market_data",
+                    "version": 1,
+                    "status": "draft",
+                    "config": json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")),
+                },
+            )
+
+        upgrade_legacy_schema(engine)
+
+        with engine.connect() as connection:
+            stored = connection.execute(
+                text("SELECT config FROM mcp_servers WHERE key = :key AND version = :version"),
+                {"key": "market_data", "version": 1},
+            ).scalar_one()
+
+        assert stored == legacy_payload
+    finally:
+        engine.dispose()

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from app.db.validation import validate_supported_database_engine
+from app.models.mcp_server import flatten_mcp_server_storage_payload
 
 _OBSOLETE_TABLES = (
     "stock_analysis_versions",
@@ -338,7 +340,9 @@ def _reset_legacy_mcp_server_table(engine: Engine, table_names: set[str]) -> Non
     if mcp_columns == expected_columns:
         return
 
-    if "config" in mcp_columns and not ({"transport", "command", "url", "auth", "enabled"} & mcp_columns):
+    if "config" in mcp_columns and not (
+        {"transport", "command", "url", "auth", "enabled"} & mcp_columns
+    ):
         return
 
     statements = dict(_AGENT_PLATFORM_TABLE_STATEMENTS)["mcp_servers"]
@@ -347,6 +351,36 @@ def _reset_legacy_mcp_server_table(engine: Engine, table_names: set[str]) -> Non
         for statement in statements:
             connection.exec_driver_sql(statement)
     table_names.add("mcp_servers")
+
+
+def _flatten_legacy_mcp_server_rows(engine: Engine, table_names: set[str]) -> None:
+    if "mcp_servers" not in table_names:
+        return
+
+    with engine.begin() as connection:
+        legacy_rows = connection.exec_driver_sql(
+            "SELECT id, key, config FROM mcp_servers ORDER BY id"
+        ).all()
+        for server_id, key, config in legacy_rows:
+            flattened_payload = flatten_mcp_server_storage_payload(config, key=str(key))
+            if flattened_payload is None:
+                continue
+
+            next_payload, changed = flattened_payload
+            if not changed:
+                continue
+
+            connection.execute(
+                text(
+                    "UPDATE mcp_servers "
+                    "SET config = CAST(:config AS jsonb), updated_at = NOW() "
+                    "WHERE id = :server_id"
+                ),
+                {
+                    "config": json.dumps(next_payload, sort_keys=True, separators=(",", ":")),
+                    "server_id": server_id,
+                },
+            )
 
 
 def _drop_tables(engine: Engine, table_names: set[str], tables: tuple[str, ...]) -> None:
@@ -365,6 +399,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
 
     _ensure_agent_platform_tables(engine, table_names)
     _reset_legacy_mcp_server_table(engine, table_names)
+    _flatten_legacy_mcp_server_rows(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
     if "portfolios" in table_names:
