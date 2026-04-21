@@ -7,7 +7,7 @@ import json
 import secrets
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, Index, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, String, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
@@ -17,8 +17,8 @@ from sqlalchemy.types import TypeDecorator
 from app.core.config import get_settings
 from app.models.base import Base, IdMixin, TimestampMixin
 
-_AUTH_ENVELOPE_MARKER = "__encrypted__"
-_AUTH_ENVELOPE_VERSION = 1
+_ENCRYPTED_PAYLOAD_MARKER = "__encrypted__"
+_ENCRYPTED_PAYLOAD_VERSION = 1
 
 
 def _encryption_key_bytes() -> bytes:
@@ -28,7 +28,7 @@ def _encryption_key_bytes() -> bytes:
 
 def _xor_stream(left: bytes, right: bytes) -> bytes:
     if len(left) != len(right):
-        raise ValueError("Encrypted MCP auth payload sizes must match.")
+        raise ValueError("Encrypted MCP payload sizes must match.")
     return bytes(left[index] ^ right[index] for index in range(len(left)))
 
 
@@ -49,7 +49,7 @@ def _decode_bytes(value: str) -> bytes:
     return base64.b64decode(value.encode("ascii"))
 
 
-def _encrypt_auth_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _encrypt_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not payload:
         return {}
     key = _encryption_key_bytes()
@@ -58,23 +58,23 @@ def _encrypt_auth_payload(payload: dict[str, Any]) -> dict[str, Any]:
     ciphertext = _xor_stream(plaintext, _derive_keystream(key, nonce, len(plaintext)))
     mac = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
     return {
-        _AUTH_ENVELOPE_MARKER: True,
-        "version": _AUTH_ENVELOPE_VERSION,
+        _ENCRYPTED_PAYLOAD_MARKER: True,
+        "version": _ENCRYPTED_PAYLOAD_VERSION,
         "nonce": _encode_bytes(nonce),
         "ciphertext": _encode_bytes(ciphertext),
         "mac": _encode_bytes(mac),
     }
 
 
-def _is_encrypted_auth_envelope(payload: object) -> bool:
-    return isinstance(payload, dict) and bool(payload.get(_AUTH_ENVELOPE_MARKER))
+def _is_encrypted_payload(payload: object) -> bool:
+    return isinstance(payload, dict) and bool(payload.get(_ENCRYPTED_PAYLOAD_MARKER))
 
 
-def _decrypt_auth_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    if not _is_encrypted_auth_envelope(payload):
+def _decrypt_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if not _is_encrypted_payload(payload):
         return payload
-    if payload.get("version") != _AUTH_ENVELOPE_VERSION:
-        raise ValueError("Unsupported MCP auth envelope version.")
+    if payload.get("version") != _ENCRYPTED_PAYLOAD_VERSION:
+        raise ValueError("Unsupported encrypted MCP payload version.")
 
     key = _encryption_key_bytes()
     nonce = _decode_bytes(str(payload["nonce"]))
@@ -82,12 +82,12 @@ def _decrypt_auth_payload(payload: dict[str, Any]) -> dict[str, Any]:
     mac = _decode_bytes(str(payload["mac"]))
     expected_mac = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
     if not hmac.compare_digest(mac, expected_mac):
-        raise ValueError("Invalid encrypted MCP auth payload.")
+        raise ValueError("Invalid encrypted MCP payload.")
 
     plaintext = _xor_stream(ciphertext, _derive_keystream(key, nonce, len(ciphertext)))
     decoded_payload = json.loads(plaintext.decode("utf-8"))
     if not isinstance(decoded_payload, dict):
-        raise ValueError("Encrypted MCP auth payload must decode to an object.")
+        raise ValueError("Encrypted MCP payload must decode to an object.")
     return decoded_payload
 
 
@@ -104,10 +104,10 @@ class EncryptedJSONB(TypeDecorator[dict[str, Any]]):
         if value is None:
             return {}
         if not isinstance(value, dict):
-            raise TypeError("MCP auth must be stored as a JSON object.")
-        if _is_encrypted_auth_envelope(value):
+            raise TypeError("MCP payloads must be stored as JSON objects.")
+        if _is_encrypted_payload(value):
             return value
-        return _encrypt_auth_payload(value)
+        return _encrypt_payload(value)
 
     def process_result_value(
         self,
@@ -118,8 +118,8 @@ class EncryptedJSONB(TypeDecorator[dict[str, Any]]):
         if value is None:
             return {}
         if not isinstance(value, dict):
-            raise TypeError("MCP auth rows must decode to JSON objects.")
-        return _decrypt_auth_payload(value)
+            raise TypeError("Stored MCP payload rows must decode to JSON objects.")
+        return _decrypt_payload(value)
 
 
 class McpServer(IdMixin, TimestampMixin, Base):
@@ -128,15 +128,6 @@ class McpServer(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "status IN ('draft', 'published', 'deprecated', 'archived')",
             name="ck_mcp_servers_status",
-        ),
-        CheckConstraint(
-            "transport IN ('stdio', 'http-sse')",
-            name="ck_mcp_servers_transport",
-        ),
-        CheckConstraint(
-            "((transport = 'stdio' AND command IS NOT NULL AND url IS NULL) OR "
-            "(transport = 'http-sse' AND url IS NOT NULL AND command IS NULL))",
-            name="ck_mcp_servers_target",
         ),
         CheckConstraint("version > 0", name="ck_mcp_servers_version_positive"),
         UniqueConstraint("key", "version", name="uq_mcp_servers_key_version"),
@@ -164,20 +155,67 @@ class McpServer(IdMixin, TimestampMixin, Base):
         default="draft",
         server_default="draft",
     )
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
-    transport: Mapped[str] = mapped_column(String(20), nullable=False)
-    command: Mapped[str | None] = mapped_column(Text, nullable=True)
-    url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    auth: Mapped[dict[str, Any]] = mapped_column(
+    config: Mapped[dict[str, Any]] = mapped_column(
         EncryptedJSONB,
         nullable=False,
         default=dict,
-        server_default="{}",
+        server_default=sql_text("'{}'::jsonb"),
     )
-    enabled: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        server_default=sql_text("true"),
-    )
+
+    @property
+    def config_entry(self) -> dict[str, Any]:
+        raw_servers = self.config.get("mcpServers") if isinstance(self.config, dict) else None
+        if not isinstance(raw_servers, dict):
+            return {}
+        raw_entry = raw_servers.get(self.key)
+        return raw_entry if isinstance(raw_entry, dict) else {}
+
+    @property
+    def name(self) -> str:
+        return str(self.config_entry.get("name", ""))
+
+    @property
+    def description(self) -> str:
+        return str(self.config_entry.get("description", ""))
+
+    @property
+    def transport(self) -> str:
+        return str(self.config_entry.get("transport", ""))
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.config_entry.get("enabled", False))
+
+    @property
+    def command(self) -> str | None:
+        raw_command = self.config_entry.get("command")
+        return str(raw_command) if raw_command is not None else None
+
+    @property
+    def args(self) -> list[str]:
+        raw_args = self.config_entry.get("args")
+        if not isinstance(raw_args, list):
+            return []
+        return [str(entry) for entry in raw_args if str(entry).strip()]
+
+    @property
+    def env(self) -> dict[str, str]:
+        raw_env = self.config_entry.get("env")
+        if not isinstance(raw_env, dict):
+            return {}
+        return {str(key): str(value) for key, value in raw_env.items()}
+
+    @property
+    def url(self) -> str | None:
+        raw_url = self.config_entry.get("url")
+        return str(raw_url) if raw_url is not None else None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        raw_headers = self.config_entry.get("headers")
+        if not isinstance(raw_headers, dict):
+            return {}
+        return {str(key): str(value) for key, value in raw_headers.items()}
+
+
+__all__ = ["EncryptedJSONB", "McpServer"]

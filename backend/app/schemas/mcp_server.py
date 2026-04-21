@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Literal, Union
 
 from pydantic import Field, field_validator, model_validator
 
@@ -40,6 +40,42 @@ def _normalize_mcp_server_key(value: object) -> str:
     return normalized
 
 
+def _normalize_string_mapping(value: object, *, field_name: str) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object")
+
+    normalized_mapping: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        normalized_key = str(raw_key).strip()
+        if not normalized_key:
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+
+        normalized_value = str(raw_value).strip() if raw_value is not None else ""
+        if not normalized_value:
+            raise ValueError(f"{field_name}.{normalized_key} values must be non-empty strings")
+
+        normalized_mapping[normalized_key] = normalized_value
+    return normalized_mapping
+
+
+def _normalize_args(value: object) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError("args must be an array of strings")
+
+    normalized_args: list[str] = []
+    for index, entry in enumerate(value):
+        normalized_entry = str(entry).strip() if entry is not None else ""
+        if not normalized_entry:
+            raise ValueError(f"args[{index}] must be a non-empty string")
+        normalized_args.append(normalized_entry)
+
+    if not normalized_args:
+        raise ValueError("args must contain at least one item")
+    return normalized_args
+
+
 class McpServerStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -52,58 +88,128 @@ class McpServerTransport(str, Enum):  # noqa: UP042
     HTTP_SSE = "http-sse"
 
 
-class McpServerDraftCreate(CamelModel):
-    key: str = Field(min_length=1, max_length=120)
+class McpServerConfigBase(CamelModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    transport: McpServerTransport
-    command: str | None = None
-    url: str | None = None
-    auth: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
-
-    @field_validator("key", mode="before")
-    @classmethod
-    def validate_key(cls, value: object) -> str:
-        return _normalize_mcp_server_key(value)
+    transport: McpServerTransport
 
     @field_validator("name", mode="before")
     @classmethod
     def validate_name(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="Name")
 
-    @field_validator("description", "command", "url", mode="before")
+    @field_validator("description", mode="before")
     @classmethod
-    def validate_optional_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value)
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
 
 
-class McpServerDraftUpdate(CamelModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
-    transport: McpServerTransport | None = None
-    command: str | None = None
-    url: str | None = None
-    auth: dict[str, Any] | None = None
-    enabled: bool | None = None
+class McpServerStdioConfig(CamelModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    enabled: bool = True
+    transport: Literal[McpServerTransport.STDIO] = McpServerTransport.STDIO
+    command: str = Field(min_length=1)
+    args: list[str] = Field(min_length=1)
+    env: dict[str, str] = Field(default_factory=dict)
 
-    @field_validator("auth", mode="before")
+    @field_validator("name", mode="before")
     @classmethod
-    def reject_null_auth(cls, value: object) -> object:
-        if value is None:
-            raise ValueError("auth must be an object")
-        return value
+    def validate_name(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Name")
 
-    @field_validator("name", "description", "command", "url", mode="before")
+    @field_validator("description", mode="before")
     @classmethod
-    def validate_optional_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value)
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def validate_command(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="command")
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def validate_args(cls, value: object) -> list[str]:
+        return _normalize_args(value)
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def validate_env(cls, value: object) -> dict[str, str]:
+        return _normalize_string_mapping(value, field_name="env")
+
+
+class McpServerHttpSseConfig(CamelModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    enabled: bool = True
+    transport: Literal[McpServerTransport.HTTP_SSE] = McpServerTransport.HTTP_SSE
+    url: str = Field(min_length=1)
+    headers: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Name")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def validate_url(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="url")
+
+    @field_validator("headers", mode="before")
+    @classmethod
+    def validate_headers(cls, value: object) -> dict[str, str]:
+        return _normalize_string_mapping(value, field_name="headers")
+
+
+McpServerConfig = Annotated[
+    Union[McpServerStdioConfig, McpServerHttpSseConfig],
+    Field(discriminator="transport"),
+]
+
+
+class McpServerConfigEnvelope(CamelModel):
+    mcp_servers: dict[str, McpServerConfig] = Field(min_length=1, max_length=1)
+
+    @field_validator("mcp_servers", mode="before")
+    @classmethod
+    def validate_mcp_servers(cls, value: object) -> dict[str, object]:
+        if not isinstance(value, dict):
+            raise ValueError("mcpServers must be an object")
+        normalized: dict[str, object] = {}
+        for raw_key, raw_config in value.items():
+            normalized_key = _normalize_mcp_server_key(raw_key)
+            normalized[normalized_key] = raw_config
+        return normalized
 
     @model_validator(mode="after")
-    def validate_payload(self) -> McpServerDraftUpdate:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be provided")
+    def validate_single_entry(self) -> McpServerConfigEnvelope:
+        if len(self.mcp_servers) != 1:
+            raise ValueError("mcpServers must contain exactly one server")
         return self
+
+    @property
+    def server_key(self) -> str:
+        return next(iter(self.mcp_servers))
+
+    @property
+    def server_config(self) -> McpServerConfig:
+        return self.mcp_servers[self.server_key]
+
+
+class McpServerDraftCreate(McpServerConfigEnvelope):
+    pass
+
+
+class McpServerDraftUpdate(McpServerConfigEnvelope):
+    pass
 
 
 class McpClientBoundaryRead(CamelModel):
@@ -127,13 +233,7 @@ class McpServerRead(CamelModel):
     key: str
     version: int = Field(ge=1)
     status: McpServerStatus
-    name: str
-    description: str
-    transport: McpServerTransport
-    command: str | None = None
-    url: str | None = None
-    auth: dict[str, Any] = Field(default_factory=dict)
-    enabled: bool
+    config: McpServerConfigEnvelope
     created_at: datetime
     updated_at: datetime
 
@@ -143,17 +243,33 @@ class McpServerRead(CamelModel):
         return ensure_timezone(value)
 
 
+class McpServerListItemRead(CamelModel):
+    id: int
+    key: str
+    version: int = Field(ge=1)
+    status: McpServerStatus
+    name: str
+    description: str
+    transport: McpServerTransport
+    enabled: bool
+
+
 class McpServerListRead(CamelModel):
-    items: list[McpServerRead]
+    items: list[McpServerListItemRead]
 
 
 __all__ = [
     "McpClientBoundaryRead",
+    "McpServerConfig",
+    "McpServerConfigEnvelope",
     "McpServerConnectionTestRead",
     "McpServerDraftCreate",
     "McpServerDraftUpdate",
+    "McpServerHttpSseConfig",
+    "McpServerListItemRead",
     "McpServerListRead",
     "McpServerRead",
     "McpServerStatus",
+    "McpServerStdioConfig",
     "McpServerTransport",
 ]

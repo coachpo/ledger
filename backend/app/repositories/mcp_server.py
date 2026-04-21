@@ -22,10 +22,6 @@ class McpServerRepository(BaseRepository[McpServer]):
         )
         if status is not None:
             latest_versions = latest_versions.where(self.model.status == status)
-        if enabled is not None:
-            latest_versions = latest_versions.where(self.model.enabled.is_(enabled))
-        if transport is not None:
-            latest_versions = latest_versions.where(self.model.transport == transport)
         latest_versions = latest_versions.group_by(self.model.key)
 
         latest_versions_subquery = latest_versions.subquery()
@@ -40,7 +36,12 @@ class McpServerRepository(BaseRepository[McpServer]):
             )
             .order_by(self.model.key.asc(), self.model.version.desc())
         )
-        return self._list(statement)
+        items = self._list(statement)
+        if enabled is not None:
+            items = [item for item in items if item.enabled is enabled]
+        if transport is not None:
+            items = [item for item in items if item.transport == transport]
+        return items
 
     def list_versions(self, key: str) -> list[McpServer]:
         statement = (
@@ -64,9 +65,12 @@ class McpServerRepository(BaseRepository[McpServer]):
             self.model.key == key,
             self.model.status == "published",
         )
-        if enabled is not None:
-            statement = statement.where(self.model.enabled.is_(enabled))
-        return self._get_by_statement(statement)
+        result = self._get_by_statement(statement)
+        if result is None:
+            return None
+        if enabled is not None and result.enabled is not enabled:
+            return None
+        return result
 
     def get_draft_by_key(self, key: str) -> McpServer | None:
         statement = select(self.model).where(self.model.key == key, self.model.status == "draft")
@@ -81,4 +85,9 @@ class McpServerRepository(BaseRepository[McpServer]):
     ) -> McpServer | None:
         if version is None:
             return self.get_published_by_key(key, enabled=enabled)
-        return self.get_by_key_version(key, version)
+        result = self.get_by_key_version(key, version)
+        if result is None:
+            return None
+        if enabled is not None and result.enabled is not enabled:
+            return None
+        return result

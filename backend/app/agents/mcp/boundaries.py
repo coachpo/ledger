@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shlex
 import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -98,13 +97,12 @@ class DefaultMcpConnectionTester:
 
 def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
     details: list[dict[str, str]] = []
-    headers: dict[str, str] = {}
-    env: dict[str, str] = {}
-
-    command = _normalize_command(server.command, server.transport, details)
-    url = _normalize_url(server.url, server.transport, details)
-    auth_payload = server.auth if isinstance(server.auth, dict) else {}
-    _normalize_auth(auth_payload, headers=headers, env=env, details=details)
+    config = server.config_entry
+    transport = _normalize_transport(config.get("transport"), details)
+    command = _normalize_command(config, transport, details)
+    url = _normalize_url(config, transport, details)
+    headers = _normalize_headers(config, transport, details)
+    env = _normalize_env(config, transport, details)
 
     if details:
         raise McpClientConfigError(details)
@@ -114,7 +112,7 @@ def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
         key=server.key,
         version=server.version,
         name=server.name,
-        transport=server.transport,
+        transport=transport,
         enabled=server.enabled,
         command=command,
         url=url,
@@ -123,124 +121,122 @@ def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
     )
 
 
+def _normalize_transport(raw_transport: object, details: list[dict[str, str]]) -> str:
+    normalized_transport = str(raw_transport).strip() if raw_transport is not None else ""
+    if normalized_transport not in {"stdio", "http-sse"}:
+        details.append(
+            {
+                "field": "mcpServers",
+                "issue": "Server transport must be either 'stdio' or 'http-sse'",
+            }
+        )
+    return normalized_transport
+
+
 def _normalize_command(
-    raw_command: str | None,
+    config: Mapping[str, Any],
     transport: str,
     details: list[dict[str, str]],
 ) -> tuple[str, ...] | None:
     if transport != "stdio":
+        if "command" in config:
+            details.append(
+                {"field": "command", "issue": "command is only supported for stdio"}
+            )
+        if "args" in config:
+            details.append({"field": "args", "issue": "args is only supported for stdio"})
         return None
-    normalized_command = str(raw_command).strip() if raw_command is not None else ""
+
+    normalized_command = str(config.get("command")).strip() if config.get("command") is not None else ""
     if not normalized_command:
         details.append({"field": "command", "issue": "Stdio transport requires a command"})
         return None
-    try:
-        command_parts = tuple(shlex.split(normalized_command))
-    except ValueError as exc:
-        details.append({"field": "command", "issue": str(exc)})
+
+    raw_args = config.get("args")
+    if not isinstance(raw_args, list):
+        details.append({"field": "args", "issue": "Stdio transport requires args[]"})
         return None
-    if not command_parts:
-        details.append({"field": "command", "issue": "Stdio command cannot be empty"})
+
+    normalized_args: list[str] = []
+    for index, entry in enumerate(raw_args):
+        normalized_entry = str(entry).strip() if entry is not None else ""
+        if not normalized_entry:
+            details.append({"field": f"args.{index}", "issue": "Args must be non-empty strings"})
+            continue
+        normalized_args.append(normalized_entry)
+
+    if not normalized_args:
+        details.append({"field": "args", "issue": "Stdio transport requires args[]"})
         return None
-    return command_parts
+    return (normalized_command, *normalized_args)
 
 
 def _normalize_url(
-    raw_url: str | None,
+    config: Mapping[str, Any],
     transport: str,
     details: list[dict[str, str]],
 ) -> str | None:
     if transport != "http-sse":
+        if "url" in config:
+            details.append({"field": "url", "issue": "url is only supported for http-sse"})
         return None
-    normalized_url = str(raw_url).strip() if raw_url is not None else ""
+    normalized_url = str(config.get("url")).strip() if config.get("url") is not None else ""
     if not normalized_url:
         details.append({"field": "url", "issue": "HTTP/SSE transport requires a URL"})
         return None
     return normalized_url
 
 
-def _normalize_auth(
-    auth_payload: Mapping[str, Any],
-    *,
-    headers: dict[str, str],
-    env: dict[str, str],
+def _normalize_headers(
+    config: Mapping[str, Any],
+    transport: str,
     details: list[dict[str, str]],
-) -> None:
-    allowed_keys = {"apiKey", "env", "header", "headers", "value"}
-    for key in sorted(set(auth_payload) - allowed_keys):
-        details.append({"field": f"auth.{key}", "issue": "Unsupported auth field"})
-
-    if not auth_payload:
-        return
-
-    raw_headers = auth_payload.get("headers")
-    if raw_headers is not None:
-        _merge_string_mapping(
-            raw_headers,
-            target=headers,
-            field_prefix="auth.headers",
-            details=details,
-        )
-
-    raw_env = auth_payload.get("env")
-    if raw_env is not None:
-        _merge_string_mapping(raw_env, target=env, field_prefix="auth.env", details=details)
-
-    if any(key in auth_payload for key in {"apiKey", "header", "value"}):
-        raw_header_name = auth_payload.get("header")
-        header_name = str(raw_header_name).strip() if raw_header_name is not None else ""
-        header_value = auth_payload.get("value")
-        if header_value is None:
-            header_value = auth_payload.get("apiKey")
-        normalized_value = str(header_value).strip() if header_value is not None else ""
-        if not header_name:
-            details.append(
-                {"field": "auth.header", "issue": "Header auth requires a non-empty header name"}
-            )
-        if not normalized_value:
-            details.append(
-                {
-                    "field": "auth.apiKey",
-                    "issue": "Header auth requires a non-empty apiKey or value",
-                }
-            )
-        if header_name and normalized_value:
-            if header_name in headers:
-                details.append(
-                    {
-                        "field": "auth.header",
-                        "issue": f"Header {header_name!r} is defined more than once",
-                    }
-                )
-            else:
-                headers[header_name] = normalized_value
+) -> dict[str, str]:
+    if transport != "http-sse":
+        if "headers" in config:
+            details.append({"field": "headers", "issue": "headers is only supported for http-sse"})
+        return {}
+    return _normalize_string_mapping(config.get("headers"), field_name="headers", details=details)
 
 
-def _merge_string_mapping(
+def _normalize_env(
+    config: Mapping[str, Any],
+    transport: str,
+    details: list[dict[str, str]],
+) -> dict[str, str]:
+    if transport != "stdio":
+        if "env" in config:
+            details.append({"field": "env", "issue": "env is only supported for stdio"})
+        return {}
+    return _normalize_string_mapping(config.get("env"), field_name="env", details=details)
+
+
+def _normalize_string_mapping(
     raw_mapping: object,
     *,
-    target: dict[str, str],
-    field_prefix: str,
+    field_name: str,
     details: list[dict[str, str]],
-) -> None:
+) -> dict[str, str]:
+    if raw_mapping is None:
+        return {}
     if not isinstance(raw_mapping, Mapping):
-        details.append({"field": field_prefix, "issue": "Expected an object"})
-        return
+        details.append({"field": field_name, "issue": "Expected an object"})
+        return {}
+
+    normalized: dict[str, str] = {}
     for key, value in raw_mapping.items():
         normalized_key = str(key).strip()
         normalized_value = str(value).strip() if value is not None else ""
         if not normalized_key:
-            details.append({"field": field_prefix, "issue": "Keys must be non-empty strings"})
+            details.append({"field": field_name, "issue": "Keys must be non-empty strings"})
             continue
         if not normalized_value:
             details.append(
-                {
-                    "field": f"{field_prefix}.{normalized_key}",
-                    "issue": "Values must be non-empty strings",
-                }
+                {"field": f"{field_name}.{normalized_key}", "issue": "Values must be non-empty strings"}
             )
             continue
-        target[normalized_key] = normalized_value
+        normalized[normalized_key] = normalized_value
+    return normalized
 
 
 __all__ = [
