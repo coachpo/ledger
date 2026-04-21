@@ -12,8 +12,8 @@ import {
 } from "@/hooks/use-mcp-servers";
 import type {
   McpServerConfig,
-  McpServerConfigEnvelope,
   McpServerCreateInput,
+  McpServerRead,
   McpServerUpdateInput,
 } from "@/lib/types/mcp-server";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -47,7 +47,6 @@ type ConnectionFeedback = {
 type McpServerEditorValues = {
   args: string;
   command: string;
-  configText: string;
   description: string;
   enabled: boolean;
   env: string;
@@ -62,7 +61,6 @@ type McpServerEditorValues = {
 const initialValues: McpServerEditorValues = {
   args: "[\n  \"-m\",\n  \"app.agents.mcp.stock_analysis_reference_server\"\n]",
   command: "python3",
-  configText: "",
   description: "",
   enabled: true,
   env: "{}",
@@ -74,16 +72,7 @@ const initialValues: McpServerEditorValues = {
   url: "",
 };
 
-function readEnvelopeEntry(envelope: McpServerConfigEnvelope): [string, McpServerConfig] {
-  const entries = Object.entries(envelope.mcpServers);
-  if (entries.length !== 1) {
-    throw new Error("MCP config must contain exactly one server entry.");
-  }
-  return entries[0] as [string, McpServerConfig];
-}
-
-function buildEnvelopeFromValues(values: McpServerEditorValues): McpServerConfigEnvelope {
-  const key = parseRequiredText("Key", values.key).toLowerCase();
+function buildConfigFromValues(values: McpServerEditorValues): McpServerConfig {
   const common = {
     description: values.description.trim(),
     enabled: values.enabled,
@@ -92,45 +81,35 @@ function buildEnvelopeFromValues(values: McpServerEditorValues): McpServerConfig
 
   if (values.transport === "stdio") {
     return {
-      mcpServers: {
-        [key]: {
-          ...common,
-          args: parseJsonValue<string[]>("Args", values.args, []),
-          command: parseRequiredText("Command", values.command),
-          env: parseJsonValue<Record<string, string>>("Env", values.env, {}),
-          transport: "stdio",
-        },
-      },
+      ...common,
+      args: parseJsonValue<string[]>("Args", values.args, []),
+      command: parseRequiredText("Command", values.command),
+      env: parseJsonValue<Record<string, string>>("Env", values.env, {}),
+      transport: "stdio",
     };
   }
 
   return {
-    mcpServers: {
-      [key]: {
-        ...common,
-        headers: parseJsonValue<Record<string, string>>("Headers", values.headers, {}),
-        transport: "http-sse",
-        url: parseRequiredText("URL", values.url),
-      },
-    },
+    ...common,
+    headers: parseJsonValue<Record<string, string>>("Headers", values.headers, {}),
+    transport: "http-sse",
+    url: parseRequiredText("URL", values.url),
   };
 }
 
-function buildValuesFromEnvelope(envelope: McpServerConfigEnvelope): McpServerEditorValues {
-  const [key, config] = readEnvelopeEntry(envelope);
+function buildValuesFromServer(server: McpServerRead): McpServerEditorValues {
   return {
-    args: stringifyJson(config.transport === "stdio" ? config.args : []),
-    command: config.transport === "stdio" ? config.command : "",
-    configText: stringifyJson(envelope),
-    description: config.description ?? "",
-    enabled: config.enabled,
-    env: stringifyJson(config.transport === "stdio" ? config.env : {}),
-    headers: stringifyJson(config.transport === "http-sse" ? config.headers : {}),
+    args: stringifyJson(server.transport === "stdio" ? server.args ?? [] : []),
+    command: server.transport === "stdio" ? server.command ?? "" : "",
+    description: server.description ?? "",
+    enabled: server.enabled,
+    env: stringifyJson(server.transport === "stdio" ? server.env ?? {} : {}),
+    headers: stringifyJson(server.transport === "http-sse" ? server.headers ?? {} : {}),
     jsonError: null,
-    key,
-    name: config.name,
-    transport: config.transport,
-    url: config.transport === "http-sse" ? config.url : "",
+    key: server.key,
+    name: server.name,
+    transport: server.transport,
+    url: server.transport === "http-sse" ? server.url ?? "" : "",
   };
 }
 
@@ -150,7 +129,7 @@ export function McpServersEditorPage() {
     if (!serverQuery.data) {
       return;
     }
-    setValues(buildValuesFromEnvelope(serverQuery.data.config));
+    setValues(buildValuesFromServer(serverQuery.data));
     setConnectionFeedback(null);
   }, [serverQuery.data]);
 
@@ -165,44 +144,34 @@ export function McpServersEditorPage() {
     setValues((current) => {
       const nextValues = { ...current, [key]: value };
       try {
-        const envelope = buildEnvelopeFromValues(nextValues);
-        return { ...nextValues, configText: stringifyJson(envelope), jsonError: null };
+        buildConfigFromValues(nextValues);
+        return { ...nextValues, jsonError: null };
       } catch {
         return { ...nextValues, jsonError: null };
       }
     });
   };
 
-  const handleConfigChange = (nextConfigText: string) => {
-    setValues((current) => {
-      const nextValues = { ...current, configText: nextConfigText };
-      try {
-        return buildValuesFromEnvelope(parseJsonValue("Config JSON", nextConfigText, { mcpServers: {} }));
-      } catch (error) {
-        return {
-          ...nextValues,
-          jsonError: error instanceof Error ? error.message : "Config JSON must be valid JSON.",
-        };
-      }
-    });
-  };
-
-  const parseEnvelopeForSubmit = (): McpServerCreateInput | McpServerUpdateInput => {
+  const parsePayloadForSubmit = (): McpServerCreateInput | McpServerUpdateInput => {
     if (values.jsonError) {
       throw new Error(values.jsonError);
     }
-    return parseJsonValue<McpServerConfigEnvelope>("Config JSON", values.configText, { mcpServers: {} });
+
+    const config = buildConfigFromValues(values);
+    const key = parseRequiredText("Key", values.key).toLowerCase();
+    return isEditing ? (config as McpServerUpdateInput) : ({ ...config, key } as McpServerCreateInput);
   };
 
   const handleSave = async () => {
     try {
-      const payload = parseEnvelopeForSubmit();
       if (isEditing && serverId) {
+        const payload = parsePayloadForSubmit() as McpServerUpdateInput;
         const updated = await updateMutation.mutateAsync({ payload, serverId });
         toast.success("MCP server updated");
         navigate(`/mcp-servers/${updated.id}/edit`);
         return;
       }
+      const payload = parsePayloadForSubmit() as McpServerCreateInput;
       const created = await createMutation.mutateAsync(payload);
       toast.success("MCP server created");
       navigate(`/mcp-servers/${created.id}/edit`);
@@ -306,14 +275,14 @@ export function McpServersEditorPage() {
         <CardHeader>
           <CardTitle>MCP server details</CardTitle>
           <CardDescription>
-            Form edits regenerate the canonical JSON. Save always submits the JSON envelope.
+            Form edits update the flat resource fields directly.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="mcp-server-key">Key</Label>
-              <Input id="mcp-server-key" aria-label="Key" disabled={isEditing || isSaving} value={values.key} onChange={(event) => updateValue("key", event.target.value)} />
+            <Label htmlFor="mcp-server-key">Key</Label>
+            <Input id="mcp-server-key" aria-label="Key" disabled={isEditing || isSaving} value={values.key} onChange={(event) => updateValue("key", event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="mcp-server-name">Name</Label>
@@ -376,11 +345,7 @@ export function McpServersEditorPage() {
             </>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="mcp-server-config">Config JSON</Label>
-            <Textarea id="mcp-server-config" aria-label="Config JSON" disabled={isSaving} rows={14} value={values.configText} onChange={(event) => handleConfigChange(event.target.value)} />
-            {values.jsonError ? <p className="text-sm text-destructive">{values.jsonError}</p> : null}
-          </div>
+          {values.jsonError ? <p className="text-sm text-destructive">{values.jsonError}</p> : null}
         </CardContent>
       </Card>
     </div>

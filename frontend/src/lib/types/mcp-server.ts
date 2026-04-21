@@ -1,7 +1,7 @@
 export type McpServerStatus = "draft" | "published" | "deprecated" | "archived";
 export type McpServerTransport = "stdio" | "http-sse";
 
-export interface McpServerStdioConfig {
+export interface McpServerStdioInput {
   name: string;
   description: string;
   enabled: boolean;
@@ -11,7 +11,7 @@ export interface McpServerStdioConfig {
   env: Record<string, string>;
 }
 
-export interface McpServerHttpSseConfig {
+export interface McpServerHttpSseInput {
   name: string;
   description: string;
   enabled: boolean;
@@ -20,14 +20,12 @@ export interface McpServerHttpSseConfig {
   headers: Record<string, string>;
 }
 
-export type McpServerConfig = McpServerStdioConfig | McpServerHttpSseConfig;
+export type McpServerConfig = McpServerStdioInput | McpServerHttpSseInput;
 
-export interface McpServerConfigEnvelope {
-  mcpServers: Record<string, McpServerConfig>;
-}
-
-export type McpServerCreateInput = McpServerConfigEnvelope;
-export type McpServerUpdateInput = McpServerConfigEnvelope;
+export type McpServerCreateInput =
+  | (McpServerStdioInput & { key: string })
+  | (McpServerHttpSseInput & { key: string });
+export type McpServerUpdateInput = McpServerConfig;
 
 export interface McpClientBoundaryRead {
   transport: McpServerTransport;
@@ -50,7 +48,15 @@ export interface McpServerRead {
   key: string;
   version: number;
   status: McpServerStatus;
-  config: McpServerConfigEnvelope;
+  name: string;
+  description: string;
+  enabled: boolean;
+  transport: McpServerTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

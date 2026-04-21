@@ -17,19 +17,15 @@ const existingServer = {
   key: "quotes_mcp",
   version: 6,
   status: "draft",
-  config: {
-    mcpServers: {
-      quotes_mcp: {
-        name: "Quotes MCP",
-        description: "Serves quotes.",
-        enabled: true,
-        transport: "stdio",
-        command: "quotesd",
-        args: ["--mode", "stdio"],
-        env: { TOKEN: "abc" },
-      },
-    },
-  },
+  name: "Quotes MCP",
+  description: "Serves quotes.",
+  enabled: true,
+  transport: "stdio",
+  command: "quotesd",
+  args: ["--mode", "stdio"],
+  env: { TOKEN: "abc" },
+  createdAt: "2026-04-21T12:00:00Z",
+  updatedAt: "2026-04-21T12:30:00Z",
 };
 
 vi.mock("react-router", () => ({
@@ -67,16 +63,7 @@ describe("McpServersEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("blocks save on malformed JSON", async () => {
-    render(<McpServersEditorPage />);
-
-    fireEvent.change(screen.getByLabelText(/config json/i), { target: { value: "{" } });
-    fireEvent.click(screen.getByRole("button", { name: /save mcp server/i }));
-
-    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Config JSON must be valid JSON."));
-  });
-
-  it("submits canonical JSON generated from form edits on create", async () => {
+  it("submits a flat create body with key", async () => {
     createServerMock.mockResolvedValue({ id: 9 });
     render(<McpServersEditorPage />);
 
@@ -89,28 +76,27 @@ describe("McpServersEditorPage", () => {
 
     await waitFor(() => expect(createServerMock).toHaveBeenCalledTimes(1));
     expect(createServerMock).toHaveBeenCalledWith({
-      mcpServers: {
-        market_data: {
-          args: ["-m", "app.agents.mcp.stock_analysis_reference_server"],
-          command: "python3",
-          description: "",
-          enabled: true,
-          env: {},
-          name: "Market Data MCP",
-          transport: "stdio",
-        },
-      },
+      args: ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+      command: "python3",
+      description: "",
+      enabled: true,
+      env: {},
+      key: "market_data",
+      name: "Market Data MCP",
+      transport: "stdio",
     });
     expect(navigateMock).toHaveBeenCalledWith("/mcp-servers/9/edit");
   });
 
-  it("backfills form from canonical JSON detail response and saves a full update envelope", async () => {
+  it("loads flat detail fields and submits a flat patch body without key", async () => {
     paramsMock.serverId = "4";
     updateServerMock.mockResolvedValue({ id: 10 });
     render(<McpServersEditorPage />);
 
     expect(screen.getByLabelText(/name/i)).toHaveValue("Quotes MCP");
     expect(screen.getByLabelText(/args json/i)).toHaveValue(JSON.stringify(["--mode", "stdio"], null, 2));
+    expect(screen.getByLabelText(/key/i)).toHaveValue("quotes_mcp");
+    expect(screen.getByLabelText(/key/i)).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Updated Quotes MCP" } });
     fireEvent.click(screen.getByRole("button", { name: /save mcp server/i }));
@@ -118,17 +104,13 @@ describe("McpServersEditorPage", () => {
     await waitFor(() => expect(updateServerMock).toHaveBeenCalledTimes(1));
     expect(updateServerMock).toHaveBeenCalledWith({
       payload: {
-        mcpServers: {
-          quotes_mcp: {
-            args: ["--mode", "stdio"],
-            command: "quotesd",
-            description: "Serves quotes.",
-            enabled: true,
-            env: { TOKEN: "abc" },
-            name: "Updated Quotes MCP",
-            transport: "stdio",
-          },
-        },
+        args: ["--mode", "stdio"],
+        command: "quotesd",
+        description: "Serves quotes.",
+        enabled: true,
+        env: { TOKEN: "abc" },
+        name: "Updated Quotes MCP",
+        transport: "stdio",
       },
       serverId: "4",
     });
