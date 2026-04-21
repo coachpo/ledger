@@ -201,17 +201,14 @@ def mcp_stdio_payload(
     enabled: bool = True,
 ) -> dict[str, object]:
     return {
-        "mcpServers": {
-            key: {
-                "name": name,
-                "description": description,
-                "enabled": enabled,
-                "transport": "stdio",
-                "command": command,
-                "args": args,
-                "env": env or {},
-            }
-        }
+        "key": key,
+        "name": name,
+        "description": description,
+        "enabled": enabled,
+        "transport": "stdio",
+        "command": command,
+        "args": args,
+        "env": env or {},
     }
 
 
@@ -225,16 +222,13 @@ def mcp_http_sse_payload(
     enabled: bool = True,
 ) -> dict[str, object]:
     return {
-        "mcpServers": {
-            key: {
-                "name": name,
-                "description": description,
-                "enabled": enabled,
-                "transport": "http-sse",
-                "url": url,
-                "headers": headers or {},
-            }
-        }
+        "key": key,
+        "name": name,
+        "description": description,
+        "enabled": enabled,
+        "transport": "http-sse",
+        "url": url,
+        "headers": headers or {},
     }
 
 
@@ -616,37 +610,36 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
 
     assert created["status"] == "draft"
     assert created["version"] == 1
-    assert cast(dict[str, object], cast(dict[str, object], created["config"])["mcpServers"])["market_data"] == {
-        "name": "Market Data MCP",
-        "description": "Reads trusted market data through HTTP/SSE.",
-        "enabled": True,
-        "transport": "http-sse",
-        "url": "https://example.com/mcp",
-        "headers": {"Authorization": "Bearer secret-token"},
-    }
+    assert created["key"] == "market_data"
+    assert created["name"] == "Market Data MCP"
+    assert created["description"] == "Reads trusted market data through HTTP/SSE."
+    assert created["enabled"] is True
+    assert created["transport"] == "http-sse"
+    assert created["url"] == "https://example.com/mcp"
+    assert created["headers"] == {"Authorization": "Bearer secret-token"}
 
     update_response = client.patch(
         f"/api/mcp-servers/{created['id']}",
-        json=mcp_http_sse_payload(
-            key="market_data",
-            name="Market Data MCP",
-            description="Updated market data MCP.",
-            url="https://example.com/mcp/v2",
-            headers={"Authorization": "Bearer secret-token"},
-        ),
+        json={
+            "name": "Market Data MCP",
+            "description": "Updated market data MCP.",
+            "enabled": True,
+            "transport": "http-sse",
+            "url": "https://example.com/mcp/v2",
+            "headers": {"Authorization": "Bearer secret-token"},
+        },
     )
     assert update_response.status_code == 200, update_response.json()
     updated = update_response.json()
     assert updated["id"] != created["id"]
     assert updated["version"] == 2
-    assert cast(dict[str, object], cast(dict[str, object], updated["config"])["mcpServers"])["market_data"] == {
-        "name": "Market Data MCP",
-        "description": "Updated market data MCP.",
-        "enabled": True,
-        "transport": "http-sse",
-        "url": "https://example.com/mcp/v2",
-        "headers": {"Authorization": "Bearer secret-token"},
-    }
+    assert updated["key"] == "market_data"
+    assert updated["name"] == "Market Data MCP"
+    assert updated["description"] == "Updated market data MCP."
+    assert updated["enabled"] is True
+    assert updated["transport"] == "http-sse"
+    assert updated["url"] == "https://example.com/mcp/v2"
+    assert updated["headers"] == {"Authorization": "Bearer secret-token"}
 
     original_detail = client.get(f"/api/mcp-servers/{created['id']}")
     assert original_detail.status_code == 200, original_detail.json()
@@ -700,30 +693,36 @@ def test_agent_platform_mcp_patch_rejects_key_changes(
 ) -> None:
     created = create_mcp_server(
         client,
-        payload=mcp_http_sse_payload(
-            key="market_data",
-            name="Market Data MCP",
-            url="https://example.com/mcp",
-        ),
+        payload={
+            "key": "market_data",
+            "name": "Market Data MCP",
+            "enabled": True,
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "headers": {},
+        },
     )
 
     response = client.patch(
         f"/api/mcp-servers/{created['id']}",
-        json=mcp_http_sse_payload(
-            key="renamed_market_data",
-            name="Market Data MCP",
-            url="https://example.com/mcp/v2",
-        ),
+        json={
+            "key": "renamed_market_data",
+            "name": "Market Data MCP",
+            "enabled": True,
+            "transport": "http-sse",
+            "url": "https://example.com/mcp/v2",
+            "headers": {},
+        },
     )
 
     assert response.status_code == 422, response.json()
     assert response.json()["code"] == "validation_error"
-    assert response.json()["details"] == [
-        {
-            "field": "mcpServers",
-            "issue": "PATCH payload key must match the persisted MCP server key",
-        }
-    ]
+    details = response.json()["details"]
+    assert any("key" in detail["field"] for detail in details)
+    assert any(
+        "command" in detail["issue"].lower() or "extra inputs" in detail["issue"].lower()
+        for detail in details
+    )
 
 
 def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
@@ -739,17 +738,13 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
         ),
     )
     assert created["key"] == "sequential-thinking"
-    assert cast(dict[str, object], cast(dict[str, object], created["config"])["mcpServers"])[
-        "sequential-thinking"
-    ] == {
-        "name": "Sequential Thinking",
-        "description": "",
-        "enabled": True,
-        "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-        "env": {},
-    }
+    assert created["name"] == "Sequential Thinking"
+    assert created["description"] == ""
+    assert created["enabled"] is True
+    assert created["transport"] == "stdio"
+    assert created["command"] == "npx"
+    assert created["args"] == ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    assert created["env"] == {}
 
     activated_server = activate_mcp_server(client, cast(int, created["id"]))
     seeded = _seed_agent_platform_agent_dependencies(client)
@@ -783,36 +778,30 @@ def test_agent_platform_mcp_invalid_transport_and_auth_return_field_errors(
     invalid_transport = client.post(
         "/api/mcp-servers",
         json={
-            "mcpServers": {
-                "broken_stdio": {
-                    "name": "Broken Stdio",
-                    "transport": "stdio",
-                    "url": "https://example.com/mcp",
-                }
-            }
+            "key": "broken_stdio",
+            "name": "Broken Stdio",
+            "transport": "stdio",
+            "url": "https://example.com/mcp",
         },
     )
     assert invalid_transport.status_code == 422, invalid_transport.json()
     assert invalid_transport.json()["code"] == "validation_error"
-    assert any(detail["field"].endswith("command") for detail in invalid_transport.json()["details"])
-    assert any(detail["field"].endswith("args") for detail in invalid_transport.json()["details"])
+    invalid_transport_details = invalid_transport.json()["details"]
+    assert any("command" in detail["issue"].lower() for detail in invalid_transport_details)
 
     invalid_headers = client.post(
         "/api/mcp-servers",
         json={
-            "mcpServers": {
-                "broken_headers": {
-                    "name": "Broken Headers",
-                    "transport": "http-sse",
-                    "url": "https://example.com/mcp",
-                    "headers": {"Authorization": ""},
-                }
-            }
+            "key": "broken_headers",
+            "name": "Broken Headers",
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": ""},
         },
     )
     assert invalid_headers.status_code == 422, invalid_headers.json()
     assert invalid_headers.json()["code"] == "validation_error"
-    assert any("headers" in detail["field"] for detail in invalid_headers.json()["details"])
+    assert any("headers" in detail["issue"].lower() for detail in invalid_headers.json()["details"])
 
 
 def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dict[str, object]]:

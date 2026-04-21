@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.dependencies import get_mcp_server_service
 from app.schemas.mcp_server import (
     McpServerConnectionTestRead,
-    McpServerDraftCreate,
-    McpServerDraftUpdate,
+    McpServerCreate,
     McpServerListRead,
     McpServerRead,
     McpServerStatus,
     McpServerTransport,
+    McpServerUpdate,
 )
 from app.services.mcp_server_service import McpServerService
 
@@ -35,7 +35,7 @@ def list_mcp_servers(
 
 @router.post("", response_model=McpServerRead, status_code=status.HTTP_201_CREATED)
 def create_mcp_server_draft(
-    payload: McpServerDraftCreate,
+    payload: McpServerCreate,
     service: Annotated[McpServerService, Depends(get_mcp_server_service)],
 ) -> McpServerRead:
     return service.create_draft(payload)
@@ -52,7 +52,7 @@ def get_mcp_server(
 @router.patch("/{server_id}", response_model=McpServerRead)
 def update_mcp_server_draft(
     server_id: int,
-    payload: McpServerDraftUpdate,
+    payload: McpServerUpdate,
     service: Annotated[McpServerService, Depends(get_mcp_server_service)],
 ) -> McpServerRead:
     return service.update_draft(server_id, payload)
