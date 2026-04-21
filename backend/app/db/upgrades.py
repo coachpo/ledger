@@ -117,24 +117,11 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 key VARCHAR(120) NOT NULL,
                 version INTEGER NOT NULL,
                 status VARCHAR(20) NOT NULL DEFAULT 'draft',
-                name VARCHAR(200) NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                transport VARCHAR(20) NOT NULL,
-                command TEXT,
-                url TEXT,
-                auth JSONB NOT NULL DEFAULT '{}'::jsonb,
-                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                config JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_mcp_servers_status CHECK (
                     status IN ('draft', 'published', 'deprecated', 'archived')
-                ),
-                CONSTRAINT ck_mcp_servers_transport CHECK (
-                    transport IN ('stdio', 'http-sse')
-                ),
-                CONSTRAINT ck_mcp_servers_target CHECK (
-                    (transport = 'stdio' AND command IS NOT NULL AND url IS NULL) OR
-                    (transport = 'http-sse' AND url IS NOT NULL AND command IS NULL)
                 ),
                 CONSTRAINT ck_mcp_servers_version_positive CHECK (version > 0),
                 CONSTRAINT uq_mcp_servers_key_version UNIQUE (key, version)
@@ -341,6 +328,27 @@ def _recover_stale_agent_platform_runs(engine: Engine, table_names: set[str]) ->
         )
 
 
+def _reset_legacy_mcp_server_table(engine: Engine, table_names: set[str]) -> None:
+    if "mcp_servers" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    mcp_columns = {column["name"] for column in inspector.get_columns("mcp_servers")}
+    expected_columns = {"id", "key", "version", "status", "config", "created_at", "updated_at"}
+    if mcp_columns == expected_columns:
+        return
+
+    if "config" in mcp_columns and not ({"transport", "command", "url", "auth", "enabled"} & mcp_columns):
+        return
+
+    statements = dict(_AGENT_PLATFORM_TABLE_STATEMENTS)["mcp_servers"]
+    with engine.begin() as connection:
+        connection.exec_driver_sql('DROP TABLE IF EXISTS "mcp_servers" CASCADE')
+        for statement in statements:
+            connection.exec_driver_sql(statement)
+    table_names.add("mcp_servers")
+
+
 def _drop_tables(engine: Engine, table_names: set[str], tables: tuple[str, ...]) -> None:
     with engine.begin() as connection:
         for table_name in tables:
@@ -356,6 +364,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     table_names = set(inspector.get_table_names())
 
     _ensure_agent_platform_tables(engine, table_names)
+    _reset_legacy_mcp_server_table(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
     if "portfolios" in table_names:

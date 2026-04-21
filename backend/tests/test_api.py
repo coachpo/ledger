@@ -190,6 +190,54 @@ def activate_mcp_server(client: TestClient, server_id: int | str) -> dict[str, o
     return response.json()
 
 
+def mcp_stdio_payload(
+    *,
+    key: str,
+    name: str,
+    description: str = "",
+    command: str,
+    args: list[str],
+    env: dict[str, str] | None = None,
+    enabled: bool = True,
+) -> dict[str, object]:
+    return {
+        "mcpServers": {
+            key: {
+                "name": name,
+                "description": description,
+                "enabled": enabled,
+                "transport": "stdio",
+                "command": command,
+                "args": args,
+                "env": env or {},
+            }
+        }
+    }
+
+
+def mcp_http_sse_payload(
+    *,
+    key: str,
+    name: str,
+    description: str = "",
+    url: str,
+    headers: dict[str, str] | None = None,
+    enabled: bool = True,
+) -> dict[str, object]:
+    return {
+        "mcpServers": {
+            key: {
+                "name": name,
+                "description": description,
+                "enabled": enabled,
+                "transport": "http-sse",
+                "url": url,
+                "headers": headers or {},
+            }
+        }
+    }
+
+
 def create_agent(
     client: TestClient,
     *,
@@ -268,14 +316,12 @@ def _seed_stock_analysis_platform(
     activate_skill(client, cast(int, created_skill["id"]))
     created_mcp_server = create_mcp_server(
         client,
-        payload={
-            "key": STOCK_ANALYSIS_MCP_SERVER_KEY,
-            "name": "Stock Analysis Data",
-            "transport": "http-sse",
-            "url": "https://example.com/mcp",
-            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
-            "enabled": True,
-        },
+        payload=mcp_http_sse_payload(
+            key=STOCK_ANALYSIS_MCP_SERVER_KEY,
+            name="Stock Analysis Data",
+            url="https://example.com/mcp",
+            headers={"Authorization": "Bearer secret-token"},
+        ),
     )
     activate_mcp_server(client, cast(int, created_mcp_server["id"]))
     for agent_key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS:
@@ -559,36 +605,48 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
 
     created = create_mcp_server(
         client,
-        payload={
-            "key": "market_data",
-            "name": "Market Data MCP",
-            "description": "Reads trusted market data through HTTP/SSE.",
-            "transport": "http-sse",
-            "url": "https://example.com/mcp",
-            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
-            "enabled": True,
-        },
+        payload=mcp_http_sse_payload(
+            key="market_data",
+            name="Market Data MCP",
+            description="Reads trusted market data through HTTP/SSE.",
+            url="https://example.com/mcp",
+            headers={"Authorization": "Bearer secret-token"},
+        ),
     )
 
     assert created["status"] == "draft"
     assert created["version"] == 1
-    assert created["transport"] == "http-sse"
-    assert created["auth"] == {"header": "Authorization", "apiKey": "Bearer secret-token"}
+    assert cast(dict[str, object], cast(dict[str, object], created["config"])["mcpServers"])["market_data"] == {
+        "name": "Market Data MCP",
+        "description": "Reads trusted market data through HTTP/SSE.",
+        "enabled": True,
+        "transport": "http-sse",
+        "url": "https://example.com/mcp",
+        "headers": {"Authorization": "Bearer secret-token"},
+    }
 
     update_response = client.patch(
         f"/api/mcp-servers/{created['id']}",
-        json={
-            "description": "Updated market data MCP.",
-            "url": "https://example.com/mcp/v2",
-            "auth": {"headers": {"Authorization": "Bearer secret-token"}},
-        },
+        json=mcp_http_sse_payload(
+            key="market_data",
+            name="Market Data MCP",
+            description="Updated market data MCP.",
+            url="https://example.com/mcp/v2",
+            headers={"Authorization": "Bearer secret-token"},
+        ),
     )
     assert update_response.status_code == 200, update_response.json()
     updated = update_response.json()
     assert updated["id"] != created["id"]
     assert updated["version"] == 2
-    assert updated["description"] == "Updated market data MCP."
-    assert updated["url"] == "https://example.com/mcp/v2"
+    assert cast(dict[str, object], cast(dict[str, object], updated["config"])["mcpServers"])["market_data"] == {
+        "name": "Market Data MCP",
+        "description": "Updated market data MCP.",
+        "enabled": True,
+        "transport": "http-sse",
+        "url": "https://example.com/mcp/v2",
+        "headers": {"Authorization": "Bearer secret-token"},
+    }
 
     original_detail = client.get(f"/api/mcp-servers/{created['id']}")
     assert original_detail.status_code == 200, original_detail.json()
@@ -601,7 +659,18 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
 
     list_response = client.get("/api/mcp-servers", params={"transport": "http-sse"})
     assert list_response.status_code == 200, list_response.json()
-    assert list_response.json()["items"] == [updated]
+    assert list_response.json()["items"] == [
+        {
+            "id": updated["id"],
+            "key": "market_data",
+            "version": 2,
+            "status": "draft",
+            "name": "Market Data MCP",
+            "description": "Updated market data MCP.",
+            "transport": "http-sse",
+            "enabled": True,
+        }
+    ]
 
     activated = activate_mcp_server(client, str(updated["id"]))
     assert activated["status"] == "published"
@@ -626,21 +695,61 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
     assert archive_response.json()["status"] == "archived"
 
 
+def test_agent_platform_mcp_patch_rejects_key_changes(
+    client: TestClient,
+) -> None:
+    created = create_mcp_server(
+        client,
+        payload=mcp_http_sse_payload(
+            key="market_data",
+            name="Market Data MCP",
+            url="https://example.com/mcp",
+        ),
+    )
+
+    response = client.patch(
+        f"/api/mcp-servers/{created['id']}",
+        json=mcp_http_sse_payload(
+            key="renamed_market_data",
+            name="Market Data MCP",
+            url="https://example.com/mcp/v2",
+        ),
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["details"] == [
+        {
+            "field": "mcpServers",
+            "issue": "PATCH payload key must match the persisted MCP server key",
+        }
+    ]
+
+
 def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
     client: TestClient,
 ) -> None:
     created = create_mcp_server(
         client,
-        payload={
-            "key": "sequential-thinking",
-            "name": "Sequential Thinking",
-            "transport": "stdio",
-            "command": "npx -y @modelcontextprotocol/server-sequential-thinking",
-            "enabled": True,
-        },
+        payload=mcp_stdio_payload(
+            key="sequential-thinking",
+            name="Sequential Thinking",
+            command="npx",
+            args=["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        ),
     )
     assert created["key"] == "sequential-thinking"
-    assert created["command"] == "npx -y @modelcontextprotocol/server-sequential-thinking"
+    assert cast(dict[str, object], cast(dict[str, object], created["config"])["mcpServers"])[
+        "sequential-thinking"
+    ] == {
+        "name": "Sequential Thinking",
+        "description": "",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        "env": {},
+    }
 
     activated_server = activate_mcp_server(client, cast(int, created["id"]))
     seeded = _seed_agent_platform_agent_dependencies(client)
@@ -674,29 +783,36 @@ def test_agent_platform_mcp_invalid_transport_and_auth_return_field_errors(
     invalid_transport = client.post(
         "/api/mcp-servers",
         json={
-            "key": "broken_stdio",
-            "name": "Broken Stdio",
-            "transport": "stdio",
-            "url": "https://example.com/mcp",
+            "mcpServers": {
+                "broken_stdio": {
+                    "name": "Broken Stdio",
+                    "transport": "stdio",
+                    "url": "https://example.com/mcp",
+                }
+            }
         },
     )
     assert invalid_transport.status_code == 422, invalid_transport.json()
     assert invalid_transport.json()["code"] == "validation_error"
-    assert {detail["field"] for detail in invalid_transport.json()["details"]} == {"command"}
+    assert any(detail["field"].endswith("command") for detail in invalid_transport.json()["details"])
+    assert any(detail["field"].endswith("args") for detail in invalid_transport.json()["details"])
 
-    invalid_auth = client.post(
+    invalid_headers = client.post(
         "/api/mcp-servers",
         json={
-            "key": "broken_auth",
-            "name": "Broken Auth",
-            "transport": "http-sse",
-            "url": "https://example.com/mcp",
-            "auth": {"header": "Authorization"},
+            "mcpServers": {
+                "broken_headers": {
+                    "name": "Broken Headers",
+                    "transport": "http-sse",
+                    "url": "https://example.com/mcp",
+                    "headers": {"Authorization": ""},
+                }
+            }
         },
     )
-    assert invalid_auth.status_code == 422, invalid_auth.json()
-    assert invalid_auth.json()["code"] == "validation_error"
-    assert {detail["field"] for detail in invalid_auth.json()["details"]} == {"auth.apiKey"}
+    assert invalid_headers.status_code == 422, invalid_headers.json()
+    assert invalid_headers.json()["code"] == "validation_error"
+    assert any("headers" in detail["field"] for detail in invalid_headers.json()["details"])
 
 
 def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dict[str, object]]:
@@ -726,14 +842,12 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
 
     created_mcp_server = create_mcp_server(
         client,
-        payload={
-            "key": "market_data",
-            "name": "Market Data MCP",
-            "transport": "http-sse",
-            "url": "https://example.com/mcp",
-            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
-            "enabled": True,
-        },
+        payload=mcp_http_sse_payload(
+            key="market_data",
+            name="Market Data MCP",
+            url="https://example.com/mcp",
+            headers={"Authorization": "Bearer secret-token"},
+        ),
     )
     mcp_server = activate_mcp_server(client, cast(int, created_mcp_server["id"]))
     return {
@@ -853,14 +967,12 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
     )
     mcp_server_v2 = create_mcp_server(
         client,
-        payload={
-            "key": "market_data",
-            "name": "Market Data MCP v2",
-            "transport": "stdio",
-            "command": "python -m ledger_market_data",
-            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
-            "enabled": True,
-        },
+        payload=mcp_stdio_payload(
+            key="market_data",
+            name="Market Data MCP v2",
+            command="python",
+            args=["-m", "ledger_market_data"],
+        ),
     )
 
     update_response = client.post(
@@ -1020,14 +1132,12 @@ def test_agent_platform_agent_missing_output_schema_returns_field_errors(
     )
     create_mcp_server(
         client,
-        payload={
-            "key": "market_data",
-            "name": "Market Data MCP",
-            "transport": "http-sse",
-            "url": "https://example.com/mcp",
-            "auth": {"header": "Authorization", "apiKey": "Bearer secret-token"},
-            "enabled": True,
-        },
+        payload=mcp_http_sse_payload(
+            key="market_data",
+            name="Market Data MCP",
+            url="https://example.com/mcp",
+            headers={"Authorization": "Bearer secret-token"},
+        ),
     )
 
     response = client.post(

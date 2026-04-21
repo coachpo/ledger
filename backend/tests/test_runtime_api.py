@@ -29,7 +29,6 @@ from app.services.skill_service import SkillService
 from app.services.workflow_service import WorkflowService
 from tests.agent_platform_stock_analysis import (
     STOCK_ANALYSIS_MCP_SERVER_KEY,
-    STOCK_ANALYSIS_REFERENCE_MCP_COMMAND,
     STOCK_ANALYSIS_REFERENCE_TOOL_KEYS,
     STOCK_ANALYSIS_SKILL_KEY,
     STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
@@ -75,17 +74,40 @@ def _build_mcp_server(
     transport: str,
     enabled: bool = True,
 ) -> McpServer:
+    config: dict[str, object]
+    if transport == "stdio":
+        config = {
+            "mcpServers": {
+                key: {
+                    "name": f"{key}-{version}",
+                    "description": "MCP server",
+                    "enabled": enabled,
+                    "transport": "stdio",
+                    "command": "python",
+                    "args": ["-m", "ledger_market_data"],
+                    "env": {},
+                }
+            }
+        }
+    else:
+        config = {
+            "mcpServers": {
+                key: {
+                    "name": f"{key}-{version}",
+                    "description": "MCP server",
+                    "enabled": enabled,
+                    "transport": "http-sse",
+                    "url": "https://example.com/mcp",
+                    "headers": {"Authorization": "Bearer secret-token"},
+                }
+            }
+        }
+
     return McpServer(
         key=key,
         version=version,
         status=status,
-        name=f"{key}-{version}",
-        description="MCP server",
-        transport=transport,
-        command="python -m ledger_market_data" if transport == "stdio" else None,
-        url="https://example.com/mcp" if transport == "http-sse" else None,
-        auth={"header": "Authorization", "apiKey": "Bearer secret-token"},
-        enabled=enabled,
+        config=config,
     )
 
 
@@ -180,8 +202,19 @@ def _seed_stock_analysis_workflow(
         status="published",
         transport="stdio",
     )
-    mcp_server.command = STOCK_ANALYSIS_REFERENCE_MCP_COMMAND
-    mcp_server.auth = {}
+    mcp_server.config = {
+        "mcpServers": {
+            STOCK_ANALYSIS_MCP_SERVER_KEY: {
+                "name": f"{STOCK_ANALYSIS_MCP_SERVER_KEY}-1",
+                "description": "MCP server",
+                "enabled": True,
+                "transport": "stdio",
+                "command": "python3",
+                "args": ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+                "env": {},
+            }
+        }
+    }
     session.add_all([note_schema, decision_schema, skill, mcp_server])
     session.flush()
 
@@ -1178,7 +1211,19 @@ def test_agent_platform_stock_analysis_missing_dependency_reports_mcp_failure(
         _seed_stock_analysis_reference_context(session)
         workflow = _seed_stock_analysis_workflow(session)
         broken_server = session.query(McpServer).filter_by(key=STOCK_ANALYSIS_MCP_SERVER_KEY).one()
-        broken_server.command = "definitely_missing_stock_analysis_mcp_binary"
+        broken_server.config = {
+            "mcpServers": {
+                STOCK_ANALYSIS_MCP_SERVER_KEY: {
+                    "name": broken_server.name,
+                    "description": broken_server.description,
+                    "enabled": broken_server.enabled,
+                    "transport": "stdio",
+                    "command": "definitely_missing_stock_analysis_mcp_binary",
+                    "args": ["--missing"],
+                    "env": {},
+                }
+            }
+        }
         session.commit()
 
     trigger = client.post(

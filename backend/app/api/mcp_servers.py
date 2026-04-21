@@ -26,7 +26,11 @@ def list_mcp_servers(
     enabled: Annotated[bool | None, Query()] = None,
     transport: Annotated[McpServerTransport | None, Query()] = None,
 ) -> McpServerListRead:
-    return service.list_servers(status_filter=status_filter, enabled=enabled, transport=transport)
+    return service.list_servers(
+        status_filter=status_filter,
+        enabled=enabled,
+        transport=transport,
+    )
 
 
 @router.post("", response_model=McpServerRead, status_code=status.HTTP_201_CREATED)
