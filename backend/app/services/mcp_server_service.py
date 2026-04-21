@@ -14,15 +14,15 @@ from app.models.mcp_server import McpServer
 from app.repositories.mcp_server import McpServerRepository
 from app.schemas.mcp_server import (
     McpClientBoundaryRead,
-    McpServerConfigEnvelope,
+    McpServerBase,
     McpServerConnectionTestRead,
-    McpServerDraftCreate,
-    McpServerDraftUpdate,
+    McpServerCreate,
     McpServerListItemRead,
     McpServerListRead,
     McpServerRead,
     McpServerStatus,
     McpServerTransport,
+    McpServerUpdate,
 )
 
 
@@ -51,8 +51,8 @@ class McpServerService:
     def get_server(self, server_id: int) -> McpServerRead:
         return McpServerRead.model_validate(self._get_model(server_id))
 
-    def create_draft(self, payload: McpServerDraftCreate) -> McpServerRead:
-        if self.repository.get_draft_by_key(payload.server_key) is not None:
+    def create_draft(self, payload: McpServerCreate) -> McpServerRead:
+        if self.repository.get_draft_by_key(payload.key) is not None:
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="mcp_server_duplicate_draft",
@@ -60,10 +60,10 @@ class McpServerService:
             )
 
         server = McpServer(
-            key=payload.server_key,
-            version=self._next_version(payload.server_key),
+            key=payload.key,
+            version=self._next_version(payload.key),
             status=McpServerStatus.DRAFT.value,
-            config=self._validated_config_payload(payload),
+            config=self._validated_config_payload(payload, key=payload.key),
         )
         try:
             self.repository.add(server)
@@ -74,16 +74,15 @@ class McpServerService:
             raise
         return McpServerRead.model_validate(server)
 
-    def update_draft(self, server_id: int, payload: McpServerDraftUpdate) -> McpServerRead:
+    def update_draft(self, server_id: int, payload: McpServerUpdate) -> McpServerRead:
         source = self._get_model(server_id)
         self._ensure_status(source, McpServerStatus.DRAFT, action="patch")
-        self._ensure_immutable_key(source, payload)
 
         updated = McpServer(
             key=source.key,
             version=self._next_version(source.key),
             status=McpServerStatus.DRAFT.value,
-            config=self._validated_config_payload(payload),
+            config=self._validated_config_payload(payload, key=source.key),
         )
         try:
             source.status = McpServerStatus.ARCHIVED.value
@@ -164,10 +163,10 @@ class McpServerService:
             }
         )
 
-    def _validated_config_payload(self, payload: McpServerConfigEnvelope) -> dict[str, object]:
-        config_payload = payload.model_dump(mode="json", by_alias=True)
+    def _validated_config_payload(self, payload: McpServerBase, *, key: str) -> dict[str, object]:
+        config_payload = self._flat_payload_to_wrapped_config(payload, key=key)
         candidate = McpServer(
-            key=payload.server_key,
+            key=key,
             version=1,
             status=McpServerStatus.DRAFT.value,
             config=config_payload,
@@ -176,17 +175,51 @@ class McpServerService:
         return config_payload
 
     @staticmethod
-    def _ensure_immutable_key(server: McpServer, payload: McpServerConfigEnvelope) -> None:
-        if payload.server_key != server.key:
-            raise validation_error(
-                "MCP server validation failed",
-                [
-                    {
-                        "field": "mcpServers",
-                        "issue": "PATCH payload key must match the persisted MCP server key",
-                    }
-                ],
+    def _flat_payload_to_wrapped_config(payload: McpServerBase, *, key: str) -> dict[str, object]:
+        del key
+        resource = {
+            "name": payload.name,
+            "description": payload.description,
+            "enabled": payload.enabled,
+            "transport": payload.transport.value,
+        }
+        if payload.transport == McpServerTransport.STDIO:
+            resource.update(
+                {
+                    "command": getattr(payload, "command", None),
+                    "args": list(getattr(payload, "args", [])),
+                    "env": dict(getattr(payload, "env", {})),
+                }
             )
+        else:
+            resource.update(
+                {
+                    "url": getattr(payload, "url", None),
+                    "headers": dict(getattr(payload, "headers", {})),
+                }
+            )
+        return resource
+
+    @staticmethod
+    def _validate_flat_config(payload: McpServerBase) -> None:
+        if payload.transport == McpServerTransport.STDIO:
+            if not getattr(payload, "command", None):
+                raise validation_error(
+                    "MCP server validation failed",
+                    [{"field": "command", "issue": "command is required"}],
+                )
+            args = getattr(payload, "args", [])
+            if not isinstance(args, list) or not args:
+                raise validation_error(
+                    "MCP server validation failed",
+                    [{"field": "args", "issue": "args must contain at least one item"}],
+                )
+        elif payload.transport == McpServerTransport.HTTP_SSE:
+            if not getattr(payload, "url", None):
+                raise validation_error(
+                    "MCP server validation failed",
+                    [{"field": "url", "issue": "url is required"}],
+                )
 
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)

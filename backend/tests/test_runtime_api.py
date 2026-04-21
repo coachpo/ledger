@@ -77,30 +77,22 @@ def _build_mcp_server(
     config: dict[str, object]
     if transport == "stdio":
         config = {
-            "mcpServers": {
-                key: {
-                    "name": f"{key}-{version}",
-                    "description": "MCP server",
-                    "enabled": enabled,
-                    "transport": "stdio",
-                    "command": "python",
-                    "args": ["-m", "ledger_market_data"],
-                    "env": {},
-                }
-            }
+            "name": f"{key}-{version}",
+            "description": "MCP server",
+            "enabled": enabled,
+            "transport": "stdio",
+            "command": "python",
+            "args": ["-m", "ledger_market_data"],
+            "env": {},
         }
     else:
         config = {
-            "mcpServers": {
-                key: {
-                    "name": f"{key}-{version}",
-                    "description": "MCP server",
-                    "enabled": enabled,
-                    "transport": "http-sse",
-                    "url": "https://example.com/mcp",
-                    "headers": {"Authorization": "Bearer secret-token"},
-                }
-            }
+            "name": f"{key}-{version}",
+            "description": "MCP server",
+            "enabled": enabled,
+            "transport": "http-sse",
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer secret-token"},
         }
 
     return McpServer(
@@ -203,17 +195,13 @@ def _seed_stock_analysis_workflow(
         transport="stdio",
     )
     mcp_server.config = {
-        "mcpServers": {
-            STOCK_ANALYSIS_MCP_SERVER_KEY: {
-                "name": f"{STOCK_ANALYSIS_MCP_SERVER_KEY}-1",
-                "description": "MCP server",
-                "enabled": True,
-                "transport": "stdio",
-                "command": "python3",
-                "args": ["-m", "app.agents.mcp.stock_analysis_reference_server"],
-                "env": {},
-            }
-        }
+        "name": f"{STOCK_ANALYSIS_MCP_SERVER_KEY}-1",
+        "description": "MCP server",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+        "env": {},
     }
     session.add_all([note_schema, decision_schema, skill, mcp_server])
     session.flush()
@@ -382,6 +370,35 @@ def test_agent_platform_mcp_connection_test_builds_deterministic_boundaries(
         assert tested.boundary.header_names == ["Authorization"]
         assert tester.boundaries[-1].key == "market_data"
         assert tester.boundaries[-1].version == 1
+
+
+def test_agent_platform_mcp_boundary_validation_uses_flat_field_names(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        server = McpServer(
+            key="market_data",
+            version=1,
+            status="published",
+            config={
+                "name": "market_data-1",
+                "description": "MCP server",
+                "enabled": True,
+                "transport": "unknown",
+            },
+        )
+        session.add(server)
+        session.commit()
+        session.refresh(server)
+
+        service = McpServerService(session, connection_tester=_FakeMcpConnectionTester())
+
+        with pytest.raises(ApiError) as exc_info:
+            service.build_client_boundary_version("market_data", None)
+
+    assert exc_info.value.details == [
+        {"field": "transport", "issue": "Server transport must be either 'stdio' or 'http-sse'"},
+    ]
 
 
 def test_agent_platform_agent_test_panel_resolves_archived_historical_versions(
@@ -1212,17 +1229,13 @@ def test_agent_platform_stock_analysis_missing_dependency_reports_mcp_failure(
         workflow = _seed_stock_analysis_workflow(session)
         broken_server = session.query(McpServer).filter_by(key=STOCK_ANALYSIS_MCP_SERVER_KEY).one()
         broken_server.config = {
-            "mcpServers": {
-                STOCK_ANALYSIS_MCP_SERVER_KEY: {
-                    "name": broken_server.name,
-                    "description": broken_server.description,
-                    "enabled": broken_server.enabled,
-                    "transport": "stdio",
-                    "command": "definitely_missing_stock_analysis_mcp_binary",
-                    "args": ["--missing"],
-                    "env": {},
-                }
-            }
+            "name": broken_server.name,
+            "description": broken_server.description,
+            "enabled": broken_server.enabled,
+            "transport": "stdio",
+            "command": "definitely_missing_stock_analysis_mcp_binary",
+            "args": ["--missing"],
+            "env": {},
         }
         session.commit()
 

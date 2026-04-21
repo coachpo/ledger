@@ -9,6 +9,19 @@ from app.repositories.base import BaseRepository
 class McpServerRepository(BaseRepository[McpServer]):
     model = McpServer
 
+    @staticmethod
+    def _matches_runtime_filters(
+        server: McpServer,
+        *,
+        enabled: bool | None = None,
+        transport: str | None = None,
+    ) -> bool:
+        if enabled is not None and server.enabled is not enabled:
+            return False
+        if transport is not None and server.transport != transport:
+            return False
+        return True
+
     def list_latest_versions(
         self,
         *,
@@ -16,32 +29,44 @@ class McpServerRepository(BaseRepository[McpServer]):
         enabled: bool | None = None,
         transport: str | None = None,
     ) -> list[McpServer]:
-        latest_versions = select(
-            self.model.key.label("key"),
-            func.max(self.model.version).label("version"),
-        )
-        if status is not None:
-            latest_versions = latest_versions.where(self.model.status == status)
-        latest_versions = latest_versions.group_by(self.model.key)
-
-        latest_versions_subquery = latest_versions.subquery()
-        statement = (
-            select(self.model)
-            .join(
-                latest_versions_subquery,
-                and_(
-                    self.model.key == latest_versions_subquery.c.key,
-                    self.model.version == latest_versions_subquery.c.version,
-                ),
+        if enabled is None and transport is None:
+            latest_versions = select(
+                self.model.key.label("key"),
+                func.max(self.model.version).label("version"),
             )
-            .order_by(self.model.key.asc(), self.model.version.desc())
-        )
-        items = self._list(statement)
-        if enabled is not None:
-            items = [item for item in items if item.enabled is enabled]
-        if transport is not None:
-            items = [item for item in items if item.transport == transport]
-        return items
+            if status is not None:
+                latest_versions = latest_versions.where(self.model.status == status)
+            latest_versions = latest_versions.group_by(self.model.key)
+
+            latest_versions_subquery = latest_versions.subquery()
+            statement = (
+                select(self.model)
+                .join(
+                    latest_versions_subquery,
+                    and_(
+                        self.model.key == latest_versions_subquery.c.key,
+                        self.model.version == latest_versions_subquery.c.version,
+                    ),
+                )
+                .order_by(self.model.key.asc(), self.model.version.desc())
+            )
+            return self._list(statement)
+
+        statement = select(self.model)
+        if status is not None:
+            statement = statement.where(self.model.status == status)
+        statement = statement.order_by(self.model.key.asc(), self.model.version.desc())
+
+        latest_matches: list[McpServer] = []
+        seen_keys: set[str] = set()
+        for item in self._list(statement):
+            if item.key in seen_keys:
+                continue
+            if not self._matches_runtime_filters(item, enabled=enabled, transport=transport):
+                continue
+            latest_matches.append(item)
+            seen_keys.add(item.key)
+        return latest_matches
 
     def list_versions(self, key: str) -> list[McpServer]:
         statement = (
@@ -68,7 +93,7 @@ class McpServerRepository(BaseRepository[McpServer]):
         result = self._get_by_statement(statement)
         if result is None:
             return None
-        if enabled is not None and result.enabled is not enabled:
+        if not self._matches_runtime_filters(result, enabled=enabled):
             return None
         return result
 
@@ -88,6 +113,6 @@ class McpServerRepository(BaseRepository[McpServer]):
         result = self.get_by_key_version(key, version)
         if result is None:
             return None
-        if enabled is not None and result.enabled is not enabled:
+        if not self._matches_runtime_filters(result, enabled=enabled):
             return None
         return result
