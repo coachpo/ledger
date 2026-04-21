@@ -11,12 +11,12 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/agents/AGENTS.md` — agents list and editor routes
-- `src/pages/skills/AGENTS.md` — skills list and editor routes
-- `src/pages/mcp-servers/AGENTS.md` — MCP servers list and editor routes
-- `src/pages/output-schemas/AGENTS.md` — output schemas list and editor routes
-- `src/pages/workflows/AGENTS.md` — workflows list, editor, and run-launch routes
-- `src/pages/runs/AGENTS.md` — runs list and detail routes
+- `src/pages/agents/AGENTS.md` — agents list, editor, duplicate, archive, and test-panel flows
+- `src/pages/skills/AGENTS.md` — skills list, editor, activation, archive, and tool-definition flows
+- `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
+- `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, and builder/json-schema/preview flows
+- `src/pages/workflows/AGENTS.md` — workflows list, editor, review, and run-launch flows
+- `src/pages/runs/AGENTS.md` — runs list, detail, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior

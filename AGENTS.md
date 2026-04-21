@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-18
-**Commit:** 500880e
+**Generated:** 2026-04-21
+**Commit:** 5555993
 **Branch:** agents
 
 ## OVERVIEW
@@ -44,7 +44,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 ledger/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # agent-platform design, UI, migration, and cutover-reference notes; secondary to live code
+├── docs/                 # agent-platform design, UI, migration, and cutover-reference notes; keep aligned with live code
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
 └── start.sh              # local orchestrator with backend/frontend/db reuse and fallback ports
 ```
@@ -120,4 +120,5 @@ ledger/
 - Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
-- `docs/` currently contains three orchestration-focused reference docs; keep them aligned with live agent-platform and preserved-product code, not retired simulation routes.
+- `docs/` contains the agent-platform design, UI, migration, and cutover reference docs. Keep them synced with live code, but don’t create nested AGENTS docs there.
+- `.github/workflows/` holds CI and release automation only. The root docs already cover that area, so no child AGENTS docs belong there.
