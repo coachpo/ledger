@@ -8,7 +8,7 @@ import type {
   McpServerUpdateInput,
 } from "../types/mcp-server";
 
-function mcpServerPath(serverId: IdParam): string {
+function mcpServerDetailPath(serverId: IdParam): string {
   return `/mcp-servers/${toPathSegment(serverId)}`;
 }
 
@@ -26,7 +26,7 @@ export function getMcpServer(
   serverId: IdParam,
   signal?: AbortSignal,
 ): Promise<McpServerRead> {
-  return requestPlatform<McpServerRead>(mcpServerPath(serverId), { signal });
+  return requestPlatform<McpServerRead>(mcpServerDetailPath(serverId), { signal });
 }
 
 export function createMcpServer(
@@ -45,7 +45,7 @@ export function updateMcpServer(
   payload: McpServerUpdateInput,
   signal?: AbortSignal,
 ): Promise<McpServerRead> {
-  return requestPlatform<McpServerRead>(mcpServerPath(serverId), {
+  return requestPlatform<McpServerRead>(mcpServerDetailPath(serverId), {
     body: payload,
     method: "PATCH",
     signal,
@@ -56,7 +56,7 @@ export function activateMcpServer(
   serverId: IdParam,
   signal?: AbortSignal,
 ): Promise<McpServerRead> {
-  return requestPlatform<McpServerRead>(`${mcpServerPath(serverId)}/activate`, {
+  return requestPlatform<McpServerRead>(`${mcpServerDetailPath(serverId)}/activate`, {
     method: "POST",
     signal,
   });
@@ -66,7 +66,7 @@ export function testMcpServerConnection(
   serverId: IdParam,
   signal?: AbortSignal,
 ): Promise<McpServerConnectionTestRead> {
-  return requestPlatform<McpServerConnectionTestRead>(`${mcpServerPath(serverId)}/connection-test`, {
+  return requestPlatform<McpServerConnectionTestRead>(`${mcpServerDetailPath(serverId)}/connection-test`, {
     method: "POST",
     signal,
   });
@@ -76,7 +76,7 @@ export function archiveMcpServer(
   serverId: IdParam,
   signal?: AbortSignal,
 ): Promise<McpServerRead> {
-  return requestPlatform<McpServerRead>(mcpServerPath(serverId), {
+  return requestPlatform<McpServerRead>(mcpServerDetailPath(serverId), {
     method: "DELETE",
     signal,
   });

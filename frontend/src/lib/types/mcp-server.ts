@@ -1,28 +1,33 @@
-import type { UnknownRecord } from "./common";
-
 export type McpServerStatus = "draft" | "published" | "deprecated" | "archived";
 export type McpServerTransport = "stdio" | "http-sse";
 
-export interface McpServerCreateInput {
-  key: string;
+export interface McpServerStdioConfig {
   name: string;
-  description?: string;
-  transport: McpServerTransport;
-  command?: string | null;
-  url?: string | null;
-  auth?: UnknownRecord;
-  enabled?: boolean;
+  description: string;
+  enabled: boolean;
+  transport: "stdio";
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 
-export interface McpServerUpdateInput {
-  name?: string;
-  description?: string;
-  transport?: McpServerTransport;
-  command?: string | null;
-  url?: string | null;
-  auth?: UnknownRecord;
-  enabled?: boolean;
+export interface McpServerHttpSseConfig {
+  name: string;
+  description: string;
+  enabled: boolean;
+  transport: "http-sse";
+  url: string;
+  headers: Record<string, string>;
 }
+
+export type McpServerConfig = McpServerStdioConfig | McpServerHttpSseConfig;
+
+export interface McpServerConfigEnvelope {
+  mcpServers: Record<string, McpServerConfig>;
+}
+
+export type McpServerCreateInput = McpServerConfigEnvelope;
+export type McpServerUpdateInput = McpServerConfigEnvelope;
 
 export interface McpClientBoundaryRead {
   transport: McpServerTransport;
@@ -45,19 +50,24 @@ export interface McpServerRead {
   key: string;
   version: number;
   status: McpServerStatus;
-  name: string;
-  description: string;
-  transport: McpServerTransport;
-  command: string | null;
-  url: string | null;
-  auth: UnknownRecord;
-  enabled: boolean;
+  config: McpServerConfigEnvelope;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface McpServerListItemRead {
+  id: number;
+  key: string;
+  version: number;
+  status: McpServerStatus;
+  name: string;
+  description: string;
+  transport: McpServerTransport;
+  enabled: boolean;
+}
+
 export interface McpServerListRead {
-  items: McpServerRead[];
+  items: McpServerListItemRead[];
 }
 
 export interface McpServerListParams {

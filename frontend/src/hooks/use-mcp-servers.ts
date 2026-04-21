@@ -10,7 +10,11 @@ import {
 } from "@/lib/api/mcp-servers";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import type { McpServerCreateInput, McpServerListParams, McpServerUpdateInput } from "@/lib/types/mcp-server";
+import type {
+  McpServerCreateInput,
+  McpServerListParams,
+  McpServerUpdateInput,
+} from "@/lib/types/mcp-server";
 
 type UpdateMcpServerVariables = {
   payload: McpServerUpdateInput;
