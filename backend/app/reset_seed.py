@@ -13,11 +13,7 @@ from app.core.config import get_settings, reset_settings_cache
 from app.db.session import get_engine, get_session_factory, init_db, reset_db_caches
 from app.schemas.agent import AgentCreate
 from app.schemas.balance import BalanceCreate
-from app.schemas.mcp_server import (
-    McpServerDraftCreate,
-    McpServerStdioConfig,
-    McpServerTransport,
-)
+from app.schemas.mcp_server import McpServerCreate, McpServerTransport
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaKind
 from app.schemas.portfolio import PortfolioCreate
 from app.schemas.position import PositionCreate
@@ -355,21 +351,18 @@ def _create_and_activate_skill(service: SkillService) -> str:
 
 def _create_and_activate_mcp_server(service: McpServerService) -> str:
     draft = service.create_draft(
-        McpServerDraftCreate(
-            mcp_servers={
-                STOCK_ANALYSIS_MCP_SERVER_KEY: McpServerStdioConfig(
-                    name="Stock Analysis Data",
-                    description="Seeded stock-analysis MCP server boundary.",
-                    transport=McpServerTransport.STDIO,
-                    command="python3",
-                    args=[
-                        "-m",
-                        "app.agents.mcp.stock_analysis_reference_server",
-                    ],
-                    env={},
-                    enabled=True,
-                )
-            }
+        McpServerCreate(
+            key=STOCK_ANALYSIS_MCP_SERVER_KEY,
+            name="Stock Analysis Data",
+            description="Seeded stock-analysis MCP server boundary.",
+            transport=McpServerTransport.STDIO,
+            command="python3",
+            args=[
+                "-m",
+                "app.agents.mcp.stock_analysis_reference_server",
+            ],
+            env={},
+            enabled=True,
         )
     )
     return service.activate(draft.id).key

@@ -31,7 +31,9 @@ from app.schemas.portfolio import PortfolioCreate
 from app.services.portfolio_service import PortfolioService
 
 
-def test_reset_and_seed_database_replaces_existing_data(database_url: str) -> None:
+def test_reset_and_seed_database_replaces_existing_data_and_seeds_flat_mcp_server(
+    database_url: str,
+) -> None:
     init_db(database_url)
     session_factory = get_session_factory(database_url)
 
@@ -88,6 +90,11 @@ def test_reset_and_seed_database_replaces_existing_data(database_url: str) -> No
         }
         assert [skill.key for skill in skills] == [STOCK_ANALYSIS_SKILL_KEY]
         assert [server.key for server in mcp_servers] == [STOCK_ANALYSIS_MCP_SERVER_KEY]
+        assert len(mcp_servers) == 1
+        assert "mcpServers" not in mcp_servers[0].config
+        assert mcp_servers[0].transport == "stdio"
+        assert mcp_servers[0].command == "python3"
+        assert mcp_servers[0].args == ["-m", "app.agents.mcp.stock_analysis_reference_server"]
         assert {agent.key for agent in agents} == {
             *STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
             STOCK_ANALYSIS_SYNTHESIZER_KEY,
