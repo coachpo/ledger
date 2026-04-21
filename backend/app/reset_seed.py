@@ -12,19 +12,34 @@ from app.agents.mcp import DefaultMcpConnectionTester
 from app.core.config import get_settings, reset_settings_cache
 from app.db.session import get_engine, get_session_factory, init_db, reset_db_caches
 from app.schemas.agent import AgentCreate
-from app.schemas.mcp_server import McpServerDraftCreate, McpServerTransport
+from app.schemas.balance import BalanceCreate
+from app.schemas.mcp_server import (
+    McpServerDraftCreate,
+    McpServerStdioConfig,
+    McpServerTransport,
+)
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaKind
 from app.schemas.portfolio import PortfolioCreate
+from app.schemas.position import PositionCreate
 from app.schemas.skill import SkillDraftCreate, SkillToolDefinitionWrite
 from app.schemas.text_template import TextTemplateCreate
+from app.schemas.workflow import WorkflowCreate
 from app.services.agent_service import AgentService
+from app.services.balance_service import BalanceService
 from app.services.mcp_server_service import McpServerService
 from app.services.output_schema_service import OutputSchemaService
 from app.services.portfolio_service import PortfolioService
+from app.services.position_service import PositionService
+from app.services.quote_provider import DeterministicQuoteProvider
+from app.services.report_service import ReportService
 from app.services.skill_service import SkillService
 from app.services.text_template_service import TextTemplateService
+from app.services.workflow_service import WorkflowService
 
-STARTER_PORTFOLIO_SLUG = "starter_portfolio"
+STARTER_PORTFOLIO_SLUG = "mag7_core"
+STARTER_PORTFOLIO_NAME = "Mag7 Core Portfolio"
+STARTER_BALANCE_LABEL = "Core Cash"
+STARTER_WORKFLOW_KEY = "stock_analysis"
 STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS = (
     "financials_analyst",
     "news_analyst",
@@ -48,8 +63,82 @@ STOCK_ANALYSIS_REFERENCE_TOOL_KEYS = (
     "ledger.stock_analysis.report_lookup",
     "ledger.stock_analysis.market_context",
 )
-STARTER_TEMPLATE_NAME = "Daily Summary"
-STARTER_TEMPLATE_CONTENT = "# Summary\n\n{{portfolios}}"
+STARTER_TEMPLATE_NAMES = (
+    "Mag7 Portfolio Snapshot",
+    "Mag7 Ticker Review",
+)
+MAG7_PORTFOLIO_TEMPLATE_CONTENT = (
+    "# Mag7 Portfolio Snapshot\n\n"
+    "Portfolio: {{portfolios.mag7_core.name}}\n"
+    "Base currency: {{portfolios.mag7_core.base_currency}}\n"
+    "Positions:\n{{portfolios.mag7_core.positions}}"
+)
+MAG7_TICKER_TEMPLATE_CONTENT = (
+    "Ticker: {{inputs.ticker}}\n"
+    "Portfolio: {{portfolios.by_slug(inputs.portfolio_slug).name}}\n"
+    "Quantity: {{portfolios.by_slug(inputs.portfolio_slug).positions."
+    "by_symbol(inputs.ticker).quantity}}\n"
+    "Tagged prior: {{reports.by_tag(inputs.analysis_tag).latest.name}}\n"
+    "Latest ticker analysis: {{reports.latest(inputs.ticker).content}}"
+)
+MAG7_COMPANIES = (
+    {
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "quantity": "40.00000000",
+        "averageCost": "185.50000000",
+        "reportSlug": "aapl_seed_report",
+        "reportTag": "aapl_loop",
+    },
+    {
+        "symbol": "MSFT",
+        "name": "Microsoft Corporation",
+        "quantity": "28.00000000",
+        "averageCost": "410.00000000",
+        "reportSlug": "msft_seed_report",
+        "reportTag": "msft_loop",
+    },
+    {
+        "symbol": "NVDA",
+        "name": "NVIDIA Corporation",
+        "quantity": "24.00000000",
+        "averageCost": "101.50000000",
+        "reportSlug": "nvda_seed_report",
+        "reportTag": "nvda_loop",
+    },
+    {
+        "symbol": "AMZN",
+        "name": "Amazon.com, Inc.",
+        "quantity": "18.00000000",
+        "averageCost": "175.00000000",
+        "reportSlug": "amzn_seed_report",
+        "reportTag": "amzn_loop",
+    },
+    {
+        "symbol": "GOOGL",
+        "name": "Alphabet Inc.",
+        "quantity": "20.00000000",
+        "averageCost": "168.00000000",
+        "reportSlug": "googl_seed_report",
+        "reportTag": "googl_loop",
+    },
+    {
+        "symbol": "META",
+        "name": "Meta Platforms, Inc.",
+        "quantity": "14.00000000",
+        "averageCost": "485.00000000",
+        "reportSlug": "meta_seed_report",
+        "reportTag": "meta_loop",
+    },
+    {
+        "symbol": "TSLA",
+        "name": "Tesla, Inc.",
+        "quantity": "16.00000000",
+        "averageCost": "205.00000000",
+        "reportSlug": "tsla_seed_report",
+        "reportTag": "tsla_loop",
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +149,8 @@ class ResetSeedSummary:
     skill_keys: tuple[str, ...]
     mcp_server_keys: tuple[str, ...]
     agent_keys: tuple[str, ...]
+    report_slugs: tuple[str, ...]
+    workflow_keys: tuple[str, ...]
 
 
 def _resolve_database_url(database_url: str | None) -> str:
@@ -142,13 +233,55 @@ def trading_decision_schema() -> dict[str, Any]:
     }
 
 
+def _stock_analysis_agent_prompt(key: str) -> str:
+    prompts = {
+        "financials_analyst": (
+            "Act like an investment research analyst. Focus on earnings quality, "
+            "profitability, cash flow resilience, and capital allocation. Summarize "
+            "the strongest financial signal and one caveat."
+        ),
+        "news_analyst": (
+            "Act like a verified news researcher. Focus on the latest company-specific "
+            "developments and sentiment. Summarize the most decision-relevant catalyst "
+            "and one uncertainty."
+        ),
+        "market_analyst": (
+            "Act like a market strategist. Focus on current market regime, momentum, "
+            "and price context. Summarize what the market is implying right now."
+        ),
+        "industry_analyst": (
+            "Act like a sector analyst. Focus on competitive positioning and market "
+            "structure. Summarize whether the company is outperforming or lagging its "
+            "peer context."
+        ),
+        "economy_analyst": (
+            "Act like a macro strategist. Focus on rates, consumer demand, growth "
+            "sensitivity, and macro backdrop in decision-ready language."
+        ),
+        "price_analyst": (
+            "Act like a technical analyst. Focus on recent price trend, support and "
+            "resistance, and time-horizon momentum. Summarize the setup with a clear bias."
+        ),
+        "position_reader": (
+            "Act like a portfolio analyst. Focus on how the ticker already sits inside "
+            "the portfolio. Summarize exposure, concentration, and the practical "
+            "implication for sizing."
+        ),
+        "history_reader": (
+            "Act like a market historian. Focus on the available historical range and "
+            "volatility. Summarize the historical context that matters for the decision horizon."
+        ),
+    }
+    return prompts[key]
+
+
 def _stock_analysis_agent_payload(key: str, *, budget_usd: str = "0.05000000") -> dict[str, Any]:
     return {
         "key": key,
         "name": key.replace("_", " ").title(),
         "description": f"Seeded stock-analysis agent for {key}.",
         "model": "openai:gpt-5.4-mini",
-        "systemPrompt": f"Return the seeded stock-analysis output for {key}.",
+        "systemPrompt": _stock_analysis_agent_prompt(key),
         "inputSchema": stock_analysis_workflow_input_schema(),
         "outputSchemaKey": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
         "skills": [{"skillKey": STOCK_ANALYSIS_SKILL_KEY}],
@@ -164,7 +297,11 @@ def _stock_analysis_synthesizer_payload() -> dict[str, Any]:
         "name": "Decision Synthesizer",
         "description": "Combines seeded stock-analysis notes into a TradingDecision.",
         "model": "openai:gpt-5.4-mini",
-        "systemPrompt": "Combine the seeded stock-analysis notes into a TradingDecision.",
+        "systemPrompt": (
+            "Synthesize the analyst notes into a single trading decision. Weigh signal quality, "
+            "portfolio context, and macro risk, then return a concise rationale "
+            "with explicit risks."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -219,15 +356,65 @@ def _create_and_activate_skill(service: SkillService) -> str:
 def _create_and_activate_mcp_server(service: McpServerService) -> str:
     draft = service.create_draft(
         McpServerDraftCreate(
-            key=STOCK_ANALYSIS_MCP_SERVER_KEY,
-            name="Stock Analysis Data",
-            description="Seeded stock-analysis MCP server boundary.",
-            transport=McpServerTransport.STDIO,
-            command=STOCK_ANALYSIS_REFERENCE_MCP_COMMAND,
-            enabled=True,
+            mcp_servers={
+                STOCK_ANALYSIS_MCP_SERVER_KEY: McpServerStdioConfig(
+                    name="Stock Analysis Data",
+                    description="Seeded stock-analysis MCP server boundary.",
+                    transport=McpServerTransport.STDIO,
+                    command="python3",
+                    args=[
+                        "-m",
+                        "app.agents.mcp.stock_analysis_reference_server",
+                    ],
+                    env={},
+                    enabled=True,
+                )
+            }
         )
     )
     return service.activate(draft.id).key
+
+
+def _workflow_payload() -> dict[str, Any]:
+    return {
+        "key": STARTER_WORKFLOW_KEY,
+        "name": "Stock Analysis",
+        "description": "Seeded Mag7 stock-analysis workflow.",
+        "inputSchema": stock_analysis_workflow_input_schema(),
+        "steps": [
+            {
+                "index": 1,
+                "agents": [
+                    {
+                        "agentKey": key,
+                        "slot": key,
+                        "wiring": {
+                            "ticker": {"from": "input", "path": "ticker"},
+                            "horizon_days": {"from": "input", "path": "horizon_days"},
+                        },
+                    }
+                    for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+                ],
+            }
+        ],
+        "outputSpec": {
+            "kind": "agent",
+            "agentKey": STOCK_ANALYSIS_SYNTHESIZER_KEY,
+            "wiring": {
+                key: {"from": "step", "stepIndex": 1, "slot": key}
+                for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+            },
+        },
+    }
+
+
+def _build_seed_report_content(symbol: str, company_name: str) -> str:
+    return (
+        f"# {symbol} Seed Analysis\n\n"
+        f"{company_name} remains part of the seeded Mag7 workflow context. "
+        "This report exists so the stock-analysis experience has persisted "
+        "company-specific context for financial and news lookup steps."
+    )
 
 
 def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
@@ -236,7 +423,11 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
 
     with session_factory() as session:
         portfolio_service = PortfolioService(session)
+        balance_service = BalanceService(session)
+        position_service = PositionService(session, DeterministicQuoteProvider())
         template_service = TextTemplateService(session)
+        report_service = ReportService(session)
+        workflow_service = WorkflowService(session)
         output_schema_service = OutputSchemaService(session)
         skill_registry = get_default_skill_registry()
         connection_tester = DefaultMcpConnectionTester()
@@ -246,18 +437,70 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
 
         portfolio = portfolio_service.create_portfolio(
             PortfolioCreate(
-                name="Starter Portfolio",
+                name=STARTER_PORTFOLIO_NAME,
                 slug=STARTER_PORTFOLIO_SLUG,
-                description="Initial seeded portfolio after application reset.",
+                description=(
+                    "Seeded Magnificent 7 portfolio for the starter stock-analysis experience."
+                ),
                 base_currency="USD",
             )
         )
-        template = template_service.create_template(
-            TextTemplateCreate(
-                name=STARTER_TEMPLATE_NAME,
-                content=STARTER_TEMPLATE_CONTENT,
-            )
+        balance_service.create_balance(
+            portfolio.id,
+            BalanceCreate.model_validate(
+                {
+                    "label": STARTER_BALANCE_LABEL,
+                    "amount": "250000.00",
+                    "operationType": "DEPOSIT",
+                }
+            ),
         )
+        for company in MAG7_COMPANIES:
+            position_service.create_position(
+                portfolio.id,
+                PositionCreate.model_validate(
+                    {
+                        "symbol": company["symbol"],
+                        "name": company["name"],
+                        "quantity": company["quantity"],
+                        "averageCost": company["averageCost"],
+                    }
+                ),
+            )
+
+        templates = (
+            template_service.create_template(
+                TextTemplateCreate(
+                    name=STARTER_TEMPLATE_NAMES[0],
+                    content=MAG7_PORTFOLIO_TEMPLATE_CONTENT,
+                )
+            ),
+            template_service.create_template(
+                TextTemplateCreate(
+                    name=STARTER_TEMPLATE_NAMES[1],
+                    content=MAG7_TICKER_TEMPLATE_CONTENT,
+                )
+            ),
+        )
+
+        report_slugs: list[str] = []
+        for company in MAG7_COMPANIES:
+            report = report_service.create_external_report(
+                name=f"{company['symbol']} Seed Analysis",
+                slug=company["reportSlug"],
+                content=_build_seed_report_content(company["symbol"], company["name"]),
+                metadata={
+                    "author": "Seeded Mag7 Workspace",
+                    "tags": ["mag7", "seed", company["reportTag"]],
+                    "analysis": {
+                        "ticker": company["symbol"],
+                        "portfolioSlug": STARTER_PORTFOLIO_SLUG,
+                        "reviewType": "fundamental",
+                    },
+                },
+            )
+            report_slugs.append(report.slug)
+
         output_schema_keys = (
             _create_and_activate_output_schema(
                 output_schema_service,
@@ -288,14 +531,19 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
                 AgentCreate.model_validate(_stock_analysis_synthesizer_payload())
             ).key
         )
+        workflow = workflow_service.create_workflow(
+            WorkflowCreate.model_validate(_workflow_payload())
+        )
 
         return ResetSeedSummary(
             portfolio_slugs=(portfolio.slug,),
-            template_names=(template.name,),
+            template_names=tuple(template.name for template in templates),
             output_schema_keys=output_schema_keys,
             skill_keys=skill_keys,
             mcp_server_keys=mcp_server_keys,
             agent_keys=tuple(agent_keys),
+            report_slugs=tuple(report_slugs),
+            workflow_keys=(workflow.key,),
         )
 
 
@@ -328,6 +576,8 @@ def main() -> int:
     print("Reset complete.")
     print(f"Portfolios: {', '.join(summary.portfolio_slugs)}")
     print(f"Templates: {', '.join(summary.template_names)}")
+    print(f"Reports: {', '.join(summary.report_slugs)}")
+    print(f"Workflows: {', '.join(summary.workflow_keys)}")
     print(f"Output schemas: {', '.join(summary.output_schema_keys)}")
     print(f"Skills: {', '.join(summary.skill_keys)}")
     print(f"MCP servers: {', '.join(summary.mcp_server_keys)}")
