@@ -2,46 +2,21 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 
-type VersionedRef = {
-  key: string;
-  version?: number | null;
-};
+export {
+  parseJsonValue,
+  parseLineList,
+  stringifyJson,
+  toLineList,
+} from "@/lib/platform-authoring/common/serialization";
+export {
+  parseVersionedRef,
+  parseVersionedRefs,
+  toVersionedRefValue,
+  type ResourceRef,
+} from "@/lib/platform-authoring/common/resource-ref";
 
 export function sortByKey<T extends { key: string }>(items: readonly T[]): T[] {
   return [...items].sort((left, right) => left.key.localeCompare(right.key));
-}
-
-export function parseLineList(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-export function toLineList(value: string[] | null | undefined): string {
-  return Array.isArray(value) ? value.join("\n") : "";
-}
-
-export function stringifyJson(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  return JSON.stringify(value, null, 2);
-}
-
-export function parseJsonValue<T>(label: string, value: string, fallback: T): T {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(trimmed) as T;
-  } catch {
-    throw new Error(`${label} must be valid JSON.`);
-  }
 }
 
 export function parseRequiredText(label: string, value: string): string {
@@ -80,41 +55,6 @@ export function parseOptionalNumber(
   }
 
   return parsed;
-}
-
-export function toVersionedRefValue(key: string, version?: number | null): string {
-  return version ? `${key}@${version}` : key;
-}
-
-export function parseVersionedRef(label: string, value: string): VersionedRef {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    throw new Error(`${label} is required.`);
-  }
-
-  const [keyPart, versionPart] = trimmed.split("@", 2);
-  const key = keyPart.trim();
-
-  if (!key) {
-    throw new Error(`${label} is required.`);
-  }
-
-  if (!versionPart) {
-    return { key };
-  }
-
-  const version = Number(versionPart.trim());
-
-  if (!Number.isInteger(version) || version <= 0) {
-    throw new Error(`${label} entries must use key or key@version.`);
-  }
-
-  return { key, version };
-}
-
-export function parseVersionedRefs(label: string, value: string): VersionedRef[] {
-  return parseLineList(value).map((entry) => parseVersionedRef(label, entry));
 }
 
 export function formatStatusLabel(status: string): string {
