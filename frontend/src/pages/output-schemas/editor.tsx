@@ -1,20 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Plus, Save, Trash2 } from "lucide-react";
+import { AlertCircle, Save } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-import {
-  useActivateOutputSchema,
-  useCreateOutputSchema,
-  useOutputSchema,
-  useUpdateOutputSchema,
-} from "@/hooks/use-output-schemas";
-import { ApiRequestError } from "@/lib/api-client";
-import type {
-  OutputSchemaBuilderField,
-  OutputSchemaBuilderNode,
-  OutputSchemaKind,
-} from "@/lib/types/output-schema";
+import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
+import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,308 +17,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useActivateOutputSchema,
+  useCreateOutputSchema,
+  useOutputSchema,
+  useUpdateOutputSchema,
+} from "@/hooks/use-output-schemas";
+import { ApiRequestError } from "@/lib/api-client";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { parseSchemaJsonText, schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
+import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
+import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import type { SchemaValidationIssue } from "@/lib/platform-authoring/schema/validation";
+import type { OutputSchemaBuilderNode, OutputSchemaKind, OutputSchemaRead } from "@/lib/types/output-schema";
 
 import { parseRequiredText, PlatformResourceBadges } from "../platform-resource-shared";
-import {
-  builderToJsonSchema,
-  createDefaultBuilderNode,
-  createDefaultField,
-  createLiteralValueDraft,
-  createPreviewJson,
-  formatPrimitiveList,
-  parseJsonSchemaText,
-  parsePrimitiveInput,
-  parsePrimitiveList,
-  stringifyJsonSchema,
-  type OutputSchemaValidationIssue,
-} from "./shared";
 
-type LiteralDraft = {
-  kind: "boolean" | "integer" | "number" | "string";
-  value: string;
-};
-
-type BuilderNodeEditorProps = {
-  depth?: number;
-  label: string;
-  node: OutputSchemaBuilderNode;
-  onChange: (node: OutputSchemaBuilderNode) => void;
-  onRemove?: () => void;
-};
-
-const kindOptions: OutputSchemaBuilderNode["kind"][] = [
-  "object",
-  "string",
-  "integer",
-  "number",
-  "boolean",
-  "enum",
-  "literal",
-  "array",
-  "ref",
-  "discriminated_union",
-];
-
-function updateNodeMetadata(
-  node: OutputSchemaBuilderNode,
-  key: "description" | "title",
-  value: string,
-): OutputSchemaBuilderNode {
-  return { ...node, [key]: value.trim() ? value : null };
-}
-
-function BuilderNodeEditor({ depth = 0, label, node, onChange, onRemove }: BuilderNodeEditorProps) {
-  const [literalDraft, setLiteralDraft] = useState<LiteralDraft>(() =>
-    node.kind === "literal"
-      ? createLiteralValueDraft(node)
-      : { kind: "string", value: "value" },
-  );
-
-  useEffect(() => {
-    if (node.kind === "literal") {
-      setLiteralDraft(createLiteralValueDraft(node));
-    }
-  }, [node]);
-
-  const handleKindChange = (nextKind: OutputSchemaBuilderNode["kind"]) => {
-    const nextNode = createDefaultBuilderNode(nextKind);
-    onChange({
-      ...nextNode,
-      description: node.description ?? null,
-      title: node.title ?? null,
-    });
-  };
-
-  return (
-    <Card className={depth > 0 ? "border-dashed" : undefined}>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-base">{label}</CardTitle>
-            <CardDescription>Adjust the supported builder subset and keep the JSON Schema tab in sync.</CardDescription>
-          </div>
-          {onRemove ? (
-            <Button size="sm" variant="outline" onClick={onRemove}>
-              <Trash2 data-icon="inline-start" />
-              Remove
-            </Button>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label>Node kind</Label>
-            <Select value={node.kind} onValueChange={(value: OutputSchemaBuilderNode["kind"]) => handleKindChange(value)}>
-              <SelectTrigger aria-label={`${label} node kind`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {kindOptions.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Title</Label>
-            <Input value={node.title ?? ""} onChange={(event) => onChange(updateNodeMetadata(node, "title", event.target.value))} />
-          </div>
-          <div className="space-y-2">
-            <Label>Description</Label>
-            <Input value={node.description ?? ""} onChange={(event) => onChange(updateNodeMetadata(node, "description", event.target.value))} />
-          </div>
-        </div>
-
-        {node.kind === "object" ? (
-          <ObjectFieldsEditor node={node} onChange={onChange} />
-        ) : null}
-
-        {node.kind === "array" ? (
-          <BuilderNodeEditor label="Array items" node={node.items} depth={depth + 1} onChange={(items) => onChange({ ...node, items })} />
-        ) : null}
-
-        {node.kind === "enum" ? (
-          <div className="space-y-2">
-            <Label>Enum values</Label>
-            <Textarea value={formatPrimitiveList(node.values)} rows={5} onChange={(event) => onChange({ ...node, values: parsePrimitiveList(event.target.value) })} />
-            <p className="text-sm text-muted-foreground">Enter one value per line. Numbers and booleans keep their primitive types.</p>
-          </div>
-        ) : null}
-
-        {node.kind === "literal" ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Literal type</Label>
-              <Select
-                value={literalDraft.kind}
-                onValueChange={(value: LiteralDraft["kind"]) => {
-                  const nextDraft = { kind: value, value: value === "boolean" ? "true" : literalDraft.value };
-                  setLiteralDraft(nextDraft);
-                  onChange({ ...node, value: parsePrimitiveInput(nextDraft.value, nextDraft.kind) });
-                }}
-              >
-                <SelectTrigger aria-label={`${label} literal type`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="string">string</SelectItem>
-                  <SelectItem value="integer">integer</SelectItem>
-                  <SelectItem value="number">number</SelectItem>
-                  <SelectItem value="boolean">boolean</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Literal value</Label>
-              <Input
-                value={literalDraft.value}
-                onChange={(event) => {
-                  const nextDraft = { ...literalDraft, value: event.target.value };
-                  setLiteralDraft(nextDraft);
-                  onChange({ ...node, value: parsePrimitiveInput(nextDraft.value, nextDraft.kind) });
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {node.kind === "ref" ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Schema key</Label>
-              <Input value={node.schemaKey} onChange={(event) => onChange({ ...node, schemaKey: event.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Schema version</Label>
-              <Input
-                value={node.schemaVersion ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value.trim();
-                  onChange({ ...node, schemaVersion: value ? Number.parseInt(value, 10) : undefined });
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {node.kind === "discriminated_union" ? (
-          <div className="flex flex-col gap-4">
-            <div className="space-y-2">
-              <Label>Discriminator field</Label>
-              <Input value={node.discriminator} onChange={(event) => onChange({ ...node, discriminator: event.target.value })} />
-            </div>
-            <div className="flex flex-col gap-3">
-              {node.variants.map((variant, index) => (
-                <BuilderNodeEditor
-                  key={`${label}-variant-${index}`}
-                  depth={depth + 1}
-                  label={`Variant ${index + 1}`}
-                  node={variant}
-                  onChange={(nextVariant) => {
-                    const nextVariants = [...node.variants];
-                    nextVariants[index] = nextVariant;
-                    onChange({ ...node, variants: nextVariants });
-                  }}
-                  onRemove={node.variants.length > 2 ? () => onChange({ ...node, variants: node.variants.filter((_, itemIndex) => itemIndex !== index) }) : undefined}
-                />
-              ))}
-            </div>
-            <div>
-              <Button size="sm" variant="outline" onClick={() => onChange({ ...node, variants: [...node.variants, createDefaultBuilderNode("object")] })}>
-                <Plus data-icon="inline-start" />
-                Add Variant
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-type ObjectFieldsEditorProps = {
-  node: Extract<OutputSchemaBuilderNode, { kind: "object" }>;
-  onChange: (node: OutputSchemaBuilderNode) => void;
-};
-
-function ObjectFieldsEditor({ node, onChange }: ObjectFieldsEditorProps) {
-  const fields = node.fields ?? [];
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between rounded-md border p-4">
-        <div className="space-y-1">
-          <Label htmlFor="allow-additional-properties">Allow additional properties</Label>
-          <p className="text-sm text-muted-foreground">Objects default to closed contracts, matching the backend compiler.</p>
-        </div>
-        <Switch id="allow-additional-properties" checked={Boolean(node.allowAdditionalProperties)} onCheckedChange={(checked) => onChange({ ...node, allowAdditionalProperties: checked })} />
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Add at least one field to build an object schema.</div>
-      ) : null}
-
-      <div className="flex flex-col gap-4">
-        {fields.map((field, index) => (
-          <Card key={`${field.name}-${index}`}>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="text-base">Field {index + 1}</CardTitle>
-                  <CardDescription>Field names feed both the builder and generated JSON Schema.</CardDescription>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => onChange({ ...node, fields: fields.filter((_, itemIndex) => itemIndex !== index) })}>
-                  <Trash2 data-icon="inline-start" />
-                  Remove Field
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Field name</Label>
-                  <Input data-testid={`output-schema-field-name-${index}`} aria-label="Field name" value={field.name} onChange={(event) => onFieldChange(index, field, { name: event.target.value }, node, onChange)} />
-                </div>
-                <div className="flex items-center justify-between rounded-md border p-4">
-                  <div className="space-y-1">
-                    <Label htmlFor={`field-required-${index}`}>Required</Label>
-                    <p className="text-sm text-muted-foreground">Required fields flow into the JSON Schema `required` array.</p>
-                  </div>
-                  <Switch id={`field-required-${index}`} checked={field.required !== false} onCheckedChange={(checked) => onFieldChange(index, field, { required: checked }, node, onChange)} />
-                </div>
-              </div>
-              <BuilderNodeEditor label={`Field schema: ${field.name || `field_${index + 1}`}`} node={field.schema} depth={1} onChange={(schema) => onFieldChange(index, field, { schema }, node, onChange)} />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div>
-        <Button data-testid="output-schema-add-field" size="sm" variant="outline" onClick={() => onChange({ ...node, fields: [...fields, createDefaultField(`field_${fields.length + 1}`)] })}>
-          <Plus data-icon="inline-start" />
-          Add Field
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function onFieldChange(
-  index: number,
-  currentField: OutputSchemaBuilderField,
-  patch: Partial<OutputSchemaBuilderField>,
-  node: Extract<OutputSchemaBuilderNode, { kind: "object" }>,
-  onChange: (node: OutputSchemaBuilderNode) => void,
-) {
-  const nextFields = [...(node.fields ?? [])];
-  nextFields[index] = { ...currentField, ...patch };
-  onChange({ ...node, fields: nextFields });
+function decodePersistedSchema(record: OutputSchemaRead) {
+  return parseSchemaJsonText(stringifyJson(record.jsonSchema));
 }
 
 export function OutputSchemasEditorPage() {
@@ -344,9 +51,9 @@ export function OutputSchemasEditorPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<OutputSchemaKind>("standalone");
-  const [builder, setBuilder] = useState<OutputSchemaBuilderNode>(createDefaultBuilderNode("object"));
-  const [jsonSchemaText, setJsonSchemaText] = useState(() => stringifyJsonSchema(builderToJsonSchema(createDefaultBuilderNode("object"))));
-  const [validationIssues, setValidationIssues] = useState<OutputSchemaValidationIssue[]>([]);
+  const [builder, setBuilder] = useState<OutputSchemaBuilderNode>(() => createDefaultSchemaNode("object"));
+  const [validationIssues, setValidationIssues] = useState<SchemaValidationIssue[]>([]);
+  const [unsupportedRecordIssues, setUnsupportedRecordIssues] = useState<SchemaValidationIssue[]>([]);
 
   useEffect(() => {
     if (!schemaQuery.data) {
@@ -357,46 +64,42 @@ export function OutputSchemasEditorPage() {
     setName(schemaQuery.data.name);
     setDescription(schemaQuery.data.description ?? "");
     setKind(schemaQuery.data.kind);
-    setBuilder(schemaQuery.data.builder);
-    setJsonSchemaText(stringifyJsonSchema(schemaQuery.data.jsonSchema));
     setValidationIssues([]);
-  }, [schemaQuery.data]);
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
-  const isBusy = isSaving || activateMutation.isPending;
-  const canActivate = Boolean(isEditing && schemaQuery.data?.status === "draft");
-  const derivedJsonSchema = useMemo(() => builderToJsonSchema(builder), [builder]);
-
-  const syncBuilder = (nextBuilder: OutputSchemaBuilderNode) => {
-    setBuilder(nextBuilder);
-    setJsonSchemaText(stringifyJsonSchema(builderToJsonSchema(nextBuilder)));
-    setValidationIssues([]);
-  };
-
-  const syncJsonSchema = (value: string) => {
-    setJsonSchemaText(value);
-    const parsed = parseJsonSchemaText(value);
-    if (parsed.issues.length > 0 || !parsed.builder) {
-      setValidationIssues(parsed.issues);
+    const decoded = decodePersistedSchema(schemaQuery.data);
+    if (decoded.issues.length > 0 || !decoded.builder) {
+      setUnsupportedRecordIssues(decoded.issues);
+      setBuilder(createDefaultSchemaNode("object"));
       return;
     }
 
-    setBuilder(parsed.builder);
+    setUnsupportedRecordIssues([]);
+    setBuilder(decoded.builder);
+  }, [schemaQuery.data]);
+
+  const hasUnsupportedPersistedRecord = isEditing && unsupportedRecordIssues.length > 0;
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isBusy = isSaving || activateMutation.isPending;
+  const canActivate = Boolean(isEditing && schemaQuery.data?.status === "draft" && !hasUnsupportedPersistedRecord);
+  const derivedJsonSchema = useMemo(() => schemaBuilderToJsonSchema(builder), [builder]);
+  const previewValue = useMemo(() => buildPreviewValue(builder), [builder]);
+
+  const syncBuilder = (nextBuilder: OutputSchemaBuilderNode) => {
+    setBuilder(nextBuilder);
     setValidationIssues([]);
   };
 
   const applyApiIssues = (error: unknown) => {
     if (error instanceof ApiRequestError && error.details.length > 0) {
       setValidationIssues(error.details.map((detail) => ({ field: detail.field, issue: detail.issue })));
-      setActiveTab("json-schema");
+      setActiveTab("builder");
     }
   };
 
   const handleSave = async () => {
     try {
-      if (validationIssues.length > 0) {
-        setActiveTab("json-schema");
-        throw new Error("Resolve JSON Schema validation issues before saving.");
+      if (hasUnsupportedPersistedRecord) {
+        throw new Error("Unsupported retired schema shape");
       }
 
       const payload = {
@@ -426,7 +129,7 @@ export function OutputSchemasEditorPage() {
   };
 
   const handleActivate = async () => {
-    if (!schemaId) {
+    if (!schemaId || hasUnsupportedPersistedRecord) {
       return;
     }
 
@@ -457,7 +160,7 @@ export function OutputSchemasEditorPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{isEditing ? "Edit Output Schema" : "Create Output Schema"}</h1>
           <p className="text-sm text-muted-foreground">
-            Keep the supported builder subset, raw JSON Schema, and preview output synchronized in one route-backed editor.
+            Author supported output schemas through the shared builder and review the derived sample output before save.
           </p>
           {schemaQuery.data ? <PlatformResourceBadges status={schemaQuery.data.status} version={schemaQuery.data.version} /> : null}
         </div>
@@ -467,17 +170,32 @@ export function OutputSchemasEditorPage() {
               Activate Output Schema
             </Button>
           ) : null}
-          <Button data-testid="output-schemas-save" disabled={isSaving} size="sm" onClick={() => void handleSave()}>
+          <Button data-testid="output-schemas-save" disabled={isSaving || hasUnsupportedPersistedRecord} size="sm" onClick={() => void handleSave()}>
             <Save data-icon="inline-start" />
             Save Output Schema
           </Button>
         </div>
       </div>
 
+      {hasUnsupportedPersistedRecord ? (
+        <Alert data-testid="output-schema-unsupported-record" variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Unsupported retired schema shape</AlertTitle>
+          <AlertDescription>
+            <p>This persisted output schema cannot be edited in the builder because it does not decode into the supported shared schema model.</p>
+            <ul className="list-disc pl-5">
+              {unsupportedRecordIssues.map((issue) => (
+                <li key={`${issue.field}-${issue.issue}`}>{`${issue.field}: ${issue.issue}`}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {validationIssues.length > 0 ? (
         <Alert data-testid="output-schema-validation-feedback" variant="destructive">
           <AlertCircle />
-          <AlertTitle>Unsupported or invalid JSON Schema</AlertTitle>
+          <AlertTitle>Unsupported or invalid schema</AlertTitle>
           <AlertDescription>
             <ul className="list-disc pl-5">
               {validationIssues.map((issue) => (
@@ -504,7 +222,7 @@ export function OutputSchemasEditorPage() {
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="output-schema-description">Description</Label>
-            <Textarea id="output-schema-description" aria-label="Description" disabled={isSaving} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
+            <Input id="output-schema-description" aria-label="Description" disabled={isSaving} value={description} onChange={(event) => setDescription(event.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Kind</Label>
@@ -521,61 +239,28 @@ export function OutputSchemasEditorPage() {
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="builder">Builder</TabsTrigger>
-          <TabsTrigger value="json-schema">JSON Schema</TabsTrigger>
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className={activeTab === "builder" ? "mt-4" : "mt-4 hidden"}>
-        <BuilderNodeEditor label="Root schema" node={builder} onChange={syncBuilder} />
-      </div>
-
-      <div className={activeTab === "json-schema" ? "mt-4" : "mt-4 hidden"}>
-        <Card>
-          <CardHeader>
-            <CardTitle>JSON Schema</CardTitle>
-            <CardDescription>Unsupported keywords are rejected here with deterministic feedback before save.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              data-testid="output-schema-json-editor"
-              aria-label="JSON Schema"
-              rows={24}
-              value={jsonSchemaText}
-              onChange={(event) => syncJsonSchema(event.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">Supported keywords mirror the backend compiler subset for objects, arrays, primitives, refs, enums, literals, and discriminated unions.</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className={activeTab === "preview" ? "mt-4" : "mt-4 hidden"}>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Preview data</CardTitle>
-              <CardDescription>Derived sample output from the current builder state.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre data-testid="output-schema-preview" className="overflow-x-auto rounded-md bg-muted p-4 text-sm">
-                {createPreviewJson(builder)}
-              </pre>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Derived JSON Schema</CardTitle>
-              <CardDescription>Builder changes serialize directly into the JSON Schema you save.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded-md bg-muted p-4 text-sm">{stringifyJsonSchema(derivedJsonSchema)}</pre>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      {!hasUnsupportedPersistedRecord ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="builder">Builder</TabsTrigger>
+            <TabsTrigger value="preview">Preview</TabsTrigger>
+          </TabsList>
+          <TabsContent forceMount value="builder" className="mt-4">
+            <SchemaComposer label="Root schema" node={builder} onChange={syncBuilder} />
+          </TabsContent>
+          <TabsContent forceMount value="preview" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Preview data</CardTitle>
+                <CardDescription>Derived sample output from the current builder state.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <StructuredValueInspector data-testid="output-schema-preview" label="Derived sample output" value={previewValue} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      ) : null}
     </div>
   );
 }

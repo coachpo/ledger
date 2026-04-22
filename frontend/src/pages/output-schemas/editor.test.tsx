@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
+import type { OutputSchemaRead } from "@/lib/types/output-schema";
+
 import { OutputSchemasEditorPage } from "./editor";
 
 const navigateMock = vi.fn();
@@ -33,7 +36,24 @@ const existingSchema = {
   registryRefs: [],
   createdAt: "2026-04-20T10:00:00Z",
   updatedAt: "2026-04-20T10:00:00Z",
-} as const;
+} satisfies OutputSchemaRead;
+
+const unsupportedSchema = {
+  ...existingSchema,
+  id: 8,
+  key: "legacy_schema",
+  name: "Legacy Schema",
+  jsonSchema: {
+    type: "object",
+    properties: {},
+    patternProperties: { "^x": { type: "string" } },
+  },
+} satisfies OutputSchemaRead;
+
+const schemaRecords: Record<string, OutputSchemaRead> = {
+  "7": existingSchema,
+  "8": unsupportedSchema,
+};
 
 vi.mock("react-router", () => ({
   useNavigate: () => navigateMock,
@@ -50,7 +70,7 @@ vi.mock("sonner", () => ({
 vi.mock("@/hooks/use-output-schemas", () => ({
   useOutputSchema: (schemaId?: string) =>
     schemaId
-      ? { data: existingSchema, error: null, isError: false, isPending: false }
+      ? { data: schemaRecords[schemaId], error: null, isError: false, isPending: false }
       : { data: undefined, error: null, isError: false, isPending: false },
   useCreateOutputSchema: () => ({ isPending: false, mutateAsync: createOutputSchemaMock }),
   useUpdateOutputSchema: () => ({ isPending: false, mutateAsync: updateOutputSchemaMock }),
@@ -68,62 +88,61 @@ describe("OutputSchemasEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("shows builder, JSON Schema, and Preview tabs and keeps builder changes synchronized", async () => {
+  it("removes editable JSON authoring UI and keeps preview synchronized with builder changes", async () => {
     render(<OutputSchemasEditorPage />);
 
     expect(screen.getByRole("tab", { name: /builder/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /json schema/i })).toBeVisible();
     expect(screen.getByRole("tab", { name: /preview/i })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: /json schema/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("output-schema-json-editor")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("output-schema-add-field"));
     fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "answer" } });
-
-    fireEvent.click(screen.getByRole("tab", { name: /json schema/i }));
-    await waitFor(() => {
-      expect((screen.getByTestId("output-schema-json-editor") as HTMLTextAreaElement).value).toContain('"answer":');
-    });
-
     fireEvent.click(screen.getByRole("tab", { name: /preview/i }));
-    expect(screen.getByTestId("output-schema-preview")).toHaveTextContent('"answer"');
+
+    await waitFor(() => expect(screen.getByTestId("output-schema-preview")).toHaveTextContent("answer"));
   });
 
-  it("surfaces unsupported keyword validation feedback and blocks save", async () => {
+  it("creates a schema from the builder-only flow", async () => {
+    createOutputSchemaMock.mockResolvedValue({ id: 11 });
+
     render(<OutputSchemasEditorPage />);
 
-    fireEvent.click(screen.getByRole("tab", { name: /json schema/i }));
-    fireEvent.change(screen.getByTestId("output-schema-json-editor"), {
-      target: {
-        value: JSON.stringify(
-          {
-            type: "object",
-            properties: {},
-            patternProperties: { "^x": { type: "string" } },
-          },
-          null,
-          2,
-        ),
-      },
-    });
-
-    expect(await screen.findByTestId("output-schema-validation-feedback")).toHaveTextContent(
-      "patternProperties is not supported",
-    );
-
+    fireEvent.change(screen.getByLabelText("Key"), { target: { value: "analysis_schema" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Analysis Schema" } });
+    fireEvent.click(screen.getByTestId("output-schema-add-field"));
+    fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "answer" } });
     fireEvent.click(screen.getByTestId("output-schemas-save"));
 
-    await waitFor(() => {
-      expect(createOutputSchemaMock).not.toHaveBeenCalled();
-      expect(toastErrorMock).toHaveBeenCalledWith("Resolve JSON Schema validation issues before saving.");
+    await waitFor(() => expect(createOutputSchemaMock).toHaveBeenCalledTimes(1));
+    expect(createOutputSchemaMock).toHaveBeenCalledWith({
+      key: "analysis_schema",
+      kind: "standalone",
+      name: "Analysis Schema",
+      description: undefined,
+      builder: {
+        kind: "object",
+        allowAdditionalProperties: false,
+        fields: [{ name: "answer", required: true, schema: { kind: "string" } }],
+      },
+      jsonSchema: schemaBuilderToJsonSchema({
+        kind: "object",
+        allowAdditionalProperties: false,
+        fields: [{ name: "answer", required: true, schema: { kind: "string" } }],
+      }),
     });
+    expect(navigateMock).toHaveBeenCalledWith("/output-schemas/11/edit");
   });
 
-  it("hydrates edit mode, saves through the update hook, and navigates to the new version", async () => {
+  it("hydrates edit mode and saves through the update hook", async () => {
     paramsMock.schemaId = "7";
     updateOutputSchemaMock.mockResolvedValue({ id: 12 });
 
     render(<OutputSchemasEditorPage />);
 
     expect(screen.getByLabelText("Key")).toBeDisabled();
+    expect(screen.queryByRole("tab", { name: /json schema/i })).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Analysis Schema Updated" } });
     fireEvent.click(screen.getByTestId("output-schemas-save"));
 
@@ -131,10 +150,34 @@ describe("OutputSchemasEditorPage", () => {
     expect(updateOutputSchemaMock).toHaveBeenCalledWith({
       schemaId: "7",
       payload: expect.objectContaining({
-        builder: existingSchema.builder,
         name: "Analysis Schema Updated",
+        description: existingSchema.description,
+        jsonSchema: existingSchema.jsonSchema,
+        builder: expect.objectContaining({
+          kind: "object",
+          allowAdditionalProperties: false,
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              name: "summary",
+              required: true,
+              schema: expect.objectContaining({ kind: "string" }),
+            }),
+          ]),
+        }),
       }),
     });
     expect(navigateMock).toHaveBeenCalledWith("/output-schemas/12/edit");
+  });
+
+  it("shows an explicit blocker for unsupported persisted records and disables save", () => {
+    paramsMock.schemaId = "8";
+
+    render(<OutputSchemasEditorPage />);
+
+    expect(screen.getByTestId("output-schema-unsupported-record")).toHaveTextContent("Unsupported retired schema shape");
+    expect(screen.getByTestId("output-schema-unsupported-record")).toHaveTextContent("patternProperties is not supported");
+    expect(screen.getByTestId("output-schemas-save")).toBeDisabled();
+    expect(screen.queryByRole("tab", { name: /builder/i })).not.toBeInTheDocument();
+    expect(updateOutputSchemaMock).not.toHaveBeenCalled();
   });
 });
