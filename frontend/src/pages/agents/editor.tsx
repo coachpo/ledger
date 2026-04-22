@@ -3,82 +3,190 @@ import { Archive, Copy, FlaskConical, Save } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
+import { ResourceMultiRefSelect } from "@/components/platform-authoring/refs/resource-multi-ref-select";
 import {
-  useAgent,
-  useArchiveAgent,
-  useCreateAgent,
-  useResolveAgentTestPanel,
-  useUpdateAgent,
-} from "@/hooks/use-agents";
+  ResourceRefSelect,
+  type ResourceRefSelectOption,
+} from "@/components/platform-authoring/refs/resource-ref-select";
+import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
+import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
+import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
+import { useAgent, useArchiveAgent, useCreateAgent, useResolveAgentTestPanel, useUpdateAgent } from "@/hooks/use-agents";
 import { useMcpServers } from "@/hooks/use-mcp-servers";
 import { useOutputSchemas } from "@/hooks/use-output-schemas";
 import { useSkills } from "@/hooks/use-skills";
-import type { AgentCreateInput, AgentUpdateInput } from "@/lib/types/agent";
+import { agentBindingRefsFromRead } from "@/lib/platform-authoring/agents/codec";
+import type { AgentAuthoringDraft } from "@/lib/platform-authoring/agents/types";
+import { validateAgentDraft } from "@/lib/platform-authoring/agents/validation";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import {
+  parseSchemaJsonText,
+  schemaBuilderToJsonSchema,
+  type SchemaCodecIssue,
+} from "@/lib/platform-authoring/schema/codec";
+import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
+import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
+import type { ValueEntry } from "@/lib/platform-authoring/values/types";
+import type { ResourceRef } from "@/lib/platform-authoring/common/resource-ref";
+import type { AgentCreateInput, AgentRead, AgentUpdateInput } from "@/lib/types/agent";
+import type { UnknownRecord } from "@/lib/types/common";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
-import {
-  parseJsonValue,
-  parseOptionalNumber,
-  parseRequiredText,
-  parseVersionedRef,
-  parseVersionedRefs,
-  PlatformResourceBadges,
-  sortByKey,
-  stringifyJson,
-  toVersionedRefValue,
-} from "../platform-resource-shared";
-
-type AgentEditorValues = {
-  budgetUsd: string;
-  description: string;
-  inputSchema: string;
-  key: string;
-  maxToolRounds: string;
-  mcpServers: string;
-  model: string;
-  name: string;
-  outputSchemaRef: string;
-  skills: string;
-  streaming: boolean;
-  systemPrompt: string;
-  temperature: string;
-};
-
-const initialValues: AgentEditorValues = {
-  budgetUsd: "",
-  description: "",
-  inputSchema: "{}",
-  key: "",
-  maxToolRounds: "",
-  mcpServers: "",
-  model: "",
-  name: "",
-  outputSchemaRef: "",
-  skills: "",
-  streaming: true,
-  systemPrompt: "",
-  temperature: "",
-};
+import { parseOptionalNumber, parseRequiredText, PlatformResourceBadges, sortByKey } from "../platform-resource-shared";
 
 type TestPanelFeedback = {
   message: string;
   title: string;
   variant: "default" | "destructive";
 };
+
+type HydratedAgentEditorState = {
+  draft: AgentAuthoringDraft;
+  issues: SchemaCodecIssue[];
+  sampleInput: ValueEntry;
+};
+
+function createInitialDraft(): AgentAuthoringDraft {
+  return {
+    budgetUsd: "",
+    description: "",
+    inputSchema: createDefaultSchemaNode("object"),
+    bindings: {
+      outputSchema: { key: "", version: null },
+      skills: [],
+      mcpServers: [],
+    },
+    key: "",
+    maxToolRounds: "",
+    model: "",
+    name: "",
+    streaming: true,
+    systemPrompt: "",
+    temperature: "",
+  };
+}
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function createDefaultSampleInputValue(schema: SchemaIRNode): ValueEntry {
+  const previewValue = buildPreviewValue(schema);
+
+  if (isUnknownRecord(previewValue) && typeof previewValue.ticker === "string") {
+    return encodeValueEntry({ ...previewValue, ticker: "AAPL" });
+  }
+
+  if (isUnknownRecord(previewValue)) {
+    return encodeValueEntry(previewValue);
+  }
+
+  return encodeValueEntry({});
+}
+
+function decodeSampleInputValue(value: ValueEntry): UnknownRecord {
+  const decoded = validateAndDecodeValueEntry(value);
+
+  if (!decoded.ok || !isUnknownRecord(decoded.value)) {
+    throw new Error("Sample input must be a JSON object.");
+  }
+
+  return decoded.value;
+}
+
+function decodePersistedInputSchema(
+  agent: AgentRead,
+  options: { clearKey?: boolean; duplicateName?: boolean } = {},
+): HydratedAgentEditorState {
+  const decoded = parseSchemaJsonText(stringifyJson(agent.inputSchema));
+  const builder = decoded.builder ?? createDefaultSchemaNode("object");
+
+  return {
+    draft: {
+      budgetUsd: agent.budgetUsd,
+      description: agent.description ?? "",
+      inputSchema: builder,
+      bindings: agentBindingRefsFromRead(agent),
+      key: options.clearKey ? "" : agent.key,
+      maxToolRounds: String(agent.maxToolRounds),
+      model: agent.model,
+      name: options.duplicateName ? `${agent.name} Copy` : agent.name,
+      streaming: agent.streaming,
+      systemPrompt: agent.systemPrompt,
+      temperature: String(agent.temperature),
+    },
+    issues: decoded.issues,
+    sampleInput: createDefaultSampleInputValue(builder),
+  };
+}
+
+function toResourceRefOptions<T extends {
+  description?: string | null;
+  key: string;
+  name: string;
+  status?: string;
+  version: number;
+}>(items: readonly T[]): ResourceRefSelectOption[] {
+  return items.map((item) => ({
+    description: item.description ?? undefined,
+    key: item.key,
+    keywords: [item.key],
+    label: item.name,
+    status: item.status,
+    version: item.version,
+  }));
+}
+
+function cloneResourceRef(ref: ResourceRef): ResourceRef {
+  return { key: ref.key, version: ref.version };
+}
+
+function cloneResourceRefs(refs: readonly ResourceRef[]): ResourceRef[] {
+  return refs.map((ref) => cloneResourceRef(ref));
+}
+
+function buildPayload(draft: AgentAuthoringDraft): AgentCreateInput | AgentUpdateInput {
+  const [issue] = validateAgentDraft(draft);
+
+  if (issue) {
+    throw new Error(issue.issue);
+  }
+
+  return {
+    budgetUsd: draft.budgetUsd.trim() || undefined,
+    description: draft.description.trim() || undefined,
+    inputSchema: schemaBuilderToJsonSchema(draft.inputSchema),
+    key: parseRequiredText("Key", draft.key).toLowerCase(),
+    maxToolRounds: parseOptionalNumber("Max tool rounds", draft.maxToolRounds, {
+      integer: true,
+      min: 1,
+    }),
+    mcpServers: draft.bindings.mcpServers.map((server) => ({
+      mcpServerKey: server.key.trim(),
+      mcpServerVersion: server.version ?? null,
+    })),
+    model: parseRequiredText("Model", draft.model),
+    name: parseRequiredText("Name", draft.name),
+    outputSchemaKey: draft.bindings.outputSchema.key.trim(),
+    outputSchemaVersion: draft.bindings.outputSchema.version ?? null,
+    skills: draft.bindings.skills.map((skill) => ({
+      skillKey: skill.key.trim(),
+      skillVersion: skill.version ?? null,
+    })),
+    streaming: draft.streaming,
+    systemPrompt: parseRequiredText("System prompt", draft.systemPrompt),
+    temperature: parseOptionalNumber("Temperature", draft.temperature, { min: 0 }),
+  };
+}
 
 export function AgentsEditorPage() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -95,10 +203,13 @@ export function AgentsEditorPage() {
   const outputSchemasQuery = useOutputSchemas();
   const skillsQuery = useSkills();
   const mcpServersQuery = useMcpServers();
-  const [values, setValues] = useState<AgentEditorValues>(initialValues);
-  const [sampleInput, setSampleInput] = useState('{\n  "ticker": "AAPL"\n}');
+  const [draft, setDraft] = useState<AgentAuthoringDraft>(() => createInitialDraft());
+  const [sampleInput, setSampleInput] = useState<ValueEntry>(() =>
+    createDefaultSampleInputValue(createInitialDraft().inputSchema),
+  );
+  const [unsupportedRecordIssues, setUnsupportedRecordIssues] = useState<SchemaCodecIssue[]>([]);
   const [testPanelFeedback, setTestPanelFeedback] = useState<TestPanelFeedback | null>(null);
-  const [testPanelResult, setTestPanelResult] = useState<string>("");
+  const [testPanelResult, setTestPanelResult] = useState<unknown | null>(null);
 
   const outputSchemas = useMemo(
     () => sortByKey(outputSchemasQuery.data?.items ?? []),
@@ -109,34 +220,19 @@ export function AgentsEditorPage() {
     () => sortByKey(mcpServersQuery.data?.items ?? []),
     [mcpServersQuery.data?.items],
   );
+  const outputSchemaOptions = useMemo(() => toResourceRefOptions(outputSchemas), [outputSchemas]);
+  const skillOptions = useMemo(() => toResourceRefOptions(skills), [skills]);
+  const mcpServerOptions = useMemo(() => toResourceRefOptions(mcpServers), [mcpServers]);
 
   useEffect(() => {
     if (!agentQuery.data) {
       return;
     }
 
-    setValues({
-      budgetUsd: agentQuery.data.budgetUsd,
-      description: agentQuery.data.description ?? "",
-      inputSchema: stringifyJson(agentQuery.data.inputSchema),
-      key: agentQuery.data.key,
-      maxToolRounds: String(agentQuery.data.maxToolRounds),
-      mcpServers: agentQuery.data.mcpServers
-        .map((server) => toVersionedRefValue(server.key, server.version))
-        .join("\n"),
-      model: agentQuery.data.model,
-      name: agentQuery.data.name,
-      outputSchemaRef: toVersionedRefValue(
-        agentQuery.data.outputSchema.key,
-        agentQuery.data.outputSchema.version,
-      ),
-      skills: agentQuery.data.skills
-        .map((skill) => toVersionedRefValue(skill.key, skill.version))
-        .join("\n"),
-      streaming: agentQuery.data.streaming,
-      systemPrompt: agentQuery.data.systemPrompt,
-      temperature: String(agentQuery.data.temperature),
-    });
+    const hydrated = decodePersistedInputSchema(agentQuery.data);
+    setDraft(hydrated.draft);
+    setSampleInput(hydrated.sampleInput);
+    setUnsupportedRecordIssues(hydrated.issues);
   }, [agentQuery.data]);
 
   useEffect(() => {
@@ -144,73 +240,32 @@ export function AgentsEditorPage() {
       return;
     }
 
-    setValues({
-      budgetUsd: duplicateQuery.data.budgetUsd,
-      description: duplicateQuery.data.description ?? "",
-      inputSchema: stringifyJson(duplicateQuery.data.inputSchema),
-      key: "",
-      maxToolRounds: String(duplicateQuery.data.maxToolRounds),
-      mcpServers: duplicateQuery.data.mcpServers
-        .map((server) => toVersionedRefValue(server.key, server.version))
-        .join("\n"),
-      model: duplicateQuery.data.model,
-      name: `${duplicateQuery.data.name} Copy`,
-      outputSchemaRef: toVersionedRefValue(
-        duplicateQuery.data.outputSchema.key,
-        duplicateQuery.data.outputSchema.version,
-      ),
-      skills: duplicateQuery.data.skills
-        .map((skill) => toVersionedRefValue(skill.key, skill.version))
-        .join("\n"),
-      streaming: duplicateQuery.data.streaming,
-      systemPrompt: duplicateQuery.data.systemPrompt,
-      temperature: String(duplicateQuery.data.temperature),
+    const hydrated = decodePersistedInputSchema(duplicateQuery.data, {
+      clearKey: true,
+      duplicateName: true,
     });
+    setDraft(hydrated.draft);
+    setSampleInput(hydrated.sampleInput);
+    setUnsupportedRecordIssues(hydrated.issues);
   }, [duplicateQuery.data, isEditing]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
+  const hasUnsupportedPersistedRecord = unsupportedRecordIssues.length > 0;
 
-  const updateValue = <Key extends keyof AgentEditorValues>(key: Key, value: AgentEditorValues[Key]) => {
-    setValues((current) => ({ ...current, [key]: value }));
-  };
-
-  const buildPayload = (): AgentCreateInput | AgentUpdateInput => {
-    const key = parseRequiredText("Key", values.key).toLowerCase();
-    const name = parseRequiredText("Name", values.name);
-    const model = parseRequiredText("Model", values.model);
-    const systemPrompt = parseRequiredText("System prompt", values.systemPrompt);
-    const outputSchema = parseVersionedRef("Output schema", values.outputSchemaRef);
-
-    return {
-      budgetUsd: values.budgetUsd.trim() || undefined,
-      description: values.description.trim() || undefined,
-      inputSchema: parseJsonValue("Input schema", values.inputSchema, {}),
-      key,
-      maxToolRounds: parseOptionalNumber("Max tool rounds", values.maxToolRounds, {
-        integer: true,
-        min: 1,
-      }),
-      mcpServers: parseVersionedRefs("MCP server", values.mcpServers).map((server) => ({
-        mcpServerKey: server.key,
-        mcpServerVersion: server.version ?? null,
-      })),
-      model,
-      name,
-      outputSchemaKey: outputSchema.key,
-      outputSchemaVersion: outputSchema.version ?? null,
-      skills: parseVersionedRefs("Skill", values.skills).map((skill) => ({
-        skillKey: skill.key,
-        skillVersion: skill.version ?? null,
-      })),
-      streaming: values.streaming,
-      systemPrompt,
-      temperature: parseOptionalNumber("Temperature", values.temperature, { min: 0 }),
-    };
+  const updateDraft = <Key extends keyof AgentAuthoringDraft>(
+    key: Key,
+    value: AgentAuthoringDraft[Key],
+  ) => {
+    setDraft((current) => ({ ...current, [key]: value }));
   };
 
   const handleSave = async () => {
     try {
-      const payload = buildPayload();
+      if (hasUnsupportedPersistedRecord) {
+        throw new Error("Unsupported retired input schema shape");
+      }
+
+      const payload = buildPayload(draft);
 
       if (isEditing && agentId) {
         const { key: _ignored, ...updatePayload } = payload as AgentCreateInput;
@@ -259,16 +314,25 @@ export function AgentsEditorPage() {
       return;
     }
 
+    if (hasUnsupportedPersistedRecord) {
+      setTestPanelFeedback({
+        message: "This agent uses an unsupported retired input schema shape.",
+        title: "Test panel unavailable",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const result = await resolveTestPanelMutation.mutateAsync({
-        sampleInput: parseJsonValue("Sample input", sampleInput, {}),
+        sampleInput: decodeSampleInputValue(sampleInput),
       });
       setTestPanelFeedback({
-        message: "Resolved the current agent snapshot for the supplied sample input.",
+        message: "Resolved the current agent snapshot for the supplied structured sample input.",
         title: "Test panel ready",
         variant: "default",
       });
-      setTestPanelResult(JSON.stringify(result, null, 2));
+      setTestPanelResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to resolve the test panel";
       setTestPanelFeedback({
@@ -276,7 +340,7 @@ export function AgentsEditorPage() {
         title: "Test panel failed",
         variant: "destructive",
       });
-      setTestPanelResult("");
+      setTestPanelResult(null);
     }
   };
 
@@ -300,7 +364,7 @@ export function AgentsEditorPage() {
             {isEditing ? "Edit Agent" : duplicateFromId ? "Duplicate Agent" : "Create Agent"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Configure the core prompt, model policy, output schema, attached skill or MCP references, and a test-panel-ready sample input surface.
+            Configure the core prompt, model policy, input schema, output schema binding, attached skills and MCP servers, and a structured test-panel input surface.
           </p>
           {agentQuery.data ? (
             <PlatformResourceBadges status={agentQuery.data.status} version={agentQuery.data.version} />
@@ -319,261 +383,296 @@ export function AgentsEditorPage() {
               Archive Agent
             </Button>
           ) : null}
-          <Button disabled={isSaving} size="sm" onClick={handleSave}>
+          <Button disabled={isSaving || hasUnsupportedPersistedRecord} size="sm" onClick={handleSave}>
             <Save data-icon="inline-start" />
             Save Agent
           </Button>
         </div>
       </div>
+
+      {hasUnsupportedPersistedRecord ? (
+        <Alert data-testid="agent-input-schema-unsupported-record" variant="destructive">
+          <AlertTitle>Unsupported retired input schema shape</AlertTitle>
+          <AlertDescription>
+            <p>
+              This persisted agent cannot be edited in the structured authoring flow because its
+              input schema does not decode into the supported shared schema model.
+            </p>
+            <ul className="list-disc pl-5">
+              {unsupportedRecordIssues.map((issue) => (
+                <li key={`${issue.field}-${issue.issue}`}>{`${issue.field}: ${issue.issue}`}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <Tabs defaultValue="configuration" data-testid="agents-editor-tabs">
         <TabsList className="h-8">
-          <TabsTrigger className="text-xs" value="configuration">Configuration</TabsTrigger>
-          <TabsTrigger className="text-xs" value="test-panel">Test Panel</TabsTrigger>
+          <TabsTrigger className="text-xs" value="configuration">
+            Configuration
+          </TabsTrigger>
+          <TabsTrigger className="text-xs" value="test-panel">
+            Test Panel
+          </TabsTrigger>
         </TabsList>
+
         <TabsContent forceMount value="configuration">
           <Card>
-        <CardHeader>
-          <CardTitle>Agent details</CardTitle>
-          <CardDescription>
-            Keys are immutable after creation, while the model, prompt, and bindings remain editable.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="agent-key">Key</Label>
-              <Input
-                id="agent-key"
-                aria-label="Key"
-                disabled={isEditing || isSaving}
-                value={values.key}
-                onChange={(event) => updateValue("key", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agent-name">Name</Label>
-              <Input
-                id="agent-name"
-                aria-label="Name"
-                disabled={isSaving}
-                value={values.name}
-                onChange={(event) => updateValue("name", event.target.value)}
-              />
-            </div>
-          </div>
+            <CardHeader>
+              <CardTitle>Agent details</CardTitle>
+              <CardDescription>
+                Keys are immutable after creation, while the model, prompt, schema, and bindings remain editable.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="agent-key">Key</Label>
+                  <Input
+                    id="agent-key"
+                    aria-label="Key"
+                    disabled={isEditing || isSaving}
+                    value={draft.key}
+                    onChange={(event) => updateDraft("key", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="agent-name">Name</Label>
+                  <Input
+                    id="agent-name"
+                    aria-label="Name"
+                    disabled={isSaving}
+                    value={draft.name}
+                    onChange={(event) => updateDraft("name", event.target.value)}
+                  />
+                </div>
+              </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="agent-model">Model</Label>
-              <Input
-                id="agent-model"
-                aria-label="Model"
-                disabled={isSaving}
-                value={values.model}
-                onChange={(event) => updateValue("model", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agent-output-schema">Output Schema</Label>
-              <Select
-                value={values.outputSchemaRef}
-                disabled={isSaving || outputSchemas.length === 0}
-                onValueChange={(value) => updateValue("outputSchemaRef", value)}
-              >
-                <SelectTrigger id="agent-output-schema" aria-label="Output Schema" data-testid="agent-output-schema-select">
-                  <SelectValue placeholder="Select an output schema" />
-                </SelectTrigger>
-                <SelectContent>
-                  {outputSchemas.map((schema) => (
-                    <SelectItem key={schema.id} value={toVersionedRefValue(schema.key, schema.version)}>
-                      {schema.name} ({schema.key}@{schema.version})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {outputSchemas.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Create an output schema before saving an agent.</p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="agent-model">Model</Label>
+                  <Input
+                    id="agent-model"
+                    aria-label="Model"
+                    disabled={isSaving}
+                    value={draft.model}
+                    onChange={(event) => updateDraft("model", event.target.value)}
+                  />
+                </div>
+                <ResourceRefSelect
+                  description="Bind the agent to one published output schema without typing a versioned ref string."
+                  disabled={isSaving}
+                  label="Output schema binding"
+                  options={outputSchemaOptions}
+                  resourceLabel="Output schema"
+                  resourcePlaceholder="Select an output schema"
+                  searchPlaceholder="Search output schemas..."
+                  value={draft.bindings.outputSchema.key ? draft.bindings.outputSchema : null}
+                  onChange={(nextValue) =>
+                    setDraft((current) => ({
+                      ...current,
+                      bindings: {
+                        ...current.bindings,
+                        outputSchema: nextValue ? cloneResourceRef(nextValue) : { key: "", version: null },
+                      },
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="agent-description">Description</Label>
+                <Textarea
+                  id="agent-description"
+                  aria-label="Description"
+                  disabled={isSaving}
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) => updateDraft("description", event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="agent-system-prompt">System Prompt</Label>
+                <Textarea
+                  id="agent-system-prompt"
+                  aria-label="System Prompt"
+                  disabled={isSaving}
+                  rows={10}
+                  value={draft.systemPrompt}
+                  onChange={(event) => updateDraft("systemPrompt", event.target.value)}
+                />
+              </div>
+
+              {!hasUnsupportedPersistedRecord ? (
+                <SchemaComposer
+                  label="Input schema"
+                  node={draft.inputSchema}
+                  onChange={(nextSchema) => {
+                    updateDraft("inputSchema", nextSchema);
+                    setSampleInput(createDefaultSampleInputValue(nextSchema));
+                  }}
+                />
               ) : null}
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="agent-description">Description</Label>
-            <Textarea
-              id="agent-description"
-              aria-label="Description"
-              disabled={isSaving}
-              rows={3}
-              value={values.description}
-              onChange={(event) => updateValue("description", event.target.value)}
-            />
-          </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="agent-temperature">Temperature</Label>
+                  <Input
+                    id="agent-temperature"
+                    aria-label="Temperature"
+                    disabled={isSaving}
+                    value={draft.temperature}
+                    onChange={(event) => updateDraft("temperature", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="agent-max-tool-rounds">Max Tool Rounds</Label>
+                  <Input
+                    id="agent-max-tool-rounds"
+                    aria-label="Max Tool Rounds"
+                    disabled={isSaving}
+                    value={draft.maxToolRounds}
+                    onChange={(event) => updateDraft("maxToolRounds", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="agent-budget-usd">Budget USD</Label>
+                  <Input
+                    id="agent-budget-usd"
+                    aria-label="Budget USD"
+                    disabled={isSaving}
+                    value={draft.budgetUsd}
+                    onChange={(event) => updateDraft("budgetUsd", event.target.value)}
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="agent-system-prompt">System Prompt</Label>
-            <Textarea
-              id="agent-system-prompt"
-              aria-label="System Prompt"
-              disabled={isSaving}
-              rows={10}
-              value={values.systemPrompt}
-              onChange={(event) => updateValue("systemPrompt", event.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="agent-input-schema">Input Schema JSON</Label>
-            <Textarea
-              id="agent-input-schema"
-              aria-label="Input Schema JSON"
-              disabled={isSaving}
-              rows={8}
-              value={values.inputSchema}
-              onChange={(event) => updateValue("inputSchema", event.target.value)}
-            />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="agent-temperature">Temperature</Label>
-              <Input
-                id="agent-temperature"
-                aria-label="Temperature"
+              <ResourceMultiRefSelect
+                addLabel="Add skill binding"
+                description="Attach one or more published skills without editing newline-delimited versioned ref text."
                 disabled={isSaving}
-                value={values.temperature}
-                onChange={(event) => updateValue("temperature", event.target.value)}
+                label="Skill bindings"
+                options={skillOptions}
+                resourceLabel="Skill"
+                resourcePlaceholder="Select a skill"
+                searchPlaceholder="Search skills..."
+                value={draft.bindings.skills}
+                onChange={(nextValue) =>
+                  setDraft((current) => ({
+                    ...current,
+                    bindings: {
+                      ...current.bindings,
+                      skills: cloneResourceRefs(nextValue),
+                    },
+                  }))
+                }
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agent-max-tool-rounds">Max Tool Rounds</Label>
-              <Input
-                id="agent-max-tool-rounds"
-                aria-label="Max Tool Rounds"
+
+              <ResourceMultiRefSelect
+                addLabel="Add MCP server binding"
+                description="Attach one or more MCP servers through structured bindings instead of raw versioned ref text."
                 disabled={isSaving}
-                value={values.maxToolRounds}
-                onChange={(event) => updateValue("maxToolRounds", event.target.value)}
+                label="MCP server bindings"
+                options={mcpServerOptions}
+                resourceLabel="MCP server"
+                resourcePlaceholder="Select an MCP server"
+                searchPlaceholder="Search MCP servers..."
+                value={draft.bindings.mcpServers}
+                onChange={(nextValue) =>
+                  setDraft((current) => ({
+                    ...current,
+                    bindings: {
+                      ...current.bindings,
+                      mcpServers: cloneResourceRefs(nextValue),
+                    },
+                  }))
+                }
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agent-budget-usd">Budget USD</Label>
-              <Input
-                id="agent-budget-usd"
-                aria-label="Budget USD"
-                disabled={isSaving}
-                value={values.budgetUsd}
-                onChange={(event) => updateValue("budgetUsd", event.target.value)}
-              />
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="agent-skills">Skills</Label>
-            <Textarea
-              id="agent-skills"
-              aria-label="Skills"
-              disabled={isSaving}
-              rows={4}
-              value={values.skills}
-              onChange={(event) => updateValue("skills", event.target.value)}
-            />
-            {skills.length > 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Available refs: {skills.map((skill) => toVersionedRefValue(skill.key, skill.version)).join(", ")}
-              </p>
-            ) : null}
-          </div>
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div className="space-y-1">
+                  <Label htmlFor="agent-streaming">Streaming</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable streaming responses for runtime callers that support partial output.
+                  </p>
+                </div>
+                <Switch
+                  id="agent-streaming"
+                  aria-label="Streaming"
+                  checked={draft.streaming}
+                  disabled={isSaving}
+                  onCheckedChange={(checked) => updateDraft("streaming", checked)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <div className="space-y-2">
-            <Label htmlFor="agent-mcp-servers">MCP Servers</Label>
-            <Textarea
-              id="agent-mcp-servers"
-              aria-label="MCP Servers"
-              disabled={isSaving}
-              rows={4}
-              value={values.mcpServers}
-              onChange={(event) => updateValue("mcpServers", event.target.value)}
-            />
-            {mcpServers.length > 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Available refs: {mcpServers.map((server) => toVersionedRefValue(server.key, server.version)).join(", ")}
-              </p>
-            ) : null}
-          </div>
+        <TabsContent forceMount value="test-panel">
+          <Card data-testid="agent-test-panel">
+            <CardHeader>
+              <CardTitle>Test panel</CardTitle>
+              <CardDescription>
+                Resolve the current saved agent snapshot against a structured sample input before wiring it into broader workflows.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              {!isEditing ? (
+                <Alert data-testid="agent-test-panel-unavailable" variant="destructive">
+                  <AlertTitle>Test panel unavailable</AlertTitle>
+                  <AlertDescription>Save the agent before using the test panel.</AlertDescription>
+                </Alert>
+              ) : null}
+              {testPanelFeedback ? (
+                <Alert data-testid="agent-test-panel-feedback" variant={testPanelFeedback.variant}>
+                  <AlertTitle>{testPanelFeedback.title}</AlertTitle>
+                  <AlertDescription>{testPanelFeedback.message}</AlertDescription>
+                </Alert>
+              ) : null}
 
-          <div className="flex items-center justify-between rounded-md border p-4">
-            <div className="space-y-1">
-              <Label htmlFor="agent-streaming">Streaming</Label>
-              <p className="text-sm text-muted-foreground">
-                Enable streaming responses for runtime callers that support partial output.
-              </p>
-            </div>
-            <Switch
-              id="agent-streaming"
-              aria-label="Streaming"
-              checked={values.streaming}
-              disabled={isSaving}
-              onCheckedChange={(checked) => updateValue("streaming", checked)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-    </TabsContent>
-    <TabsContent forceMount value="test-panel">
-      <Card data-testid="agent-test-panel">
-        <CardHeader>
-          <CardTitle>Test panel</CardTitle>
-          <CardDescription>
-            Resolve the current saved agent snapshot against a sample input before wiring it into broader workflows.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {!isEditing ? (
-            <Alert data-testid="agent-test-panel-unavailable" variant="destructive">
-              <AlertTitle>Test panel unavailable</AlertTitle>
-              <AlertDescription>Save the agent before using the test panel.</AlertDescription>
-            </Alert>
-          ) : null}
-          {testPanelFeedback ? (
-            <Alert data-testid="agent-test-panel-feedback" variant={testPanelFeedback.variant}>
-              <AlertTitle>{testPanelFeedback.title}</AlertTitle>
-              <AlertDescription>{testPanelFeedback.message}</AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="space-y-2">
-            <Label htmlFor="agent-test-panel-sample-input">Sample Input JSON</Label>
-            <Textarea
-              id="agent-test-panel-sample-input"
-              aria-label="Sample Input JSON"
-              disabled={!isEditing || resolveTestPanelMutation.isPending}
-              rows={8}
-              value={sampleInput}
-              onChange={(event) => setSampleInput(event.target.value)}
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button
-              data-testid="agent-test-panel-run"
-              disabled={!isEditing || resolveTestPanelMutation.isPending}
-              size="sm"
-              variant="outline"
-              onClick={() => void handleRunTestPanel()}
-            >
-              <FlaskConical data-icon="inline-start" />
-              Run Test Panel
-            </Button>
-          </div>
-          {testPanelResult ? (
-            <div className="space-y-2" data-testid="agent-test-panel-result">
-              <Label>Resolved Result JSON</Label>
-              <pre className="overflow-x-auto rounded-md border bg-muted p-3 text-xs text-foreground whitespace-pre-wrap">
-                {testPanelResult}
-              </pre>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-    </TabsContent>
-  </Tabs>
-</div>
+              {!hasUnsupportedPersistedRecord ? (
+                <SchemaForm
+                  description="Fill the sample input through the shared schema-driven form instead of editing JSON directly."
+                  disabled={!isEditing || resolveTestPanelMutation.isPending}
+                  label="Sample input"
+                  schema={draft.inputSchema}
+                  value={sampleInput}
+                  onChange={setSampleInput}
+                />
+              ) : null}
+
+              <div className="flex justify-end">
+                <Button
+                  data-testid="agent-test-panel-run"
+                  disabled={!isEditing || resolveTestPanelMutation.isPending || hasUnsupportedPersistedRecord}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleRunTestPanel()}
+                >
+                  <FlaskConical data-icon="inline-start" />
+                  Run Test Panel
+                </Button>
+              </div>
+
+              {testPanelResult ? (
+                <Card data-testid="agent-test-panel-result">
+                  <CardHeader>
+                    <CardTitle className="text-base">Resolved result</CardTitle>
+                    <CardDescription>
+                      Structured response preview for the current saved agent snapshot.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <StructuredValueInspector label="Resolved result" value={testPanelResult} />
+                  </CardContent>
+                </Card>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

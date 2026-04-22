@@ -13,18 +13,57 @@ const resolveTestPanelMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
+const existingInputSchema = {
+  additionalProperties: false,
+  properties: {
+    ticker: { type: "string" },
+  },
+  required: ["ticker"],
+  type: "object",
+};
+
 const existingAgent = {
   id: 12,
   budgetUsd: "2.50",
   description: "Tracks macro context.",
-  inputSchema: { ticker: "AAPL" },
+  inputSchema: existingInputSchema,
   key: "macro_agent",
   maxToolRounds: 4,
-  mcpServers: [{ id: 8, key: "quotes_mcp", version: 2 }],
+  mcpServers: [
+    {
+      boundary: { readOnly: false },
+      description: "Quotes feed",
+      enabled: true,
+      id: 8,
+      key: "quotes_mcp",
+      name: "Quotes",
+      status: "active",
+      transport: "stdio",
+      version: 2,
+    },
+  ],
   model: "gpt-5.4",
   name: "Macro Agent",
-  outputSchema: { id: 4, key: "summary_schema", version: 5 },
-  skills: [{ id: 7, key: "summarize_skill", version: 3 }],
+  outputSchema: {
+    description: "Summary schema",
+    id: 4,
+    jsonSchema: { type: "object" },
+    key: "summary_schema",
+    kind: "standalone",
+    name: "Summary Schema",
+    status: "published",
+    version: 5,
+  },
+  skills: [
+    {
+      description: "Summaries",
+      id: 7,
+      key: "summarize_skill",
+      name: "Summarize",
+      status: "published",
+      version: 3,
+    },
+  ],
   status: "draft",
   streaming: true,
   systemPrompt: "Summarize clearly.",
@@ -58,16 +97,53 @@ vi.mock("@/hooks/use-agents", () => ({
 
 vi.mock("@/hooks/use-output-schemas", () => ({
   useOutputSchemas: () => ({
-    data: { items: [{ id: 4, key: "summary_schema", name: "Summary Schema", version: 5 }] },
+    data: {
+      items: [
+        {
+          description: "Summary schema",
+          id: 4,
+          key: "summary_schema",
+          name: "Summary Schema",
+          status: "published",
+          version: 5,
+        },
+      ],
+    },
   }),
 }));
 
 vi.mock("@/hooks/use-skills", () => ({
-  useSkills: () => ({ data: { items: [{ id: 7, key: "summarize_skill", name: "Summarize", version: 3 }] } }),
+  useSkills: () => ({
+    data: {
+      items: [
+        {
+          description: "Summaries",
+          id: 7,
+          key: "summarize_skill",
+          name: "Summarize",
+          status: "published",
+          version: 3,
+        },
+      ],
+    },
+  }),
 }));
 
 vi.mock("@/hooks/use-mcp-servers", () => ({
-  useMcpServers: () => ({ data: { items: [{ id: 8, key: "quotes_mcp", name: "Quotes", version: 2 }] } }),
+  useMcpServers: () => ({
+    data: {
+      items: [
+        {
+          description: "Quotes feed",
+          id: 8,
+          key: "quotes_mcp",
+          name: "Quotes",
+          status: "active",
+          version: 2,
+        },
+      ],
+    },
+  }),
 }));
 
 describe("AgentsEditorPage", () => {
@@ -83,8 +159,17 @@ describe("AgentsEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("shows a deterministic invalid-save error on create", async () => {
+  it("removes raw JSON and free-text authoring surfaces on create", async () => {
     render(<AgentsEditorPage />);
+
+    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^skills$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^mcp servers$/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /skill bindings/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /mcp server bindings/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^Input schema$/i })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /save agent/i }));
 
@@ -92,24 +177,27 @@ describe("AgentsEditorPage", () => {
     expect(createAgentMock).not.toHaveBeenCalled();
   });
 
-  it("hydrates duplicate mode from an existing agent", () => {
+  it("hydrates duplicate mode from an existing agent with structured bindings", () => {
     searchParamsMock.set("duplicateFrom", "12");
 
     render(<AgentsEditorPage />);
 
     expect(screen.getByRole("heading", { name: /duplicate agent/i })).toBeVisible();
-    expect(screen.getByLabelText(/name/i)).toHaveValue("Macro Agent Copy");
-    expect(screen.getByLabelText(/key/i)).toHaveValue("");
+    expect(screen.getByLabelText(/^Name$/i)).toHaveValue("Macro Agent Copy");
+    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("");
+    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
   });
 
-  it("hydrates edit state and saves through the update hook", async () => {
+  it("hydrates edit state and saves through the update hook with structured payloads", async () => {
     paramsMock.agentId = "12";
     updateAgentMock.mockResolvedValue({ id: 12 });
 
     render(<AgentsEditorPage />);
 
-    expect(screen.getByLabelText(/key/i)).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Macro Agent Updated" } });
+    expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
+    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save agent/i }));
 
     await waitFor(() => expect(updateAgentMock).toHaveBeenCalledTimes(1));
@@ -118,7 +206,7 @@ describe("AgentsEditorPage", () => {
       payload: {
         budgetUsd: "2.50",
         description: "Tracks macro context.",
-        inputSchema: { ticker: "AAPL" },
+        inputSchema: existingInputSchema,
         maxToolRounds: 4,
         mcpServers: [{ mcpServerKey: "quotes_mcp", mcpServerVersion: 2 }],
         model: "gpt-5.4",
@@ -144,7 +232,7 @@ describe("AgentsEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/agents");
   });
 
-  it("runs the test panel and renders the resolved payload", async () => {
+  it("runs the test panel from the structured sample input form", async () => {
     paramsMock.agentId = "12";
     resolveTestPanelMock.mockResolvedValue({
       agent: existingAgent,
@@ -153,9 +241,13 @@ describe("AgentsEditorPage", () => {
 
     render(<AgentsEditorPage />);
     fireEvent.click(screen.getByRole("tab", { name: /test panel/i }));
+
+    expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("agent-test-panel-run"));
 
-    await waitFor(() => expect(resolveTestPanelMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(resolveTestPanelMock).toHaveBeenCalledWith({ sampleInput: { ticker: "AAPL" } }),
+    );
     expect(screen.getByTestId("agent-test-panel-result")).toBeVisible();
     expect(screen.getByText(/test panel ready/i)).toBeVisible();
   });
