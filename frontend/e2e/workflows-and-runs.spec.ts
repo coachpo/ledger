@@ -1,6 +1,48 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("workflow wizard saves and opens the runs monitor", async ({ page }) => {
+type WorkflowCreatePayload = {
+  description?: string;
+  inputSchema: {
+    properties: Record<string, unknown>;
+    required?: string[];
+    type: "object";
+  };
+  key: string;
+  name: string;
+  outputSpec: {
+    kind: "slot";
+    slot: string;
+    stepIndex: number;
+  };
+  steps: Array<{
+    agents: Array<{
+      agentKey: string;
+      agentVersion: number | null;
+      optional: boolean;
+      slot: string;
+      wiring: Record<string, unknown>;
+    }>;
+    index: number;
+  }>;
+};
+
+function runInputForm(page: Page) {
+  return page
+    .getByRole("tabpanel", { name: "Review" })
+    .getByText(
+      "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
+      { exact: true },
+    )
+    .locator("xpath=ancestor::*[@data-slot='card'][1]");
+}
+
+async function expectLegacyWorkflowJsonAuthoringAbsent(page: Page) {
+  await expect(page.getByLabel("Input Schema JSON")).toHaveCount(0);
+  await expect(page.getByLabel("Run Input JSON")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-review-payload")).toHaveCount(0);
+}
+
+test("workflow wizard uses structured authoring and opens the runs monitor", async ({ page }) => {
   const agents = [
     {
       id: 1,
@@ -77,6 +119,8 @@ test("workflow wizard saves and opens the runs monitor", async ({ page }) => {
       version: 2,
     },
   ];
+
+  let createdWorkflowPayload: WorkflowCreatePayload | null = null;
 
   const workflow = {
     aggregateBudgetUsd: "1.25000000",
@@ -219,6 +263,7 @@ test("workflow wizard saves and opens the runs monitor", async ({ page }) => {
 
   await page.route("**/api/workflows", async (route) => {
     if (route.request().method() === "POST") {
+      createdWorkflowPayload = route.request().postDataJSON() as WorkflowCreatePayload;
       await route.fulfill({ body: JSON.stringify(workflow), contentType: "application/json" });
       return;
     }
@@ -257,8 +302,13 @@ test("workflow wizard saves and opens the runs monitor", async ({ page }) => {
   });
 
   await page.goto("/workflows/new");
+  await expect(page.getByTestId("workflows-editor")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /workflow input schema/i })).toBeVisible();
+  await expectLegacyWorkflowJsonAuthoringAbsent(page);
+
   await page.getByLabel("Workflow Key").fill("market_review");
   await page.getByLabel("Workflow Name").fill("Market Review");
+  await page.getByTestId("output-schema-field-name-0").fill("ticker");
   await page.getByTestId("workflow-wizard-next").click();
 
   await page.getByLabel("Step 1 Agent 1 agent").click();
@@ -283,8 +333,65 @@ test("workflow wizard saves and opens the runs monitor", async ({ page }) => {
   await page.getByRole("option", { name: "decision" }).click();
 
   await page.getByTestId("workflow-wizard-next").click();
+  await expectLegacyWorkflowJsonAuthoringAbsent(page);
+  await expect(page.getByTestId("workflow-review-summary")).toBeVisible();
+  await expect(page.getByTestId("workflow-review-summary")).toContainText("market_review");
+  await expect(page.getByTestId("workflow-review-summary")).toContainText("ticker");
+  await expect(page.getByTestId("workflow-review-summary")).toContainText("decision");
+  await expect(runInputForm(page)).toContainText(
+    "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
+  );
+  await expect(runInputForm(page)).toContainText("ticker");
+  await expect(runInputForm(page).getByRole("textbox")).toHaveCount(1);
+  await runInputForm(page).getByRole("textbox").fill("AAPL");
+
   await page.getByTestId("workflow-save").click();
   await expect(page).toHaveURL(/\/workflows\/501\/edit$/);
+  await expectLegacyWorkflowJsonAuthoringAbsent(page);
+  await expect(page.getByTestId("workflow-review-summary")).toContainText("market_review");
+
+  expect(createdWorkflowPayload).not.toBeNull();
+  expect(createdWorkflowPayload).not.toHaveProperty("inputSchemaText");
+  expect(createdWorkflowPayload).toMatchObject({
+    inputSchema: {
+      properties: { ticker: { type: "string" } },
+      required: ["ticker"],
+      type: "object",
+    },
+    key: "market_review",
+    name: "Market Review",
+    outputSpec: {
+      kind: "slot",
+      slot: "decision",
+      stepIndex: 2,
+    },
+    steps: [
+      {
+        agents: [
+          {
+            agentKey: "research_agent",
+            agentVersion: null,
+            optional: false,
+            slot: "analysis",
+            wiring: { ticker: { from: "input", path: "ticker" } },
+          },
+        ],
+        index: 1,
+      },
+      {
+        agents: [
+          {
+            agentKey: "consumer_agent",
+            agentVersion: null,
+            optional: false,
+            slot: "decision",
+            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
+          },
+        ],
+        index: 2,
+      },
+    ],
+  });
 
   await page.getByTestId("workflow-run-now").click();
   await expect(page).toHaveURL(/\/runs\/901$/);

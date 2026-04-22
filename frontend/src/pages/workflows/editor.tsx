@@ -11,6 +11,9 @@ import {
 import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
+import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
+import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgents } from "@/hooks/use-agents";
 import {
   useCreateWorkflow,
@@ -19,6 +22,15 @@ import {
   useWorkflow,
 } from "@/hooks/use-workflows";
 import { ApiRequestError } from "@/lib/api-client";
+import { parseSchemaJsonText, schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
+import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
+import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import {
+  encodeValueEntry,
+  validateAndDecodeValueEntry,
+} from "@/lib/platform-authoring/values/codec";
+import type { ValueEntry } from "@/lib/platform-authoring/values/types";
 import type { AgentRead } from "@/lib/types/agent";
 import type { UnknownRecord } from "@/lib/types/common";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -67,9 +79,16 @@ import {
 } from "./shared";
 
 const NONE_OPTION = "__none__";
+const DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER =
+  parseSchemaJsonText(createInitialWorkflowDraft().inputSchemaText).builder ??
+  createDefaultSchemaNode("object");
 
 function createEmptySourceDraft(): WiringSourceDraft {
   return { from: "none", path: "", slot: "", stepIndex: "" };
+}
+
+function stringifyWorkflowInputSchema(builder: SchemaIRNode): string {
+  return stringifyJson(schemaBuilderToJsonSchema(builder));
 }
 
 function sortAgents(agents: readonly AgentRead[]): AgentRead[] {
@@ -92,18 +111,31 @@ function sectionForIssue(field: string): WorkflowSection {
   return "review";
 }
 
-function parseRunInput(value: string): UnknownRecord {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return {};
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
+  const previewValue = buildPreviewValue(schema);
+
+  if (isUnknownRecord(previewValue) && typeof previewValue.ticker === "string") {
+    return encodeValueEntry({ ...previewValue, ticker: "AAPL" });
   }
 
-  const parsed = JSON.parse(trimmed) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (isUnknownRecord(previewValue)) {
+    return encodeValueEntry(previewValue);
+  }
+
+  return encodeValueEntry({});
+}
+
+function parseRunInputValue(value: ValueEntry): UnknownRecord {
+  const decoded = validateAndDecodeValueEntry(value);
+  if (!decoded.ok || !isUnknownRecord(decoded.value)) {
     throw new Error("Run input must be a JSON object.");
   }
 
-  return parsed as UnknownRecord;
+  return decoded.value;
 }
 
 type StepSlotOption = {
@@ -676,7 +708,11 @@ export function WorkflowsEditorPage() {
   const workflowAgents = useMemo(() => sortAgents(agentsQuery.data?.items ?? []), [agentsQuery.data?.items]);
   const [activeSection, setActiveSection] = useState<WorkflowSection>("input");
   const [draft, setDraft] = useState<WorkflowDraft>(createInitialWorkflowDraft);
-  const [runInputText, setRunInputText] = useState('{\n  "ticker": "AAPL"\n}');
+  const [inputSchemaBuilder, setInputSchemaBuilder] =
+    useState<SchemaIRNode>(DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER);
+  const [runInputValue, setRunInputValue] = useState<ValueEntry>(() =>
+    createDefaultRunInputValue(DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER),
+  );
   const [validationIssues, setValidationIssues] = useState<WorkflowValidationIssue[]>([]);
 
   useEffect(() => {
@@ -684,7 +720,14 @@ export function WorkflowsEditorPage() {
       return;
     }
 
-    setDraft(workflowDraftFromRead(workflowQuery.data));
+    const nextDraft = workflowDraftFromRead(workflowQuery.data);
+    const decodedSchema = parseSchemaJsonText(nextDraft.inputSchemaText);
+
+    const nextInputSchemaBuilder = decodedSchema.builder ?? createDefaultSchemaNode("object");
+
+    setDraft(nextDraft);
+    setInputSchemaBuilder(nextInputSchemaBuilder);
+    setRunInputValue(createDefaultRunInputValue(nextInputSchemaBuilder));
     setValidationIssues([]);
   }, [workflowQuery.data]);
 
@@ -701,11 +744,20 @@ export function WorkflowsEditorPage() {
 
   const reviewPayload = useMemo(() => {
     try {
-      return stringifyJson(buildWorkflowPayload(draft));
+      return buildWorkflowPayload(draft);
     } catch {
       return null;
     }
   }, [draft]);
+
+  const handleInputSchemaBuilderChange = (nextBuilder: SchemaIRNode) => {
+    setInputSchemaBuilder(nextBuilder);
+    setRunInputValue(createDefaultRunInputValue(nextBuilder));
+    setDraft((current) => ({
+      ...current,
+      inputSchemaText: stringifyWorkflowInputSchema(nextBuilder),
+    }));
+  };
 
   const setIssueState = (issues: WorkflowValidationIssue[]) => {
     setValidationIssues(issues);
@@ -770,7 +822,7 @@ export function WorkflowsEditorPage() {
       }
 
       const run = await createRunMutation.mutateAsync({
-        payload: parseRunInput(runInputText),
+        payload: parseRunInputValue(runInputValue),
         version: workflowQuery.data.version,
         workflowId: workflowQuery.data.id,
       });
@@ -909,16 +961,17 @@ export function WorkflowsEditorPage() {
                       }
                     />
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="workflow-input-schema">Input Schema JSON</Label>
-                    <Textarea
-                      id="workflow-input-schema"
-                      aria-label="Input Schema JSON"
-                      rows={12}
-                      value={draft.inputSchemaText}
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, inputSchemaText: event.target.value }))
-                      }
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <Label>Workflow Input Schema</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Define the workflow request shape with the shared schema builder instead of editing JSON directly.
+                      </p>
+                    </div>
+                    <SchemaComposer
+                      label="Workflow input schema"
+                      node={inputSchemaBuilder}
+                      onChange={handleInputSchemaBuilderChange}
                     />
                   </div>
                 </CardContent>
@@ -1087,7 +1140,7 @@ export function WorkflowsEditorPage() {
                   <CardHeader>
                     <CardTitle>Run input</CardTitle>
                     <CardDescription>
-                      Save the workflow, then run the currently saved version with a JSON object payload.
+                      Save the workflow, then run the currently saved version with structured inputs derived from the workflow request schema.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-4">
@@ -1100,26 +1153,35 @@ export function WorkflowsEditorPage() {
                         </AlertDescription>
                       </Alert>
                     ) : null}
-                    <Textarea
-                      aria-label="Run Input JSON"
-                      rows={8}
-                      value={runInputText}
-                      onChange={(event) => setRunInputText(event.target.value)}
+                    <SchemaForm
+                      description="Enter the run payload through the shared schema-driven form instead of authoring JSON."
+                      label="Run input"
+                      onChange={setRunInputValue}
+                      schema={inputSchemaBuilder}
+                      value={runInputValue}
                     />
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Payload preview</CardTitle>
+                    <CardTitle>Workflow summary</CardTitle>
                     <CardDescription>
-                      Review the exact saved workflow structure produced by the wizard controls.
+                      Review the structured workflow payload produced by the current builder state.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <pre className="overflow-x-auto rounded-md border bg-muted/30 p-3 text-xs" data-testid="workflow-review-payload">
-                      {reviewPayload ?? "Resolve validation issues to preview the payload."}
-                    </pre>
+                  <CardContent className="flex flex-col gap-4">
+                    {reviewPayload ? (
+                      <StructuredValueInspector
+                        data-testid="workflow-review-summary"
+                        label="Workflow payload"
+                        value={reviewPayload}
+                      />
+                    ) : (
+                      <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                        Resolve validation issues to preview the workflow summary.
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>

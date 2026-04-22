@@ -203,20 +203,31 @@ describe("WorkflowsEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("shows the four wizard sections and navigates to review", () => {
+  it("shows the shared schema builder in the input step and removes the input-schema JSON textarea", () => {
     render(<WorkflowsEditorPage />);
 
     expect(screen.getByRole("tab", { name: /input/i })).toBeVisible();
     expect(screen.getByRole("tab", { name: /steps/i })).toBeVisible();
     expect(screen.getByRole("tab", { name: /output/i })).toBeVisible();
     expect(screen.getByRole("tab", { name: /review/i })).toBeVisible();
+    expect(screen.queryByLabelText("Input Schema JSON")).not.toBeInTheDocument();
+    expect(screen.getByText("Workflow Input Schema")).toBeVisible();
+    expect(screen.getByTestId("output-schema-add-field")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Workflow Key"), { target: { value: "market_review" } });
+    fireEvent.change(screen.getByLabelText("Workflow Name"), { target: { value: "Market Review" } });
 
     fireEvent.click(screen.getByTestId("workflow-wizard-next"));
     fireEvent.click(screen.getByTestId("workflow-wizard-next"));
     fireEvent.click(screen.getByTestId("workflow-wizard-next"));
 
-    expect(screen.getByText(/run input/i)).toBeVisible();
+    expect(screen.getAllByText(/run input/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/run now becomes available after the first save/i)).toBeVisible();
+    expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/workflow summary/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/resolve validation issues to preview the workflow summary/i)).toBeVisible();
+    expect(screen.getByText(/enter the run payload through the shared schema-driven form/i)).toBeVisible();
   });
 
   it("surfaces invalid slot wiring feedback and blocks save", async () => {
@@ -231,11 +242,17 @@ describe("WorkflowsEditorPage", () => {
     expect(updateWorkflowMock).not.toHaveBeenCalled();
   });
 
-  it("starts a run from the saved workflow detail", async () => {
+  it("renders the structured review summary and starts a run from the saved workflow detail", async () => {
     paramsMock.workflowId = "88";
     createWorkflowRunMock.mockResolvedValue({ id: 901 });
 
     render(<WorkflowsEditorPage />);
+
+    expect(screen.getByTestId("workflow-review-summary")).toBeVisible();
+    expect(screen.getByTestId("workflow-review-summary")).toHaveTextContent("market_review");
+    expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId("workflow-run-now"));
 
     await waitFor(() => expect(createWorkflowRunMock).toHaveBeenCalledTimes(1));
