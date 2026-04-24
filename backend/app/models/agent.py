@@ -42,6 +42,7 @@ class Agent(IdMixin, TimestampMixin, Base):
         UniqueConstraint("key", "version", name="uq_agents_key_version"),
         Index("ix_agents_key", "key"),
         Index("ix_agents_status", "status"),
+        Index("ix_agents_model_connection", "model_connection_id"),
         Index("ix_agents_output_schema", "output_schema_id", "output_schema_version"),
         Index(
             "uq_agents_published_key",
@@ -67,6 +68,7 @@ class Agent(IdMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    model_connection_id: Mapped[int] = mapped_column(nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

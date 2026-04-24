@@ -2,6 +2,7 @@ from app.models.agent import Agent
 from app.models.balance import Balance
 from app.models.market_quote import MarketQuote
 from app.models.mcp_server import McpServer
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.portfolio import Portfolio
 from app.models.position import Position
@@ -18,6 +19,7 @@ __all__ = [
     "Balance",
     "MarketQuote",
     "McpServer",
+    "ModelConnection",
     "OutputSchema",
     "Portfolio",
     "Position",

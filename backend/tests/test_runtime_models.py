@@ -37,6 +37,7 @@ LEGACY_BACKEND_TABLE_NAMES = {
 AGENT_PLATFORM_CONFIG_TABLE_NAMES = {
     "skills",
     "mcp_servers",
+    "model_connections",
     "output_schemas",
 }
 AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
@@ -108,6 +109,7 @@ def _build_agent(
     skills: list[Skill],
     mcp_servers: list[McpServer],
     budget_usd: Decimal = Decimal("1.25000000"),
+    model_connection_id: int = 1,
 ) -> Agent:
     return Agent(
         key=key,
@@ -115,6 +117,7 @@ def _build_agent(
         status=status,
         name=f"{key}-{version}",
         description="Agent description",
+        model_connection_id=model_connection_id,
         model="openai:gpt-5.4-mini",
         system_prompt="Assess the input and return a typed result.",
         input_schema={"type": "object", "required": ["ticker"]},
@@ -225,6 +228,7 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
 
     skill_table = Base.metadata.tables["skills"]
     mcp_server_table = Base.metadata.tables["mcp_servers"]
+    model_connection_table = Base.metadata.tables["model_connections"]
     output_schema_table = Base.metadata.tables["output_schemas"]
 
     assert {"uq_skills_published_key", "uq_skills_draft_key"} <= {
@@ -233,10 +237,26 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert {"uq_mcp_servers_published_key", "uq_mcp_servers_draft_key"} <= {
         index.name for index in mcp_server_table.indexes
     }
+    assert {"ix_model_connections_status", "ix_model_connections_model_id"} <= {
+        index.name for index in model_connection_table.indexes
+    }
     assert {"uq_output_schemas_published_key", "uq_output_schemas_draft_key"} <= {
         index.name for index in output_schema_table.indexes
     }
     assert "config" in mcp_server_table.c
+    assert {
+        "secret_payload",
+        "has_api_key",
+        "api_key_last4",
+        "last_tested_at",
+        "last_test_ok",
+        "last_test_message",
+    } <= set(model_connection_table.c.keys())
+    assert {
+        "ck_model_connections_status",
+        "ck_model_connections_reasoning_effort",
+        "ck_model_connections_timeout_seconds_positive",
+    } <= {constraint.name for constraint in model_connection_table.constraints if constraint.name}
     assert "ck_mcp_servers_target" not in {
         constraint.name for constraint in mcp_server_table.constraints if constraint.name
     }
@@ -247,9 +267,13 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
 ) -> None:
     assert AGENT_PLATFORM_EXECUTION_TABLE_NAMES <= set(Base.metadata.tables)
     agent_table = Base.metadata.tables["agents"]
-    assert {"uq_agents_published_key", "uq_agents_draft_key", "ix_agents_output_schema"} <= {
-        index.name for index in agent_table.indexes
-    }
+    assert {
+        "uq_agents_published_key",
+        "uq_agents_draft_key",
+        "ix_agents_model_connection",
+        "ix_agents_output_schema",
+    } <= {index.name for index in agent_table.indexes}
+    assert agent_table.c.model_connection_id.nullable is False
 
     with session_factory() as session:
         published_skill = _build_skill(key="research_skill", version=1, status="published")
