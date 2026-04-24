@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
 import type { AgentListParams } from "./types/agent";
 import type { McpServerListParams } from "./types/mcp-server";
+import type { ModelConnectionListParams } from "./types/model-connection";
 import type { OutputSchemaListParams } from "./types/output-schema";
 import type { RunListParams } from "./types/run";
 import type { SkillListParams } from "./types/skill";
@@ -85,6 +86,12 @@ function normalizeMcpServerListParams(params: McpServerListParams = {}) {
     enabled: params.enabled,
     status: params.status,
     transport: params.transport,
+  });
+}
+
+function normalizeModelConnectionListParams(params: ModelConnectionListParams = {}) {
+  return omitUndefined({
+    status: params.status,
   });
 }
 
@@ -191,6 +198,13 @@ const platformQueryKeys = {
       [...platformApiRoot, "mcpServers", "detail", normalizeId(serverId)] as const,
     list: (params: McpServerListParams = {}) =>
       [...platformApiRoot, "mcpServers", "list", normalizeMcpServerListParams(params)] as const,
+  },
+  modelConnections: {
+    all: [...platformApiRoot, "modelConnections"] as const,
+    detail: (modelConnectionId: IdParam) =>
+      [...platformApiRoot, "modelConnections", "detail", normalizeId(modelConnectionId)] as const,
+    list: (params: ModelConnectionListParams = {}) =>
+      [...platformApiRoot, "modelConnections", "list", normalizeModelConnectionListParams(params)] as const,
   },
   outputSchemas: {
     all: [...platformApiRoot, "outputSchemas"] as const,
