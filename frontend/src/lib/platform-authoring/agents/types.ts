@@ -20,11 +20,10 @@ export interface AgentAuthoringDraft {
   key: string;
   name: string;
   description: string;
-  model: string;
+  modelConnectionId: string;
   systemPrompt: string;
   inputSchema: AgentAuthoringSchemaInput;
   bindings: AgentAuthoringBindingRefs;
-  temperature: string;
   maxToolRounds: string;
   budgetUsd: string;
   streaming: boolean;

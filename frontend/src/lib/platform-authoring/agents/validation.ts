@@ -93,21 +93,22 @@ export function validateAgentDraft(draft: AgentAuthoringDraft): AgentValidationI
     issues.push(nameIssue);
   }
 
-  const modelIssue = requiredText("Model", draft.model, "model");
-  if (modelIssue) {
-    issues.push(modelIssue);
+  const modelConnectionIssue = optionalNumericText(
+    "Model connection",
+    draft.modelConnectionId,
+    "modelConnectionId",
+    { integer: true, min: 1 },
+  );
+  if (modelConnectionIssue) {
+    issues.push(modelConnectionIssue);
+  }
+  if (!draft.modelConnectionId.trim()) {
+    issues.push(createAgentValidationIssue("modelConnectionId", "Model connection is required."));
   }
 
   const systemPromptIssue = requiredText("System prompt", draft.systemPrompt, "systemPrompt");
   if (systemPromptIssue) {
     issues.push(systemPromptIssue);
-  }
-
-  const temperatureIssue = optionalNumericText("Temperature", draft.temperature, "temperature", {
-    min: 0,
-  });
-  if (temperatureIssue) {
-    issues.push(temperatureIssue);
   }
 
   const maxToolRoundsIssue = optionalNumericText("Max tool rounds", draft.maxToolRounds, "maxToolRounds", {

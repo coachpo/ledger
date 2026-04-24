@@ -1,5 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AgentRead } from "@/lib/types/agent";
+import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 
 import { AgentsEditorPage } from "./editor";
 
@@ -12,6 +16,7 @@ const archiveAgentMock = vi.fn();
 const resolveTestPanelMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
+const useModelConnectionsMock = vi.fn();
 
 const existingInputSchema = {
   additionalProperties: false,
@@ -22,8 +27,43 @@ const existingInputSchema = {
   type: "object",
 };
 
+const activeModelConnection: ModelConnectionListItemRead = {
+  apiKeyLast4: "4242",
+  baseUrl: "https://api.openai.com/v1",
+  description: "Primary production connection",
+  hasApiKey: true,
+  id: 44,
+  lastTestMessage: "Healthy",
+  lastTestOk: true,
+  lastTestedAt: "2026-04-22T08:00:00Z",
+  modelId: "gpt-4.1",
+  name: "Primary OpenAI",
+  organization: "org_live",
+  project: "proj_live",
+  reasoningEffort: "high",
+  status: "active",
+  timeoutSeconds: 90,
+};
+
+const archivedModelConnection: ModelConnectionListItemRead = {
+  apiKeyLast4: null,
+  baseUrl: "https://archive.openai.com/v1",
+  description: "Retired but still referenced",
+  hasApiKey: false,
+  id: 91,
+  lastTestMessage: "Expired key",
+  lastTestOk: false,
+  lastTestedAt: "2026-04-21T08:00:00Z",
+  modelId: "gpt-4o-mini",
+  name: "Legacy Archive",
+  organization: null,
+  project: null,
+  reasoningEffort: "low",
+  status: "archived",
+  timeoutSeconds: 45,
+};
+
 const existingAgent = {
-  id: 12,
   budgetUsd: "2.50",
   description: "Tracks macro context.",
   inputSchema: existingInputSchema,
@@ -42,7 +82,8 @@ const existingAgent = {
       version: 2,
     },
   ],
-  model: "gpt-5.4",
+  modelConnection: activeModelConnection,
+  modelConnectionId: activeModelConnection.id,
   name: "Macro Agent",
   outputSchema: {
     description: "Summary schema",
@@ -67,9 +108,16 @@ const existingAgent = {
   status: "draft",
   streaming: true,
   systemPrompt: "Summarize clearly.",
-  temperature: 0.2,
   version: 9,
-};
+} as unknown as AgentRead;
+
+const archivedAgent = {
+  ...existingAgent,
+  modelConnection: archivedModelConnection,
+  modelConnectionId: archivedModelConnection.id,
+} as unknown as AgentRead;
+
+let currentAgent: AgentRead = existingAgent;
 
 vi.mock("react-router", () => ({
   useNavigate: () => navigateMock,
@@ -87,12 +135,16 @@ vi.mock("sonner", () => ({
 vi.mock("@/hooks/use-agents", () => ({
   useAgent: (agentId?: string) =>
     agentId
-      ? { data: existingAgent, error: null, isError: false, isPending: false }
+      ? { data: currentAgent, error: null, isError: false, isPending: false }
       : { data: undefined, error: null, isError: false, isPending: false },
-  useCreateAgent: () => ({ isPending: false, mutateAsync: createAgentMock }),
-  useUpdateAgent: () => ({ isPending: false, mutateAsync: updateAgentMock }),
   useArchiveAgent: () => ({ isPending: false, mutateAsync: archiveAgentMock }),
+  useCreateAgent: () => ({ isPending: false, mutateAsync: createAgentMock }),
   useResolveAgentTestPanel: () => ({ isPending: false, mutateAsync: resolveTestPanelMock }),
+  useUpdateAgent: () => ({ isPending: false, mutateAsync: updateAgentMock }),
+}));
+
+vi.mock("@/hooks/use-model-connections", () => ({
+  useModelConnections: (params?: unknown) => useModelConnectionsMock(params),
 }));
 
 vi.mock("@/hooks/use-output-schemas", () => ({
@@ -146,57 +198,85 @@ vi.mock("@/hooks/use-mcp-servers", () => ({
   }),
 }));
 
-describe("AgentsEditorPage", () => {
-  beforeEach(() => {
-    paramsMock.agentId = undefined;
-    searchParamsMock.delete("duplicateFrom");
-    navigateMock.mockReset();
-    createAgentMock.mockReset();
-    updateAgentMock.mockReset();
-    archiveAgentMock.mockReset();
-    resolveTestPanelMock.mockReset();
-    toastErrorMock.mockReset();
-    toastSuccessMock.mockReset();
+function renderAgentsEditorPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      mutations: { retry: false },
+      queries: { retry: false },
+    },
   });
 
-  it("removes raw JSON and free-text authoring surfaces on create", async () => {
-    render(<AgentsEditorPage />);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AgentsEditorPage />
+    </QueryClientProvider>,
+  );
+}
 
+describe("AgentsEditorPage", () => {
+  beforeEach(() => {
+    archiveAgentMock.mockReset();
+    createAgentMock.mockReset();
+    currentAgent = existingAgent;
+    navigateMock.mockReset();
+    paramsMock.agentId = undefined;
+    resolveTestPanelMock.mockReset();
+    searchParamsMock.delete("duplicateFrom");
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    updateAgentMock.mockReset();
+    useModelConnectionsMock.mockReset();
+    useModelConnectionsMock.mockReturnValue({
+      data: { items: [activeModelConnection] },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+  });
+
+  it("removes legacy model fields and requires a model connection on create", async () => {
+    renderAgentsEditorPage();
+
+    expect(useModelConnectionsMock).toHaveBeenCalledWith({ status: "active" });
+    expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Model Connection$/i)).toBeVisible();
     expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^skills$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^mcp servers$/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /skill bindings/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /mcp server bindings/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^Input schema$/i })).toBeVisible();
 
+    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "macro_agent" } });
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent" } });
     fireEvent.click(screen.getByRole("button", { name: /save agent/i }));
 
-    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Key is required."));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Model connection is required."));
     expect(createAgentMock).not.toHaveBeenCalled();
   });
 
   it("hydrates duplicate mode from an existing agent with structured bindings", () => {
     searchParamsMock.set("duplicateFrom", "12");
 
-    render(<AgentsEditorPage />);
+    renderAgentsEditorPage();
 
     expect(screen.getByRole("heading", { name: /duplicate agent/i })).toBeVisible();
     expect(screen.getByLabelText(/^Name$/i)).toHaveValue("Macro Agent Copy");
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("");
-    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
+    expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Model Connection$/i)).toHaveTextContent("Primary OpenAI · gpt-4.1");
   });
 
-  it("hydrates edit state and saves through the update hook with structured payloads", async () => {
+  it("hydrates edit state and saves through the update hook with modelConnectionId only", async () => {
     paramsMock.agentId = "12";
     updateAgentMock.mockResolvedValue({ id: 12 });
 
-    render(<AgentsEditorPage />);
+    renderAgentsEditorPage();
 
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
-    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Model Connection$/i)).toHaveTextContent("Primary OpenAI · gpt-4.1");
+
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save agent/i }));
 
@@ -209,23 +289,35 @@ describe("AgentsEditorPage", () => {
         inputSchema: existingInputSchema,
         maxToolRounds: 4,
         mcpServers: [{ mcpServerKey: "quotes_mcp", mcpServerVersion: 2 }],
-        model: "gpt-5.4",
+        modelConnectionId: 44,
         name: "Macro Agent Updated",
         outputSchemaKey: "summary_schema",
         outputSchemaVersion: 5,
         skills: [{ skillKey: "summarize_skill", skillVersion: 3 }],
         streaming: true,
         systemPrompt: "Summarize clearly.",
-        temperature: 0.2,
       },
     });
+  });
+
+  it("renders an existing archived model connection on edit", () => {
+    currentAgent = archivedAgent;
+    paramsMock.agentId = "12";
+
+    renderAgentsEditorPage();
+
+    expect(screen.getByLabelText(/^Model Connection$/i)).toHaveTextContent("Legacy Archive · gpt-4o-mini");
+    expect(screen.getByText(/archived model connection in use/i)).toBeVisible();
+    expect(
+      screen.getByText("https://archive.openai.com/v1 · low reasoning · archived"),
+    ).toBeVisible();
   });
 
   it("archives an existing agent", async () => {
     paramsMock.agentId = "12";
     archiveAgentMock.mockResolvedValue({ id: 12 });
 
-    render(<AgentsEditorPage />);
+    renderAgentsEditorPage();
     fireEvent.click(screen.getByTestId("agents-archive"));
 
     await waitFor(() => expect(archiveAgentMock).toHaveBeenCalledWith("12"));
@@ -239,7 +331,7 @@ describe("AgentsEditorPage", () => {
       sampleInput: { ticker: "AAPL" },
     });
 
-    render(<AgentsEditorPage />);
+    renderAgentsEditorPage();
     fireEvent.click(screen.getByRole("tab", { name: /test panel/i }));
 
     expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();

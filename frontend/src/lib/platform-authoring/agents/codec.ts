@@ -36,11 +36,10 @@ export function agentDraftFromRead(agent: AgentRead): AgentAuthoringDraft {
     key: agent.key,
     name: agent.name,
     description: agent.description ?? "",
-    model: agent.model,
+    modelConnectionId: String(agent.modelConnectionId),
     systemPrompt: agent.systemPrompt,
     inputSchema: agent.inputSchema as unknown as SchemaIRBuilderInput,
     bindings: agentBindingRefsFromRead(agent),
-    temperature: String(agent.temperature),
     maxToolRounds: String(agent.maxToolRounds),
     budgetUsd: agent.budgetUsd,
     streaming: agent.streaming,
@@ -55,11 +54,6 @@ function toAgentWriteRefs(bindings: AgentAuthoringBindingRefs): AgentAuthoringBi
   };
 }
 
-function toOptionalNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  return trimmed ? Number(trimmed) : undefined;
-}
-
 function normalizeDraftKey(key: string): string {
   return key.trim().toLowerCase();
 }
@@ -70,12 +64,11 @@ function toAuthoringCreateInput(draft: AgentAuthoringDraft): AgentAuthoringCreat
     description: draft.description.trim() || undefined,
     inputSchema: draft.inputSchema,
     key: normalizeDraftKey(draft.key),
-    maxToolRounds: toOptionalNumber(draft.maxToolRounds),
-    model: draft.model.trim(),
+    maxToolRounds: draft.maxToolRounds.trim() ? Number(draft.maxToolRounds) : undefined,
+    modelConnectionId: Number(draft.modelConnectionId),
     name: draft.name.trim(),
     streaming: draft.streaming,
     systemPrompt: draft.systemPrompt.trim(),
-    temperature: toOptionalNumber(draft.temperature),
     ...toAgentWriteRefs(draft.bindings),
   };
 }

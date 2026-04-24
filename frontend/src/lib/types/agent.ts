@@ -1,5 +1,6 @@
 import type { UnknownRecord } from "./common";
 import type { McpClientBoundaryRead, McpServerStatus, McpServerTransport } from "./mcp-server";
+import type { ModelConnectionListItemRead } from "./model-connection";
 import type { OutputSchemaRead } from "./output-schema";
 import type { SkillRead } from "./skill";
 
@@ -19,14 +20,13 @@ export interface AgentCreateInput {
   key: string;
   name: string;
   description?: string;
-  model: string;
+  modelConnectionId: number;
   systemPrompt: string;
   inputSchema: UnknownRecord;
   outputSchemaKey: string;
   outputSchemaVersion?: number | null;
   skills?: AgentSkillRefWrite[];
   mcpServers?: AgentMcpServerRefWrite[];
-  temperature?: number;
   maxToolRounds?: number;
   budgetUsd?: string;
   streaming?: boolean;
@@ -53,13 +53,15 @@ export interface AgentRead {
   status: AgentStatus;
   name: string;
   description: string;
-  model: string;
+  modelConnectionId: number;
+  modelConnection: ModelConnectionListItemRead;
+  model?: string;
   systemPrompt: string;
   inputSchema: UnknownRecord;
   outputSchema: OutputSchemaRead;
   skills: SkillRead[];
   mcpServers: AgentMcpServerRead[];
-  temperature: number;
+  temperature?: number;
   maxToolRounds: number;
   budgetUsd: string;
   streaming: boolean;

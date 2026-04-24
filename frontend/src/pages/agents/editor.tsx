@@ -13,6 +13,7 @@ import { StructuredValueInspector } from "@/components/platform-authoring/inspec
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgent, useArchiveAgent, useCreateAgent, useResolveAgentTestPanel, useUpdateAgent } from "@/hooks/use-agents";
 import { useMcpServers } from "@/hooks/use-mcp-servers";
+import { useModelConnections } from "@/hooks/use-model-connections";
 import { useOutputSchemas } from "@/hooks/use-output-schemas";
 import { useSkills } from "@/hooks/use-skills";
 import { agentBindingRefsFromRead } from "@/lib/platform-authoring/agents/codec";
@@ -32,11 +33,20 @@ import type { ValueEntry } from "@/lib/platform-authoring/values/types";
 import type { ResourceRef } from "@/lib/platform-authoring/common/resource-ref";
 import type { AgentCreateInput, AgentRead, AgentUpdateInput } from "@/lib/types/agent";
 import type { UnknownRecord } from "@/lib/types/common";
+import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +65,46 @@ type HydratedAgentEditorState = {
   sampleInput: ValueEntry;
 };
 
+const UNSELECTED_MODEL_CONNECTION = "__unselected_model_connection__";
+
+function compareModelConnections(
+  left: ModelConnectionListItemRead,
+  right: ModelConnectionListItemRead,
+): number {
+  const nameComparison = left.name.localeCompare(right.name);
+  if (nameComparison !== 0) {
+    return nameComparison;
+  }
+
+  const modelComparison = left.modelId.localeCompare(right.modelId);
+  if (modelComparison !== 0) {
+    return modelComparison;
+  }
+
+  return left.id - right.id;
+}
+
+function formatModelConnectionLabel(connection: ModelConnectionListItemRead): string {
+  return `${connection.name} · ${connection.modelId}`;
+}
+
+function formatModelConnectionMeta(connection: ModelConnectionListItemRead): string {
+  return `${connection.baseUrl} · ${connection.reasoningEffort} reasoning`;
+}
+
+function parseModelConnectionId(value: string) {
+  const modelConnectionId = parseOptionalNumber("Model connection", value, {
+    integer: true,
+    min: 1,
+  });
+
+  if (modelConnectionId === undefined) {
+    throw new Error("Model connection is required.");
+  }
+
+  return modelConnectionId;
+}
+
 function createInitialDraft(): AgentAuthoringDraft {
   return {
     budgetUsd: "",
@@ -67,11 +117,10 @@ function createInitialDraft(): AgentAuthoringDraft {
     },
     key: "",
     maxToolRounds: "",
-    model: "",
+    modelConnectionId: "",
     name: "",
     streaming: true,
     systemPrompt: "",
-    temperature: "",
   };
 }
 
@@ -105,10 +154,12 @@ function decodeSampleInputValue(value: ValueEntry): UnknownRecord {
 
 function decodePersistedInputSchema(
   agent: AgentRead,
-  options: { clearKey?: boolean; duplicateName?: boolean } = {},
+  options: { clearArchivedModelConnection?: boolean; clearKey?: boolean; duplicateName?: boolean } = {},
 ): HydratedAgentEditorState {
   const decoded = parseSchemaJsonText(stringifyJson(agent.inputSchema));
   const builder = decoded.builder ?? createDefaultSchemaNode("object");
+  const shouldClearArchivedModelConnection =
+    options.clearArchivedModelConnection && agent.modelConnection.status === "archived";
 
   return {
     draft: {
@@ -118,11 +169,10 @@ function decodePersistedInputSchema(
       bindings: agentBindingRefsFromRead(agent),
       key: options.clearKey ? "" : agent.key,
       maxToolRounds: String(agent.maxToolRounds),
-      model: agent.model,
+      modelConnectionId: shouldClearArchivedModelConnection ? "" : String(agent.modelConnectionId),
       name: options.duplicateName ? `${agent.name} Copy` : agent.name,
       streaming: agent.streaming,
       systemPrompt: agent.systemPrompt,
-      temperature: String(agent.temperature),
     },
     issues: decoded.issues,
     sampleInput: createDefaultSampleInputValue(builder),
@@ -174,7 +224,7 @@ function buildPayload(draft: AgentAuthoringDraft): AgentCreateInput | AgentUpdat
       mcpServerKey: server.key.trim(),
       mcpServerVersion: server.version ?? null,
     })),
-    model: parseRequiredText("Model", draft.model),
+    modelConnectionId: parseModelConnectionId(draft.modelConnectionId),
     name: parseRequiredText("Name", draft.name),
     outputSchemaKey: draft.bindings.outputSchema.key.trim(),
     outputSchemaVersion: draft.bindings.outputSchema.version ?? null,
@@ -184,7 +234,6 @@ function buildPayload(draft: AgentAuthoringDraft): AgentCreateInput | AgentUpdat
     })),
     streaming: draft.streaming,
     systemPrompt: parseRequiredText("System prompt", draft.systemPrompt),
-    temperature: parseOptionalNumber("Temperature", draft.temperature, { min: 0 }),
   };
 }
 
@@ -203,6 +252,7 @@ export function AgentsEditorPage() {
   const outputSchemasQuery = useOutputSchemas();
   const skillsQuery = useSkills();
   const mcpServersQuery = useMcpServers();
+  const modelConnectionsQuery = useModelConnections({ status: "active" });
   const [draft, setDraft] = useState<AgentAuthoringDraft>(() => createInitialDraft());
   const [sampleInput, setSampleInput] = useState<ValueEntry>(() =>
     createDefaultSampleInputValue(createInitialDraft().inputSchema),
@@ -223,6 +273,28 @@ export function AgentsEditorPage() {
   const outputSchemaOptions = useMemo(() => toResourceRefOptions(outputSchemas), [outputSchemas]);
   const skillOptions = useMemo(() => toResourceRefOptions(skills), [skills]);
   const mcpServerOptions = useMemo(() => toResourceRefOptions(mcpServers), [mcpServers]);
+  const activeModelConnections = useMemo(
+    () => [...(modelConnectionsQuery.data?.items ?? [])].sort(compareModelConnections),
+    [modelConnectionsQuery.data?.items],
+  );
+  const currentArchivedModelConnection = useMemo(() => {
+    const currentAgent = isEditing ? agentQuery.data : null;
+    if (!currentAgent || currentAgent.modelConnection.status !== "archived") {
+      return null;
+    }
+
+    return currentAgent.modelConnection;
+  }, [agentQuery.data, isEditing]);
+  const selectedModelConnection = useMemo(() => {
+    return (
+      activeModelConnections.find((connection) => String(connection.id) === draft.modelConnectionId) ??
+      (currentArchivedModelConnection &&
+      String(currentArchivedModelConnection.id) === draft.modelConnectionId
+        ? currentArchivedModelConnection
+        : null)
+    );
+  }, [activeModelConnections, currentArchivedModelConnection, draft.modelConnectionId]);
+  const selectedModelConnectionIsArchived = selectedModelConnection?.status === "archived";
 
   useEffect(() => {
     if (!agentQuery.data) {
@@ -241,6 +313,7 @@ export function AgentsEditorPage() {
     }
 
     const hydrated = decodePersistedInputSchema(duplicateQuery.data, {
+      clearArchivedModelConnection: true,
       clearKey: true,
       duplicateName: true,
     });
@@ -364,7 +437,7 @@ export function AgentsEditorPage() {
             {isEditing ? "Edit Agent" : duplicateFromId ? "Duplicate Agent" : "Create Agent"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Configure the core prompt, model policy, input schema, output schema binding, attached skills and MCP servers, and a structured test-panel input surface.
+            Configure the core prompt, saved model connection, input schema, output schema binding, attached skills and MCP servers, and a structured test-panel input surface.
           </p>
           {agentQuery.data ? (
             <PlatformResourceBadges status={agentQuery.data.status} version={agentQuery.data.version} />
@@ -422,7 +495,7 @@ export function AgentsEditorPage() {
             <CardHeader>
               <CardTitle>Agent details</CardTitle>
               <CardDescription>
-                Keys are immutable after creation, while the model, prompt, schema, and bindings remain editable.
+                Keys are immutable after creation, while the model connection, prompt, schema, and bindings remain editable.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4">
@@ -451,14 +524,53 @@ export function AgentsEditorPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="agent-model">Model</Label>
-                  <Input
-                    id="agent-model"
-                    aria-label="Model"
-                    disabled={isSaving}
-                    value={draft.model}
-                    onChange={(event) => updateDraft("model", event.target.value)}
-                  />
+                  <Label htmlFor="agent-model-connection">Model Connection</Label>
+                  <Select
+                    disabled={
+                      isSaving ||
+                      modelConnectionsQuery.isPending ||
+                      (activeModelConnections.length === 0 && !currentArchivedModelConnection)
+                    }
+                    value={draft.modelConnectionId || UNSELECTED_MODEL_CONNECTION}
+                    onValueChange={(value) =>
+                      updateDraft(
+                        "modelConnectionId",
+                        value === UNSELECTED_MODEL_CONNECTION ? "" : value,
+                      )
+                    }
+                  >
+                    <SelectTrigger aria-label="Model Connection" id="agent-model-connection">
+                      <SelectValue placeholder="Select a model connection" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem disabled value={UNSELECTED_MODEL_CONNECTION}>
+                          Select a model connection
+                        </SelectItem>
+                        {currentArchivedModelConnection ? (
+                          <SelectItem disabled value={String(currentArchivedModelConnection.id)}>
+                            {formatModelConnectionLabel(currentArchivedModelConnection)} (archived current selection)
+                          </SelectItem>
+                        ) : null}
+                        {activeModelConnections.map((connection) => (
+                          <SelectItem key={connection.id} value={String(connection.id)}>
+                            {formatModelConnectionLabel(connection)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    {modelConnectionsQuery.isError
+                      ? modelConnectionsQuery.error instanceof Error
+                        ? modelConnectionsQuery.error.message
+                        : "Failed to load active model connections."
+                      : selectedModelConnection
+                        ? `${formatModelConnectionMeta(selectedModelConnection)}${selectedModelConnectionIsArchived ? " · archived" : ""}`
+                        : activeModelConnections.length > 0
+                          ? "Choose an active model connection for this agent."
+                          : "No active model connections are available yet."}
+                  </p>
                 </div>
                 <ResourceRefSelect
                   description="Bind the agent to one published output schema without typing a versioned ref string."
@@ -480,6 +592,15 @@ export function AgentsEditorPage() {
                   }
                 />
               </div>
+
+              {selectedModelConnectionIsArchived ? (
+                <Alert>
+                  <AlertTitle>Archived model connection in use</AlertTitle>
+                  <AlertDescription>
+                    This agent still points to an archived connection. You can keep the current binding on edit, but archived connections are not available as new selections.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
               <div className="space-y-2">
                 <Label htmlFor="agent-description">Description</Label>
@@ -516,17 +637,7 @@ export function AgentsEditorPage() {
                 />
               ) : null}
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="agent-temperature">Temperature</Label>
-                  <Input
-                    id="agent-temperature"
-                    aria-label="Temperature"
-                    disabled={isSaving}
-                    value={draft.temperature}
-                    onChange={(event) => updateDraft("temperature", event.target.value)}
-                  />
-                </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="agent-max-tool-rounds">Max Tool Rounds</Label>
                   <Input
