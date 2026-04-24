@@ -6,6 +6,8 @@ import { AgentsEditorPage } from "./pages/agents/editor";
 import { AgentsListPage } from "./pages/agents/list";
 import { McpServersEditorPage } from "./pages/mcp-servers/editor";
 import { McpServersListPage } from "./pages/mcp-servers/list";
+import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
+import { ModelConnectionsListPage } from "./pages/model-connections/list";
 import { OutputSchemasEditorPage } from "./pages/output-schemas/editor";
 import { OutputSchemasListPage } from "./pages/output-schemas/list";
 import { RunsDetailPage } from "./pages/runs/detail";
@@ -43,6 +45,12 @@ export const router = createBrowserRouter([
       { path: "mcp-servers", Component: McpServersListPage },
       { path: "mcp-servers/new", Component: McpServersEditorPage },
       { path: "mcp-servers/:serverId/edit", Component: McpServersEditorPage },
+      { path: "model-connections", Component: ModelConnectionsListPage },
+      { path: "model-connections/new", Component: ModelConnectionsEditorPage },
+      {
+        path: "model-connections/:modelConnectionId/edit",
+        Component: ModelConnectionsEditorPage,
+      },
       { path: "output-schemas", Component: OutputSchemasListPage },
       { path: "output-schemas/new", Component: OutputSchemasEditorPage },
       { path: "output-schemas/:schemaId/edit", Component: OutputSchemasEditorPage },

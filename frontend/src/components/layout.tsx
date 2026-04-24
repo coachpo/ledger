@@ -6,6 +6,7 @@ import {
   ClipboardList,
   FileText,
   LayoutDashboard,
+  Link2,
   PlayCircle,
   Server,
   Sparkles,
@@ -54,6 +55,12 @@ const navItems: NavItem[] = [
   { icon: Bot, label: "Agents", testId: "nav-agents", to: "/agents" },
   { icon: Sparkles, label: "Skills", testId: "nav-skills", to: "/skills" },
   { icon: Server, label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
+  {
+    icon: Link2,
+    label: "Model Connections",
+    testId: "nav-model-connections",
+    to: "/model-connections",
+  },
   {
     icon: Braces,
     label: "Output Schemas",
@@ -113,6 +120,26 @@ function getPageMeta(pathname: string) {
 
   if (pathname === "/mcp-servers") {
     return { section: "MCP Servers", title: "MCP Servers" };
+  }
+
+  if (pathname === "/model-connections") {
+    return { section: "Model Connections", title: "Model Connections" };
+  }
+
+  if (pathname === "/model-connections/new") {
+    return {
+      section: "Model Connections",
+      sectionHref: "/model-connections",
+      title: "New Model Connection",
+    };
+  }
+
+  if (pathname.startsWith("/model-connections/") && pathname.endsWith("/edit")) {
+    return {
+      section: "Model Connections",
+      sectionHref: "/model-connections",
+      title: "Edit Model Connection",
+    };
   }
 
   if (pathname === "/output-schemas") {
