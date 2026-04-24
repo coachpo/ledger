@@ -16,23 +16,17 @@ uv run uvicorn app.main:app --reload --port 28000
 
 The backend expects PostgreSQL everywhere. The default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`, so manual `uv run uvicorn ...` startup assumes PostgreSQL is already running on that port. CORS is enabled for common local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`.
 
-## Optional Runtime Provider Settings
+## Model Connections
 
-If you want live model-backed platform execution, export provider settings before startup:
+Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
 
-```bash
-export OPENAI_API_KEY="your-provider-key"
-export RUNTIME_AGENT_API_KEY="$OPENAI_API_KEY"
-export RUNTIME_AGENT_MODEL="gpt-5.4-mini"
-export RUNTIME_AGENT_BASE_URL="http://127.0.0.1:8080/v1"   # optional override
-export RUNTIME_AGENT_TEMPERATURE="0"
-```
+Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 
 ## Live API Surfaces
 
 - `/health` for backend health
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
-- `/api/*` for agents, skills, MCP servers, output schemas, workflows, and runs
+- `/api/*` for agents, skills, MCP servers, model connections, output schemas, workflows, and runs
 
 ## Tests
 
@@ -68,4 +62,3 @@ docker compose down -v
 - `app/db/upgrades.py` is the supported schema-repair path; `alembic/` is scaffolding only.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs` and forwards the current environment into that process.
 - For repo-wide setup, validation, and frontend wiring, see the root `README.md`.
-e the root `README.md`.

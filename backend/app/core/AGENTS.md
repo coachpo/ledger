@@ -15,10 +15,10 @@
 
 ## CONVENTIONS
 - `get_settings()` is cached; tests reset it with `reset_settings_cache()` when env values change.
-- Runtime config uses env aliases such as `DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT`, `QUOTE_STALE_AFTER_MINUTES`, `CORS_ALLOWED_ORIGINS`, `RUNTIME_AGENT_MODEL`, `RUNTIME_AGENT_BASE_URL`, `RUNTIME_AGENT_API_KEY`, `RUNTIME_AGENT_API_MODE`, `RUNTIME_AGENT_TEMPERATURE`, and `RUNTIME_AGENT_TIMEOUT`.
+- Runtime config uses env aliases such as `DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT`, `QUOTE_STALE_AFTER_MINUTES`, `CORS_ALLOWED_ORIGINS`, and `AGENT_PLATFORM_ENCRYPTION_KEY`.
 - `errors.py` is the single source for domain-level error envelopes and validation-detail shaping.
 - `formatting.py` is the single place for decimal parsing, decimal string serialization, symbol/currency normalization, UTC conversion, and `utcnow()`.
-- `config.py` normalizes `public_base_url`, trims `runtime_agent_base_url`, and restricts `RUNTIME_AGENT_API_MODE` to `auto`, `responses`, or `chat_completions`.
+- `config.py` normalizes `public_base_url`.
 
 ## ANTI-PATTERNS
 - Do not read env vars directly from routes/services when `Settings` already defines them.

@@ -12,9 +12,9 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 ## What Ships
 
-- Frontend routes for `portfolios`, `templates`, `reports`, and the agent-platform routes for `agents`, `skills`, `mcp-servers`, `output-schemas`, `workflows`, and `runs`
+- Frontend routes for `portfolios`, `templates`, `reports`, and the agent-platform routes for `agents`, `skills`, `mcp-servers`, `model-connections`, `output-schemas`, `workflows`, and `runs`
 - Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
-- Backend `/api/*` platform routes for agents, skills, MCP servers, output schemas, workflows, and runs
+- Backend `/api/*` platform routes for agents, skills, MCP servers, model connections, output schemas, workflows, and runs
 
 ## Prerequisites
 
@@ -40,19 +40,13 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 (cd frontend && pnpm install)
 ```
 
-### 3. Optionally export runtime provider settings
+### 3. Set up model connections in the web UI
 
 If you only want the UI, API, and local database running, skip this step.
 
-If you want live model-backed agent-platform execution, export the provider settings before startup:
+Model connections are now managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
 
-```bash
-export OPENAI_API_KEY="your-provider-key"
-export RUNTIME_AGENT_API_KEY="$OPENAI_API_KEY"
-export RUNTIME_AGENT_MODEL="gpt-5.4-mini"
-export RUNTIME_AGENT_BASE_URL="http://127.0.0.1:8080/v1"   # optional override
-export RUNTIME_AGENT_TEMPERATURE="0"
-```
+Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set if you want those stored secrets encrypted at rest.
 
 ### 4. Start everything with the local helper
 
@@ -112,8 +106,9 @@ Visit `http://127.0.0.1:25173/`.
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are the agent-platform routes for agents, skills, MCP servers, output schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
-- Runtime execution inherits its provider settings from the backend process, so export `RUNTIME_AGENT_*` variables before starting the backend if you want live model calls.
+- The normal browser-facing execution surfaces are the agent-platform routes for agents, skills, MCP servers, model-connections, output-schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
+- Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
+- Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
 

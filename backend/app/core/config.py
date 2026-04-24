@@ -16,16 +16,10 @@ class Settings(BaseSettings):
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
     quote_provider_backend: str = Field(default="yahoo", alias="QUOTE_PROVIDER_BACKEND")
     quote_stale_after_minutes: int = Field(default=15, alias="QUOTE_STALE_AFTER_MINUTES")
-    runtime_agent_model: str = Field(default="gpt-4.1-mini", alias="RUNTIME_AGENT_MODEL")
-    runtime_agent_base_url: str | None = Field(default=None, alias="RUNTIME_AGENT_BASE_URL")
-    runtime_agent_api_key: str | None = Field(default=None, alias="RUNTIME_AGENT_API_KEY")
     agent_platform_encryption_key: str = Field(
         default="ledger-agent-platform-dev-key",
         alias="AGENT_PLATFORM_ENCRYPTION_KEY",
     )
-    runtime_agent_temperature: float = Field(default=0.0, alias="RUNTIME_AGENT_TEMPERATURE")
-    runtime_agent_timeout_seconds: float = Field(default=60.0, alias="RUNTIME_AGENT_TIMEOUT")
-    runtime_agent_api_mode: str = Field(default="auto", alias="RUNTIME_AGENT_API_MODE")
     market_data_cache_dir: str = Field(
         default=str(Path(__file__).resolve().parents[2] / ".cache" / "market_data"),
         alias="MARKET_DATA_CACHE_DIR",
@@ -68,26 +62,6 @@ class Settings(BaseSettings):
         if not normalized:
             return None
         return normalized.rstrip("/")
-
-    @field_validator("runtime_agent_base_url", mode="before")
-    @classmethod
-    def normalize_runtime_agent_base_url(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        if not normalized:
-            return None
-        return normalized.rstrip("/")
-
-    @field_validator("runtime_agent_api_mode", mode="before")
-    @classmethod
-    def normalize_runtime_agent_api_mode(cls, value: object) -> str:
-        normalized = str(value).strip().lower() if value is not None else "auto"
-        if normalized not in {"auto", "responses", "chat_completions"}:
-            raise ValueError(
-                "RUNTIME_AGENT_API_MODE must be one of: auto, responses, chat_completions"
-            )
-        return normalized
 
     @field_validator("quote_provider_backend", mode="before")
     @classmethod
