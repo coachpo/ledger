@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from decimal import Decimal
@@ -11,7 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.agent import Agent
 from app.models.mcp_server import McpServer
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
+from app.models.run import Run
 from app.models.skill import Skill
 from app.schemas.workflow import WorkflowCreate
 from app.services.run_service import RunService
@@ -68,6 +71,30 @@ def _build_agent_platform_mcp_server(*, key: str, version: int, status: str) -> 
     )
 
 
+def _build_model_connection(
+    *,
+    name: str,
+    api_key: str | None = "sk-artifact-secret-1234",
+    base_url: str = "https://api.openai.com/v1",
+    model_id: str = "gpt-5.4-mini",
+) -> ModelConnection:
+    payload = {} if api_key is None else {"apiKey": api_key}
+    return ModelConnection(
+        status="active",
+        name=name,
+        description=f"{name} description",
+        base_url=base_url,
+        organization=None,
+        project=None,
+        model_id=model_id,
+        reasoning_effort="medium",
+        timeout_seconds=60,
+        secret_payload=payload,
+        has_api_key=api_key is not None,
+        api_key_last4=None if api_key is None else api_key[-4:],
+    )
+
+
 def _build_agent_platform_agent(
     *,
     key: str,
@@ -76,6 +103,7 @@ def _build_agent_platform_agent(
     output_schema: OutputSchema,
     skill: Skill,
     mcp_server: McpServer,
+    model_connection: ModelConnection | None = None,
     input_schema: dict[str, Any] | None = None,
     budget_usd: Decimal = Decimal("1.00000000"),
 ) -> Agent:
@@ -85,7 +113,8 @@ def _build_agent_platform_agent(
         status=status,
         name=f"{key}-{version}",
         description="Agent configuration",
-        model="openai:gpt-5.4-mini",
+        model_connection_id=None if model_connection is None else model_connection.id,
+        model=("openai:gpt-5.4-mini" if model_connection is None else model_connection.model_id),
         system_prompt="Analyze the ticker and return a typed result.",
         input_schema=input_schema
         or {
@@ -129,6 +158,33 @@ def _wait_for_agent_platform_run_detail(
         time.sleep(0.02)
     assert last_body is not None
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
+
+
+class _RuntimeFailingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    failure_message = "Provider rejected sk-artifact-secret-1234 during auth"
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any):
+        type(self).create_calls.append(kwargs)
+        raise Exception(type(self).failure_message)
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.failure_message = "Provider rejected sk-artifact-secret-1234 during auth"
 
 
 def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable(
@@ -177,7 +233,8 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
             version=1,
             status="published",
         )
-        session.add_all([output_schema, skill, mcp_server])
+        connection = _build_model_connection(name="Trace Artifact Connection")
+        session.add_all([output_schema, skill, mcp_server, connection])
         session.flush()
         trace_agent = _build_agent_platform_agent(
             key="trace_agent",
@@ -186,6 +243,7 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
             output_schema=output_schema,
             skill=skill,
             mcp_server=mcp_server,
+            model_connection=connection,
         )
         session.add(trace_agent)
         session.commit()
@@ -269,7 +327,8 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
             version=1,
             status="published",
         )
-        session.add_all([output_schema, skill, mcp_server])
+        connection = _build_model_connection(name="Step Persistence Connection")
+        session.add_all([output_schema, skill, mcp_server, connection])
         session.flush()
         first_agent = _build_agent_platform_agent(
             key="step_agent_a",
@@ -278,6 +337,7 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
             output_schema=output_schema,
             skill=skill,
             mcp_server=mcp_server,
+            model_connection=connection,
         )
         second_agent = _build_agent_platform_agent(
             key="step_agent_b",
@@ -286,6 +346,7 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
             output_schema=output_schema,
             skill=skill,
             mcp_server=mcp_server,
+            model_connection=connection,
             input_schema={
                 "type": "object",
                 "properties": {
@@ -356,3 +417,93 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
     assert detail["perStepOutputs"]["2"][0]["output"] is None
     _assert_logfire_span_id(detail["perStepOutputs"]["2"][0]["traceSpanId"])
     assert detail["perStepOutputs"]["2"][0]["error"]["code"] == "agent_execution_failed"
+
+
+def test_agent_platform_run_persists_redacted_provider_failure_metadata(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeFailingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeFailingOpenAIClient)
+
+    with session_factory() as session:
+        output_schema = _build_agent_platform_output_schema(
+            key="artifact_failure_schema",
+            version=1,
+            status="published",
+        )
+        skill = _build_agent_platform_skill(
+            key="artifact_failure_skill",
+            version=1,
+            status="published",
+        )
+        mcp_server = _build_agent_platform_mcp_server(
+            key="artifact_failure_server",
+            version=1,
+            status="published",
+        )
+        connection = _build_model_connection(
+            name="Artifact Failure Connection",
+            api_key="sk-artifact-secret-1234",
+        )
+        session.add_all([output_schema, skill, mcp_server, connection])
+        session.flush()
+        failing_agent = _build_agent_platform_agent(
+            key="artifact_failure_agent",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            skill=skill,
+            mcp_server=mcp_server,
+            model_connection=connection,
+        )
+        session.add(failing_agent)
+        session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreate.model_validate(
+                {
+                    "key": "artifact_failure_workflow",
+                    "name": "Artifact Failure Workflow",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ticker": {"type": "string"}},
+                        "required": ["ticker"],
+                    },
+                    "steps": [
+                        {
+                            "index": 1,
+                            "agents": [
+                                {
+                                    "agentKey": "artifact_failure_agent",
+                                    "slot": "analysis",
+                                    "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                                }
+                            ],
+                        }
+                    ],
+                    "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+                }
+            )
+        )
+
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    assert trigger.status_code == 201, trigger.json()
+    run_id = trigger.json()["id"]
+    detail = _wait_for_agent_platform_run_detail(client, run_id)
+
+    assert detail["status"] == "failed"
+    assert "[REDACTED]" in detail["error"]
+    assert "sk-artifact-secret-1234" not in detail["error"]
+    step_error = detail["perStepOutputs"]["1"][0]["error"]
+    assert step_error["code"] == "agent_provider_error"
+    assert "[REDACTED]" in step_error["message"]
+    assert "sk-artifact-secret-1234" not in json.dumps(detail)
+
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error is not None and "[REDACTED]" in run.error
+        assert "sk-artifact-secret-1234" not in run.error
+        assert "sk-artifact-secret-1234" not in json.dumps(run.per_step_outputs)

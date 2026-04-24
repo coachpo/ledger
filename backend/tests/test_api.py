@@ -232,6 +232,16 @@ def mcp_http_sse_payload(
     }
 
 
+def create_model_connection(
+    client: TestClient,
+    *,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    response = client.post("/api/model-connections", json=payload)
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
 def create_agent(
     client: TestClient,
     *,
@@ -318,11 +328,32 @@ def _seed_stock_analysis_platform(
         ),
     )
     activate_mcp_server(client, cast(int, created_mcp_server["id"]))
+    model_connection = create_model_connection(
+        client,
+        payload={
+            "name": "Stock Analysis Runtime",
+            "description": "Shared stock-analysis runtime connection for API tests.",
+            "baseUrl": "https://api.openai.com",
+            "modelId": "gpt-5.4-mini",
+            "reasoningEffort": "medium",
+            "timeoutSeconds": 60,
+            "apiKey": "sk-stock-analysis-1234",
+        },
+    )
     for agent_key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS:
-        create_agent(client, payload=stock_analysis_agent_payload(agent_key))
+        create_agent(
+            client,
+            payload=stock_analysis_agent_payload(
+                agent_key,
+                model_connection_id=cast(int, model_connection["id"]),
+            ),
+        )
     create_agent(
         client,
-        payload=stock_analysis_synthesizer_payload(optional_agents=optional_agents or set()),
+        payload=stock_analysis_synthesizer_payload(
+            model_connection_id=cast(int, model_connection["id"]),
+            optional_agents=optional_agents or set(),
+        ),
     )
 
 
@@ -750,24 +781,24 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
     seeded = _seed_agent_platform_agent_dependencies(client)
     agent = create_agent(
         client,
-        payload={
-            "key": "hyphenated_mcp_agent",
-            "name": "Hyphenated MCP Agent",
-            "description": "Uses a hyphenated MCP server key.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Summarize the market state.",
-            "inputSchema": {
+        payload=_agent_payload(
+            seeded,
+            key="hyphenated_mcp_agent",
+            name="Hyphenated MCP Agent",
+            description="Uses a hyphenated MCP server key.",
+            system_prompt="Summarize the market state.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
                 "additionalProperties": False,
             },
-            "outputSchemaKey": seeded["outputSchema"]["key"],
-            "skills": [{"skillKey": seeded["skill"]["key"]}],
-            "mcpServers": [{"mcpServerKey": activated_server["key"]}],
-            "budgetUsd": "0.50000000",
-            "streaming": False,
-        },
+            output_schema_key=cast(str, seeded["outputSchema"]["key"]),
+            skills=[{"skillKey": seeded["skill"]["key"]}],
+            mcp_servers=[{"mcpServerKey": activated_server["key"]}],
+            budget_usd="0.50000000",
+            streaming=False,
+        ),
     )
     assert cast(list[dict[str, object]], agent["mcpServers"])[0]["key"] == "sequential-thinking"
 
@@ -839,11 +870,64 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
         ),
     )
     mcp_server = activate_mcp_server(client, cast(int, created_mcp_server["id"]))
+    model_connection = create_model_connection(
+        client,
+        payload={
+            "name": "Agent Test Runtime",
+            "description": "Shared model connection for agent/workflow API tests.",
+            "baseUrl": "https://api.openai.com",
+            "modelId": "gpt-5.4-mini",
+            "reasoningEffort": "medium",
+            "timeoutSeconds": 60,
+            "apiKey": "sk-agent-tests-1234",
+        },
+    )
     return {
         "outputSchema": output_schema,
         "skill": skill,
         "mcpServer": mcp_server,
+        "modelConnection": model_connection,
     }
+
+
+def _agent_payload(
+    dependencies: dict[str, dict[str, object]],
+    *,
+    key: str,
+    name: str,
+    description: str,
+    system_prompt: str,
+    input_schema: dict[str, object],
+    output_schema_key: str,
+    skills: list[dict[str, object]],
+    mcp_servers: list[dict[str, object]],
+    include_key: bool = True,
+    output_schema_version: int | None = None,
+    max_tool_rounds: int | None = None,
+    budget_usd: str | None = None,
+    streaming: bool | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": name,
+        "description": description,
+        "modelConnectionId": dependencies["modelConnection"]["id"],
+        "systemPrompt": system_prompt,
+        "inputSchema": input_schema,
+        "outputSchemaKey": output_schema_key,
+        "skills": skills,
+        "mcpServers": mcp_servers,
+    }
+    if include_key:
+        payload["key"] = key
+    if output_schema_version is not None:
+        payload["outputSchemaVersion"] = output_schema_version
+    if max_tool_rounds is not None:
+        payload["maxToolRounds"] = max_tool_rounds
+    if budget_usd is not None:
+        payload["budgetUsd"] = budget_usd
+    if streaming is not None:
+        payload["streaming"] = streaming
+    return payload
 
 
 def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved_dependencies(
@@ -853,13 +937,13 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
 
     created = create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {
                     "ticker": {"type": "string"},
@@ -867,14 +951,13 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
                 },
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-            "temperature": 0.2,
-            "maxToolRounds": 2,
-            "budgetUsd": "1.25000000",
-            "streaming": True,
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+            max_tool_rounds=2,
+            budget_usd="1.25000000",
+            streaming=True,
+        ),
     )
 
     assert created["version"] == 1
@@ -911,24 +994,24 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
 def test_agent_platform_agent_update_version_creates_new_immutable_row(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     created = create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     output_schema_v2 = create_output_schema(
@@ -966,12 +1049,13 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
 
     update_response = client.post(
         f"/api/agents/{created['id']}",
-        json={
-            "name": "Research Agent v2",
-            "description": "Uses explicit pinned dependency versions.",
-            "model": "openai:gpt-5.4",
-            "systemPrompt": "Use the pinned dependencies and return the richer schema.",
-            "inputSchema": {
+        json=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent v2",
+            description="Uses explicit pinned dependency versions.",
+            system_prompt="Use the pinned dependencies and return the richer schema.",
+            input_schema={
                 "type": "object",
                 "properties": {
                     "ticker": {"type": "string"},
@@ -979,15 +1063,15 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
                 },
                 "required": ["ticker", "horizonDays"],
             },
-            "outputSchemaKey": "decision_schema",
-            "outputSchemaVersion": 2,
-            "skills": [{"skillKey": "market_research", "skillVersion": 2}],
-            "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
-            "temperature": 0.4,
-            "maxToolRounds": 3,
-            "budgetUsd": "2.50000000",
-            "streaming": False,
-        },
+            output_schema_key="decision_schema",
+            include_key=False,
+            output_schema_version=2,
+            skills=[{"skillKey": "market_research", "skillVersion": 2}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
+            max_tool_rounds=3,
+            budget_usd="2.50000000",
+            streaming=False,
+        ),
     )
     assert update_response.status_code == 200, update_response.json()
     updated = update_response.json()
@@ -1017,33 +1101,34 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
 def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     created = create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
     updated = client.post(
         f"/api/agents/{created['id']}",
-        json={
-            "name": "Research Agent v2",
-            "description": "Version 2 for archive coverage.",
-            "model": "openai:gpt-5.4",
-            "systemPrompt": "Use version 2 for archive coverage.",
-            "inputSchema": {
+        json=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent v2",
+            description="Version 2 for archive coverage.",
+            system_prompt="Use version 2 for archive coverage.",
+            input_schema={
                 "type": "object",
                 "properties": {
                     "ticker": {"type": "string"},
@@ -1051,10 +1136,11 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
                 },
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            include_key=False,
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
     assert updated.status_code == 200, updated.json()
     updated_body = updated.json()
@@ -1082,22 +1168,23 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
 def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
 
     response = client.post(
         "/api/agents",
-        json={
-            "key": "invalid_agent",
-            "name": "Invalid Agent",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "This save should fail.",
-            "inputSchema": {
+        json=_agent_payload(
+            dependencies,
+            key="invalid_agent",
+            name="Invalid Agent",
+            description="",
+            system_prompt="This save should fail.",
+            input_schema={
                 "allOf": [{"type": "object"}, {"type": "string"}],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     assert response.status_code == 422, response.json()
@@ -1111,40 +1198,25 @@ def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
 def test_agent_platform_agent_missing_output_schema_returns_field_errors(
     client: TestClient,
 ) -> None:
-    create_skill(
-        client,
-        payload={
-            "key": "market_research",
-            "name": "Market Research",
-            "toolDefinitions": [{"tool": "ledger.market_data.quote_lookup"}],
-        },
-    )
-    create_mcp_server(
-        client,
-        payload=mcp_http_sse_payload(
-            key="market_data",
-            name="Market Data MCP",
-            url="https://example.com/mcp",
-            headers={"Authorization": "Bearer secret-token"},
-        ),
-    )
+    dependencies = _seed_agent_platform_agent_dependencies(client)
 
     response = client.post(
         "/api/agents",
-        json={
-            "key": "broken_agent",
-            "name": "Broken Agent",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "This save should fail.",
-            "inputSchema": {
+        json=_agent_payload(
+            dependencies,
+            key="broken_agent",
+            name="Broken Agent",
+            description="",
+            system_prompt="This save should fail.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "missing_schema",
-            "skills": [{"skillKey": "market_research", "skillVersion": 1}],
-            "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
-        },
+            output_schema_key="missing_schema",
+            skills=[{"skillKey": "market_research", "skillVersion": 1}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
+        ),
     )
 
     assert response.status_code == 422, response.json()
@@ -1157,16 +1229,16 @@ def test_agent_platform_agent_missing_output_schema_returns_field_errors(
 def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resolved_structure(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {
                     "ticker": {"type": "string"},
@@ -1174,11 +1246,11 @@ def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resol
                 },
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-            "budgetUsd": "1.25000000",
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+            budget_usd="1.25000000",
+        ),
     )
 
     created = create_workflow(
@@ -1245,25 +1317,25 @@ def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resol
 def test_agent_platform_workflow_update_version_pins_current_agent_versions_immutably(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     created_agent = create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-            "budgetUsd": "1.25000000",
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+            budget_usd="1.25000000",
+        ),
     )
     created_workflow = create_workflow(
         client,
@@ -1311,12 +1383,13 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
     )
     update_agent_response = client.post(
         f"/api/agents/{created_agent['id']}",
-        json={
-            "name": "Research Agent v2",
-            "description": "Publishes a richer schema.",
-            "model": "openai:gpt-5.4",
-            "systemPrompt": "Use the richer output schema.",
-            "inputSchema": {
+        json=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent v2",
+            description="Publishes a richer schema.",
+            system_prompt="Use the richer output schema.",
+            input_schema={
                 "type": "object",
                 "properties": {
                     "ticker": {"type": "string"},
@@ -1324,12 +1397,13 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
                 },
                 "required": ["ticker", "horizonDays"],
             },
-            "outputSchemaKey": "decision_schema",
-            "outputSchemaVersion": 2,
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-            "budgetUsd": "2.50000000",
-        },
+            output_schema_key="decision_schema",
+            include_key=False,
+            output_schema_version=2,
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+            budget_usd="2.50000000",
+        ),
     )
     assert update_agent_response.status_code == 200, update_agent_response.json()
 
@@ -1393,24 +1467,24 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
 def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     response = client.post(
@@ -1456,24 +1530,24 @@ def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
 def test_agent_platform_workflow_wiring_rejects_unresolved_slots(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     response = client.post(
@@ -1530,24 +1604,24 @@ def test_agent_platform_workflow_wiring_rejects_unresolved_slots(
 def test_agent_platform_workflow_wiring_rejects_forward_step_references(
     client: TestClient,
 ) -> None:
-    _seed_agent_platform_agent_dependencies(client)
+    dependencies = _seed_agent_platform_agent_dependencies(client)
     create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     response = client.post(
@@ -1607,39 +1681,39 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
     dependencies = _seed_agent_platform_agent_dependencies(client)
     create_agent(
         client,
-        payload={
-            "key": "research_agent",
-            "name": "Research Agent",
-            "description": "Analyzes a ticker.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Analyze the requested ticker and return a typed result.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
                 "type": "object",
                 "properties": {"ticker": {"type": "string"}},
                 "required": ["ticker"],
             },
-            "outputSchemaKey": "decision_schema",
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
     create_agent(
         client,
-        payload={
-            "key": "score_agent",
-            "name": "Score Agent",
-            "description": "Requires an integer score.",
-            "model": "openai:gpt-5.4-mini",
-            "systemPrompt": "Use the integer score.",
-            "inputSchema": {
+        payload=_agent_payload(
+            dependencies,
+            key="score_agent",
+            name="Score Agent",
+            description="Requires an integer score.",
+            system_prompt="Use the integer score.",
+            input_schema={
                 "type": "object",
                 "properties": {"score": {"type": "integer"}},
                 "required": ["score"],
             },
-            "outputSchemaKey": cast(str, dependencies["outputSchema"]["key"]),
-            "skills": [{"skillKey": "market_research"}],
-            "mcpServers": [{"mcpServerKey": "market_data"}],
-        },
+            output_schema_key=cast(str, dependencies["outputSchema"]["key"]),
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
     )
 
     response = client.post(

@@ -10,6 +10,7 @@ from pydantic import Field, ValidationInfo, field_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.mcp_server import McpClientBoundaryRead, McpServerStatus, McpServerTransport
+from app.schemas.model_connection import ModelConnectionListItemRead
 from app.schemas.output_schema import OutputSchemaRead
 from app.schemas.skill import SkillRead
 
@@ -84,19 +85,18 @@ class AgentMcpServerRefWrite(CamelModel):
 class AgentVersionBase(CamelModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    model: str = Field(min_length=1, max_length=200)
+    model_connection_id: int = Field(ge=1)
     system_prompt: str = Field(min_length=1)
     input_schema: dict[str, Any]
     output_schema_key: str = Field(min_length=1, max_length=120)
     output_schema_version: int | None = Field(default=None, ge=1)
     skills: list[AgentSkillRefWrite] = Field(default_factory=list)
     mcp_servers: list[AgentMcpServerRefWrite] = Field(default_factory=list)
-    temperature: float = 0.0
     max_tool_rounds: int = Field(default=1, ge=1)
     budget_usd: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
     streaming: bool = False
 
-    @field_validator("name", "model", "system_prompt", mode="before")
+    @field_validator("name", "system_prompt", mode="before")
     @classmethod
     def validate_required_text_fields(
         cls,
@@ -149,13 +149,13 @@ class AgentRead(CamelModel):
     status: AgentStatus
     name: str
     description: str
-    model: str
+    model_connection_id: int = Field(ge=1)
+    model_connection: ModelConnectionListItemRead
     system_prompt: str
     input_schema: dict[str, Any]
     output_schema: OutputSchemaRead
     skills: list[SkillRead]
     mcp_servers: list[AgentMcpServerRead]
-    temperature: float
     max_tool_rounds: int
     budget_usd: Decimal
     streaming: bool

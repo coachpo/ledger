@@ -12,10 +12,12 @@ from app.agents.mcp import McpClientBoundary, McpConnectionTester
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
 from app.models.agent import Agent
 from app.models.mcp_server import McpServer
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.skill import Skill
 from app.repositories.agent import AgentRepository
 from app.repositories.mcp_server import McpServerRepository
+from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.skill import SkillRepository
 from app.schemas.agent import (
@@ -29,6 +31,7 @@ from app.schemas.agent import (
     AgentUpdate,
 )
 from app.schemas.mcp_server import McpClientBoundaryRead
+from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionStatus
 from app.services.mcp_server_service import McpServerService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -51,6 +54,7 @@ class AgentService:
         self.output_schema_repository = OutputSchemaRepository(session)
         self.skill_repository = SkillRepository(session)
         self.mcp_server_repository = McpServerRepository(session)
+        self.model_connection_repository = ModelConnectionRepository(session)
         self.skill_service = SkillService(session, skill_registry)
         self.mcp_server_service = McpServerService(session, connection_tester)
         self.output_schema_service = OutputSchemaService(session)
@@ -82,14 +86,13 @@ class AgentService:
         state = self._build_state(
             name=payload.name,
             description=payload.description,
-            model_name=payload.model,
+            model_connection_id=payload.model_connection_id,
             system_prompt=payload.system_prompt,
             input_schema=payload.input_schema,
             output_schema_key=payload.output_schema_key,
             output_schema_version=payload.output_schema_version,
             skills=payload.skills,
             mcp_servers=payload.mcp_servers,
-            temperature=payload.temperature,
             max_tool_rounds=payload.max_tool_rounds,
             budget_usd=payload.budget_usd,
             streaming=payload.streaming,
@@ -109,14 +112,13 @@ class AgentService:
         state = self._build_state(
             name=payload.name,
             description=payload.description,
-            model_name=payload.model,
+            model_connection_id=payload.model_connection_id,
             system_prompt=payload.system_prompt,
             input_schema=payload.input_schema,
             output_schema_key=payload.output_schema_key,
             output_schema_version=payload.output_schema_version,
             skills=payload.skills,
             mcp_servers=payload.mcp_servers,
-            temperature=payload.temperature,
             max_tool_rounds=payload.max_tool_rounds,
             budget_usd=payload.budget_usd,
             streaming=payload.streaming,
@@ -174,14 +176,13 @@ class AgentService:
         *,
         name: str,
         description: str,
-        model_name: str,
+        model_connection_id: int,
         system_prompt: str,
         input_schema: dict[str, Any],
         output_schema_key: str,
         output_schema_version: int | None,
         skills: Sequence[Any],
         mcp_servers: Sequence[Any],
-        temperature: float,
         max_tool_rounds: int,
         budget_usd: Any,
         streaming: bool,
@@ -190,10 +191,12 @@ class AgentService:
         output_schema = self._resolve_output_schema(output_schema_key, output_schema_version)
         skill_rows = self._resolve_skill_rows(skills)
         mcp_server_rows = self._resolve_mcp_server_rows(mcp_servers)
+        model_connection = self._resolve_model_connection_for_save(model_connection_id)
         return {
             "name": name,
             "description": description,
-            "model": model_name,
+            "model_connection_id": model_connection.id,
+            "model": model_connection.model_id,
             "system_prompt": system_prompt,
             "input_schema": normalized_input_schema,
             "output_schema_id": output_schema.id,
@@ -210,7 +213,6 @@ class AgentService:
                 }
                 for item in mcp_server_rows
             ],
-            "temperature": temperature,
             "max_tool_rounds": max_tool_rounds,
             "budget_usd": budget_usd,
             "streaming": streaming,
@@ -329,6 +331,47 @@ class AgentService:
             resolved.append(server)
         return resolved
 
+    def _resolve_model_connection_for_save(self, connection_id: int) -> ModelConnection:
+        connection = self.model_connection_repository.get(connection_id)
+        if connection is None:
+            raise validation_error(
+                "Agent validation failed",
+                [
+                    {
+                        "field": "modelConnectionId",
+                        "issue": f"Model connection {connection_id} was not found",
+                    }
+                ],
+            )
+        if connection.status != ModelConnectionStatus.ACTIVE.value:
+            raise validation_error(
+                "Agent validation failed",
+                [
+                    {
+                        "field": "modelConnectionId",
+                        "issue": "Archived model connections cannot be selected",
+                    }
+                ],
+            )
+        return connection
+
+    def _resolve_stored_model_connection_row(self, agent: Agent) -> ModelConnection:
+        if agent.model_connection_id is None:
+            raise business_rule_error(
+                "agent_model_connection_missing",
+                f"Agent {agent.key!r} is missing its saved model connection",
+            )
+        connection = self.model_connection_repository.get(agent.model_connection_id)
+        if connection is None:
+            raise business_rule_error(
+                "agent_model_connection_missing",
+                (
+                    f"Agent {agent.key!r} references missing model connection "
+                    f"{agent.model_connection_id}"
+                ),
+            )
+        return connection
+
     def _resolve_model(self, agent_id: int, *, version: int | None) -> Agent:
         anchor = self._get_model(agent_id)
         if version is None:
@@ -387,6 +430,9 @@ class AgentService:
             )
 
         output_schema = self.output_schema_service.get_schema(output_schema_row.id)
+        model_connection = ModelConnectionListItemRead.model_validate(
+            self._resolve_stored_model_connection_row(agent)
+        )
         skills = [
             self.skill_service.get_skill(skill.id)
             for skill in self._resolve_stored_skill_rows(agent.skills)
@@ -403,13 +449,13 @@ class AgentService:
                 "status": agent.status,
                 "name": agent.name,
                 "description": agent.description,
-                "model": agent.model,
+                "modelConnectionId": model_connection.id,
+                "modelConnection": model_connection,
                 "systemPrompt": agent.system_prompt,
                 "inputSchema": agent.input_schema,
                 "outputSchema": output_schema,
                 "skills": skills,
                 "mcpServers": mcp_servers,
-                "temperature": agent.temperature,
                 "maxToolRounds": agent.max_tool_rounds,
                 "budgetUsd": agent.budget_usd,
                 "streaming": agent.streaming,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import and_, func, select
 
 from app.models.agent import Agent
+from app.models.model_connection import ModelConnection
 from app.repositories.base import BaseRepository
 
 
@@ -18,11 +19,14 @@ class AgentRepository(BaseRepository[Agent]):
         latest_versions = select(
             self.model.key.label("key"),
             func.max(self.model.version).label("version"),
-        )
+        ).select_from(self.model)
+        if model is not None:
+            latest_versions = latest_versions.join(
+                ModelConnection,
+                self.model.model_connection_id == ModelConnection.id,
+            ).where(ModelConnection.model_id == model)
         if status is not None:
             latest_versions = latest_versions.where(self.model.status == status)
-        if model is not None:
-            latest_versions = latest_versions.where(self.model.model == model)
         latest_versions = latest_versions.group_by(self.model.key)
 
         latest_versions_subquery = latest_versions.subquery()

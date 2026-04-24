@@ -102,13 +102,14 @@ def stock_analysis_step_one_wiring() -> dict[str, dict[str, str]]:
 def stock_analysis_agent_payload(
     key: str,
     *,
+    model_connection_id: int,
     budget_usd: str = "0.05000000",
 ) -> dict[str, Any]:
     return {
         "key": key,
         "name": key.replace("_", " ").title(),
         "description": f"Stub stock-analysis agent for {key}.",
-        "model": "openai:gpt-5.4-mini",
+        "modelConnectionId": model_connection_id,
         "systemPrompt": f"Return the deterministic stub analysis for {key}.",
         "inputSchema": stock_analysis_workflow_input_schema(),
         "outputSchemaKey": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
@@ -121,6 +122,7 @@ def stock_analysis_agent_payload(
 
 def stock_analysis_synthesizer_payload(
     *,
+    model_connection_id: int,
     optional_agents: Iterable[str] = (),
     budget_usd: str = "0.10000000",
 ) -> dict[str, Any]:
@@ -128,7 +130,7 @@ def stock_analysis_synthesizer_payload(
         "key": STOCK_ANALYSIS_SYNTHESIZER_KEY,
         "name": "Decision Synthesizer",
         "description": "Combines the stub analyses into a TradingDecision.",
-        "model": "openai:gpt-5.4-mini",
+        "modelConnectionId": model_connection_id,
         "systemPrompt": "Combine the wired analyses into a deterministic TradingDecision.",
         "inputSchema": stock_analysis_synthesizer_input_schema(optional_agents=optional_agents),
         "outputSchemaKey": TRADING_DECISION_SCHEMA_KEY,

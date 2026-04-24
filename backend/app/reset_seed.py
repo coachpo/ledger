@@ -14,6 +14,7 @@ from app.db.session import get_engine, get_session_factory, init_db, reset_db_ca
 from app.schemas.agent import AgentCreate
 from app.schemas.balance import BalanceCreate
 from app.schemas.mcp_server import McpServerCreate, McpServerTransport
+from app.schemas.model_connection import ModelConnectionCreate
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaKind
 from app.schemas.portfolio import PortfolioCreate
 from app.schemas.position import PositionCreate
@@ -23,6 +24,7 @@ from app.schemas.workflow import WorkflowCreate
 from app.services.agent_service import AgentService
 from app.services.balance_service import BalanceService
 from app.services.mcp_server_service import McpServerService
+from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_service import OutputSchemaService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
@@ -271,12 +273,17 @@ def _stock_analysis_agent_prompt(key: str) -> str:
     return prompts[key]
 
 
-def _stock_analysis_agent_payload(key: str, *, budget_usd: str = "0.05000000") -> dict[str, Any]:
+def _stock_analysis_agent_payload(
+    key: str,
+    *,
+    model_connection_id: int,
+    budget_usd: str = "0.05000000",
+) -> dict[str, Any]:
     return {
         "key": key,
         "name": key.replace("_", " ").title(),
         "description": f"Seeded stock-analysis agent for {key}.",
-        "model": "openai:gpt-5.4-mini",
+        "modelConnectionId": model_connection_id,
         "systemPrompt": _stock_analysis_agent_prompt(key),
         "inputSchema": stock_analysis_workflow_input_schema(),
         "outputSchemaKey": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
@@ -287,12 +294,12 @@ def _stock_analysis_agent_payload(key: str, *, budget_usd: str = "0.05000000") -
     }
 
 
-def _stock_analysis_synthesizer_payload() -> dict[str, Any]:
+def _stock_analysis_synthesizer_payload(*, model_connection_id: int) -> dict[str, Any]:
     return {
         "key": STOCK_ANALYSIS_SYNTHESIZER_KEY,
         "name": "Decision Synthesizer",
         "description": "Combines seeded stock-analysis notes into a TradingDecision.",
-        "model": "openai:gpt-5.4-mini",
+        "modelConnectionId": model_connection_id,
         "systemPrompt": (
             "Synthesize the analyst notes into a single trading decision. Weigh signal quality, "
             "portfolio context, and macro risk, then return a concise rationale "
@@ -368,6 +375,23 @@ def _create_and_activate_mcp_server(service: McpServerService) -> str:
     return service.activate(draft.id).key
 
 
+def _create_starter_model_connection(service: ModelConnectionService) -> int:
+    created = service.create_connection(
+        ModelConnectionCreate.model_validate(
+            {
+                "name": "Starter stock-analysis runtime",
+                "description": "Seeded saved model connection for starter agents.",
+                "baseUrl": "https://api.openai.com",
+                "modelId": "gpt-5.4-mini",
+                "reasoningEffort": "medium",
+                "timeoutSeconds": 60,
+                "apiKey": "sk-seed-placeholder-1234",
+            }
+        )
+    )
+    return created.id
+
+
 def _workflow_payload() -> dict[str, Any]:
     return {
         "key": STARTER_WORKFLOW_KEY,
@@ -426,6 +450,7 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
         connection_tester = DefaultMcpConnectionTester()
         skill_service = SkillService(session, skill_registry)
         mcp_server_service = McpServerService(session, connection_tester)
+        model_connection_service = ModelConnectionService(session)
         agent_service = AgentService(session, skill_registry, connection_tester)
 
         portfolio = portfolio_service.create_portfolio(
@@ -512,16 +537,26 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
         )
         skill_keys = (_create_and_activate_skill(skill_service),)
         mcp_server_keys = (_create_and_activate_mcp_server(mcp_server_service),)
+        starter_model_connection_id = _create_starter_model_connection(model_connection_service)
 
         agent_keys = [
             agent_service.create_agent(
-                AgentCreate.model_validate(_stock_analysis_agent_payload(key))
+                AgentCreate.model_validate(
+                    _stock_analysis_agent_payload(
+                        key,
+                        model_connection_id=starter_model_connection_id,
+                    )
+                )
             ).key
             for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
         ]
         agent_keys.append(
             agent_service.create_agent(
-                AgentCreate.model_validate(_stock_analysis_synthesizer_payload())
+                AgentCreate.model_validate(
+                    _stock_analysis_synthesizer_payload(
+                        model_connection_id=starter_model_connection_id,
+                    )
+                )
             ).key
         )
         workflow = workflow_service.create_workflow(
