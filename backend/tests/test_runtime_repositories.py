@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.agent import Agent
 from app.models.mcp_server import McpServer
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
 from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
 from app.repositories.mcp_server import McpServerRepository
+from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.skill import SkillRepository
@@ -74,6 +76,29 @@ def _build_mcp_server(
     )
 
 
+def _build_model_connection(
+    *,
+    name: str,
+    status: str,
+    api_key: str,
+    model_id: str = "gpt-5.4-mini",
+) -> ModelConnection:
+    return ModelConnection(
+        status=status,
+        name=name,
+        description=f"{name} description",
+        base_url="https://api.openai.com/v1",
+        organization=None,
+        project=None,
+        model_id=model_id,
+        reasoning_effort="medium",
+        timeout_seconds=60,
+        secret_payload={"apiKey": api_key},
+        has_api_key=True,
+        api_key_last4=api_key[-4:],
+    )
+
+
 def _build_agent(
     *,
     key: str,
@@ -83,6 +108,7 @@ def _build_agent(
     skills: list[Skill],
     mcp_servers: list[McpServer],
     budget_usd: Decimal,
+    model_connection_id: int = 1,
 ) -> Agent:
     return Agent(
         key=key,
@@ -90,6 +116,7 @@ def _build_agent(
         status=status,
         name=f"{key}-{version}",
         description="Agent description",
+        model_connection_id=model_connection_id,
         model="openai:gpt-5.4-mini",
         system_prompt="Assess the input and return a typed result.",
         input_schema={"type": "object", "required": ["ticker"]},
@@ -323,6 +350,46 @@ def test_agent_platform_mcp_repository_filters_enabled_servers_and_versions(
             ("filings", 1),
             ("market_data", 1),
         ]
+
+
+def test_agent_platform_model_connection_repository_filters_active_and_archived_rows(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        archived = _build_model_connection(
+            name="Archived Connection",
+            status="archived",
+            api_key="sk-archived-4444",
+        )
+        alpha_active = _build_model_connection(
+            name="Alpha Active",
+            status="active",
+            api_key="sk-active-1111",
+        )
+        beta_active = _build_model_connection(
+            name="Beta Active",
+            status="active",
+            api_key="sk-active-2222",
+        )
+        session.add_all([archived, beta_active, alpha_active])
+        session.commit()
+
+        repo = ModelConnectionRepository(session)
+        all_connections = repo.list_connections()
+        active_connections = repo.list_active()
+        archived_connections = repo.list_connections(status="archived")
+        archived_row = repo.get(archived.id)
+
+        assert [(item.name, item.status) for item in all_connections] == [
+            ("Alpha Active", "active"),
+            ("Beta Active", "active"),
+            ("Archived Connection", "archived"),
+        ]
+        assert [item.id for item in active_connections] == [alpha_active.id, beta_active.id]
+        assert [item.id for item in archived_connections] == [archived.id]
+        assert archived_row is not None
+        assert archived_row.status == "archived"
+        assert archived_row.secret_payload == {"apiKey": "sk-archived-4444"}
 
 
 def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_versions(

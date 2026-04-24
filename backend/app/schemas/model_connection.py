@@ -1,0 +1,221 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from urllib.parse import urlsplit, urlunsplit
+
+from pydantic import Field, ValidationInfo, field_validator, model_validator
+
+from app.schemas.common import CamelModel, ensure_timezone
+
+
+def _normalize_required_text(value: object, *, field_name: str) -> str:
+    if value is None:
+        raise ValueError(f"{field_name} is required")
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError(f"{field_name} is required")
+    return normalized
+
+
+def _normalize_optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _normalize_optional_secret(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError("API key cannot be empty")
+    return normalized
+
+
+def _normalize_base_url(value: object) -> str:
+    normalized = _normalize_required_text(value, field_name="Base URL")
+    parsed = urlsplit(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Base URL must be a valid http or https URL")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL must not include query parameters or fragments")
+
+    path = parsed.path.rstrip("/")
+    lower_path = path.lower()
+    if lower_path.endswith("/v1/responses"):
+        raise ValueError("Base URL must point to the /v1 root, not /v1/responses")
+    if "/v1/" in lower_path:
+        raise ValueError("Base URL must point to the /v1 root")
+    if not path:
+        path = "/v1"
+    elif not lower_path.endswith("/v1"):
+        path = f"{path}/v1"
+
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+class ModelConnectionStatus(str, Enum):  # noqa: UP042
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ModelConnectionReasoningEffort(str, Enum):  # noqa: UP042
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ModelConnectionCreate(CamelModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    base_url: str
+    organization: str | None = Field(default=None, max_length=200)
+    project: str | None = Field(default=None, max_length=200)
+    model_id: str = Field(min_length=1, max_length=200)
+    reasoning_effort: ModelConnectionReasoningEffort = ModelConnectionReasoningEffort.MEDIUM
+    timeout_seconds: int = Field(default=60, ge=1)
+    api_key: str | None = None
+
+    @field_validator("name", "model_id", mode="before")
+    @classmethod
+    def validate_required_text_fields(cls, value: object, info: ValidationInfo) -> str:
+        field_name = (info.field_name or "field").replace("_", " ").title()
+        return _normalize_required_text(value, field_name=field_name)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def validate_base_url(cls, value: object) -> str:
+        return _normalize_base_url(value)
+
+    @field_validator("organization", "project", mode="before")
+    @classmethod
+    def validate_optional_identifiers(cls, value: object) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_api_key(cls, value: object) -> str | None:
+        return _normalize_optional_secret(value)
+
+
+class ModelConnectionUpdate(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    base_url: str | None = None
+    organization: str | None = Field(default=None, max_length=200)
+    project: str | None = Field(default=None, max_length=200)
+    model_id: str | None = Field(default=None, min_length=1, max_length=200)
+    reasoning_effort: ModelConnectionReasoningEffort | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1)
+    api_key: str | None = None
+
+    @field_validator("name", "model_id", mode="before")
+    @classmethod
+    def validate_optional_required_text_fields(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> str:
+        field_name = (info.field_name or "field").replace("_", " ").title()
+        return _normalize_required_text(value, field_name=field_name)
+
+    @field_validator("description", "organization", "project", mode="before")
+    @classmethod
+    def validate_optional_text_fields(cls, value: object) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def validate_optional_base_url(cls, value: object) -> str:
+        return _normalize_base_url(value)
+
+    @field_validator("timeout_seconds", "reasoning_effort", mode="before")
+    @classmethod
+    def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            field_name = info.field_name or "field"
+            raise ValueError(f"{field_name} cannot be null")
+        return value
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_optional_api_key(cls, value: object) -> str | None:
+        return _normalize_optional_secret(value)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> ModelConnectionUpdate:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+        if "api_key" in self.model_fields_set and self.api_key is None:
+            raise ValueError("apiKey cannot be null")
+        return self
+
+
+class ModelConnectionListItemRead(CamelModel):
+    id: int
+    status: ModelConnectionStatus
+    name: str
+    description: str
+    base_url: str
+    organization: str | None = None
+    project: str | None = None
+    model_id: str
+    reasoning_effort: ModelConnectionReasoningEffort
+    timeout_seconds: int = Field(ge=1)
+    has_api_key: bool
+    api_key_last4: str | None = None
+    last_tested_at: datetime | None = None
+    last_test_ok: bool | None = None
+    last_test_message: str | None = None
+
+    @field_validator("last_tested_at")
+    @classmethod
+    def validate_last_tested_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class ModelConnectionRead(ModelConnectionListItemRead):
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class ModelConnectionListRead(CamelModel):
+    items: list[ModelConnectionListItemRead]
+
+
+class ModelConnectionConnectionTestRead(CamelModel):
+    model_connection_id: int
+    ok: bool
+    message: str
+    last_tested_at: datetime
+
+    @field_validator("last_tested_at")
+    @classmethod
+    def validate_test_timestamp(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+__all__ = [
+    "ModelConnectionConnectionTestRead",
+    "ModelConnectionCreate",
+    "ModelConnectionListItemRead",
+    "ModelConnectionListRead",
+    "ModelConnectionRead",
+    "ModelConnectionReasoningEffort",
+    "ModelConnectionStatus",
+    "ModelConnectionUpdate",
+]

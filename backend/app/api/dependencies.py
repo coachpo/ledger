@@ -15,6 +15,7 @@ from app.services.balance_service import BalanceService
 from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService
 from app.services.mcp_server_service import McpServerService
+from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_service import OutputSchemaService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
@@ -114,6 +115,12 @@ def get_mcp_server_service(
     connection_tester: Annotated[McpConnectionTester, Depends(get_mcp_connection_tester)],
 ) -> McpServerService:
     return McpServerService(session, connection_tester)
+
+
+def get_model_connection_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> ModelConnectionService:
+    return ModelConnectionService(session)
 
 
 def get_output_schema_service(
