@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, agents, skills, MCP servers, output schemas, workflows, runs, and one small UI debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, agents, skills, MCP servers, model connections, output schemas, workflows, runs, and one small UI debounce helper.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -18,6 +18,7 @@
 | Agent flows | `use-agents.ts` | agent CRUD, archive, duplicate/test-panel helpers |
 | Skill flows | `use-skills.ts` | skill list/detail and activation |
 | MCP server flows | `use-mcp-servers.ts` | CRUD and connection-test helpers |
+| Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, archive, connection-test helpers |
 | Output schema flows | `use-output-schemas.ts` | schema list/detail/create/update |
 | Workflow flows | `use-workflows.ts` | workflow list/detail/create/update and run launch |
 | Run flows | `use-runs.ts` | run list/detail reads |
@@ -29,7 +30,7 @@
 - Mutations invalidate either list/detail keys or `invalidatePortfolioScope()`; do not hand-roll cache clearing in components.
 - Template hooks invalidate `queryKeys.templates.list()` and keep placeholder/detail query composition inside the hooks layer.
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
-- Agent-platform hooks invalidate `queryKeys.platform.*` namespaces and keep route-specific polling or mutation policy inside the hooks layer.
+- Agent-platform hooks invalidate `queryKeys.platform.*` namespaces and keep route-specific polling or mutation policy inside the hooks layer; model-connection connection tests also invalidate persisted last-test metadata.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
 - The template editor owns the 500 ms debounce for inline compile; hooks expose compile/query primitives but do not debounce internally.
