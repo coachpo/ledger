@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own agents, skills, MCP servers, output schemas, workflows, runs, and the stock-analysis reference path.
+`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own agents, skills, MCP servers, model connections, output schemas, workflows, runs, and the stock-analysis reference path.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -34,8 +34,8 @@
 - `PositionService` may consult the quote provider to resolve symbol names and caches successful lookups in `symbol_name_cache`; lookup failures should not block manual position CRUD.
 - `TemplateCompilerService` resolves the `{{portfolios...}}` and `{{reports...}}` placeholder contract against repositories and powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
 - `ReportService` treats compiled reports as timestamped snapshots, uploaded reports as slug-addressed markdown documents with optional metadata, and external JSON reports as first-class persisted sources.
-- Agent-platform services keep versioned config immutable, validate typed contracts before save, and keep run persistence detailed enough for the run monitor.
-- Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries.
+- Agent-platform services keep versioned config immutable, validate typed contracts before save, preserve secret-safe model-connection semantics, and keep run persistence detailed enough for the run monitor.
+- Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from model connections.
 
 ## ANTI-PATTERNS
 - Do not commit from routers or repositories when a service already owns the workflow.
@@ -60,5 +60,6 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_art
 ## NOTES
 - `TradingOperationService` may delete positions on full sell-down and supports DIVIDEND/SPLIT as well as BUY/SELL.
 - `MarketDataService` caches quotes by provider/symbol/as-of and recomputes staleness when falling back to cached rows.
+- `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
 - `RunService` persists run status, totals, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.

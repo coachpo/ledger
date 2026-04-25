@@ -39,5 +39,5 @@ uv run pytest
 ## NOTES
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior plus current agent-platform validation paths.
-- `test_runtime_api.py`, `test_runtime_artifacts.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence and execution contracts.
+- `test_runtime_api.py`, `test_runtime_artifacts.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, saved model-connection, upgrade, and execution contracts.
 - `test_legacy_backend_cutover.py` proves retired backend routes return `404` and removed modules stay absent.
