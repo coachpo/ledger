@@ -8,6 +8,7 @@
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
 - `types/AGENTS.md` — shared TypeScript wire contracts and enum-like unions
+- `platform-authoring/AGENTS.md` — pure schema/value/ref/workflow/agent authoring helpers
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -20,6 +21,7 @@
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
 | Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
+| Platform authoring helpers | `platform-authoring/AGENTS.md` | schema/value/ref/workflow/agent IR, codecs, factories, validation |
 | Report grouping | `report-grouping.ts` | report list filtering, grouping, and sort helpers |
 | Unit coverage | `api.test.ts`, `query-keys.test.ts`, `portfolio-analytics.test.ts`, `format.test.ts`, `markdown-format.test.ts` | contract and helper regressions |
 
