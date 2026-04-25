@@ -29,6 +29,94 @@ first_available_port() {
   return 1
 }
 
+require_command() {
+  local command_name="$1"
+  local install_hint="${2:-}"
+
+  if command -v "$command_name" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  printf 'Missing required command: %s.\n' "$command_name" >&2
+  if [[ -n "$install_hint" ]]; then
+    printf '%s\n' "$install_hint" >&2
+  fi
+  exit 1
+}
+
+require_frontend_dependencies() {
+  if (
+    cd "$FRONTEND_DIR"
+    pnpm exec vite --version >/dev/null 2>&1
+  ); then
+    return 0
+  fi
+
+  printf 'Frontend dependencies are not installed.\n' >&2
+  printf 'Run (cd "%s" && pnpm install) and retry.\n' "$FRONTEND_DIR" >&2
+  exit 1
+}
+
+validate_local_requirements() {
+  require_command lsof 'Install lsof and retry.'
+  require_command uv 'Install uv and retry.'
+  require_command pnpm 'Install pnpm 10+ and retry.'
+
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    require_command docker 'Install Docker with docker compose support or set DATABASE_URL explicitly.'
+    if ! docker compose version >/dev/null 2>&1; then
+      printf 'Docker Compose is required but `docker compose` is unavailable.\n' >&2
+      exit 1
+    fi
+  fi
+
+  require_frontend_dependencies
+}
+
+normalize_loopback_aliases() {
+  local host="$1"
+
+  case "$host" in
+    127.0.0.1)
+      printf '%s\n%s' '127.0.0.1' 'localhost'
+      ;;
+    localhost)
+      printf '%s\n%s' 'localhost' '127.0.0.1'
+      ;;
+    *)
+      printf '%s' "$host"
+      ;;
+  esac
+}
+
+append_unique_origin() {
+  local origins="$1"
+  local origin="$2"
+  local wrapped_origins=",${origins},"
+
+  if [[ "$wrapped_origins" == *",${origin},"* ]]; then
+    printf '%s' "$origins"
+  elif [[ -z "$origins" ]]; then
+    printf '%s' "$origin"
+  else
+    printf '%s,%s' "$origins" "$origin"
+  fi
+}
+
+merged_cors_allowed_origins() {
+  local frontend_host="$1"
+  local frontend_port="$2"
+  local allowed_origins="${CORS_ALLOWED_ORIGINS:-}"
+  local host
+
+  while IFS= read -r host; do
+    [[ -z "$host" ]] && continue
+    allowed_origins="$(append_unique_origin "$allowed_origins" "http://${host}:${frontend_port}")"
+  done < <(normalize_loopback_aliases "$frontend_host")
+
+  printf '%s' "$allowed_origins"
+}
+
 kill_listener_on_port() {
   local port="$1"
   local pids
@@ -103,6 +191,7 @@ database_url_for_port() {
   printf 'postgresql+psycopg://ledger:ledger@localhost:%s/ledger' "$1"
 }
 
+validate_local_requirements
 stop_existing_instances
 
 if [[ -z "${FRONTEND_PORT:-}" ]]; then
@@ -195,9 +284,10 @@ if [[ "$REUSE_BACKEND" -eq 0 ]]; then
       exit 1
     fi
 
-    DATABASE_URL="$selected_database_url" uv run uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$SELECTED_BACKEND_PORT"
+    BACKEND_CORS_ALLOWED_ORIGINS="$(merged_cors_allowed_origins "$FRONTEND_HOST" "$SELECTED_FRONTEND_PORT")"
+    DATABASE_URL="$selected_database_url" CORS_ALLOWED_ORIGINS="$BACKEND_CORS_ALLOWED_ORIGINS" uv run uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$SELECTED_BACKEND_PORT"
   ) &
-  BACKEND_PID=$!
+BACKEND_PID=$!
 fi
 
 cd "$FRONTEND_DIR"
