@@ -9,7 +9,7 @@
 | Task | Location | Notes |
 |---|---|---|
 | Router composition | `router.py`, `platform_router.py`, `../main.py` | `router.py` composes `/api/v1`, `platform_router.py` composes `/api/*`, and `main.py` mounts both |
-| Service construction | `dependencies.py` | request-scoped session plus CRUD, trading, market-data, template, report, and agent-platform service factories |
+| Service construction | `dependencies.py` | request-scoped session plus CRUD, trading, market-data, template, report, model-connection, and agent-platform service factories |
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD plus symbol lookup |
@@ -17,7 +17,7 @@
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Agent-platform routes | `agents.py`, `skills.py`, `mcp_servers.py`, `output_schemas.py`, `workflows.py`, `runs.py` | live `/api/*` routes for the stateless agent platform |
+| Agent-platform routes | `agents.py`, `skills.py`, `mcp_servers.py`, `model_connections.py`, `output_schemas.py`, `workflows.py`, `runs.py` | live `/api/*` routes for the current agent platform |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
@@ -35,7 +35,7 @@
 - Do not put business rules or DB logic in route handlers.
 - Do not instantiate `Session()` or repositories directly in routes.
 - Do not swallow `ApiError` exceptions just to remap status codes manually.
-- Do not bypass dependencies when wiring services, template helpers, report helpers, platform helpers, or quote providers.
+- Do not bypass dependencies when wiring services, template helpers, report helpers, model-connection helpers, platform helpers, or quote providers.
 - Do not duplicate request validation already captured by schemas.
 
 ## VALIDATION
@@ -50,5 +50,5 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_legacy_back
 
 ## NOTES
 - `router.py` mounts the live `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
-- `platform_router.py` mounts the live `/api/*` routers for agents, skills, MCP servers, output schemas, workflows, and runs.
-- `dependencies.py` constructs services with a shared request `Session` and wires the preserved product services plus the current agent-platform services into the live API.
+- `platform_router.py` mounts the live `/api/*` routers for agents, skills, MCP servers, model connections, output schemas, workflows, and runs.
+- `dependencies.py` constructs services with a shared request `Session` and wires the preserved product services, model-connection service, and current agent-platform services into the live API.
