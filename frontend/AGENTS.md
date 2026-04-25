@@ -3,24 +3,27 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, and the current agent-platform routes, plus shared forms and UI that keep route logic thin.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, and the current agent-platform routes including model connections, plus shared forms and UI that keep route logic thin.
 
 ## CHILD DOCS
-- `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, shared types
+- `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, shared types
 - `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
+- `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/workflow/agent authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/agents/AGENTS.md` — agents list, editor, duplicate, archive, and test-panel flows
 - `src/pages/skills/AGENTS.md` — skills list, editor, activation, archive, and tool-definition flows
 - `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
+- `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
 - `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, and builder/json-schema/preview flows
 - `src/pages/workflows/AGENTS.md` — workflows list, editor, review, and run-launch flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
-- `src/components/AGENTS.md` — layout shell, theme system, shared components, forms, feature UI, primitives
+- `src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, feature UI, primitives
+- `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
 - `src/components/forms/AGENTS.md` — shared dialog forms for portfolios and report generation
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
@@ -30,10 +33,10 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 ## STRUCTURE
 ```text
 frontend/
-├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types
+├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
 ├── src/pages/          # dashboard, portfolio, template, report, and agent-platform routes
-├── src/components/     # layout shell, theme, shared UI, forms, templates, portfolio feature UI, shadcn primitives
+├── src/components/     # layout shell, theme, shared UI, forms, platform-authoring widgets, templates, portfolio UI, shadcn primitives
 ├── src/styles/         # fonts, theme tokens, global styles
 ├── src/test/           # Vitest jsdom setup
 ├── e2e/                # Playwright smoke and functional coverage
@@ -44,13 +47,13 @@ frontend/
 | Task | Location | Notes |
 |---|---|---|
 | App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
-| Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, and TanStack Query wrappers |
+| Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Portfolio routes | `src/pages/portfolios/*.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/*.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/skills/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, skills, MCP servers, output schemas, workflows, runs |
+| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/skills/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, skills, MCP servers, model connections, output schemas, workflows, runs |
 | Preserved product routes | `src/pages/portfolios/AGENTS.md`, `src/pages/templates/AGENTS.md`, `src/pages/reports/AGENTS.md` | portfolio, template, and report routes |
-| Shared components | `src/components/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, dialog forms, portfolio feature folders |
+| Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, platform-authoring widgets, dialog forms, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
 | E2E flow setup | `playwright.config.ts`, `scripts/start-playwright-*.mjs` | backend `8001`, frontend `4173` |
