@@ -38,7 +38,7 @@ export function AgentsListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
           <p className="text-sm text-muted-foreground">
-            Create and update primary workspace agents, including model settings,
+            Create and update primary workspace agents, including saved model connections,
             output schema bindings, attached skill or MCP references, and editor-ready test-panel workflows.
           </p>
         </div>
@@ -88,7 +88,7 @@ export function AgentsListPage() {
                     extra={
                       <>
                         <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                          {agent.model}
+                          {agent.modelConnection.modelId}
                         </span>
                         <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
                           {agent.streaming ? "Streaming" : "Non-streaming"}

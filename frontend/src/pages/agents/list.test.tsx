@@ -37,7 +37,7 @@ describe("AgentsListPage", () => {
             key: "macro_agent",
             name: "Macro Agent",
             description: "Summarizes macro context.",
-            model: "gpt-5.4",
+            modelConnection: { modelId: "gpt-5.4" },
             outputSchema: { key: "summary_schema" },
             skills: [{ id: 1 }],
             mcpServers: [{ id: 2 }],
