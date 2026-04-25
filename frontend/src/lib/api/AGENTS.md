@@ -28,7 +28,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `agents.ts`, `skills.ts`, `mcp-servers.ts`, `output-schemas.ts`, `workflows.ts`, `runs.ts` | browser-facing `/api/*` helpers |
+| Agent-platform contracts | `agents.ts`, `skills.ts`, `mcp-servers.ts`, `model-connections.ts`, `output-schemas.ts`, `workflows.ts`, `runs.ts` | browser-facing `/api/*` helpers |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
