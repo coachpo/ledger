@@ -40,6 +40,6 @@ uv run pytest tests/test_api.py tests/test_runtime_db_upgrades.py tests/test_leg
 ```
 
 ## NOTES
-- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, creates the current agent-platform tables, recovers stale agent-platform runs, and drops retired backend tables.
+- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, creates the current agent-platform tables, backfills placeholder model connections from legacy agent models, recovers stale agent-platform runs, and drops retired backend tables.
 - `session.py` imports the full model package, validates the engine and numeric-id schema, creates tables, and runs upgrade helpers.
 - `create_app(init_database=False)` lets tests control initialization explicitly through fixtures.

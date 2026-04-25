@@ -17,7 +17,7 @@
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
-| Platform config entities | `skill.py`, `mcp_server.py`, `output_schema.py` | versioned skills, MCP servers, and output schemas |
+| Platform config entities | `skill.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned skills, MCP servers, saved model connections, and output schemas |
 | Platform execution entities | `agent.py`, `workflow.py`, `run.py` | versioned agents and workflows plus persisted run detail |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
@@ -46,6 +46,7 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 
 ## NOTES
 - `app/models/__init__.py` imports the full preserved-product and agent-platform model surface for startup registration.
+- `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists workflow version identity, per-step outputs, final output, and run totals used by the run monitor.
 - `report.py` stores unique `name` and `slug`, tracks `source` (`compiled` vs `uploaded`), and keeps optional metadata in JSONB under the `metadata` column.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.

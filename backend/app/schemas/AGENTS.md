@@ -52,6 +52,7 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_mod
 - Market data schemas include `warnings` lists for degraded-state messaging.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
 - `output_schema.py` carries the saved-schema, builder, preview, and validation-detail payloads for the current schema subset.
+- `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `workflow.py` and `run.py` carry the live workflow authoring, run trigger, run list/detail, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation.

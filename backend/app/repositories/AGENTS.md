@@ -16,7 +16,7 @@
 | Symbol-name cache queries | `symbol_name_cache.py` | symbol lookup plus `insert_if_missing()` |
 | Text-template queries | `text_template.py` | list_all, get_by_name |
 | Report queries | `report.py` | newest-first listing, slug lookup, and name lookup |
-| Platform config queries | `skill.py`, `mcp_server.py`, `output_schema.py` | versioned catalog reads and lifecycle lookups |
+| Platform config queries | `skill.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned catalog reads, saved model connections, and lifecycle lookups |
 | Platform execution queries | `agent.py`, `workflow.py`, `run.py` | version pinning, workflow reads, and run list/detail helpers |
 ## CONVENTIONS
 - Each repository is constructed with a `Session` and exposes query methods.
@@ -47,5 +47,6 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 ## NOTES
 - Repositories are instantiated directly inside service constructors with the shared `Session`.
 - `ReportRepository` keeps slug and name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
+- `ModelConnectionRepository` filters saved provider connections by status for list/editor/agent-selection flows.
 - `RunRepository` backs the current run list/detail surfaces and keeps persisted workflow-run lookup behavior centralized.
 - `TradingOperationRepository` retains historical attribution helpers where preserved legacy columns still matter, but there is no active `SimulationRepository` in the shipped package.
