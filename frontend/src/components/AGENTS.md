@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the preserved portfolio/template/report routes and the current agent-platform routes.
+`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the preserved portfolio/template/report routes and the current agent-platform routes.
 
 ## STRUCTURE
 ```text
@@ -29,6 +29,7 @@ src/components/
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable data tables, metrics, field schemas, and error boundaries |
 | Form components | `forms/AGENTS.md` | shared dialog forms that do not belong in a feature folder |
+| Platform authoring widgets | `platform-authoring/AGENTS.md` | schema composer, generated form, workflow builder, refs, inspectors |
 | Template-editor support UI | `templates/AGENTS.md` | placeholder reference and runtime-input surfaces used by template routes |
 | Portfolio feature UI | `portfolios/AGENTS.md` | sections, dialogs, trading form, feature-specific logic |
 | Pure UI primitives | `ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
@@ -36,6 +37,7 @@ src/components/
 ## CHILD DOCS
 - `shared/AGENTS.md` — reusable cross-feature components and schema helpers
 - `forms/AGENTS.md` — cross-route dialog forms such as portfolio and report-generation dialogs
+- `platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
 - `templates/AGENTS.md` — template-editor support components such as placeholder reference and runtime-input sections
 - `portfolios/AGENTS.md` — portfolio feature sections, dialogs, and trades UI
 - `ui/AGENTS.md` — presentational shadcn/ui wrappers, sidebar context, and shared style helpers
@@ -45,9 +47,10 @@ src/components/
 - Shared components in `shared/` are reusable across multiple features and should not contain portfolio-specific request logic.
 - `shared/` is where the app keeps reusable data tables, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
 - `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing and shared report-generation dialogs.
+- `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
-- Preserved product and agent-platform routes stay page-centric and reuse shared components instead of maintaining extra feature folders unless UI becomes genuinely reusable across multiple routes.
+- Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across agents, output schemas, and workflows.
 - Shared field schemas in `shared/form-schemas.ts` should stay aligned with the current routed forms that consume them.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.
