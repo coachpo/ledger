@@ -25,7 +25,6 @@ const agents = [
     key: "research_agent",
     maxToolRounds: 3,
     mcpServers: [],
-    model: "openai:gpt-5.4-mini",
     name: "Research Agent",
     outputSchema: {
       id: 11,
@@ -42,7 +41,6 @@ const agents = [
     status: "published",
     streaming: true,
     systemPrompt: "Research clearly.",
-    temperature: 0,
     updatedAt: "2026-04-20T10:00:00Z",
     version: 3,
   },
@@ -65,7 +63,6 @@ const agents = [
     key: "consumer_agent",
     maxToolRounds: 3,
     mcpServers: [],
-    model: "openai:gpt-5.4-mini",
     name: "Consumer Agent",
     outputSchema: {
       id: 11,
@@ -82,7 +79,6 @@ const agents = [
     status: "published",
     streaming: true,
     systemPrompt: "Consume clearly.",
-    temperature: 0,
     updatedAt: "2026-04-20T10:00:00Z",
     version: 2,
   },
