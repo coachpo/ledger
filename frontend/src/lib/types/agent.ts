@@ -55,13 +55,11 @@ export interface AgentRead {
   description: string;
   modelConnectionId: number;
   modelConnection: ModelConnectionListItemRead;
-  model?: string;
   systemPrompt: string;
   inputSchema: UnknownRecord;
   outputSchema: OutputSchemaRead;
   skills: SkillRead[];
   mcpServers: AgentMcpServerRead[];
-  temperature?: number;
   maxToolRounds: number;
   budgetUsd: string;
   streaming: boolean;
@@ -75,7 +73,6 @@ export interface AgentListRead {
 
 export interface AgentListParams {
   status?: AgentStatus;
-  model?: string;
 }
 
 export interface AgentTestPanelRequest {

@@ -38,14 +38,12 @@ describe("query keys", () => {
 
   it("adds an isolated unversioned platform namespace", () => {
     expect(queryKeys.platform.agents.detail("7")).toEqual(queryKeys.platform.agents.detail(7));
-    expect(
-      queryKeys.platform.agents.list({ model: " openai:gpt-5.4-mini ", status: "published" }),
-    ).toEqual([
+    expect(queryKeys.platform.agents.list({ status: "published" })).toEqual([
       "api",
       "platform",
       "agents",
       "list",
-      { model: "openai:gpt-5.4-mini", status: "published" },
+      { status: "published" },
     ]);
 
     expect(queryKeys.platform.workflows.detail("9", 2)).toEqual(

@@ -70,7 +70,6 @@ function normalizeHistoryParams(params: GetMarketHistoryParams) {
 
 function normalizeAgentListParams(params: AgentListParams = {}) {
   return omitUndefined({
-    model: normalizeOptionalText(params.model),
     status: params.status,
   });
 }
