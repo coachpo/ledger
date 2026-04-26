@@ -18,7 +18,6 @@ from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import (
     WorkflowCreate,
     WorkflowListRead,
-    WorkflowOutputAgentWrite,
     WorkflowOutputSlotWrite,
     WorkflowRead,
     WorkflowStatus,
@@ -232,13 +231,11 @@ class WorkflowService:
                 aggregate_budget += agent.budget_usd
             normalized_steps.append({"index": step.index, "agents": normalized_agents})
 
-        normalized_output_spec, output_budget = self._normalize_output_spec(
+        normalized_output_spec = self._normalize_output_spec(
             output_spec=output_spec,
-            input_node=input_node,
             resolved_slots=resolved_slots,
             current_step_index=len(steps) + 1,
         )
-        aggregate_budget += output_budget
         return {
             "name": name,
             "description": description,
@@ -251,75 +248,39 @@ class WorkflowService:
     def _normalize_output_spec(
         self,
         *,
-        output_spec: WorkflowOutputSlotWrite | WorkflowOutputAgentWrite,
-        input_node: SchemaNode,
+        output_spec: WorkflowOutputSlotWrite,
         resolved_slots: dict[tuple[int, str], _ResolvedSlot],
         current_step_index: int,
-    ) -> tuple[dict[str, Any], Decimal]:
-        if isinstance(output_spec, WorkflowOutputSlotWrite):
-            resolved_slot = self._get_resolved_slot(
-                step_index=output_spec.step_index,
-                slot=output_spec.slot,
-                field="outputSpec.slot",
-                resolved_slots=resolved_slots,
-                current_step_index=current_step_index,
-            )
-            if resolved_slot.optional:
-                self._raise_validation(
-                    "outputSpec.slot",
-                    "Final output cannot reference an optional slot",
-                )
-            if output_spec.path is not None:
-                self._resolve_node_path(
-                    resolved_slot.schema,
-                    output_spec.path,
-                    field="outputSpec.path",
-                )
-            return (
-                {
-                    "kind": "slot",
-                    "stepIndex": output_spec.step_index,
-                    "slot": output_spec.slot,
-                    "path": output_spec.path,
-                    "agentId": resolved_slot.agent.id,
-                    "agentKey": resolved_slot.agent.key,
-                    "agentVersion": resolved_slot.agent.version,
-                    "outputSchemaId": resolved_slot.output_schema.id,
-                    "outputSchemaVersion": resolved_slot.output_schema.version,
-                },
-                Decimal("0"),
-            )
-
-        agent = self._resolve_agent(
-            output_spec.agent_key,
-            output_spec.agent_version,
-            field="outputSpec.agentKey",
-        )
-        output_schema = self._resolve_agent_output_schema(agent, field="outputSpec.agentKey")
-        agent_input_node = self._parse_input_schema_node(
-            agent.input_schema,
-            field="outputSpec.agentKey",
-        )
-        normalized_wiring = self._normalize_wiring(
-            field_prefix="outputSpec.wiring",
-            wiring=output_spec.wiring,
-            target_node=agent_input_node,
-            input_node=input_node,
+    ) -> dict[str, Any]:
+        resolved_slot = self._get_resolved_slot(
+            step_index=output_spec.step_index,
+            slot=output_spec.slot,
+            field="outputSpec.slot",
             resolved_slots=resolved_slots,
             current_step_index=current_step_index,
         )
-        return (
-            {
-                "kind": "agent",
-                "agentId": agent.id,
-                "agentKey": agent.key,
-                "agentVersion": agent.version,
-                "outputSchemaId": output_schema.id,
-                "outputSchemaVersion": output_schema.version,
-                "wiring": normalized_wiring,
-            },
-            agent.budget_usd,
-        )
+        if resolved_slot.optional:
+            self._raise_validation(
+                "outputSpec.slot",
+                "Final output cannot reference an optional slot",
+            )
+        if output_spec.path is not None:
+            self._resolve_node_path(
+                resolved_slot.schema,
+                output_spec.path,
+                field="outputSpec.path",
+            )
+        return {
+            "kind": "slot",
+            "stepIndex": output_spec.step_index,
+            "slot": output_spec.slot,
+            "path": output_spec.path,
+            "agentId": resolved_slot.agent.id,
+            "agentKey": resolved_slot.agent.key,
+            "agentVersion": resolved_slot.agent.version,
+            "outputSchemaId": resolved_slot.output_schema.id,
+            "outputSchemaVersion": resolved_slot.output_schema.version,
+        }
 
     def _normalize_wiring(
         self,

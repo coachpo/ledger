@@ -5,10 +5,8 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
-    Float,
     Index,
     String,
     Text,
@@ -33,10 +31,6 @@ class Agent(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "output_schema_version > 0",
             name="ck_agents_output_schema_version_positive",
-        ),
-        CheckConstraint(
-            "max_tool_rounds > 0",
-            name="ck_agents_max_tool_rounds_positive",
         ),
         CheckConstraint("budget_usd >= 0", name="ck_agents_budget_usd_non_negative"),
         UniqueConstraint("key", "version", name="uq_agents_key_version"),
@@ -86,23 +80,10 @@ class Agent(IdMixin, TimestampMixin, Base):
         default=list,
         server_default=sql_text("'[]'::jsonb"),
     )
-    temperature: Mapped[float] = mapped_column(
-        Float(asdecimal=False),
-        nullable=False,
-        default=0.0,
-        server_default="0",
-    )
-    max_tool_rounds: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     budget_usd: Mapped[Decimal] = mapped_column(
         nullable=False,
         default=Decimal("0"),
         server_default="0",
-    )
-    streaming: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=sql_text("false"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

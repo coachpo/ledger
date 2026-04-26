@@ -116,7 +116,6 @@ def stock_analysis_agent_payload(
         "skills": [{"skillKey": STOCK_ANALYSIS_SKILL_KEY}],
         "mcpServers": [{"mcpServerKey": STOCK_ANALYSIS_MCP_SERVER_KEY}],
         "budgetUsd": budget_usd,
-        "streaming": False,
     }
 
 
@@ -137,7 +136,6 @@ def stock_analysis_synthesizer_payload(
         "skills": [{"skillKey": STOCK_ANALYSIS_SKILL_KEY}],
         "mcpServers": [{"mcpServerKey": STOCK_ANALYSIS_MCP_SERVER_KEY}],
         "budgetUsd": budget_usd,
-        "streaming": False,
     }
 
 
@@ -160,16 +158,22 @@ def stock_analysis_workflow_payload(*, optional_agents: Iterable[str] = ()) -> d
                     }
                     for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
                 ],
+            },
+            {
+                "index": 2,
+                "agents": [
+                    {
+                        "agentKey": STOCK_ANALYSIS_SYNTHESIZER_KEY,
+                        "slot": "decision",
+                        "wiring": {
+                            key: {"from": "step", "stepIndex": 1, "slot": key}
+                            for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+                        },
+                    }
+                ],
             }
         ],
-        "outputSpec": {
-            "kind": "agent",
-            "agentKey": STOCK_ANALYSIS_SYNTHESIZER_KEY,
-            "wiring": {
-                key: {"from": "step", "stepIndex": 1, "slot": key}
-                for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
-            },
-        },
+        "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
     }
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -10,10 +10,9 @@ from app.schemas.agent import (
     AgentListRead,
     AgentRead,
     AgentStatus,
-    AgentTestPanelRead,
-    AgentTestPanelRequest,
     AgentUpdate,
 )
+from app.schemas.run import RunCreatedRead
 from app.services.agent_service import AgentService
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -62,11 +61,15 @@ def archive_agent(
     return service.archive_agent(agent_id)
 
 
-@router.post("/{agent_id}/test-panel", response_model=AgentTestPanelRead)
-def resolve_agent_test_panel(
+@router.post(
+    "/{agent_id}/runs",
+    response_model=RunCreatedRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agent_run(
     agent_id: int,
-    payload: AgentTestPanelRequest,
+    payload: dict[str, Any],
     service: Annotated[AgentService, Depends(get_agent_service)],
     version: Annotated[int | None, Query()] = None,
-) -> AgentTestPanelRead:
-    return service.resolve_test_panel(agent_id, payload, version=version)
+) -> RunCreatedRead:
+    return service.create_run(agent_id, payload, version=version)

@@ -364,7 +364,7 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
     assert {
         "/api/agents",
         "/api/agents/{agent_id}",
-        "/api/agents/{agent_id}/test-panel",
+        "/api/agents/{agent_id}/runs",
         "/api/skills",
         "/api/skills/{skill_id}",
         "/api/skills/{skill_id}/activate",
@@ -381,7 +381,36 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
         "/api/runs",
         "/api/runs/{run_id}",
     } <= route_paths
+    assert "/api/agents/{agent_id}/test-panel" not in route_paths
     assert not any(path.startswith("/api/v3") for path in route_paths)
+
+
+def test_agent_platform_removed_agent_test_panel_route_returns_404(client: TestClient) -> None:
+    response = client.post(
+        "/api/agents/1/test-panel",
+        json={"sampleInput": {"ticker": "MSFT"}},
+    )
+
+    assert response.status_code == 404
+
+
+def test_agent_platform_runs_target_filters_require_target_kind(client: TestClient) -> None:
+    response = client.get("/api/runs", params={"targetId": 1})
+
+    assert response.status_code == 422, response.json()
+    assert response.json() == {
+        "code": "validation_error",
+        "message": "Request validation failed",
+        "details": [
+            {
+                "field": "targetKind",
+            "issue": (
+                "targetKind is required when targetId, targetKey, or "
+                "targetVersion is provided"
+            ),
+            }
+        ],
+    }
 
 
 @pytest.mark.parametrize(
@@ -798,7 +827,6 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
             skills=[{"skillKey": seeded["skill"]["key"]}],
             mcp_servers=[{"mcpServerKey": activated_server["key"]}],
             budget_usd="0.50000000",
-            streaming=False,
         ),
     )
     assert cast(list[dict[str, object]], agent["mcpServers"])[0]["key"] == "sequential-thinking"
@@ -904,9 +932,7 @@ def _agent_payload(
     mcp_servers: list[dict[str, object]],
     include_key: bool = True,
     output_schema_version: int | None = None,
-    max_tool_rounds: int | None = None,
     budget_usd: str | None = None,
-    streaming: bool | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "name": name,
@@ -922,12 +948,8 @@ def _agent_payload(
         payload["key"] = key
     if output_schema_version is not None:
         payload["outputSchemaVersion"] = output_schema_version
-    if max_tool_rounds is not None:
-        payload["maxToolRounds"] = max_tool_rounds
     if budget_usd is not None:
         payload["budgetUsd"] = budget_usd
-    if streaming is not None:
-        payload["streaming"] = streaming
     return payload
 
 
@@ -955,14 +977,15 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
             output_schema_key="decision_schema",
             skills=[{"skillKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
-            max_tool_rounds=2,
             budget_usd="1.25000000",
-            streaming=True,
         ),
     )
 
     assert created["version"] == 1
     assert created["status"] == "published"
+    assert "temperature" not in created
+    assert "maxToolRounds" not in created
+    assert "streaming" not in created
     assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
     assert (
         cast(dict[str, object], created["outputSchema"])["id"] == dependencies["outputSchema"]["id"]
@@ -1069,9 +1092,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
             output_schema_version=2,
             skills=[{"skillKey": "market_research", "skillVersion": 2}],
             mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
-            max_tool_rounds=3,
             budget_usd="2.50000000",
-            streaming=False,
         ),
     )
     assert update_response.status_code == 200, update_response.json()
@@ -1087,6 +1108,9 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
     assert cast(list[dict[str, object]], updated["skills"])[0]["version"] == 2
     assert cast(list[dict[str, object]], updated["mcpServers"])[0]["id"] == mcp_server_v2["id"]
     assert cast(list[dict[str, object]], updated["mcpServers"])[0]["transport"] == "stdio"
+    assert "temperature" not in updated
+    assert "maxToolRounds" not in updated
+    assert "streaming" not in updated
 
     previous_version = client.get(f"/api/agents/{updated['id']}", params={"version": 1})
     assert previous_version.status_code == 200, previous_version.json()
@@ -1194,6 +1218,40 @@ def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
         detail["field"] == "inputSchema.allOf" and "allOf is not supported" in detail["issue"]
         for detail in response.json()["details"]
     )
+
+
+def test_agent_platform_agent_removed_runtime_fields_are_rejected(
+    client: TestClient,
+) -> None:
+    dependencies = _seed_agent_platform_agent_dependencies(client)
+
+    response = client.post(
+        "/api/agents",
+        json={
+            **_agent_payload(
+                dependencies,
+                key="removed_runtime_agent",
+                name="Removed Runtime Agent",
+                description="Should reject removed fields.",
+                system_prompt="This save should fail.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"ticker": {"type": "string"}},
+                    "required": ["ticker"],
+                },
+                output_schema_key="decision_schema",
+                skills=[{"skillKey": "market_research"}],
+                mcp_servers=[{"mcpServerKey": "market_data"}],
+            ),
+            "temperature": 0.2,
+            "maxToolRounds": 2,
+            "streaming": True,
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    detail_fields = {detail["field"] for detail in response.json()["details"]}
+    assert {"temperature", "maxToolRounds", "streaming"} <= detail_fields
 
 
 def test_agent_platform_agent_missing_output_schema_returns_field_errors(
@@ -1463,6 +1521,60 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
     assert previous["status"] == "deprecated"
     assert previous_step_agent["agentVersion"] == 1
     assert previous_step_agent["outputSchemaVersion"] == 1
+
+
+def test_agent_platform_workflow_rejects_agent_output_kind(client: TestClient) -> None:
+    dependencies = _seed_agent_platform_agent_dependencies(client)
+    create_agent(
+        client,
+        payload=_agent_payload(
+            dependencies,
+            key="research_agent",
+            name="Research Agent",
+            description="Analyzes a ticker.",
+            system_prompt="Analyze the requested ticker and return a typed result.",
+            input_schema={
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            output_schema_key="decision_schema",
+            skills=[{"skillKey": "market_research"}],
+            mcp_servers=[{"mcpServerKey": "market_data"}],
+        ),
+    )
+
+    response = client.post(
+        "/api/workflows",
+        json={
+            "key": "legacy_output_workflow",
+            "name": "Legacy Output Workflow",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "steps": [
+                {
+                    "index": 1,
+                    "agents": [
+                        {
+                            "agentKey": "research_agent",
+                            "slot": "analysis",
+                            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                        }
+                    ],
+                }
+            ],
+            "outputSpec": {"kind": "agent", "stepIndex": 1, "slot": "analysis"},
+        },
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["code"] == "validation_error"
+    assert any(
+        detail["field"] == "outputSpec.kind" for detail in response.json()["details"]
+    )
 
 
 def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
@@ -1778,13 +1890,19 @@ def test_agent_platform_stock_analysis_success_runs_stub_workflow_without_live_s
 
     created_workflow = create_workflow(client, payload=stock_analysis_workflow_payload())
     created_steps = cast(list[dict[str, object]], created_workflow["steps"])
-    created_step_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
+    created_step_one_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
+    created_step_two_agents = cast(list[dict[str, object]], created_steps[1]["agents"])
     output_spec = cast(dict[str, object], created_workflow["outputSpec"])
 
-    assert [agent["agentKey"] for agent in created_step_agents] == list(
+    assert [agent["agentKey"] for agent in created_step_one_agents] == list(
         STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
     )
-    assert output_spec["kind"] == "agent"
+    assert [agent["agentKey"] for agent in created_step_two_agents] == [
+        "decision_synthesizer"
+    ]
+    assert output_spec["kind"] == "slot"
+    assert output_spec["stepIndex"] == 2
+    assert output_spec["slot"] == "decision"
     assert output_spec["agentKey"] == "decision_synthesizer"
     assert created_workflow["aggregateBudgetUsd"] == "0.50000000"
 

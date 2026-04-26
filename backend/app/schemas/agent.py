@@ -92,9 +92,7 @@ class AgentVersionBase(CamelModel):
     output_schema_version: int | None = Field(default=None, ge=1)
     skills: list[AgentSkillRefWrite] = Field(default_factory=list)
     mcp_servers: list[AgentMcpServerRefWrite] = Field(default_factory=list)
-    max_tool_rounds: int = Field(default=1, ge=1)
     budget_usd: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
-    streaming: bool = False
 
     @field_validator("name", "system_prompt", mode="before")
     @classmethod
@@ -156,9 +154,7 @@ class AgentRead(CamelModel):
     output_schema: OutputSchemaRead
     skills: list[SkillRead]
     mcp_servers: list[AgentMcpServerRead]
-    max_tool_rounds: int
     budget_usd: Decimal
-    streaming: bool
     created_at: datetime
     updated_at: datetime
 
@@ -172,15 +168,6 @@ class AgentListRead(CamelModel):
     items: list[AgentRead]
 
 
-class AgentTestPanelRequest(CamelModel):
-    sample_input: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentTestPanelRead(CamelModel):
-    agent: AgentRead
-    sample_input: dict[str, Any]
-
-
 __all__ = [
     "AgentCreate",
     "AgentListRead",
@@ -189,7 +176,5 @@ __all__ = [
     "AgentRead",
     "AgentSkillRefWrite",
     "AgentStatus",
-    "AgentTestPanelRead",
-    "AgentTestPanelRequest",
     "AgentUpdate",
 ]

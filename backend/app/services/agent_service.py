@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from fastapi import status
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents import SkillRegistry
@@ -26,12 +26,11 @@ from app.schemas.agent import (
     AgentMcpServerRead,
     AgentRead,
     AgentStatus,
-    AgentTestPanelRead,
-    AgentTestPanelRequest,
     AgentUpdate,
 )
 from app.schemas.mcp_server import McpClientBoundaryRead
 from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionStatus
+from app.schemas.run import RunCreatedRead
 from app.services.mcp_server_service import McpServerService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -39,6 +38,7 @@ from app.services.output_schema_compiler import (
     OutputSchemaValidationFailure,
 )
 from app.services.output_schema_service import OutputSchemaService
+from app.services.run_service import RunService
 from app.services.skill_service import SkillService
 
 
@@ -93,9 +93,7 @@ class AgentService:
             output_schema_version=payload.output_schema_version,
             skills=payload.skills,
             mcp_servers=payload.mcp_servers,
-            max_tool_rounds=payload.max_tool_rounds,
             budget_usd=payload.budget_usd,
-            streaming=payload.streaming,
         )
         agent = Agent(key=payload.key, version=1, status=AgentStatus.PUBLISHED.value, **state)
         try:
@@ -119,9 +117,7 @@ class AgentService:
             output_schema_version=payload.output_schema_version,
             skills=payload.skills,
             mcp_servers=payload.mcp_servers,
-            max_tool_rounds=payload.max_tool_rounds,
             budget_usd=payload.budget_usd,
-            streaming=payload.streaming,
         )
         agent = Agent(
             key=source.key,
@@ -157,18 +153,18 @@ class AgentService:
             raise
         return self._to_read_model(agent)
 
-    def resolve_test_panel(
+    def create_run(
         self,
         agent_id: int,
-        payload: AgentTestPanelRequest,
+        payload: dict[str, Any],
         *,
         version: int | None = None,
-    ) -> AgentTestPanelRead:
-        agent = self._resolve_model(agent_id, version=version)
-        input_model = self._build_input_model(agent.input_schema)
-        validated_input = self._validate_sample_input(input_model, payload.sample_input)
-        return AgentTestPanelRead.model_validate(
-            {"agent": self._to_read_model(agent), "sampleInput": validated_input}
+    ) -> RunCreatedRead:
+        return RunService(self.session).create_target_run(
+            "agent",
+            agent_id,
+            payload,
+            version=version,
         )
 
     def _build_state(
@@ -183,9 +179,7 @@ class AgentService:
         output_schema_version: int | None,
         skills: Sequence[Any],
         mcp_servers: Sequence[Any],
-        max_tool_rounds: int,
         budget_usd: Any,
-        streaming: bool,
     ) -> dict[str, Any]:
         normalized_input_schema = self._normalize_input_schema(input_schema)
         output_schema = self._resolve_output_schema(output_schema_key, output_schema_version)
@@ -213,9 +207,7 @@ class AgentService:
                 }
                 for item in mcp_server_rows
             ],
-            "max_tool_rounds": max_tool_rounds,
             "budget_usd": budget_usd,
-            "streaming": streaming,
         }
 
     def _normalize_input_schema(self, input_schema: dict[str, Any]) -> dict[str, Any]:
@@ -406,21 +398,6 @@ class AgentService:
         )
         return self.schema_compiler.build_runtime_model(candidate)
 
-    def _validate_sample_input(
-        self,
-        input_model: type[BaseModel],
-        sample_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        try:
-            validated = input_model.model_validate(sample_input)
-        except ValidationError as exc:
-            raise business_rule_error(
-                "agent_test_panel_invalid_input",
-                "Sample input failed input schema validation",
-                details=self._validation_details_from_pydantic_error(exc),
-            ) from exc
-        return validated.model_dump(mode="json")
-
     def _to_read_model(self, agent: Agent) -> AgentRead:
         output_schema_row = self.output_schema_repository.get(agent.output_schema_id)
         if output_schema_row is None or output_schema_row.version != agent.output_schema_version:
@@ -456,9 +433,7 @@ class AgentService:
                 "outputSchema": output_schema,
                 "skills": skills,
                 "mcpServers": mcp_servers,
-                "maxToolRounds": agent.max_tool_rounds,
                 "budgetUsd": agent.budget_usd,
-                "streaming": agent.streaming,
                 "createdAt": agent.created_at,
                 "updatedAt": agent.updated_at,
             }
@@ -536,19 +511,5 @@ class AgentService:
         else:
             mapped_field = field
         return {"field": mapped_field, "issue": issue.get("issue", "Invalid schema")}
-
-    @staticmethod
-    def _validation_details_from_pydantic_error(exc: ValidationError) -> list[dict[str, str]]:
-        details: list[dict[str, str]] = []
-        for error in exc.errors():
-            location = error.get("loc", ())
-            field_parts = [str(part) for part in location]
-            if field_parts:
-                field = "sampleInput." + ".".join(field_parts)
-            else:
-                field = "sampleInput"
-            details.append({"field": field, "issue": str(error.get("msg", "Invalid value"))})
-        return details
-
 
 __all__ = ["AgentService"]

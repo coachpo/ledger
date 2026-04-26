@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Any, Literal
 
 from pydantic import (
     Field,
@@ -169,33 +169,7 @@ class WorkflowOutputSlotWrite(CamelModel):
         return _normalize_source_path(value)
 
 
-class WorkflowOutputAgentWrite(CamelModel):
-    kind: Literal["agent"] = "agent"
-    agent_key: str = Field(min_length=1, max_length=120)
-    agent_version: int | None = Field(default=None, ge=1)
-    wiring: dict[str, WorkflowWireSource] = Field(default_factory=dict)
-
-    @field_validator("agent_key", mode="before")
-    @classmethod
-    def validate_agent_key(cls, value: object) -> str:
-        return _normalize_workflow_key(value)
-
-    @field_validator("wiring")
-    @classmethod
-    def validate_wiring(cls, value: dict[str, WorkflowWireSource]) -> dict[str, WorkflowWireSource]:
-        normalized: dict[str, WorkflowWireSource] = {}
-        for raw_key, raw_value in value.items():
-            field_name = _normalize_wiring_field_name(raw_key)
-            if field_name in normalized:
-                raise ValueError(f"Duplicate wiring field: {field_name}")
-            normalized[field_name] = raw_value
-        return normalized
-
-
-WorkflowOutputSpecWrite = Annotated[
-    Union[WorkflowOutputSlotWrite, WorkflowOutputAgentWrite],  # noqa: UP007
-    Field(discriminator="kind"),
-]
+WorkflowOutputSpecWrite = WorkflowOutputSlotWrite
 
 
 class WorkflowStepAgentRead(CamelModel):
@@ -227,20 +201,7 @@ class WorkflowOutputSlotRead(CamelModel):
     output_schema_version: int = Field(ge=1)
 
 
-class WorkflowOutputAgentRead(CamelModel):
-    kind: Literal["agent"] = "agent"
-    agent_id: int
-    agent_key: str
-    agent_version: int = Field(ge=1)
-    output_schema_id: int
-    output_schema_version: int = Field(ge=1)
-    wiring: dict[str, WorkflowWireSource]
-
-
-WorkflowOutputSpecRead = Annotated[
-    Union[WorkflowOutputSlotRead, WorkflowOutputAgentRead],  # noqa: UP007
-    Field(discriminator="kind"),
-]
+WorkflowOutputSpecRead = WorkflowOutputSlotRead
 
 
 class WorkflowVersionBase(CamelModel):
@@ -306,8 +267,6 @@ WorkflowUpdate.model_rebuild()
 __all__ = [
     "WorkflowCreate",
     "WorkflowListRead",
-    "WorkflowOutputAgentRead",
-    "WorkflowOutputAgentWrite",
     "WorkflowOutputSlotRead",
     "WorkflowOutputSlotWrite",
     "WorkflowOutputSpecRead",

@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 
-import openai
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import business_rule_error, not_found_error
-from app.core.formatting import decimal_to_string, parse_decimal_string, utcnow
+from app.core.formatting import decimal_to_string, utcnow
 from app.core.telemetry import (
     configure_logfire,
     create_logfire_span,
@@ -24,16 +21,33 @@ from app.core.telemetry import (
 )
 from app.db.engine import get_session_factory
 from app.models.agent import Agent
-from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
-from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
-from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
-from app.repositories.workflow import WorkflowRepository
-from app.schemas.run import RunCreatedRead, RunListItemRead, RunListRead, RunRead, RunStatus
+from app.schemas.run import (
+    RunCreatedRead,
+    RunListItemRead,
+    RunListRead,
+    RunRead,
+    RunStatus,
+    RunTargetKind,
+)
+from app.services.agent_execution_service import (
+    AgentExecutionService,
+    RunAgentInvocationResult,
+    RunExecutionError,
+    normalize_agent_invocation_result,
+)
+from app.services.execution_plan import (
+    ExecutionPlan,
+    ExecutionPlanAgent,
+    ExecutionPlanFinalOutput,
+    ExecutionPlanSource,
+    ExecutionPlanStep,
+)
+from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -42,41 +56,12 @@ from app.services.output_schema_compiler import (
     SchemaObject,
     SchemaRef,
 )
-from app.services.stock_analysis_reference import (
-    StockAnalysisReferenceError,
-    StockAnalysisReferenceService,
-)
 
 logger = logging.getLogger(__name__)
 
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
-
-
-class RunExecutionError(Exception):
-    def __init__(
-        self,
-        *,
-        code: str,
-        message: str,
-        details: list[dict[str, Any]] | None = None,
-        trace_span_id: str | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.details = list(details or [])
-        self.trace_span_id = trace_span_id
-
-
-@dataclass
-class RunAgentInvocationResult:
-    output: Any
-    tokens: int = 0
-    cost_usd: Decimal = Decimal("0")
-    duration_ms: int | None = None
-    trace_span_id: str | None = None
 
 
 @dataclass
@@ -90,19 +75,6 @@ class _PreparedAgentInvocation:
     slot: str
 
 
-@dataclass(frozen=True)
-class _ResolvedModelConnectionConfig:
-    id: int
-    name: str
-    base_url: str
-    organization: str | None
-    project: str | None
-    model_id: str
-    reasoning_effort: str
-    timeout_seconds: int
-    api_key: str | None
-
-
 class RunService:
     def __init__(
         self,
@@ -111,16 +83,21 @@ class RunService:
     ) -> None:
         self.session = session
         self.session_factory = session_factory or get_session_factory()
-        self.workflow_repository = WorkflowRepository(session)
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
+        self.execution_plan_builder = ExecutionPlanBuilder(session)
+        self.agent_execution_service = AgentExecutionService(self.session_factory)
         self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
 
     def list_runs(
         self,
         *,
+        target_kind: RunTargetKind | None = None,
+        target_id: int | None = None,
+        target_key: str | None = None,
+        target_version: int | None = None,
         workflow_id: int | None = None,
         workflow_key: str | None = None,
         workflow_version: int | None = None,
@@ -129,6 +106,10 @@ class RunService:
         offset: int = 0,
     ) -> RunListRead:
         runs = self.run_repository.list_all(
+            target_kind=target_kind.value if target_kind is not None else None,
+            target_id=target_id,
+            target_key=target_key,
+            target_version=target_version,
             workflow_id=workflow_id,
             workflow_key=workflow_key,
             workflow_version=workflow_version,
@@ -148,12 +129,30 @@ class RunService:
         *,
         version: int | None = None,
     ) -> RunCreatedRead:
-        workflow = self._resolve_workflow(workflow_id, version=version)
-        validated_input = self._validate_workflow_input(workflow.input_schema, input_payload)
+        return self.create_target_run("workflow", workflow_id, input_payload, version=version)
+
+    def create_target_run(
+        self,
+        target_kind: str,
+        target_id: int,
+        input_payload: dict[str, Any],
+        *,
+        version: int | None = None,
+    ) -> RunCreatedRead:
+        plan = self.execution_plan_builder.build_target_plan(
+            target_kind, target_id, version=version
+        )
+        validated_input = self._validate_run_input(
+            input_schema=plan.input_schema,
+            input_payload=input_payload,
+            candidate_key=f"{plan.target.kind}_input",
+            resource_name=plan.target.kind,
+        )
         run = Run(
-            workflow_id=workflow.id,
-            workflow_key=workflow.key,
-            workflow_version=workflow.version,
+            target_kind=plan.target.kind,
+            target_id=plan.target.id,
+            target_key=plan.target.key,
+            target_version=plan.target.version,
             input=validated_input,
             status=_RUN_STATUS_RUNNING,
             per_step_outputs={},
@@ -198,29 +197,29 @@ class RunService:
 
     async def _execute_run_async(self, run_id: int) -> None:
         run = self._get_run_or_raise(run_id)
-        workflow = self._get_workflow_for_run(run)
+        plan = self.execution_plan_builder.build_plan_for_run(run)
         try:
-            trace_session = self._start_trace_session(run=run, workflow=workflow)
+            trace_session = self._start_trace_session(run=run, plan=plan)
         except Exception:
-            await self._execute_run_with_trace(run=run, workflow=workflow, trace_id=None)
+            await self._execute_run_with_trace(run=run, plan=plan, trace_id=None)
             return
 
         with trace_session as run_span:
             trace_id = format_current_trace_id(run_span)
-            await self._execute_run_with_trace(run=run, workflow=workflow, trace_id=trace_id)
+            await self._execute_run_with_trace(run=run, plan=plan, trace_id=trace_id)
 
     async def _execute_run_with_trace(
         self,
         *,
         run: Run,
-        workflow: Workflow,
+        plan: ExecutionPlan,
         trace_id: str | None,
     ) -> None:
         slot_outputs: dict[tuple[int, str], Any] = {}
         total_tokens = 0
         total_cost = Decimal("0")
 
-        for raw_step in workflow.steps:
+        for step in plan.steps:
             (
                 step_entries,
                 step_slot_outputs,
@@ -228,14 +227,14 @@ class RunService:
                 step_cost,
                 fatal_error,
             ) = await self._execute_step(
-                workflow=workflow,
-                raw_step=raw_step,
+                plan=plan,
+                step=step,
                 initial_input=run.input,
                 slot_outputs=slot_outputs,
                 current_total_cost=total_cost,
                 trace_id=trace_id,
             )
-            step_index = int(raw_step["index"])
+            step_index = step.index
             persisted_outputs = dict(run.per_step_outputs)
             persisted_outputs[str(step_index)] = step_entries
             run.per_step_outputs = persisted_outputs
@@ -253,26 +252,10 @@ class RunService:
                 self.session.commit()
                 return
 
-        (
-            final_output,
-            final_entries,
-            final_tokens,
-            final_cost,
-            final_error,
-        ) = await self._resolve_final_output(
-            workflow=workflow,
-            initial_input=run.input,
+        final_output, final_error = self._resolve_final_output(
+            plan=plan,
             slot_outputs=slot_outputs,
-            current_total_cost=total_cost,
-            trace_id=trace_id,
         )
-        if final_entries is not None:
-            final_step_index = len(workflow.steps) + 1
-            persisted_outputs = dict(run.per_step_outputs)
-            persisted_outputs[str(final_step_index)] = final_entries
-            run.per_step_outputs = persisted_outputs
-        total_tokens += final_tokens
-        total_cost += final_cost
         run.total_tokens = total_tokens
         run.total_cost_usd = total_cost
         if final_error is not None:
@@ -289,92 +272,50 @@ class RunService:
         run.finished_at = utcnow()
         self.session.commit()
 
-    async def _resolve_final_output(
+    def _resolve_final_output(
         self,
         *,
-        workflow: Workflow,
-        initial_input: dict[str, Any],
+        plan: ExecutionPlan,
         slot_outputs: dict[tuple[int, str], Any],
-        current_total_cost: Decimal,
-        trace_id: str | None,
-    ) -> tuple[Any | None, list[dict[str, Any]] | None, int, Decimal, str | None]:
-        output_spec = workflow.output_spec
-        if output_spec.get("kind") == "slot":
-            try:
-                source_value, optional_null = self._resolve_source_value(
-                    {
-                        "from": "step",
-                        "stepIndex": int(output_spec["stepIndex"]),
-                        "slot": str(output_spec["slot"]),
-                        "path": output_spec.get("path"),
-                    },
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                )
-            except RunExecutionError as exc:
-                return None, None, 0, Decimal("0"), exc.message
-            if optional_null:
-                return None, None, 0, Decimal("0"), "Final output cannot resolve from a null slot"
-            return source_value, None, 0, Decimal("0"), None
-
-        final_step = {
-            "index": len(workflow.steps) + 1,
-            "agents": [
-                {
-                    "slot": "final_output",
-                    "agentId": int(output_spec["agentId"]),
-                    "agentKey": str(output_spec["agentKey"]),
-                    "agentVersion": int(output_spec["agentVersion"]),
-                    "outputSchemaId": int(output_spec["outputSchemaId"]),
-                    "outputSchemaVersion": int(output_spec["outputSchemaVersion"]),
-                    "wiring": dict(output_spec.get("wiring") or {}),
-                    "optional": False,
-                }
-            ],
-        }
-        entries, step_slot_outputs, step_tokens, step_cost, fatal_error = await self._execute_step(
-            workflow=workflow,
-            raw_step=final_step,
-            initial_input=initial_input,
-            slot_outputs=slot_outputs,
-            current_total_cost=current_total_cost,
-            trace_id=trace_id,
-        )
-        return (
-            step_slot_outputs.get("final_output"),
-            entries,
-            step_tokens,
-            step_cost,
-            fatal_error,
-        )
+    ) -> tuple[Any | None, str | None]:
+        try:
+            source_value, optional_null = self._resolve_final_output_value(
+                plan.final_output,
+                slot_outputs=slot_outputs,
+            )
+        except RunExecutionError as exc:
+            return None, exc.message
+        if optional_null:
+            return None, "Final output cannot resolve from a null slot"
+        return source_value, None
 
     async def _execute_step(
         self,
         *,
-        workflow: Workflow,
-        raw_step: dict[str, Any],
+        plan: ExecutionPlan,
+        step: ExecutionPlanStep,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
         current_total_cost: Decimal,
         trace_id: str | None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], int, Decimal, str | None]:
-        step_index = int(raw_step["index"])
+        step_index = step.index
         entries: list[dict[str, Any]] = []
         prepared_invocations: list[_PreparedAgentInvocation] = []
         step_slot_outputs: dict[str, Any] = {}
         fatal_error: str | None = None
 
-        for raw_agent in raw_step.get("agents") or []:
+        for plan_agent in step.agents:
             prepared, entry = self._prepare_agent_invocation(
                 step_index=step_index,
-                raw_agent=raw_agent,
+                plan_agent=plan_agent,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
             entries.append(entry)
             if prepared is None:
-                step_slot_outputs[str(raw_agent["slot"])] = None
-                if not bool(raw_agent.get("optional", False)) and fatal_error is None:
+                step_slot_outputs[plan_agent.slot] = None
+                if not plan_agent.optional and fatal_error is None:
                     fatal_error = str(entry["error"]["message"])
                 continue
             prepared_invocations.append(prepared)
@@ -412,7 +353,7 @@ class RunService:
             step_cost += result.cost_usd
             budget_failure = self._check_budget(
                 agent=prepared.agent,
-                workflow=workflow,
+                aggregate_budget_usd=plan.aggregate_budget_usd,
                 agent_cost=result.cost_usd,
                 projected_total_cost=current_total_cost + step_cost,
             )
@@ -445,12 +386,12 @@ class RunService:
         self,
         *,
         step_index: int,
-        raw_agent: dict[str, Any],
+        plan_agent: ExecutionPlanAgent,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
     ) -> tuple[_PreparedAgentInvocation | None, dict[str, Any]]:
         try:
-            agent = self._resolve_agent_row(raw_agent)
+            agent = self._resolve_agent_row(plan_agent)
             output_schema = self._resolve_agent_output_schema(agent)
             output_model = self.schema_compiler.build_runtime_model(output_schema)
             input_model = self._build_input_model(
@@ -463,28 +404,28 @@ class RunService:
             )
             resolved_input = self._resolve_agent_input(
                 step_index=step_index,
-                raw_agent=raw_agent,
+                plan_agent=plan_agent,
                 input_node=input_node,
                 input_model=input_model,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
-            entry = self._build_step_entry(raw_agent=raw_agent, resolved_input=resolved_input)
+            entry = self._build_step_entry(plan_agent=plan_agent, resolved_input=resolved_input)
             return (
                 _PreparedAgentInvocation(
                     agent=agent,
                     output_model=output_model,
                     resolved_input=resolved_input,
                     entry=entry,
-                    optional=bool(raw_agent.get("optional", False)),
+                    optional=plan_agent.optional,
                     step_index=step_index,
-                    slot=str(raw_agent["slot"]),
+                    slot=plan_agent.slot,
                 ),
                 entry,
             )
         except RunExecutionError as exc:
             entry = self._build_step_entry(
-                raw_agent=raw_agent,
+                plan_agent=plan_agent,
                 resolved_input={},
                 status=_RUN_STATUS_FAILED,
                 error=self._error_payload(exc),
@@ -496,7 +437,7 @@ class RunService:
                 message=str(exc),
             )
             entry = self._build_step_entry(
-                raw_agent=raw_agent,
+                plan_agent=plan_agent,
                 resolved_input={},
                 status=_RUN_STATUS_FAILED,
                 error=self._error_payload(failure),
@@ -507,15 +448,32 @@ class RunService:
         self,
         *,
         step_index: int,
-        raw_agent: dict[str, Any],
+        plan_agent: ExecutionPlanAgent,
         input_node: SchemaNode,
         input_model: type[BaseModel],
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
     ) -> dict[str, Any]:
+        if plan_agent.input_mode == "passthrough":
+            try:
+                validated = input_model.model_validate(initial_input)
+            except ValidationError as exc:
+                raise RunExecutionError(
+                    code="agent_input_validation_failed",
+                    message="Resolved agent input failed schema validation",
+                    details=self._validation_details_from_pydantic_error(exc),
+                ) from exc
+            return validated.model_dump(mode="json", exclude_none=True)
+
+        if plan_agent.input_mode != "wired":
+            raise RunExecutionError(
+                code="agent_input_mode_invalid",
+                message=f"Unsupported plan input mode {plan_agent.input_mode!r}",
+            )
+
         target_fields = self._object_field_map(input_node)
-        wiring = dict(raw_agent.get("wiring") or {})
-        agent_field_prefix = f"steps[{step_index - 1}].agents.{raw_agent['slot']}.wiring"
+        wiring = dict(plan_agent.wiring)
+        agent_field_prefix = f"steps[{step_index - 1}].agents.{plan_agent.slot}.wiring"
         for target_name in wiring:
             if target_name not in target_fields:
                 raise RunExecutionError(
@@ -547,7 +505,7 @@ class RunService:
                 continue
 
             value, optional_null = self._resolve_source_value(
-                source,
+                self._plan_source_payload(source),
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
@@ -577,6 +535,46 @@ class RunService:
                 details=self._validation_details_from_pydantic_error(exc),
             ) from exc
         return validated.model_dump(mode="json", exclude_none=True)
+
+    @staticmethod
+    def _plan_source_payload(source: ExecutionPlanSource) -> dict[str, Any]:
+        payload: dict[str, Any] = {"from": source.source}
+        if source.path is not None:
+            payload["path"] = source.path
+        if source.step_index is not None:
+            payload["stepIndex"] = source.step_index
+        if source.slot is not None:
+            payload["slot"] = source.slot
+        return payload
+
+    def _resolve_final_output_value(
+        self,
+        final_output: ExecutionPlanFinalOutput,
+        *,
+        slot_outputs: dict[tuple[int, str], Any],
+    ) -> tuple[Any, bool]:
+        key = (final_output.step_index, final_output.slot)
+        if key not in slot_outputs:
+            raise RunExecutionError(
+                code="run_source_slot_missing",
+                message=(
+                    f"Slot {final_output.slot!r} from step {final_output.step_index} "
+                    "is not available"
+                ),
+                details=[
+                    {
+                        "field": f"step.{final_output.step_index}.{final_output.slot}",
+                        "issue": "Referenced slot is not available in the current run state",
+                    }
+                ],
+            )
+
+        base_value = slot_outputs[key]
+        if base_value is None:
+            return None, True
+        if final_output.path is None:
+            return base_value, False
+        return self._resolve_value_path(base_value, final_output.path), False
 
     def _resolve_source_value(
         self,
@@ -710,369 +708,25 @@ class RunService:
         step_index: int,
         slot: str,
     ) -> RunAgentInvocationResult:
-        return await asyncio.to_thread(
-            self._invoke_agent_sync,
-            agent,
-            resolved_input,
-            output_model,
-            trace_id,
-            step_index,
-            slot,
-        )
-
-    def _invoke_agent_sync(
-        self,
-        agent: Agent,
-        resolved_input: dict[str, Any],
-        output_model: type[BaseModel],
-        trace_id: str | None,
-        step_index: int,
-        slot: str,
-    ) -> RunAgentInvocationResult:
-        del trace_id
-        with self.session_factory() as session:
-            reference_service = StockAnalysisReferenceService(session)
-            try:
-                reference_result = reference_service.maybe_invoke(
-                    agent=agent,
-                    resolved_input=resolved_input,
-                    step_index=step_index,
-                    slot=slot,
-                )
-            except StockAnalysisReferenceError as exc:
-                raise RunExecutionError(
-                    code=exc.code,
-                    message=exc.message,
-                    details=list(exc.details or []),
-                ) from exc
-            if reference_result is not None:
-                return RunAgentInvocationResult(
-                    output=reference_result["output"],
-                    tokens=int(reference_result.get("tokens", 0) or 0),
-                    cost_usd=parse_decimal_string(reference_result.get("costUsd", "0")),
-                    duration_ms=(
-                        int(reference_result["durationMs"])
-                        if reference_result.get("durationMs") is not None
-                        else None
-                    ),
-                    trace_span_id=(
-                        None
-                        if reference_result.get("traceSpanId") is None
-                        else str(reference_result["traceSpanId"])
-                    ),
-                )
-            model_connection = self._resolve_runtime_model_connection(session, agent)
-        return self._invoke_saved_model_connection_agent(
+        return await self.agent_execution_service.invoke(
             agent=agent,
-            model_connection=model_connection,
             resolved_input=resolved_input,
             output_model=output_model,
-        )
-
-    def _resolve_runtime_model_connection(
-        self,
-        session: Session,
-        agent: Agent,
-    ) -> _ResolvedModelConnectionConfig:
-        if agent.model_connection_id is None:
-            raise RunExecutionError(
-                code="run_agent_model_connection_missing",
-                message=f"Agent {agent.key!r} is missing its saved model connection",
-            )
-        connection = ModelConnectionRepository(session).get(agent.model_connection_id)
-        if connection is None:
-            raise RunExecutionError(
-                code="run_agent_model_connection_missing",
-                message=(
-                    f"Agent {agent.key!r} references missing model connection "
-                    f"{agent.model_connection_id}"
-                ),
-            )
-        return _ResolvedModelConnectionConfig(
-            id=connection.id,
-            name=connection.name,
-            base_url=connection.base_url,
-            organization=connection.organization,
-            project=connection.project,
-            model_id=connection.model_id,
-            reasoning_effort=connection.reasoning_effort,
-            timeout_seconds=connection.timeout_seconds,
-            api_key=self._extract_model_connection_api_key(connection),
+            trace_id=trace_id,
+            step_index=step_index,
+            slot=slot,
+            openai_client_factory=OpenAI,
         )
 
     @staticmethod
-    def _extract_model_connection_api_key(connection: ModelConnection) -> str | None:
-        payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
-        raw_api_key = payload.get("apiKey")
-        if raw_api_key is None:
-            return None
-        normalized = str(raw_api_key).strip()
-        return normalized or None
-
-    def _invoke_saved_model_connection_agent(
-        self,
-        *,
-        agent: Agent,
-        model_connection: _ResolvedModelConnectionConfig,
-        resolved_input: dict[str, Any],
-        output_model: type[BaseModel],
-    ) -> RunAgentInvocationResult:
-        if model_connection.api_key is None:
-            raise RunExecutionError(
-                code="agent_model_connection_api_key_missing",
-                message=(
-                    f"Agent {agent.key!r} cannot run because model connection "
-                    f"{model_connection.name!r} is missing an API key"
-                ),
-            )
-
-        instructions = self._build_openai_instructions(agent, output_model)
-        input_text = self._build_openai_input(resolved_input)
-        started_at = time.monotonic()
-        client_kwargs: dict[str, Any] = {
-            "api_key": model_connection.api_key,
-            "base_url": model_connection.base_url,
-            "timeout": float(model_connection.timeout_seconds),
-        }
-        if model_connection.organization:
-            client_kwargs["organization"] = model_connection.organization
-        if model_connection.project:
-            client_kwargs["project"] = model_connection.project
-
-        try:
-            with OpenAI(**client_kwargs) as client:
-                response = client.responses.create(
-                    model=model_connection.model_id,
-                    instructions=instructions,
-                    input=input_text,
-                    reasoning=cast(Any, {"effort": model_connection.reasoning_effort}),
-                )
-        except openai.APITimeoutError as exc:
-            raise RunExecutionError(
-                code="agent_provider_timeout",
-                message="OpenAI request timed out.",
-            ) from exc
-        except openai.APIConnectionError as exc:
-            raise RunExecutionError(
-                code="agent_provider_connection_error",
-                message="OpenAI request could not reach the API.",
-            ) from exc
-        except openai.APIStatusError as exc:
-            raise RunExecutionError(
-                code="agent_provider_status_error",
-                message=self._format_api_status_error(exc, api_key=model_connection.api_key),
-            ) from exc
-        except openai.APIError as exc:
-            raise RunExecutionError(
-                code="agent_provider_error",
-                message=self._normalize_provider_message(
-                    str(exc),
-                    api_key=model_connection.api_key,
-                ),
-            ) from exc
-        except Exception as exc:
-            raise RunExecutionError(
-                code="agent_provider_error",
-                message=self._normalize_provider_message(
-                    f"Unexpected OpenAI execution failure: {exc}",
-                    api_key=model_connection.api_key,
-                ),
-            ) from exc
-
-        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        response_text = self._extract_response_text(response)
-        return RunAgentInvocationResult(
-            output=self._parse_response_output(response_text),
-            tokens=self._extract_total_tokens(response),
-            cost_usd=Decimal("0"),
-            duration_ms=duration_ms,
-        )
-
-    @staticmethod
-    def _build_openai_instructions(agent: Agent, output_model: type[BaseModel]) -> str:
-        schema_text = json.dumps(output_model.model_json_schema(), indent=2, sort_keys=True)
-        return (
-            f"{agent.system_prompt.strip()}\n\n"
-            "Return only valid JSON with no markdown fences or explanatory text. "
-            "The JSON must satisfy this schema exactly:\n"
-            f"{schema_text}"
-        )
-
-    @staticmethod
-    def _build_openai_input(resolved_input: dict[str, Any]) -> str:
-        serialized_input = json.dumps(
-            resolved_input,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-        return f"Use this JSON object as the complete agent input:\n{serialized_input}"
-
-    @classmethod
-    def _extract_response_text(cls, response: Any) -> str:
-        if isinstance(response, dict):
-            direct_text = response.get("output_text") or response.get("outputText")
-            output_payload = response.get("output")
-        else:
-            direct_text = getattr(response, "output_text", None)
-            output_payload = getattr(response, "output", None)
-        if isinstance(direct_text, str) and direct_text.strip():
-            return direct_text.strip()
-        fragments = cls._collect_response_text_fragments(output_payload)
-        normalized = "\n".join(
-            fragment.strip() for fragment in fragments if fragment.strip()
-        ).strip()
-        if normalized:
-            return normalized
-        raise RunExecutionError(
-            code="agent_provider_response_empty",
-            message="OpenAI response did not contain text output.",
-        )
-
-    @classmethod
-    def _collect_response_text_fragments(cls, value: Any) -> list[str]:
-        fragments: list[str] = []
-        if value is None:
-            return fragments
-        if isinstance(value, str):
-            return [value] if value.strip() else []
-        if isinstance(value, list):
-            for item in value:
-                fragments.extend(cls._collect_response_text_fragments(item))
-            return fragments
-        if isinstance(value, dict):
-            text_value = value.get("text")
-            if isinstance(text_value, str) and text_value.strip():
-                fragments.append(text_value)
-            for key in ("content", "output"):
-                nested = value.get(key)
-                if nested is not None:
-                    fragments.extend(cls._collect_response_text_fragments(nested))
-            return fragments
-
-        text_attr = getattr(value, "text", None)
-        if isinstance(text_attr, str) and text_attr.strip():
-            fragments.append(text_attr)
-        for attr in ("content", "output"):
-            nested = getattr(value, attr, None)
-            if nested is not None:
-                fragments.extend(cls._collect_response_text_fragments(nested))
-        return fragments
-
-    def _parse_response_output(self, response_text: str) -> Any:
-        candidate = self._strip_markdown_code_fence(response_text)
-        candidates = [candidate]
-        embedded = self._extract_embedded_json_candidate(candidate)
-        if embedded is not None and embedded != candidate:
-            candidates.append(embedded)
-        for raw_candidate in candidates:
-            try:
-                return json.loads(raw_candidate)
-            except json.JSONDecodeError:
-                continue
-        raise RunExecutionError(
-            code="agent_output_parse_failed",
-            message="OpenAI response did not return valid JSON for the agent output schema.",
-        )
-
-    @staticmethod
-    def _strip_markdown_code_fence(text: str) -> str:
-        candidate = text.strip()
-        if not candidate.startswith("```"):
-            return candidate
-        lines = candidate.splitlines()
-        if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
-            return "\n".join(lines[1:-1]).strip()
-        return candidate
-
-    @staticmethod
-    def _extract_embedded_json_candidate(text: str) -> str | None:
-        object_start = text.find("{")
-        object_end = text.rfind("}")
-        if object_start != -1 and object_end > object_start:
-            return text[object_start : object_end + 1].strip()
-        array_start = text.find("[")
-        array_end = text.rfind("]")
-        if array_start != -1 and array_end > array_start:
-            return text[array_start : array_end + 1].strip()
-        return None
-
-    @staticmethod
-    def _extract_total_tokens(response: Any) -> int:
-        if isinstance(response, dict):
-            usage = response.get("usage")
-        else:
-            usage = getattr(response, "usage", None)
-        if isinstance(usage, dict):
-            raw_total = usage.get("total_tokens", usage.get("totalTokens"))
-        else:
-            raw_total = getattr(usage, "total_tokens", None)
-            if raw_total is None:
-                raw_total = getattr(usage, "totalTokens", None)
-        try:
-            return int(raw_total or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    def _format_api_status_error(self, exc: openai.APIStatusError, *, api_key: str) -> str:
-        message = self._extract_api_status_message(exc)
-        request_id = getattr(exc, "request_id", None)
-        if isinstance(request_id, str) and request_id.strip():
-            message = f"{message} requestId={request_id.strip()}"
-        return self._normalize_provider_message(message, api_key=api_key)
-
-    @staticmethod
-    def _extract_api_status_message(exc: openai.APIStatusError) -> str:
-        body = getattr(exc, "body", None)
-        if isinstance(body, dict):
-            raw_error = body.get("error")
-            if isinstance(raw_error, dict):
-                raw_message = raw_error.get("message")
-                if isinstance(raw_message, str) and raw_message.strip():
-                    return raw_message.strip()
-            raw_message = body.get("message")
-            if isinstance(raw_message, str) and raw_message.strip():
-                return raw_message.strip()
-
-        status_code = getattr(exc, "status_code", None)
-        if isinstance(status_code, int):
-            return f"OpenAI request failed with status {status_code}."
-        return "OpenAI request failed."
-
-    @staticmethod
-    def _normalize_provider_message(message: str, *, api_key: str | None) -> str:
-        normalized = " ".join(str(message).split()).strip()
-        if api_key:
-            normalized = normalized.replace(api_key, "[REDACTED]")
-        if len(normalized) > 500:
-            return f"{normalized[:497]}..."
-        return normalized or "Agent execution failed."
-
-    def _coerce_invocation_result(self, raw_result: Any) -> RunAgentInvocationResult:
-        if isinstance(raw_result, RunAgentInvocationResult):
-            return raw_result
-        if not isinstance(raw_result, dict):
-            raise RunExecutionError(
-                code="agent_result_invalid",
-                message="Agent execution returned an unsupported result payload",
-            )
-        duration_raw = raw_result.get("duration_ms", raw_result.get("durationMs"))
-        trace_span_raw = raw_result.get("trace_span_id", raw_result.get("traceSpanId"))
-        return RunAgentInvocationResult(
-            output=raw_result.get("output"),
-            tokens=int(raw_result.get("tokens", 0) or 0),
-            cost_usd=self._normalize_cost(
-                raw_result.get("cost_usd", raw_result.get("costUsd", "0"))
-            ),
-            duration_ms=None if duration_raw is None else int(duration_raw),
-            trace_span_id=None if trace_span_raw is None else str(trace_span_raw),
-        )
+    def _coerce_invocation_result(raw_result: Any) -> RunAgentInvocationResult:
+        return normalize_agent_invocation_result(raw_result)
 
     def _check_budget(
         self,
         *,
         agent: Agent,
-        workflow: Workflow,
+        aggregate_budget_usd: Decimal,
         agent_cost: Decimal,
         projected_total_cost: Decimal,
     ) -> RunExecutionError | None:
@@ -1082,12 +736,12 @@ class RunService:
                 code="agent_budget_exceeded",
                 message=f"Agent {agent.key!r} exceeded its budget of {budget_text} USD",
             )
-        if projected_total_cost > workflow.aggregate_budget_usd:
+        if projected_total_cost > aggregate_budget_usd:
             return RunExecutionError(
                 code="run_budget_exceeded",
                 message=(
                     f"Run exceeded the workflow aggregate budget of "
-                    f"{decimal_to_string(workflow.aggregate_budget_usd)} USD"
+                    f"{decimal_to_string(aggregate_budget_usd)} USD"
                 ),
             )
         return None
@@ -1114,43 +768,17 @@ class RunService:
         entry["durationMs"] = duration_ms
         entry["traceSpanId"] = trace_span_id
 
-    def _resolve_workflow(self, workflow_id: int, *, version: int | None) -> Workflow:
-        anchor = self.workflow_repository.get(workflow_id)
-        if anchor is None:
-            raise not_found_error("Workflow")
-        if version is None:
-            return anchor
-        workflow = self.workflow_repository.get_by_key_version(anchor.key, version)
-        if workflow is None:
-            raise not_found_error("Workflow")
-        return workflow
-
-    def _get_workflow_for_run(self, run: Run) -> Workflow:
-        workflow = self.workflow_repository.get_by_key_version(
-            run.workflow_key,
-            run.workflow_version,
-        )
-        if workflow is None:
-            raise RunExecutionError(
-                code="run_workflow_missing",
-                message=(
-                    f"Workflow {run.workflow_key!r} version {run.workflow_version} "
-                    "is no longer available"
-                ),
-            )
-        return workflow
-
-    def _resolve_agent_row(self, raw_agent: dict[str, Any]) -> Agent:
+    def _resolve_agent_row(self, plan_agent: ExecutionPlanAgent) -> Agent:
         agent = self.agent_repository.get_by_key_version(
-            str(raw_agent["agentKey"]),
-            int(raw_agent["agentVersion"]),
+            plan_agent.agent_key,
+            plan_agent.agent_version,
         )
         if agent is None:
             raise RunExecutionError(
                 code="run_agent_missing",
                 message=(
-                    f"Agent {raw_agent['agentKey']!r} version "
-                    f"{raw_agent['agentVersion']} was not found"
+                    f"Agent {plan_agent.agent_key!r} version "
+                    f"{plan_agent.agent_version} was not found"
                 ),
             )
         return agent
@@ -1164,18 +792,21 @@ class RunService:
             )
         return output_schema
 
-    def _validate_workflow_input(
+    def _validate_run_input(
         self,
+        *,
         input_schema: dict[str, Any],
         input_payload: dict[str, Any],
+        candidate_key: str,
+        resource_name: str,
     ) -> dict[str, Any]:
-        input_model = self._build_input_model(input_schema, candidate_key="workflow_input")
+        input_model = self._build_input_model(input_schema, candidate_key=candidate_key)
         try:
             validated = input_model.model_validate(input_payload)
         except ValidationError as exc:
             raise business_rule_error(
                 "run_invalid_input",
-                "Run input failed workflow input schema validation",
+                f"Run input failed {resource_name} input schema validation",
                 details=self._validation_details_from_pydantic_error(exc),
             ) from exc
         return validated.model_dump(mode="json")
@@ -1254,27 +885,36 @@ class RunService:
             session.commit()
 
     @staticmethod
-    def _start_trace_session(*, run: Run, workflow: Workflow) -> Any:
+    def _start_trace_session(*, run: Run, plan: ExecutionPlan) -> Any:
         configure_logfire()
+        if plan.target.kind == "workflow":
+            return create_logfire_span(
+                "Workflow run {workflow_key} v{workflow_version} #{run_id}",
+                workflow_id=plan.target.id,
+                workflow_key=plan.target.key,
+                workflow_version=plan.target.version,
+                run_id=run.id,
+                run_status=run.status,
+            )
         return create_logfire_span(
-            "Workflow run {workflow_key} v{workflow_version} #{run_id}",
-            workflow_id=workflow.id,
-            workflow_key=workflow.key,
-            workflow_version=workflow.version,
+            "Agent run {agent_key} v{agent_version} #{run_id}",
+            agent_id=plan.target.id,
+            agent_key=plan.target.key,
+            agent_version=plan.target.version,
             run_id=run.id,
             run_status=run.status,
         )
 
     @staticmethod
-    def _normalize_cost(value: Any) -> Decimal:
-        if isinstance(value, Decimal):
-            return value
-        return parse_decimal_string(value)
-
-    @staticmethod
     def _coerce_execution_error(exc: Exception) -> RunExecutionError:
         if isinstance(exc, RunExecutionError):
             return exc
+        if isinstance(exc, ExecutionPlanBuilderError):
+            return RunExecutionError(
+                code=exc.code,
+                message=exc.message,
+                details=list(exc.details),
+            )
         return RunExecutionError(code="agent_execution_failed", message=str(exc))
 
     @staticmethod
@@ -1304,18 +944,18 @@ class RunService:
     @staticmethod
     def _build_step_entry(
         *,
-        raw_agent: dict[str, Any],
+        plan_agent: ExecutionPlanAgent,
         resolved_input: dict[str, Any],
         status: str = _RUN_STATUS_RUNNING,
         error: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
-            "slot": str(raw_agent["slot"]),
-            "agentId": int(raw_agent["agentId"]),
-            "agentKey": str(raw_agent["agentKey"]),
-            "agentVersion": int(raw_agent["agentVersion"]),
-            "outputSchemaId": int(raw_agent["outputSchemaId"]),
-            "outputSchemaVersion": int(raw_agent["outputSchemaVersion"]),
+            "slot": plan_agent.slot,
+            "agentId": plan_agent.agent_id,
+            "agentKey": plan_agent.agent_key,
+            "agentVersion": plan_agent.agent_version,
+            "outputSchemaId": plan_agent.output_schema_id,
+            "outputSchemaVersion": plan_agent.output_schema_version,
             "resolvedInput": resolved_input,
             "output": None,
             "error": error,
@@ -1332,9 +972,10 @@ class RunService:
             {
                 "id": run.id,
                 "status": run.status,
-                "workflowId": run.workflow_id,
-                "workflowKey": run.workflow_key,
-                "workflowVersion": run.workflow_version,
+                "targetKind": run.target_kind,
+                "targetId": run.target_id,
+                "targetKey": run.target_key,
+                "targetVersion": run.target_version,
                 "traceId": run.trace_id,
                 "createdAt": run.created_at,
             }
@@ -1345,9 +986,10 @@ class RunService:
         return RunListItemRead.model_validate(
             {
                 "id": run.id,
-                "workflowId": run.workflow_id,
-                "workflowKey": run.workflow_key,
-                "workflowVersion": run.workflow_version,
+                "targetKind": run.target_kind,
+                "targetId": run.target_id,
+                "targetKey": run.target_key,
+                "targetVersion": run.target_version,
                 "status": run.status,
                 "totalTokens": run.total_tokens,
                 "totalCostUsd": run.total_cost_usd,
@@ -1362,9 +1004,10 @@ class RunService:
         return RunRead.model_validate(
             {
                 "id": run.id,
-                "workflowId": run.workflow_id,
-                "workflowKey": run.workflow_key,
-                "workflowVersion": run.workflow_version,
+                "targetKind": run.target_kind,
+                "targetId": run.target_id,
+                "targetKey": run.target_key,
+                "targetVersion": run.target_version,
                 "input": run.input,
                 "perStepOutputs": run.per_step_outputs,
                 "finalOutput": run.final_output,

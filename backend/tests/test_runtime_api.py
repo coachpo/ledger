@@ -24,6 +24,7 @@ from app.models.output_schema import OutputSchema
 from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
+from app.models.run import Run
 from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
@@ -190,10 +191,7 @@ def _build_agent_platform_agent(
                 "mcpServerVersion": mcp_server.version,
             }
         ],
-        temperature=0.2,
-        max_tool_rounds=2,
         budget_usd=budget_usd,
-        streaming=True,
     )
 
 
@@ -729,10 +727,31 @@ def test_agent_platform_model_connections_connection_test_failure_redacts_secret
         assert "sk-test-secret-1234" not in (row.last_test_message or "")
 
 
-def test_agent_platform_agent_test_panel_resolves_archived_historical_versions(
+def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archived_anchor(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        return {
+            "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
+            "tokens": 7,
+            "costUsd": "0.01000000",
+            "durationMs": 4,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+
     with session_factory() as session:
         output_schema_v1 = _build_output_schema(
             key="decision_schema",
@@ -796,29 +815,77 @@ def test_agent_platform_agent_test_panel_resolves_archived_historical_versions(
         historical_agent_id = agent_v1.id
 
     response = client.post(
-        f"/api/agents/{archived_agent_id}/test-panel",
+        f"/api/agents/{archived_agent_id}/runs",
         params={"version": 1},
-        json={"sampleInput": {"ticker": "MSFT"}},
+        json={"ticker": "MSFT"},
     )
 
-    assert response.status_code == 200, response.json()
-    body = response.json()
-    assert body["sampleInput"] == {"ticker": "MSFT"}
-    assert body["agent"]["id"] == historical_agent_id
-    assert body["agent"]["version"] == 1
-    assert body["agent"]["status"] == "deprecated"
-    assert body["agent"]["modelConnectionId"] == body["agent"]["modelConnection"]["id"]
-    assert body["agent"]["modelConnection"]["status"] == "archived"
-    assert body["agent"]["modelConnection"]["apiKeyLast4"] == "9876"
-    assert body["agent"]["outputSchema"]["version"] == 1
-    assert body["agent"]["skills"][0]["version"] == 1
-    assert body["agent"]["mcpServers"][0]["boundary"] == {
-        "transport": "http-sse",
-        "command": None,
-        "url": "https://example.com/mcp",
-        "headerNames": ["Authorization"],
-        "envKeys": [],
-        "enabled": True,
+    assert response.status_code == 201, response.json()
+    created = response.json()
+    assert created == {
+        "id": created["id"],
+        "targetKind": "agent",
+        "targetId": historical_agent_id,
+        "targetKey": "research_agent",
+        "targetVersion": 1,
+        "status": "running",
+        "traceId": None,
+        "createdAt": created["createdAt"],
+    }
+
+    detail = _wait_for_agent_platform_run(client, created["id"])
+
+    assert detail["status"] == "succeeded"
+    _assert_logfire_trace_id(detail["traceId"])
+    assert detail["targetKind"] == "agent"
+    assert detail["targetId"] == historical_agent_id
+    assert detail["targetKey"] == "research_agent"
+    assert detail["targetVersion"] == 1
+    assert detail["input"] == {"ticker": "MSFT"}
+    assert detail["finalOutput"] == {"summary": "research_agent:MSFT"}
+    assert detail["perStepOutputs"] == {
+        "1": [
+            {
+                "slot": "final_output",
+                "agentId": historical_agent_id,
+                "agentKey": "research_agent",
+                "agentVersion": 1,
+                "outputSchemaId": detail["perStepOutputs"]["1"][0]["outputSchemaId"],
+                "outputSchemaVersion": 1,
+                "resolvedInput": {"ticker": "MSFT"},
+                "output": {"summary": "research_agent:MSFT"},
+                "error": None,
+                "status": "succeeded",
+                "tokens": 7,
+                "costUsd": "0.01000000",
+                "durationMs": 4,
+                "traceSpanId": detail["perStepOutputs"]["1"][0]["traceSpanId"],
+            }
+        ]
+    }
+    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
+
+    listed = client.get(
+        "/api/runs",
+        params={"targetKind": "agent", "targetId": historical_agent_id, "status": "succeeded"},
+    )
+    assert listed.status_code == 200, listed.json()
+    assert listed.json() == {
+        "items": [
+            {
+                "id": created["id"],
+                "targetKind": "agent",
+                "targetId": historical_agent_id,
+                "targetKey": "research_agent",
+                "targetVersion": 1,
+                "status": "succeeded",
+                "totalTokens": 7,
+                "totalCostUsd": "0.01000000",
+                "traceId": detail["traceId"],
+                "startedAt": listed.json()["items"][0]["startedAt"],
+                "finishedAt": listed.json()["items"][0]["finishedAt"],
+            }
+        ]
     }
 
 
@@ -874,9 +941,7 @@ def test_agent_platform_agent_create_rejects_archived_model_connection_selection
                     "mcpServerVersion": mcp_server.version,
                 }
             ],
-            "maxToolRounds": 2,
             "budgetUsd": "1.25000000",
-            "streaming": True,
         },
     )
 
@@ -1026,6 +1091,66 @@ def test_agent_platform_run_fails_when_saved_model_connection_has_no_api_key(
     step_error = detail["perStepOutputs"]["1"][0]["error"]
     assert step_error["code"] == "agent_model_connection_api_key_missing"
     assert "missing an API key" in step_error["message"]
+
+
+def test_agent_platform_run_rejects_invalid_input_without_persisting_run(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="invalid_input_agent",
+            workflow_key="invalid_input_workflow",
+            connection=_build_model_connection(name="Invalid Input Connection"),
+        )
+
+    response = client.post(f"/api/workflows/{workflow.id}/runs", json={})
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "run_invalid_input"
+    assert response.json()["message"] == "Run input failed workflow input schema validation"
+    assert response.json()["details"] == [{"field": "ticker", "issue": "Field required"}]
+
+    with session_factory() as session:
+        assert session.query(Run).all() == []
+
+    listed = client.get(
+        "/api/runs",
+        params={"targetKind": "workflow", "targetId": workflow.id},
+    )
+    assert listed.status_code == 200, listed.json()
+    assert listed.json() == {"items": []}
+
+
+def test_agent_platform_agent_run_rejects_invalid_input_without_persisting_run(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _workflow, agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="invalid_input_agent_direct",
+            workflow_key="invalid_input_workflow_direct",
+            connection=_build_model_connection(name="Invalid Direct Agent Input Connection"),
+        )
+
+    response = client.post(f"/api/agents/{agent.id}/runs", json={})
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["code"] == "run_invalid_input"
+    assert response.json()["message"] == "Run input failed agent input schema validation"
+    assert response.json()["details"] == [{"field": "ticker", "issue": "Field required"}]
+
+    with session_factory() as session:
+        assert session.query(Run).all() == []
+
+    listed = client.get(
+        "/api/runs",
+        params={"targetKind": "agent", "targetId": agent.id},
+    )
+    assert listed.status_code == 200, listed.json()
+    assert listed.json() == {"items": []}
 
 
 def test_agent_platform_workflow_validation_rejects_optional_slots_for_required_fields(
@@ -1417,9 +1542,10 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
     created = trigger.json()
     assert created == {
         "id": created["id"],
-        "workflowId": workflow.id,
-        "workflowKey": workflow.key,
-        "workflowVersion": workflow.version,
+        "targetKind": "workflow",
+        "targetId": workflow.id,
+        "targetKey": workflow.key,
+        "targetVersion": workflow.version,
         "status": "running",
         "traceId": None,
         "createdAt": created["createdAt"],
@@ -1428,9 +1554,10 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
     detail = _wait_for_agent_platform_run(client, created["id"])
     assert detail["status"] == "succeeded"
     _assert_logfire_trace_id(detail["traceId"])
-    assert detail["workflowId"] == workflow.id
-    assert detail["workflowKey"] == workflow.key
-    assert detail["workflowVersion"] == workflow.version
+    assert detail["targetKind"] == "workflow"
+    assert detail["targetId"] == workflow.id
+    assert detail["targetKey"] == workflow.key
+    assert detail["targetVersion"] == workflow.version
     assert detail["input"] == {"ticker": "AVGO"}
     assert detail["finalOutput"] == {"summary": "http_agent:AVGO"}
     assert detail["perStepOutputs"] == {
@@ -1457,16 +1584,17 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
 
     listed = client.get(
         "/api/runs",
-        params={"workflowId": workflow.id, "status": "succeeded"},
+        params={"targetKind": "workflow", "targetId": workflow.id, "status": "succeeded"},
     )
     assert listed.status_code == 200, listed.json()
     assert listed.json() == {
         "items": [
             {
                 "id": created["id"],
-                "workflowId": workflow.id,
-                "workflowKey": workflow.key,
-                "workflowVersion": workflow.version,
+                "targetKind": "workflow",
+                "targetId": workflow.id,
+                "targetKey": workflow.key,
+                "targetVersion": workflow.version,
                 "status": "succeeded",
                 "totalTokens": 13,
                 "totalCostUsd": "0.01500000",
@@ -1758,15 +1886,16 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
 
     list_response = client.get(
         "/api/runs",
-        params={"workflowId": workflow.id, "status": "succeeded"},
+        params={"targetKind": "workflow", "targetId": workflow.id, "status": "succeeded"},
     )
     assert list_response.status_code == 200, list_response.json()
     assert list_response.json()["items"] == [
         {
             "id": run_id,
-            "workflowId": workflow.id,
-            "workflowKey": workflow.key,
-            "workflowVersion": workflow.version,
+            "targetKind": "workflow",
+            "targetId": workflow.id,
+            "targetKey": workflow.key,
+            "targetVersion": workflow.version,
             "status": "succeeded",
             "totalTokens": 21,
             "totalCostUsd": "0.02000000",
@@ -1777,9 +1906,10 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
     ]
 
     _assert_logfire_trace_id(detail["traceId"])
-    assert detail["workflowId"] == workflow.id
-    assert detail["workflowKey"] == workflow.key
-    assert detail["workflowVersion"] == workflow.version
+    assert detail["targetKind"] == "workflow"
+    assert detail["targetId"] == workflow.id
+    assert detail["targetKey"] == workflow.key
+    assert detail["targetVersion"] == workflow.version
     assert detail["input"] == {"ticker": "MSFT"}
     assert detail["totalTokens"] == 21
     assert detail["totalCostUsd"] == "0.02000000"
