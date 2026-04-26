@@ -208,7 +208,6 @@ function stepOneAgentPayload(
     skills: [{ skillKey: skill.key, skillVersion: skill.version }],
     mcpServers: [{ mcpServerKey: mcpServer.key, mcpServerVersion: mcpServer.version }],
     budgetUsd: key === "price_analyst" ? "0.02000000" : "0.05000000",
-    streaming: false,
   };
 }
 
@@ -229,7 +228,6 @@ function synthesizerPayload(
     skills: [{ skillKey: skill.key, skillVersion: skill.version }],
     mcpServers: [{ mcpServerKey: mcpServer.key, mcpServerVersion: mcpServer.version }],
     budgetUsd: "0.10000000",
-    streaming: false,
   };
 }
 
@@ -253,14 +251,20 @@ function workflowPayload(
           },
         })),
       },
+      {
+        index: 2,
+        agents: [
+          {
+            agentKey: SYNTHESIZER_KEY,
+            slot: "decision",
+            wiring: Object.fromEntries(
+              STEP_ONE_AGENT_KEYS.map((key) => [key, { from: "step", stepIndex: 1, slot: key }]),
+            ),
+          },
+        ],
+      },
     ],
-    outputSpec: {
-      kind: "agent",
-      agentKey: SYNTHESIZER_KEY,
-      wiring: Object.fromEntries(
-        STEP_ONE_AGENT_KEYS.map((key) => [key, { from: "step", stepIndex: 1, slot: key }]),
-      ),
-    },
+    outputSpec: { kind: "slot", stepIndex: 2, slot: "decision" },
   };
 }
 
@@ -342,5 +346,5 @@ test("runs the real stock-analysis reference workflow through the UI", async ({ 
   await expect(page.getByTestId("runs-trace-linkage")).toContainText(/[0-9a-f]{32}/);
   await expect(page.getByTestId("runs-trace-linkage")).toContainText(/Span id: [0-9a-f]{16}/);
   await expect(page.getByTestId("runs-trace-linkage")).toContainText("step 1 / position_reader");
-  await expect(page.getByTestId("runs-trace-linkage")).toContainText("step 2 / final_output");
+  await expect(page.getByTestId("runs-trace-linkage")).toContainText("step 2 / decision");
 });

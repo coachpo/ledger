@@ -24,11 +24,10 @@ const agents = [
       properties: { ticker: { type: "string" } },
       required: ["ticker"],
       type: "object",
-    },
-    key: "research_agent",
-    maxToolRounds: 3,
-    mcpServers: [],
-    name: "Research Agent",
+      },
+      key: "research_agent",
+      mcpServers: [],
+      name: "Research Agent",
     outputSchema: {
       id: 11,
       jsonSchema: {
@@ -39,13 +38,12 @@ const agents = [
       },
       key: "decision_schema",
       version: 1,
-    },
-    skills: [],
-    status: "published",
-    streaming: true,
-    systemPrompt: "Research clearly.",
-    updatedAt: "2026-04-20T10:00:00Z",
-    version: 3,
+      },
+      skills: [],
+      status: "published",
+      systemPrompt: "Research clearly.",
+      updatedAt: "2026-04-20T10:00:00Z",
+      version: 3,
   },
   {
     id: 2,
@@ -62,11 +60,10 @@ const agents = [
       },
       required: ["analysis"],
       type: "object",
-    },
-    key: "consumer_agent",
-    maxToolRounds: 3,
-    mcpServers: [],
-    name: "Consumer Agent",
+      },
+      key: "consumer_agent",
+      mcpServers: [],
+      name: "Consumer Agent",
     outputSchema: {
       id: 11,
       jsonSchema: {
@@ -77,13 +74,12 @@ const agents = [
       },
       key: "decision_schema",
       version: 1,
-    },
-    skills: [],
-    status: "published",
-    streaming: true,
-    systemPrompt: "Consume clearly.",
-    updatedAt: "2026-04-20T10:00:00Z",
-    version: 2,
+      },
+      skills: [],
+      status: "published",
+      systemPrompt: "Consume clearly.",
+      updatedAt: "2026-04-20T10:00:00Z",
+      version: 2,
   },
 ];
 
@@ -267,6 +263,22 @@ describe("WorkflowsEditorPage", () => {
       "Slot 'missing_slot' was not found on step 1",
     );
     expect(updateWorkflowMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps final output slot-only and tells users to model extra agent calls as the last step", () => {
+    render(<WorkflowsEditorPage />);
+
+    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
+    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
+
+    expect(screen.getByText("Final output slot")).toBeVisible();
+    expect(
+      screen.getByText(/model any synthesizer or post-processing agent as a normal final workflow step/i),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /switch to output agent/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Output kind")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Output step")).toBeVisible();
+    expect(screen.getByLabelText("Output slot")).toBeVisible();
   });
 
   it("renders the structured review summary and starts a run from the saved workflow detail", async () => {

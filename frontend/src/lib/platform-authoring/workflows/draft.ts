@@ -72,25 +72,12 @@ function wireBindingFromWireSource(source?: WorkflowWireSource): WireBinding {
 }
 
 export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
-  const output: WorkflowDraftOutput =
-    workflow.outputSpec.kind === "slot"
-      ? {
-          kind: "slot",
-          pathTokens: pathTokensFromPath(workflow.outputSpec.path),
-          slot: workflow.outputSpec.slot,
-          stepIndex: String(workflow.outputSpec.stepIndex),
-        }
-      : {
-          agentKey: workflow.outputSpec.agentKey,
-          agentVersion: String(workflow.outputSpec.agentVersion),
-          kind: "agent",
-          wiring: Object.fromEntries(
-            Object.entries(workflow.outputSpec.wiring).map(([field, source]) => [
-              field,
-              wireBindingFromWireSource(source),
-            ]),
-          ),
-        };
+  const output: WorkflowDraftOutput = {
+    kind: "slot",
+    pathTokens: pathTokensFromPath(workflow.outputSpec.path),
+    slot: workflow.outputSpec.slot,
+    stepIndex: String(workflow.outputSpec.stepIndex),
+  };
 
   return {
     description: workflow.description ?? "",
@@ -114,21 +101,12 @@ export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
 }
 
 export function createWorkflowDraftFromOutputSpec(outputSpec: WorkflowOutputSpecRead): WorkflowDraftOutput {
-  return outputSpec.kind === "slot"
-    ? {
-        kind: "slot",
-        pathTokens: pathTokensFromPath(outputSpec.path),
-        slot: outputSpec.slot,
-        stepIndex: String(outputSpec.stepIndex),
-      }
-    : {
-        agentKey: outputSpec.agentKey,
-        agentVersion: String(outputSpec.agentVersion),
-        kind: "agent",
-        wiring: Object.fromEntries(
-          Object.entries(outputSpec.wiring).map(([field, source]) => [field, wireBindingFromWireSource(source)]),
-        ),
-      };
+  return {
+    kind: "slot",
+    pathTokens: pathTokensFromPath(outputSpec.path),
+    slot: outputSpec.slot,
+    stepIndex: String(outputSpec.stepIndex),
+  };
 }
 
 export function wireBindingToPath(binding: WireBinding): string | undefined {

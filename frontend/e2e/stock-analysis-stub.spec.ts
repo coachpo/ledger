@@ -208,7 +208,6 @@ async function ensureStepOneAgents(
       skills: [{ skillKey: skill.key, skillVersion: skill.version }],
       mcpServers: [{ mcpServerKey: mcpServer.key, mcpServerVersion: mcpServer.version }],
       budgetUsd: "0.05000000",
-      streaming: false,
     });
   }
 

@@ -333,9 +333,8 @@ export function validateWorkflowDraft(
     issues.push(createIssue("name", error instanceof Error ? error.message : "Name is required"));
   }
 
-  let parsedInputSchema: WorkflowJsonSchema = {};
   try {
-    parsedInputSchema = parseJsonValue<WorkflowJsonSchema>("Input schema", draft.inputSchemaText, {});
+    parseJsonValue<WorkflowJsonSchema>("Input schema", draft.inputSchemaText, {});
   } catch (error) {
     issues.push(
       createIssue(
@@ -383,39 +382,21 @@ export function validateWorkflowDraft(
     });
   });
 
-  if (draft.output.kind === "slot") {
-    const outputStep = Number(draft.output.stepIndex.trim());
-    const slotName = draft.output.slot.trim();
+  const outputStep = Number(draft.output.stepIndex.trim());
+  const slotName = draft.output.slot.trim();
 
-    if (!Number.isInteger(outputStep) || outputStep <= 0) {
-      issues.push(createIssue("outputSpec.stepIndex", "Select an output step"));
-    } else {
-      const slots = collectPriorSlots(draft.steps, agents, draft.steps.length + 1).get(outputStep);
-      if (!slots || !slotName || !slots[slotName]) {
-        issues.push(
-          createIssue(
-            "outputSpec.slot",
-            `Slot '${slotName || "(empty)"}' was not found on step ${outputStep}`,
-          ),
-        );
-      }
-    }
+  if (!Number.isInteger(outputStep) || outputStep <= 0) {
+    issues.push(createIssue("outputSpec.stepIndex", "Select an output step"));
   } else {
-    issues.push(
-      ...validateDraftAgent({
-        agents,
-        currentStepIndex: draft.steps.length,
-        draft: { ...draft, inputSchemaText: JSON.stringify(parsedInputSchema, null, 2) },
-        draftAgent: {
-          agentKey: draft.output.agentKey,
-          agentVersion: draft.output.agentVersion,
-          optional: false,
-          slot: "final_output",
-          wiring: draft.output.wiring,
-        },
-        fieldPrefix: "outputSpec",
-      }),
-    );
+    const slots = collectPriorSlots(draft.steps, agents, draft.steps.length + 1).get(outputStep);
+    if (!slots || !slotName || !slots[slotName]) {
+      issues.push(
+        createIssue(
+          "outputSpec.slot",
+          `Slot '${slotName || "(empty)"}' was not found on step ${outputStep}`,
+        ),
+      );
+    }
   }
 
   return issues;

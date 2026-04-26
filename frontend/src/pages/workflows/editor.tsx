@@ -468,43 +468,31 @@ function AgentEditorCard(props: AgentEditorCardProps) {
 
 type OutputEditorProps = {
   onChange: (nextOutput: WorkflowDraftOutput) => void;
-  workflowAgents: readonly AgentRead[];
   workflowDraft: WorkflowDraft;
 };
 
 function OutputEditor(props: OutputEditorProps) {
-  const { onChange, workflowAgents, workflowDraft } = props;
+  const { onChange, workflowDraft } = props;
   const stepOptions = getStepOptions(workflowDraft);
   const output = workflowDraft.output;
+  const slots = collectPreviousStepSlots(workflowDraft, workflowDraft.steps.length + 1).filter(
+    (entry) => String(entry.stepNumber) === output.stepIndex,
+  );
 
-  if (output.kind === "slot") {
-    const slots = collectPreviousStepSlots(workflowDraft, workflowDraft.steps.length + 1).filter(
-      (entry) => String(entry.stepNumber) === output.stepIndex,
-    );
-
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Final output slot</CardTitle>
-          <CardDescription>
-            Choose which step slot becomes the workflow result and optionally pick a nested path.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="flex flex-col gap-2">
-            <Label>Output kind</Label>
-            <Select value="slot" onValueChange={() => void 0}>
-              <SelectTrigger aria-label="Output kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="slot">Slot</SelectItem>
-                  <SelectItem value="agent" onSelect={() => void 0}>Agent</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Final output slot</CardTitle>
+        <CardDescription>
+          Choose which step slot becomes the workflow result. If you need another agent invocation,
+          add it as the last step and select that step’s slot here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+          Model any synthesizer or post-processing agent as a normal final workflow step, then point the final output at that step’s slot.
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="flex flex-col gap-2">
             <Label>Step</Label>
             <Select
@@ -578,119 +566,7 @@ function OutputEditor(props: OutputEditorProps) {
               }
             />
           </div>
-          <Button
-            className="md:col-span-3 md:w-fit"
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              onChange({ agentKey: "", agentVersion: "", kind: "agent", wiring: {} })
-            }
-          >
-            Switch to Output Agent
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const resolvedAgent = findAgentByKey(workflowAgents, output.agentKey);
-  const fieldNames = getSchemaFieldNames(resolvedAgent?.inputSchema, output.wiring);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Final output agent</CardTitle>
-        <CardDescription>
-          Run a pinned agent after all steps and map its inputs from earlier slots or the workflow input.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="flex flex-col gap-2">
-            <Label>Output kind</Label>
-            <Input aria-label="Output kind" disabled value="agent" />
-          </div>
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <Label>Agent</Label>
-            <Select
-              value={output.agentKey || NONE_OPTION}
-              onValueChange={(value) =>
-                onChange({
-                  agentKey: value === NONE_OPTION ? "" : value,
-                  agentVersion: output.agentVersion,
-                  kind: "agent",
-                  wiring: output.wiring,
-                })
-              }
-            >
-              <SelectTrigger aria-label="Output agent">
-                <SelectValue placeholder="Select agent" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NONE_OPTION}>Select agent</SelectItem>
-                  {workflowAgents.map((agent) => (
-                    <SelectItem key={`output-agent-${agent.id}`} value={agent.key}>
-                      {agent.name} ({agent.key}@{agent.version})
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="workflow-output-agent-version">Pinned version</Label>
-            <Input
-              id="workflow-output-agent-version"
-              aria-label="Output agent version"
-              placeholder={resolvedAgent ? String(resolvedAgent.version) : "1"}
-              value={output.agentVersion}
-              onChange={(event) =>
-                onChange({
-                  agentKey: output.agentKey,
-                  agentVersion: event.target.value,
-                  kind: "agent",
-                  wiring: output.wiring,
-                })
-              }
-            />
-          </div>
         </div>
-
-        {fieldNames.length === 0 ? (
-          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            Select an output agent with an object input schema to configure its wiring.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {fieldNames.map((fieldName) => (
-              <WiringFieldEditor
-                currentStepNumber={workflowDraft.steps.length + 1}
-                fieldName={fieldName}
-                key={`output-${fieldName}`}
-                onChange={(nextSource) =>
-                  onChange({
-                    agentKey: output.agentKey,
-                    agentVersion: output.agentVersion,
-                    kind: "agent",
-                    wiring: { ...output.wiring, [fieldName]: nextSource },
-                  })
-                }
-                source={output.wiring[fieldName] ?? createEmptySourceDraft()}
-                workflowDraft={workflowDraft}
-              />
-            ))}
-          </div>
-        )}
-
-        <Button
-          className="w-fit"
-          size="sm"
-          variant="outline"
-          onClick={() => onChange({ kind: "slot", path: "", slot: "", stepIndex: "1" })}
-        >
-          Switch to Output Slot
-        </Button>
       </CardContent>
     </Card>
   );
@@ -1152,7 +1028,10 @@ export function WorkflowsEditorPage() {
             </TabsContent>
 
             <TabsContent forceMount value="output">
-              <OutputEditor onChange={(nextOutput) => setDraft((current) => ({ ...current, output: nextOutput }))} workflowAgents={workflowAgents} workflowDraft={draft} />
+              <OutputEditor
+                onChange={(nextOutput) => setDraft((current) => ({ ...current, output: nextOutput }))}
+                workflowDraft={draft}
+              />
             </TabsContent>
 
             <TabsContent forceMount value="review">
@@ -1183,15 +1062,11 @@ export function WorkflowsEditorPage() {
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Output</CardTitle>
-                      <CardDescription>Final slot or synthesized agent result.</CardDescription>
+                      <CardDescription>Final slot selected from the workflow steps.</CardDescription>
                     </CardHeader>
                     <CardContent className="text-sm text-muted-foreground">
-                      <p>{draft.output.kind === "slot" ? "Slot output" : "Agent output"}</p>
-                      <p>
-                        {draft.output.kind === "slot"
-                          ? `Step ${draft.output.stepIndex || "?"} · ${draft.output.slot || "slot pending"}`
-                          : draft.output.agentKey || "Output agent pending"}
-                      </p>
+                      <p>Slot output</p>
+                      <p>{`Step ${draft.output.stepIndex || "?"} · ${draft.output.slot || "slot pending"}`}</p>
                     </CardContent>
                   </Card>
                 </div>

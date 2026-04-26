@@ -1,7 +1,6 @@
 import type { AgentRead } from "@/lib/types/agent";
 import type {
   WorkflowCreateInput,
-  WorkflowOutputSpecWrite,
   WorkflowRead,
   WorkflowStepAgentWrite,
   WorkflowWireSource,
@@ -96,25 +95,12 @@ export function createInitialWorkflowDraft(): WorkflowDraft {
 }
 
 export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
-  const output: WorkflowDraftOutput =
-    workflow.outputSpec.kind === "slot"
-      ? {
-          kind: "slot",
-          pathTokens: workflowPathToTokens(workflow.outputSpec.path),
-          slot: workflow.outputSpec.slot,
-          stepIndex: String(workflow.outputSpec.stepIndex),
-        }
-      : {
-          agentKey: workflow.outputSpec.agentKey,
-          agentVersion: String(workflow.outputSpec.agentVersion),
-          kind: "agent",
-          wiring: Object.fromEntries(
-            Object.entries(workflow.outputSpec.wiring).map(([field, source]) => [
-              field,
-              wireBindingFromWireSource(source),
-            ]),
-          ),
-        };
+  const output: WorkflowDraftOutput = {
+    kind: "slot",
+    pathTokens: workflowPathToTokens(workflow.outputSpec.path),
+    slot: workflow.outputSpec.slot,
+    stepIndex: String(workflow.outputSpec.stepIndex),
+  };
 
   return {
     description: workflow.description ?? "",
@@ -140,24 +126,12 @@ export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
 export function createWorkflowDraftFromOutputSpec(
   outputSpec: WorkflowRead["outputSpec"],
 ): WorkflowDraftOutput {
-  return outputSpec.kind === "slot"
-    ? {
-        kind: "slot",
-        pathTokens: workflowPathToTokens(outputSpec.path),
-        slot: outputSpec.slot,
-        stepIndex: String(outputSpec.stepIndex),
-      }
-    : {
-        agentKey: outputSpec.agentKey,
-        agentVersion: String(outputSpec.agentVersion),
-        kind: "agent",
-        wiring: Object.fromEntries(
-          Object.entries(outputSpec.wiring).map(([field, source]) => [
-            field,
-            wireBindingFromWireSource(source),
-          ]),
-        ),
-      };
+  return {
+    kind: "slot",
+    pathTokens: workflowPathToTokens(outputSpec.path),
+    slot: outputSpec.slot,
+    stepIndex: String(outputSpec.stepIndex),
+  };
 }
 
 function parsePositiveInteger(value: string, label: string): number | undefined {
@@ -191,32 +165,19 @@ function buildStepAgent(agent: WorkflowDraftAgent): WorkflowStepAgentWrite {
 
 export function buildWorkflowPayload(draft: WorkflowDraft): WorkflowCreateInput {
   const inputSchema = parseJsonValue<WorkflowJsonSchema>("Input schema", draft.inputSchemaText, {});
-  const output =
-    draft.output.kind === "slot"
-      ? {
-          kind: "slot",
-          path: workflowPathTokensToPath(draft.output.pathTokens),
-          slot: parseRequiredText("Output slot", draft.output.slot),
-          stepIndex: parsePositiveInteger(draft.output.stepIndex, "Output step") ?? 1,
-        }
-      : {
-          agentKey: parseRequiredText("Output agent", draft.output.agentKey),
-          agentVersion:
-            parsePositiveInteger(draft.output.agentVersion, "Output agent version") ?? null,
-          kind: "agent",
-          wiring: Object.fromEntries(
-            Object.entries(draft.output.wiring)
-              .map(([field, source]) => [field, wireBindingToWireSource(source)] as const)
-              .filter((entry): entry is readonly [string, WorkflowWireSource] => Boolean(entry[1])),
-          ),
-        };
+  const outputSpec: WorkflowCreateInput["outputSpec"] = {
+    kind: "slot",
+    path: workflowPathTokensToPath(draft.output.pathTokens),
+    slot: parseRequiredText("Output slot", draft.output.slot),
+    stepIndex: parsePositiveInteger(draft.output.stepIndex, "Output step") ?? 1,
+  };
 
   return {
     description: draft.description.trim() || undefined,
     inputSchema,
     key: parseRequiredText("Key", draft.key).toLowerCase(),
     name: parseRequiredText("Name", draft.name),
-    outputSpec: output as WorkflowOutputSpecWrite,
+    outputSpec,
     steps: draft.steps.map((step, index) => ({
       agents: step.agents.map((agent) => buildStepAgent(agent)),
       index: index + 1,

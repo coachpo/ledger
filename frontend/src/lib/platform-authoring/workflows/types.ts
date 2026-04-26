@@ -39,19 +39,12 @@ export interface WorkflowDraftStep {
   id: string;
 }
 
-export type WorkflowDraftOutput =
-  | {
-      kind: "slot";
-      pathTokens: WorkflowBindingPath;
-      slot: string;
-      stepIndex: string;
-    }
-  | {
-      agentKey: string;
-      agentVersion: string;
-      kind: "agent";
-      wiring: Record<string, WireBinding>;
-    };
+export interface WorkflowDraftOutput {
+  kind: "slot";
+  pathTokens: WorkflowBindingPath;
+  slot: string;
+  stepIndex: string;
+}
 
 export interface WorkflowDraft {
   description: string;

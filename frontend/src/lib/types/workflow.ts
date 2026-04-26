@@ -29,14 +29,7 @@ export interface WorkflowOutputSlotWrite {
   path?: string | null;
 }
 
-export interface WorkflowOutputAgentWrite {
-  kind: "agent";
-  agentKey: string;
-  agentVersion?: number | null;
-  wiring?: Record<string, WorkflowWireSource>;
-}
-
-export type WorkflowOutputSpecWrite = WorkflowOutputSlotWrite | WorkflowOutputAgentWrite;
+export type WorkflowOutputSpecWrite = WorkflowOutputSlotWrite;
 
 export interface WorkflowStepAgentRead {
   agentId: number;
@@ -67,17 +60,7 @@ export interface WorkflowOutputSlotRead {
   outputSchemaVersion: number;
 }
 
-export interface WorkflowOutputAgentRead {
-  kind: "agent";
-  agentId: number;
-  agentKey: string;
-  agentVersion: number;
-  outputSchemaId: number;
-  outputSchemaVersion: number;
-  wiring: Record<string, WorkflowWireSource>;
-}
-
-export type WorkflowOutputSpecRead = WorkflowOutputSlotRead | WorkflowOutputAgentRead;
+export type WorkflowOutputSpecRead = WorkflowOutputSlotRead;
 
 export interface WorkflowCreateInput {
   key: string;

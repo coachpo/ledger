@@ -2,7 +2,6 @@ import type { AgentRead } from "@/lib/types/agent";
 import type { UnknownRecord } from "@/lib/types/common";
 import type {
   WorkflowCreateInput,
-  WorkflowOutputSpecWrite,
   WorkflowRead,
   WorkflowStepAgentWrite,
   WorkflowWireSource,
@@ -31,7 +30,7 @@ export const WORKFLOW_SECTIONS: { description: string; title: string; value: Wor
     value: "steps",
   },
   {
-    description: "Choose the final output slot or agent.",
+    description: "Choose the final output slot. Add another final step if you need one more agent invocation.",
     title: "Output",
     value: "output",
   },
@@ -68,19 +67,12 @@ export type WorkflowDraftStep = {
   id: string;
 };
 
-export type WorkflowDraftOutput =
-  | {
-      kind: "slot";
-      path: string;
-      slot: string;
-      stepIndex: string;
-    }
-  | {
-      agentKey: string;
-      agentVersion: string;
-      kind: "agent";
-      wiring: Record<string, WiringSourceDraft>;
-    };
+export type WorkflowDraftOutput = {
+  kind: "slot";
+  path: string;
+  slot: string;
+  stepIndex: string;
+};
 
 export type WorkflowDraft = {
   description: string;
@@ -155,25 +147,12 @@ export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
     inputSchemaText: JSON.stringify(workflow.inputSchema, null, 2),
     key: workflow.key,
     name: workflow.name,
-    output:
-      workflow.outputSpec.kind === "slot"
-        ? {
-            kind: "slot",
-            path: workflow.outputSpec.path ?? "",
-            slot: workflow.outputSpec.slot,
-            stepIndex: String(workflow.outputSpec.stepIndex),
-          }
-        : {
-            agentKey: workflow.outputSpec.agentKey,
-            agentVersion: String(workflow.outputSpec.agentVersion),
-            kind: "agent",
-            wiring: Object.fromEntries(
-              Object.entries(workflow.outputSpec.wiring).map(([field, source]) => [
-                field,
-                sourceDraftFromRead(source),
-              ]),
-            ),
-          },
+    output: {
+      kind: "slot",
+      path: workflow.outputSpec.path ?? "",
+      slot: workflow.outputSpec.slot,
+      stepIndex: String(workflow.outputSpec.stepIndex),
+    },
     steps: workflow.steps.map((step) => ({
       agents: step.agents.map((agent) => ({
         id: createDraftId(`agent-${step.index}`),
@@ -244,32 +223,19 @@ function buildStepAgent(agent: WorkflowDraftAgent): WorkflowStepAgentWrite {
 
 export function buildWorkflowPayload(draft: WorkflowDraft): WorkflowCreateInput {
   const inputSchema = parseJsonValue<JsonSchema>("Input schema", draft.inputSchemaText, {});
-  const output =
-    draft.output.kind === "slot"
-      ? {
-          kind: "slot",
-          path: draft.output.path.trim() || undefined,
-          slot: parseRequiredText("Output slot", draft.output.slot),
-          stepIndex: parsePositiveInteger(draft.output.stepIndex, "Output step") ?? 1,
-        }
-      : {
-          agentKey: parseRequiredText("Output agent", draft.output.agentKey),
-          agentVersion:
-            parsePositiveInteger(draft.output.agentVersion, "Output agent version") ?? null,
-          kind: "agent",
-          wiring: Object.fromEntries(
-            Object.entries(draft.output.wiring)
-              .map(([field, source]) => [field, toWireSourceWrite(source)] as const)
-              .filter((entry): entry is readonly [string, WorkflowWireSource] => Boolean(entry[1])),
-          ),
-        };
+  const outputSpec: WorkflowCreateInput["outputSpec"] = {
+    kind: "slot",
+    path: draft.output.path.trim() || undefined,
+    slot: parseRequiredText("Output slot", draft.output.slot),
+    stepIndex: parsePositiveInteger(draft.output.stepIndex, "Output step") ?? 1,
+  };
 
   return {
     description: draft.description.trim() || undefined,
     inputSchema,
     key: parseRequiredText("Key", draft.key).toLowerCase(),
     name: parseRequiredText("Name", draft.name),
-    outputSpec: output as WorkflowOutputSpecWrite,
+    outputSpec,
     steps: draft.steps.map((step, index) => ({
       agents: step.agents.map((agent) => buildStepAgent(agent)),
       index: index + 1,
@@ -587,9 +553,8 @@ export function validateWorkflowDraft(
     issues.push({ field: "name", issue: error instanceof Error ? error.message : "Name is required" });
   }
 
-  let parsedInputSchema: JsonSchema = {};
   try {
-    parsedInputSchema = parseJsonValue<JsonSchema>("Input schema", draft.inputSchemaText, {});
+    parseJsonValue<JsonSchema>("Input schema", draft.inputSchemaText, {});
   } catch (error) {
     issues.push({
       field: "inputSchema",
@@ -633,38 +598,19 @@ export function validateWorkflowDraft(
     });
   });
 
-  if (draft.output.kind === "slot") {
-    const outputStep = Number(draft.output.stepIndex.trim());
-    const slotName = draft.output.slot.trim();
+  const outputStep = Number(draft.output.stepIndex.trim());
+  const slotName = draft.output.slot.trim();
 
-    if (!Number.isInteger(outputStep) || outputStep <= 0) {
-      issues.push({ field: "outputSpec.stepIndex", issue: "Select an output step" });
-    } else {
-      const slots = collectPriorSlots(draft.steps, agents, draft.steps.length + 1).get(outputStep);
-      if (!slots || !slotName || !slots[slotName]) {
-        issues.push({
-          field: "outputSpec.slot",
-          issue: `Slot '${slotName || "(empty)"}' was not found on step ${outputStep}`,
-        });
-      }
-    }
+  if (!Number.isInteger(outputStep) || outputStep <= 0) {
+    issues.push({ field: "outputSpec.stepIndex", issue: "Select an output step" });
   } else {
-    issues.push(
-      ...validateDraftAgent({
-        agents,
-        currentStepIndex: draft.steps.length,
-        draft: { ...draft, inputSchemaText: JSON.stringify(parsedInputSchema, null, 2) },
-        draftAgent: {
-          id: createDraftId("agent-output"),
-          agentKey: draft.output.agentKey,
-          agentVersion: draft.output.agentVersion,
-          optional: false,
-          slot: "final_output",
-          wiring: draft.output.wiring,
-        },
-        fieldPrefix: "outputSpec",
-      }),
-    );
+    const slots = collectPriorSlots(draft.steps, agents, draft.steps.length + 1).get(outputStep);
+    if (!slots || !slotName || !slots[slotName]) {
+      issues.push({
+        field: "outputSpec.slot",
+        issue: `Slot '${slotName || "(empty)"}' was not found on step ${outputStep}`,
+      });
+    }
   }
 
   return issues;
