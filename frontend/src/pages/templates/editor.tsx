@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 import { TemplatePlaceholderReference } from "@/components/templates/template-placeholder-reference";
 import { TemplateRuntimeInputsSection } from "@/components/templates/template-runtime-inputs-section";
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { Button } from "@/components/ui/button";
 import { GenerateReportDialog } from "@/components/forms/generate-report-dialog";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import {
 import { useCompileReport } from "@/hooks/use-reports";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatMarkdown } from "@/lib/markdown-format";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import {
   buildRuntimeInputs,
   createRuntimeInputRow,
@@ -60,6 +62,7 @@ export function TemplateEditorPage() {
 
   const debouncedContent = useDebounce(content, 500);
   const runtimeInputs = useMemo(() => buildRuntimeInputs(runtimeInputRows), [runtimeInputRows]);
+  const runtimeInputsPreview = useMemo(() => stringifyJson(runtimeInputs), [runtimeInputs]);
   const debouncedRuntimeInputs = useDebounce(runtimeInputs, 500);
   const handleClose = () => navigate("/templates");
 
@@ -323,6 +326,24 @@ export function TemplateEditorPage() {
         onRemoveRow={removeRuntimeInputRow}
         onUpdateRow={updateRuntimeInputRow}
       />
+
+      <div className="border-b border-border bg-muted/10 px-4 py-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Exact Runtime Input JSON
+          </span>
+          <p className="text-xs text-muted-foreground">
+            Read-only canonical JSON built from the same runtime-input object used for inline compile and report generation.
+          </p>
+        </div>
+        <ExactJsonPreview
+          ariaLabel="Exact raw runtime input JSON"
+          className="mt-3"
+          data-testid="template-runtime-inputs-raw-json"
+          textareaClassName="min-h-40"
+          value={runtimeInputsPreview}
+        />
+      </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
         <div className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border">

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+
 import { TemplateEditorPage } from "./editor";
 
 const paramsMock: { templateId?: string } = {};
@@ -111,6 +113,11 @@ describe("TemplateEditorPage", () => {
     fireEvent.change(screen.getByPlaceholderText("Enter template content…"), {
       target: { value: "Ticker {{inputs.ticker}}" },
     });
+
+    const rawRuntimeInputPreview = screen.getByLabelText(/exact raw runtime input json/i);
+
+    expect(rawRuntimeInputPreview).toHaveValue(stringifyJson({ ticker: "MSFT" }));
+    expect(rawRuntimeInputPreview).toHaveAttribute("readonly");
 
     expect(compileInlineMock).toHaveBeenLastCalledWith({
       content: "Ticker {{inputs.ticker}}",
