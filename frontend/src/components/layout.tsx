@@ -94,6 +94,10 @@ function getPageMeta(pathname: string) {
     return { section: "Templates", title: "Templates" };
   }
 
+  if (pathname === "/templates/seed") {
+    return { section: "Templates", sectionHref: "/templates", title: "Reset Workspace" };
+  }
+
   if (pathname === "/templates/new") {
     return { section: "Templates", sectionHref: "/templates", title: "New Template" };
   }

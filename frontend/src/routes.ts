@@ -10,16 +10,17 @@ import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
 import { ModelConnectionsListPage } from "./pages/model-connections/list";
 import { OutputSchemasEditorPage } from "./pages/output-schemas/editor";
 import { OutputSchemasListPage } from "./pages/output-schemas/list";
-import { RunsDetailPage } from "./pages/runs/detail";
-import { RunsListPage } from "./pages/runs/list";
-import { SkillsEditorPage } from "./pages/skills/editor";
-import { SkillsListPage } from "./pages/skills/list";
 import { PortfolioDetailPage } from "./pages/portfolios/detail";
 import { PortfolioListPage } from "./pages/portfolios/list";
 import { ReportDetailPage } from "./pages/reports/detail";
 import { ReportListPage } from "./pages/reports/list";
+import { RunsDetailPage } from "./pages/runs/detail";
+import { RunsListPage } from "./pages/runs/list";
+import { SkillsEditorPage } from "./pages/skills/editor";
+import { SkillsListPage } from "./pages/skills/list";
 import { TemplateEditorPage } from "./pages/templates/editor";
 import { TemplateListPage } from "./pages/templates/list";
+import { TemplateSeedPage } from "./pages/templates/seed";
 import { WorkflowsEditorPage } from "./pages/workflows/editor";
 import { WorkflowsListPage } from "./pages/workflows/list";
 
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
       { path: "portfolios", Component: PortfolioListPage },
       { path: "portfolios/:portfolioId", Component: PortfolioDetailPage },
       { path: "templates", Component: TemplateListPage },
+      { path: "templates/seed", Component: TemplateSeedPage },
       { path: "templates/new", Component: TemplateEditorPage },
       { path: "templates/:templateId/edit", Component: TemplateEditorPage },
       { path: "reports", Component: ReportListPage },
