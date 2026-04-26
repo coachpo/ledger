@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
-import type { RunStatus } from "@/lib/types/run";
+import type { RunStatus, RunTargetKind } from "@/lib/types/run";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,15 @@ import {
 } from "@/components/ui/select";
 
 const ALL_STATUSES = "__all__";
+const ALL_TARGET_KINDS = "__all_target_kinds__";
+
+function formatTargetKindLabel(targetKind: RunTargetKind): string {
+  return targetKind === "agent" ? "Agent" : "Workflow";
+}
+
+function describeRunTarget(targetKind: RunTargetKind): string {
+  return targetKind === "agent" ? "Standalone agent execution" : "Multi-step workflow execution";
+}
 
 function progressForStatus(status: RunStatus): number {
   if (status === "running") {
@@ -38,13 +47,15 @@ function progressForStatus(status: RunStatus): number {
 
 export function RunsListPage() {
   const navigate = useNavigate();
-  const [workflowKey, setWorkflowKey] = useState("");
+  const [targetKind, setTargetKind] = useState<RunTargetKind | undefined>(undefined);
+  const [targetKey, setTargetKey] = useState("");
   const [status, setStatus] = useState<RunStatus | undefined>(undefined);
   const runsQuery = useRuns(
     {
       limit: 50,
+      targetKind,
+      targetKey: targetKey.trim() || undefined,
       status,
-      workflowKey: workflowKey.trim() || undefined,
     },
     { refetchInterval: 2_000 },
   );
@@ -56,8 +67,8 @@ export function RunsListPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor recent workflow executions with live status, total token/cost summaries,
-            and direct links into per-run detail.
+            Monitor recent agent and workflow executions with live status, target identity,
+            total token/cost summaries, and direct links into per-run detail.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => void runsQuery.refetch()}>
@@ -69,17 +80,39 @@ export function RunsListPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Filters</CardTitle>
-          <CardDescription>Filter the monitor by workflow key or terminal status.</CardDescription>
+          <CardDescription>
+            Filter the monitor by target kind, target key, or terminal status.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+        <CardContent className="grid gap-4 md:grid-cols-3">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="runs-workflow-key">Workflow key</Label>
+            <Label>Target kind</Label>
+            <Select
+              value={targetKind ?? ALL_TARGET_KINDS}
+              onValueChange={(value) =>
+                setTargetKind(value === ALL_TARGET_KINDS ? undefined : (value as RunTargetKind))
+              }
+            >
+              <SelectTrigger aria-label="Target kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ALL_TARGET_KINDS}>All targets</SelectItem>
+                  <SelectItem value="agent">agent</SelectItem>
+                  <SelectItem value="workflow">workflow</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="runs-target-key">Target key</Label>
             <Input
-              id="runs-workflow-key"
-              aria-label="Workflow key"
-              placeholder="market_review"
-              value={workflowKey}
-              onChange={(event) => setWorkflowKey(event.target.value)}
+              id="runs-target-key"
+              aria-label="Target key"
+              placeholder="market_review or macro_agent"
+              value={targetKey}
+              onChange={(event) => setTargetKey(event.target.value)}
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -139,14 +172,18 @@ export function RunsListPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <CardTitle className="text-base">Run #{run.id}</CardTitle>
                     <Badge variant="secondary">{run.status}</Badge>
-                    <Badge variant="outline">
-                      {run.workflowKey}@{run.workflowVersion}
-                    </Badge>
+                    <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
+                    <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
                   </div>
                   <CardDescription>
-                    Started {formatDateTime(run.startedAt)}
-                    {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : " · Still running"}
+                    {describeRunTarget(run.targetKind)} · Started {formatDateTime(run.startedAt)}
+                    {run.finishedAt
+                      ? ` · Finished ${formatDateTime(run.finishedAt)}`
+                      : " · Still running"}
                   </CardDescription>
+                  <p className="text-sm text-muted-foreground">
+                    Target {formatTargetKindLabel(run.targetKind).toLowerCase()} #{run.targetId}
+                  </p>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => navigate(`/runs/${run.id}`)}>
                   Open Run
@@ -162,7 +199,9 @@ export function RunsListPage() {
                   <Progress value={progressForStatus(run.status)} />
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-md border p-3">Workflow id: {run.workflowId}</div>
+                  <div className="rounded-md border p-3">
+                    {formatTargetKindLabel(run.targetKind)} id: {run.targetId}
+                  </div>
                   <div className="rounded-md border p-3">Total tokens: {run.totalTokens}</div>
                   <div className="rounded-md border p-3">Total cost: {run.totalCostUsd}</div>
                 </div>

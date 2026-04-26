@@ -1,13 +1,35 @@
 import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
+import { queryKeys } from "../query-keys";
 import type { RunListParams, RunListRead, RunRead } from "../types/run";
 
 function runPath(runId: IdParam): string {
   return `/runs/${toPathSegment(runId)}`;
 }
 
+function normalizeOptionalText(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+export function normalizeRunListParams(params: RunListParams = {}): RunListParams {
+  return {
+    limit: params.limit,
+    offset: params.offset ?? 0,
+    status: params.status,
+    targetId: params.targetId,
+    targetKey: normalizeOptionalText(params.targetKey),
+    targetKind: params.targetKind,
+    targetVersion: params.targetVersion,
+  };
+}
+
+export function buildRunsListQueryKey(params: RunListParams = {}) {
+  return [...queryKeys.platform.runs.all, "list", normalizeRunListParams(params)] as const;
+}
+
 export function listRuns(params?: RunListParams, signal?: AbortSignal): Promise<RunListRead> {
   return requestPlatform<RunListRead>("/runs", {
-    query: toQueryRecord(params),
+    query: toQueryRecord(normalizeRunListParams(params)),
     signal,
   });
 }
@@ -17,6 +39,8 @@ export function getRun(runId: IdParam, signal?: AbortSignal): Promise<RunRead> {
 }
 
 export const runsApi = {
+  buildListQueryKey: buildRunsListQueryKey,
   get: getRun,
   list: listRuns,
+  normalizeListParams: normalizeRunListParams,
 } as const;

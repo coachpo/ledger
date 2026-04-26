@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router";
 
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
-import type { RunStatus, RunStepAgentRead } from "@/lib/types/run";
+import type { RunStatus, RunStepAgentRead, RunTargetKind } from "@/lib/types/run";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +55,16 @@ function formatTracePath(
   return [traceId, ...segments].filter(Boolean).join(" -> ");
 }
 
+function formatTargetKindLabel(targetKind: RunTargetKind): string {
+  return targetKind === "agent" ? "Agent" : "Workflow";
+}
+
+function describeRunTarget(targetKind: RunTargetKind): string {
+  return targetKind === "agent"
+    ? "Standalone agent execution with a single runnable target."
+    : "Workflow execution with step-by-step agent orchestration.";
+}
+
 export function RunsDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const runQuery = useRun(runId, { refetchInterval: 2_000 });
@@ -93,6 +103,7 @@ export function RunsDetailPage() {
   const runProgress = progressForRun(run.status, run.perStepOutputs);
   const tracePath = formatTracePath(run.traceId, traceSpanEntries);
   const traceIdLabel = run.traceId ?? (traceSpanEntries.length > 0 ? "Captured through per-agent span linkage" : "No trace id recorded");
+  const targetKindLabel = formatTargetKindLabel(run.targetKind);
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="runs-detail-page">
@@ -102,17 +113,20 @@ export function RunsDetailPage() {
           <Badge data-testid="runs-detail-status" variant="secondary">
             {run.status}
           </Badge>
-          <Badge variant="outline">
-            {run.workflowKey}@{run.workflowVersion}
+          <Badge data-testid="runs-detail-target-kind" variant="outline">
+            {targetKindLabel}
+          </Badge>
+          <Badge data-testid="runs-detail-target-identity" variant="outline">
+            {run.targetKey}@{run.targetVersion}
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          Started {formatDateTime(run.startedAt)}
+          {describeRunTarget(run.targetKind)} · Started {formatDateTime(run.startedAt)}
           {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : " · Still running"}
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Progress</CardTitle>
@@ -124,6 +138,18 @@ export function RunsDetailPage() {
               <span>{runProgress}%</span>
             </div>
             <Progress value={runProgress} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Target</CardTitle>
+            <CardDescription>Runnable identity for this execution.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>Target kind: {targetKindLabel}</p>
+            <p>Target key: {run.targetKey}</p>
+            <p>Target version: {run.targetVersion}</p>
+            <p>Target id: {run.targetId}</p>
           </CardContent>
         </Card>
         <Card>
@@ -164,7 +190,7 @@ export function RunsDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Final output</CardTitle>
-          <CardDescription>Workflow input and resolved final payload.</CardDescription>
+          <CardDescription>Run input and resolved final payload.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">

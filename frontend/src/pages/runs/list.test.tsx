@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RunsListPage } from "./list";
@@ -27,12 +27,26 @@ describe("RunsListPage", () => {
             id: 15,
             startedAt: "2026-04-20T10:00:00Z",
             status: "running",
+            targetId: 41,
+            targetKey: "market_review",
+            targetKind: "workflow",
+            targetVersion: 2,
             totalCostUsd: "0.02000000",
             totalTokens: 21,
             traceId: "trace-15",
-            workflowId: 41,
-            workflowKey: "market_review",
-            workflowVersion: 2,
+          },
+          {
+            finishedAt: "2026-04-20T10:03:00Z",
+            id: 16,
+            startedAt: "2026-04-20T10:01:00Z",
+            status: "succeeded",
+            targetId: 12,
+            targetKey: "macro_agent",
+            targetKind: "agent",
+            targetVersion: 9,
+            totalCostUsd: "0.01500000",
+            totalTokens: 13,
+            traceId: "trace-16",
           },
         ],
       },
@@ -47,11 +61,18 @@ describe("RunsListPage", () => {
     render(<RunsListPage />);
 
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
+    expect(screen.getByTestId("runs-row-16")).toBeVisible();
+    expect(screen.getAllByText("Workflow")[0]).toBeVisible();
+    expect(screen.getAllByText("Agent")[0]).toBeVisible();
+    expect(screen.getByText(/market_review@2/i)).toBeVisible();
+    expect(screen.getByText(/macro_agent@9/i)).toBeVisible();
+    expect(screen.getByText(/workflow id: 41/i)).toBeVisible();
+    expect(screen.getByText(/agent id: 12/i)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
     expect(refetchMock).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /open run/i }));
+    fireEvent.click(within(screen.getByTestId("runs-row-15")).getByRole("button", { name: /open run/i }));
     expect(navigateMock).toHaveBeenCalledWith("/runs/15");
   });
 });

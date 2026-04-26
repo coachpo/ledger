@@ -2,6 +2,15 @@ import type { UnknownRecord } from "./common";
 
 export type RunStatus = "running" | "succeeded" | "failed";
 
+export type RunTargetKind = "agent" | "workflow";
+
+export interface RunTargetIdentityRead {
+  targetKind: RunTargetKind;
+  targetId: number;
+  targetKey: string;
+  targetVersion: number;
+}
+
 export interface RunAgentErrorRead {
   code: string;
   message: string;
@@ -25,21 +34,15 @@ export interface RunStepAgentRead {
   traceSpanId: string | null;
 }
 
-export interface RunCreatedRead {
+export interface RunCreatedRead extends RunTargetIdentityRead {
   id: number;
   status: RunStatus;
-  workflowId: number;
-  workflowKey: string;
-  workflowVersion: number;
   traceId: string | null;
   createdAt: string;
 }
 
-export interface RunListItemRead {
+export interface RunListItemRead extends RunTargetIdentityRead {
   id: number;
-  workflowId: number;
-  workflowKey: string;
-  workflowVersion: number;
   status: RunStatus;
   totalTokens: number;
   totalCostUsd: string;
@@ -52,11 +55,8 @@ export interface RunListRead {
   items: RunListItemRead[];
 }
 
-export interface RunRead {
+export interface RunRead extends RunTargetIdentityRead {
   id: number;
-  workflowId: number;
-  workflowKey: string;
-  workflowVersion: number;
   input: UnknownRecord;
   perStepOutputs: Record<string, RunStepAgentRead[]>;
   finalOutput: unknown | null;
@@ -72,9 +72,12 @@ export interface RunRead {
 }
 
 export interface RunListParams {
-  workflowId?: number;
-  workflowKey?: string;
-  workflowVersion?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+  targetKind?: RunTargetKind;
+  targetId?: number;
+  targetKey?: string;
+  targetVersion?: number;
   status?: RunStatus;
   limit?: number;
   offset?: number;
