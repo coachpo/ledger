@@ -134,10 +134,7 @@ def _build_agent(
             }
             for server in mcp_servers
         ],
-        temperature=0.2,
-        max_tool_rounds=2,
         budget_usd=budget_usd,
-        streaming=True,
     )
 
 
@@ -175,14 +172,14 @@ def _build_workflow(
             }
         ],
         output_spec={
-            "kind": "agent",
+            "kind": "slot",
+            "stepIndex": 1,
             "slot": "analysis",
             "agentId": agent.id,
             "agentKey": agent.key,
             "agentVersion": agent.version,
             "outputSchemaId": agent.output_schema_id,
             "outputSchemaVersion": agent.output_schema_version,
-            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
         },
         aggregate_budget_usd=aggregate_budget_usd,
     )
@@ -201,9 +198,10 @@ def _build_agent_platform_run(
     final_output: object | None,
 ) -> Run:
     return Run(
-        workflow_id=workflow.id,
-        workflow_key=workflow.key,
-        workflow_version=workflow.version,
+        target_kind="workflow",
+        target_id=workflow.id,
+        target_key=workflow.key,
+        target_version=workflow.version,
         input={"ticker": "NVDA", "horizonDays": 30},
         per_step_outputs=per_step_outputs,
         final_output=final_output,
@@ -587,9 +585,16 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         run_repo = RunRepository(session)
 
         run_detail = run_repo.get_detail(latest_run.id)
-        listed_runs = run_repo.list_for_workflow(workflow_key="market_review")
-        filtered_runs = run_repo.list_all(workflow_key="market_review", status="succeeded")
-        latest_for_workflow = run_repo.get_latest_for_workflow(workflow_key="market_review")
+        listed_runs = run_repo.list_for_target(target_kind="workflow", target_key="market_review")
+        filtered_runs = run_repo.list_all(
+            target_kind="workflow",
+            target_key="market_review",
+            status="succeeded",
+        )
+        latest_for_workflow = run_repo.get_latest_for_target(
+            target_kind="workflow",
+            target_key="market_review",
+        )
 
         assert run_detail is not None
         assert run_detail.per_step_outputs["1"][0]["traceSpanId"] == "span-latest"

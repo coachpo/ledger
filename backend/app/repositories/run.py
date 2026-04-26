@@ -12,20 +12,30 @@ class RunRepository(BaseRepository[Run]):
     def list_all(
         self,
         *,
-        workflow_id: int | None = None,
-        workflow_key: str | None = None,
-        workflow_version: int | None = None,
+        target_kind: str | None = None,
+        target_id: int | None = None,
+        target_key: str | None = None,
+        target_version: int | None = None,
         status: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        workflow_id: int | None = None,
+        workflow_key: str | None = None,
+        workflow_version: int | None = None,
     ) -> list[Run]:
+        resolved_target_id = target_id if target_id is not None else workflow_id
+        resolved_target_key = target_key if target_key is not None else workflow_key
+        resolved_target_version = target_version if target_version is not None else workflow_version
+
         statement = select(self.model)
-        if workflow_id is not None:
-            statement = statement.where(self.model.workflow_id == workflow_id)
-        if workflow_key is not None:
-            statement = statement.where(self.model.workflow_key == workflow_key)
-        if workflow_version is not None:
-            statement = statement.where(self.model.workflow_version == workflow_version)
+        if target_kind is not None:
+            statement = statement.where(self.model.target_kind == target_kind)
+        if resolved_target_id is not None:
+            statement = statement.where(self.model.target_id == resolved_target_id)
+        if resolved_target_key is not None:
+            statement = statement.where(self.model.target_key == resolved_target_key)
+        if resolved_target_version is not None:
+            statement = statement.where(self.model.target_version == resolved_target_version)
         if status is not None:
             statement = statement.where(self.model.status == status)
 
@@ -44,33 +54,37 @@ class RunRepository(BaseRepository[Run]):
         statement = select(self.model).where(self.model.id == run_id)
         return self._get_by_statement(statement)
 
-    def list_for_workflow(
+    def list_for_target(
         self,
         *,
-        workflow_key: str,
-        workflow_version: int | None = None,
+        target_kind: str,
+        target_key: str,
+        target_version: int | None = None,
         status: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[Run]:
         return self.list_all(
-            workflow_key=workflow_key,
-            workflow_version=workflow_version,
+            target_kind=target_kind,
+            target_key=target_key,
+            target_version=target_version,
             status=status,
             limit=limit,
             offset=offset,
         )
 
-    def get_latest_for_workflow(
+    def get_latest_for_target(
         self,
         *,
-        workflow_key: str,
-        workflow_version: int | None = None,
+        target_kind: str,
+        target_key: str,
+        target_version: int | None = None,
         status: str | None = None,
     ) -> Run | None:
-        statement = select(self.model).where(self.model.workflow_key == workflow_key)
-        if workflow_version is not None:
-            statement = statement.where(self.model.workflow_version == workflow_version)
+        statement = select(self.model).where(self.model.target_kind == target_kind)
+        statement = statement.where(self.model.target_key == target_key)
+        if target_version is not None:
+            statement = statement.where(self.model.target_version == target_version)
         if status is not None:
             statement = statement.where(self.model.status == status)
         statement = statement.order_by(

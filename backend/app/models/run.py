@@ -17,12 +17,16 @@ class Run(IdMixin, TimestampMixin, Base):
     __tablename__ = "runs"
     __table_args__ = (
         CheckConstraint(
+            "target_kind IN ('agent', 'workflow')",
+            name="ck_runs_target_kind",
+        ),
+        CheckConstraint(
             "status IN ('running', 'succeeded', 'failed')",
             name="ck_runs_status",
         ),
         CheckConstraint(
-            "workflow_version > 0",
-            name="ck_runs_workflow_version_positive",
+            "target_version > 0",
+            name="ck_runs_target_version_positive",
         ),
         CheckConstraint("total_tokens >= 0", name="ck_runs_total_tokens_non_negative"),
         CheckConstraint(
@@ -30,13 +34,46 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_total_cost_non_negative",
         ),
         Index("ix_runs_status", "status"),
-        Index("ix_runs_workflow", "workflow_id", "workflow_version"),
-        Index("ix_runs_workflow_key", "workflow_key", "workflow_version"),
+        Index("ix_runs_target", "target_kind", "target_id", "target_version"),
+        Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
     )
 
-    workflow_id: Mapped[int] = mapped_column(nullable=False)
-    workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)
-    workflow_version: Mapped[int] = mapped_column(nullable=False)
+    target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_id: Mapped[int] = mapped_column(nullable=False)
+    target_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    target_version: Mapped[int] = mapped_column(nullable=False)
+
+    def _set_workflow_target_kind(self) -> None:
+        if getattr(self, "target_kind", None) is None:
+            self.target_kind = "workflow"
+
+    @property
+    def workflow_id(self) -> int:
+        return self.target_id
+
+    @workflow_id.setter
+    def workflow_id(self, value: int) -> None:
+        self._set_workflow_target_kind()
+        self.target_id = value
+
+    @property
+    def workflow_key(self) -> str:
+        return self.target_key
+
+    @workflow_key.setter
+    def workflow_key(self, value: str) -> None:
+        self._set_workflow_target_kind()
+        self.target_key = value
+
+    @property
+    def workflow_version(self) -> int:
+        return self.target_version
+
+    @workflow_version.setter
+    def workflow_version(self, value: int) -> None:
+        self._set_workflow_target_kind()
+        self.target_version = value
+
     input: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     per_step_outputs: Mapped[dict[str, list[dict[str, Any]]]] = mapped_column(
         JSONB,

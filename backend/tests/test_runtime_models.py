@@ -135,10 +135,7 @@ def _build_agent(
             }
             for server in mcp_servers
         ],
-        temperature=0.2,
-        max_tool_rounds=2,
         budget_usd=budget_usd,
-        streaming=True,
     )
 
 
@@ -176,14 +173,14 @@ def _build_workflow(
             }
         ],
         output_spec={
-            "kind": "agent",
+            "kind": "slot",
+            "stepIndex": 1,
             "slot": "analysis",
             "agentId": agent.id,
             "agentKey": agent.key,
             "agentVersion": agent.version,
             "outputSchemaId": agent.output_schema_id,
             "outputSchemaVersion": agent.output_schema_version,
-            "wiring": {"ticker": {"from": "input", "path": "ticker"}},
         },
         aggregate_budget_usd=aggregate_budget_usd,
     )
@@ -191,7 +188,10 @@ def _build_workflow(
 
 def _build_run(
     *,
-    workflow: Workflow,
+    target_kind: str,
+    target_id: int,
+    target_key: str,
+    target_version: int,
     status: str,
     per_step_outputs: dict[str, list[dict[str, object]]],
     final_output: object | None,
@@ -203,9 +203,10 @@ def _build_run(
     error: str | None = None,
 ) -> Run:
     return Run(
-        workflow_id=workflow.id,
-        workflow_key=workflow.key,
-        workflow_version=workflow.version,
+        target_kind=target_kind,
+        target_id=target_id,
+        target_key=target_key,
+        target_version=target_version,
         input={"ticker": "NVDA", "horizonDays": 30},
         per_step_outputs=per_step_outputs,
         final_output=final_output,
@@ -274,6 +275,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
         "ix_agents_output_schema",
     } <= {index.name for index in agent_table.indexes}
     assert agent_table.c.model_connection_id.nullable is False
+    assert {"temperature", "max_tool_rounds", "streaming"}.isdisjoint(agent_table.c.keys())
 
     with session_factory() as session:
         published_skill = _build_skill(key="research_skill", version=1, status="published")
@@ -316,7 +318,6 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 "mcpServerVersion": 1,
             }
         ]
-        assert stored_agent.streaming is True
         assert stored_agent.budget_usd == Decimal("1.25000000")
 
         draft_schema = _build_output_schema(
@@ -755,9 +756,13 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
     session_factory,
 ) -> None:
     run_table = Base.metadata.tables["runs"]
-    assert {"ix_runs_status", "ix_runs_workflow", "ix_runs_workflow_key"} <= {
+    assert {"ix_runs_status", "ix_runs_target", "ix_runs_target_key"} <= {
         index.name for index in run_table.indexes
     }
+    assert {"target_kind", "target_id", "target_key", "target_version"} <= set(
+        run_table.c.keys()
+    )
+    assert {"workflow_id", "workflow_key", "workflow_version"}.isdisjoint(run_table.c.keys())
 
     with session_factory() as session:
         published_skill = _build_skill(key="research_skill", version=1, status="published")
@@ -799,7 +804,10 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
         started_at = datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ)
         finished_at = datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ)
         run = _build_run(
-            workflow=workflow,
+            target_kind="workflow",
+            target_id=workflow.id,
+            target_key=workflow.key,
+            target_version=workflow.version,
             status="succeeded",
             per_step_outputs={
                 "1": [
@@ -829,12 +837,32 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
             finished_at=finished_at,
         )
         session.add(run)
+        session.add(
+            _build_run(
+                target_kind="agent",
+                target_id=published_agent.id,
+                target_key=published_agent.key,
+                target_version=published_agent.version,
+                status="failed",
+                per_step_outputs={"1": []},
+                final_output=None,
+                total_tokens=0,
+                total_cost_usd=Decimal("0"),
+                trace_id="trace-agent-run",
+                started_at=started_at,
+                finished_at=finished_at,
+                error="Missing API key",
+            )
+        )
         session.commit()
         session.refresh(run)
 
         stored_run = session.get(Run, run.id)
         assert stored_run is not None
-        assert stored_run.workflow_version == 1
+        assert stored_run.target_kind == "workflow"
+        assert stored_run.target_id == workflow.id
+        assert stored_run.target_key == workflow.key
+        assert stored_run.target_version == 1
         assert stored_run.per_step_outputs["1"][0]["traceSpanId"] == "span-analysis"
         assert stored_run.per_step_outputs["1"][0]["resolvedInput"] == {"ticker": "NVDA"}
         assert stored_run.total_tokens == 321
@@ -844,3 +872,10 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
         assert stored_run.finished_at == finished_at
         assert stored_run.created_at is not None
         assert stored_run.updated_at is not None
+
+        stored_agent_run = session.query(Run).filter_by(trace_id="trace-agent-run").one()
+        assert stored_agent_run.target_kind == "agent"
+        assert stored_agent_run.target_id == published_agent.id
+        assert stored_agent_run.target_key == published_agent.key
+        assert stored_agent_run.target_version == published_agent.version
+        assert stored_agent_run.error == "Missing API key"
