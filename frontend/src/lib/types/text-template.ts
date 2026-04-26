@@ -37,6 +37,21 @@ export interface TextTemplateInlineCompileRead {
   compiled: string;
 }
 
+export interface TextTemplateSeedInput {
+  confirm: boolean;
+}
+
+export interface TextTemplateSeedRead {
+  portfolioSlugs: string[];
+  templateNames: string[];
+  outputSchemaKeys: string[];
+  skillKeys: string[];
+  mcpServerKeys: string[];
+  agentKeys: string[];
+  reportSlugs: string[];
+  workflowKeys: string[];
+}
+
 export interface PlaceholderPosition {
   symbol: string;
   name: string | null;

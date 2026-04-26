@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
   compileTemplate,
   compileTemplateInline,
@@ -7,11 +8,17 @@ import {
   getPlaceholders,
   getTemplate,
   listTemplates,
+  seedTemplates,
   updateTemplate,
 } from "@/lib/api/templates";
 import { queryKeys } from "@/lib/query-keys";
-import type { TextTemplateUpdateInput, TextTemplateWriteInput } from "@/lib/types/text-template";
-import type { TextTemplateInlineCompileInput, TextTemplateStoredCompileInput } from "@/lib/types/text-template";
+import type {
+  TextTemplateInlineCompileInput,
+  TextTemplateSeedInput,
+  TextTemplateStoredCompileInput,
+  TextTemplateUpdateInput,
+  TextTemplateWriteInput,
+} from "@/lib/types/text-template";
 
 type IdParam = number | string;
 
@@ -58,6 +65,15 @@ export function useDeleteTemplate() {
   });
 }
 
+export function useSeedTemplates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: TextTemplateSeedInput) => seedTemplates(input),
+    onSuccess: () => queryClient.removeQueries({ queryKey: ["api"] }),
+  });
+}
+
 export function useCompileTemplate(templateId: IdParam | undefined) {
   const resolvedId = templateId ?? "";
 
@@ -80,7 +96,8 @@ export function useTemplate(templateId: IdParam | undefined) {
 
 export function useCompileInline() {
   return useMutation({
-    mutationFn: (input: TextTemplateInlineCompileInput | string) => compileTemplateInline(input),
+    mutationFn: (input: TextTemplateInlineCompileInput | string) =>
+      compileTemplateInline(input),
   });
 }
 
