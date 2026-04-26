@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+
 import { ModelConnectionsEditorPage } from "./editor";
 
 const navigateMock = vi.fn();
@@ -74,6 +76,17 @@ describe("ModelConnectionsEditorPage", () => {
 
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
+
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        name: "Primary OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-4.1",
+        reasoningEffort: "medium",
+        timeoutSeconds: 60,
+      }),
+    );
+
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
     await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
@@ -87,6 +100,28 @@ describe("ModelConnectionsEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
   });
 
+  it("masks an entered apiKey in the exact config preview", () => {
+    render(<ModelConnectionsEditorPage />);
+
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
+    fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
+    fireEvent.change(screen.getByLabelText(/^API Key$/i), { target: { value: "sk-live-secret" } });
+
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        name: "Primary OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-4.1",
+        reasoningEffort: "medium",
+        timeoutSeconds: 60,
+        apiKey: "••••••••",
+      }),
+    );
+    expect(screen.getByLabelText(/exact config json/i)).not.toHaveValue(
+      expect.stringContaining("sk-live-secret"),
+    );
+  });
+
   it("keeps the secret blank on edit and preserves the existing key when save omits apiKey", async () => {
     paramsMock.modelConnectionId = "4";
     updateModelConnectionMock.mockResolvedValue({ id: 4 });
@@ -96,6 +131,21 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
     expect(screen.getByText(/leave blank to keep current key ending in ••••4242\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        name: "Primary OpenAI",
+        description: "Production OpenAI connection.",
+        baseUrl: "https://api.openai.com/v1",
+        organization: "org_live",
+        project: "proj_live",
+        modelId: "gpt-4.1",
+        reasoningEffort: "high",
+        timeoutSeconds: 90,
+      }),
+    );
+    expect(screen.getByLabelText(/exact config json/i)).not.toHaveValue(
+      expect.stringContaining("4242"),
+    );
 
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
