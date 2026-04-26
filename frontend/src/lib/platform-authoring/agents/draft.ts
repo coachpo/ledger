@@ -33,9 +33,7 @@ export function createInitialAgentDraft(): AgentAuthoringDraft {
     systemPrompt: "",
     inputSchema: {} as unknown as SchemaIRBuilderInput,
     bindings: createEmptyBindingRefs(),
-    maxToolRounds: "",
     budgetUsd: "",
-    streaming: true,
   };
 }
 
@@ -58,9 +56,7 @@ export function agentDraftFromRead(agent: AgentRead): AgentAuthoringDraft {
     systemPrompt: agent.systemPrompt,
     inputSchema: agent.inputSchema as unknown as SchemaIRBuilderInput,
     bindings: bindingsFromRead(agent),
-    maxToolRounds: String(agent.maxToolRounds),
     budgetUsd: agent.budgetUsd,
-    streaming: agent.streaming,
   };
 }
 
@@ -82,10 +78,8 @@ export function agentDraftToCreateInput(draft: AgentAuthoringDraft): AgentAuthor
     description: draft.description.trim() || undefined,
     inputSchema: draft.inputSchema,
     key: draft.key.trim().toLowerCase(),
-    maxToolRounds: draft.maxToolRounds.trim() ? Number(draft.maxToolRounds) : undefined,
     modelConnectionId: Number(draft.modelConnectionId),
     name: draft.name.trim(),
-    streaming: draft.streaming,
     systemPrompt: draft.systemPrompt.trim(),
     ...bindingsToCreateInput(draft.bindings),
   };
@@ -96,10 +90,8 @@ export function agentDraftToUpdateInput(draft: AgentAuthoringDraft): AgentAuthor
     budgetUsd: draft.budgetUsd.trim() || undefined,
     description: draft.description.trim() || undefined,
     inputSchema: draft.inputSchema,
-    maxToolRounds: draft.maxToolRounds.trim() ? Number(draft.maxToolRounds) : undefined,
     modelConnectionId: Number(draft.modelConnectionId),
     name: draft.name.trim(),
-    streaming: draft.streaming,
     systemPrompt: draft.systemPrompt.trim(),
     ...bindingsToUpdateInput(draft.bindings),
   };

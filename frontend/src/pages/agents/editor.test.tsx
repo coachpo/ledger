@@ -6,6 +6,7 @@ import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
 import type { AgentRead } from "@/lib/types/agent";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
+import type { RunCreatedRead } from "@/lib/types/run";
 
 import { AgentsEditorPage } from "./editor";
 
@@ -15,7 +16,7 @@ const searchParamsMock = new URLSearchParams();
 const createAgentMock = vi.fn();
 const updateAgentMock = vi.fn();
 const archiveAgentMock = vi.fn();
-const resolveTestPanelMock = vi.fn();
+const createAgentRunMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const useModelConnectionsMock = vi.fn();
@@ -70,7 +71,6 @@ const existingAgent = {
   description: "Tracks macro context.",
   inputSchema: existingInputSchema,
   key: "macro_agent",
-  maxToolRounds: 4,
   mcpServers: [
     {
       boundary: { readOnly: false },
@@ -108,7 +108,6 @@ const existingAgent = {
     },
   ],
   status: "draft",
-  streaming: true,
   systemPrompt: "Summarize clearly.",
   version: 9,
 } as unknown as AgentRead;
@@ -141,7 +140,7 @@ vi.mock("@/hooks/use-agents", () => ({
       : { data: undefined, error: null, isError: false, isPending: false },
   useArchiveAgent: () => ({ isPending: false, mutateAsync: archiveAgentMock }),
   useCreateAgent: () => ({ isPending: false, mutateAsync: createAgentMock }),
-  useResolveAgentTestPanel: () => ({ isPending: false, mutateAsync: resolveTestPanelMock }),
+  useCreateAgentRun: () => ({ isPending: false, mutateAsync: createAgentRunMock }),
   useUpdateAgent: () => ({ isPending: false, mutateAsync: updateAgentMock }),
 }));
 
@@ -219,10 +218,10 @@ describe("AgentsEditorPage", () => {
   beforeEach(() => {
     archiveAgentMock.mockReset();
     createAgentMock.mockReset();
+    createAgentRunMock.mockReset();
     currentAgent = existingAgent;
     navigateMock.mockReset();
     paramsMock.agentId = undefined;
-    resolveTestPanelMock.mockReset();
     searchParamsMock.delete("duplicateFrom");
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
@@ -242,6 +241,8 @@ describe("AgentsEditorPage", () => {
     expect(useModelConnectionsMock).toHaveBeenCalledWith({ status: "active" });
     expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Max Tool Rounds$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Streaming$/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Model Connection$/i)).toBeVisible();
     expect(screen.queryByLabelText(/^Input Schema JSON$/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("agent-input-schema-raw-json")).toBeVisible();
@@ -292,6 +293,8 @@ describe("AgentsEditorPage", () => {
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("");
     expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Max Tool Rounds$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Streaming$/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Model Connection$/i)).toHaveTextContent("Primary OpenAI · gpt-4.1");
   });
 
@@ -304,6 +307,8 @@ describe("AgentsEditorPage", () => {
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
     expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Max Tool Rounds$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Streaming$/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Model Connection$/i)).toHaveTextContent("Primary OpenAI · gpt-4.1");
 
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent Updated" } });
@@ -316,14 +321,12 @@ describe("AgentsEditorPage", () => {
         budgetUsd: "2.50",
         description: "Tracks macro context.",
         inputSchema: existingInputSchema,
-        maxToolRounds: 4,
         mcpServers: [{ mcpServerKey: "quotes_mcp", mcpServerVersion: 2 }],
         modelConnectionId: 44,
         name: "Macro Agent Updated",
         outputSchemaKey: "summary_schema",
         outputSchemaVersion: 5,
         skills: [{ skillKey: "summarize_skill", skillVersion: 3 }],
-        streaming: true,
         systemPrompt: "Summarize clearly.",
       },
     });
@@ -353,34 +356,41 @@ describe("AgentsEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/agents");
   });
 
-  it("runs the test panel from the structured sample input form", async () => {
+  it("launches a real run from the structured input form and navigates to the run detail route", async () => {
     paramsMock.agentId = "12";
-    resolveTestPanelMock.mockResolvedValue({
-      agent: existingAgent,
-      sampleInput: { ticker: "AAPL" },
-    });
+    createAgentRunMock.mockResolvedValue({
+      createdAt: "2026-04-26T12:00:00Z",
+      id: 321,
+      status: "running",
+      targetId: 12,
+      targetKey: "macro_agent",
+      targetKind: "agent",
+      targetVersion: 9,
+      traceId: null,
+    } satisfies RunCreatedRead);
 
     renderAgentsEditorPage();
-    fireEvent.click(screen.getByRole("tab", { name: /test panel/i }));
+    expect(screen.queryByRole("tab", { name: /test panel/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /^run$/i }));
 
     expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId("agent-test-panel-sample-input-form")).toBeVisible();
-    expect(screen.getByTestId("agent-test-panel-sample-input-raw-json")).toBeVisible();
-    expect(screen.getByLabelText("Exact raw sample-input JSON")).toHaveValue(
+    expect(screen.queryByLabelText(/exact raw result json/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-run-panel-input-form")).toBeVisible();
+    expect(screen.getByTestId("agent-run-panel-input-raw-json")).toBeVisible();
+    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(
       stringifyJson({ ticker: "AAPL" }),
     );
-    expect(screen.getByLabelText("Exact raw sample-input JSON")).toHaveAttribute("readonly");
-    fireEvent.click(screen.getByTestId("agent-test-panel-run"));
+    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveAttribute("readonly");
+    fireEvent.click(screen.getByTestId("agent-run-panel-launch"));
 
     await waitFor(() =>
-      expect(resolveTestPanelMock).toHaveBeenCalledWith({ sampleInput: { ticker: "AAPL" } }),
+      expect(createAgentRunMock).toHaveBeenCalledWith({
+        agentId: "12",
+        payload: { ticker: "AAPL" },
+        version: 9,
+      }),
     );
-    expect(screen.getByTestId("agent-test-panel-result")).toBeVisible();
-    expect(screen.getByTestId("agent-test-panel-result-raw-json")).toBeVisible();
-    expect(screen.getByText(/test panel ready/i)).toBeVisible();
-    expect(screen.getByLabelText("Exact raw result JSON")).toHaveValue(
-      stringifyJson({ agent: existingAgent, sampleInput: { ticker: "AAPL" } }),
-    );
-    expect(screen.getByLabelText("Exact raw result JSON")).toHaveAttribute("readonly");
+    expect(toastSuccessMock).toHaveBeenCalledWith("Agent run started");
+    expect(navigateMock).toHaveBeenCalledWith("/runs/321");
   });
 });

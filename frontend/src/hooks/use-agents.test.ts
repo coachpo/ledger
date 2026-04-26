@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiState = vi.hoisted(() => ({
   archiveAgentMock: vi.fn(),
+  createAgentRunMock: vi.fn(),
   createAgentMock: vi.fn(),
   getAgentMock: vi.fn(),
   listAgentsMock: vi.fn(),
-  resolveAgentTestPanelMock: vi.fn(),
   updateAgentMock: vi.fn(),
 }));
 
@@ -34,15 +34,15 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@/lib/api/agents", () => ({
   archiveAgent: apiState.archiveAgentMock,
+  createAgentRun: apiState.createAgentRunMock,
   createAgent: apiState.createAgentMock,
   getAgent: apiState.getAgentMock,
   listAgents: apiState.listAgentsMock,
-  resolveAgentTestPanel: apiState.resolveAgentTestPanelMock,
   updateAgent: apiState.updateAgentMock,
 }));
 
 import { queryKeys } from "@/lib/query-keys";
-import { useAgent, useCreateAgent } from "./use-agents";
+import { useAgent, useCreateAgent, useCreateAgentRun } from "./use-agents";
 
 type CapturedMutationOptions = {
   mutationFn?: (variables: unknown) => unknown;
@@ -52,10 +52,10 @@ type CapturedMutationOptions = {
 describe("useAgents", () => {
   beforeEach(() => {
     apiState.archiveAgentMock.mockReset();
+    apiState.createAgentRunMock.mockReset();
     apiState.createAgentMock.mockReset();
     apiState.getAgentMock.mockReset();
     apiState.listAgentsMock.mockReset();
-    apiState.resolveAgentTestPanelMock.mockReset();
     apiState.updateAgentMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     reactQueryState.invalidateQueriesMock.mockReset();
@@ -101,6 +101,28 @@ describe("useAgents", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.agents.detail(11, 1),
+    });
+  });
+
+  it("creates agent runs and invalidates shared run queries", async () => {
+    useCreateAgentRun();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    const variables = {
+      agentId: 11,
+      payload: { ticker: "AAPL" },
+      version: 3,
+    };
+
+    await mutationOptions.mutationFn?.(variables);
+    expect(apiState.createAgentRunMock).toHaveBeenCalledWith(11, { ticker: "AAPL" }, { version: 3 });
+
+    await mutationOptions.onSuccess?.({ id: 41 }, variables);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.detail(41),
     });
   });
 });

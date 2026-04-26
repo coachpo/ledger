@@ -18,6 +18,10 @@ type McpServerRead = {
   key: string;
 };
 
+function readTickerFromPayload(payload: Record<string, unknown> | null): string {
+  return typeof payload?.ticker === "string" ? payload.ticker : "AAPL";
+}
+
 async function createOutputSchema(
   request: APIRequestContext,
   key: string,
@@ -112,7 +116,7 @@ async function expectLegacyAgentAuthoringAbsent(page: Page) {
 }
 
 test.describe("Agent platform CRUD flows", () => {
-  test("covers schema transparency, duplicate behavior, and the structured agent test panel", async ({
+  test("covers schema transparency, duplicate behavior, and structured agent run launch", async ({
     page,
     request,
   }) => {
@@ -122,8 +126,77 @@ test.describe("Agent platform CRUD flows", () => {
     const serverKey = `quotes_mcp_${timestamp}`;
     const agentKey = `macro_agent_${timestamp}`;
     const duplicateAgentKey = `macro_agent_copy_${timestamp}`;
+    let createdRunPayload: Record<string, unknown> | null = null;
+    let createdRunRequestUrl: string | null = null;
     const skill = await createAndActivateSkill(request, skillKey);
     const server = await createAndActivateMcpServer(request, serverKey);
+
+    await page.route("**/api/agents/*/runs?*", async (route) => {
+      createdRunPayload = route.request().postDataJSON() as Record<string, unknown>;
+      createdRunRequestUrl = route.request().url();
+      const launchedAgentId = Number(route.request().url().match(/\/agents\/(\d+)\/runs/)?.[1] ?? 0);
+
+      await route.fulfill({
+        body: JSON.stringify({
+          createdAt: "2026-04-26T12:00:00Z",
+          id: 321,
+          status: "running",
+          targetId: launchedAgentId,
+          targetKey: agentKey,
+          targetKind: "agent",
+          targetVersion: 1,
+          traceId: "trace-321",
+        }),
+        contentType: "application/json",
+        status: 201,
+      });
+    });
+
+    await page.route("**/api/runs/321", async (route) => {
+      const ticker = readTickerFromPayload(createdRunPayload);
+
+      await route.fulfill({
+        body: JSON.stringify({
+          createdAt: "2026-04-26T12:00:00Z",
+          error: null,
+          finalOutput: { summary: `Agent summary for ${ticker}` },
+          finishedAt: "2026-04-26T12:00:03Z",
+          id: 321,
+          input: createdRunPayload ?? {},
+          perStepOutputs: {
+            "1": [
+              {
+                agentId: 1,
+                agentKey,
+                agentVersion: 1,
+                costUsd: "0.01000000",
+                durationMs: 5,
+                error: null,
+                output: { summary: `Agent summary for ${ticker}` },
+                outputSchemaId: outputSchema.id,
+                outputSchemaVersion: outputSchema.version,
+                resolvedInput: createdRunPayload ?? {},
+                slot: "result",
+                status: "succeeded",
+                tokens: 18,
+                traceSpanId: null,
+              },
+            ],
+          },
+          startedAt: "2026-04-26T12:00:01Z",
+          status: "succeeded",
+          targetId: 1,
+          targetKey: agentKey,
+          targetKind: "agent",
+          targetVersion: 1,
+          totalCostUsd: "0.01000000",
+          totalTokens: 18,
+          traceId: "trace-321",
+          updatedAt: "2026-04-26T12:00:03Z",
+        }),
+        contentType: "application/json",
+      });
+    });
 
     await page.goto(`/skills/${skill.id}/edit`);
     await expect(page).toHaveURL(new RegExp(`/skills/${skill.id}/edit$`));
@@ -180,24 +253,32 @@ test.describe("Agent platform CRUD flows", () => {
 
     await page.getByRole("button", { name: /save agent/i }).click();
     await expect(page).toHaveURL(/\/agents\/\d+\/edit$/);
+    const agentEditUrl = page.url();
     await expectLegacyAgentAuthoringAbsent(page);
 
-    await page.getByRole("tab", { name: /test panel/i }).click();
+    await expect(page.getByRole("tab", { name: /test panel/i })).toHaveCount(0);
+    await page.getByRole("tab", { name: /^run$/i }).click();
     await expect(page.getByLabel("Sample Input JSON")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: /^Sample input$/i })).toBeVisible();
-    await expect(page.getByTestId("agent-test-panel-sample-input-raw-json")).toBeVisible();
-    await expect(page.getByLabel("Exact raw sample-input JSON")).toHaveValue(/"ticker": "AAPL"/);
-    await page.getByTestId("agent-test-panel-sample-input-form").getByRole("textbox").fill("MSFT");
-    await expect(page.getByLabel("Exact raw sample-input JSON")).toHaveValue(/"ticker": "MSFT"/);
-    await page.getByTestId("agent-test-panel-run").click();
-    await expect(page.getByTestId("agent-test-panel-result")).toBeVisible();
-    await expect(page.getByTestId("agent-test-panel-result-raw-json")).toBeVisible();
-    await expect(page.getByTestId("agent-test-panel-result")).toContainText("MSFT");
-    await expect(page.getByTestId("agent-test-panel-result")).toContainText(agentKey);
-    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(/"sampleInput"/);
-    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(/"ticker": "MSFT"/);
-    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(new RegExp(agentKey));
+    await expect(page.getByRole("heading", { name: /^launch run$/i })).toBeVisible();
+    await expect(page.getByTestId("agent-run-panel-input-form")).toBeVisible();
+    await expect(page.getByTestId("agent-run-panel-input-raw-json")).toBeVisible();
+    await expect(page.getByTestId("agent-test-panel-result")).toHaveCount(0);
+    await expect(page.getByLabel("Exact raw result JSON")).toHaveCount(0);
+    await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(/"ticker": "AAPL"/);
+    await page.getByTestId("agent-run-panel-input-form").getByRole("textbox").fill("MSFT");
+    await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(/"ticker": "MSFT"/);
+    await page.getByTestId("agent-run-panel-launch").click();
+    await expect(page.getByText("Agent run started")).toBeVisible();
+    await expect(page).toHaveURL(/\/runs\/321$/);
+    expect(createdRunPayload).toEqual({ ticker: "MSFT" });
+    expect(createdRunRequestUrl).toMatch(/version=1/);
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded");
+    await expect(page.getByTestId("runs-detail-page")).toContainText("MSFT");
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText("Agent summary for MSFT");
 
+    await page.goto(agentEditUrl);
+    await expect(page).toHaveURL(/\/agents\/\d+\/edit$/);
     await page.getByTestId("agents-duplicate").click();
     await expect(page).toHaveURL(/\/agents\/new\?duplicateFrom=\d+$/);
     await expect(page.getByRole("heading", { name: /duplicate agent/i })).toBeVisible();

@@ -42,7 +42,6 @@ describe("AgentsListPage", () => {
             skills: [{ id: 1 }],
             mcpServers: [{ id: 2 }],
             status: "draft",
-            streaming: true,
             version: 3,
           },
         ],

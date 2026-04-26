@@ -27,9 +27,7 @@ export interface AgentCreateInput {
   outputSchemaVersion?: number | null;
   skills?: AgentSkillRefWrite[];
   mcpServers?: AgentMcpServerRefWrite[];
-  maxToolRounds?: number;
   budgetUsd?: string;
-  streaming?: boolean;
 }
 
 export type AgentUpdateInput = Omit<AgentCreateInput, "key">;
@@ -60,9 +58,7 @@ export interface AgentRead {
   outputSchema: OutputSchemaRead;
   skills: SkillRead[];
   mcpServers: AgentMcpServerRead[];
-  maxToolRounds: number;
   budgetUsd: string;
-  streaming: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,11 +71,4 @@ export interface AgentListParams {
   status?: AgentStatus;
 }
 
-export interface AgentTestPanelRequest {
-  sampleInput?: UnknownRecord;
-}
-
-export interface AgentTestPanelRead {
-  agent: AgentRead;
-  sampleInput: UnknownRecord;
-}
+export type AgentRunCreateInput = UnknownRecord;

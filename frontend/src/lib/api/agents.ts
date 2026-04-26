@@ -1,11 +1,11 @@
 import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
+import type { RunCreatedRead } from "../types/run";
 import type {
   AgentCreateInput,
   AgentListParams,
   AgentListRead,
   AgentRead,
-  AgentTestPanelRead,
-  AgentTestPanelRequest,
+  AgentRunCreateInput,
   AgentUpdateInput,
 } from "../types/agent";
 
@@ -63,12 +63,12 @@ export function archiveAgent(agentId: IdParam, signal?: AbortSignal): Promise<Ag
   });
 }
 
-export function resolveAgentTestPanel(
+export function createAgentRun(
   agentId: IdParam,
-  payload: AgentTestPanelRequest,
+  payload: AgentRunCreateInput,
   options: { signal?: AbortSignal; version?: number } = {},
-): Promise<AgentTestPanelRead> {
-  return requestPlatform<AgentTestPanelRead>(`${agentPath(agentId)}/test-panel`, {
+): Promise<RunCreatedRead> {
+  return requestPlatform<RunCreatedRead>(`${agentPath(agentId)}/runs`, {
     body: payload,
     method: "POST",
     query: toQueryRecord({ version: options.version }),
@@ -79,8 +79,8 @@ export function resolveAgentTestPanel(
 export const agentsApi = {
   archive: archiveAgent,
   create: createAgent,
+  createRun: createAgentRun,
   get: getAgent,
   list: listAgents,
-  resolveTestPanel: resolveAgentTestPanel,
   update: updateAgent,
 } as const;

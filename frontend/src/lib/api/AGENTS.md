@@ -15,7 +15,7 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-├── agents.ts              # agent-platform agent CRUD and test-panel helpers
+├── agents.ts              # agent-platform agent CRUD and run helpers
 ├── skills.ts              # skill CRUD and activation
 ├── mcp-servers.ts         # MCP server CRUD and connection testing
 ├── output-schemas.ts      # output schema CRUD and version reads

@@ -40,9 +40,7 @@ export function agentDraftFromRead(agent: AgentRead): AgentAuthoringDraft {
     systemPrompt: agent.systemPrompt,
     inputSchema: agent.inputSchema as unknown as SchemaIRBuilderInput,
     bindings: agentBindingRefsFromRead(agent),
-    maxToolRounds: String(agent.maxToolRounds),
     budgetUsd: agent.budgetUsd,
-    streaming: agent.streaming,
   };
 }
 
@@ -64,10 +62,8 @@ function toAuthoringCreateInput(draft: AgentAuthoringDraft): AgentAuthoringCreat
     description: draft.description.trim() || undefined,
     inputSchema: draft.inputSchema,
     key: normalizeDraftKey(draft.key),
-    maxToolRounds: draft.maxToolRounds.trim() ? Number(draft.maxToolRounds) : undefined,
     modelConnectionId: Number(draft.modelConnectionId),
     name: draft.name.trim(),
-    streaming: draft.streaming,
     systemPrompt: draft.systemPrompt.trim(),
     ...toAgentWriteRefs(draft.bindings),
   };

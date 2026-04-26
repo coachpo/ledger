@@ -15,7 +15,7 @@
 | Market data | `use-market-data.ts` | quotes/history with symbol guards |
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
-| Agent flows | `use-agents.ts` | agent CRUD, archive, duplicate/test-panel helpers |
+| Agent flows | `use-agents.ts` | agent CRUD, archive, duplicate/run helpers |
 | Skill flows | `use-skills.ts` | skill list/detail and activation |
 | MCP server flows | `use-mcp-servers.ts` | CRUD and connection-test helpers |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, archive, connection-test helpers |

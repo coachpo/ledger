@@ -111,14 +111,6 @@ export function validateAgentDraft(draft: AgentAuthoringDraft): AgentValidationI
     issues.push(systemPromptIssue);
   }
 
-  const maxToolRoundsIssue = optionalNumericText("Max tool rounds", draft.maxToolRounds, "maxToolRounds", {
-    integer: true,
-    min: 1,
-  });
-  if (maxToolRoundsIssue) {
-    issues.push(maxToolRoundsIssue);
-  }
-
   const outputSchemaIssue = validateResourceRef(
     draft.bindings.outputSchema,
     joinAgentPath("bindings", "outputSchema"),

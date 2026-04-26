@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Copy, FlaskConical, Save } from "lucide-react";
+import { Archive, Copy, PlayCircle, Save } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
@@ -12,7 +12,7 @@ import { SchemaForm } from "@/components/platform-authoring/generated-form/schem
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
-import { useAgent, useArchiveAgent, useCreateAgent, useResolveAgentTestPanel, useUpdateAgent } from "@/hooks/use-agents";
+import { useAgent, useArchiveAgent, useCreateAgent, useCreateAgentRun, useUpdateAgent } from "@/hooks/use-agents";
 import { useMcpServers } from "@/hooks/use-mcp-servers";
 import { useModelConnections } from "@/hooks/use-model-connections";
 import { useOutputSchemas } from "@/hooks/use-output-schemas";
@@ -48,13 +48,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { parseOptionalNumber, parseRequiredText, PlatformResourceBadges, sortByKey } from "../platform-resource-shared";
 
-type TestPanelFeedback = {
+type RunLaunchFeedback = {
   message: string;
   title: string;
   variant: "default" | "destructive";
@@ -117,10 +116,8 @@ function createInitialDraft(): AgentAuthoringDraft {
       mcpServers: [],
     },
     key: "",
-    maxToolRounds: "",
     modelConnectionId: "",
     name: "",
-    streaming: true,
     systemPrompt: "",
   };
 }
@@ -163,18 +160,16 @@ function decodePersistedInputSchema(
     options.clearArchivedModelConnection && agent.modelConnection.status === "archived";
 
   return {
-    draft: {
-      budgetUsd: agent.budgetUsd,
-      description: agent.description ?? "",
-      inputSchema: builder,
-      bindings: agentBindingRefsFromRead(agent),
-      key: options.clearKey ? "" : agent.key,
-      maxToolRounds: String(agent.maxToolRounds),
-      modelConnectionId: shouldClearArchivedModelConnection ? "" : String(agent.modelConnectionId),
-      name: options.duplicateName ? `${agent.name} Copy` : agent.name,
-      streaming: agent.streaming,
-      systemPrompt: agent.systemPrompt,
-    },
+      draft: {
+        budgetUsd: agent.budgetUsd,
+        description: agent.description ?? "",
+        inputSchema: builder,
+        bindings: agentBindingRefsFromRead(agent),
+        key: options.clearKey ? "" : agent.key,
+        modelConnectionId: shouldClearArchivedModelConnection ? "" : String(agent.modelConnectionId),
+        name: options.duplicateName ? `${agent.name} Copy` : agent.name,
+        systemPrompt: agent.systemPrompt,
+      },
     issues: decoded.issues,
     sampleInput: createDefaultSampleInputValue(builder),
   };
@@ -220,10 +215,6 @@ function buildPayload(
     description: draft.description.trim() || undefined,
     inputSchema,
     key: parseRequiredText("Key", draft.key).toLowerCase(),
-    maxToolRounds: parseOptionalNumber("Max tool rounds", draft.maxToolRounds, {
-      integer: true,
-      min: 1,
-    }),
     mcpServers: draft.bindings.mcpServers.map((server) => ({
       mcpServerKey: server.key.trim(),
       mcpServerVersion: server.version ?? null,
@@ -236,7 +227,6 @@ function buildPayload(
       skillKey: skill.key.trim(),
       skillVersion: skill.version ?? null,
     })),
-    streaming: draft.streaming,
     systemPrompt: parseRequiredText("System prompt", draft.systemPrompt),
   };
 }
@@ -252,7 +242,7 @@ export function AgentsEditorPage() {
   const createMutation = useCreateAgent();
   const updateMutation = useUpdateAgent();
   const archiveMutation = useArchiveAgent();
-  const resolveTestPanelMutation = useResolveAgentTestPanel(agentId);
+  const createRunMutation = useCreateAgentRun();
   const outputSchemasQuery = useOutputSchemas();
   const skillsQuery = useSkills();
   const mcpServersQuery = useMcpServers();
@@ -262,8 +252,7 @@ export function AgentsEditorPage() {
     createDefaultSampleInputValue(createInitialDraft().inputSchema),
   );
   const [unsupportedRecordIssues, setUnsupportedRecordIssues] = useState<SchemaCodecIssue[]>([]);
-  const [testPanelFeedback, setTestPanelFeedback] = useState<TestPanelFeedback | null>(null);
-  const [testPanelResult, setTestPanelResult] = useState<unknown | null>(null);
+  const [runLaunchFeedback, setRunLaunchFeedback] = useState<RunLaunchFeedback | null>(null);
 
   const outputSchemas = useMemo(
     () => sortByKey(outputSchemasQuery.data?.items ?? []),
@@ -315,10 +304,6 @@ export function AgentsEditorPage() {
   const sampleInputPreview = useMemo(
     () => buildPreviewValue(draft.inputSchema),
     [draft.inputSchema],
-  );
-  const rawTestPanelResultJson = useMemo(
-    () => (testPanelResult ? stringifyJson(testPanelResult) : null),
-    [testPanelResult],
   );
 
   useEffect(() => {
@@ -402,43 +387,40 @@ export function AgentsEditorPage() {
     }
   };
 
-  const handleRunTestPanel = async () => {
+  const handleLaunchRun = async () => {
     if (!agentId) {
-      setTestPanelFeedback({
-        message: "Save the agent before using the test panel.",
-        title: "Test panel unavailable",
+      setRunLaunchFeedback({
+        message: "Save the agent before launching a run.",
+        title: "Run launch unavailable",
         variant: "destructive",
       });
       return;
     }
 
     if (hasUnsupportedPersistedRecord) {
-      setTestPanelFeedback({
+      setRunLaunchFeedback({
         message: "This agent uses an unsupported retired input schema shape.",
-        title: "Test panel unavailable",
+        title: "Run launch unavailable",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const result = await resolveTestPanelMutation.mutateAsync({
-        sampleInput: sampleInputPayload,
+      const run = await createRunMutation.mutateAsync({
+        agentId,
+        payload: sampleInputPayload,
+        version: agentQuery.data?.version,
       });
-      setTestPanelFeedback({
-        message: "Resolved the current agent snapshot for the supplied structured sample input.",
-        title: "Test panel ready",
-        variant: "default",
-      });
-      setTestPanelResult(result);
+      toast.success("Agent run started");
+      navigate(`/runs/${run.id}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to resolve the test panel";
-      setTestPanelFeedback({
+      const message = error instanceof Error ? error.message : "Failed to start agent run";
+      setRunLaunchFeedback({
         message,
-        title: "Test panel failed",
+        title: "Run launch failed",
         variant: "destructive",
       });
-      setTestPanelResult(null);
     }
   };
 
@@ -462,7 +444,7 @@ export function AgentsEditorPage() {
             {isEditing ? "Edit Agent" : duplicateFromId ? "Duplicate Agent" : "Create Agent"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Configure the core prompt, saved model connection, input schema, output schema binding, attached skills and MCP servers, and a structured test-panel input surface.
+            Configure the core prompt, saved model connection, input schema, output schema binding, attached skills and MCP servers, and a structured run-launch input surface.
           </p>
           {agentQuery.data ? (
             <PlatformResourceBadges status={agentQuery.data.status} version={agentQuery.data.version} />
@@ -510,8 +492,8 @@ export function AgentsEditorPage() {
           <TabsTrigger className="text-xs" value="configuration">
             Configuration
           </TabsTrigger>
-          <TabsTrigger className="text-xs" value="test-panel">
-            Test Panel
+          <TabsTrigger className="text-xs" value="run">
+            Run
           </TabsTrigger>
         </TabsList>
 
@@ -696,17 +678,7 @@ export function AgentsEditorPage() {
                 </div>
               ) : null}
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="agent-max-tool-rounds">Max Tool Rounds</Label>
-                  <Input
-                    id="agent-max-tool-rounds"
-                    aria-label="Max Tool Rounds"
-                    disabled={isSaving}
-                    value={draft.maxToolRounds}
-                    onChange={(event) => updateDraft("maxToolRounds", event.target.value)}
-                  />
-                </div>
+              <div className="space-y-2">
                 <div className="space-y-2">
                   <Label htmlFor="agent-budget-usd">Budget USD</Label>
                   <Input
@@ -760,55 +732,39 @@ export function AgentsEditorPage() {
                   }))
                 }
               />
-
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="agent-streaming">Streaming</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Enable streaming responses for runtime callers that support partial output.
-                  </p>
-                </div>
-                <Switch
-                  id="agent-streaming"
-                  aria-label="Streaming"
-                  checked={draft.streaming}
-                  disabled={isSaving}
-                  onCheckedChange={(checked) => updateDraft("streaming", checked)}
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent forceMount value="test-panel">
-          <Card data-testid="agent-test-panel">
+        <TabsContent forceMount value="run">
+          <Card data-testid="agent-run-panel">
             <CardHeader>
-              <CardTitle>Test panel</CardTitle>
+              <CardTitle>Launch run</CardTitle>
               <CardDescription>
-                Resolve the current saved agent snapshot against a structured sample input before wiring it into broader workflows.
+                Launch the current saved agent version with structured input, then continue in the shared run detail view.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4">
               {!isEditing ? (
-                <Alert data-testid="agent-test-panel-unavailable" variant="destructive">
-                  <AlertTitle>Test panel unavailable</AlertTitle>
-                  <AlertDescription>Save the agent before using the test panel.</AlertDescription>
+                <Alert data-testid="agent-run-panel-unavailable" variant="destructive">
+                  <AlertTitle>Run launch unavailable</AlertTitle>
+                  <AlertDescription>Save the agent before launching a run.</AlertDescription>
                 </Alert>
               ) : null}
-              {testPanelFeedback ? (
-                <Alert data-testid="agent-test-panel-feedback" variant={testPanelFeedback.variant}>
-                  <AlertTitle>{testPanelFeedback.title}</AlertTitle>
-                  <AlertDescription>{testPanelFeedback.message}</AlertDescription>
+              {runLaunchFeedback ? (
+                <Alert data-testid="agent-run-panel-feedback" variant={runLaunchFeedback.variant}>
+                  <AlertTitle>{runLaunchFeedback.title}</AlertTitle>
+                  <AlertDescription>{runLaunchFeedback.message}</AlertDescription>
                 </Alert>
               ) : null}
 
               {!hasUnsupportedPersistedRecord ? (
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <div data-testid="agent-test-panel-sample-input-form">
+                  <div data-testid="agent-run-panel-input-form">
                     <SchemaForm
-                      description="Fill the sample input through the shared schema-driven form instead of editing JSON directly."
-                      disabled={!isEditing || resolveTestPanelMutation.isPending}
-                      label="Sample input"
+                      description="Fill the run input through the shared schema-driven form instead of editing JSON directly."
+                      disabled={!isEditing || createRunMutation.isPending}
+                      label="Run input"
                       schema={draft.inputSchema}
                       value={sampleInput}
                       onChange={setSampleInput}
@@ -816,15 +772,15 @@ export function AgentsEditorPage() {
                   </div>
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Exact raw sample-input JSON</CardTitle>
+                      <CardTitle className="text-base">Exact raw run-input JSON</CardTitle>
                       <CardDescription>
-                        Read-only canonical JSON from the same decoded payload used when resolving the test panel.
+                        Read-only canonical JSON from the same decoded payload used when launching the run.
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <ExactJsonPreview
-                        ariaLabel="Exact raw sample-input JSON"
-                        data-testid="agent-test-panel-sample-input-raw-json"
+                        ariaLabel="Exact raw run-input JSON"
+                        data-testid="agent-run-panel-input-raw-json"
                         value={rawSampleInputJson}
                       />
                     </CardContent>
@@ -834,47 +790,16 @@ export function AgentsEditorPage() {
 
               <div className="flex justify-end">
                 <Button
-                  data-testid="agent-test-panel-run"
-                  disabled={!isEditing || resolveTestPanelMutation.isPending || hasUnsupportedPersistedRecord}
+                  data-testid="agent-run-panel-launch"
+                  disabled={!isEditing || createRunMutation.isPending || hasUnsupportedPersistedRecord}
                   size="sm"
                   variant="outline"
-                  onClick={() => void handleRunTestPanel()}
+                  onClick={() => void handleLaunchRun()}
                 >
-                  <FlaskConical data-icon="inline-start" />
-                  Run Test Panel
+                  <PlayCircle data-icon="inline-start" />
+                  Launch Run
                 </Button>
               </div>
-
-              {testPanelResult && rawTestPanelResultJson ? (
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <Card data-testid="agent-test-panel-result">
-                    <CardHeader>
-                      <CardTitle className="text-base">Resolved result</CardTitle>
-                      <CardDescription>
-                        Structured response preview for the current saved agent snapshot.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <StructuredValueInspector label="Resolved result" value={testPanelResult} />
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Exact raw result JSON</CardTitle>
-                      <CardDescription>
-                        Read-only canonical JSON for the exact resolved test-panel response.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ExactJsonPreview
-                        ariaLabel="Exact raw result JSON"
-                        data-testid="agent-test-panel-result-raw-json"
-                        value={rawTestPanelResultJson}
-                      />
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : null}
             </CardContent>
           </Card>
         </TabsContent>

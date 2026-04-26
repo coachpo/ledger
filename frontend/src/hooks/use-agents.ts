@@ -1,19 +1,25 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   archiveAgent,
+  createAgentRun,
   createAgent,
   getAgent,
   listAgents,
-  resolveAgentTestPanel,
   updateAgent,
 } from "@/lib/api/agents";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import type { AgentCreateInput, AgentListParams, AgentTestPanelRequest, AgentUpdateInput } from "@/lib/types/agent";
+import type { AgentCreateInput, AgentListParams, AgentRunCreateInput, AgentUpdateInput } from "@/lib/types/agent";
 
 type UpdateAgentVariables = {
   agentId: IdParam;
   payload: AgentUpdateInput;
+};
+
+type CreateAgentRunVariables = {
+  agentId: IdParam;
+  payload: AgentRunCreateInput;
+  version?: number;
 };
 
 function invalidateAgentScope(queryClient: QueryClient, agentId: IdParam, version?: number) {
@@ -76,14 +82,16 @@ export function useArchiveAgent() {
   });
 }
 
-export function useResolveAgentTestPanel(agentId: IdParam | undefined, version?: number) {
-  return useMutation({
-    mutationFn: async (payload: AgentTestPanelRequest) => {
-      if (!agentId) {
-        throw new Error("Agent id is required to resolve the test panel.");
-      }
+export function useCreateAgentRun() {
+  const queryClient = useQueryClient();
 
-      return resolveAgentTestPanel(agentId, payload, { version });
+  return useMutation({
+    mutationFn: async ({ agentId, payload, version }: CreateAgentRunVariables) => {
+      return createAgentRun(agentId, payload, { version });
+    },
+    onSuccess: async (run) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(run.id) });
     },
   });
 }

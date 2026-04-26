@@ -24,9 +24,7 @@ export interface AgentAuthoringDraft {
   systemPrompt: string;
   inputSchema: AgentAuthoringSchemaInput;
   bindings: AgentAuthoringBindingRefs;
-  maxToolRounds: string;
   budgetUsd: string;
-  streaming: boolean;
 }
 
 export type AgentAuthoringCreateInput = Omit<
