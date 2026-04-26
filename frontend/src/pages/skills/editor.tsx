@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { useActivateSkill, useCreateSkill, useSkill, useUpdateSkill } from "@/hooks/use-skills";
 import type { SkillCreateInput, SkillUpdateInput } from "@/lib/types/skill";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import { parseLineList, parseRequiredText, PlatformResourceBadges } from "../platform-resource-shared";
+import { parseLineList, parseRequiredText, PlatformResourceBadges, stringifyJson } from "../platform-resource-shared";
 
 type SkillEditorValues = {
   description: string;
@@ -53,6 +54,13 @@ export function SkillsEditorPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isBusy = isSaving || activateMutation.isPending;
   const canActivate = Boolean(isEditing && skillQuery.data?.status === "draft");
+  const serializedToolDefinitions = useMemo(
+    () =>
+      stringifyJson(
+        parseLineList(values.toolDefinitions).map((tool) => ({ tool })),
+      ),
+    [values.toolDefinitions],
+  );
 
   const updateValue = <Key extends keyof SkillEditorValues>(key: Key, value: SkillEditorValues[Key]) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -187,17 +195,30 @@ export function SkillsEditorPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="skill-tool-definitions">Tool Definitions</Label>
-            <Textarea
-              id="skill-tool-definitions"
-              aria-label="Tool Definitions"
-              disabled={isSaving}
-              rows={8}
-              value={values.toolDefinitions}
-              onChange={(event) => updateValue("toolDefinitions", event.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">Add one tool id per line.</p>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="skill-tool-definitions">Tool Definitions</Label>
+              <Textarea
+                id="skill-tool-definitions"
+                aria-label="Tool Definitions"
+                disabled={isSaving}
+                rows={8}
+                value={values.toolDefinitions}
+                onChange={(event) => updateValue("toolDefinitions", event.target.value)}
+              />
+              <p className="text-sm text-muted-foreground">Add one tool id per line.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Exact Tool Definitions JSON</Label>
+              <ExactJsonPreview
+                ariaLabel="Exact tool definitions JSON"
+                data-testid="skills-tool-definitions-json-preview"
+                value={serializedToolDefinitions}
+              />
+              <p className="text-sm text-muted-foreground">
+                Read-only preview of the exact JSON array saved from the current tool-definition lines.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+
 import { SkillsEditorPage } from "./editor";
 
 const navigateMock = vi.fn();
@@ -83,6 +85,19 @@ describe("SkillsEditorPage", () => {
       skillId: "3",
     });
     expect(navigateMock).toHaveBeenCalledWith("/skills/8/edit");
+  });
+
+  it("shows a read-only exact JSON preview for the current tool-definition lines", () => {
+    render(<SkillsEditorPage />);
+
+    fireEvent.change(screen.getByLabelText(/^tool definitions$/i), {
+      target: { value: " search_docs \n\n answer_user " },
+    });
+
+    expect(screen.getByLabelText(/exact tool definitions json/i)).toHaveValue(
+      stringifyJson([{ tool: "search_docs" }, { tool: "answer_user" }]),
+    );
+    expect(screen.getByLabelText(/exact tool definitions json/i)).toHaveAttribute("readonly");
   });
 
   it("activates a draft skill", async () => {
