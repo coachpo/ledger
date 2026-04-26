@@ -3,6 +3,7 @@ import { AlertCircle, Save } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useActivateOutputSchema,
   useCreateOutputSchema,
@@ -46,7 +46,6 @@ export function OutputSchemasEditorPage() {
   const createMutation = useCreateOutputSchema();
   const updateMutation = useUpdateOutputSchema();
   const activateMutation = useActivateOutputSchema();
-  const [activeTab, setActiveTab] = useState("builder");
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -82,6 +81,7 @@ export function OutputSchemasEditorPage() {
   const isBusy = isSaving || activateMutation.isPending;
   const canActivate = Boolean(isEditing && schemaQuery.data?.status === "draft" && !hasUnsupportedPersistedRecord);
   const derivedJsonSchema = useMemo(() => schemaBuilderToJsonSchema(builder), [builder]);
+  const rawSchemaJson = useMemo(() => stringifyJson(derivedJsonSchema), [derivedJsonSchema]);
   const previewValue = useMemo(() => buildPreviewValue(builder), [builder]);
 
   const syncBuilder = (nextBuilder: OutputSchemaBuilderNode) => {
@@ -92,7 +92,6 @@ export function OutputSchemasEditorPage() {
   const applyApiIssues = (error: unknown) => {
     if (error instanceof ApiRequestError && error.details.length > 0) {
       setValidationIssues(error.details.map((detail) => ({ field: detail.field, issue: detail.issue })));
-      setActiveTab("builder");
     }
   };
 
@@ -155,12 +154,12 @@ export function OutputSchemasEditorPage() {
   }
 
   return (
-    <div className="space-y-4 p-4" data-testid="output-schemas-editor">
+    <div className="flex flex-col gap-4 p-4" data-testid="output-schemas-editor">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{isEditing ? "Edit Output Schema" : "Create Output Schema"}</h1>
           <p className="text-sm text-muted-foreground">
-            Author supported output schemas through the shared builder and review the derived sample output before save.
+            Author supported output schemas through the shared builder and review the exact saved schema JSON alongside derived sample output.
           </p>
           {schemaQuery.data ? <PlatformResourceBadges status={schemaQuery.data.status} version={schemaQuery.data.version} /> : null}
         </div>
@@ -240,15 +239,22 @@ export function OutputSchemasEditorPage() {
       </Card>
 
       {!hasUnsupportedPersistedRecord ? (
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="builder">Builder</TabsTrigger>
-            <TabsTrigger value="preview">Preview</TabsTrigger>
-          </TabsList>
-          <TabsContent forceMount value="builder" className="mt-4">
-            <SchemaComposer label="Root schema" node={builder} onChange={syncBuilder} />
-          </TabsContent>
-          <TabsContent forceMount value="preview" className="mt-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold tracking-tight">Schema builder</h2>
+            <p className="text-sm text-muted-foreground">The structured builder remains the source of truth for schema editing.</p>
+          </div>
+          <SchemaComposer label="Root schema" node={builder} onChange={syncBuilder} />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Exact raw schema JSON</CardTitle>
+                <CardDescription>Read-only canonical JSON derived from the same schema object sent on save.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ExactJsonPreview ariaLabel="Exact raw schema JSON" data-testid="output-schema-raw-json" value={rawSchemaJson} />
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>Preview data</CardTitle>
@@ -258,8 +264,8 @@ export function OutputSchemasEditorPage() {
                 <StructuredValueInspector data-testid="output-schema-preview" label="Derived sample output" value={previewValue} />
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+          </div>
+        </div>
       ) : null}
     </div>
   );

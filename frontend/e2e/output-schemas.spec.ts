@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function expectRawJsonAuthoringAbsent(page: Page) {
-  await expect(page.getByRole("tab", { name: /json schema/i })).toHaveCount(0);
-  await expect(page.getByTestId("output-schema-json-editor")).toHaveCount(0);
+async function expectBuilderAndDerivedPreviews(page: Page) {
+  await expect(page.getByText("Schema builder")).toBeVisible();
+  await expect(page.getByTestId("output-schema-raw-json")).toBeVisible();
+  await expect(page.getByTestId("output-schema-preview")).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
 }
 
 async function saveAndWaitForEditRoute(page: Page) {
@@ -22,30 +24,27 @@ test.describe("Output schema routes", () => {
     await expect(page.getByTestId("platform-output-schemas-page")).toBeVisible();
     await page.getByTestId("output-schemas-new").click();
     await expect(page).toHaveURL(/\/output-schemas\/new$/);
-    await expect(page.getByRole("tab", { name: /builder/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /preview/i })).toBeVisible();
-    await expectRawJsonAuthoringAbsent(page);
+    await expectBuilderAndDerivedPreviews(page);
 
     await page.getByLabel("Key").fill(draftKey);
     await page.locator("#output-schema-name").fill(`Draft ${draftKey}`);
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-0").fill("answer");
 
-    await page.getByRole("tab", { name: /preview/i }).click();
     await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"answer"/);
 
     await saveAndWaitForEditRoute(page);
     await expect(page).toHaveURL(/\/output-schemas\/\d+\/edit$/);
-    await expectRawJsonAuthoringAbsent(page);
+    await expectBuilderAndDerivedPreviews(page);
 
-    await page.getByRole("tab", { name: /builder/i }).click();
     await page.locator("#output-schema-name").fill(`Updated ${draftKey}`);
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-1").fill("rationale");
 
-    await page.getByRole("tab", { name: /preview/i }).click();
     await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
     await expect(page.getByTestId("output-schema-preview")).toContainText("rationale");
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"rationale"/);
 
     await saveAndWaitForEditRoute(page);
     await expect(page).toHaveURL(/\/output-schemas\/\d+\/edit$/);
@@ -55,10 +54,10 @@ test.describe("Output schema routes", () => {
     await page.getByTestId(`output-schemas-open-${draftKey}`).click();
     await expect(page).toHaveURL(/\/output-schemas\/\d+\/edit$/);
     await expect(page.locator("#output-schema-name")).toHaveValue(`Updated ${draftKey}`);
-    await expectRawJsonAuthoringAbsent(page);
+    await expectBuilderAndDerivedPreviews(page);
 
-    await page.getByRole("tab", { name: /preview/i }).click();
     await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
     await expect(page.getByTestId("output-schema-preview")).toContainText("rationale");
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"rationale"/);
   });
 });

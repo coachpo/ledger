@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
 import type { OutputSchemaRead } from "@/lib/types/output-schema";
 
@@ -88,19 +89,35 @@ describe("OutputSchemasEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("removes editable JSON authoring UI and keeps preview synchronized with builder changes", async () => {
+  it("shows builder, exact raw schema JSON, and sample preview together from shared builder state", async () => {
     render(<OutputSchemasEditorPage />);
 
-    expect(screen.getByRole("tab", { name: /builder/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /preview/i })).toBeVisible();
-    expect(screen.queryByRole("tab", { name: /json schema/i })).not.toBeInTheDocument();
-    expect(screen.queryByTestId("output-schema-json-editor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByText("Schema builder")).toBeVisible();
+    expect(screen.getByTestId("output-schema-raw-json")).toBeVisible();
+    expect(screen.getByTestId("output-schema-preview")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("output-schema-add-field"));
     fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "answer" } });
-    fireEvent.click(screen.getByRole("tab", { name: /preview/i }));
 
-    await waitFor(() => expect(screen.getByTestId("output-schema-preview")).toHaveTextContent("answer"));
+    await waitFor(() => {
+      expect(screen.getByTestId("output-schema-preview")).toHaveTextContent("answer");
+    });
+
+    const rawJsonTextbox = within(screen.getByTestId("output-schema-raw-json")).getByRole("textbox", {
+      name: /exact raw schema json/i,
+    });
+
+    expect(rawJsonTextbox).toHaveValue(
+      stringifyJson(
+        schemaBuilderToJsonSchema({
+          kind: "object",
+          allowAdditionalProperties: false,
+          fields: [{ name: "answer", required: true, schema: { kind: "string" } }],
+        }),
+      ),
+    );
+    expect(rawJsonTextbox).toHaveAttribute("readonly");
   });
 
   it("creates a schema from the builder-only flow", async () => {
@@ -141,7 +158,7 @@ describe("OutputSchemasEditorPage", () => {
     render(<OutputSchemasEditorPage />);
 
     expect(screen.getByLabelText("Key")).toBeDisabled();
-    expect(screen.queryByRole("tab", { name: /json schema/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("output-schema-raw-json")).toBeVisible();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Analysis Schema Updated" } });
     fireEvent.click(screen.getByTestId("output-schemas-save"));
