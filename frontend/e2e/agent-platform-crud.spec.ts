@@ -112,7 +112,7 @@ async function expectLegacyAgentAuthoringAbsent(page: Page) {
 }
 
 test.describe("Agent platform CRUD flows", () => {
-  test("covers no-raw-JSON authoring, duplicate behavior, and the structured agent test panel", async ({
+  test("covers schema transparency, duplicate behavior, and the structured agent test panel", async ({
     page,
     request,
   }) => {
@@ -137,6 +137,8 @@ test.describe("Agent platform CRUD flows", () => {
     await expect(page.getByTestId("agents-editor")).toBeVisible();
     await expectLegacyAgentAuthoringAbsent(page);
     await expect(page.getByRole("heading", { name: /^Input schema$/i })).toBeVisible();
+    await expect(page.getByTestId("agent-input-schema-raw-json")).toBeVisible();
+    await expect(page.getByTestId("agent-input-schema-preview")).toBeVisible();
     await expect(page.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: /skill bindings/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: /mcp server bindings/i })).toBeVisible();
@@ -146,12 +148,19 @@ test.describe("Agent platform CRUD flows", () => {
 
     await page.getByLabel("Key").fill(agentKey);
     await page.getByLabel("Name").fill(`Macro Agent ${timestamp}`);
-    await page.getByLabel("Model").fill("openai:gpt-5.4-mini");
+    await page.getByLabel("Model Connection").click();
+    await page.getByRole("option").filter({ hasText: / · / }).first().click();
     await page.getByLabel("System Prompt").fill("Summarize macro context clearly.");
     await page.getByLabel("Description").fill("Tracks macro context.");
 
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-0").fill("ticker");
+    await expect(
+      cardByHeading(page, /exact raw schema json/i).getByRole("textbox", {
+        name: /exact raw schema json/i,
+      }),
+    ).toHaveValue(/"ticker"/);
+    await expect(cardByHeading(page, /sample input companion/i)).toContainText("ticker");
 
     const outputSchemaCard = cardByHeading(page, /output schema binding/i);
     await outputSchemaCard.getByRole("combobox").first().click();
@@ -166,7 +175,7 @@ test.describe("Agent platform CRUD flows", () => {
     const mcpBindingsCard = cardByHeading(page, /mcp server bindings/i);
     await mcpBindingsCard.getByRole("button", { name: /add mcp server binding/i }).click();
     await mcpBindingsCard.getByRole("combobox").first().click();
-    await page.getByText(`MCP ${serverKey}`, { exact: true }).click();
+    await page.getByLabel("Suggestions").getByText(`MCP ${serverKey}`, { exact: true }).click();
     await expect(mcpBindingsCard.getByText(serverKey, { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: /save agent/i }).click();
@@ -176,11 +185,18 @@ test.describe("Agent platform CRUD flows", () => {
     await page.getByRole("tab", { name: /test panel/i }).click();
     await expect(page.getByLabel("Sample Input JSON")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /^Sample input$/i })).toBeVisible();
-    await page.getByRole("tabpanel", { name: /test panel/i }).locator("textarea").fill("AAPL");
+    await expect(page.getByTestId("agent-test-panel-sample-input-raw-json")).toBeVisible();
+    await expect(page.getByLabel("Exact raw sample-input JSON")).toHaveValue(/"ticker": "AAPL"/);
+    await page.getByTestId("agent-test-panel-sample-input-form").getByRole("textbox").fill("MSFT");
+    await expect(page.getByLabel("Exact raw sample-input JSON")).toHaveValue(/"ticker": "MSFT"/);
     await page.getByTestId("agent-test-panel-run").click();
     await expect(page.getByTestId("agent-test-panel-result")).toBeVisible();
-    await expect(page.getByTestId("agent-test-panel-result")).toContainText("AAPL");
+    await expect(page.getByTestId("agent-test-panel-result-raw-json")).toBeVisible();
+    await expect(page.getByTestId("agent-test-panel-result")).toContainText("MSFT");
     await expect(page.getByTestId("agent-test-panel-result")).toContainText(agentKey);
+    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(/"sampleInput"/);
+    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(/"ticker": "MSFT"/);
+    await expect(page.getByLabel("Exact raw result JSON")).toHaveValue(new RegExp(agentKey));
 
     await page.getByTestId("agents-duplicate").click();
     await expect(page).toHaveURL(/\/agents\/new\?duplicateFrom=\d+$/);
@@ -194,6 +210,7 @@ test.describe("Agent platform CRUD flows", () => {
     await page.getByTestId("agents-archive").click();
     await expect(page.getByText("Agent archived")).toBeVisible();
     await expect(page).toHaveURL(/\/agents$/);
-    await expect(page.getByTestId(`agents-row-${duplicateAgentKey}`)).toHaveCount(0);
+    await expect(page.getByTestId(`agents-row-${duplicateAgentKey}`)).toBeVisible();
+    await expect(page.getByTestId(`agents-archive-${duplicateAgentKey}`)).toHaveCount(0);
   });
 });

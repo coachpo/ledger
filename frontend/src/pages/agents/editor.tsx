@@ -9,6 +9,7 @@ import {
   type ResourceRefSelectOption,
 } from "@/components/platform-authoring/refs/resource-ref-select";
 import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgent, useArchiveAgent, useCreateAgent, useResolveAgentTestPanel, useUpdateAgent } from "@/hooks/use-agents";
@@ -204,7 +205,10 @@ function cloneResourceRefs(refs: readonly ResourceRef[]): ResourceRef[] {
   return refs.map((ref) => cloneResourceRef(ref));
 }
 
-function buildPayload(draft: AgentAuthoringDraft): AgentCreateInput | AgentUpdateInput {
+function buildPayload(
+  draft: AgentAuthoringDraft,
+  inputSchema = schemaBuilderToJsonSchema(draft.inputSchema),
+): AgentCreateInput | AgentUpdateInput {
   const [issue] = validateAgentDraft(draft);
 
   if (issue) {
@@ -214,7 +218,7 @@ function buildPayload(draft: AgentAuthoringDraft): AgentCreateInput | AgentUpdat
   return {
     budgetUsd: draft.budgetUsd.trim() || undefined,
     description: draft.description.trim() || undefined,
-    inputSchema: schemaBuilderToJsonSchema(draft.inputSchema),
+    inputSchema,
     key: parseRequiredText("Key", draft.key).toLowerCase(),
     maxToolRounds: parseOptionalNumber("Max tool rounds", draft.maxToolRounds, {
       integer: true,
@@ -295,6 +299,27 @@ export function AgentsEditorPage() {
     );
   }, [activeModelConnections, currentArchivedModelConnection, draft.modelConnectionId]);
   const selectedModelConnectionIsArchived = selectedModelConnection?.status === "archived";
+  const derivedInputSchema = useMemo(
+    () => schemaBuilderToJsonSchema(draft.inputSchema),
+    [draft.inputSchema],
+  );
+  const rawInputSchemaJson = useMemo(
+    () => stringifyJson(derivedInputSchema),
+    [derivedInputSchema],
+  );
+  const sampleInputPayload = useMemo(() => decodeSampleInputValue(sampleInput), [sampleInput]);
+  const rawSampleInputJson = useMemo(
+    () => stringifyJson(sampleInputPayload),
+    [sampleInputPayload],
+  );
+  const sampleInputPreview = useMemo(
+    () => buildPreviewValue(draft.inputSchema),
+    [draft.inputSchema],
+  );
+  const rawTestPanelResultJson = useMemo(
+    () => (testPanelResult ? stringifyJson(testPanelResult) : null),
+    [testPanelResult],
+  );
 
   useEffect(() => {
     if (!agentQuery.data) {
@@ -338,7 +363,7 @@ export function AgentsEditorPage() {
         throw new Error("Unsupported retired input schema shape");
       }
 
-      const payload = buildPayload(draft);
+      const payload = buildPayload(draft, derivedInputSchema);
 
       if (isEditing && agentId) {
         const { key: _ignored, ...updatePayload } = payload as AgentCreateInput;
@@ -398,7 +423,7 @@ export function AgentsEditorPage() {
 
     try {
       const result = await resolveTestPanelMutation.mutateAsync({
-        sampleInput: decodeSampleInputValue(sampleInput),
+        sampleInput: sampleInputPayload,
       });
       setTestPanelFeedback({
         message: "Resolved the current agent snapshot for the supplied structured sample input.",
@@ -627,14 +652,48 @@ export function AgentsEditorPage() {
               </div>
 
               {!hasUnsupportedPersistedRecord ? (
-                <SchemaComposer
-                  label="Input schema"
-                  node={draft.inputSchema}
-                  onChange={(nextSchema) => {
-                    updateDraft("inputSchema", nextSchema);
-                    setSampleInput(createDefaultSampleInputValue(nextSchema));
-                  }}
-                />
+                <div className="flex flex-col gap-4">
+                  <SchemaComposer
+                    label="Input schema"
+                    node={draft.inputSchema}
+                    onChange={(nextSchema) => {
+                      updateDraft("inputSchema", nextSchema);
+                      setSampleInput(createDefaultSampleInputValue(nextSchema));
+                    }}
+                  />
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Exact raw schema JSON</CardTitle>
+                        <CardDescription>
+                          Read-only canonical JSON derived from the same schema object used in the save payload.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ExactJsonPreview
+                          ariaLabel="Exact raw schema JSON"
+                          data-testid="agent-input-schema-raw-json"
+                          value={rawInputSchemaJson}
+                        />
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Sample input companion</CardTitle>
+                        <CardDescription>
+                          Derived sample input stays aligned with the current schema builder state.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <StructuredValueInspector
+                          data-testid="agent-input-schema-preview"
+                          label="Derived sample input"
+                          value={sampleInputPreview}
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
               ) : null}
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -744,14 +803,33 @@ export function AgentsEditorPage() {
               ) : null}
 
               {!hasUnsupportedPersistedRecord ? (
-                <SchemaForm
-                  description="Fill the sample input through the shared schema-driven form instead of editing JSON directly."
-                  disabled={!isEditing || resolveTestPanelMutation.isPending}
-                  label="Sample input"
-                  schema={draft.inputSchema}
-                  value={sampleInput}
-                  onChange={setSampleInput}
-                />
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div data-testid="agent-test-panel-sample-input-form">
+                    <SchemaForm
+                      description="Fill the sample input through the shared schema-driven form instead of editing JSON directly."
+                      disabled={!isEditing || resolveTestPanelMutation.isPending}
+                      label="Sample input"
+                      schema={draft.inputSchema}
+                      value={sampleInput}
+                      onChange={setSampleInput}
+                    />
+                  </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Exact raw sample-input JSON</CardTitle>
+                      <CardDescription>
+                        Read-only canonical JSON from the same decoded payload used when resolving the test panel.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ExactJsonPreview
+                        ariaLabel="Exact raw sample-input JSON"
+                        data-testid="agent-test-panel-sample-input-raw-json"
+                        value={rawSampleInputJson}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
               ) : null}
 
               <div className="flex justify-end">
@@ -767,18 +845,35 @@ export function AgentsEditorPage() {
                 </Button>
               </div>
 
-              {testPanelResult ? (
-                <Card data-testid="agent-test-panel-result">
-                  <CardHeader>
-                    <CardTitle className="text-base">Resolved result</CardTitle>
-                    <CardDescription>
-                      Structured response preview for the current saved agent snapshot.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <StructuredValueInspector label="Resolved result" value={testPanelResult} />
-                  </CardContent>
-                </Card>
+              {testPanelResult && rawTestPanelResultJson ? (
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card data-testid="agent-test-panel-result">
+                    <CardHeader>
+                      <CardTitle className="text-base">Resolved result</CardTitle>
+                      <CardDescription>
+                        Structured response preview for the current saved agent snapshot.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <StructuredValueInspector label="Resolved result" value={testPanelResult} />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Exact raw result JSON</CardTitle>
+                      <CardDescription>
+                        Read-only canonical JSON for the exact resolved test-panel response.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ExactJsonPreview
+                        ariaLabel="Exact raw result JSON"
+                        data-testid="agent-test-panel-result-raw-json"
+                        value={rawTestPanelResultJson}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
               ) : null}
             </CardContent>
           </Card>

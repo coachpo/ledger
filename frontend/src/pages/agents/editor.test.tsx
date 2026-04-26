@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
 import type { AgentRead } from "@/lib/types/agent";
 import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
 
@@ -234,16 +236,43 @@ describe("AgentsEditorPage", () => {
     });
   });
 
-  it("removes legacy model fields and requires a model connection on create", async () => {
+  it("shows builder, exact raw schema JSON, and derived sample input while still requiring a model connection on create", async () => {
     renderAgentsEditorPage();
 
     expect(useModelConnectionsMock).toHaveBeenCalledWith({ status: "active" });
     expect(screen.queryByLabelText(/^Model$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Temperature$/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Model Connection$/i)).toBeVisible();
-    expect(screen.queryByLabelText(/input schema json/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Input Schema JSON$/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-input-schema-raw-json")).toBeVisible();
+    expect(screen.getByTestId("agent-input-schema-preview")).toBeVisible();
     expect(screen.queryByLabelText(/^skills$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^mcp servers$/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("output-schema-add-field"));
+    fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "ticker" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-input-schema-preview")).toHaveTextContent("ticker");
+    });
+
+    const rawJsonTextbox = within(screen.getByTestId("agent-input-schema-raw-json")).getByRole(
+      "textbox",
+      {
+        name: /exact raw schema json/i,
+      },
+    );
+
+    expect(rawJsonTextbox).toHaveValue(
+      stringifyJson(
+        schemaBuilderToJsonSchema({
+          kind: "object",
+          allowAdditionalProperties: false,
+          fields: [{ name: "ticker", required: true, schema: { kind: "string" } }],
+        }),
+      ),
+    );
+    expect(rawJsonTextbox).toHaveAttribute("readonly");
 
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "macro_agent" } });
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent" } });
@@ -335,12 +364,23 @@ describe("AgentsEditorPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: /test panel/i }));
 
     expect(screen.queryByLabelText(/sample input json/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-test-panel-sample-input-form")).toBeVisible();
+    expect(screen.getByTestId("agent-test-panel-sample-input-raw-json")).toBeVisible();
+    expect(screen.getByLabelText("Exact raw sample-input JSON")).toHaveValue(
+      stringifyJson({ ticker: "AAPL" }),
+    );
+    expect(screen.getByLabelText("Exact raw sample-input JSON")).toHaveAttribute("readonly");
     fireEvent.click(screen.getByTestId("agent-test-panel-run"));
 
     await waitFor(() =>
       expect(resolveTestPanelMock).toHaveBeenCalledWith({ sampleInput: { ticker: "AAPL" } }),
     );
     expect(screen.getByTestId("agent-test-panel-result")).toBeVisible();
+    expect(screen.getByTestId("agent-test-panel-result-raw-json")).toBeVisible();
     expect(screen.getByText(/test panel ready/i)).toBeVisible();
+    expect(screen.getByLabelText("Exact raw result JSON")).toHaveValue(
+      stringifyJson({ agent: existingAgent, sampleInput: { ticker: "AAPL" } }),
+    );
+    expect(screen.getByLabelText("Exact raw result JSON")).toHaveAttribute("readonly");
   });
 });
