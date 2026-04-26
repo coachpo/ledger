@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { stringifyJson } from "../src/lib/platform-authoring/common/serialization";
+import { schemaBuilderToJsonSchema } from "../src/lib/platform-authoring/schema/codec";
+
 type WorkflowCreatePayload = {
   description?: string;
   inputSchema: {
@@ -27,13 +30,11 @@ type WorkflowCreatePayload = {
 };
 
 function runInputForm(page: Page) {
-  return page
-    .getByRole("tabpanel", { name: "Review" })
-    .getByText(
-      "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
-      { exact: true },
-    )
-    .locator("xpath=ancestor::*[@data-slot='card'][1]");
+  return page.getByTestId("workflow-review-run-input-form");
+}
+
+function runInputRawPreview(page: Page) {
+  return page.getByTestId("workflow-review-run-input-raw-json");
 }
 
 async function expectLegacyWorkflowJsonAuthoringAbsent(page: Page) {
@@ -121,6 +122,7 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   ];
 
   let createdWorkflowPayload: WorkflowCreatePayload | null = null;
+  let createdRunPayload: Record<string, unknown> | null = null;
 
   const workflow = {
     aggregateBudgetUsd: "1.25000000",
@@ -199,7 +201,7 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
     finalOutput: { summary: "decision" },
     finishedAt: "2026-04-20T10:00:05Z",
     id: 901,
-    input: { ticker: "AAPL" },
+    input: { ticker: "MSFT" },
     perStepOutputs: {
       "1": [
         {
@@ -212,7 +214,7 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
           output: { summary: "analysis" },
           outputSchemaId: 11,
           outputSchemaVersion: 1,
-          resolvedInput: { ticker: "AAPL" },
+          resolvedInput: { ticker: "MSFT" },
           slot: "analysis",
           status: "succeeded",
           tokens: 21,
@@ -272,6 +274,7 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   });
 
   await page.route("**/api/workflows/501/runs?*", async (route) => {
+    createdRunPayload = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ body: JSON.stringify(runCreated), contentType: "application/json", status: 201 });
   });
 
@@ -305,6 +308,18 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   await expect(page.getByTestId("workflows-editor")).toBeVisible();
   await expect(page.getByRole("heading", { name: /workflow input schema/i })).toBeVisible();
   await expectLegacyWorkflowJsonAuthoringAbsent(page);
+  await expect(page.getByTestId("workflow-input-schema-raw-json")).toBeVisible();
+  await expect(page.getByTestId("workflow-input-schema-preview")).toBeVisible();
+  await expect(page.getByLabel("Exact raw schema JSON")).toHaveValue(
+    stringifyJson(
+      schemaBuilderToJsonSchema({
+        kind: "object",
+        allowAdditionalProperties: false,
+        fields: [{ name: "ticker", required: true, schema: { kind: "string" } }],
+      }),
+    ),
+  );
+  await expect(page.getByTestId("workflow-input-schema-preview")).toContainText("ticker");
 
   await page.getByLabel("Workflow Key").fill("market_review");
   await page.getByLabel("Workflow Name").fill("Market Review");
@@ -341,14 +356,24 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   await expect(runInputForm(page)).toContainText(
     "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
   );
+  await expect(runInputRawPreview(page)).toBeVisible();
+  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
+    stringifyJson({ ticker: "AAPL" }),
+  );
   await expect(runInputForm(page)).toContainText("ticker");
   await expect(runInputForm(page).getByRole("textbox")).toHaveCount(1);
-  await runInputForm(page).getByRole("textbox").fill("AAPL");
+  await runInputForm(page).getByRole("textbox").fill("MSFT");
+  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
+    stringifyJson({ ticker: "MSFT" }),
+  );
 
   await page.getByTestId("workflow-save").click();
   await expect(page).toHaveURL(/\/workflows\/501\/edit$/);
   await expectLegacyWorkflowJsonAuthoringAbsent(page);
   await expect(page.getByTestId("workflow-review-summary")).toContainText("market_review");
+  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
+    stringifyJson({ ticker: "AAPL" }),
+  );
 
   expect(createdWorkflowPayload).not.toBeNull();
   expect(createdWorkflowPayload).not.toHaveProperty("inputSchemaText");
@@ -393,8 +418,14 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
     ],
   });
 
+  await runInputForm(page).getByRole("textbox").fill("MSFT");
+  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
+    stringifyJson({ ticker: "MSFT" }),
+  );
+
   await page.getByTestId("workflow-run-now").click();
   await expect(page).toHaveURL(/\/runs\/901$/);
+  expect(createdRunPayload).toEqual({ ticker: "MSFT" });
   await expect(page.getByTestId("runs-detail-page")).toBeVisible();
   await expect(page.getByTestId("runs-detail-final-output")).toContainText("decision");
   await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-901");

@@ -55,6 +55,7 @@ export type WiringSourceDraft = {
 };
 
 export type WorkflowDraftAgent = {
+  id: string;
   agentKey: string;
   agentVersion: string;
   optional: boolean;
@@ -100,6 +101,7 @@ function createEmptyWiringSource(): WiringSourceDraft {
 
 export function createEmptyWorkflowAgent(): WorkflowDraftAgent {
   return {
+    id: createDraftId("agent"),
     agentKey: "",
     agentVersion: "",
     optional: false,
@@ -174,6 +176,7 @@ export function workflowDraftFromRead(workflow: WorkflowRead): WorkflowDraft {
           },
     steps: workflow.steps.map((step) => ({
       agents: step.agents.map((agent) => ({
+        id: createDraftId(`agent-${step.index}`),
         agentKey: agent.agentKey,
         agentVersion: String(agent.agentVersion),
         optional: agent.optional,
@@ -652,6 +655,7 @@ export function validateWorkflowDraft(
         currentStepIndex: draft.steps.length,
         draft: { ...draft, inputSchemaText: JSON.stringify(parsedInputSchema, null, 2) },
         draftAgent: {
+          id: createDraftId("agent-output"),
           agentKey: draft.output.agentKey,
           agentVersion: draft.output.agentVersion,
           optional: false,

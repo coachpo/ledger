@@ -1,5 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
 
 import { WorkflowsEditorPage } from "./editor";
 
@@ -199,7 +202,7 @@ describe("WorkflowsEditorPage", () => {
     toastSuccessMock.mockReset();
   });
 
-  it("shows the shared schema builder in the input step and removes the input-schema JSON textarea", () => {
+  it("shows builder, exact raw schema JSON, and derived sample run input together in the input step", async () => {
     render(<WorkflowsEditorPage />);
 
     expect(screen.getByRole("tab", { name: /input/i })).toBeVisible();
@@ -209,6 +212,31 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.queryByLabelText("Input Schema JSON")).not.toBeInTheDocument();
     expect(screen.getByText("Workflow Input Schema")).toBeVisible();
     expect(screen.getByTestId("output-schema-add-field")).toBeVisible();
+    expect(screen.getByTestId("workflow-input-schema-raw-json")).toBeVisible();
+    expect(screen.getByTestId("workflow-input-schema-preview")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("output-schema-add-field"));
+    fireEvent.change(screen.getByTestId("output-schema-field-name-1"), {
+      target: { value: "region" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("workflow-input-schema-preview")).toHaveTextContent("region");
+    });
+
+    expect(screen.getByLabelText("Exact raw schema JSON")).toHaveValue(
+      stringifyJson(
+        schemaBuilderToJsonSchema({
+          kind: "object",
+          allowAdditionalProperties: false,
+          fields: [
+            { name: "ticker", required: true, schema: { kind: "string" } },
+            { name: "region", required: true, schema: { kind: "string" } },
+          ],
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Exact raw schema JSON")).toHaveAttribute("readonly");
 
     fireEvent.change(screen.getByLabelText("Workflow Key"), { target: { value: "market_review" } });
     fireEvent.change(screen.getByLabelText("Workflow Name"), { target: { value: "Market Review" } });
@@ -221,6 +249,9 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByText(/run now becomes available after the first save/i)).toBeVisible();
     expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workflow-review-run-input-form")).toBeVisible();
+    expect(screen.getByTestId("workflow-review-run-input-raw-json")).toBeVisible();
+    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveAttribute("readonly");
     expect(screen.getAllByText(/workflow summary/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/resolve validation issues to preview the workflow summary/i)).toBeVisible();
     expect(screen.getByText(/enter the run payload through the shared schema-driven form/i)).toBeVisible();
@@ -248,12 +279,25 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByTestId("workflow-review-summary")).toHaveTextContent("market_review");
     expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(
+      stringifyJson({ ticker: "AAPL" }),
+    );
+
+    fireEvent.change(within(screen.getByTestId("workflow-review-run-input-form")).getByRole("textbox"), {
+      target: { value: "MSFT" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(
+        stringifyJson({ ticker: "MSFT" }),
+      );
+    });
 
     fireEvent.click(screen.getByTestId("workflow-run-now"));
 
     await waitFor(() => expect(createWorkflowRunMock).toHaveBeenCalledTimes(1));
     expect(createWorkflowRunMock).toHaveBeenCalledWith({
-      payload: { ticker: "AAPL" },
+      payload: { ticker: "MSFT" },
       version: 2,
       workflowId: 88,
     });

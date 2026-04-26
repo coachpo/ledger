@@ -12,6 +12,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgents } from "@/hooks/use-agents";
@@ -741,6 +742,29 @@ export function WorkflowsEditorPage() {
   const progressValue = ((activeIndex + 1) / WORKFLOW_SECTIONS.length) * 100;
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const canRunNow = Boolean(isEditing && workflowQuery.data);
+  const derivedInputSchema = useMemo(
+    () => schemaBuilderToJsonSchema(inputSchemaBuilder),
+    [inputSchemaBuilder],
+  );
+  const rawInputSchemaJson = useMemo(
+    () => stringifyJson(derivedInputSchema),
+    [derivedInputSchema],
+  );
+  const inputSchemaPreviewValue = useMemo(
+    () => buildPreviewValue(inputSchemaBuilder),
+    [inputSchemaBuilder],
+  );
+  const parsedRunInputPayload = useMemo(() => {
+    try {
+      return parseRunInputValue(runInputValue);
+    } catch {
+      return null;
+    }
+  }, [runInputValue]);
+  const rawRunInputJson = useMemo(
+    () => stringifyJson(parsedRunInputPayload),
+    [parsedRunInputPayload],
+  );
 
   const reviewPayload = useMemo(() => {
     try {
@@ -821,8 +845,12 @@ export function WorkflowsEditorPage() {
         throw new Error("Resolve workflow validation issues before running.");
       }
 
+      if (!parsedRunInputPayload) {
+        throw new Error("Run input must be a JSON object.");
+      }
+
       const run = await createRunMutation.mutateAsync({
-        payload: parseRunInputValue(runInputValue),
+        payload: parsedRunInputPayload,
         version: workflowQuery.data.version,
         workflowId: workflowQuery.data.id,
       });
@@ -973,6 +1001,38 @@ export function WorkflowsEditorPage() {
                       node={inputSchemaBuilder}
                       onChange={handleInputSchemaBuilderChange}
                     />
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Exact raw schema JSON</CardTitle>
+                          <CardDescription>
+                            Read-only canonical JSON derived from the same schema object used in the save payload.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ExactJsonPreview
+                            ariaLabel="Exact raw schema JSON"
+                            data-testid="workflow-input-schema-raw-json"
+                            value={rawInputSchemaJson}
+                          />
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Sample run input</CardTitle>
+                          <CardDescription>
+                            Derived companion data from the current schema state.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <StructuredValueInspector
+                            data-testid="workflow-input-schema-preview"
+                            label="Derived sample run input"
+                            value={inputSchemaPreviewValue}
+                          />
+                        </CardContent>
+                      </Card>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1013,7 +1073,7 @@ export function WorkflowsEditorPage() {
                           currentStepNumber={stepIndex + 1}
                           draftAgent={agentDraft}
                           heading={`Step ${stepIndex + 1} Agent ${agentIndex + 1}`}
-                          key={`${step.id}-${agentIndex}`}
+                          key={agentDraft.id}
                           onChange={(nextAgent) =>
                             setDraft((current) => ({
                               ...current,
@@ -1153,13 +1213,32 @@ export function WorkflowsEditorPage() {
                         </AlertDescription>
                       </Alert>
                     ) : null}
-                    <SchemaForm
-                      description="Enter the run payload through the shared schema-driven form instead of authoring JSON."
-                      label="Run input"
-                      onChange={setRunInputValue}
-                      schema={inputSchemaBuilder}
-                      value={runInputValue}
-                    />
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <div data-testid="workflow-review-run-input-form">
+                        <SchemaForm
+                          description="Enter the run payload through the shared schema-driven form instead of authoring JSON."
+                          label="Run input"
+                          onChange={setRunInputValue}
+                          schema={inputSchemaBuilder}
+                          value={runInputValue}
+                        />
+                      </div>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Exact raw run-input JSON</CardTitle>
+                          <CardDescription>
+                            Read-only canonical JSON from the same parsed payload used when creating a run.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ExactJsonPreview
+                            ariaLabel="Exact raw run-input JSON"
+                            data-testid="workflow-review-run-input-raw-json"
+                            value={rawRunInputJson}
+                          />
+                        </CardContent>
+                      </Card>
+                    </div>
                   </CardContent>
                 </Card>
 
