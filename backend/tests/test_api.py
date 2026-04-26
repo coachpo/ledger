@@ -19,6 +19,7 @@ from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
 from app.db.session import init_db, validate_supported_database_engine
 from app.models.market_quote import MarketQuote
 from app.models.symbol_name_cache import SymbolNameCache
+from app.reset_seed import STARTER_PORTFOLIO_SLUG, STARTER_TEMPLATE_NAMES
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
@@ -2000,6 +2001,47 @@ def test_template_crud_and_compile_flow(client: TestClient) -> None:
     missing_response = client.get(f"/api/v1/templates/{template['id']}")
     assert missing_response.status_code == 404
     assert missing_response.json()["code"] == "not_found"
+
+
+def test_template_seed_requires_explicit_confirmation(client: TestClient) -> None:
+    create_template(client, name="Existing Template", content="# Existing")
+
+    response = client.post("/api/v1/templates/seed", json={"confirm": False})
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["message"] == "Request validation failed"
+    assert response.json()["details"] == [
+        {
+            "field": "confirm",
+            "issue": "Value error, confirm must be true to reset and seed the database",
+        }
+    ]
+
+    templates_response = client.get("/api/v1/templates")
+    assert templates_response.status_code == 200
+    assert [item["name"] for item in templates_response.json()] == ["Existing Template"]
+
+
+
+def test_template_seed_replaces_existing_data_with_starter_workspace(client: TestClient) -> None:
+    create_portfolio(client, name="Legacy Portfolio", slug="legacy_portfolio")
+    create_template(client, name="Legacy Template", content="# Legacy")
+
+    response = client.post("/api/v1/templates/seed", json={"confirm": True})
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["portfolioSlugs"] == [STARTER_PORTFOLIO_SLUG]
+    assert response.json()["templateNames"] == list(STARTER_TEMPLATE_NAMES)
+
+    templates_response = client.get("/api/v1/templates")
+    assert templates_response.status_code == 200
+    assert {item["name"] for item in templates_response.json()} == set(STARTER_TEMPLATE_NAMES)
+
+    portfolios_response = client.get("/api/v1/portfolios")
+    assert portfolios_response.status_code == 200
+    assert [item["slug"] for item in portfolios_response.json()] == [STARTER_PORTFOLIO_SLUG]
+
 
 
 def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:

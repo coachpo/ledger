@@ -4,7 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import get_template_compiler_service, get_text_template_service
+from app.api.dependencies import (
+    get_reset_seed_service,
+    get_template_compiler_service,
+    get_text_template_service,
+)
+from app.schemas.reset_seed import ResetSeedRead, ResetSeedRequest
 from app.schemas.text_template import (
     PlaceholderTreeRead,
     TextTemplateCompileRead,
@@ -15,6 +20,7 @@ from app.schemas.text_template import (
     TextTemplateStoredCompile,
     TextTemplateUpdate,
 )
+from app.services.reset_seed_service import ResetSeedService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 
@@ -51,6 +57,16 @@ def compile_inline(
 ) -> TextTemplateInlineCompileRead:
     compiled = compiler_service.compile(payload.content, inputs=payload.inputs)
     return TextTemplateInlineCompileRead.model_validate({"compiled": compiled})
+
+
+@router.post("/seed", response_model=ResetSeedRead)
+def seed_templates(
+    payload: ResetSeedRequest,
+    service: Annotated[ResetSeedService, Depends(get_reset_seed_service)],
+) -> ResetSeedRead:
+    if payload.confirm:
+        return service.reset_and_seed_starter_data()
+    raise AssertionError("ResetSeedRequest validation should require confirm=true")
 
 
 @router.get("/{template_id}", response_model=TextTemplateRead)
