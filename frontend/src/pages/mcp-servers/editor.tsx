@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { CheckCircle2, PlugZap, Save, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, PlugZap, Plus, Save, Trash2, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import {
   useActivateMcpServer,
   useCreateMcpServer,
@@ -44,13 +45,153 @@ type ConnectionFeedback = {
   variant: "default" | "destructive";
 };
 
+type KeyValueEntry = {
+  id: string;
+  key: string;
+  value: string;
+};
+
+let keyValueEntryCounter = 0;
+
+function createKeyValueEntry(key = "", value = ""): KeyValueEntry {
+  keyValueEntryCounter += 1;
+  return {
+    id: `mcp-server-entry-${keyValueEntryCounter}`,
+    key,
+    value,
+  };
+}
+
+function buildKeyValueEntries(record: Record<string, string> | null | undefined): KeyValueEntry[] {
+  const entries = Object.entries(record ?? {});
+  return entries.length > 0
+    ? entries.map(([key, value]) => createKeyValueEntry(key, value))
+    : [createKeyValueEntry()];
+}
+
+function buildKeyValueRecord(entries: KeyValueEntry[]): Record<string, string> {
+  const record: Record<string, string> = {};
+
+  for (const entry of entries) {
+    const trimmedKey = entry.key.trim();
+
+    if (!trimmedKey) {
+      continue;
+    }
+
+    record[trimmedKey] = entry.value;
+  }
+
+  return record;
+}
+
+function buildStructuredConfigValues(values: McpServerEditorValues) {
+  return {
+    args: parseJsonValue<string[]>("Args", values.args, []),
+    env: buildKeyValueRecord(values.env),
+    headers: buildKeyValueRecord(values.headers),
+  };
+}
+
+function KeyValueObjectEditor(props: {
+  addLabel: string;
+  description: string;
+  disabled: boolean;
+  emptyKeyLabel: string;
+  keyLabelPrefix: string;
+  previewAriaLabel: string;
+  previewTestId: string;
+  previewValue: string;
+  rows: KeyValueEntry[];
+  title: string;
+  valueLabelPrefix: string;
+  onAdd: () => void;
+  onChange: (entryId: string, field: "key" | "value", value: string) => void;
+  onRemove: (entryId: string) => void;
+}) {
+  const {
+    addLabel,
+    description,
+    disabled,
+    emptyKeyLabel,
+    keyLabelPrefix,
+    previewAriaLabel,
+    previewTestId,
+    previewValue,
+    rows,
+    title,
+    valueLabelPrefix,
+    onAdd,
+    onChange,
+    onRemove,
+  } = props;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Label>{title}</Label>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
+          <Button disabled={disabled} size="sm" type="button" variant="outline" onClick={onAdd}>
+            <Plus data-icon="inline-start" />
+            {addLabel}
+          </Button>
+        </div>
+        <div className="grid gap-3">
+          {rows.map((entry, index) => (
+            <div key={entry.id} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+              <div className="space-y-2">
+                <Label htmlFor={`${entry.id}-key`}>{index === 0 ? emptyKeyLabel : `${emptyKeyLabel} ${index + 1}`}</Label>
+                <Input
+                  id={`${entry.id}-key`}
+                  aria-label={`${keyLabelPrefix} ${index + 1}`}
+                  disabled={disabled}
+                  value={entry.key}
+                  onChange={(event) => onChange(entry.id, "key", event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`${entry.id}-value`}>Value</Label>
+                <Input
+                  id={`${entry.id}-value`}
+                  aria-label={`${valueLabelPrefix} ${index + 1}`}
+                  disabled={disabled}
+                  value={entry.value}
+                  onChange={(event) => onChange(entry.id, "value", event.target.value)}
+                />
+              </div>
+              <Button
+                aria-label={`Remove ${keyLabelPrefix.toLowerCase()} row ${index + 1}`}
+                className="md:self-end"
+                disabled={disabled}
+                size="icon"
+                type="button"
+                variant="outline"
+                onClick={() => onRemove(entry.id)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>{previewAriaLabel}</Label>
+        <ExactJsonPreview ariaLabel={previewAriaLabel} data-testid={previewTestId} value={previewValue} />
+      </div>
+    </div>
+  );
+}
+
 type McpServerEditorValues = {
   args: string;
   command: string;
   description: string;
   enabled: boolean;
-  env: string;
-  headers: string;
+  env: KeyValueEntry[];
+  headers: KeyValueEntry[];
   key: string;
   jsonError: string | null;
   name: string;
@@ -59,12 +200,12 @@ type McpServerEditorValues = {
 };
 
 const initialValues: McpServerEditorValues = {
-  args: "[\n  \"-m\",\n  \"app.agents.mcp.stock_analysis_reference_server\"\n]",
+  args: stringifyJson(["-m", "app.agents.mcp.stock_analysis_reference_server"]),
   command: "python3",
   description: "",
   enabled: true,
-  env: "{}",
-  headers: "{}",
+  env: buildKeyValueEntries({}),
+  headers: buildKeyValueEntries({}),
   jsonError: null,
   key: "",
   name: "",
@@ -73,6 +214,7 @@ const initialValues: McpServerEditorValues = {
 };
 
 function buildConfigFromValues(values: McpServerEditorValues): McpServerConfig {
+  const structuredValues = buildStructuredConfigValues(values);
   const common = {
     description: values.description.trim(),
     enabled: values.enabled,
@@ -82,16 +224,16 @@ function buildConfigFromValues(values: McpServerEditorValues): McpServerConfig {
   if (values.transport === "stdio") {
     return {
       ...common,
-      args: parseJsonValue<string[]>("Args", values.args, []),
+      args: structuredValues.args,
       command: parseRequiredText("Command", values.command),
-      env: parseJsonValue<Record<string, string>>("Env", values.env, {}),
+      env: structuredValues.env,
       transport: "stdio",
     };
   }
 
   return {
     ...common,
-    headers: parseJsonValue<Record<string, string>>("Headers", values.headers, {}),
+    headers: structuredValues.headers,
     transport: "http-sse",
     url: parseRequiredText("URL", values.url),
   };
@@ -103,8 +245,8 @@ function buildValuesFromServer(server: McpServerRead): McpServerEditorValues {
     command: server.transport === "stdio" ? server.command ?? "" : "",
     description: server.description ?? "",
     enabled: server.enabled,
-    env: stringifyJson(server.transport === "stdio" ? server.env ?? {} : {}),
-    headers: stringifyJson(server.transport === "http-sse" ? server.headers ?? {} : {}),
+    env: buildKeyValueEntries(server.transport === "stdio" ? server.env ?? {} : {}),
+    headers: buildKeyValueEntries(server.transport === "http-sse" ? server.headers ?? {} : {}),
     jsonError: null,
     key: server.key,
     name: server.name,
@@ -124,6 +266,8 @@ export function McpServersEditorPage() {
   const testConnectionMutation = useTestMcpServerConnection(serverId);
   const [values, setValues] = useState<McpServerEditorValues>(initialValues);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
+  const rawEnvJson = useMemo(() => stringifyJson(buildKeyValueRecord(values.env)), [values.env]);
+  const rawHeadersJson = useMemo(() => stringifyJson(buildKeyValueRecord(values.headers)), [values.headers]);
 
   useEffect(() => {
     if (!serverQuery.data) {
@@ -149,6 +293,44 @@ export function McpServersEditorPage() {
       } catch {
         return { ...nextValues, jsonError: null };
       }
+    });
+  };
+
+  const updateObjectRows = (field: "env" | "headers", nextRows: KeyValueEntry[]) => {
+    setValues((current) => ({
+      ...current,
+      [field]: nextRows,
+      jsonError: null,
+    }));
+  };
+
+  const handleObjectRowChange = (
+    field: "env" | "headers",
+    entryId: string,
+    entryField: "key" | "value",
+    value: string,
+  ) => {
+    setValues((current) => ({
+      ...current,
+      [field]: current[field].map((entry) =>
+        entry.id === entryId ? { ...entry, [entryField]: value } : entry,
+      ),
+      jsonError: null,
+    }));
+  };
+
+  const handleAddObjectRow = (field: "env" | "headers") => {
+    updateObjectRows(field, [...values[field], createKeyValueEntry()]);
+  };
+
+  const handleRemoveObjectRow = (field: "env" | "headers", entryId: string) => {
+    setValues((current) => {
+      const nextRows = current[field].filter((entry) => entry.id !== entryId);
+      return {
+        ...current,
+        [field]: nextRows.length > 0 ? nextRows : [createKeyValueEntry()],
+        jsonError: null,
+      };
     });
   };
 
@@ -281,8 +463,8 @@ export function McpServersEditorPage() {
         <CardContent className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-            <Label htmlFor="mcp-server-key">Key</Label>
-            <Input id="mcp-server-key" aria-label="Key" disabled={isEditing || isSaving} value={values.key} onChange={(event) => updateValue("key", event.target.value)} />
+              <Label htmlFor="mcp-server-key">Key</Label>
+              <Input id="mcp-server-key" aria-label="Key" disabled={isEditing || isSaving} value={values.key} onChange={(event) => updateValue("key", event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="mcp-server-name">Name</Label>
@@ -327,10 +509,22 @@ export function McpServersEditorPage() {
                 <Label htmlFor="mcp-server-args">Args JSON</Label>
                 <Textarea id="mcp-server-args" aria-label="Args JSON" disabled={isSaving} rows={5} value={values.args} onChange={(event) => updateValue("args", event.target.value)} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="mcp-server-env">Env JSON</Label>
-                <Textarea id="mcp-server-env" aria-label="Env JSON" disabled={isSaving} rows={5} value={values.env} onChange={(event) => updateValue("env", event.target.value)} />
-              </div>
+              <KeyValueObjectEditor
+                addLabel="Add env row"
+                description="Edit environment variables as structured key/value rows. Blank keys stay local and are omitted from the submitted payload."
+                disabled={isSaving}
+                emptyKeyLabel="Env key"
+                keyLabelPrefix="Env key"
+                previewAriaLabel="Exact raw env JSON"
+                previewTestId="mcp-server-env-raw-json"
+                previewValue={rawEnvJson}
+                rows={values.env}
+                title="Env variables"
+                valueLabelPrefix="Env value"
+                onAdd={() => handleAddObjectRow("env")}
+                onChange={(entryId, field, value) => handleObjectRowChange("env", entryId, field, value)}
+                onRemove={(entryId) => handleRemoveObjectRow("env", entryId)}
+              />
             </>
           ) : (
             <>
@@ -338,10 +532,22 @@ export function McpServersEditorPage() {
                 <Label htmlFor="mcp-server-url">URL</Label>
                 <Input id="mcp-server-url" aria-label="URL" disabled={isSaving} value={values.url} onChange={(event) => updateValue("url", event.target.value)} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="mcp-server-headers">Headers JSON</Label>
-                <Textarea id="mcp-server-headers" aria-label="Headers JSON" disabled={isSaving} rows={5} value={values.headers} onChange={(event) => updateValue("headers", event.target.value)} />
-              </div>
+              <KeyValueObjectEditor
+                addLabel="Add header row"
+                description="Edit request headers as structured key/value rows. Blank keys stay local and are omitted from the submitted payload."
+                disabled={isSaving}
+                emptyKeyLabel="Header key"
+                keyLabelPrefix="Header key"
+                previewAriaLabel="Exact raw headers JSON"
+                previewTestId="mcp-server-headers-raw-json"
+                previewValue={rawHeadersJson}
+                rows={values.headers}
+                title="Headers"
+                valueLabelPrefix="Header value"
+                onAdd={() => handleAddObjectRow("headers")}
+                onChange={(entryId, field, value) => handleObjectRowChange("headers", entryId, field, value)}
+                onRemove={(entryId) => handleRemoveObjectRow("headers", entryId)}
+              />
             </>
           )}
 
