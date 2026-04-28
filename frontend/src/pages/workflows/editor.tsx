@@ -13,7 +13,6 @@ import { toast } from "sonner";
 
 import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgents } from "@/hooks/use-agents";
 import {
@@ -630,6 +629,10 @@ export function WorkflowsEditorPage() {
     () => buildPreviewValue(inputSchemaBuilder),
     [inputSchemaBuilder],
   );
+  const rawInputSchemaPreviewJson = useMemo(
+    () => stringifyJson(inputSchemaPreviewValue),
+    [inputSchemaPreviewValue],
+  );
   const parsedRunInputPayload = useMemo(() => {
     try {
       return parseRunInputValue(runInputValue);
@@ -901,14 +904,14 @@ export function WorkflowsEditorPage() {
                         <CardHeader>
                           <CardTitle>Sample run input</CardTitle>
                           <CardDescription>
-                            Derived companion data from the current schema state.
+                            Derived sample run input from the current builder state.
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <StructuredValueInspector
+                          <ExactJsonPreview
+                            ariaLabel="Derived sample run input"
                             data-testid="workflow-input-schema-preview"
-                            label="Derived sample run input"
-                            value={inputSchemaPreviewValue}
+                            value={rawInputSchemaPreviewJson}
                           />
                         </CardContent>
                       </Card>
