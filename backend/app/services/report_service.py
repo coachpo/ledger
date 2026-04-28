@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.agents import get_default_skill_registry
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
 from app.schemas.report import ReportMetadata, ReportRead, ReportUpdate
+from app.services.skill_service import SkillService
 
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
@@ -35,16 +38,40 @@ class ReportService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ReportRead]:
-        reports = self.repository.list_all(
-            ticker=self._normalize_ticker_filter(ticker),
-            tag=self._normalize_optional_filter(tag),
-            review_type=self._normalize_optional_filter(review_type),
-            portfolio_slug=self._normalize_optional_filter(portfolio_slug),
+        return self._list_report_reads(
+            ticker=ticker,
+            tag=tag,
+            review_type=review_type,
+            portfolio_slug=portfolio_slug,
             source=source,
             limit=limit,
             offset=offset,
         )
-        return [ReportRead.model_validate(r) for r in reports]
+
+    def lookup_reports(
+        self,
+        *,
+        skill_references: Sequence[dict[str, object]],
+        ticker: str | None = None,
+        tag: str | None = None,
+        review_type: str | None = None,
+        portfolio_slug: str | None = None,
+        source: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ReportRead]:
+        SkillService(self.session, get_default_skill_registry()).require_report_lookup_grant(
+            skill_references=skill_references
+        )
+        return self._list_report_reads(
+            ticker=ticker,
+            tag=tag,
+            review_type=review_type,
+            portfolio_slug=portfolio_slug,
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_report(self, report_id: int) -> ReportRead:
         report = self._get_model(report_id)
@@ -171,6 +198,28 @@ class ReportService:
         report = self._get_model(report_id)
         self.repository.delete(report)
         self.session.commit()
+
+    def _list_report_reads(
+        self,
+        *,
+        ticker: str | None = None,
+        tag: str | None = None,
+        review_type: str | None = None,
+        portfolio_slug: str | None = None,
+        source: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ReportRead]:
+        reports = self.repository.list_all(
+            ticker=self._normalize_ticker_filter(ticker),
+            tag=self._normalize_optional_filter(tag),
+            review_type=self._normalize_optional_filter(review_type),
+            portfolio_slug=self._normalize_optional_filter(portfolio_slug),
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
+        return [ReportRead.model_validate(report) for report in reports]
 
     def _get_model(self, report_id: int) -> Report:
         report = self.repository.get(report_id)

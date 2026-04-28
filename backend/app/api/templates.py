@@ -4,12 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import (
-    get_reset_seed_service,
-    get_template_compiler_service,
-    get_text_template_service,
-)
-from app.schemas.reset_seed import ResetSeedRead, ResetSeedRequest
+from app.api.dependencies import get_template_compiler_service, get_text_template_service
 from app.schemas.text_template import (
     PlaceholderTreeRead,
     TextTemplateCompileRead,
@@ -20,7 +15,6 @@ from app.schemas.text_template import (
     TextTemplateStoredCompile,
     TextTemplateUpdate,
 )
-from app.services.reset_seed_service import ResetSeedService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 
@@ -59,17 +53,7 @@ def compile_inline(
     return TextTemplateInlineCompileRead.model_validate({"compiled": compiled})
 
 
-@router.post("/seed", response_model=ResetSeedRead)
-def seed_templates(
-    payload: ResetSeedRequest,
-    service: Annotated[ResetSeedService, Depends(get_reset_seed_service)],
-) -> ResetSeedRead:
-    if payload.confirm:
-        return service.reset_and_seed_starter_data()
-    raise AssertionError("ResetSeedRequest validation should require confirm=true")
-
-
-@router.get("/{template_id}", response_model=TextTemplateRead)
+@router.get("/{template_id:int}", response_model=TextTemplateRead)
 def get_template(
     template_id: int,
     service: Annotated[TextTemplateService, Depends(get_text_template_service)],
@@ -77,7 +61,7 @@ def get_template(
     return service.get_template(template_id)
 
 
-@router.patch("/{template_id}", response_model=TextTemplateRead)
+@router.patch("/{template_id:int}", response_model=TextTemplateRead)
 def update_template(
     template_id: int,
     payload: TextTemplateUpdate,
@@ -86,7 +70,7 @@ def update_template(
     return service.update_template(template_id, payload)
 
 
-@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{template_id:int}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_template(
     template_id: int,
     service: Annotated[TextTemplateService, Depends(get_text_template_service)],
@@ -95,7 +79,7 @@ def delete_template(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{template_id}/compile", response_model=TextTemplateCompileRead)
+@router.get("/{template_id:int}/compile", response_model=TextTemplateCompileRead)
 def compile_template(
     template_id: int,
     template_service: Annotated[TextTemplateService, Depends(get_text_template_service)],
@@ -112,7 +96,7 @@ def compile_template(
     )
 
 
-@router.post("/{template_id}/compile", response_model=TextTemplateCompileRead)
+@router.post("/{template_id:int}/compile", response_model=TextTemplateCompileRead)
 def compile_template_with_inputs(
     template_id: int,
     payload: TextTemplateStoredCompile,

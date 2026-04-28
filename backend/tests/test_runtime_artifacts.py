@@ -438,7 +438,7 @@ def test_execution_plan_builder_preserves_explicit_final_output_step(
                                     },
                                 }
                             ],
-                        }
+                        },
                     ],
                     "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
                 }
@@ -482,7 +482,7 @@ def test_agent_platform_run_persists_explicit_final_output_step(
         trace_id: str | None,
         step_index: int,
         slot: str,
-        ) -> dict[str, Any]:
+    ) -> dict[str, Any]:
         del self, output_model, trace_id, step_index
         if slot == "analysis":
             return {
@@ -595,7 +595,7 @@ def test_agent_platform_run_persists_explicit_final_output_step(
                                     },
                                 }
                             ],
-                        }
+                        },
                     ],
                     "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
                 }
@@ -898,7 +898,6 @@ def test_agent_platform_run_persists_missing_workflow_target_failure_before_step
         assert run.finished_at is not None
 
 
-
 def test_agent_platform_run_persists_missing_output_schema_failure(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -945,7 +944,6 @@ def test_agent_platform_run_persists_missing_output_schema_failure(
         assert run.error == expected_error
         assert run.final_output is None
         assert run.per_step_outputs["1"][0]["error"]["code"] == "run_output_schema_missing"
-
 
 
 def test_agent_platform_run_persists_missing_model_connection_failure(
@@ -998,7 +996,6 @@ def test_agent_platform_run_persists_missing_model_connection_failure(
         assert run.per_step_outputs["1"][0]["error"]["code"] == "run_agent_model_connection_missing"
 
 
-
 def test_agent_platform_run_persists_missing_api_key_failure(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -1048,7 +1045,6 @@ def test_agent_platform_run_persists_missing_api_key_failure(
             run.per_step_outputs["1"][0]["error"]["code"]
             == "agent_model_connection_api_key_missing"
         )
-
 
 
 def test_agent_platform_run_persists_redacted_provider_failure_metadata(

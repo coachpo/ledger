@@ -759,9 +759,7 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
     assert {"ix_runs_status", "ix_runs_target", "ix_runs_target_key"} <= {
         index.name for index in run_table.indexes
     }
-    assert {"target_kind", "target_id", "target_key", "target_version"} <= set(
-        run_table.c.keys()
-    )
+    assert {"target_kind", "target_id", "target_key", "target_version"} <= set(run_table.c.keys())
     assert {"workflow_id", "workflow_key", "workflow_version"}.isdisjoint(run_table.c.keys())
 
     with session_factory() as session:

@@ -18,8 +18,8 @@ from app.agents.mcp import McpClientBoundary, McpConnectionTestResult
 from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
 from app.db.session import init_db, validate_supported_database_engine
 from app.models.market_quote import MarketQuote
+from app.models.skill import Skill
 from app.models.symbol_name_cache import SymbolNameCache
-from app.reset_seed import STARTER_PORTFOLIO_SLUG, STARTER_TEMPLATE_NAMES
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
@@ -27,21 +27,6 @@ from app.services.quote_provider import (
     QuoteProviderError,
 )
 from app.services.run_service import RunService
-from tests.agent_platform_stock_analysis import (
-    STOCK_ANALYSIS_MCP_SERVER_KEY,
-    STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-    STOCK_ANALYSIS_SKILL_KEY,
-    STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-    TRADING_DECISION_SCHEMA_KEY,
-    build_stock_analysis_note,
-    build_trading_decision,
-    make_stock_analysis_stub_invoke,
-    stock_analysis_agent_payload,
-    stock_analysis_note_schema,
-    stock_analysis_synthesizer_payload,
-    stock_analysis_workflow_payload,
-    trading_decision_schema,
-)
 
 UTC_TZ = timezone.utc  # noqa: UP017
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
@@ -284,37 +269,180 @@ def _wait_for_agent_platform_run(
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
 
 
-def _seed_stock_analysis_platform(
-    client: TestClient,
-    *,
-    optional_agents: set[str] | None = None,
-) -> None:
+STUB_ANALYSIS_AGENT_KEYS = ("report_researcher", "market_researcher")
+STUB_SYNTHESIZER_KEY = "decision_synthesizer"
+STUB_NOTE_SCHEMA_KEY = "stub_analysis_note"
+STUB_DECISION_SCHEMA_KEY = "stub_trading_decision"
+STUB_SKILL_KEY = "stub_workspace_tools"
+STUB_MCP_SERVER_KEY = "stub_workspace_data"
+
+
+def _stub_workflow_input_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "horizon_days": {"type": "integer"},
+        },
+        "required": ["ticker", "horizon_days"],
+        "additionalProperties": False,
+    }
+
+
+def _stub_note_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "signal": {"type": "string"},
+        },
+        "required": ["summary", "signal"],
+        "additionalProperties": False,
+    }
+
+
+def _stub_decision_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["buy", "sell", "hold"]},
+            "confidence": {"type": "number"},
+            "rationale": {"type": "string"},
+            "price_targets": {"type": "array", "items": {"type": "number"}},
+            "risks": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "confidence", "rationale", "price_targets", "risks"],
+        "additionalProperties": False,
+    }
+
+
+def _stub_synthesizer_input_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {key: _stub_note_schema() for key in STUB_ANALYSIS_AGENT_KEYS},
+        "required": list(STUB_ANALYSIS_AGENT_KEYS),
+        "additionalProperties": False,
+    }
+
+
+def _stub_agent_payload(*, key: str, model_connection_id: int) -> dict[str, object]:
+    return {
+        "key": key,
+        "name": key.replace("_", " ").title(),
+        "description": f"Deterministic stub agent for {key}.",
+        "modelConnectionId": model_connection_id,
+        "systemPrompt": f"Return the deterministic stub analysis for {key}.",
+        "inputSchema": _stub_workflow_input_schema(),
+        "outputSchemaKey": STUB_NOTE_SCHEMA_KEY,
+        "skills": [{"skillKey": STUB_SKILL_KEY}],
+        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
+        "budgetUsd": "0.05000000",
+    }
+
+
+def _stub_synthesizer_payload(*, model_connection_id: int) -> dict[str, object]:
+    return {
+        "key": STUB_SYNTHESIZER_KEY,
+        "name": "Decision Synthesizer",
+        "description": "Combines deterministic analyses into a final decision.",
+        "modelConnectionId": model_connection_id,
+        "systemPrompt": "Combine the wired analyses into a deterministic trading decision.",
+        "inputSchema": _stub_synthesizer_input_schema(),
+        "outputSchemaKey": STUB_DECISION_SCHEMA_KEY,
+        "skills": [{"skillKey": STUB_SKILL_KEY}],
+        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
+        "budgetUsd": "0.10000000",
+    }
+
+
+def _stub_workflow_payload() -> dict[str, object]:
+    return {
+        "key": "report_lookup_stub_review",
+        "name": "Report Lookup Stub Review",
+        "description": "Deterministic stub workflow acceptance path.",
+        "inputSchema": _stub_workflow_input_schema(),
+        "steps": [
+            {
+                "index": 1,
+                "agents": [
+                    {
+                        "agentKey": key,
+                        "slot": key,
+                        "wiring": {
+                            "ticker": {"from": "input", "path": "ticker"},
+                            "horizon_days": {"from": "input", "path": "horizon_days"},
+                        },
+                    }
+                    for key in STUB_ANALYSIS_AGENT_KEYS
+                ],
+            },
+            {
+                "index": 2,
+                "agents": [
+                    {
+                        "agentKey": STUB_SYNTHESIZER_KEY,
+                        "slot": "decision",
+                        "wiring": {
+                            key: {"from": "step", "stepIndex": 1, "slot": key}
+                            for key in STUB_ANALYSIS_AGENT_KEYS
+                        },
+                    }
+                ],
+            },
+        ],
+        "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
+    }
+
+
+def _build_stub_analysis_note(*, agent_key: str, ticker: str, horizon_days: int) -> dict[str, str]:
+    signal_by_agent = {
+        "report_researcher": "bullish",
+        "market_researcher": "supportive",
+    }
+    return {
+        "summary": f"{agent_key} stub summary for {ticker} over {horizon_days}d",
+        "signal": signal_by_agent[agent_key],
+    }
+
+
+def _build_stub_decision(analyses: dict[str, dict[str, Any]]) -> dict[str, object]:
+    ordered_summaries = [str(analyses[key]["summary"]) for key in STUB_ANALYSIS_AGENT_KEYS]
+    return {
+        "action": "buy",
+        "confidence": 0.82,
+        "rationale": " | ".join(ordered_summaries),
+        "price_targets": [125.0, 140.0],
+        "risks": ["macro slowdown", "execution drift"],
+    }
+
+
+def _seed_stub_platform_workflow(client: TestClient) -> None:
     created_note_schema = create_output_schema(
         client,
         payload={
-            "key": STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-            "name": "Stock Analysis Note",
-            "jsonSchema": stock_analysis_note_schema(),
+            "key": STUB_NOTE_SCHEMA_KEY,
+            "name": "Stub Analysis Note",
+            "jsonSchema": _stub_note_schema(),
         },
     )
     activate_output_schema(client, cast(int, created_note_schema["id"]))
     created_decision_schema = create_output_schema(
         client,
         payload={
-            "key": TRADING_DECISION_SCHEMA_KEY,
-            "name": "TradingDecision",
-            "jsonSchema": trading_decision_schema(),
+            "key": STUB_DECISION_SCHEMA_KEY,
+            "name": "Stub Trading Decision",
+            "jsonSchema": _stub_decision_schema(),
         },
     )
     activate_output_schema(client, cast(int, created_decision_schema["id"]))
     created_skill = create_skill(
         client,
         payload={
-            "key": STOCK_ANALYSIS_SKILL_KEY,
-            "name": "Stock Analysis Tools",
+            "key": STUB_SKILL_KEY,
+            "name": "Stub Workspace Tools",
             "toolDefinitions": [
                 {"tool": "ledger.market_data.quote_lookup"},
-                {"tool": "ledger.market_data.history_lookup"},
+                {"tool": "ledger.reports.lookup"},
             ],
         },
     )
@@ -322,8 +450,8 @@ def _seed_stock_analysis_platform(
     created_mcp_server = create_mcp_server(
         client,
         payload=mcp_http_sse_payload(
-            key=STOCK_ANALYSIS_MCP_SERVER_KEY,
-            name="Stock Analysis Data",
+            key=STUB_MCP_SERVER_KEY,
+            name="Stub Workspace Data",
             url="https://example.com/mcp",
             headers={"Authorization": "Bearer secret-token"},
         ),
@@ -332,28 +460,27 @@ def _seed_stock_analysis_platform(
     model_connection = create_model_connection(
         client,
         payload={
-            "name": "Stock Analysis Runtime",
-            "description": "Shared stock-analysis runtime connection for API tests.",
+            "name": "Stub Workspace Runtime",
+            "description": "Shared deterministic runtime connection for API tests.",
             "baseUrl": "https://api.openai.com",
             "modelId": "gpt-5.4-mini",
             "reasoningEffort": "medium",
             "timeoutSeconds": 60,
-            "apiKey": "sk-stock-analysis-1234",
+            "apiKey": "sk-stub-runtime-1234",
         },
     )
-    for agent_key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS:
+    for agent_key in STUB_ANALYSIS_AGENT_KEYS:
         create_agent(
             client,
-            payload=stock_analysis_agent_payload(
-                agent_key,
+            payload=_stub_agent_payload(
+                key=agent_key,
                 model_connection_id=cast(int, model_connection["id"]),
             ),
         )
     create_agent(
         client,
-        payload=stock_analysis_synthesizer_payload(
+        payload=_stub_synthesizer_payload(
             model_connection_id=cast(int, model_connection["id"]),
-            optional_agents=optional_agents or set(),
         ),
     )
 
@@ -404,10 +531,10 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
         "details": [
             {
                 "field": "targetKind",
-            "issue": (
-                "targetKind is required when targetId, targetKey, or "
-                "targetVersion is provided"
-            ),
+                "issue": (
+                    "targetKind is required when targetId, targetKey, or "
+                    "targetVersion is provided"
+                ),
             }
         ],
     }
@@ -585,7 +712,7 @@ def test_agent_platform_output_schema_invalid_unsupported_keywords_return_field_
     )
 
 
-def test_agent_platform_skill_crud_routes_resolve_server_declared_tool_metadata(
+def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared_tool_metadata(
     client: TestClient,
 ) -> None:
     created = create_skill(
@@ -645,10 +772,87 @@ def test_agent_platform_skill_crud_routes_resolve_server_declared_tool_metadata(
 
     activated = activate_skill(client, str(updated["id"]))
     assert activated["status"] == "published"
+    assert [
+        item["tool"] for item in cast(list[dict[str, object]], activated["toolDefinitions"])
+    ] == [
+        "ledger.market_data.history_lookup",
+        "ledger.reports.lookup",
+    ]
 
     archive_response = client.delete(f"/api/skills/{updated['id']}")
     assert archive_response.status_code == 200, archive_response.json()
     assert archive_response.json()["status"] == "archived"
+
+
+def test_agent_platform_skill_create_rejects_removed_tool_without_persisting_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    response = client.post(
+        "/api/skills",
+        json={
+            "key": "stock_analysis_tools",
+            "name": "Stock Analysis Tools",
+            "description": "Removed stock-analysis toolset should fail validation.",
+            "toolDefinitions": [{"tool": "ledger.stock_analysis.report_lookup"}],
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert any(
+        detail["field"] == "toolDefinitions.0.tool"
+        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
+        for detail in body["details"]
+    )
+
+    with session_factory() as session:
+        assert session.query(Skill).filter(Skill.key == "stock_analysis_tools").all() == []
+
+
+def test_agent_platform_skill_update_rejects_removed_tool_without_archiving_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    created = create_skill(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research",
+            "description": "Valid draft before invalid patch attempt.",
+            "toolDefinitions": [{"tool": "ledger.reports.lookup"}],
+        },
+    )
+
+    response = client.patch(
+        f"/api/skills/{created['id']}",
+        json={
+            "toolDefinitions": [{"tool": "ledger.stock_analysis.report_lookup"}],
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert any(
+        detail["field"] == "toolDefinitions.0.tool"
+        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
+        for detail in body["details"]
+    )
+
+    with session_factory() as session:
+        versions = (
+            session.query(Skill)
+            .filter(Skill.key == "market_research")
+            .order_by(Skill.version.asc())
+            .all()
+        )
+
+    assert len(versions) == 1
+    assert versions[0].id == created["id"]
+    assert versions[0].status == "draft"
+    assert versions[0].version == 1
 
 
 def test_agent_platform_mcp_crud_routes_and_connection_test(
@@ -1572,9 +1776,7 @@ def test_agent_platform_workflow_rejects_agent_output_kind(client: TestClient) -
 
     assert response.status_code == 422, response.json()
     assert response.json()["code"] == "validation_error"
-    assert any(
-        detail["field"] == "outputSpec.kind" for detail in response.json()["details"]
-    )
+    assert any(detail["field"] == "outputSpec.kind" for detail in response.json()["details"])
 
 
 def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
@@ -1881,30 +2083,60 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
     ]
 
 
-def test_agent_platform_stock_analysis_success_runs_stub_workflow_without_live_services(
+def test_agent_platform_stub_workflow_runs_without_live_services(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(RunService, "_invoke_agent", make_stock_analysis_stub_invoke())
-    _seed_stock_analysis_platform(client)
+    async def fake_invoke(self: RunService, **kwargs: Any) -> dict[str, Any]:
+        del self
+        step_index = int(kwargs["step_index"])
+        slot = str(kwargs["slot"])
+        resolved_input = dict(kwargs["resolved_input"])
+        agent_key = str(kwargs["agent"].key)
+        if step_index == 1:
+            return {
+                "output": _build_stub_analysis_note(
+                    agent_key=agent_key,
+                    ticker=str(resolved_input["ticker"]),
+                    horizon_days=int(resolved_input["horizon_days"]),
+                ),
+                "tokens": 5,
+                "costUsd": "0.01000000",
+                "durationMs": 4,
+                "traceSpanId": f"step-1-{slot}",
+            }
+        return {
+            "output": _build_stub_decision(
+                {
+                    key: value
+                    for key, value in resolved_input.items()
+                    if key in STUB_ANALYSIS_AGENT_KEYS
+                }
+            ),
+            "tokens": 9,
+            "costUsd": "0.02000000",
+            "durationMs": 6,
+            "traceSpanId": f"step-2-{agent_key}",
+        }
 
-    created_workflow = create_workflow(client, payload=stock_analysis_workflow_payload())
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    _seed_stub_platform_workflow(client)
+
+    created_workflow = create_workflow(client, payload=_stub_workflow_payload())
     created_steps = cast(list[dict[str, object]], created_workflow["steps"])
     created_step_one_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
     created_step_two_agents = cast(list[dict[str, object]], created_steps[1]["agents"])
     output_spec = cast(dict[str, object], created_workflow["outputSpec"])
 
     assert [agent["agentKey"] for agent in created_step_one_agents] == list(
-        STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+        STUB_ANALYSIS_AGENT_KEYS
     )
-    assert [agent["agentKey"] for agent in created_step_two_agents] == [
-        "decision_synthesizer"
-    ]
+    assert [agent["agentKey"] for agent in created_step_two_agents] == [STUB_SYNTHESIZER_KEY]
     assert output_spec["kind"] == "slot"
     assert output_spec["stepIndex"] == 2
     assert output_spec["slot"] == "decision"
-    assert output_spec["agentKey"] == "decision_synthesizer"
-    assert created_workflow["aggregateBudgetUsd"] == "0.50000000"
+    assert output_spec["agentKey"] == STUB_SYNTHESIZER_KEY
+    assert created_workflow["aggregateBudgetUsd"] == "0.20000000"
 
     trigger = client.post(
         f"/api/workflows/{created_workflow['id']}/runs",
@@ -1913,17 +2145,17 @@ def test_agent_platform_stock_analysis_success_runs_stub_workflow_without_live_s
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, cast(int, trigger.json()["id"]))
     expected_step_outputs = {
-        key: build_stock_analysis_note(agent_key=key, ticker="NVDA", horizon_days=30)
-        for key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+        key: _build_stub_analysis_note(agent_key=key, ticker="NVDA", horizon_days=30)
+        for key in STUB_ANALYSIS_AGENT_KEYS
     }
 
     assert detail["status"] == "succeeded"
     _assert_logfire_trace_id(detail["traceId"])
-    assert detail["finalOutput"] == build_trading_decision(expected_step_outputs)
+    assert detail["finalOutput"] == _build_stub_decision(expected_step_outputs)
     assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == list(
-        STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+        STUB_ANALYSIS_AGENT_KEYS
     )
-    assert detail["perStepOutputs"]["2"][0]["agentKey"] == "decision_synthesizer"
+    assert detail["perStepOutputs"]["2"][0]["agentKey"] == STUB_SYNTHESIZER_KEY
     assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == expected_step_outputs
     assert detail["perStepOutputs"]["2"][0]["status"] == "succeeded"
 
@@ -2121,45 +2353,25 @@ def test_template_crud_and_compile_flow(client: TestClient) -> None:
     assert missing_response.json()["code"] == "not_found"
 
 
-def test_template_seed_requires_explicit_confirmation(client: TestClient) -> None:
-    create_template(client, name="Existing Template", content="# Existing")
-
-    response = client.post("/api/v1/templates/seed", json={"confirm": False})
-
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
-    assert response.json()["message"] == "Request validation failed"
-    assert response.json()["details"] == [
-        {
-            "field": "confirm",
-            "issue": "Value error, confirm must be true to reset and seed the database",
-        }
-    ]
-
-    templates_response = client.get("/api/v1/templates")
-    assert templates_response.status_code == 200
-    assert [item["name"] for item in templates_response.json()] == ["Existing Template"]
-
-
-
-def test_template_seed_replaces_existing_data_with_starter_workspace(client: TestClient) -> None:
+@pytest.mark.parametrize("payload", [{"confirm": False}, {"confirm": True}])
+def test_template_seed_route_is_removed(
+    client: TestClient,
+    payload: dict[str, bool],
+) -> None:
     create_portfolio(client, name="Legacy Portfolio", slug="legacy_portfolio")
     create_template(client, name="Legacy Template", content="# Legacy")
 
-    response = client.post("/api/v1/templates/seed", json={"confirm": True})
+    response = client.post("/api/v1/templates/seed", json=payload)
 
-    assert response.status_code == 200, response.json()
-    assert response.json()["portfolioSlugs"] == [STARTER_PORTFOLIO_SLUG]
-    assert response.json()["templateNames"] == list(STARTER_TEMPLATE_NAMES)
+    assert response.status_code == 404
 
     templates_response = client.get("/api/v1/templates")
     assert templates_response.status_code == 200
-    assert {item["name"] for item in templates_response.json()} == set(STARTER_TEMPLATE_NAMES)
+    assert [item["name"] for item in templates_response.json()] == ["Legacy Template"]
 
     portfolios_response = client.get("/api/v1/portfolios")
     assert portfolios_response.status_code == 200
-    assert [item["slug"] for item in portfolios_response.json()] == [STARTER_PORTFOLIO_SLUG]
-
+    assert [item["slug"] for item in portfolios_response.json()] == ["legacy_portfolio"]
 
 
 def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:

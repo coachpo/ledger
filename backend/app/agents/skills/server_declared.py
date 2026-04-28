@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agents.skills.stock_analysis import STOCK_ANALYSIS_TOOL_DEFINITIONS
-
 
 @dataclass(frozen=True)
 class ServerDeclaredToolSpec:
@@ -33,15 +31,6 @@ SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
         display_name="Report Lookup",
         description="Read persisted Ledger reports through server-owned report lookups.",
         module=_SERVER_DECLARED_MODULE,
-    ),
-    *tuple(
-        ServerDeclaredToolSpec(
-            key=item["key"],
-            display_name=item["display_name"],
-            description=item["description"],
-            module=item["module"],
-        )
-        for item in STOCK_ANALYSIS_TOOL_DEFINITIONS
     ),
 )
 

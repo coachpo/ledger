@@ -12,14 +12,13 @@ from openai import OpenAI
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.formatting import parse_decimal_string
+from app.agents.skill_registry import get_default_skill_registry
+from app.core.formatting import normalize_symbol, parse_decimal_string
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
-from app.services.stock_analysis_reference import (
-    StockAnalysisReferenceError,
-    StockAnalysisReferenceService,
-)
+from app.services.report_service import ReportService
+from app.services.skill_service import REPORT_LOOKUP_TOOL_KEY, RuntimeToolGrantError, SkillService
 
 
 class RunExecutionError(Exception):
@@ -58,6 +57,17 @@ class _ResolvedModelConnectionConfig:
     reasoning_effort: str
     timeout_seconds: int
     api_key: str | None
+
+
+@dataclass(frozen=True)
+class _PendingToolCall:
+    name: str
+    arguments_json: str
+    call_id: str
+
+
+_REPORT_LOOKUP_FUNCTION_NAME = "ledger_reports_lookup"
+_MAX_SERVER_TOOL_CALL_ROUNDS = 5
 
 
 def _normalize_cost(value: Any) -> Decimal:
@@ -128,32 +138,29 @@ class AgentExecutionService:
         slot: str,
         openai_client_factory: type[Any],
     ) -> RunAgentInvocationResult:
-        del trace_id
+        del trace_id, step_index, slot
         with self.session_factory() as session:
-            reference_service = StockAnalysisReferenceService(session)
-            try:
-                reference_result = reference_service.maybe_invoke(
-                    agent=agent,
-                    resolved_input=resolved_input,
-                    step_index=step_index,
-                    slot=slot,
-                )
-            except StockAnalysisReferenceError as exc:
-                raise RunExecutionError(
-                    code=exc.code,
-                    message=exc.message,
-                    details=list(exc.details or []),
-                ) from exc
-            if reference_result is not None:
-                return normalize_agent_invocation_result(reference_result)
             model_connection = self._resolve_runtime_model_connection(session, agent)
-        return self._invoke_saved_model_connection_agent(
-            agent=agent,
-            model_connection=model_connection,
-            resolved_input=resolved_input,
-            output_model=output_model,
-            openai_client_factory=openai_client_factory,
-        )
+            granted_tool_keys = SkillService(
+                session,
+                get_default_skill_registry(),
+            ).resolve_granted_tool_keys(agent.skills)
+        try:
+            return self._invoke_saved_model_connection_agent(
+                agent=agent,
+                model_connection=model_connection,
+                resolved_input=resolved_input,
+                output_model=output_model,
+                openai_client_factory=openai_client_factory,
+                skill_references=agent.skills,
+                granted_tool_keys=granted_tool_keys,
+            )
+        except RuntimeToolGrantError as exc:
+            raise RunExecutionError(
+                code=exc.code,
+                message=exc.message,
+                details=list(exc.details or []),
+            ) from exc
 
     def _resolve_runtime_model_connection(
         self,
@@ -203,6 +210,8 @@ class AgentExecutionService:
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         openai_client_factory: type[Any],
+        skill_references: list[dict[str, Any]],
+        granted_tool_keys: set[str],
     ) -> RunAgentInvocationResult:
         if model_connection.api_key is None:
             raise RunExecutionError(
@@ -213,8 +222,15 @@ class AgentExecutionService:
                 ),
             )
 
-        instructions = self._build_openai_instructions(agent, output_model)
-        input_text = self._build_openai_input(resolved_input)
+        available_tools = self._build_server_tool_definitions(granted_tool_keys)
+        instructions = self._build_openai_instructions(
+            agent,
+            output_model,
+            available_tools=available_tools,
+        )
+        response_input: str | list[dict[str, str]] = self._build_openai_input(resolved_input)
+        previous_response_id: str | None = None
+        total_tokens = 0
         started_at = time.monotonic()
         client_kwargs: dict[str, Any] = {
             "api_key": model_connection.api_key,
@@ -228,12 +244,36 @@ class AgentExecutionService:
 
         try:
             with openai_client_factory(**client_kwargs) as client:
-                response = client.responses.create(
-                    model=model_connection.model_id,
-                    instructions=instructions,
-                    input=input_text,
-                    reasoning=cast(Any, {"effort": model_connection.reasoning_effort}),
-                )
+                for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS):
+                    request_kwargs: dict[str, Any] = {
+                        "model": model_connection.model_id,
+                        "instructions": instructions,
+                        "input": response_input,
+                        "reasoning": cast(Any, {"effort": model_connection.reasoning_effort}),
+                    }
+                    if previous_response_id is not None:
+                        request_kwargs["previous_response_id"] = previous_response_id
+                    if available_tools:
+                        request_kwargs["tools"] = available_tools
+                    response = client.responses.create(**request_kwargs)
+                    total_tokens += self._extract_total_tokens(response)
+                    pending_tool_calls = self._extract_pending_tool_calls(response)
+                    if not pending_tool_calls:
+                        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+                        response_text = self._extract_response_text(response)
+                        return RunAgentInvocationResult(
+                            output=self._parse_response_output(response_text),
+                            tokens=total_tokens,
+                            cost_usd=Decimal("0"),
+                            duration_ms=duration_ms,
+                        )
+                    previous_response_id = self._extract_response_id(response)
+                    response_input = self._build_function_call_outputs(
+                        pending_tool_calls=pending_tool_calls,
+                        skill_references=skill_references,
+                    )
+        except (RuntimeToolGrantError, RunExecutionError):
+            raise
         except openai.APITimeoutError as exc:
             raise RunExecutionError(
                 code="agent_provider_timeout",
@@ -266,20 +306,27 @@ class AgentExecutionService:
                 ),
             ) from exc
 
-        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        response_text = self._extract_response_text(response)
-        return RunAgentInvocationResult(
-            output=self._parse_response_output(response_text),
-            tokens=self._extract_total_tokens(response),
-            cost_usd=Decimal("0"),
-            duration_ms=duration_ms,
+        raise RunExecutionError(
+            code="agent_tool_round_limit_exceeded",
+            message="Agent exceeded the supported server tool call round limit.",
         )
 
     @staticmethod
-    def _build_openai_instructions(agent: Agent, output_model: type[BaseModel]) -> str:
+    def _build_openai_instructions(
+        agent: Agent,
+        output_model: type[BaseModel],
+        *,
+        available_tools: list[dict[str, Any]],
+    ) -> str:
         schema_text = json.dumps(output_model.model_json_schema(), indent=2, sort_keys=True)
+        tool_guidance = ""
+        if any(tool.get("name") == _REPORT_LOOKUP_FUNCTION_NAME for tool in available_tools):
+            tool_guidance = (
+                "\n\nWhen you need persisted Ledger report context, call the "
+                "ledger_reports_lookup tool instead of inventing report content."
+            )
         return (
-            f"{agent.system_prompt.strip()}\n\n"
+            f"{agent.system_prompt.strip()}{tool_guidance}\n\n"
             "Return only valid JSON with no markdown fences or explanatory text. "
             "The JSON must satisfy this schema exactly:\n"
             f"{schema_text}"
@@ -294,6 +341,258 @@ class AgentExecutionService:
             sort_keys=True,
         )
         return f"Use this JSON object as the complete agent input:\n{serialized_input}"
+
+    @staticmethod
+    def _build_server_tool_definitions(granted_tool_keys: set[str]) -> list[dict[str, Any]]:
+        if REPORT_LOOKUP_TOOL_KEY not in granted_tool_keys:
+            return []
+        return [
+            {
+                "type": "function",
+                "name": _REPORT_LOOKUP_FUNCTION_NAME,
+                "description": (
+                    "Read persisted Ledger reports by ticker, tag, review type, portfolio "
+                    "slug, source, limit, and offset."
+                ),
+                "strict": True,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string"},
+                        "tag": {"type": "string"},
+                        "reviewType": {"type": "string"},
+                        "portfolioSlug": {"type": "string"},
+                        "source": {
+                            "type": "string",
+                            "enum": ["compiled", "uploaded", "external"],
+                        },
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                        "offset": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
+            }
+        ]
+
+    @classmethod
+    def _extract_pending_tool_calls(cls, response: Any) -> list[_PendingToolCall]:
+        output_items = (
+            response.get("output")
+            if isinstance(response, dict)
+            else getattr(response, "output", None)
+        )
+        if output_items is None:
+            return []
+        if not isinstance(output_items, list):
+            output_items = [output_items]
+
+        pending: list[_PendingToolCall] = []
+        for item in output_items:
+            item_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
+            if item_type != "function_call":
+                continue
+            name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
+            arguments = (
+                item.get("arguments")
+                if isinstance(item, dict)
+                else getattr(item, "arguments", None)
+            )
+            call_id = (
+                item.get("call_id") if isinstance(item, dict) else getattr(item, "call_id", None)
+            )
+            if not isinstance(name, str) or not name.strip():
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message="OpenAI response requested a server tool without a valid name.",
+                )
+            if not isinstance(arguments, str):
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message=(
+                        f"OpenAI response requested server tool {name!r} " "without JSON arguments."
+                    ),
+                )
+            if not isinstance(call_id, str) or not call_id.strip():
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message=f"OpenAI response requested server tool {name!r} without a call id.",
+                )
+            pending.append(
+                _PendingToolCall(
+                    name=name.strip(),
+                    arguments_json=arguments,
+                    call_id=call_id.strip(),
+                )
+            )
+        return pending
+
+    @staticmethod
+    def _extract_response_id(response: Any) -> str:
+        response_id = (
+            response.get("id") if isinstance(response, dict) else getattr(response, "id", None)
+        )
+        if isinstance(response_id, str) and response_id.strip():
+            return response_id.strip()
+        raise RunExecutionError(
+            code="agent_tool_call_invalid",
+            message="OpenAI response did not include a response id for tool continuation.",
+        )
+
+    def _build_function_call_outputs(
+        self,
+        *,
+        pending_tool_calls: list[_PendingToolCall],
+        skill_references: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        for tool_call in pending_tool_calls:
+            output_payload = self._execute_server_tool_call(
+                name=tool_call.name,
+                arguments_json=tool_call.arguments_json,
+                skill_references=skill_references,
+            )
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": json.dumps(output_payload, ensure_ascii=False, sort_keys=True),
+                }
+            )
+        return items
+
+    def _execute_server_tool_call(
+        self,
+        *,
+        name: str,
+        arguments_json: str,
+        skill_references: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if name != _REPORT_LOOKUP_FUNCTION_NAME:
+            raise RunExecutionError(
+                code="agent_tool_call_unsupported",
+                message=f"Agent requested unsupported server tool {name!r}.",
+            )
+        arguments = self._parse_report_lookup_arguments(arguments_json)
+        with self.session_factory() as session:
+            reports = ReportService(session).lookup_reports(
+                skill_references=skill_references,
+                ticker=arguments["ticker"],
+                tag=arguments["tag"],
+                review_type=arguments["review_type"],
+                portfolio_slug=arguments["portfolio_slug"],
+                source=arguments["source"],
+                limit=arguments["limit"],
+                offset=arguments["offset"],
+            )
+        return {
+            "count": len(reports),
+            "reports": [report.model_dump(mode="json", by_alias=True) for report in reports],
+        }
+
+    @staticmethod
+    def _parse_report_lookup_arguments(arguments_json: str) -> dict[str, Any]:
+        try:
+            raw_arguments = json.loads(arguments_json)
+        except json.JSONDecodeError as exc:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=(
+                    "OpenAI response requested ledger_reports_lookup "
+                    "with invalid JSON arguments."
+                ),
+            ) from exc
+        if not isinstance(raw_arguments, dict):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message="ledger_reports_lookup arguments must be a JSON object.",
+            )
+
+        allowed_keys = {"ticker", "tag", "reviewType", "portfolioSlug", "source", "limit", "offset"}
+        unexpected_keys = sorted(set(raw_arguments) - allowed_keys)
+        if unexpected_keys:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=(
+                    "ledger_reports_lookup arguments contained unsupported fields: "
+                    f"{', '.join(unexpected_keys)}"
+                ),
+            )
+
+        ticker = AgentExecutionService._parse_optional_string_argument(raw_arguments.get("ticker"))
+        if ticker is not None:
+            ticker = normalize_symbol(ticker)
+        source = AgentExecutionService._parse_optional_string_argument(raw_arguments.get("source"))
+        if source is not None and source not in {"compiled", "uploaded", "external"}:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=(
+                    "ledger_reports_lookup source must be one of "
+                    "compiled, uploaded, or external."
+                ),
+            )
+        return {
+            "ticker": ticker,
+            "tag": AgentExecutionService._parse_optional_string_argument(raw_arguments.get("tag")),
+            "review_type": AgentExecutionService._parse_optional_string_argument(
+                raw_arguments.get("reviewType")
+            ),
+            "portfolio_slug": AgentExecutionService._parse_optional_string_argument(
+                raw_arguments.get("portfolioSlug")
+            ),
+            "source": source,
+            "limit": AgentExecutionService._parse_optional_integer_argument(
+                raw_arguments.get("limit"),
+                field_name="limit",
+                minimum=1,
+                maximum=50,
+            )
+            or 50,
+            "offset": AgentExecutionService._parse_optional_integer_argument(
+                raw_arguments.get("offset"),
+                field_name="offset",
+                minimum=0,
+            )
+            or 0,
+        }
+
+    @staticmethod
+    def _parse_optional_string_argument(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message="ledger_reports_lookup string arguments must be strings.",
+            )
+        normalized = value.strip()
+        return normalized or None
+
+    @staticmethod
+    def _parse_optional_integer_argument(
+        value: Any,
+        *,
+        field_name: str,
+        minimum: int,
+        maximum: int | None = None,
+    ) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_reports_lookup {field_name} must be an integer.",
+            )
+        if value < minimum:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_reports_lookup {field_name} must be at least {minimum}.",
+            )
+        if maximum is not None and value > maximum:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_reports_lookup {field_name} must be at most {maximum}.",
+            )
+        return int(value)
 
     @classmethod
     def _extract_response_text(cls, response: Any) -> str:

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_skill_registry
+from app.agents.mcp import DefaultMcpConnectionTester
 from app.core.config import reset_settings_cache
 from app.core.errors import ApiError
 from app.models.agent import Agent
@@ -27,24 +28,17 @@ from app.models.report import Report
 from app.models.run import Run
 from app.models.skill import Skill
 from app.models.workflow import Workflow
+from app.schemas.report import ReportRead
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
 from app.services.mcp_server_service import McpServerService
+from app.services.report_service import ReportService
 from app.services.run_service import RunService
-from app.services.skill_service import SkillService
-from app.services.workflow_service import WorkflowService
-from tests.agent_platform_stock_analysis import (
-    STOCK_ANALYSIS_MCP_SERVER_KEY,
-    STOCK_ANALYSIS_REFERENCE_TOOL_KEYS,
-    STOCK_ANALYSIS_SKILL_KEY,
-    STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-    STOCK_ANALYSIS_SYNTHESIZER_KEY,
-    TRADING_DECISION_SCHEMA_KEY,
-    stock_analysis_note_schema,
-    stock_analysis_synthesizer_input_schema,
-    stock_analysis_workflow_input_schema,
-    stock_analysis_workflow_payload,
-    trading_decision_schema,
+from app.services.skill_service import (
+    REPORT_LOOKUP_ACCESS_DENIED_CODE,
+    REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
+    SkillService,
 )
+from app.services.workflow_service import WorkflowService
 
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 _TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
@@ -60,6 +54,115 @@ def _assert_logfire_span_id(value: object) -> None:
     assert _TRACE_SPAN_ID_PATTERN.fullmatch(value) is not None
 
 
+REFERENCE_STEP_ONE_AGENT_KEYS = (
+    "financials_analyst",
+    "news_analyst",
+    "market_analyst",
+    "industry_analyst",
+    "economy_analyst",
+    "price_analyst",
+    "position_reader",
+    "history_reader",
+)
+REFERENCE_SYNTHESIZER_KEY = "decision_synthesizer"
+REFERENCE_SKILL_KEY = "reference_runtime_tools"
+REFERENCE_MCP_SERVER_KEY = "reference_runtime_data"
+REFERENCE_DECISION_SCHEMA_KEY = "reference_trading_decision"
+
+
+def _reference_workflow_input_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "horizon_days": {"type": "integer"},
+        },
+        "required": ["ticker", "horizon_days"],
+        "additionalProperties": False,
+    }
+
+
+def _reference_note_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "signal": {"type": "string"},
+        },
+        "required": ["summary", "signal"],
+        "additionalProperties": False,
+    }
+
+
+def _reference_trading_decision_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["buy", "sell", "hold"]},
+            "confidence": {"type": "number"},
+            "rationale": {"type": "string"},
+            "price_targets": {"type": "array", "items": {"type": "number"}},
+            "risks": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "confidence", "rationale", "price_targets", "risks"],
+        "additionalProperties": False,
+    }
+
+
+def _reference_synthesizer_input_schema(
+    *,
+    optional_agents: set[str] | None = None,
+) -> dict[str, Any]:
+    optional_keys = optional_agents or set()
+    return {
+        "type": "object",
+        "properties": {key: _reference_note_schema() for key in REFERENCE_STEP_ONE_AGENT_KEYS},
+        "required": [key for key in REFERENCE_STEP_ONE_AGENT_KEYS if key not in optional_keys],
+        "additionalProperties": False,
+    }
+
+
+def _reference_workflow_payload(*, optional_agents: set[str] | None = None) -> dict[str, Any]:
+    optional_keys = optional_agents or set()
+    return {
+        "key": "report_lookup_reference",
+        "name": "Report Lookup Reference",
+        "description": "Reference workflow runtime coverage.",
+        "inputSchema": _reference_workflow_input_schema(),
+        "steps": [
+            {
+                "index": 1,
+                "agents": [
+                    {
+                        "agentKey": key,
+                        "slot": key,
+                        "wiring": {
+                            "ticker": {"from": "input", "path": "ticker"},
+                            "horizon_days": {"from": "input", "path": "horizon_days"},
+                        },
+                        "optional": key in optional_keys,
+                    }
+                    for key in REFERENCE_STEP_ONE_AGENT_KEYS
+                ],
+            },
+            {
+                "index": 2,
+                "agents": [
+                    {
+                        "agentKey": REFERENCE_SYNTHESIZER_KEY,
+                        "slot": "decision",
+                        "wiring": {
+                            key: {"from": "step", "stepIndex": 1, "slot": key}
+                            for key in REFERENCE_STEP_ONE_AGENT_KEYS
+                        },
+                    }
+                ],
+            },
+        ],
+        "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
+    }
+
+
 def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Skill:
     return Skill(
         key=key,
@@ -69,6 +172,16 @@ def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Sk
         description="Skill toolset",
         tool_definitions=[{"tool": tool} for tool in tools],
     )
+
+
+def _reference_workflow_skill_tools(*, grant_report_lookup: bool) -> list[str]:
+    tools = [
+        "ledger.market_data.quote_lookup",
+        "ledger.market_data.history_lookup",
+    ]
+    if grant_report_lookup:
+        tools.append("ledger.reports.lookup")
+    return tools
 
 
 def _build_mcp_server(
@@ -195,92 +308,185 @@ def _build_agent_platform_agent(
     )
 
 
-def _seed_stock_analysis_workflow(
+def _seed_reference_workflow(
     session: Session,
     *,
     optional_agents: set[str] | None = None,
     budget_overrides: dict[str, Decimal] | None = None,
+    grant_report_lookup: bool = True,
+    resource_version: int = 1,
+    workflow_key: str = "report_lookup_reference",
+    workflow_name: str = "Report Lookup Reference",
+    note_schema_key: str = "reference_analysis_note",
+    decision_schema_key: str = REFERENCE_DECISION_SCHEMA_KEY,
+    skill_key: str = REFERENCE_SKILL_KEY,
+    mcp_server_key: str = REFERENCE_MCP_SERVER_KEY,
+    connection_name: str = "Reference Runtime Connection",
 ) -> WorkflowRead:
     optional_keys = optional_agents or set()
     budgets = budget_overrides or {}
     note_schema = _build_output_schema(
-        key="stock_analysis_note",
-        version=1,
+        key=note_schema_key,
+        version=resource_version,
         status="published",
     )
-    note_schema.json_schema = stock_analysis_note_schema()
+    note_schema.json_schema = _reference_note_schema()
     decision_schema = _build_output_schema(
-        key=TRADING_DECISION_SCHEMA_KEY,
-        version=1,
+        key=decision_schema_key,
+        version=resource_version,
         status="published",
     )
-    decision_schema.json_schema = trading_decision_schema()
+    decision_schema.json_schema = _reference_trading_decision_schema()
     skill = _build_skill(
-        key=STOCK_ANALYSIS_SKILL_KEY,
-        version=1,
+        key=skill_key,
+        version=resource_version,
         status="published",
-        tools=list(STOCK_ANALYSIS_REFERENCE_TOOL_KEYS),
+        tools=_reference_workflow_skill_tools(grant_report_lookup=grant_report_lookup),
     )
     mcp_server = _build_mcp_server(
-        key=STOCK_ANALYSIS_MCP_SERVER_KEY,
-        version=1,
+        key=mcp_server_key,
+        version=resource_version,
         status="published",
         transport="stdio",
     )
     mcp_server.config = {
-        "name": f"{STOCK_ANALYSIS_MCP_SERVER_KEY}-1",
+        "name": f"{mcp_server_key}-{resource_version}",
         "description": "MCP server",
         "enabled": True,
         "transport": "stdio",
         "command": "python3",
-        "args": ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+        "args": ["-V"],
         "env": {},
     }
-    connection = _build_model_connection(name="Stock Analysis Connection")
+    connection = _build_model_connection(name=f"{connection_name} v{resource_version}")
     session.add_all([note_schema, decision_schema, skill, mcp_server, connection])
     session.flush()
 
     created_agents = [
         _build_agent_platform_agent(
             key=agent_key,
-            version=1,
+            version=resource_version,
             status="published",
             output_schema=note_schema,
             skill=skill,
             mcp_server=mcp_server,
             model_connection=connection,
-            input_schema=stock_analysis_workflow_input_schema(),
+            input_schema=_reference_workflow_input_schema(),
             budget_usd=budgets.get(agent_key, Decimal("0.05000000")),
         )
-        for agent_key in STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+        for agent_key in REFERENCE_STEP_ONE_AGENT_KEYS
     ]
     created_agents.append(
         _build_agent_platform_agent(
-            key=STOCK_ANALYSIS_SYNTHESIZER_KEY,
-            version=1,
+            key=REFERENCE_SYNTHESIZER_KEY,
+            version=resource_version,
             status="published",
             output_schema=decision_schema,
             skill=skill,
             mcp_server=mcp_server,
             model_connection=connection,
-            input_schema=stock_analysis_synthesizer_input_schema(optional_agents=optional_keys),
-            budget_usd=budgets.get(STOCK_ANALYSIS_SYNTHESIZER_KEY, Decimal("0.10000000")),
+            input_schema=_reference_synthesizer_input_schema(optional_agents=optional_keys),
+            budget_usd=budgets.get(REFERENCE_SYNTHESIZER_KEY, Decimal("0.10000000")),
         )
     )
     session.add_all(created_agents)
     session.commit()
+    workflow_payload = _reference_workflow_payload(optional_agents=optional_keys)
+    workflow_payload["key"] = workflow_key
+    workflow_payload["name"] = workflow_name
+    return WorkflowService(session).create_workflow(WorkflowCreate.model_validate(workflow_payload))
+
+
+def _seed_backend_report_lookup_workflow(
+    session: Session,
+    *,
+    grant_report_lookup: bool,
+    workflow_key: str = "backend_report_lookup_runtime",
+    skill_key: str = "backend_report_lookup_runtime_skill",
+    agent_key: str = "report_lookup_reader",
+) -> WorkflowRead:
+    note_schema = _build_output_schema(
+        key=f"{workflow_key}_note",
+        version=1,
+        status="published",
+    )
+    note_schema.json_schema = _reference_note_schema()
+    skill = _build_skill(
+        key=skill_key,
+        version=1,
+        status="published",
+        tools=(
+            ["ledger.reports.lookup"]
+            if grant_report_lookup
+            else ["ledger.market_data.quote_lookup"]
+        ),
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="stdio",
+    )
+    mcp_server.config = {
+        "name": f"{workflow_key}_server-1",
+        "description": "MCP server",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-V"],
+        "env": {},
+    }
+    connection = _build_model_connection(name=f"{workflow_key} connection")
+    session.add_all([note_schema, skill, mcp_server, connection])
+    session.flush()
+    agent = _build_agent_platform_agent(
+        key=agent_key,
+        version=1,
+        status="published",
+        output_schema=note_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema=_reference_workflow_input_schema(),
+        budget_usd=Decimal("0.05000000"),
+    )
+    session.add(agent)
+    session.commit()
     return WorkflowService(session).create_workflow(
         WorkflowCreate.model_validate(
-            stock_analysis_workflow_payload(optional_agents=optional_keys)
+            {
+                "key": workflow_key,
+                "name": "Backend Report Lookup Runtime",
+                "inputSchema": _reference_workflow_input_schema(),
+                "steps": [
+                    {
+                        "index": 1,
+                        "agents": [
+                            {
+                                "agentKey": agent_key,
+                                "slot": "analysis",
+                                "wiring": {
+                                    "ticker": {"from": "input", "path": "ticker"},
+                                    "horizon_days": {
+                                        "from": "input",
+                                        "path": "horizon_days",
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+            }
         )
     )
 
 
-def _seed_stock_analysis_reference_context(session: Session) -> None:
+def _seed_report_lookup_reference_context(session: Session) -> None:
     portfolio = Portfolio(
-        name="Stock Analysis Reference",
-        slug="stock_analysis_reference",
-        description="Reference portfolio for stock-analysis runtime coverage.",
+        name="Report Lookup Reference",
+        slug="report_lookup_reference",
+        description="Reference portfolio for report-lookup runtime coverage.",
         base_currency="USD",
     )
     session.add(portfolio)
@@ -298,8 +504,8 @@ def _seed_stock_analysis_reference_context(session: Session) -> None:
     )
     session.add(
         Report(
-            name="nvda_reference_report",
-            slug="nvda_reference_report",
+            name="nvda_lookup_reference",
+            slug="nvda_lookup_reference",
             source="external",
             content="# NVDA reference\n\nRevenue acceleration remains intact.",
             metadata_={
@@ -452,6 +658,80 @@ class _RuntimeFailingOpenAIClient(_RuntimeRecordingOpenAIClient):
     def reset(cls) -> None:
         super().reset()
         cls.exception_factory = staticmethod(lambda: Exception("provider failure"))
+
+
+class _RuntimeToolCallResponse:
+    def __init__(
+        self,
+        *,
+        response_id: str,
+        output: list[dict[str, Any]] | None = None,
+        output_text: str | None = None,
+        total_tokens: int,
+    ) -> None:
+        self.id = response_id
+        self.output = list(output or [])
+        self.output_text = output_text
+        self.usage = _RuntimeOpenAIUsage(total_tokens)
+
+
+class _RuntimeToolCallingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    expect_report_lookup_tool = True
+    tool_arguments_json = '{"ticker":"NVDA","limit":1}'
+    final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
+    captured_lookup_arguments: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> _RuntimeToolCallResponse:
+        type(self).create_calls.append(kwargs)
+        call_number = len(type(self).create_calls)
+        if call_number == 1:
+            tools = kwargs.get("tools")
+            if type(self).expect_report_lookup_tool:
+                assert isinstance(tools, list) and tools[0]["name"] == "ledger_reports_lookup"
+            else:
+                assert "tools" not in kwargs
+            return _RuntimeToolCallResponse(
+                response_id="resp_report_lookup_1",
+                output=[
+                    {
+                        "type": "function_call",
+                        "name": "ledger_reports_lookup",
+                        "arguments": type(self).tool_arguments_json,
+                        "call_id": "call_report_lookup_1",
+                    }
+                ],
+                total_tokens=11,
+            )
+        assert kwargs["previous_response_id"] == "resp_report_lookup_1"
+        output_items = kwargs["input"]
+        assert output_items[0]["type"] == "function_call_output"
+        assert output_items[0]["call_id"] == "call_report_lookup_1"
+        return _RuntimeToolCallResponse(
+            response_id="resp_report_lookup_2",
+            output_text=type(self).final_output_text,
+            total_tokens=13,
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.expect_report_lookup_tool = True
+        cls.tool_arguments_json = '{"ticker":"NVDA","limit":1}'
+        cls.final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
 
 
 def _build_api_status_error(*, message: str, status_code: int = 400) -> openai.APIStatusError:
@@ -1936,99 +2216,34 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
     _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
 
 
-def test_agent_platform_stock_analysis_real_skills_executes_reference_workflow(
+def test_agent_platform_report_lookup_run_requires_capability_grant(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "deterministic")
-    reset_settings_cache()
+    _RuntimeToolCallingOpenAIClient.reset()
+    _RuntimeToolCallingOpenAIClient.expect_report_lookup_tool = False
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeToolCallingOpenAIClient)
 
     with session_factory() as session:
-        _seed_stock_analysis_reference_context(session)
-        workflow = _seed_stock_analysis_workflow(session)
-
-    trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
-    )
-    assert trigger.status_code == 201, trigger.json()
-    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_one_entries = {entry["slot"]: entry for entry in detail["perStepOutputs"]["1"]}
-
-    assert detail["status"] == "succeeded"
-    _assert_logfire_trace_id(detail["traceId"])
-    for entry in detail["perStepOutputs"]["1"]:
-        _assert_logfire_span_id(entry["traceSpanId"])
-    _assert_logfire_span_id(detail["perStepOutputs"]["2"][0]["traceSpanId"])
-    assert detail["finalOutput"]["action"] == "buy"
-    assert "stub" not in detail["finalOutput"]["rationale"]
-    assert "stock_analysis_reference" in detail["finalOutput"]["rationale"]
-    assert "nvda_reference_report" in detail["finalOutput"]["rationale"]
-    assert detail["totalCostUsd"] == "0.11000000"
-    assert step_one_entries["financials_analyst"]["output"]["summary"].startswith(
-        "Ledger has 1 persisted report(s)"
-    )
-    assert "NVDA trades at" in step_one_entries["market_analyst"]["output"]["summary"]
-    assert "stock_analysis_reference" in step_one_entries["position_reader"]["output"]["summary"]
-    assert detail["perStepOutputs"]["2"][0]["agentKey"] == STOCK_ANALYSIS_SYNTHESIZER_KEY
-
-
-def test_agent_platform_stock_analysis_missing_dependency_reports_mcp_failure(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "deterministic")
-    reset_settings_cache()
-
-    with session_factory() as session:
-        _seed_stock_analysis_reference_context(session)
-        workflow = _seed_stock_analysis_workflow(session)
-        broken_server = session.query(McpServer).filter_by(key=STOCK_ANALYSIS_MCP_SERVER_KEY).one()
-        broken_server.config = {
-            "name": broken_server.name,
-            "description": broken_server.description,
-            "enabled": broken_server.enabled,
-            "transport": "stdio",
-            "command": "definitely_missing_stock_analysis_mcp_binary",
-            "args": ["--missing"],
-            "env": {},
-        }
+        session.add(
+            Report(
+                name="nvda_backend_lookup_denied",
+                slug="nvda_backend_lookup_denied",
+                source="external",
+                content="# NVDA backend lookup denied\n\nRevenue acceleration remains intact.",
+                metadata_={
+                    "tags": ["earnings"],
+                    "analysis": {"ticker": "NVDA", "reviewType": "fundamental"},
+                },
+            )
+        )
         session.commit()
-
-    trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
-    )
-    assert trigger.status_code == 201, trigger.json()
-    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_one_entries = {entry["slot"]: entry for entry in detail["perStepOutputs"]["1"]}
-
-    assert detail["status"] == "failed"
-    assert detail["finalOutput"] is None
-    assert "could not access MCP server" in str(detail["error"])
-    assert step_one_entries["financials_analyst"]["status"] == "failed"
-    assert (
-        step_one_entries["financials_analyst"]["error"]["code"]
-        == "agent_execution_missing_dependency"
-    )
-    assert "2" not in detail["perStepOutputs"]
-
-
-def test_agent_platform_stock_analysis_budget_failure_is_reported_deterministically(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "deterministic")
-    reset_settings_cache()
-
-    with session_factory() as session:
-        _seed_stock_analysis_reference_context(session)
-        workflow = _seed_stock_analysis_workflow(
+        workflow = _seed_backend_report_lookup_workflow(
             session,
-            budget_overrides={"price_analyst": Decimal("0.01000000")},
+            grant_report_lookup=False,
+            workflow_key="backend_report_lookup_without_grant",
+            skill_key="backend_report_lookup_without_grant_skill",
         )
 
     trigger = client.post(
@@ -2037,16 +2252,138 @@ def test_agent_platform_stock_analysis_budget_failure_is_reported_deterministica
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_one_entries = {entry["slot"]: entry for entry in detail["perStepOutputs"]["1"]}
+    step_entry = detail["perStepOutputs"]["1"][0]
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
-    assert detail["error"] == "Agent 'price_analyst' exceeded its budget of 0.01000000 USD"
-    assert step_one_entries["price_analyst"]["status"] == "failed"
-    assert step_one_entries["price_analyst"]["output"] is None
-    assert step_one_entries["price_analyst"]["error"]["code"] == "agent_budget_exceeded"
-    assert step_one_entries["financials_analyst"]["status"] == "succeeded"
-    assert "2" not in detail["perStepOutputs"]
+    assert detail["error"] == REPORT_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert step_entry["agentKey"] == "report_lookup_reader"
+    assert step_entry["status"] == "failed"
+    assert step_entry["output"] is None
+    assert step_entry["error"] == {
+        "code": REPORT_LOOKUP_ACCESS_DENIED_CODE,
+        "message": REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
+        "details": [],
+    }
+    assert "tools" not in _RuntimeToolCallingOpenAIClient.create_calls[0]
+
+
+def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeToolCallingOpenAIClient.reset()
+    _RuntimeToolCallingOpenAIClient.tool_arguments_json = '{"ticker":"NVDA"}'
+    _RuntimeToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"backend report lookup used nvda_backend_lookup","signal":"bullish"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeToolCallingOpenAIClient)
+    retired_mcp_calls: list[str] = []
+    captured_lookup_calls: list[dict[str, Any]] = []
+
+    def fail_if_retired_mcp_tested(
+        self: DefaultMcpConnectionTester,
+        boundary: Any,
+    ) -> object:
+        del self
+        retired_mcp_calls.append(str(boundary.key))
+        raise AssertionError("retired report-lookup MCP path should not be invoked")
+
+    original_lookup_reports = ReportService.lookup_reports
+
+    def fake_lookup_reports(
+        self: ReportService,
+        *,
+        skill_references: list[dict[str, Any]],
+        ticker: str | None = None,
+        tag: str | None = None,
+        review_type: str | None = None,
+        portfolio_slug: str | None = None,
+        source: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ReportRead]:
+        captured_lookup_calls.append(
+            {
+                "skill_references": skill_references,
+                "ticker": ticker,
+                "tag": tag,
+                "review_type": review_type,
+                "portfolio_slug": portfolio_slug,
+                "source": source,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+        return original_lookup_reports(
+            self,
+            skill_references=skill_references,
+            ticker=ticker,
+            tag=tag,
+            review_type=review_type,
+            portfolio_slug=portfolio_slug,
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
+
+    monkeypatch.setattr(DefaultMcpConnectionTester, "test", fail_if_retired_mcp_tested)
+    monkeypatch.setattr(ReportService, "lookup_reports", fake_lookup_reports)
+
+    with session_factory() as session:
+        session.add(
+            Report(
+                name="nvda_backend_lookup",
+                slug="nvda_backend_lookup",
+                source="external",
+                content="# NVDA backend lookup\n\nRevenue acceleration remains intact.",
+                metadata_={
+                    "tags": ["earnings"],
+                    "analysis": {"ticker": "NVDA", "reviewType": "fundamental"},
+                },
+            )
+        )
+        session.commit()
+        workflow = _seed_backend_report_lookup_workflow(
+            session,
+            grant_report_lookup=True,
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "backend report lookup used nvda_backend_lookup",
+        "signal": "bullish",
+    }
+    assert step_entry["agentKey"] == "report_lookup_reader"
+    assert step_entry["status"] == "succeeded"
+    assert step_entry["output"] == detail["finalOutput"]
+    assert retired_mcp_calls == []
+    assert len(captured_lookup_calls) == 1
+    assert captured_lookup_calls[0]["ticker"] == "NVDA"
+    assert captured_lookup_calls[0]["tag"] is None
+    assert captured_lookup_calls[0]["review_type"] is None
+    assert captured_lookup_calls[0]["portfolio_slug"] is None
+    assert captured_lookup_calls[0]["source"] is None
+    assert captured_lookup_calls[0]["limit"] == 50
+    assert captured_lookup_calls[0]["offset"] == 0
+    assert isinstance(captured_lookup_calls[0]["skill_references"], list)
+    assert (
+        _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"][0]["name"]
+        == "ledger_reports_lookup"
+    )
+    assert (
+        "nvda_backend_lookup"
+        in _RuntimeToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
 
 
 def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceeded(

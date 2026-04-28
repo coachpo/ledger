@@ -4,14 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import (
-    CheckConstraint,
-    DateTime,
-    Index,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column

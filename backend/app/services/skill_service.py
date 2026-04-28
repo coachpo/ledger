@@ -6,6 +6,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.agents.skill_registry import (
+    ResolvedSkillTool,
     ResolvedSkillToolset,
     SkillRegistry,
     SkillRegistryValidationError,
@@ -21,6 +22,24 @@ from app.schemas.skill import (
     SkillStatus,
     SkillToolDefinitionWrite,
 )
+
+REPORT_LOOKUP_TOOL_KEY = "ledger.reports.lookup"
+REPORT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.lookup."
+
+
+class RuntimeToolGrantError(Exception):
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        details: list[dict[str, str]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = list(details or [])
 
 
 class SkillService:
@@ -47,6 +66,7 @@ class SkillService:
             )
 
         tool_definitions = self._normalize_tool_definitions(payload.tool_definitions)
+        self._resolve_tool_definitions(tool_definitions)
         skill = Skill(
             key=payload.key,
             version=self._next_version(payload.key),
@@ -68,6 +88,12 @@ class SkillService:
         source = self._get_model(skill_id)
         self._ensure_status(source, SkillStatus.DRAFT, action="patch")
 
+        tool_definitions = (
+            self._normalize_tool_definitions(payload.tool_definitions)
+            if payload.tool_definitions is not None
+            else list(source.tool_definitions)
+        )
+        self._resolve_tool_definitions(tool_definitions)
         updated = Skill(
             key=source.key,
             version=self._next_version(source.key),
@@ -78,11 +104,7 @@ class SkillService:
                 if payload.description is not None or "description" in payload.model_fields_set
                 else source.description
             ),
-            tool_definitions=(
-                self._normalize_tool_definitions(payload.tool_definitions)
-                if payload.tool_definitions is not None
-                else list(source.tool_definitions)
-            ),
+            tool_definitions=tool_definitions,
         )
 
         try:
@@ -137,6 +159,43 @@ class SkillService:
             raise not_found_error("Skill")
         return self._resolve_toolset_model(skill)
 
+    def resolve_granted_tool_keys(
+        self,
+        skill_references: Sequence[dict[str, object]],
+    ) -> set[str]:
+        granted_tool_keys: set[str] = set()
+        for reference in skill_references:
+            resolved = self.resolve_toolset_version(
+                str(reference["skillKey"]),
+                int(str(reference["skillVersion"])),
+            )
+            granted_tool_keys.update(tool.key for tool in resolved.tools)
+        return granted_tool_keys
+
+    def require_runtime_tool_grant(
+        self,
+        *,
+        skill_references: Sequence[dict[str, object]],
+        tool_key: str,
+        denied_code: str,
+        denied_message: str,
+    ) -> None:
+        granted_tool_keys = self.resolve_granted_tool_keys(skill_references)
+        if tool_key not in granted_tool_keys:
+            raise RuntimeToolGrantError(code=denied_code, message=denied_message)
+
+    def require_report_lookup_grant(
+        self,
+        *,
+        skill_references: Sequence[dict[str, object]],
+    ) -> None:
+        self.require_runtime_tool_grant(
+            skill_references=skill_references,
+            tool_key=REPORT_LOOKUP_TOOL_KEY,
+            denied_code=REPORT_LOOKUP_ACCESS_DENIED_CODE,
+            denied_message=REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
+        )
+
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)
         if not versions:
@@ -172,11 +231,24 @@ class SkillService:
     def _normalize_tool_definition(raw_definition: SkillToolDefinitionWrite) -> dict[str, str]:
         return {"tool": raw_definition.tool.strip().lower()}
 
-    def _resolve_toolset_model(self, skill: Skill) -> ResolvedSkillToolset:
+    def _resolve_tool_definitions(
+        self,
+        tool_definitions: Sequence[dict[str, str]],
+    ) -> tuple[ResolvedSkillTool, ...]:
         try:
-            return self.skill_registry.resolve_skill(skill)
+            return self.skill_registry.resolve_tool_definitions(tool_definitions)
         except SkillRegistryValidationError as exc:
             raise validation_error("Skill validation failed", exc.details) from exc
+
+    def _resolve_toolset_model(self, skill: Skill) -> ResolvedSkillToolset:
+        return ResolvedSkillToolset(
+            skill_id=skill.id,
+            skill_key=skill.key,
+            skill_version=skill.version,
+            name=skill.name,
+            description=skill.description,
+            tools=self._resolve_tool_definitions(skill.tool_definitions),
+        )
 
     def _to_read_model(self, skill: Skill) -> SkillRead:
         resolved_toolset = self._resolve_toolset_model(skill)
@@ -202,4 +274,10 @@ class SkillService:
         )
 
 
-__all__ = ["SkillService"]
+__all__ = [
+    "REPORT_LOOKUP_ACCESS_DENIED_CODE",
+    "REPORT_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "REPORT_LOOKUP_TOOL_KEY",
+    "RuntimeToolGrantError",
+    "SkillService",
+]

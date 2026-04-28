@@ -5,13 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_agent_service
-from app.schemas.agent import (
-    AgentCreate,
-    AgentListRead,
-    AgentRead,
-    AgentStatus,
-    AgentUpdate,
-)
+from app.schemas.agent import AgentCreate, AgentListRead, AgentRead, AgentStatus, AgentUpdate
 from app.schemas.run import RunCreatedRead
 from app.services.agent_service import AgentService
 

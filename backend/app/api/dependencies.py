@@ -25,7 +25,6 @@ from app.services.quote_provider import (
     YahooFinanceQuoteProvider,
 )
 from app.services.report_service import ReportService
-from app.services.reset_seed_service import ResetSeedService
 from app.services.run_service import RunService
 from app.services.skill_service import SkillService
 from app.services.template_compiler_service import TemplateCompilerService
@@ -94,10 +93,6 @@ def get_report_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ReportService:
     return ReportService(session)
-
-
-def get_reset_seed_service() -> ResetSeedService:
-    return ResetSeedService()
 
 
 def get_skill_registry() -> SkillRegistry:
