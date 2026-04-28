@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { LayoutGrid, List, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -17,6 +17,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function TemplateListPage() {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export function TemplateListPage() {
   const deleteMutation = useDeleteTemplate();
   const [deleting, setDeleting] = useState<TextTemplateRead | null>(null);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
   const templates = templatesQuery.data ?? [];
   const query = search.trim().toLowerCase();
@@ -63,6 +66,14 @@ export function TemplateListPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
+        <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as "cards" | "table")}>
+          <ToggleGroupItem value="cards" aria-label="Cards view" className="h-8 w-8 px-0">
+            <LayoutGrid className="size-3.5" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="table" aria-label="Table view" className="h-8 w-8 px-0">
+            <List className="size-3.5" />
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       <div className="space-y-2">
@@ -96,38 +107,101 @@ export function TemplateListPage() {
             </CardContent>
           </Card>
         ) : null}
-        {filteredTemplates.map((template) => (
-          <Card key={template.id} className="transition-colors hover:bg-accent/50">
-            <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0 space-y-0.5">
-                <CardTitle className="text-sm font-medium tracking-tight">
-                  {template.name}
-                </CardTitle>
-                <p className="text-[11px] text-muted-foreground">
-                  Updated {formatDateTime(template.updatedAt)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Button
-                  className="h-7 text-xs"
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setDeleting(template)}
-                >
-                  Delete
-                </Button>
-                <Button
-                  className="h-7 text-xs"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => navigate(`/templates/${template.id}/edit`)}
-                >
-                  Open Editor
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {viewMode === "cards" ? (
+          filteredTemplates.map((template) => (
+            <Card key={template.id} className="transition-colors hover:bg-accent/50">
+              <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0 space-y-0.5">
+                  <CardTitle className="text-sm font-medium tracking-tight">
+                    {template.name}
+                  </CardTitle>
+                  <p className="text-[11px] text-muted-foreground">
+                    Updated {formatDateTime(template.updatedAt)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    className="h-7 text-xs"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setDeleting(template)}
+                  >
+                    Delete
+                  </Button>
+                  <Button
+                    className="h-7 text-xs"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => navigate(`/templates/${template.id}/edit`)}
+                  >
+                    Open Editor
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : filteredTemplates.length > 0 ? (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Updated</TableHead>
+                  <TableHead className="w-[160px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredTemplates.map((template) => (
+                  <TableRow key={template.id}>
+                    <TableCell
+                      className="cursor-pointer font-medium"
+                      onClick={() => navigate(`/templates/${template.id}/edit`)}
+                    >
+                      {template.name}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDateTime(template.updatedAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1.5">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              aria-label={`Open actions for ${template.name}`}
+                              className="size-7"
+                              size="icon"
+                              variant="ghost"
+                            >
+                              <MoreHorizontal className="size-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => navigate(`/templates/${template.id}/edit`)}>
+                              <Pencil className="size-3.5" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setDeleting(template)} variant="destructive">
+                              <Trash2 className="size-3.5" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                          className="h-7 text-xs"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => navigate(`/templates/${template.id}/edit`)}
+                        >
+                          Open Editor
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : null}
       </div>
 
       <ConfirmDeleteDialog
