@@ -275,6 +275,11 @@ STUB_NOTE_SCHEMA_KEY = "stub_analysis_note"
 STUB_DECISION_SCHEMA_KEY = "stub_trading_decision"
 STUB_SKILL_KEY = "stub_workspace_tools"
 STUB_MCP_SERVER_KEY = "stub_workspace_data"
+STALE_SKILL_KEY = "stock_analysis_ws1_verify"
+RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
+REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
+REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
+REPORT_LOOKUP_DESCRIPTION = "Read persisted Ledger reports through server-owned report lookups."
 
 
 def _stub_workflow_input_schema() -> dict[str, object]:
@@ -853,6 +858,52 @@ def test_agent_platform_skill_update_rejects_removed_tool_without_archiving_draf
     assert versions[0].id == created["id"]
     assert versions[0].status == "draft"
     assert versions[0].version == 1
+
+
+def test_agent_platform_skill_reads_succeed_after_startup_repairs_custom_key_stale_tool_row(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    database_url: str,
+) -> None:
+    with session_factory() as session:
+        stale_skill = Skill(
+            key=STALE_SKILL_KEY,
+            version=1,
+            status="draft",
+            name="Stock Analysis Workspace Verify",
+            description="Custom-key stale row repaired during startup.",
+            tool_definitions=[{"tool": RETIRED_REPORT_LOOKUP_TOOL}],
+        )
+        session.add(stale_skill)
+        session.commit()
+        stale_skill_id = stale_skill.id
+
+    init_db(database_url)
+
+    with session_factory() as session:
+        repaired_skill = session.get(Skill, stale_skill_id)
+
+    assert repaired_skill is not None
+    assert repaired_skill.key == STALE_SKILL_KEY
+    assert repaired_skill.status == "draft"
+    assert repaired_skill.tool_definitions == [{"tool": REPAIRED_REPORT_LOOKUP_TOOL}]
+
+    detail_response = client.get(f"/api/skills/{stale_skill_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail_payload = detail_response.json()
+    assert detail_payload["id"] == stale_skill_id
+    assert detail_payload["key"] == STALE_SKILL_KEY
+    assert detail_payload["toolDefinitions"] == [
+        {
+            "tool": REPAIRED_REPORT_LOOKUP_TOOL,
+            "displayName": REPORT_LOOKUP_DISPLAY_NAME,
+            "description": REPORT_LOOKUP_DESCRIPTION,
+        }
+    ]
+
+    list_response = client.get("/api/skills")
+    assert list_response.status_code == 200, list_response.json()
+    assert list_response.json()["items"] == [detail_payload]
 
 
 def test_agent_platform_mcp_crud_routes_and_connection_test(

@@ -60,6 +60,9 @@ _LIVE_WORKFLOW_KEY = "market_review"
 _LIVE_TEMPLATE_NAME = "Quarterly Review"
 _LIVE_REPORT_SLUG = "market_review_report"
 _LIVE_PORTFOLIO_SLUG = "income_core"
+_CUSTOM_STALE_SKILL_KEY = "stock_analysis_ws1_verify"
+_RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
+_REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -589,6 +592,80 @@ def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: s
             )
 
         assert second_snapshot == first_snapshot
+    finally:
+        engine.dispose()
+
+
+def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            stale_skill_id = connection.execute(
+                text(
+                    "INSERT INTO skills ("
+                    "key, version, status, name, description, tool_definitions, created_at, updated_at"
+                    ") VALUES ("
+                    ":key, 1, 'draft', :name, :description, CAST(:tool_definitions AS jsonb), "
+                    "NOW(), NOW()"
+                    ") RETURNING id"
+                ),
+                {
+                    "key": _CUSTOM_STALE_SKILL_KEY,
+                    "name": "Stock Analysis Workspace Verify",
+                    "description": "Custom-key stale tool definition repaired during startup.",
+                    "tool_definitions": json.dumps(
+                        [{"tool": _RETIRED_REPORT_LOOKUP_TOOL}],
+                        separators=(",", ":"),
+                    ),
+                },
+            ).scalar_one()
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            first_row = connection.execute(
+                text(
+                    "SELECT key, version, status, tool_definitions, ctid::text AS row_pointer "
+                    "FROM skills WHERE id = :skill_id"
+                ),
+                {"skill_id": stale_skill_id},
+            ).mappings().one()
+            retired_reference_count = connection.execute(
+                text(
+                    "SELECT COUNT(*) FROM skills "
+                    "WHERE tool_definitions @> CAST(:retired_tool_filter AS jsonb)"
+                ),
+                {
+                    "retired_tool_filter": json.dumps(
+                        [{"tool": _RETIRED_REPORT_LOOKUP_TOOL}],
+                        separators=(",", ":"),
+                    )
+                },
+            ).scalar_one()
+
+        assert first_row["key"] == _CUSTOM_STALE_SKILL_KEY
+        assert first_row["version"] == 1
+        assert first_row["status"] == "draft"
+        assert first_row["tool_definitions"] == [{"tool": _REPAIRED_REPORT_LOOKUP_TOOL}]
+        assert retired_reference_count == 0
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            second_row = connection.execute(
+                text(
+                    "SELECT tool_definitions, ctid::text AS row_pointer "
+                    "FROM skills WHERE id = :skill_id"
+                ),
+                {"skill_id": stale_skill_id},
+            ).mappings().one()
+
+        assert second_row["tool_definitions"] == first_row["tool_definitions"]
+        assert second_row["row_pointer"] == first_row["row_pointer"]
     finally:
         engine.dispose()
 
