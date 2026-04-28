@@ -108,28 +108,14 @@ export function TemplateListPage() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label={`Open actions for ${template.name}`}
-                      className="size-7"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => navigate(`/templates/${template.id}/edit`)}>
-                      <Pencil className="size-3.5" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDeleting(template)} variant="destructive">
-                      <Trash2 className="size-3.5" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  className="h-7 text-xs"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setDeleting(template)}
+                >
+                  Delete
+                </Button>
                 <Button
                   className="h-7 text-xs"
                   size="sm"
