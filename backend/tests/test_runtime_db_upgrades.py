@@ -607,7 +607,8 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
             stale_skill_id = connection.execute(
                 text(
                     "INSERT INTO skills ("
-                    "key, version, status, name, description, tool_definitions, created_at, updated_at"
+                    "key, version, status, name, description, tool_definitions, "
+                    "created_at, updated_at"
                     ") VALUES ("
                     ":key, 1, 'draft', :name, :description, CAST(:tool_definitions AS jsonb), "
                     "NOW(), NOW()"
@@ -627,13 +628,17 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
         init_db(database_url)
 
         with engine.connect() as connection:
-            first_row = connection.execute(
-                text(
-                    "SELECT key, version, status, tool_definitions, ctid::text AS row_pointer "
-                    "FROM skills WHERE id = :skill_id"
-                ),
-                {"skill_id": stale_skill_id},
-            ).mappings().one()
+            first_row = (
+                connection.execute(
+                    text(
+                        "SELECT key, version, status, tool_definitions, ctid::text AS row_pointer "
+                        "FROM skills WHERE id = :skill_id"
+                    ),
+                    {"skill_id": stale_skill_id},
+                )
+                .mappings()
+                .one()
+            )
             retired_reference_count = connection.execute(
                 text(
                     "SELECT COUNT(*) FROM skills "
@@ -656,13 +661,17 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
         init_db(database_url)
 
         with engine.connect() as connection:
-            second_row = connection.execute(
-                text(
-                    "SELECT tool_definitions, ctid::text AS row_pointer "
-                    "FROM skills WHERE id = :skill_id"
-                ),
-                {"skill_id": stale_skill_id},
-            ).mappings().one()
+            second_row = (
+                connection.execute(
+                    text(
+                        "SELECT tool_definitions, ctid::text AS row_pointer "
+                        "FROM skills WHERE id = :skill_id"
+                    ),
+                    {"skill_id": stale_skill_id},
+                )
+                .mappings()
+                .one()
+            )
 
         assert second_row["tool_definitions"] == first_row["tool_definitions"]
         assert second_row["row_pointer"] == first_row["row_pointer"]
