@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own agents, skills, MCP servers, model connections, output schemas, workflows, runs, and the stock-analysis reference path.
+`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own agents, skills, MCP servers, model connections, output schemas, workflows, and runs.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -21,7 +21,6 @@
 | Agent-platform catalog services | `agent_service.py`, `skill_service.py`, `mcp_server_service.py`, `output_schema_service.py`, `workflow_service.py` | immutable versioned CRUD and validation |
 | Run execution service | `run_service.py` | persisted run lifecycle, per-step detail, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
-| Stock-analysis reference helpers | `stock_analysis_reference.py` | reference workflow support for the shipped platform flow |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
 | Service test hotspots | `../../tests/test_api.py`, `../../tests/test_runtime_api.py`, `../../tests/test_runtime_artifacts.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, platform execution, and cutover assertions |
 

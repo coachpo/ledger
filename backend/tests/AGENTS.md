@@ -9,9 +9,8 @@
 | Task | Location | Notes |
 |---|---|---|
 | Fixture setup | `conftest.py` | isolated PostgreSQL `DATABASE_URL`, `init_db()`, `TestClient`, dependency override cleanup |
-| Shared stock-analysis builders | `agent_platform_stock_analysis.py` | reusable `TradingDecision` schema, agent payloads, and workflow builders for runtime tests |
-| API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, and platform validation |
-| Agent-platform run coverage | `test_runtime_api.py` | workflow execution, run detail/list, budgets, optional agents, and stock-analysis flows |
+| API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, platform validation, and neutral stub workflow coverage |
+| Agent-platform run coverage | `test_runtime_api.py` | workflow execution, run detail/list, budgets, reference-runtime coverage, and `ledger.reports.lookup` capability enforcement |
 | Runtime artifact coverage | `test_runtime_artifacts.py` | persisted step outputs, trace linkage, and run-detail artifact assertions |
 | Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, and version-pinning expectations |
 | DB-upgrade and cutover coverage | `test_runtime_db_upgrades.py`, `test_legacy_backend_cutover.py` | startup repairs, legacy table cleanup, and removed-route/module guarantees |

@@ -83,5 +83,4 @@ uv run pytest
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and legacy-schema upgrades.
 - `tests/test_runtime_api.py`, `tests/test_runtime_artifacts.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover the current agent-platform execution, saved model connections, trace, persistence, and version-pinning contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, retired-table cleanup, and removed-route guarantees after cutover.
-- `tests/agent_platform_stock_analysis.py` provides reusable stock-analysis fixtures for the platform regression suite.
 - `backend/alembic/` exists as scaffolding only; schema changes still live in `app/db/upgrades.py`.
