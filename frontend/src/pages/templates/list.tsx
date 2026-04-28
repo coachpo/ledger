@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -16,14 +16,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 export function TemplateListPage() {
   const navigate = useNavigate();
   const templatesQuery = useTemplates();
   const deleteMutation = useDeleteTemplate();
   const [deleting, setDeleting] = useState<TextTemplateRead | null>(null);
+  const [search, setSearch] = useState("");
 
   const templates = templatesQuery.data ?? [];
+  const query = search.trim().toLowerCase();
+  const filteredTemplates = !query
+    ? templates
+    : templates.filter((template) =>
+        template.name.toLowerCase().includes(query)
+        || template.content.toLowerCase().includes(query),
+      );
 
   return (
     <div className="max-w-6xl space-y-3 p-4">
@@ -39,6 +48,20 @@ export function TemplateListPage() {
             <Plus data-icon="inline-start" />
             New Template
           </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-2.5 top-2 size-4 text-muted-foreground" />
+          <Input
+            id="template-search"
+            name="templateSearch"
+            placeholder="Search templates..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-xs"
+          />
         </div>
       </div>
 
@@ -66,7 +89,14 @@ export function TemplateListPage() {
             </CardContent>
           </Card>
         ) : null}
-        {templates.map((template) => (
+        {!templatesQuery.isPending && !templatesQuery.isError && templates.length > 0 && filteredTemplates.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
+              No templates match your search.
+            </CardContent>
+          </Card>
+        ) : null}
+        {filteredTemplates.map((template) => (
           <Card key={template.id} className="transition-colors hover:bg-accent/50">
             <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0 space-y-0.5">
