@@ -235,7 +235,7 @@ describe("AgentsEditorPage", () => {
     });
   });
 
-  it("shows builder, exact raw schema JSON, and derived sample input while still requiring a model connection on create", async () => {
+  it("shows builder, exact raw schema JSON, and sample input raw JSON while still requiring a model connection on create", async () => {
     renderAgentsEditorPage();
 
     expect(useModelConnectionsMock).toHaveBeenCalledWith({ status: "active" });
@@ -254,7 +254,11 @@ describe("AgentsEditorPage", () => {
     fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "ticker" } });
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-input-schema-preview")).toHaveTextContent("ticker");
+      expect(
+        within(screen.getByTestId("agent-input-schema-preview")).getByRole("textbox", {
+          name: /sample input/i,
+        }),
+      ).toHaveValue(stringifyJson({ ticker: "AAPL" }));
     });
 
     const rawJsonTextbox = within(screen.getByTestId("agent-input-schema-raw-json")).getByRole(
@@ -274,6 +278,16 @@ describe("AgentsEditorPage", () => {
       ),
     );
     expect(rawJsonTextbox).toHaveAttribute("readonly");
+
+    const sampleInputTextbox = within(screen.getByTestId("agent-input-schema-preview")).getByRole(
+      "textbox",
+      {
+        name: /sample input/i,
+      },
+    );
+
+    expect(sampleInputTextbox).toHaveValue(stringifyJson({ ticker: "AAPL" }));
+    expect(sampleInputTextbox).toHaveAttribute("readonly");
 
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "macro_agent" } });
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Macro Agent" } });

@@ -1,16 +1,13 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
+import type { SkillRead } from "../src/lib/types/skill";
+
 const PLATFORM_API = "http://127.0.0.1:8001/api";
 
 type OutputSchemaRead = {
   id: number;
   key: string;
   version: number;
-};
-
-type SkillRead = {
-  id: number;
-  key: string;
 };
 
 type McpServerRead = {
@@ -131,6 +128,13 @@ test.describe("Agent platform CRUD flows", () => {
     const skill = await createAndActivateSkill(request, skillKey);
     const server = await createAndActivateMcpServer(request, serverKey);
 
+    await page.route(/\/api\/skills(?:\?.*)?$/, async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({ items: [skill] }),
+        contentType: "application/json",
+      });
+    });
+
     await page.route("**/api/agents/*/runs?*", async (route) => {
       createdRunPayload = route.request().postDataJSON() as Record<string, unknown>;
       createdRunRequestUrl = route.request().url();
@@ -233,16 +237,26 @@ test.describe("Agent platform CRUD flows", () => {
         name: /exact raw schema json/i,
       }),
     ).toHaveValue(/"ticker"/);
-    await expect(cardByHeading(page, /sample input companion/i)).toContainText("ticker");
+    await expect(
+      cardByHeading(page, /^sample input$/i).getByRole("textbox", {
+        name: /^sample input$/i,
+      }),
+    ).toHaveValue(/"ticker": "AAPL"/);
+    await expect(
+      cardByHeading(page, /^sample input$/i).getByRole("textbox", {
+        name: /^sample input$/i,
+      }),
+    ).toHaveJSProperty("readOnly", true);
 
     const outputSchemaCard = cardByHeading(page, /output schema binding/i);
     await outputSchemaCard.getByRole("combobox").first().click();
     await page.getByText(`Schema ${outputSchema.key}`, { exact: true }).click();
 
     const skillBindingsCard = cardByHeading(page, /skill bindings/i);
+    await expect(skillBindingsCard.getByRole("button", { name: /add skill binding/i })).toBeEnabled();
     await skillBindingsCard.getByRole("button", { name: /add skill binding/i }).click();
     await skillBindingsCard.getByRole("combobox").first().click();
-    await page.getByText(`Skill ${skillKey}`, { exact: true }).click();
+    await page.getByLabel("Suggestions").getByText(`Skill ${skillKey}`, { exact: true }).click();
     await expect(skillBindingsCard.getByText(skillKey, { exact: true })).toBeVisible();
 
     const mcpBindingsCard = cardByHeading(page, /mcp server bindings/i);

@@ -10,7 +10,6 @@ import {
 } from "@/components/platform-authoring/refs/resource-ref-select";
 import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { useAgent, useArchiveAgent, useCreateAgent, useCreateAgentRun, useUpdateAgent } from "@/hooks/use-agents";
 import { useMcpServers } from "@/hooks/use-mcp-servers";
@@ -300,10 +299,6 @@ export function AgentsEditorPage() {
   const rawSampleInputJson = useMemo(
     () => stringifyJson(sampleInputPayload),
     [sampleInputPayload],
-  );
-  const sampleInputPreview = useMemo(
-    () => buildPreviewValue(draft.inputSchema),
-    [draft.inputSchema],
   );
 
   useEffect(() => {
@@ -661,16 +656,16 @@ export function AgentsEditorPage() {
                     </Card>
                     <Card>
                       <CardHeader>
-                        <CardTitle>Sample input companion</CardTitle>
+                        <CardTitle>Sample input</CardTitle>
                         <CardDescription>
                           Derived sample input stays aligned with the current schema builder state.
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <StructuredValueInspector
+                        <ExactJsonPreview
+                          ariaLabel="Sample input"
                           data-testid="agent-input-schema-preview"
-                          label="Derived sample input"
-                          value={sampleInputPreview}
+                          value={rawSampleInputJson}
                         />
                       </CardContent>
                     </Card>
