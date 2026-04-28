@@ -8,13 +8,11 @@ import {
   getPlaceholders,
   getTemplate,
   listTemplates,
-  seedTemplates,
   updateTemplate,
 } from "@/lib/api/templates";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   TextTemplateInlineCompileInput,
-  TextTemplateSeedInput,
   TextTemplateStoredCompileInput,
   TextTemplateUpdateInput,
   TextTemplateWriteInput,
@@ -62,15 +60,6 @@ export function useDeleteTemplate() {
     mutationFn: (templateId: IdParam) => deleteTemplate(templateId),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.list() }),
-  });
-}
-
-export function useSeedTemplates() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: TextTemplateSeedInput) => seedTemplates(input),
-    onSuccess: () => queryClient.removeQueries({ queryKey: ["api"] }),
   });
 }
 

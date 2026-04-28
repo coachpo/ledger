@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -35,10 +35,6 @@ export function TemplateListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate("/templates/seed")}>
-            <RefreshCcw data-icon="inline-start" />
-            Reset Workspace
-          </Button>
           <Button size="sm" onClick={() => navigate("/templates/new")}>
             <Plus data-icon="inline-start" />
             New Template

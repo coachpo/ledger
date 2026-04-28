@@ -40,4 +40,17 @@ test.describe("Primary workspace navigation", () => {
       await expect(page.getByTestId(route.pageTestId)).toBeVisible();
     }
   });
+
+  test("template seed removal hides the Reset Workspace entry point and retires /templates/seed", async ({ page }) => {
+    await page.goto("/templates");
+
+    await expect(page.getByRole("button", { name: "Reset Workspace" })).toHaveCount(0);
+
+    await page.goto("/templates/seed");
+
+    await expect(page.getByTestId("template-seed-page")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText(
+      "Run the existing starter workspace reset-and-seed flow from the Web UI.",
+    );
+  });
 });

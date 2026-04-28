@@ -4,8 +4,6 @@ import type {
   TextTemplateInlineCompileInput,
   TextTemplateInlineCompileRead,
   TextTemplateRead,
-  TextTemplateSeedInput,
-  TextTemplateSeedRead,
   TextTemplateStoredCompileInput,
   TextTemplateUpdateInput,
   TextTemplateWriteInput,
@@ -90,17 +88,6 @@ export function getPlaceholders(signal?: AbortSignal): Promise<PlaceholderTree> 
   return request<PlaceholderTree>("/templates/placeholders", { signal });
 }
 
-export function seedTemplates(
-  input: TextTemplateSeedInput,
-  signal?: AbortSignal,
-): Promise<TextTemplateSeedRead> {
-  return request<TextTemplateSeedRead>("/templates/seed", {
-    body: input,
-    method: "POST",
-    signal,
-  });
-}
-
 export const templatesApi = {
   compile: compileTemplate,
   compileInline: compileTemplateInline,
@@ -109,6 +96,5 @@ export const templatesApi = {
   get: getTemplate,
   list: listTemplates,
   placeholders: getPlaceholders,
-  seed: seedTemplates,
   update: updateTemplate,
 } as const;
