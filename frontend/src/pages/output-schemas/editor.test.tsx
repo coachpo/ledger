@@ -101,7 +101,11 @@ describe("OutputSchemasEditorPage", () => {
     fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "answer" } });
 
     await waitFor(() => {
-      expect(screen.getByTestId("output-schema-preview")).toHaveTextContent("answer");
+      expect(
+        within(screen.getByTestId("output-schema-preview")).getByRole("textbox", {
+          name: /derived sample output/i,
+        }),
+      ).toHaveValue(stringifyJson({ answer: "example" }));
     });
 
     const rawJsonTextbox = within(screen.getByTestId("output-schema-raw-json")).getByRole("textbox", {
@@ -118,6 +122,13 @@ describe("OutputSchemasEditorPage", () => {
       ),
     );
     expect(rawJsonTextbox).toHaveAttribute("readonly");
+
+    const previewTextbox = within(screen.getByTestId("output-schema-preview")).getByRole("textbox", {
+      name: /derived sample output/i,
+    });
+
+    expect(previewTextbox).toHaveValue(stringifyJson({ answer: "example" }));
+    expect(previewTextbox).toHaveAttribute("readonly");
   });
 
   it("creates a schema from the builder-only flow", async () => {

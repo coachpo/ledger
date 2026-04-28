@@ -4,7 +4,6 @@ import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -83,6 +82,7 @@ export function OutputSchemasEditorPage() {
   const derivedJsonSchema = useMemo(() => schemaBuilderToJsonSchema(builder), [builder]);
   const rawSchemaJson = useMemo(() => stringifyJson(derivedJsonSchema), [derivedJsonSchema]);
   const previewValue = useMemo(() => buildPreviewValue(builder), [builder]);
+  const rawPreviewJson = useMemo(() => stringifyJson(previewValue), [previewValue]);
 
   const syncBuilder = (nextBuilder: OutputSchemaBuilderNode) => {
     setBuilder(nextBuilder);
@@ -261,7 +261,7 @@ export function OutputSchemasEditorPage() {
                 <CardDescription>Derived sample output from the current builder state.</CardDescription>
               </CardHeader>
               <CardContent>
-                <StructuredValueInspector data-testid="output-schema-preview" label="Derived sample output" value={previewValue} />
+                <ExactJsonPreview ariaLabel="Derived sample output" data-testid="output-schema-preview" value={rawPreviewJson} />
               </CardContent>
             </Card>
           </div>

@@ -31,7 +31,7 @@ test.describe("Output schema routes", () => {
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-0").fill("answer");
 
-    await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
+    await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"answer"/);
     await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"answer"/);
 
     await saveAndWaitForEditRoute(page);
@@ -42,8 +42,8 @@ test.describe("Output schema routes", () => {
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-1").fill("rationale");
 
-    await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
-    await expect(page.getByTestId("output-schema-preview")).toContainText("rationale");
+    await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"answer"/);
+    await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"rationale"/);
     await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"rationale"/);
 
     await saveAndWaitForEditRoute(page);
@@ -56,8 +56,8 @@ test.describe("Output schema routes", () => {
     await expect(page.locator("#output-schema-name")).toHaveValue(`Updated ${draftKey}`);
     await expectBuilderAndDerivedPreviews(page);
 
-    await expect(page.getByTestId("output-schema-preview")).toContainText("answer");
-    await expect(page.getByTestId("output-schema-preview")).toContainText("rationale");
+    await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"answer"/);
+    await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"rationale"/);
     await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"rationale"/);
   });
 });
