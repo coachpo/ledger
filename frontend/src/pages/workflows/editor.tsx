@@ -649,6 +649,10 @@ export function WorkflowsEditorPage() {
       return null;
     }
   }, [draft]);
+  const rawReviewPayloadJson = useMemo(
+    () => stringifyJson(reviewPayload),
+    [reviewPayload],
+  );
 
   const handleInputSchemaBuilderChange = (nextBuilder: SchemaIRNode) => {
     setInputSchemaBuilder(nextBuilder);
@@ -1126,10 +1130,10 @@ export function WorkflowsEditorPage() {
                   </CardHeader>
                   <CardContent className="flex flex-col gap-4">
                     {reviewPayload ? (
-                      <StructuredValueInspector
+                      <ExactJsonPreview
+                        ariaLabel="Workflow payload"
                         data-testid="workflow-review-summary"
-                        label="Workflow payload"
-                        value={reviewPayload}
+                        value={rawReviewPayloadJson}
                       />
                     ) : (
                       <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">

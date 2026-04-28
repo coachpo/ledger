@@ -152,6 +152,44 @@ const validWorkflow = {
   ],
 };
 
+const validWorkflowReviewPayload = {
+  description: "Broken workflow for validation.",
+  inputSchema: {
+    properties: { ticker: { type: "string" } },
+    required: ["ticker"],
+    type: "object",
+  },
+  key: "market_review",
+  name: "Market Review",
+  outputSpec: { kind: "slot", slot: "decision", stepIndex: 2 },
+  steps: [
+    {
+      agents: [
+        {
+          agentKey: "research_agent",
+          agentVersion: 3,
+          optional: false,
+          slot: "analysis",
+          wiring: { ticker: { from: "input", path: "ticker" } },
+        },
+      ],
+      index: 1,
+    },
+    {
+      agents: [
+        {
+          agentKey: "consumer_agent",
+          agentVersion: 2,
+          optional: false,
+          slot: "decision",
+          wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
+        },
+      ],
+      index: 2,
+    },
+  ],
+};
+
 vi.mock("react-router", () => ({
   useLocation: () => ({ hash: "" }),
   useNavigate: () => navigateMock,
@@ -281,14 +319,17 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByLabelText("Output slot")).toBeVisible();
   });
 
-  it("renders the structured review summary and starts a run from the saved workflow detail", async () => {
+  it("renders the raw review summary JSON and starts a run from the saved workflow detail", async () => {
     paramsMock.workflowId = "88";
     createWorkflowRunMock.mockResolvedValue({ id: 901 });
 
     render(<WorkflowsEditorPage />);
 
     expect(screen.getByTestId("workflow-review-summary")).toBeVisible();
-    expect(screen.getByTestId("workflow-review-summary")).toHaveTextContent("market_review");
+    expect(screen.getByLabelText("Workflow payload")).toHaveValue(
+      stringifyJson(validWorkflowReviewPayload),
+    );
+    expect(screen.getByLabelText("Workflow payload")).toHaveAttribute("readonly");
     expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(

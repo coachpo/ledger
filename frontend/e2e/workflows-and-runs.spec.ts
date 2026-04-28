@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { stringifyJson } from "../src/lib/platform-authoring/common/serialization";
 import { schemaBuilderToJsonSchema } from "../src/lib/platform-authoring/schema/codec";
+import { createInitialWorkflowDraft } from "../src/pages/workflows/shared";
 
 type WorkflowCreatePayload = {
   description?: string;
@@ -118,16 +119,16 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   let createdWorkflowPayload: WorkflowCreatePayload | null = null;
   let createdRunPayload: Record<string, unknown> | null = null;
 
+  const workflowPayloadInputSchema = JSON.parse(
+    createInitialWorkflowDraft().inputSchemaText,
+  ) as WorkflowCreatePayload["inputSchema"];
+
   const workflow = {
     aggregateBudgetUsd: "1.25000000",
     createdAt: "2026-04-20T10:00:00Z",
     description: "Runs research then produces a decision.",
     id: 501,
-    inputSchema: {
-      properties: { ticker: { type: "string" } },
-      required: ["ticker"],
-      type: "object",
-    },
+    inputSchema: workflowPayloadInputSchema,
     key: "market_review",
     name: "Market Review",
     outputSpec: {
@@ -177,6 +178,81 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
     ],
     updatedAt: "2026-04-20T10:00:00Z",
     version: 1,
+  };
+
+  const draftReviewPayload = {
+    inputSchema: workflowPayloadInputSchema,
+    key: "market_review",
+    name: "Market Review",
+    outputSpec: {
+      kind: "slot",
+      slot: "decision",
+      stepIndex: 2,
+    },
+    steps: [
+      {
+        agents: [
+          {
+            agentKey: "research_agent",
+            agentVersion: null,
+            optional: false,
+            slot: "analysis",
+            wiring: { ticker: { from: "input", path: "ticker" } },
+          },
+        ],
+        index: 1,
+      },
+      {
+        agents: [
+          {
+            agentKey: "consumer_agent",
+            agentVersion: null,
+            optional: false,
+            slot: "decision",
+            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
+          },
+        ],
+        index: 2,
+      },
+    ],
+  };
+
+  const savedReviewPayload = {
+    description: "Runs research then produces a decision.",
+    inputSchema: workflowPayloadInputSchema,
+    key: "market_review",
+    name: "Market Review",
+    outputSpec: {
+      kind: "slot",
+      slot: "decision",
+      stepIndex: 2,
+    },
+    steps: [
+      {
+        agents: [
+          {
+            agentKey: "research_agent",
+            agentVersion: 3,
+            optional: false,
+            slot: "analysis",
+            wiring: { ticker: { from: "input", path: "ticker" } },
+          },
+        ],
+        index: 1,
+      },
+      {
+        agents: [
+          {
+            agentKey: "consumer_agent",
+            agentVersion: 2,
+            optional: false,
+            slot: "decision",
+            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
+          },
+        ],
+        index: 2,
+      },
+    ],
   };
 
   const runCreated = {
@@ -285,12 +361,13 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
             id: runDetail.id,
             startedAt: runDetail.startedAt,
             status: runDetail.status,
+            targetId: 501,
+            targetKey: "market_review",
+            targetKind: "workflow",
+            targetVersion: 1,
             totalCostUsd: runDetail.totalCostUsd,
             totalTokens: runDetail.totalTokens,
             traceId: runDetail.traceId,
-            workflowId: runDetail.workflowId,
-            workflowKey: runDetail.workflowKey,
-            workflowVersion: runDetail.workflowVersion,
           },
         ],
       }),
@@ -344,9 +421,8 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   await page.getByTestId("workflow-wizard-next").click();
   await expectLegacyWorkflowJsonAuthoringAbsent(page);
   await expect(page.getByTestId("workflow-review-summary")).toBeVisible();
-  await expect(page.getByTestId("workflow-review-summary")).toContainText("market_review");
-  await expect(page.getByTestId("workflow-review-summary")).toContainText("ticker");
-  await expect(page.getByTestId("workflow-review-summary")).toContainText("decision");
+  await expect(page.getByLabel("Workflow payload")).toHaveValue(stringifyJson(draftReviewPayload));
+  await expect(page.getByLabel("Workflow payload")).toHaveAttribute("readonly", "");
   await expect(runInputForm(page)).toContainText(
     "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
   );
@@ -364,7 +440,8 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   await page.getByTestId("workflow-save").click();
   await expect(page).toHaveURL(/\/workflows\/501\/edit$/);
   await expectLegacyWorkflowJsonAuthoringAbsent(page);
-  await expect(page.getByTestId("workflow-review-summary")).toContainText("market_review");
+  await expect(page.getByLabel("Workflow payload")).toHaveValue(stringifyJson(savedReviewPayload));
+  await expect(page.getByLabel("Workflow payload")).toHaveAttribute("readonly", "");
   await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
     stringifyJson({ ticker: "AAPL" }),
   );
@@ -372,11 +449,7 @@ test("workflow wizard uses structured authoring and opens the runs monitor", asy
   expect(createdWorkflowPayload).not.toBeNull();
   expect(createdWorkflowPayload).not.toHaveProperty("inputSchemaText");
   expect(createdWorkflowPayload).toMatchObject({
-    inputSchema: {
-      properties: { ticker: { type: "string" } },
-      required: ["ticker"],
-      type: "object",
-    },
+    inputSchema: workflowPayloadInputSchema,
     key: "market_review",
     name: "Market Review",
     outputSpec: {
