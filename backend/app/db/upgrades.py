@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
-from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import bindparam, inspect, text
+from sqlalchemy.engine import Connection, Engine
 
 from app.db.validation import validate_supported_database_engine
 from app.models.mcp_server import flatten_mcp_server_storage_payload
@@ -349,6 +350,75 @@ def build_unique_legacy_portfolio_slug(base_slug: str, used_slugs: set[str]) -> 
         sequence += 1
 
 
+@dataclass(frozen=True)
+class _RetiredStockAnalysisSanitationTargets:
+    portfolio_slugs: tuple[str, ...]
+    template_names: tuple[str, ...]
+    report_slugs: tuple[str, ...]
+    output_schema_keys: tuple[str, ...]
+    skill_keys: tuple[str, ...]
+    mcp_server_keys: tuple[str, ...]
+    agent_keys: tuple[str, ...]
+    workflow_keys: tuple[str, ...]
+
+
+def _load_retired_stock_analysis_sanitation_targets() -> _RetiredStockAnalysisSanitationTargets:
+    from app import reset_seed
+
+    return _RetiredStockAnalysisSanitationTargets(
+        portfolio_slugs=(reset_seed.STARTER_PORTFOLIO_SLUG,),
+        template_names=tuple(reset_seed.STARTER_TEMPLATE_NAMES),
+        report_slugs=tuple(company["reportSlug"] for company in reset_seed.MAG7_COMPANIES),
+        output_schema_keys=(
+            reset_seed.STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
+            reset_seed.TRADING_DECISION_SCHEMA_KEY,
+        ),
+        skill_keys=(reset_seed.STOCK_ANALYSIS_SKILL_KEY,),
+        mcp_server_keys=(reset_seed.STOCK_ANALYSIS_MCP_SERVER_KEY,),
+        agent_keys=reset_seed.STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS
+        + (reset_seed.STOCK_ANALYSIS_SYNTHESIZER_KEY,),
+        workflow_keys=(reset_seed.STARTER_WORKFLOW_KEY,),
+    )
+
+
+def _delete_rows_by_column_values(
+    connection: Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    values: tuple[object, ...],
+) -> None:
+    if not values:
+        return
+
+    connection.execute(
+        text(f'DELETE FROM "{table_name}" WHERE "{column_name}" IN :values').bindparams(
+            bindparam("values", expanding=True)
+        ),
+        {"values": list(values)},
+    )
+
+
+def _select_ids_by_column_values(
+    connection: Connection,
+    *,
+    table_name: str,
+    match_column: str,
+    values: tuple[object, ...],
+) -> tuple[int, ...]:
+    if not values:
+        return ()
+
+    return tuple(
+        connection.execute(
+            text(
+                f'SELECT id FROM "{table_name}" WHERE "{match_column}" IN :values ORDER BY id'
+            ).bindparams(bindparam("values", expanding=True)),
+            {"values": list(values)},
+        ).scalars()
+    )
+
+
 def _ensure_agent_platform_tables(engine: Engine, table_names: set[str]) -> None:
     with engine.begin() as connection:
         for table_name, statements in _AGENT_PLATFORM_TABLE_STATEMENTS:
@@ -389,9 +459,7 @@ def _remove_dead_agent_runtime_fields(engine: Engine, table_names: set[str]) -> 
                 "ALTER TABLE agents DROP COLUMN IF EXISTS max_tool_rounds CASCADE"
             )
         if "streaming" in agent_columns:
-            connection.exec_driver_sql(
-                "ALTER TABLE agents DROP COLUMN IF EXISTS streaming CASCADE"
-            )
+            connection.exec_driver_sql("ALTER TABLE agents DROP COLUMN IF EXISTS streaming CASCADE")
 
 
 def _backfill_agent_model_connections(
@@ -699,6 +767,83 @@ def _flatten_legacy_mcp_server_rows(engine: Engine, table_names: set[str]) -> No
             )
 
 
+def _sanitize_retired_stock_analysis_resources(engine: Engine, table_names: set[str]) -> None:
+    targets = _load_retired_stock_analysis_sanitation_targets()
+
+    with engine.begin() as connection:
+        if "agents" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="agents",
+                column_name="key",
+                values=targets.agent_keys,
+            )
+        if "workflows" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="workflows",
+                column_name="key",
+                values=targets.workflow_keys,
+            )
+        if "skills" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="skills",
+                column_name="key",
+                values=targets.skill_keys,
+            )
+        if "mcp_servers" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="mcp_servers",
+                column_name="key",
+                values=targets.mcp_server_keys,
+            )
+        if "output_schemas" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="output_schemas",
+                column_name="key",
+                values=targets.output_schema_keys,
+            )
+        if "reports" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="reports",
+                column_name="slug",
+                values=targets.report_slugs,
+            )
+        if "text_templates" in table_names:
+            _delete_rows_by_column_values(
+                connection,
+                table_name="text_templates",
+                column_name="name",
+                values=targets.template_names,
+            )
+        if "portfolios" in table_names:
+            retired_portfolio_ids = _select_ids_by_column_values(
+                connection,
+                table_name="portfolios",
+                match_column="slug",
+                values=targets.portfolio_slugs,
+            )
+            if retired_portfolio_ids:
+                for child_table_name in ("trading_operations", "positions", "balances"):
+                    if child_table_name in table_names:
+                        _delete_rows_by_column_values(
+                            connection,
+                            table_name=child_table_name,
+                            column_name="portfolio_id",
+                            values=retired_portfolio_ids,
+                        )
+                _delete_rows_by_column_values(
+                    connection,
+                    table_name="portfolios",
+                    column_name="id",
+                    values=retired_portfolio_ids,
+                )
+
+
 def _drop_tables(engine: Engine, table_names: set[str], tables: tuple[str, ...]) -> None:
     with engine.begin() as connection:
         for table_name in tables:
@@ -788,5 +933,6 @@ def upgrade_legacy_schema(engine: Engine) -> None:
             with engine.begin() as connection:
                 connection.exec_driver_sql("ALTER TABLE market_quotes ADD COLUMN name VARCHAR(255)")
 
+    _sanitize_retired_stock_analysis_resources(engine, table_names)
     _drop_tables(engine, table_names, _LEGACY_BACKEND_TABLES)
     _drop_tables(engine, table_names, _OBSOLETE_TABLES)

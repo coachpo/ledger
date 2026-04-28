@@ -13,25 +13,12 @@ from app.models.report import Report
 from app.models.skill import Skill
 from app.models.text_template import TextTemplate
 from app.models.workflow import Workflow
-from app.reset_seed import (
-    MAG7_COMPANIES,
-    STARTER_BALANCE_LABEL,
-    STARTER_PORTFOLIO_SLUG,
-    STARTER_TEMPLATE_NAMES,
-    STARTER_WORKFLOW_KEY,
-    STOCK_ANALYSIS_MCP_SERVER_KEY,
-    STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-    STOCK_ANALYSIS_SKILL_KEY,
-    STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-    STOCK_ANALYSIS_SYNTHESIZER_KEY,
-    TRADING_DECISION_SCHEMA_KEY,
-    reset_and_seed_database,
-)
+from app.reset_seed import reset_and_seed_database
 from app.schemas.portfolio import PortfolioCreate
 from app.services.portfolio_service import PortfolioService
 
 
-def test_reset_and_seed_database_replaces_existing_data_and_seeds_flat_mcp_server(
+def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_workspace(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -49,57 +36,25 @@ def test_reset_and_seed_database_replaces_existing_data_and_seeds_flat_mcp_serve
 
     summary = reset_and_seed_database(database_url)
 
-    assert summary.portfolio_slugs == (STARTER_PORTFOLIO_SLUG,)
-    assert summary.template_names == STARTER_TEMPLATE_NAMES
-    assert summary.output_schema_keys == (
-        STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-        TRADING_DECISION_SCHEMA_KEY,
-    )
-    assert summary.skill_keys == (STOCK_ANALYSIS_SKILL_KEY,)
-    assert summary.mcp_server_keys == (STOCK_ANALYSIS_MCP_SERVER_KEY,)
-    assert set(summary.agent_keys) == {
-        *STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-        STOCK_ANALYSIS_SYNTHESIZER_KEY,
-    }
-    assert set(summary.report_slugs) == {company["reportSlug"] for company in MAG7_COMPANIES}
-    assert summary.workflow_keys == (STARTER_WORKFLOW_KEY,)
+    assert summary.portfolio_slugs == ()
+    assert summary.template_names == ()
+    assert summary.output_schema_keys == ()
+    assert summary.skill_keys == ()
+    assert summary.mcp_server_keys == ()
+    assert summary.agent_keys == ()
+    assert summary.report_slugs == ()
+    assert summary.workflow_keys == ()
 
     reset_db_caches()
     verification_session_factory = get_session_factory(database_url)
     with verification_session_factory() as session:
-        portfolios = session.scalars(select(Portfolio)).all()
-        balances = session.scalars(select(Balance)).all()
-        positions = session.scalars(select(Position)).all()
-        templates = session.scalars(select(TextTemplate)).all()
-        reports = session.scalars(select(Report)).all()
-        workflows = session.scalars(select(Workflow)).all()
-        output_schemas = session.scalars(select(OutputSchema)).all()
-        skills = session.scalars(select(Skill)).all()
-        mcp_servers = session.scalars(select(McpServer)).all()
-        agents = session.scalars(select(Agent)).all()
-
-        assert [portfolio.slug for portfolio in portfolios] == [STARTER_PORTFOLIO_SLUG]
-        assert [balance.label for balance in balances] == [STARTER_BALANCE_LABEL]
-        assert {position.symbol for position in positions} == {
-            company["symbol"] for company in MAG7_COMPANIES
-        }
-        assert tuple(template.name for template in templates) == STARTER_TEMPLATE_NAMES
-        assert {schema.key for schema in output_schemas} == {
-            STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-            TRADING_DECISION_SCHEMA_KEY,
-        }
-        assert [skill.key for skill in skills] == [STOCK_ANALYSIS_SKILL_KEY]
-        assert [server.key for server in mcp_servers] == [STOCK_ANALYSIS_MCP_SERVER_KEY]
-        assert len(mcp_servers) == 1
-        assert "mcpServers" not in mcp_servers[0].config
-        assert mcp_servers[0].transport == "stdio"
-        assert mcp_servers[0].command == "python3"
-        assert mcp_servers[0].args == ["-m", "app.agents.mcp.stock_analysis_reference_server"]
-        assert {agent.key for agent in agents} == {
-            *STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
-            STOCK_ANALYSIS_SYNTHESIZER_KEY,
-        }
-        assert {report.slug for report in reports} == {
-            company["reportSlug"] for company in MAG7_COMPANIES
-        }
-        assert [workflow.key for workflow in workflows] == [STARTER_WORKFLOW_KEY]
+        assert session.scalars(select(Portfolio)).all() == []
+        assert session.scalars(select(Balance)).all() == []
+        assert session.scalars(select(Position)).all() == []
+        assert session.scalars(select(TextTemplate)).all() == []
+        assert session.scalars(select(Report)).all() == []
+        assert session.scalars(select(Workflow)).all() == []
+        assert session.scalars(select(OutputSchema)).all() == []
+        assert session.scalars(select(Skill)).all() == []
+        assert session.scalars(select(McpServer)).all() == []
+        assert session.scalars(select(Agent)).all() == []
