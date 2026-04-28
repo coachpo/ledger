@@ -17,8 +17,14 @@ from app.core.formatting import normalize_symbol, parse_decimal_string
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
+from app.services.position_service import PositionService
 from app.services.report_service import ReportService
-from app.services.skill_service import REPORT_LOOKUP_TOOL_KEY, RuntimeToolGrantError, SkillService
+from app.services.skill_service import (
+    POSITION_LOOKUP_TOOL_KEY,
+    REPORT_LOOKUP_TOOL_KEY,
+    RuntimeToolGrantError,
+    SkillService,
+)
 
 
 class RunExecutionError(Exception):
@@ -67,6 +73,7 @@ class _PendingToolCall:
 
 
 _REPORT_LOOKUP_FUNCTION_NAME = "ledger_reports_lookup"
+_POSITION_LOOKUP_FUNCTION_NAME = "ledger_positions_lookup"
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
 
 
@@ -319,12 +326,18 @@ class AgentExecutionService:
         available_tools: list[dict[str, Any]],
     ) -> str:
         schema_text = json.dumps(output_model.model_json_schema(), indent=2, sort_keys=True)
-        tool_guidance = ""
+        tool_guidance_parts: list[str] = []
         if any(tool.get("name") == _REPORT_LOOKUP_FUNCTION_NAME for tool in available_tools):
-            tool_guidance = (
-                "\n\nWhen you need persisted Ledger report context, call the "
+            tool_guidance_parts.append(
+                "When you need persisted Ledger report context, call the "
                 "ledger_reports_lookup tool instead of inventing report content."
             )
+        if any(tool.get("name") == _POSITION_LOOKUP_FUNCTION_NAME for tool in available_tools):
+            tool_guidance_parts.append(
+                "When you need persisted Ledger position context, call the "
+                "ledger_positions_lookup tool instead of inventing portfolio holdings."
+            )
+        tool_guidance = "".join(f"\n\n{part}" for part in tool_guidance_parts)
         return (
             f"{agent.system_prompt.strip()}{tool_guidance}\n\n"
             "Return only valid JSON with no markdown fences or explanatory text. "
@@ -344,35 +357,76 @@ class AgentExecutionService:
 
     @staticmethod
     def _build_server_tool_definitions(granted_tool_keys: set[str]) -> list[dict[str, Any]]:
-        if REPORT_LOOKUP_TOOL_KEY not in granted_tool_keys:
-            return []
-        return [
-            {
-                "type": "function",
-                "name": _REPORT_LOOKUP_FUNCTION_NAME,
-                "description": (
-                    "Read persisted Ledger reports by ticker, tag, review type, portfolio "
-                    "slug, source, limit, and offset."
-                ),
-                "strict": True,
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "ticker": {"type": "string"},
-                        "tag": {"type": "string"},
-                        "reviewType": {"type": "string"},
-                        "portfolioSlug": {"type": "string"},
-                        "source": {
-                            "type": "string",
-                            "enum": ["compiled", "uploaded", "external"],
+        tools: list[dict[str, Any]] = []
+        if REPORT_LOOKUP_TOOL_KEY in granted_tool_keys:
+            tools.append(
+                {
+                    "type": "function",
+                    "name": _REPORT_LOOKUP_FUNCTION_NAME,
+                    "description": (
+                        "Read persisted Ledger reports by ticker, tag, review type, portfolio "
+                        "slug, source, limit, and offset."
+                    ),
+                    "strict": True,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": ["string", "null"]},
+                            "tag": {"type": ["string", "null"]},
+                            "reviewType": {"type": ["string", "null"]},
+                            "portfolioSlug": {"type": ["string", "null"]},
+                            "source": {
+                                "type": ["string", "null"],
+                                "enum": ["compiled", "uploaded", "external", None],
+                            },
+                            "limit": {
+                                "type": ["integer", "null"],
+                                "minimum": 1,
+                                "maximum": 50,
+                            },
+                            "offset": {"type": ["integer", "null"], "minimum": 0},
                         },
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
-                        "offset": {"type": "integer", "minimum": 0},
+                        "required": [
+                            "ticker",
+                            "tag",
+                            "reviewType",
+                            "portfolioSlug",
+                            "source",
+                            "limit",
+                            "offset",
+                        ],
+                        "additionalProperties": False,
                     },
-                    "additionalProperties": False,
-                },
-            }
-        ]
+                }
+            )
+        if POSITION_LOOKUP_TOOL_KEY in granted_tool_keys:
+            tools.append(
+                {
+                    "type": "function",
+                    "name": _POSITION_LOOKUP_FUNCTION_NAME,
+                    "description": (
+                        "Read persisted Ledger positions for a portfolio slug, optionally "
+                        "filtered by symbol, limit, and offset."
+                    ),
+                    "strict": True,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "portfolioSlug": {"type": "string"},
+                            "symbol": {"type": ["string", "null"]},
+                            "limit": {
+                                "type": ["integer", "null"],
+                                "minimum": 1,
+                                "maximum": 200,
+                            },
+                            "offset": {"type": ["integer", "null"], "minimum": 0},
+                        },
+                        "required": ["portfolioSlug", "symbol", "limit", "offset"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        return tools
 
     @classmethod
     def _extract_pending_tool_calls(cls, response: Any) -> list[_PendingToolCall]:
@@ -467,27 +521,44 @@ class AgentExecutionService:
         arguments_json: str,
         skill_references: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        if name != _REPORT_LOOKUP_FUNCTION_NAME:
-            raise RunExecutionError(
-                code="agent_tool_call_unsupported",
-                message=f"Agent requested unsupported server tool {name!r}.",
-            )
-        arguments = self._parse_report_lookup_arguments(arguments_json)
-        with self.session_factory() as session:
-            reports = ReportService(session).lookup_reports(
-                skill_references=skill_references,
-                ticker=arguments["ticker"],
-                tag=arguments["tag"],
-                review_type=arguments["review_type"],
-                portfolio_slug=arguments["portfolio_slug"],
-                source=arguments["source"],
-                limit=arguments["limit"],
-                offset=arguments["offset"],
-            )
-        return {
-            "count": len(reports),
-            "reports": [report.model_dump(mode="json", by_alias=True) for report in reports],
-        }
+        if name == _REPORT_LOOKUP_FUNCTION_NAME:
+            arguments = self._parse_report_lookup_arguments(arguments_json)
+            with self.session_factory() as session:
+                reports = ReportService(session).lookup_reports(
+                    skill_references=skill_references,
+                    ticker=arguments["ticker"],
+                    tag=arguments["tag"],
+                    review_type=arguments["review_type"],
+                    portfolio_slug=arguments["portfolio_slug"],
+                    source=arguments["source"],
+                    limit=arguments["limit"],
+                    offset=arguments["offset"],
+                )
+            return {
+                "count": len(reports),
+                "reports": [report.model_dump(mode="json", by_alias=True) for report in reports],
+            }
+        if name == _POSITION_LOOKUP_FUNCTION_NAME:
+            arguments = self._parse_position_lookup_arguments(arguments_json)
+            with self.session_factory() as session:
+                positions = PositionService(session, quote_provider=None).lookup_positions(
+                    skill_references=skill_references,
+                    portfolio_slug=arguments["portfolio_slug"],
+                    symbol=arguments["symbol"],
+                    limit=arguments["limit"],
+                    offset=arguments["offset"],
+                )
+            return {
+                "count": len(positions),
+                "portfolioSlug": arguments["portfolio_slug"],
+                "positions": [
+                    position.model_dump(mode="json", by_alias=True) for position in positions
+                ],
+            }
+        raise RunExecutionError(
+            code="agent_tool_call_unsupported",
+            message=f"Agent requested unsupported server tool {name!r}.",
+        )
 
     @staticmethod
     def _parse_report_lookup_arguments(arguments_json: str) -> dict[str, Any]:
@@ -554,6 +625,119 @@ class AgentExecutionService:
             )
             or 0,
         }
+
+    @staticmethod
+    def _parse_position_lookup_arguments(arguments_json: str) -> dict[str, Any]:
+        try:
+            raw_arguments = json.loads(arguments_json)
+        except json.JSONDecodeError as exc:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=(
+                    "OpenAI response requested ledger_positions_lookup "
+                    "with invalid JSON arguments."
+                ),
+            ) from exc
+        if not isinstance(raw_arguments, dict):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message="ledger_positions_lookup arguments must be a JSON object.",
+            )
+
+        allowed_keys = {"portfolioSlug", "symbol", "limit", "offset"}
+        unexpected_keys = sorted(set(raw_arguments) - allowed_keys)
+        if unexpected_keys:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=(
+                    "ledger_positions_lookup arguments contained unsupported fields: "
+                    f"{', '.join(unexpected_keys)}"
+                ),
+            )
+
+        portfolio_slug = AgentExecutionService._parse_position_required_string_argument(
+            raw_arguments.get("portfolioSlug"),
+            field_name="portfolioSlug",
+        )
+        symbol = AgentExecutionService._parse_position_optional_string_argument(
+            raw_arguments.get("symbol"),
+            field_name="symbol",
+        )
+        if symbol is not None:
+            symbol = normalize_symbol(symbol)
+        return {
+            "portfolio_slug": portfolio_slug,
+            "symbol": symbol,
+            "limit": AgentExecutionService._parse_position_optional_integer_argument(
+                raw_arguments.get("limit"),
+                field_name="limit",
+                minimum=1,
+                maximum=200,
+            )
+            or 50,
+            "offset": AgentExecutionService._parse_position_optional_integer_argument(
+                raw_arguments.get("offset"),
+                field_name="offset",
+                minimum=0,
+            )
+            or 0,
+        }
+
+    @staticmethod
+    def _parse_position_required_string_argument(value: Any, *, field_name: str) -> str:
+        normalized = AgentExecutionService._parse_position_optional_string_argument(
+            value,
+            field_name=field_name,
+        )
+        if normalized is None:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_positions_lookup {field_name} is required.",
+            )
+        return normalized
+
+    @staticmethod
+    def _parse_position_optional_string_argument(
+        value: Any,
+        *,
+        field_name: str,
+    ) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_positions_lookup {field_name} must be a string.",
+            )
+        normalized = value.strip()
+        return normalized or None
+
+    @staticmethod
+    def _parse_position_optional_integer_argument(
+        value: Any,
+        *,
+        field_name: str,
+        minimum: int,
+        maximum: int | None = None,
+    ) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_positions_lookup {field_name} must be an integer.",
+            )
+        if value < minimum:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_positions_lookup {field_name} must be at least {minimum}.",
+            )
+        if maximum is not None and value > maximum:
+            raise RunExecutionError(
+                code="agent_tool_call_invalid",
+                message=f"ledger_positions_lookup {field_name} must be at most {maximum}.",
+            )
+        return int(value)
 
     @staticmethod
     def _parse_optional_string_argument(value: Any) -> str | None:

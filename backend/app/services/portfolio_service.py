@@ -27,6 +27,9 @@ class PortfolioService:
             raise not_found_error("Portfolio")
         return portfolio
 
+    def get_portfolio_model_by_slug_or_none(self, slug: str) -> Portfolio | None:
+        return self.repository.get_by_slug(slug)
+
     def create_portfolio(self, payload: PortfolioCreate) -> PortfolioRead:
         if self.repository.get_by_slug(payload.slug) is not None:
             raise business_rule_error(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.agents import get_default_skill_registry
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import normalize_symbol, utcnow
 from app.models.position import Position
@@ -15,15 +16,44 @@ from app.schemas.position import (
 )
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
+from app.services.skill_service import SkillService
 
 
 class PositionService:
-    def __init__(self, session: Session, quote_provider: QuoteProvider) -> None:
+    def __init__(self, session: Session, quote_provider: QuoteProvider | None = None) -> None:
         self.session = session
         self.quote_provider = quote_provider
         self.repository = PositionRepository(session)
         self.symbol_name_cache_repository = SymbolNameCacheRepository(session)
         self.portfolio_service = PortfolioService(session)
+
+    def lookup_positions(
+        self,
+        *,
+        skill_references: list[dict[str, object]],
+        portfolio_slug: str,
+        symbol: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[PositionRead]:
+        SkillService(self.session, get_default_skill_registry()).require_position_lookup_grant(
+            skill_references=skill_references
+        )
+        portfolio = self.portfolio_service.get_portfolio_model_by_slug_or_none(portfolio_slug)
+        if portfolio is None:
+            return []
+
+        positions = self.repository.list_for_portfolio(portfolio.id)
+        normalized_symbol = normalize_symbol(symbol) if symbol is not None else None
+        if normalized_symbol:
+            positions = [position for position in positions if position.symbol == normalized_symbol]
+
+        if offset:
+            positions = positions[offset:]
+        if limit is not None:
+            positions = positions[:limit]
+
+        return [PositionRead.model_validate(position) for position in positions]
 
     def list_positions(self, portfolio_id: int) -> list[PositionRead]:
         self.portfolio_service.get_portfolio_model(portfolio_id)
@@ -97,6 +127,9 @@ class PositionService:
         cached = self.symbol_name_cache_repository.get_by_symbol(symbol)
         if cached is not None:
             return cached.name, False
+
+        if self.quote_provider is None:
+            return None, False
 
         try:
             name = self.quote_provider.fetch_symbol_name(symbol)

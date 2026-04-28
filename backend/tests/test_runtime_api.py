@@ -28,12 +28,16 @@ from app.models.report import Report
 from app.models.run import Run
 from app.models.skill import Skill
 from app.models.workflow import Workflow
+from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
 from app.services.mcp_server_service import McpServerService
+from app.services.position_service import PositionService
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
 from app.services.skill_service import (
+    POSITION_LOOKUP_ACCESS_DENIED_CODE,
+    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
     REPORT_LOOKUP_ACCESS_DENIED_CODE,
     REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
     SkillService,
@@ -482,6 +486,129 @@ def _seed_backend_report_lookup_workflow(
     )
 
 
+def _seed_backend_position_lookup_workflow(
+    session: Session,
+    *,
+    grant_position_lookup: bool,
+    grant_report_lookup: bool = False,
+    workflow_key: str = "backend_position_lookup_runtime",
+    skill_key: str = "backend_position_lookup_runtime_skill",
+    agent_key: str = "position_lookup_reader",
+) -> WorkflowRead:
+    note_schema = _build_output_schema(
+        key=f"{workflow_key}_note",
+        version=1,
+        status="published",
+    )
+    note_schema.json_schema = _reference_note_schema()
+    tools: list[str] = []
+    if grant_report_lookup:
+        tools.append("ledger.reports.lookup")
+    if grant_position_lookup:
+        tools.append("ledger.positions.lookup")
+    if not tools:
+        tools.append("ledger.market_data.quote_lookup")
+    skill = _build_skill(
+        key=skill_key,
+        version=1,
+        status="published",
+        tools=tools,
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="stdio",
+    )
+    mcp_server.config = {
+        "name": f"{workflow_key}_server-1",
+        "description": "MCP server",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-V"],
+        "env": {},
+    }
+    connection = _build_model_connection(name=f"{workflow_key} connection")
+    session.add_all([note_schema, skill, mcp_server, connection])
+    session.flush()
+    agent = _build_agent_platform_agent(
+        key=agent_key,
+        version=1,
+        status="published",
+        output_schema=note_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema=_reference_workflow_input_schema(),
+        budget_usd=Decimal("0.05000000"),
+    )
+    session.add(agent)
+    session.commit()
+    return WorkflowService(session).create_workflow(
+        WorkflowCreate.model_validate(
+            {
+                "key": workflow_key,
+                "name": "Backend Position Lookup Runtime",
+                "inputSchema": _reference_workflow_input_schema(),
+                "steps": [
+                    {
+                        "index": 1,
+                        "agents": [
+                            {
+                                "agentKey": agent_key,
+                                "slot": "analysis",
+                                "wiring": {
+                                    "ticker": {"from": "input", "path": "ticker"},
+                                    "horizon_days": {
+                                        "from": "input",
+                                        "path": "horizon_days",
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+            }
+        )
+    )
+
+
+def _seed_position_lookup_reference_context(session: Session) -> None:
+    portfolio = Portfolio(
+        name="Position Lookup Reference",
+        slug="position_lookup_reference",
+        description="Reference portfolio for position-lookup runtime coverage.",
+        base_currency="USD",
+    )
+    session.add(portfolio)
+    session.flush()
+    session.add_all(
+        [
+            Position(
+                portfolio_id=portfolio.id,
+                symbol="NVDA",
+                name="NVIDIA Corporation",
+                quantity=Decimal("12.00000000"),
+                average_cost=Decimal("101.50000000"),
+                currency="USD",
+                last_source="manual",
+            ),
+            Position(
+                portfolio_id=portfolio.id,
+                symbol="MSFT",
+                name="Microsoft Corporation",
+                quantity=Decimal("5.00000000"),
+                average_cost=Decimal("220.00000000"),
+                currency="USD",
+                last_source="manual",
+            ),
+        ]
+    )
+    session.commit()
+
+
 def _seed_report_lookup_reference_context(session: Session) -> None:
     portfolio = Portfolio(
         name="Report Lookup Reference",
@@ -675,6 +802,34 @@ class _RuntimeToolCallResponse:
         self.usage = _RuntimeOpenAIUsage(total_tokens)
 
 
+def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
+    for tool in tools:
+        if tool.get("strict") is not True:
+            continue
+        assert tool.get("type") == "function"
+        parameters = tool.get("parameters")
+        assert isinstance(parameters, dict)
+        properties = parameters.get("properties")
+        assert isinstance(properties, dict)
+        assert parameters.get("required") == list(properties)
+        assert parameters.get("additionalProperties") is False
+
+        if tool.get("name") == "ledger_reports_lookup":
+            assert properties["ticker"]["type"] == ["string", "null"]
+            assert properties["tag"]["type"] == ["string", "null"]
+            assert properties["reviewType"]["type"] == ["string", "null"]
+            assert properties["portfolioSlug"]["type"] == ["string", "null"]
+            assert properties["source"]["type"] == ["string", "null"]
+            assert properties["source"]["enum"] == ["compiled", "uploaded", "external", None]
+            assert properties["limit"]["type"] == ["integer", "null"]
+            assert properties["offset"]["type"] == ["integer", "null"]
+        elif tool.get("name") == "ledger_positions_lookup":
+            assert properties["portfolioSlug"]["type"] == "string"
+            assert properties["symbol"]["type"] == ["string", "null"]
+            assert properties["limit"]["type"] == ["integer", "null"]
+            assert properties["offset"]["type"] == ["integer", "null"]
+
+
 class _RuntimeToolCallingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
@@ -700,7 +855,9 @@ class _RuntimeToolCallingOpenAIClient:
         if call_number == 1:
             tools = kwargs.get("tools")
             if type(self).expect_report_lookup_tool:
-                assert isinstance(tools, list) and tools[0]["name"] == "ledger_reports_lookup"
+                assert isinstance(tools, list)
+                _assert_openai_strict_tool_schemas(tools)
+                assert tools[0]["name"] == "ledger_reports_lookup"
             else:
                 assert "tools" not in kwargs
             return _RuntimeToolCallResponse(
@@ -732,6 +889,80 @@ class _RuntimeToolCallingOpenAIClient:
         cls.expect_report_lookup_tool = True
         cls.tool_arguments_json = '{"ticker":"NVDA","limit":1}'
         cls.final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
+
+
+class _RuntimePositionToolCallingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    expected_tool_names: list[str] | None = ["ledger_positions_lookup"]
+    tool_call_name: str | None = "ledger_positions_lookup"
+    tool_arguments_json = (
+        '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA","limit":1,"offset":0}'
+    )
+    final_output_text = '{"summary":"position tool loop output","signal":"bullish"}'
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> _RuntimeToolCallResponse:
+        type(self).create_calls.append(kwargs)
+        call_number = len(type(self).create_calls)
+        if call_number == 1:
+            expected_tool_names = type(self).expected_tool_names
+            if expected_tool_names is None:
+                assert "tools" not in kwargs
+            else:
+                tools = kwargs.get("tools")
+                assert isinstance(tools, list)
+                _assert_openai_strict_tool_schemas(tools)
+                assert [tool["name"] for tool in tools] == expected_tool_names
+            tool_call_name = type(self).tool_call_name
+            if tool_call_name is None:
+                return _RuntimeToolCallResponse(
+                    response_id="resp_position_lookup_final",
+                    output_text=type(self).final_output_text,
+                    total_tokens=11,
+                )
+            return _RuntimeToolCallResponse(
+                response_id="resp_position_lookup_1",
+                output=[
+                    {
+                        "type": "function_call",
+                        "name": tool_call_name,
+                        "arguments": type(self).tool_arguments_json,
+                        "call_id": "call_position_lookup_1",
+                    }
+                ],
+                total_tokens=11,
+            )
+        assert kwargs["previous_response_id"] == "resp_position_lookup_1"
+        output_items = kwargs["input"]
+        assert output_items[0]["type"] == "function_call_output"
+        assert output_items[0]["call_id"] == "call_position_lookup_1"
+        return _RuntimeToolCallResponse(
+            response_id="resp_position_lookup_2",
+            output_text=type(self).final_output_text,
+            total_tokens=13,
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.expected_tool_names = ["ledger_positions_lookup"]
+        cls.tool_call_name = "ledger_positions_lookup"
+        cls.tool_arguments_json = (
+            '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA","limit":1,"offset":0}'
+        )
+        cls.final_output_text = '{"summary":"position tool loop output","signal":"bullish"}'
 
 
 def _build_api_status_error(*, message: str, status_code: int = 400) -> openai.APIStatusError:
@@ -2274,7 +2505,10 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeToolCallingOpenAIClient.reset()
-    _RuntimeToolCallingOpenAIClient.tool_arguments_json = '{"ticker":"NVDA"}'
+    _RuntimeToolCallingOpenAIClient.tool_arguments_json = (
+        '{"ticker":"NVDA","tag":null,"reviewType":null,'
+        '"portfolioSlug":null,"source":null,"limit":null,"offset":null}'
+    )
     _RuntimeToolCallingOpenAIClient.final_output_text = (
         '{"summary":"backend report lookup used nvda_backend_lookup","signal":"bullish"}'
     )
@@ -2384,6 +2618,350 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
         "nvda_backend_lookup"
         in _RuntimeToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
     )
+
+
+def test_agent_platform_position_lookup_run_requires_capability_grant(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = ["ledger_reports_lookup"]
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
+        '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+
+    with session_factory() as session:
+        workflow = _seed_backend_position_lookup_workflow(
+            session,
+            grant_position_lookup=False,
+            grant_report_lookup=True,
+            workflow_key="backend_position_lookup_without_grant",
+            skill_key="backend_position_lookup_without_grant_skill",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "failed"
+    assert detail["finalOutput"] is None
+    assert detail["error"] == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert step_entry["agentKey"] == "position_lookup_reader"
+    assert step_entry["status"] == "failed"
+    assert step_entry["output"] is None
+    assert step_entry["error"] == {
+        "code": POSITION_LOOKUP_ACCESS_DENIED_CODE,
+        "message": POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
+        "details": [],
+    }
+    first_tool_names = [
+        tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
+    ]
+    assert first_tool_names == ["ledger_reports_lookup"]
+    assert "ledger_positions_lookup" not in first_tool_names
+
+
+def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
+        '{"portfolioSlug":"position_lookup_reference","symbol":" nvda ","limit":1,"offset":0}'
+    )
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"backend position lookup used NVDA","signal":"bullish"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+    retired_mcp_calls: list[str] = []
+    captured_lookup_calls: list[dict[str, Any]] = []
+
+    def fail_if_retired_mcp_tested(
+        self: DefaultMcpConnectionTester,
+        boundary: Any,
+    ) -> object:
+        del self
+        retired_mcp_calls.append(str(boundary.key))
+        raise AssertionError("retired position-lookup MCP path should not be invoked")
+
+    original_lookup_positions = PositionService.lookup_positions
+
+    def fake_lookup_positions(
+        self: PositionService,
+        *,
+        skill_references: list[dict[str, object]],
+        portfolio_slug: str,
+        symbol: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[PositionRead]:
+        captured_lookup_calls.append(
+            {
+                "skill_references": skill_references,
+                "portfolio_slug": portfolio_slug,
+                "symbol": symbol,
+                "limit": limit,
+                "offset": offset,
+                "quote_provider": self.quote_provider,
+            }
+        )
+        return original_lookup_positions(
+            self,
+            skill_references=skill_references,
+            portfolio_slug=portfolio_slug,
+            symbol=symbol,
+            limit=limit,
+            offset=offset,
+        )
+
+    monkeypatch.setattr(DefaultMcpConnectionTester, "test", fail_if_retired_mcp_tested)
+    monkeypatch.setattr(PositionService, "lookup_positions", fake_lookup_positions)
+
+    with session_factory() as session:
+        _seed_position_lookup_reference_context(session)
+        workflow = _seed_backend_position_lookup_workflow(
+            session,
+            grant_position_lookup=True,
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "backend position lookup used NVDA",
+        "signal": "bullish",
+    }
+    assert step_entry["agentKey"] == "position_lookup_reader"
+    assert step_entry["status"] == "succeeded"
+    assert step_entry["output"] == detail["finalOutput"]
+    assert retired_mcp_calls == []
+    assert len(captured_lookup_calls) == 1
+    assert captured_lookup_calls[0]["portfolio_slug"] == "position_lookup_reference"
+    assert captured_lookup_calls[0]["symbol"] == "NVDA"
+    assert captured_lookup_calls[0]["limit"] == 1
+    assert captured_lookup_calls[0]["offset"] == 0
+    assert captured_lookup_calls[0]["quote_provider"] is None
+    assert isinstance(captured_lookup_calls[0]["skill_references"], list)
+    assert captured_lookup_calls[0]["skill_references"][0]["skillKey"] == (
+        "backend_position_lookup_runtime_skill"
+    )
+    assert (
+        _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"][0]["name"]
+        == "ledger_positions_lookup"
+    )
+    tool_output = json.loads(
+        _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    assert tool_output["count"] == 1
+    assert tool_output["portfolioSlug"] == "position_lookup_reference"
+    assert len(tool_output["positions"]) == 1
+    position_payload = tool_output["positions"][0]
+    assert set(position_payload) == {
+        "id",
+        "portfolioId",
+        "symbol",
+        "name",
+        "quantity",
+        "averageCost",
+        "currency",
+        "createdAt",
+        "updatedAt",
+    }
+    assert position_payload["symbol"] == "NVDA"
+    assert position_payload["name"] == "NVIDIA Corporation"
+    assert position_payload["quantity"] == "12.00000000"
+    assert position_payload["averageCost"] == "101.50000000"
+    assert position_payload["currency"] == "USD"
+    assert not {
+        "marketPrice",
+        "marketValue",
+        "unrealizedGainLoss",
+        "unrealizedGainLossPercent",
+    } & set(position_payload)
+
+
+def test_agent_platform_position_lookup_tool_order_is_deterministic_when_report_and_position_grants_exist(  # noqa: E501
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
+        "ledger_reports_lookup",
+        "ledger_positions_lookup",
+    ]
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = None
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"both tools exposed deterministically","signal":"neutral"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+
+    with session_factory() as session:
+        workflow = _seed_backend_position_lookup_workflow(
+            session,
+            grant_position_lookup=True,
+            grant_report_lookup=True,
+            workflow_key="backend_position_lookup_order",
+            skill_key="backend_position_lookup_order_skill",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "both tools exposed deterministically",
+        "signal": "neutral",
+    }
+    assert [
+        tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
+    ] == ["ledger_reports_lookup", "ledger_positions_lookup"]
+
+
+@pytest.mark.parametrize(
+    ("case_name", "arguments_json", "expected_message"),
+    [
+        (
+            "unsupported_field",
+            '{"portfolioSlug":"position_lookup_reference","unsupported":true}',
+            "ledger_positions_lookup arguments contained unsupported fields: unsupported",
+        ),
+        (
+            "non_string_portfolio_slug",
+            '{"portfolioSlug":123}',
+            "ledger_positions_lookup portfolioSlug must be a string.",
+        ),
+        (
+            "non_integer_limit",
+            '{"portfolioSlug":"position_lookup_reference","limit":"1"}',
+            "ledger_positions_lookup limit must be an integer.",
+        ),
+        (
+            "limit_too_high",
+            '{"portfolioSlug":"position_lookup_reference","limit":201}',
+            "ledger_positions_lookup limit must be at most 200.",
+        ),
+        (
+            "negative_offset",
+            '{"portfolioSlug":"position_lookup_reference","offset":-1}',
+            "ledger_positions_lookup offset must be at least 0.",
+        ),
+    ],
+    ids=[
+        "unsupported-field",
+        "non-string-portfolio-slug",
+        "non-integer-limit",
+        "limit-too-high",
+        "negative-offset",
+    ],
+)
+def test_agent_platform_position_lookup_run_rejects_invalid_tool_arguments(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    case_name: str,
+    arguments_json: str,
+    expected_message: str,
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = arguments_json
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+
+    def fail_lookup_positions(self: PositionService, **kwargs: Any) -> list[PositionRead]:
+        del self, kwargs
+        raise AssertionError("invalid ledger_positions_lookup arguments should not hit service")
+
+    monkeypatch.setattr(PositionService, "lookup_positions", fail_lookup_positions)
+
+    with session_factory() as session:
+        workflow = _seed_backend_position_lookup_workflow(
+            session,
+            grant_position_lookup=True,
+            workflow_key=f"backend_position_lookup_invalid_{case_name}",
+            skill_key=f"backend_position_lookup_invalid_{case_name}_skill",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "failed"
+    assert detail["finalOutput"] is None
+    assert detail["error"] == expected_message
+    assert step_entry["agentKey"] == "position_lookup_reader"
+    assert step_entry["status"] == "failed"
+    assert step_entry["output"] is None
+    assert step_entry["error"] == {
+        "code": "agent_tool_call_invalid",
+        "message": expected_message,
+        "details": [],
+    }
+    assert len(_RuntimePositionToolCallingOpenAIClient.create_calls) == 1
+
+
+def test_agent_platform_position_lookup_run_returns_empty_payload_for_unknown_slug(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
+        '{"portfolioSlug":"unknown_portfolio","symbol":"NVDA","limit":10,"offset":0}'
+    )
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"unknown slug returned empty positions","signal":"neutral"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+
+    with session_factory() as session:
+        workflow = _seed_backend_position_lookup_workflow(
+            session,
+            grant_position_lookup=True,
+            workflow_key="backend_position_lookup_unknown_slug",
+            skill_key="backend_position_lookup_unknown_slug_skill",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "unknown slug returned empty positions",
+        "signal": "neutral",
+    }
+    tool_output = json.loads(
+        _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    assert tool_output == {
+        "count": 0,
+        "portfolioSlug": "unknown_portfolio",
+        "positions": [],
+    }
 
 
 def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceeded(
