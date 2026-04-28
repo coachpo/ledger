@@ -68,7 +68,7 @@ describe("useWorkflows", () => {
     }
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
 
-    await mutationOptions.onSuccess?.({ id: 15, version: 1 }, { key: "stock_analysis" });
+    await mutationOptions.onSuccess?.({ id: 15, version: 1 }, { key: "report_lookup_reference" });
 
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflows.all,

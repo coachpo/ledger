@@ -90,10 +90,11 @@ describe("McpServersEditorPage", () => {
 
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "market_data" } });
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Market Data MCP" } });
+    fireEvent.change(screen.getByLabelText(/command/i), { target: { value: "python3" } });
     fireEvent.change(screen.getByLabelText("Env key 1"), { target: { value: "TOKEN" } });
     fireEvent.change(screen.getByLabelText("Env value 1"), { target: { value: "abc" } });
     fireEvent.change(screen.getByLabelText(/args json/i), {
-      target: { value: '["-m", "app.agents.mcp.stock_analysis_reference_server"]' },
+      target: { value: '["-V"]' },
     });
 
     expect(screen.getByLabelText("Exact raw env JSON")).toHaveValue(stringifyJson({ TOKEN: "abc" }));
@@ -103,7 +104,7 @@ describe("McpServersEditorPage", () => {
 
     await waitFor(() => expect(createServerMock).toHaveBeenCalledTimes(1));
     expect(createServerMock).toHaveBeenCalledWith({
-      args: ["-m", "app.agents.mcp.stock_analysis_reference_server"],
+      args: ["-V"],
       command: "python3",
       description: "",
       enabled: true,

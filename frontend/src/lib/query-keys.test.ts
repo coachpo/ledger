@@ -59,13 +59,13 @@ describe("query keys", () => {
     ]);
 
     expect(
-      queryKeys.platform.runs.list({ offset: 0, status: "succeeded", workflowKey: " stock_analysis " }),
+      queryKeys.platform.runs.list({ offset: 0, status: "succeeded", workflowKey: " report_lookup_reference " }),
     ).toEqual([
       "api",
       "platform",
       "runs",
       "list",
-      { offset: 0, status: "succeeded", workflowKey: "stock_analysis" },
+      { offset: 0, status: "succeeded", workflowKey: "report_lookup_reference" },
     ]);
   });
 

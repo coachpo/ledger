@@ -200,8 +200,8 @@ type McpServerEditorValues = {
 };
 
 const initialValues: McpServerEditorValues = {
-  args: stringifyJson(["-m", "app.agents.mcp.stock_analysis_reference_server"]),
-  command: "python3",
+  args: stringifyJson([]),
+  command: "",
   description: "",
   enabled: true,
   env: buildKeyValueEntries({}),
