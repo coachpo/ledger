@@ -26,6 +26,9 @@ from app.schemas.skill import (
 REPORT_LOOKUP_TOOL_KEY = "ledger.reports.lookup"
 REPORT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.lookup."
+POSITION_LOOKUP_TOOL_KEY = "ledger.positions.lookup"
+POSITION_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+POSITION_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.positions.lookup."
 
 
 class RuntimeToolGrantError(Exception):
@@ -196,6 +199,18 @@ class SkillService:
             denied_message=REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
         )
 
+    def require_position_lookup_grant(
+        self,
+        *,
+        skill_references: Sequence[dict[str, object]],
+    ) -> None:
+        self.require_runtime_tool_grant(
+            skill_references=skill_references,
+            tool_key=POSITION_LOOKUP_TOOL_KEY,
+            denied_code=POSITION_LOOKUP_ACCESS_DENIED_CODE,
+            denied_message=POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
+        )
+
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)
         if not versions:
@@ -275,6 +290,9 @@ class SkillService:
 
 
 __all__ = [
+    "POSITION_LOOKUP_ACCESS_DENIED_CODE",
+    "POSITION_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "POSITION_LOOKUP_TOOL_KEY",
     "REPORT_LOOKUP_ACCESS_DENIED_CODE",
     "REPORT_LOOKUP_ACCESS_DENIED_MESSAGE",
     "REPORT_LOOKUP_TOOL_KEY",

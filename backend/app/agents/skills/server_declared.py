@@ -27,6 +27,12 @@ SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
         module=_SERVER_DECLARED_MODULE,
     ),
     ServerDeclaredToolSpec(
+        key="ledger.positions.lookup",
+        display_name="Position Lookup",
+        description="Read persisted Ledger positions through server-owned position lookups.",
+        module=_SERVER_DECLARED_MODULE,
+    ),
+    ServerDeclaredToolSpec(
         key="ledger.reports.lookup",
         display_name="Report Lookup",
         description="Read persisted Ledger reports through server-owned report lookups.",

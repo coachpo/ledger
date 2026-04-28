@@ -278,6 +278,10 @@ STUB_MCP_SERVER_KEY = "stub_workspace_data"
 STALE_SKILL_KEY = "stock_analysis_ws1_verify"
 RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
 REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
+POSITION_LOOKUP_DISPLAY_NAME = "Position Lookup"
+POSITION_LOOKUP_DESCRIPTION = (
+    "Read persisted Ledger positions through server-owned position lookups."
+)
 REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
 REPORT_LOOKUP_DESCRIPTION = "Read persisted Ledger reports through server-owned report lookups."
 
@@ -728,6 +732,7 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
             "description": "Server-declared research toolset.",
             "toolDefinitions": [
                 {"tool": "ledger.market_data.quote_lookup"},
+                {"tool": "ledger.positions.lookup"},
                 {"tool": "ledger.reports.lookup"},
             ],
         },
@@ -738,9 +743,14 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
     created_tool_definitions = cast(list[dict[str, object]], created["toolDefinitions"])
     assert [item["tool"] for item in created_tool_definitions] == [
         "ledger.market_data.quote_lookup",
+        "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
     assert created_tool_definitions[0]["displayName"] == "Market Data Quote Lookup"
+    assert created_tool_definitions[1]["displayName"] == POSITION_LOOKUP_DISPLAY_NAME
+    assert created_tool_definitions[1]["description"] == POSITION_LOOKUP_DESCRIPTION
+    assert created_tool_definitions[2]["displayName"] == REPORT_LOOKUP_DISPLAY_NAME
+    assert created_tool_definitions[2]["description"] == REPORT_LOOKUP_DESCRIPTION
 
     update_response = client.patch(
         f"/api/skills/{created['id']}",
@@ -748,6 +758,7 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
             "name": "Market Research v2",
             "toolDefinitions": [
                 {"tool": "ledger.market_data.history_lookup"},
+                {"tool": "ledger.positions.lookup"},
                 {"tool": "ledger.reports.lookup"},
             ],
         },
@@ -759,6 +770,7 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
     assert updated["name"] == "Market Research v2"
     assert [item["tool"] for item in updated["toolDefinitions"]] == [
         "ledger.market_data.history_lookup",
+        "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
 
@@ -781,6 +793,7 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
         item["tool"] for item in cast(list[dict[str, object]], activated["toolDefinitions"])
     ] == [
         "ledger.market_data.history_lookup",
+        "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
 
