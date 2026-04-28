@@ -48,6 +48,8 @@ _RUN_TARGET_IDENTITY_CONFLICT_MESSAGE = (
 _MODEL_CONNECTION_PLACEHOLDER_BASE_URL = "https://api.openai.com/v1"
 _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
 _MODEL_CONNECTION_PLACEHOLDER_TIMEOUT_SECONDS = 60
+_RETIRED_SKILL_TOOL_ID = "ledger.stock_analysis.report_lookup"
+_REPAIRED_SKILL_TOOL_ID = "ledger.reports.lookup"
 _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "output_schemas",
@@ -767,6 +769,64 @@ def _flatten_legacy_mcp_server_rows(engine: Engine, table_names: set[str]) -> No
             )
 
 
+def _repair_retired_skill_tool_definitions(engine: Engine, table_names: set[str]) -> None:
+    if "skills" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    skill_columns = {column["name"] for column in inspector.get_columns("skills")}
+    if "tool_definitions" not in skill_columns:
+        return
+
+    with engine.begin() as connection:
+        _ = connection.execute(
+            text(
+                """
+                UPDATE skills
+                SET tool_definitions = repaired_tool_definitions.tool_definitions,
+                    updated_at = NOW()
+                FROM (
+                    SELECT skill.id,
+                           jsonb_agg(
+                               CASE
+                                   WHEN jsonb_typeof(defs.tool_definition) = 'object'
+                                        AND defs.tool_definition->>'tool' = :retired_tool_id
+                                   THEN jsonb_set(
+                                       defs.tool_definition,
+                                       '{tool}',
+                                       to_jsonb(CAST(:replacement_tool_id AS text)),
+                                       false
+                                   )
+                                   ELSE defs.tool_definition
+                               END
+                               ORDER BY defs.ordinality
+                           ) AS tool_definitions
+                    FROM skills AS skill
+                    JOIN LATERAL jsonb_array_elements(
+                        CASE
+                            WHEN jsonb_typeof(skill.tool_definitions) = 'array'
+                            THEN skill.tool_definitions
+                            ELSE '[]'::jsonb
+                        END
+                    ) WITH ORDINALITY AS defs(tool_definition, ordinality) ON TRUE
+                    WHERE skill.tool_definitions @> CAST(:retired_tool_filter AS jsonb)
+                    GROUP BY skill.id
+                ) AS repaired_tool_definitions
+                WHERE skills.id = repaired_tool_definitions.id
+                  AND skills.tool_definitions @> CAST(:retired_tool_filter AS jsonb)
+                """
+            ),
+            {
+                "retired_tool_id": _RETIRED_SKILL_TOOL_ID,
+                "replacement_tool_id": _REPAIRED_SKILL_TOOL_ID,
+                "retired_tool_filter": json.dumps(
+                    [{"tool": _RETIRED_SKILL_TOOL_ID}],
+                    separators=(",", ":"),
+                ),
+            },
+        )
+
+
 def _sanitize_retired_stock_analysis_resources(engine: Engine, table_names: set[str]) -> None:
     targets = _load_retired_stock_analysis_sanitation_targets()
 
@@ -868,6 +928,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     )
     _reset_legacy_mcp_server_table(engine, table_names)
     _flatten_legacy_mcp_server_rows(engine, table_names)
+    _repair_retired_skill_tool_definitions(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
     if "portfolios" in table_names:
