@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
+from decimal import Decimal
+from typing import cast
 
 from fastapi import status
 from pydantic import BaseModel
@@ -24,7 +25,9 @@ from app.schemas.agent import (
     AgentCreate,
     AgentListRead,
     AgentMcpServerRead,
+    AgentMcpServerRefWrite,
     AgentRead,
+    AgentSkillRefWrite,
     AgentStatus,
     AgentUpdate,
 )
@@ -41,6 +44,9 @@ from app.services.output_schema_service import OutputSchemaService
 from app.services.run_service import RunService
 from app.services.skill_service import SkillService
 
+type JsonValue = (str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"])
+type JsonObject = dict[str, JsonValue]
+
 
 class AgentService:
     def __init__(
@@ -49,16 +55,20 @@ class AgentService:
         skill_registry: SkillRegistry,
         connection_tester: McpConnectionTester,
     ) -> None:
-        self.session = session
-        self.repository = AgentRepository(session)
-        self.output_schema_repository = OutputSchemaRepository(session)
-        self.skill_repository = SkillRepository(session)
-        self.mcp_server_repository = McpServerRepository(session)
-        self.model_connection_repository = ModelConnectionRepository(session)
-        self.skill_service = SkillService(session, skill_registry)
-        self.mcp_server_service = McpServerService(session, connection_tester)
-        self.output_schema_service = OutputSchemaService(session)
-        self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
+        self.session: Session = session
+        self.repository: AgentRepository = AgentRepository(session)
+        self.output_schema_repository: OutputSchemaRepository = OutputSchemaRepository(session)
+        self.skill_repository: SkillRepository = SkillRepository(session)
+        self.mcp_server_repository: McpServerRepository = McpServerRepository(session)
+        self.model_connection_repository: ModelConnectionRepository = ModelConnectionRepository(
+            session
+        )
+        self.skill_service: SkillService = SkillService(session, skill_registry)
+        self.mcp_server_service: McpServerService = McpServerService(session, connection_tester)
+        self.output_schema_service: OutputSchemaService = OutputSchemaService(session)
+        self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
+            self.output_schema_repository
+        )
 
     def list_agents(
         self,
@@ -97,7 +107,7 @@ class AgentService:
         )
         agent = Agent(key=payload.key, version=1, status=AgentStatus.PUBLISHED.value, **state)
         try:
-            self.repository.add(agent)
+            _ = self.repository.add(agent)
             self.session.commit()
             self.session.refresh(agent)
         except Exception:
@@ -131,7 +141,7 @@ class AgentService:
             if current_published is not None:
                 current_published.status = AgentStatus.DEPRECATED.value
                 self.session.flush()
-            self.repository.add(agent)
+            _ = self.repository.add(agent)
             self.session.commit()
             self.session.refresh(agent)
         except Exception:
@@ -156,7 +166,7 @@ class AgentService:
     def create_run(
         self,
         agent_id: int,
-        payload: dict[str, Any],
+        payload: JsonObject,
         *,
         version: int | None = None,
     ) -> RunCreatedRead:
@@ -174,13 +184,13 @@ class AgentService:
         description: str,
         model_connection_id: int,
         system_prompt: str,
-        input_schema: dict[str, Any],
+        input_schema: JsonObject,
         output_schema_key: str,
         output_schema_version: int | None,
-        skills: Sequence[Any],
-        mcp_servers: Sequence[Any],
-        budget_usd: Any,
-    ) -> dict[str, Any]:
+        skills: Sequence[AgentSkillRefWrite],
+        mcp_servers: Sequence[AgentMcpServerRefWrite],
+        budget_usd: Decimal,
+    ) -> dict[str, object]:
         normalized_input_schema = self._normalize_input_schema(input_schema)
         output_schema = self._resolve_output_schema(output_schema_key, output_schema_version)
         skill_rows = self._resolve_skill_rows(skills)
@@ -210,7 +220,7 @@ class AgentService:
             "budget_usd": budget_usd,
         }
 
-    def _normalize_input_schema(self, input_schema: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_input_schema(self, input_schema: JsonObject) -> JsonObject:
         try:
             prepared = self.schema_compiler.normalize_payload(
                 builder=None,
@@ -229,13 +239,13 @@ class AgentService:
             )
 
         try:
-            self._build_input_model(prepared.json_schema)
+            _ = self._build_input_model(prepared.json_schema)
         except OutputSchemaCompilerError as exc:
             raise validation_error(
                 "Agent validation failed",
                 [{"field": "inputSchema", "issue": str(exc)}],
             ) from exc
-        return prepared.json_schema
+        return cast(JsonObject, prepared.json_schema)
 
     def _resolve_output_schema(self, key: str, version: int | None) -> OutputSchema:
         schema = self.output_schema_repository.resolve_version(key, version)
@@ -254,12 +264,12 @@ class AgentService:
                 ],
             )
         try:
-            self.output_schema_service.compile_schema_model(schema.id)
+            _ = self.output_schema_service.compile_schema_model(schema.id)
         except ApiError as exc:
             raise validation_error("Agent validation failed", exc.details) from exc
         return schema
 
-    def _resolve_skill_rows(self, refs: Sequence[Any]) -> list[Skill]:
+    def _resolve_skill_rows(self, refs: Sequence[AgentSkillRefWrite]) -> list[Skill]:
         resolved: list[Skill] = []
         seen: set[tuple[str, int]] = set()
         for index, ref in enumerate(refs):
@@ -275,7 +285,7 @@ class AgentService:
                     "Agent validation failed",
                     [{"field": field, "issue": issue}],
                 )
-            self.skill_service.resolve_toolset_version(skill.key, skill.version)
+            _ = self.skill_service.resolve_toolset_version(skill.key, skill.version)
             identity = (skill.key, skill.version)
             if identity in seen:
                 raise validation_error(
@@ -286,7 +296,7 @@ class AgentService:
             resolved.append(skill)
         return resolved
 
-    def _resolve_mcp_server_rows(self, refs: Sequence[Any]) -> list[McpServer]:
+    def _resolve_mcp_server_rows(self, refs: Sequence[AgentMcpServerRefWrite]) -> list[McpServer]:
         resolved: list[McpServer] = []
         seen: set[tuple[str, int]] = set()
         for index, ref in enumerate(refs):
@@ -308,7 +318,7 @@ class AgentService:
                     "Agent validation failed",
                     [{"field": field, "issue": issue}],
                 )
-            self.mcp_server_service.build_client_boundary_version(
+            _ = self.mcp_server_service.build_client_boundary_version(
                 server.key,
                 server.version,
                 require_enabled=True,
@@ -348,18 +358,19 @@ class AgentService:
         return connection
 
     def _resolve_stored_model_connection_row(self, agent: Agent) -> ModelConnection:
-        if agent.model_connection_id is None:
+        model_connection_id = cast(int | None, agent.model_connection_id)
+        if model_connection_id is None:
             raise business_rule_error(
                 "agent_model_connection_missing",
                 f"Agent {agent.key!r} is missing its saved model connection",
             )
-        connection = self.model_connection_repository.get(agent.model_connection_id)
+        connection = self.model_connection_repository.get(model_connection_id)
         if connection is None:
             raise business_rule_error(
                 "agent_model_connection_missing",
                 (
                     f"Agent {agent.key!r} references missing model connection "
-                    f"{agent.model_connection_id}"
+                    f"{model_connection_id}"
                 ),
             )
         return connection
@@ -385,7 +396,7 @@ class AgentService:
             return 1
         return versions[0].version + 1
 
-    def _build_input_model(self, input_schema: dict[str, Any]) -> type[BaseModel]:
+    def _build_input_model(self, input_schema: JsonObject) -> type[BaseModel]:
         candidate = OutputSchema(
             key="agent_input_schema_validation",
             version=1,
@@ -439,12 +450,13 @@ class AgentService:
             }
         )
 
-    def _resolve_stored_skill_rows(self, raw_refs: Sequence[dict[str, Any]]) -> list[Skill]:
+    def _resolve_stored_skill_rows(self, raw_refs: Sequence[Mapping[str, object]]) -> list[Skill]:
         rows: list[Skill] = []
         for raw_ref in raw_refs:
+            version = self._coerce_stored_ref_version(raw_ref.get("skillVersion"))
             row = self.skill_repository.get_by_key_version(
                 str(raw_ref["skillKey"]),
-                int(raw_ref["skillVersion"]),
+                version,
             )
             if row is None:
                 raise business_rule_error(
@@ -456,13 +468,14 @@ class AgentService:
 
     def _resolve_stored_mcp_server_rows(
         self,
-        raw_refs: Sequence[dict[str, Any]],
+        raw_refs: Sequence[Mapping[str, object]],
     ) -> list[McpServer]:
         rows: list[McpServer] = []
         for raw_ref in raw_refs:
+            version = self._coerce_stored_ref_version(raw_ref.get("mcpServerVersion"))
             row = self.mcp_server_repository.get_by_key_version(
                 str(raw_ref["mcpServerKey"]),
-                int(raw_ref["mcpServerVersion"]),
+                version,
             )
             if row is None:
                 raise business_rule_error(
@@ -471,6 +484,17 @@ class AgentService:
                 )
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _coerce_stored_ref_version(value: object) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            return int(value)
+        raise business_rule_error(
+            "agent_reference_invalid",
+            "Agent references an invalid catalog version",
+        )
 
     def _to_mcp_server_read(self, server: McpServer) -> AgentMcpServerRead:
         boundary = self.mcp_server_service.build_client_boundary_version(server.key, server.version)
@@ -511,5 +535,6 @@ class AgentService:
         else:
             mapped_field = field
         return {"field": mapped_field, "issue": issue.get("issue", "Invalid schema")}
+
 
 __all__ = ["AgentService"]
