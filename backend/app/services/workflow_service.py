@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from fastapi import status
 from pydantic import BaseModel
@@ -11,18 +12,31 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
-from app.models.workflow import Workflow
+from app.models.workflow import (
+    TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
+    WORKFLOW_MANIFEST_API_VERSION,
+    Workflow,
+)
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import (
     WorkflowCreate,
+    WorkflowCreateRequest,
     WorkflowListRead,
+    WorkflowManifestValidationMetadata,
+    WorkflowManifestValidationRead,
+    WorkflowManifestValidationRequest,
     WorkflowOutputSlotWrite,
     WorkflowRead,
     WorkflowStatus,
     WorkflowUpdate,
+    WorkflowUpdateRequest,
     WorkflowWireSource,
+)
+from app.schemas.workflow_manifest import (
+    WorkflowManifestDiagnostic,
+    WorkflowManifestDiagnosticSeverity,
 )
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -38,6 +52,11 @@ from app.services.output_schema_compiler import (
     SchemaPrimitive,
     SchemaRef,
 )
+from app.services.workflow_manifest_compiler import compile_workflow_manifest
+from app.services.workflow_manifest_parser import (
+    locate_workflow_manifest_path,
+    parse_workflow_manifest,
+)
 
 
 @dataclass
@@ -48,6 +67,20 @@ class _ResolvedSlot:
     output_schema: OutputSchema
     schema: SchemaNode
     optional: bool
+
+
+@dataclass
+class _PreparedManifestWrite:
+    payload: WorkflowCreate
+    state: dict[str, object]
+    metadata: WorkflowManifestValidationMetadata
+    compiled_payload: dict[str, object]
+
+
+class _WorkflowManifestDiagnosticsError(ValueError):
+    def __init__(self, diagnostics: list[WorkflowManifestDiagnostic]) -> None:
+        super().__init__("Workflow manifest validation failed")
+        self.diagnostics: list[WorkflowManifestDiagnostic] = diagnostics
 
 
 class WorkflowService:
@@ -72,29 +105,59 @@ class WorkflowService:
     def get_workflow(self, workflow_id: int, *, version: int | None = None) -> WorkflowRead:
         return self._to_read_model(self._resolve_model(workflow_id, version=version))
 
-    def create_workflow(self, payload: WorkflowCreate) -> WorkflowRead:
-        if self.repository.list_versions(payload.key):
+    def validate_workflow_manifest(
+        self,
+        payload: WorkflowManifestValidationRequest,
+    ) -> WorkflowManifestValidationRead:
+        try:
+            prepared = self._prepare_manifest_write(payload.manifest_source)
+        except _WorkflowManifestDiagnosticsError as exc:
+            return WorkflowManifestValidationRead(diagnostics=exc.diagnostics)
+        return WorkflowManifestValidationRead(
+            diagnostics=[],
+            metadata=prepared.metadata,
+            compiled_payload=prepared.compiled_payload,
+            run_input_schema=cast(dict[str, object], prepared.state["input_schema"]),
+        )
+
+    def create_workflow(self, payload: WorkflowCreate | WorkflowCreateRequest) -> WorkflowRead:
+        prepared_manifest: _PreparedManifestWrite | None = None
+        compiled_payload: WorkflowCreate
+        if isinstance(payload, WorkflowCreateRequest):
+            if payload.manifest_source is not None:
+                prepared_manifest = self._prepare_manifest_write_or_raise(payload.manifest_source)
+                compiled_payload = prepared_manifest.payload
+            else:
+                compiled_payload = payload.to_workflow_create()
+        else:
+            compiled_payload = payload
+
+        if self.repository.list_versions(compiled_payload.key):
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="workflow_duplicate_key",
                 message="A workflow with this key already exists",
             )
 
-        state = self._build_state(
-            name=payload.name,
-            description=payload.description,
-            input_schema=payload.input_schema,
-            steps=payload.steps,
-            output_spec=payload.output_spec,
+        state = (
+            prepared_manifest.state
+            if prepared_manifest is not None
+            else self._build_state(
+                name=compiled_payload.name,
+                description=compiled_payload.description,
+                input_schema=compiled_payload.input_schema,
+                steps=compiled_payload.steps,
+                output_spec=compiled_payload.output_spec,
+            )
         )
         workflow = Workflow(
-            key=payload.key,
+            key=compiled_payload.key,
             version=1,
             status=WorkflowStatus.PUBLISHED.value,
             **state,
         )
         try:
-            self.repository.add(workflow)
+            _ = self.repository.add(workflow)
             self.session.commit()
             self.session.refresh(workflow)
         except Exception:
@@ -102,14 +165,46 @@ class WorkflowService:
             raise
         return self._to_read_model(workflow)
 
-    def update_workflow(self, workflow_id: int, payload: WorkflowUpdate) -> WorkflowRead:
+    def update_workflow(
+        self,
+        workflow_id: int,
+        payload: WorkflowUpdate | WorkflowUpdateRequest,
+    ) -> WorkflowRead:
         source = self._get_model(workflow_id)
-        state = self._build_state(
-            name=payload.name,
-            description=payload.description,
-            input_schema=payload.input_schema,
-            steps=payload.steps,
-            output_spec=payload.output_spec,
+        prepared_manifest: _PreparedManifestWrite | None = None
+        compiled_payload: WorkflowUpdate
+        if isinstance(payload, WorkflowUpdateRequest):
+            if payload.manifest_source is not None:
+                prepared_manifest = self._prepare_manifest_write_or_raise(payload.manifest_source)
+                if prepared_manifest.payload.key != source.key:
+                    diagnostic = self._manifest_diagnostic(
+                        payload.manifest_source,
+                        "metadata.key",
+                        f"Manifest key must remain {source.key!r} for workflow updates",
+                    )
+                    self._raise_manifest_validation([diagnostic])
+                compiled_payload = WorkflowUpdate.model_validate(
+                    prepared_manifest.payload.model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude={"key"},
+                    )
+                )
+            else:
+                compiled_payload = payload.to_workflow_update()
+        else:
+            compiled_payload = payload
+
+        state = (
+            prepared_manifest.state
+            if prepared_manifest is not None
+            else self._build_state(
+                name=compiled_payload.name,
+                description=compiled_payload.description,
+                input_schema=compiled_payload.input_schema,
+                steps=compiled_payload.steps,
+                output_spec=compiled_payload.output_spec,
+            )
         )
         workflow = Workflow(
             key=source.key,
@@ -123,7 +218,7 @@ class WorkflowService:
             if current_published is not None:
                 current_published.status = WorkflowStatus.DEPRECATED.value
                 self.session.flush()
-            self.repository.add(workflow)
+            _ = self.repository.add(workflow)
             self.session.commit()
             self.session.refresh(workflow)
         except Exception:
@@ -153,6 +248,8 @@ class WorkflowService:
         input_schema: dict[str, Any],
         steps: list[Any],
         output_spec: Any,
+        manifest_api_version: str = WORKFLOW_MANIFEST_API_VERSION,
+        manifest_source: str = TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
     ) -> dict[str, Any]:
         normalized_input_schema = self._normalize_input_schema(input_schema)
         input_node = self._parse_input_schema_node(
@@ -239,11 +336,142 @@ class WorkflowService:
         return {
             "name": name,
             "description": description,
+            "manifest_api_version": manifest_api_version,
+            "manifest_source": manifest_source,
             "input_schema": normalized_input_schema,
             "steps": normalized_steps,
             "output_spec": normalized_output_spec,
             "aggregate_budget_usd": aggregate_budget,
         }
+
+    def _prepare_manifest_write_or_raise(self, manifest_source: str) -> _PreparedManifestWrite:
+        try:
+            return self._prepare_manifest_write(manifest_source)
+        except _WorkflowManifestDiagnosticsError as exc:
+            self._raise_manifest_validation(exc.diagnostics)
+
+    def _prepare_manifest_write(self, manifest_source: str) -> _PreparedManifestWrite:
+        parse_result = parse_workflow_manifest(manifest_source)
+        if parse_result.manifest is None or parse_result.diagnostics:
+            raise _WorkflowManifestDiagnosticsError(parse_result.diagnostics)
+
+        manifest = parse_result.manifest
+        compiled_payload = compile_workflow_manifest(manifest)
+        payload = WorkflowCreate.model_validate(compiled_payload)
+        try:
+            state = self._build_state(
+                name=payload.name,
+                description=payload.description,
+                input_schema=payload.input_schema,
+                steps=payload.steps,
+                output_spec=payload.output_spec,
+                manifest_api_version=manifest.api_version,
+                manifest_source=manifest_source,
+            )
+        except ApiError as exc:
+            raise _WorkflowManifestDiagnosticsError(
+                self._api_error_to_manifest_diagnostics(manifest_source, exc.details)
+            ) from exc
+        metadata = WorkflowManifestValidationMetadata(
+            api_version=manifest.api_version,
+            key=manifest.metadata.key,
+            name=manifest.metadata.name,
+            description=manifest.metadata.description,
+        )
+        return _PreparedManifestWrite(
+            payload=payload,
+            state=state,
+            metadata=metadata,
+            compiled_payload=dict(compiled_payload),
+        )
+
+    def _api_error_to_manifest_diagnostics(
+        self,
+        manifest_source: str,
+        details: list[dict[str, Any]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        if not details:
+            return [
+                self._manifest_diagnostic(
+                    manifest_source,
+                    "$",
+                    "Workflow manifest validation failed",
+                )
+            ]
+
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        for detail in details:
+            field = str(detail.get("field") or "$")
+            issue = str(detail.get("issue") or "Invalid workflow manifest value")
+            diagnostics.append(
+                self._manifest_diagnostic(
+                    manifest_source,
+                    self._workflow_field_to_manifest_path(field),
+                    issue,
+                )
+            )
+        return diagnostics
+
+    @staticmethod
+    def _workflow_field_to_manifest_path(field: str) -> str:
+        agent_field_match = re.fullmatch(
+            r"steps\[(\d+)\]\.agents\[(\d+)\]\.agentKey",
+            field,
+        )
+        if agent_field_match is not None:
+            return f"steps[{agent_field_match.group(1)}].agents[{agent_field_match.group(2)}].uses"
+
+        wiring_match = re.fullmatch(
+            r"steps\[(\d+)\]\.agents\[(\d+)\]\.wiring(?:\.(.+))?",
+            field,
+        )
+        if wiring_match is not None:
+            path = f"steps[{wiring_match.group(1)}].agents[{wiring_match.group(2)}].with"
+            target_field = wiring_match.group(3)
+            if target_field:
+                path += f".{target_field}"
+            return path
+
+        if field.startswith("outputSpec"):
+            return "output.from"
+        if field.startswith("inputSchema"):
+            return field
+        return field
+
+    @staticmethod
+    def _manifest_diagnostic(
+        manifest_source: str,
+        path: str,
+        message: str,
+    ) -> WorkflowManifestDiagnostic:
+        line, column = locate_workflow_manifest_path(manifest_source, path)
+        return WorkflowManifestDiagnostic(
+            severity=WorkflowManifestDiagnosticSeverity.ERROR,
+            message=message,
+            path=path,
+            line=line,
+            column=column,
+        )
+
+    @staticmethod
+    def _manifest_diagnostic_detail(diagnostic: WorkflowManifestDiagnostic) -> dict[str, object]:
+        return {
+            "field": "manifestSource",
+            "issue": diagnostic.message,
+            "severity": diagnostic.severity.value,
+            "path": diagnostic.path,
+            "line": diagnostic.line,
+            "column": diagnostic.column,
+        }
+
+    def _raise_manifest_validation(
+        self,
+        diagnostics: list[WorkflowManifestDiagnostic],
+    ) -> NoReturn:
+        raise validation_error(
+            "Workflow manifest validation failed",
+            [self._manifest_diagnostic_detail(diagnostic) for diagnostic in diagnostics],
+        )
 
     def _normalize_output_spec(
         self,
@@ -654,6 +882,8 @@ class WorkflowService:
                 "status": workflow.status,
                 "name": workflow.name,
                 "description": workflow.description,
+                "manifestApiVersion": workflow.manifest_api_version,
+                "manifestSource": workflow.manifest_source,
                 "inputSchema": workflow.input_schema,
                 "steps": workflow.steps,
                 "outputSpec": workflow.output_spec,

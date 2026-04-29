@@ -15,10 +15,12 @@ from pydantic import (
 )
 
 from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.workflow_manifest import WorkflowManifestDiagnostic
 
 _STABLE_WORKFLOW_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 _STABLE_SLOT_NAME_RE = _STABLE_WORKFLOW_KEY_RE
 _SOURCE_PATH_RE = r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$"
+WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH = 262_144
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -70,6 +72,26 @@ def _normalize_source_path(value: object) -> str | None:
 
 def _normalize_wiring_field_name(value: object) -> str:
     return _normalize_required_text(value, field_name="Wiring field")
+
+
+def _validate_manifest_source(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("manifestSource must be a string")
+    if not value.strip():
+        raise ValueError("manifestSource is required")
+    if len(value) > WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH:
+        raise ValueError(
+            f"manifestSource must be at most {WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH} characters"
+        )
+    return value
+
+
+def _external_field_name(field_name: str) -> str:
+    return {
+        "input_schema": "inputSchema",
+        "manifest_source": "manifestSource",
+        "output_spec": "outputSpec",
+    }.get(field_name, field_name)
 
 
 class WorkflowStatus(str, Enum):  # noqa: UP042
@@ -235,6 +257,149 @@ class WorkflowUpdate(WorkflowVersionBase):
     pass
 
 
+class WorkflowCreateRequest(CamelModel):
+    key: str | None = Field(default=None, min_length=1, max_length=120)
+    manifest_source: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str = ""
+    input_schema: dict[str, Any] | None = None
+    steps: list[WorkflowStepWrite] | None = None
+    output_spec: WorkflowOutputSpecWrite | None = None
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def validate_key(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalize_workflow_key(value)
+
+    @field_validator("manifest_source", mode="before")
+    @classmethod
+    def validate_manifest_source(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _validate_manifest_source(value)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalize_required_text(value, field_name="Name")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+    @model_validator(mode="after")
+    def validate_authoring_mode(self) -> WorkflowCreateRequest:
+        compiled_fields = {"key", "name", "description", "input_schema", "steps", "output_spec"}
+        if self.manifest_source is not None:
+            mixed_fields = compiled_fields & self.model_fields_set
+            if mixed_fields:
+                names = ", ".join(sorted(_external_field_name(field) for field in mixed_fields))
+                raise ValueError(f"manifestSource cannot be combined with {names}")
+            return self
+
+        required_fields = {"key", "name", "input_schema", "steps", "output_spec"}
+        missing_fields = [
+            _external_field_name(field)
+            for field in sorted(required_fields)
+            if getattr(self, field) is None
+        ]
+        if missing_fields:
+            raise ValueError(
+                "Either manifestSource or the compiled workflow fields are required; "
+                + f"missing {', '.join(missing_fields)}"
+            )
+        return self
+
+    def to_workflow_create(self) -> WorkflowCreate:
+        return WorkflowCreate.model_validate(
+            self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        )
+
+
+class WorkflowUpdateRequest(CamelModel):
+    manifest_source: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str = ""
+    input_schema: dict[str, Any] | None = None
+    steps: list[WorkflowStepWrite] | None = None
+    output_spec: WorkflowOutputSpecWrite | None = None
+
+    @field_validator("manifest_source", mode="before")
+    @classmethod
+    def validate_manifest_source(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _validate_manifest_source(value)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalize_required_text(value, field_name="Name")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+    @model_validator(mode="after")
+    def validate_authoring_mode(self) -> WorkflowUpdateRequest:
+        compiled_fields = {"name", "description", "input_schema", "steps", "output_spec"}
+        if self.manifest_source is not None:
+            mixed_fields = compiled_fields & self.model_fields_set
+            if mixed_fields:
+                names = ", ".join(sorted(_external_field_name(field) for field in mixed_fields))
+                raise ValueError(f"manifestSource cannot be combined with {names}")
+            return self
+
+        required_fields = {"name", "input_schema", "steps", "output_spec"}
+        missing_fields = [
+            _external_field_name(field)
+            for field in sorted(required_fields)
+            if getattr(self, field) is None
+        ]
+        if missing_fields:
+            raise ValueError(
+                "Either manifestSource or the compiled workflow fields are required; "
+                + f"missing {', '.join(missing_fields)}"
+            )
+        return self
+
+    def to_workflow_update(self) -> WorkflowUpdate:
+        return WorkflowUpdate.model_validate(
+            self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        )
+
+
+class WorkflowManifestValidationRequest(CamelModel):
+    manifest_source: str
+
+    @field_validator("manifest_source", mode="before")
+    @classmethod
+    def validate_manifest_source(cls, value: object) -> str:
+        return _validate_manifest_source(value)
+
+
+class WorkflowManifestValidationMetadata(CamelModel):
+    api_version: str
+    key: str
+    name: str
+    description: str
+
+
+class WorkflowManifestValidationRead(CamelModel):
+    diagnostics: list[WorkflowManifestDiagnostic]
+    metadata: WorkflowManifestValidationMetadata | None = None
+    compiled_payload: dict[str, Any] | None = None
+    run_input_schema: dict[str, Any] | None = None
+
+
 class WorkflowRead(CamelModel):
     id: int
     key: str
@@ -242,6 +407,8 @@ class WorkflowRead(CamelModel):
     status: WorkflowStatus
     name: str
     description: str
+    manifest_api_version: str
+    manifest_source: str
     input_schema: dict[str, Any]
     steps: list[WorkflowStepRead]
     output_spec: WorkflowOutputSpecRead
@@ -262,11 +429,18 @@ class WorkflowListRead(CamelModel):
 WorkflowRead.model_rebuild()
 WorkflowCreate.model_rebuild()
 WorkflowUpdate.model_rebuild()
+WorkflowCreateRequest.model_rebuild()
+WorkflowUpdateRequest.model_rebuild()
 
 
 __all__ = [
     "WorkflowCreate",
+    "WorkflowCreateRequest",
     "WorkflowListRead",
+    "WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH",
+    "WorkflowManifestValidationMetadata",
+    "WorkflowManifestValidationRead",
+    "WorkflowManifestValidationRequest",
     "WorkflowOutputSlotRead",
     "WorkflowOutputSlotWrite",
     "WorkflowOutputSpecRead",
@@ -278,5 +452,6 @@ __all__ = [
     "WorkflowStepRead",
     "WorkflowStepWrite",
     "WorkflowUpdate",
+    "WorkflowUpdateRequest",
     "WorkflowWireSource",
 ]

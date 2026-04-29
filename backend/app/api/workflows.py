@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.dependencies import get_run_service, get_workflow_service
 from app.schemas.run import RunCreatedRead
 from app.schemas.workflow import (
-    WorkflowCreate,
+    WorkflowCreateRequest,
     WorkflowListRead,
+    WorkflowManifestValidationRead,
+    WorkflowManifestValidationRequest,
     WorkflowRead,
     WorkflowStatus,
-    WorkflowUpdate,
+    WorkflowUpdateRequest,
 )
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -29,10 +31,18 @@ def list_workflows(
 
 @router.post("", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
 def create_workflow(
-    payload: WorkflowCreate,
+    payload: WorkflowCreateRequest,
     service: Annotated[WorkflowService, Depends(get_workflow_service)],
 ) -> WorkflowRead:
     return service.create_workflow(payload)
+
+
+@router.post("/validate-manifest", response_model=WorkflowManifestValidationRead)
+def validate_workflow_manifest(
+    payload: WorkflowManifestValidationRequest,
+    service: Annotated[WorkflowService, Depends(get_workflow_service)],
+) -> WorkflowManifestValidationRead:
+    return service.validate_workflow_manifest(payload)
 
 
 @router.get("/{workflow_id}", response_model=WorkflowRead)
@@ -47,7 +57,7 @@ def get_workflow(
 @router.post("/{workflow_id}", response_model=WorkflowRead)
 def update_workflow(
     workflow_id: int,
-    payload: WorkflowUpdate,
+    payload: WorkflowUpdateRequest,
     service: Annotated[WorkflowService, Depends(get_workflow_service)],
 ) -> WorkflowRead:
     return service.update_workflow(workflow_id, payload)
