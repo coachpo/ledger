@@ -12,6 +12,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin, TimestampMixin
 
+WORKFLOW_MANIFEST_API_VERSION = "ledger.workflow/v1"
+TEMPORARY_WORKFLOW_MANIFEST_SOURCE = (
+    "apiVersion: ledger.workflow/v1\n"
+    "kind: Workflow\n"
+    "metadata:\n"
+    "  source: legacy-payload-placeholder\n"
+)
+
 
 class Workflow(IdMixin, TimestampMixin, Base):
     __tablename__ = "workflows"
@@ -52,6 +60,18 @@ class Workflow(IdMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    manifest_api_version: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default=WORKFLOW_MANIFEST_API_VERSION,
+        server_default=WORKFLOW_MANIFEST_API_VERSION,
+    )
+    manifest_source: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
+        server_default=TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
+    )
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     steps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     output_spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

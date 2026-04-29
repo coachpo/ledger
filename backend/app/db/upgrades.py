@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from app.db.validation import validate_supported_database_engine
 from app.models.mcp_server import flatten_mcp_server_storage_payload
+from app.models.workflow import TEMPORARY_WORKFLOW_MANIFEST_SOURCE, WORKFLOW_MANIFEST_API_VERSION
 
 _OBSOLETE_TABLES = (
     "stock_analysis_versions",
@@ -50,6 +51,14 @@ _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
 _MODEL_CONNECTION_PLACEHOLDER_TIMEOUT_SECONDS = 60
 _RETIRED_SKILL_TOOL_ID = "ledger.stock_analysis.report_lookup"
 _REPAIRED_SKILL_TOOL_ID = "ledger.reports.lookup"
+
+
+def _sql_string_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+_WORKFLOW_MANIFEST_API_VERSION_SQL = _sql_string_literal(WORKFLOW_MANIFEST_API_VERSION)
+_TEMPORARY_WORKFLOW_MANIFEST_SOURCE_SQL = _sql_string_literal(TEMPORARY_WORKFLOW_MANIFEST_SOURCE)
 _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "output_schemas",
@@ -252,6 +261,12 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 status VARCHAR(20) NOT NULL DEFAULT 'draft',
                 name VARCHAR(200) NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
+                manifest_api_version VARCHAR(80) NOT NULL DEFAULT 'ledger.workflow/v1',
+                manifest_source TEXT NOT NULL DEFAULT $$apiVersion: ledger.workflow/v1
+kind: Workflow
+metadata:
+  source: legacy-payload-placeholder
+$$,
                 input_schema JSONB NOT NULL,
                 steps JSONB NOT NULL,
                 output_spec JSONB NOT NULL,
@@ -442,6 +457,76 @@ def _ensure_agent_model_connection_support(engine: Engine, table_names: set[str]
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_agents_model_connection ON agents (model_connection_id)"
         )
+
+
+def _ensure_workflow_manifest_columns(engine: Engine, table_names: set[str]) -> None:
+    if "workflows" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    workflow_columns = {column["name"]: column for column in inspector.get_columns("workflows")}
+
+    with engine.begin() as connection:
+        if "manifest_api_version" not in workflow_columns:
+            _ = connection.exec_driver_sql(
+                f"""
+                ALTER TABLE workflows
+                ADD COLUMN manifest_api_version VARCHAR(80)
+                NOT NULL DEFAULT {_WORKFLOW_MANIFEST_API_VERSION_SQL}
+                """
+            )
+        else:
+            _ = connection.execute(
+                text(
+                    """
+                    UPDATE workflows
+                    SET manifest_api_version = :manifest_api_version
+                    WHERE manifest_api_version IS NULL
+                    """
+                ),
+                {"manifest_api_version": WORKFLOW_MANIFEST_API_VERSION},
+            )
+            _ = connection.exec_driver_sql(
+                f"""
+                ALTER TABLE workflows
+                ALTER COLUMN manifest_api_version
+                SET DEFAULT {_WORKFLOW_MANIFEST_API_VERSION_SQL}
+                """
+            )
+            if workflow_columns["manifest_api_version"].get("nullable", True):
+                _ = connection.exec_driver_sql(
+                    "ALTER TABLE workflows ALTER COLUMN manifest_api_version SET NOT NULL"
+                )
+        if "manifest_source" not in workflow_columns:
+            _ = connection.exec_driver_sql(
+                f"""
+                ALTER TABLE workflows
+                ADD COLUMN manifest_source TEXT
+                NOT NULL DEFAULT {_TEMPORARY_WORKFLOW_MANIFEST_SOURCE_SQL}
+                """
+            )
+        else:
+            _ = connection.execute(
+                text(
+                    """
+                    UPDATE workflows
+                    SET manifest_source = :manifest_source
+                    WHERE manifest_source IS NULL
+                    """
+                ),
+                {"manifest_source": TEMPORARY_WORKFLOW_MANIFEST_SOURCE},
+            )
+            _ = connection.exec_driver_sql(
+                f"""
+                ALTER TABLE workflows
+                ALTER COLUMN manifest_source
+                SET DEFAULT {_TEMPORARY_WORKFLOW_MANIFEST_SOURCE_SQL}
+                """
+            )
+            if workflow_columns["manifest_source"].get("nullable", True):
+                _ = connection.exec_driver_sql(
+                    "ALTER TABLE workflows ALTER COLUMN manifest_source SET NOT NULL"
+                )
 
 
 def _remove_dead_agent_runtime_fields(engine: Engine, table_names: set[str]) -> None:
@@ -920,6 +1005,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
 
     _ensure_run_target_identity_support(engine, table_names)
     _ensure_agent_platform_tables(engine, table_names)
+    _ensure_workflow_manifest_columns(engine, table_names)
     _remove_dead_agent_runtime_fields(engine, table_names)
     _ensure_agent_model_connection_support(engine, table_names)
     _backfill_agent_model_connections(
