@@ -8,14 +8,16 @@ from typing import Any
 
 from pydantic import Field, ValidationInfo, field_validator
 
+from app.schemas.agent_manifest import AgentManifestDiagnostic
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.mcp_server import McpClientBoundaryRead, McpServerStatus, McpServerTransport
-from app.schemas.model_connection import ModelConnectionListItemRead
+from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionReasoningEffort
 from app.schemas.output_schema import OutputSchemaRead
 from app.schemas.skill import SkillRead
 
 _STABLE_AGENT_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 _STABLE_MCP_SERVER_KEY_RE = r"^[a-z][a-z0-9_-]{0,119}$"
+AGENT_MANIFEST_SOURCE_MAX_LENGTH = 262_144
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -43,6 +45,18 @@ def _normalize_agent_key(value: object) -> str:
             "Key must start with a letter and use only lowercase letters, numbers, and underscores"
         )
     return normalized
+
+
+def _validate_manifest_source(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("manifestSource must be a string")
+    if not value.strip():
+        raise ValueError("manifestSource is required")
+    if len(value) > AGENT_MANIFEST_SOURCE_MAX_LENGTH:
+        raise ValueError(
+            f"manifestSource must be at most {AGENT_MANIFEST_SOURCE_MAX_LENGTH} characters"
+        )
+    return value
 
 
 def _normalize_mcp_server_key(value: object) -> str:
@@ -128,6 +142,33 @@ class AgentUpdate(AgentVersionBase):
     pass
 
 
+class AgentManifestWriteRequest(CamelModel):
+    manifest_source: str
+
+    @field_validator("manifest_source", mode="before")
+    @classmethod
+    def validate_manifest_source(cls, value: object) -> str:
+        return _validate_manifest_source(value)
+
+
+class AgentManifestValidationRequest(AgentManifestWriteRequest):
+    pass
+
+
+class AgentManifestValidationMetadata(CamelModel):
+    api_version: str
+    key: str
+    name: str
+    description: str
+
+
+class AgentManifestValidationRead(CamelModel):
+    diagnostics: list[AgentManifestDiagnostic]
+    metadata: AgentManifestValidationMetadata | None = None
+    compiled_payload: dict[str, Any] | None = None
+    run_input_schema: dict[str, Any] | None = None
+
+
 class AgentMcpServerRead(CamelModel):
     id: int
     key: str
@@ -140,6 +181,15 @@ class AgentMcpServerRead(CamelModel):
     boundary: McpClientBoundaryRead
 
 
+class AgentModelConnectionSnapshotRead(CamelModel):
+    base_url: str
+    model_id: str
+    organization: str | None = None
+    project: str | None = None
+    reasoning_effort: ModelConnectionReasoningEffort
+    timeout_seconds: int = Field(ge=1)
+
+
 class AgentRead(CamelModel):
     id: int
     key: str
@@ -147,8 +197,13 @@ class AgentRead(CamelModel):
     status: AgentStatus
     name: str
     description: str
+    manifest_api_version: str
+    manifest_source: str
+    manifest_hash: str
+    compiler_version: str
     model_connection_id: int = Field(ge=1)
     model_connection: ModelConnectionListItemRead
+    model_connection_snapshot: AgentModelConnectionSnapshotRead
     system_prompt: str
     input_schema: dict[str, Any]
     output_schema: OutputSchemaRead
@@ -169,8 +224,14 @@ class AgentListRead(CamelModel):
 
 
 __all__ = [
+    "AGENT_MANIFEST_SOURCE_MAX_LENGTH",
     "AgentCreate",
     "AgentListRead",
+    "AgentManifestValidationMetadata",
+    "AgentManifestValidationRead",
+    "AgentManifestValidationRequest",
+    "AgentManifestWriteRequest",
+    "AgentModelConnectionSnapshotRead",
     "AgentMcpServerRead",
     "AgentMcpServerRefWrite",
     "AgentRead",
