@@ -5,10 +5,11 @@ from datetime import datetime
 from typing import Any, cast
 
 import openai
+from fastapi import status
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from app.core.errors import not_found_error
+from app.core.errors import ApiError, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
@@ -20,6 +21,7 @@ from app.schemas.model_connection import (
     ModelConnectionRead,
     ModelConnectionStatus,
     ModelConnectionUpdate,
+    normalize_model_connection_key,
 )
 
 
@@ -50,8 +52,41 @@ class ModelConnectionService:
     def get_connection(self, connection_id: int) -> ModelConnectionRead:
         return ModelConnectionRead.model_validate(self._get_model(connection_id))
 
+    def resolve_connection_by_key(self, key: str) -> ModelConnection:
+        normalized_key = self._normalize_key_for_resolver(key)
+        connection = self.repository.get_by_key(normalized_key)
+        if connection is None:
+            raise validation_error(
+                "Model connection validation failed",
+                [
+                    {
+                        "field": "modelConnection",
+                        "issue": f"Model connection {normalized_key!r} was not found",
+                    }
+                ],
+            )
+        if connection.status != ModelConnectionStatus.ACTIVE.value:
+            raise validation_error(
+                "Model connection validation failed",
+                [
+                    {
+                        "field": "modelConnection",
+                        "issue": "Archived model connections cannot be selected",
+                    }
+                ],
+            )
+        return connection
+
     def create_connection(self, payload: ModelConnectionCreate) -> ModelConnectionRead:
+        if self.repository.get_by_key(payload.key) is not None:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="model_connection_duplicate_key",
+                message="A model connection with this key already exists",
+            )
+
         connection = ModelConnection(
+            key=payload.key,
             status=ModelConnectionStatus.ACTIVE.value,
             name=payload.name,
             description=payload.description,
@@ -149,6 +184,16 @@ class ModelConnectionService:
         if connection is None:
             raise not_found_error("Model connection")
         return connection
+
+    @staticmethod
+    def _normalize_key_for_resolver(key: str) -> str:
+        try:
+            return normalize_model_connection_key(key)
+        except ValueError as exc:
+            raise validation_error(
+                "Model connection validation failed",
+                [{"field": "modelConnection", "issue": str(exc)}],
+            ) from exc
 
     def _run_connection_test(self, connection: ModelConnection) -> _ModelConnectionTestResult:
         tested_at = utcnow()

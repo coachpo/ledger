@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from urllib.parse import urlsplit, urlunsplit
@@ -7,6 +8,8 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
+
+_STABLE_MODEL_CONNECTION_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -56,6 +59,15 @@ def _normalize_base_url(value: object) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
+def normalize_model_connection_key(value: object) -> str:
+    normalized = _normalize_required_text(value, field_name="Key").lower()
+    if re.fullmatch(_STABLE_MODEL_CONNECTION_KEY_RE, normalized) is None:
+        raise ValueError(
+            "Key must start with a letter and use only lowercase letters, numbers, and underscores"
+        )
+    return normalized
+
+
 class ModelConnectionStatus(str, Enum):  # noqa: UP042
     ACTIVE = "active"
     ARCHIVED = "archived"
@@ -68,6 +80,7 @@ class ModelConnectionReasoningEffort(str, Enum):  # noqa: UP042
 
 
 class ModelConnectionCreate(CamelModel):
+    key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     base_url: str
@@ -77,6 +90,11 @@ class ModelConnectionCreate(CamelModel):
     reasoning_effort: ModelConnectionReasoningEffort = ModelConnectionReasoningEffort.MEDIUM
     timeout_seconds: int = Field(default=60, ge=1)
     api_key: str | None = None
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def validate_key(cls, value: object) -> str:
+        return normalize_model_connection_key(value)
 
     @field_validator("name", "model_id", mode="before")
     @classmethod
@@ -160,6 +178,7 @@ class ModelConnectionUpdate(CamelModel):
 
 class ModelConnectionListItemRead(CamelModel):
     id: int
+    key: str
     status: ModelConnectionStatus
     name: str
     description: str
@@ -218,4 +237,5 @@ __all__ = [
     "ModelConnectionReasoningEffort",
     "ModelConnectionStatus",
     "ModelConnectionUpdate",
+    "normalize_model_connection_key",
 ]

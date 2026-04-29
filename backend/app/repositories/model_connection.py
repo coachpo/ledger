@@ -23,5 +23,16 @@ class ModelConnectionRepository(BaseRepository[ModelConnection]):
     def list_active(self) -> list[ModelConnection]:
         return self.list_connections(status="active")
 
+    def get_by_key(self, key: str) -> ModelConnection | None:
+        statement = select(self.model).where(self.model.key == key)
+        return self._get_by_statement(statement)
+
+    def resolve_active_by_key(self, key: str) -> ModelConnection | None:
+        statement = select(self.model).where(
+            self.model.key == key,
+            self.model.status == "active",
+        )
+        return self._get_by_statement(statement)
+
 
 __all__ = ["ModelConnectionRepository"]

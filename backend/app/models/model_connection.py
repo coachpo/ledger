@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,10 +26,13 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
             "timeout_seconds > 0",
             name="ck_model_connections_timeout_seconds_positive",
         ),
+        UniqueConstraint("key", name="uq_model_connections_key"),
+        Index("ix_model_connections_key", "key"),
         Index("ix_model_connections_status", "status"),
         Index("ix_model_connections_model_id", "model_id"),
     )
 
+    key: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
