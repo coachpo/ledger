@@ -19,6 +19,7 @@ from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.schemas.workflow import WorkflowCreate
 from app.services.execution_plan_builder import ExecutionPlanBuilder
+from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
 
@@ -76,12 +77,14 @@ def _build_agent_platform_mcp_server(*, key: str, version: int, status: str) -> 
 def _build_model_connection(
     *,
     name: str,
+    key: str | None = None,
     api_key: str | None = "sk-artifact-secret-1234",
     base_url: str = "https://api.openai.com/v1",
     model_id: str = "gpt-5.4-mini",
 ) -> ModelConnection:
     payload = {} if api_key is None else {"apiKey": api_key}
     return ModelConnection(
+        key=key or name.strip().lower().replace(" ", "_"),
         status="active",
         name=name,
         description=f"{name} description",
@@ -109,6 +112,10 @@ def _build_agent_platform_agent(
     input_schema: dict[str, Any] | None = None,
     budget_usd: Decimal = Decimal("1.00000000"),
 ) -> Agent:
+    if model_connection is None:
+        model_connection_snapshot = {}
+    else:
+        model_connection_snapshot = build_model_connection_runtime_snapshot(model_connection)
     return Agent(
         key=key,
         version=version,
@@ -116,6 +123,7 @@ def _build_agent_platform_agent(
         name=f"{key}-{version}",
         description="Agent configuration",
         model_connection_id=None if model_connection is None else model_connection.id,
+        model_connection_snapshot=model_connection_snapshot,
         model=("openai:gpt-5.4-mini" if model_connection is None else model_connection.model_id),
         system_prompt="Analyze the ticker and return a typed result.",
         input_schema=input_schema

@@ -32,6 +32,7 @@ from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
 from app.services.mcp_server_service import McpServerService
+from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from app.services.position_service import PositionService
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
@@ -245,6 +246,7 @@ def _build_output_schema(*, key: str, version: int, status: str) -> OutputSchema
 def _build_model_connection(
     *,
     name: str,
+    key: str | None = None,
     status: str = "active",
     api_key: str | None = "sk-test-secret-1234",
     base_url: str = "https://api.openai.com/v1",
@@ -256,6 +258,7 @@ def _build_model_connection(
 ) -> ModelConnection:
     payload = {} if api_key is None else {"apiKey": api_key}
     return ModelConnection(
+        key=key or name.strip().lower().replace(" ", "_"),
         status=status,
         name=name,
         description=f"{name} description",
@@ -283,6 +286,10 @@ def _build_agent_platform_agent(
     input_schema: dict[str, Any] | None = None,
     budget_usd: Decimal = Decimal("1.25000000"),
 ) -> Agent:
+    if model_connection is None:
+        model_connection_snapshot = {}
+    else:
+        model_connection_snapshot = build_model_connection_runtime_snapshot(model_connection)
     return Agent(
         key=key,
         version=version,
@@ -290,6 +297,7 @@ def _build_agent_platform_agent(
         name=f"{key}-{version}",
         description="Agent configuration",
         model_connection_id=None if model_connection is None else model_connection.id,
+        model_connection_snapshot=model_connection_snapshot,
         model=("openai:gpt-5.4-mini" if model_connection is None else model_connection.model_id),
         system_prompt="Analyze the ticker and return a typed result.",
         input_schema=input_schema
@@ -659,6 +667,7 @@ class _FakeMcpConnectionTester:
 
 def _model_connection_payload(
     *,
+    key: str = "primary_openai",
     name: str = "Primary OpenAI",
     description: str = "Primary model connection.",
     base_url: str = "https://api.openai.com",
@@ -670,6 +679,7 @@ def _model_connection_payload(
     api_key: str | None = "sk-test-secret-1234",
 ) -> dict[str, object]:
     payload: dict[str, object] = {
+        "key": key,
         "name": name,
         "description": description,
         "baseUrl": base_url,
@@ -1116,6 +1126,7 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     assert create_response.status_code == 201, create_response.json()
     created = create_response.json()
     connection_id = created["id"]
+    assert created["key"] == "primary_openai"
     assert created["baseUrl"] == "https://api.openai.com/v1"
     assert created["hasApiKey"] is True
     assert created["apiKeyLast4"] == "1234"
@@ -1126,6 +1137,7 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     assert listed.status_code == 200, listed.json()
     listed_item = listed.json()["items"][0]
     assert listed_item["id"] == connection_id
+    assert listed_item["key"] == "primary_openai"
     assert listed_item["hasApiKey"] is True
     assert listed_item["apiKeyLast4"] == "1234"
     assert "apiKey" not in listed_item and "sk-test-secret-1234" not in json.dumps(listed_item)
@@ -1133,6 +1145,7 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     detail = client.get(f"/api/model-connections/{connection_id}")
     assert detail.status_code == 200, detail.json()
     assert detail.json()["id"] == connection_id
+    assert detail.json()["key"] == "primary_openai"
 
     preserved = client.patch(
         f"/api/model-connections/{connection_id}",
@@ -1184,6 +1197,46 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
         params={"status": "archived"},
     ).json()["items"]
     assert archived_items[0]["id"] == connection_id
+    assert archived_items[0]["key"] == "primary_openai"
+
+
+def test_agent_platform_model_connections_require_unique_immutable_keys(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    missing_key_payload = _model_connection_payload()
+    missing_key_payload.pop("key")
+    missing_key = client.post("/api/model-connections", json=missing_key_payload)
+    assert missing_key.status_code == 422, missing_key.json()
+    assert missing_key.json()["code"] == "validation_error"
+
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(key="Primary_OpenAI", name="Primary OpenAI"),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    created = create_response.json()
+    connection_id = created["id"]
+    assert created["key"] == "primary_openai"
+
+    duplicate = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(key="primary_openai", name="Secondary OpenAI"),
+    )
+    assert duplicate.status_code == 409, duplicate.json()
+    assert duplicate.json()["code"] == "model_connection_duplicate_key"
+
+    key_change = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"key": "secondary_openai"},
+    )
+    assert key_change.status_code == 422, key_change.json()
+    assert key_change.json()["code"] == "validation_error"
+
+    with session_factory() as session:
+        row = session.get(ModelConnection, connection_id)
+        assert row is not None
+        assert row.key == "primary_openai"
 
 
 def test_agent_platform_model_connections_patch_rejects_empty_api_key(
@@ -1433,40 +1486,40 @@ def test_agent_platform_agent_create_rejects_archived_model_connection_selection
     response = client.post(
         "/api/agents",
         json={
-            "key": "archived_save_agent",
-            "name": "Archived Save Agent",
-            "description": "Should fail",
-            "modelConnectionId": archived_connection.id,
-            "systemPrompt": "Analyze the ticker and return a typed result.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"],
-            },
-            "outputSchemaKey": output_schema.key,
-            "outputSchemaVersion": output_schema.version,
-            "skills": [{"skillKey": skill.key, "skillVersion": skill.version}],
-            "mcpServers": [
-                {
-                    "mcpServerKey": mcp_server.key,
-                    "mcpServerVersion": mcp_server.version,
-                }
-            ],
-            "budgetUsd": "1.25000000",
+            "manifestSource": f"""apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: archived_save_agent
+  name: Archived Save Agent
+  description: Should fail
+spec:
+  modelConnection: {archived_connection.key}
+  systemPrompt: |
+    Analyze the ticker and return a typed result.
+  inputSchema:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required:
+      - ticker
+  outputSchema: {output_schema.key}@{output_schema.version}
+  skills:
+    - {skill.key}@{skill.version}
+  mcpServers:
+    - {mcp_server.key}@{mcp_server.version}
+  budgetUsd: "1.25000000"
+""",
         },
     )
 
     assert response.status_code == 422, response.json()
-    assert response.json() == {
-        "code": "validation_error",
-        "message": "Agent validation failed",
-        "details": [
-            {
-                "field": "modelConnectionId",
-                "issue": "Archived model connections cannot be selected",
-            }
-        ],
-    }
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Agent manifest validation failed"
+    assert body["details"][0]["field"] == "manifestSource"
+    assert body["details"][0]["path"] == "spec.modelConnection"
+    assert "Active model connection" in body["details"][0]["issue"]
 
 
 def test_agent_platform_run_uses_saved_model_connection_instead_of_env_settings(
@@ -1516,6 +1569,60 @@ def test_agent_platform_run_uses_saved_model_connection_instead_of_env_settings(
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-db-right"
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
     assert "TSLA" in _RuntimeRecordingOpenAIClient.create_calls[-1]["input"]
+
+
+def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_connection_update(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot runtime output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    with session_factory() as session:
+        connection = _build_model_connection(
+            name="Snapshot Runtime Connection",
+            api_key="sk-original-secret-1111",
+            base_url="https://snapshot-v1.example.com/v1",
+            model_id="gpt-snapshot-v1",
+            reasoning_effort="high",
+            timeout_seconds=31,
+            organization="org-v1",
+            project="proj-v1",
+        )
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="snapshot_runtime_agent",
+            workflow_key="snapshot_runtime_workflow",
+            connection=connection,
+        )
+        connection.base_url = "https://snapshot-v2.example.com/v1"
+        connection.model_id = "gpt-snapshot-v2"
+        connection.reasoning_effort = "low"
+        connection.timeout_seconds = 91
+        connection.organization = "org-v2"
+        connection.project = "proj-v2"
+        connection.secret_payload = {"apiKey": "sk-rotated-secret-2222"}
+        connection.has_api_key = True
+        connection.api_key_last4 = "2222"
+        session.commit()
+
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "MSFT"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "snapshot runtime output"}
+    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
+        "api_key": "sk-rotated-secret-2222",
+        "base_url": "https://snapshot-v1.example.com/v1",
+        "timeout": 31.0,
+        "organization": "org-v1",
+        "project": "proj-v1",
+    }
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-snapshot-v1"
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
 
 
 @pytest.mark.parametrize(
