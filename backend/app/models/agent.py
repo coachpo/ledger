@@ -12,6 +12,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin, TimestampMixin
 
+AGENT_MANIFEST_API_VERSION = "ledger.agent/v1"
+AGENT_MANIFEST_COMPILER_VERSION = "agent-manifest-compiler/v1"
+TEMPORARY_AGENT_MANIFEST_SOURCE = (
+    "apiVersion: ledger.agent/v1\n"
+    "kind: Agent\n"
+    "metadata:\n"
+    "  source: legacy-payload-placeholder\n"
+)
+TEMPORARY_AGENT_MANIFEST_HASH = "98e17b8a6f1bd584aab673e2ab817f26173a7a1cd19ec5890c5bd2f0099c2f3b"
+
 
 class Agent(IdMixin, TimestampMixin, Base):
     __tablename__ = "agents"
@@ -55,7 +65,37 @@ class Agent(IdMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    manifest_api_version: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default=AGENT_MANIFEST_API_VERSION,
+        server_default=AGENT_MANIFEST_API_VERSION,
+    )
+    manifest_source: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=TEMPORARY_AGENT_MANIFEST_SOURCE,
+        server_default=TEMPORARY_AGENT_MANIFEST_SOURCE,
+    )
+    manifest_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=TEMPORARY_AGENT_MANIFEST_HASH,
+        server_default=TEMPORARY_AGENT_MANIFEST_HASH,
+    )
+    compiler_version: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default=AGENT_MANIFEST_COMPILER_VERSION,
+        server_default=AGENT_MANIFEST_COMPILER_VERSION,
+    )
     model_connection_id: Mapped[int] = mapped_column(nullable=False)
+    model_connection_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
     model: Mapped[str] = mapped_column(String(200), nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
