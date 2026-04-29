@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import ApiError
 from app.models.agent import Agent
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
@@ -19,6 +21,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.skill import SkillRepository
 from app.repositories.workflow import WorkflowRepository
+from app.services.model_connection_service import ModelConnectionService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -79,11 +82,13 @@ def _build_mcp_server(
 def _build_model_connection(
     *,
     name: str,
+    key: str | None = None,
     status: str,
     api_key: str,
     model_id: str = "gpt-5.4-mini",
 ) -> ModelConnection:
     return ModelConnection(
+        key=key or name.strip().lower().replace(" ", "_"),
         status=status,
         name=name,
         description=f"{name} description",
@@ -109,6 +114,7 @@ def _build_agent(
     mcp_servers: list[McpServer],
     budget_usd: Decimal,
     model_connection_id: int = 1,
+    model: str = "openai:gpt-5.4-mini",
 ) -> Agent:
     return Agent(
         key=key,
@@ -117,7 +123,7 @@ def _build_agent(
         name=f"{key}-{version}",
         description="Agent description",
         model_connection_id=model_connection_id,
-        model="openai:gpt-5.4-mini",
+        model=model,
         system_prompt="Assess the input and return a typed result.",
         input_schema={"type": "object", "required": ["ticker"]},
         output_schema_id=output_schema.id,
@@ -356,16 +362,19 @@ def test_agent_platform_model_connection_repository_filters_active_and_archived_
     with session_factory() as session:
         archived = _build_model_connection(
             name="Archived Connection",
+            key="archived_openai",
             status="archived",
             api_key="sk-archived-4444",
         )
         alpha_active = _build_model_connection(
             name="Alpha Active",
+            key="alpha_openai",
             status="active",
             api_key="sk-active-1111",
         )
         beta_active = _build_model_connection(
             name="Beta Active",
+            key="beta_openai",
             status="active",
             api_key="sk-active-2222",
         )
@@ -388,6 +397,55 @@ def test_agent_platform_model_connection_repository_filters_active_and_archived_
         assert archived_row is not None
         assert archived_row.status == "archived"
         assert archived_row.secret_payload == {"apiKey": "sk-archived-4444"}
+
+
+def test_agent_platform_model_connection_repository_and_service_resolve_by_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        active = _build_model_connection(
+            name="Primary OpenAI",
+            key="primary_openai",
+            status="active",
+            api_key="sk-active-1111",
+        )
+        archived = _build_model_connection(
+            name="Archived OpenAI",
+            key="archived_openai",
+            status="archived",
+            api_key="sk-archived-2222",
+        )
+        session.add_all([active, archived])
+        session.commit()
+
+        repo = ModelConnectionRepository(session)
+        service = ModelConnectionService(session)
+
+        resolved = repo.get_by_key("primary_openai")
+        active_only = repo.resolve_active_by_key("primary_openai")
+        archived_active_only = repo.resolve_active_by_key("archived_openai")
+
+        assert resolved is not None and resolved.id == active.id
+        assert active_only is not None and active_only.id == active.id
+        assert archived_active_only is None
+        assert service.resolve_connection_by_key("PRIMARY_OPENAI").id == active.id
+
+        with pytest.raises(ApiError) as missing_error:
+            service.resolve_connection_by_key("missing_openai")
+        assert missing_error.value.code == "validation_error"
+        assert missing_error.value.details == [
+            {
+                "field": "modelConnection",
+                "issue": "Model connection 'missing_openai' was not found",
+            }
+        ]
+
+        with pytest.raises(ApiError) as archived_error:
+            service.resolve_connection_by_key("archived_openai")
+        assert archived_error.value.code == "validation_error"
+        assert archived_error.value.details == [
+            {"field": "modelConnection", "issue": "Archived model connections cannot be selected"}
+        ]
 
 
 def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_versions(
@@ -480,6 +538,57 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
         assert draft_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 2
         assert [(item.key, item.version) for item in workflow_repo.list_latest_versions()] == [
             ("market_review", 2)
+        ]
+
+
+def test_agent_repository_model_filter_uses_saved_agent_model_value(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_schema = _build_output_schema(
+            key="decision_schema",
+            version=1,
+            status="published",
+        )
+        published_server = _build_mcp_server(
+            key="market_data",
+            version=1,
+            status="published",
+            transport="http-sse",
+        )
+        session.add_all([published_skill, published_schema, published_server])
+        session.flush()
+        session.add_all(
+            [
+                _build_agent(
+                    key="snapshot_agent",
+                    version=1,
+                    status="published",
+                    output_schema=published_schema,
+                    skills=[published_skill],
+                    mcp_servers=[published_server],
+                    budget_usd=Decimal("1.00000000"),
+                    model="gpt-snapshot-v1",
+                ),
+                _build_agent(
+                    key="live_connection_agent",
+                    version=1,
+                    status="published",
+                    output_schema=published_schema,
+                    skills=[published_skill],
+                    mcp_servers=[published_server],
+                    budget_usd=Decimal("1.00000000"),
+                    model="gpt-live-v2",
+                ),
+            ]
+        )
+        session.commit()
+
+        agent_repo = AgentRepository(session)
+
+        assert [item.key for item in agent_repo.list_latest_versions(model="gpt-snapshot-v1")] == [
+            "snapshot_agent"
         ]
 
 

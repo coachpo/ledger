@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.agent import Agent
 from app.models.base import Base
 from app.models.mcp_server import McpServer
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
 from app.models.skill import Skill
@@ -238,15 +239,18 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert {"uq_mcp_servers_published_key", "uq_mcp_servers_draft_key"} <= {
         index.name for index in mcp_server_table.indexes
     }
-    assert {"ix_model_connections_status", "ix_model_connections_model_id"} <= {
-        index.name for index in model_connection_table.indexes
-    }
+    assert {
+        "ix_model_connections_key",
+        "ix_model_connections_status",
+        "ix_model_connections_model_id",
+    } <= {index.name for index in model_connection_table.indexes}
     assert {"uq_output_schemas_published_key", "uq_output_schemas_draft_key"} <= {
         index.name for index in output_schema_table.indexes
     }
     assert "config" in mcp_server_table.c
     assert {
         "secret_payload",
+        "key",
         "has_api_key",
         "api_key_last4",
         "last_tested_at",
@@ -257,10 +261,55 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
         "ck_model_connections_status",
         "ck_model_connections_reasoning_effort",
         "ck_model_connections_timeout_seconds_positive",
+        "uq_model_connections_key",
     } <= {constraint.name for constraint in model_connection_table.constraints if constraint.name}
     assert "ck_mcp_servers_target" not in {
         constraint.name for constraint in mcp_server_table.constraints if constraint.name
     }
+
+
+def test_agent_platform_model_connections_enforce_unique_keys(session_factory) -> None:
+    with session_factory() as session:
+        session.add(
+            ModelConnection(
+                key="primary_openai",
+                status="active",
+                name="Primary OpenAI",
+                description="Primary model connection",
+                base_url="https://api.openai.com/v1",
+                organization=None,
+                project=None,
+                model_id="gpt-5.4-mini",
+                reasoning_effort="medium",
+                timeout_seconds=60,
+                secret_payload={},
+                has_api_key=False,
+                api_key_last4=None,
+            )
+        )
+        session.commit()
+
+        session.add(
+            ModelConnection(
+                key="primary_openai",
+                status="active",
+                name="Duplicate OpenAI",
+                description="Duplicate model connection",
+                base_url="https://api.openai.com/v1",
+                organization=None,
+                project=None,
+                model_id="gpt-5.4",
+                reasoning_effort="medium",
+                timeout_seconds=60,
+                secret_payload={},
+                has_api_key=False,
+                api_key_last4=None,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
 
 
 def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_status_indexes(
@@ -275,6 +324,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
         "ix_agents_output_schema",
     } <= {index.name for index in agent_table.indexes}
     assert agent_table.c.model_connection_id.nullable is False
+    assert agent_table.c.model_connection_snapshot.nullable is False
     assert {"temperature", "max_tool_rounds", "streaming"}.isdisjoint(agent_table.c.keys())
 
     with session_factory() as session:
