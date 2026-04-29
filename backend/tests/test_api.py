@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -233,9 +234,56 @@ def create_agent(
     *,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    response = client.post("/api/agents", json=payload)
+    request_payload = payload if "manifestSource" in payload else _agent_manifest_request(payload)
+    response = client.post("/api/agents", json=request_payload)
     assert response.status_code == 201, response.json()
     return response.json()
+
+
+def _agent_manifest_request(payload: dict[str, object]) -> dict[str, object]:
+    return {"manifestSource": _agent_manifest_source(payload)}
+
+
+def _agent_manifest_source(payload: dict[str, object]) -> str:
+    key = str(payload.get("key") or "research_agent")
+    description = str(payload.get("description") or "")
+    output_schema_version = _coerce_manifest_version(payload.get("outputSchemaVersion"))
+    skill_refs = cast(list[dict[str, object]], payload.get("skills") or [])
+    mcp_server_refs = cast(list[dict[str, object]], payload.get("mcpServers") or [])
+    skill_lines = [
+        f"    - {ref['skillKey']}@{_coerce_manifest_version(ref.get('skillVersion'))}"
+        for ref in skill_refs
+    ]
+    mcp_server_lines = [
+        f"    - {ref['mcpServerKey']}@{_coerce_manifest_version(ref.get('mcpServerVersion'))}"
+        for ref in mcp_server_refs
+    ]
+    system_prompt = str(payload["systemPrompt"]).rstrip("\n")
+    indented_prompt = "\n".join(f"    {line}" for line in system_prompt.splitlines())
+    lines = [
+        "apiVersion: ledger.agent/v1",
+        "kind: Agent",
+        "metadata:",
+        f"  key: {key}",
+        f"  name: {json.dumps(str(payload['name']))}",
+        f"  description: {json.dumps(description)}",
+        "spec:",
+        f"  modelConnection: {payload['modelConnectionKey']}",
+        "  systemPrompt: |",
+        indented_prompt,
+        f"  inputSchema: {json.dumps(payload['inputSchema'])}",
+        f"  outputSchema: {payload['outputSchemaKey']}@{output_schema_version}",
+    ]
+    lines.extend(["  skills:", *skill_lines] if skill_lines else ["  skills: []"])
+    lines.extend(["  mcpServers:", *mcp_server_lines] if mcp_server_lines else ["  mcpServers: []"])
+    lines.extend([f"  budgetUsd: {json.dumps(str(payload.get('budgetUsd') or '0'))}", ""])
+    return "\n".join(lines)
+
+
+def _coerce_manifest_version(value: object) -> int:
+    if value is None:
+        return 1
+    return int(str(value))
 
 
 def create_workflow(
@@ -334,12 +382,18 @@ def _stub_synthesizer_input_schema() -> dict[str, object]:
     }
 
 
-def _stub_agent_payload(*, key: str, model_connection_id: int) -> dict[str, object]:
+def _stub_agent_payload(
+    *,
+    key: str,
+    model_connection_id: int,
+    model_connection_key: str,
+) -> dict[str, object]:
     return {
         "key": key,
         "name": key.replace("_", " ").title(),
         "description": f"Deterministic stub agent for {key}.",
         "modelConnectionId": model_connection_id,
+        "modelConnectionKey": model_connection_key,
         "systemPrompt": f"Return the deterministic stub analysis for {key}.",
         "inputSchema": _stub_workflow_input_schema(),
         "outputSchemaKey": STUB_NOTE_SCHEMA_KEY,
@@ -349,12 +403,17 @@ def _stub_agent_payload(*, key: str, model_connection_id: int) -> dict[str, obje
     }
 
 
-def _stub_synthesizer_payload(*, model_connection_id: int) -> dict[str, object]:
+def _stub_synthesizer_payload(
+    *,
+    model_connection_id: int,
+    model_connection_key: str,
+) -> dict[str, object]:
     return {
         "key": STUB_SYNTHESIZER_KEY,
         "name": "Decision Synthesizer",
         "description": "Combines deterministic analyses into a final decision.",
         "modelConnectionId": model_connection_id,
+        "modelConnectionKey": model_connection_key,
         "systemPrompt": "Combine the wired analyses into a deterministic trading decision.",
         "inputSchema": _stub_synthesizer_input_schema(),
         "outputSchemaKey": STUB_DECISION_SCHEMA_KEY,
@@ -469,6 +528,7 @@ def _seed_stub_platform_workflow(client: TestClient) -> None:
     model_connection = create_model_connection(
         client,
         payload={
+            "key": "stub_workspace_runtime",
             "name": "Stub Workspace Runtime",
             "description": "Shared deterministic runtime connection for API tests.",
             "baseUrl": "https://api.openai.com",
@@ -484,12 +544,14 @@ def _seed_stub_platform_workflow(client: TestClient) -> None:
             payload=_stub_agent_payload(
                 key=agent_key,
                 model_connection_id=cast(int, model_connection["id"]),
+                model_connection_key=str(model_connection["key"]),
             ),
         )
     create_agent(
         client,
         payload=_stub_synthesizer_payload(
             model_connection_id=cast(int, model_connection["id"]),
+            model_connection_key=str(model_connection["key"]),
         ),
     )
 
@@ -1170,6 +1232,7 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
     model_connection = create_model_connection(
         client,
         payload={
+            "key": "agent_test_runtime",
             "name": "Agent Test Runtime",
             "description": "Shared model connection for agent/workflow API tests.",
             "baseUrl": "https://api.openai.com",
@@ -1206,6 +1269,7 @@ def _agent_payload(
         "name": name,
         "description": description,
         "modelConnectionId": dependencies["modelConnection"]["id"],
+        "modelConnectionKey": dependencies["modelConnection"]["key"],
         "systemPrompt": system_prompt,
         "inputSchema": input_schema,
         "outputSchemaKey": output_schema_key,
@@ -1341,26 +1405,28 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
 
     update_response = client.post(
         f"/api/agents/{created['id']}",
-        json=_agent_payload(
-            dependencies,
-            key="research_agent",
-            name="Research Agent v2",
-            description="Uses explicit pinned dependency versions.",
-            system_prompt="Use the pinned dependencies and return the richer schema.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string"},
-                    "horizonDays": {"type": "integer"},
+        json=_agent_manifest_request(
+            _agent_payload(
+                dependencies,
+                key="research_agent",
+                name="Research Agent v2",
+                description="Uses explicit pinned dependency versions.",
+                system_prompt="Use the pinned dependencies and return the richer schema.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string"},
+                        "horizonDays": {"type": "integer"},
+                    },
+                    "required": ["ticker", "horizonDays"],
                 },
-                "required": ["ticker", "horizonDays"],
-            },
-            output_schema_key="decision_schema",
-            include_key=False,
-            output_schema_version=2,
-            skills=[{"skillKey": "market_research", "skillVersion": 2}],
-            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
-            budget_usd="2.50000000",
+                output_schema_key="decision_schema",
+                include_key=False,
+                output_schema_version=2,
+                skills=[{"skillKey": "market_research", "skillVersion": 2}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
+                budget_usd="2.50000000",
+            )
         ),
     )
     assert update_response.status_code == 200, update_response.json()
@@ -1415,24 +1481,26 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
     )
     updated = client.post(
         f"/api/agents/{created['id']}",
-        json=_agent_payload(
-            dependencies,
-            key="research_agent",
-            name="Research Agent v2",
-            description="Version 2 for archive coverage.",
-            system_prompt="Use version 2 for archive coverage.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string"},
-                    "horizonDays": {"type": "integer"},
+        json=_agent_manifest_request(
+            _agent_payload(
+                dependencies,
+                key="research_agent",
+                name="Research Agent v2",
+                description="Version 2 for archive coverage.",
+                system_prompt="Use version 2 for archive coverage.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string"},
+                        "horizonDays": {"type": "integer"},
+                    },
+                    "required": ["ticker"],
                 },
-                "required": ["ticker"],
-            },
-            output_schema_key="decision_schema",
-            include_key=False,
-            skills=[{"skillKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+                output_schema_key="decision_schema",
+                include_key=False,
+                skills=[{"skillKey": "market_research"}],
+                mcp_servers=[{"mcpServerKey": "market_data"}],
+            )
         ),
     )
     assert updated.status_code == 200, updated.json()
@@ -1464,27 +1532,30 @@ def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
     dependencies = _seed_agent_platform_agent_dependencies(client)
 
     response = client.post(
-        "/api/agents",
-        json=_agent_payload(
-            dependencies,
-            key="invalid_agent",
-            name="Invalid Agent",
-            description="",
-            system_prompt="This save should fail.",
-            input_schema={
-                "allOf": [{"type": "object"}, {"type": "string"}],
-            },
-            output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+        "/api/agents/validate-manifest",
+        json=_agent_manifest_request(
+            _agent_payload(
+                dependencies,
+                key="invalid_agent",
+                name="Invalid Agent",
+                description="",
+                system_prompt="This save should fail.",
+                input_schema={
+                    "type": "object",
+                    "allOf": [{"type": "object"}, {"type": "string"}],
+                },
+                output_schema_key="decision_schema",
+                skills=[{"skillKey": "market_research"}],
+                mcp_servers=[{"mcpServerKey": "market_data"}],
+            )
         ),
     )
 
-    assert response.status_code == 422, response.json()
-    assert response.json()["code"] == "validation_error"
+    assert response.status_code == 200, response.json()
     assert any(
-        detail["field"] == "inputSchema.allOf" and "allOf is not supported" in detail["issue"]
-        for detail in response.json()["details"]
+        diagnostic["path"] == "spec.inputSchema.allOf"
+        and "allOf is not supported" in diagnostic["message"]
+        for diagnostic in response.json()["diagnostics"]
     )
 
 
@@ -1528,29 +1599,34 @@ def test_agent_platform_agent_missing_output_schema_returns_field_errors(
     dependencies = _seed_agent_platform_agent_dependencies(client)
 
     response = client.post(
-        "/api/agents",
-        json=_agent_payload(
-            dependencies,
-            key="broken_agent",
-            name="Broken Agent",
-            description="",
-            system_prompt="This save should fail.",
-            input_schema={
-                "type": "object",
-                "properties": {"ticker": {"type": "string"}},
-                "required": ["ticker"],
-            },
-            output_schema_key="missing_schema",
-            skills=[{"skillKey": "market_research", "skillVersion": 1}],
-            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
+        "/api/agents/validate-manifest",
+        json=_agent_manifest_request(
+            _agent_payload(
+                dependencies,
+                key="broken_agent",
+                name="Broken Agent",
+                description="",
+                system_prompt="This save should fail.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"ticker": {"type": "string"}},
+                    "required": ["ticker"],
+                },
+                output_schema_key="missing_schema",
+                skills=[{"skillKey": "market_research", "skillVersion": 1}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
+            )
         ),
     )
 
-    assert response.status_code == 422, response.json()
-    assert response.json()["code"] == "validation_error"
-    assert response.json()["details"] == [
-        {"field": "outputSchemaKey", "issue": "Output schema 'missing_schema' was not found"}
-    ]
+    assert response.status_code == 200, response.json()
+    diagnostics = response.json()["diagnostics"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["severity"] == "error"
+    assert diagnostics[0]["path"] == "spec.outputSchema"
+    assert diagnostics[0]["line"] is not None
+    assert diagnostics[0]["column"] is not None
+    assert diagnostics[0]["message"] == "Output schema 'missing_schema' version 1 was not found"
 
 
 def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resolved_structure(
@@ -1710,26 +1786,28 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
     )
     update_agent_response = client.post(
         f"/api/agents/{created_agent['id']}",
-        json=_agent_payload(
-            dependencies,
-            key="research_agent",
-            name="Research Agent v2",
-            description="Publishes a richer schema.",
-            system_prompt="Use the richer output schema.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string"},
-                    "horizonDays": {"type": "integer"},
+        json=_agent_manifest_request(
+            _agent_payload(
+                dependencies,
+                key="research_agent",
+                name="Research Agent v2",
+                description="Publishes a richer schema.",
+                system_prompt="Use the richer output schema.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string"},
+                        "horizonDays": {"type": "integer"},
+                    },
+                    "required": ["ticker", "horizonDays"],
                 },
-                "required": ["ticker", "horizonDays"],
-            },
-            output_schema_key="decision_schema",
-            include_key=False,
-            output_schema_version=2,
-            skills=[{"skillKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
-            budget_usd="2.50000000",
+                output_schema_key="decision_schema",
+                include_key=False,
+                output_schema_version=2,
+                skills=[{"skillKey": "market_research"}],
+                mcp_servers=[{"mcpServerKey": "market_data"}],
+                budget_usd="2.50000000",
+            )
         ),
     )
     assert update_agent_response.status_code == 200, update_agent_response.json()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import cast
+from typing import NoReturn, cast
 
 from fastapi import status
 from pydantic import BaseModel
@@ -11,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.agents import SkillRegistry
 from app.agents.mcp import McpClientBoundary, McpConnectionTester
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
-from app.models.agent import Agent
+from app.models.agent import AGENT_MANIFEST_COMPILER_VERSION, Agent
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
@@ -24,6 +26,9 @@ from app.repositories.skill import SkillRepository
 from app.schemas.agent import (
     AgentCreate,
     AgentListRead,
+    AgentManifestValidationMetadata,
+    AgentManifestValidationRead,
+    AgentManifestValidationRequest,
     AgentMcpServerRead,
     AgentMcpServerRefWrite,
     AgentRead,
@@ -31,10 +36,18 @@ from app.schemas.agent import (
     AgentStatus,
     AgentUpdate,
 )
+from app.schemas.agent_manifest import AgentManifestDiagnostic, AgentManifestDiagnosticSeverity
 from app.schemas.mcp_server import McpClientBoundaryRead
 from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionStatus
 from app.schemas.run import RunCreatedRead
+from app.services.agent_manifest_compiler import AgentManifestCompiler, AgentManifestCompilerError
+from app.services.agent_manifest_parser import locate_agent_manifest_path, parse_agent_manifest
 from app.services.mcp_server_service import McpServerService
+from app.services.model_connection_snapshot import (
+    build_model_connection_runtime_snapshot,
+    parse_model_connection_runtime_snapshot,
+    snapshot_to_json,
+)
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -46,6 +59,23 @@ from app.services.skill_service import SkillService
 
 type JsonValue = (str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"])
 type JsonObject = dict[str, JsonValue]
+
+
+@dataclass
+class _PreparedAgentManifestWrite:
+    payload: AgentCreate
+    state: dict[str, object]
+    manifest_api_version: str
+    manifest_source: str
+    manifest_hash: str
+    compiler_version: str
+    compiled_payload: dict[str, object]
+
+
+class _AgentManifestDiagnosticsError(ValueError):
+    def __init__(self, diagnostics: list[AgentManifestDiagnostic]) -> None:
+        super().__init__("Agent manifest validation failed")
+        self.diagnostics: list[AgentManifestDiagnostic] = diagnostics
 
 
 class AgentService:
@@ -69,6 +99,7 @@ class AgentService:
         self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
             self.output_schema_repository
         )
+        self.manifest_compiler: AgentManifestCompiler = AgentManifestCompiler(session)
 
     def list_agents(
         self,
@@ -85,27 +116,45 @@ class AgentService:
     def get_agent(self, agent_id: int, *, version: int | None = None) -> AgentRead:
         return self._to_read_model(self._resolve_model(agent_id, version=version))
 
+    def validate_agent_manifest(
+        self,
+        payload: AgentManifestValidationRequest,
+    ) -> AgentManifestValidationRead:
+        try:
+            prepared = self._prepare_manifest_write(payload.manifest_source)
+        except _AgentManifestDiagnosticsError as exc:
+            return AgentManifestValidationRead(diagnostics=exc.diagnostics)
+        return AgentManifestValidationRead(
+            diagnostics=[],
+            metadata=AgentManifestValidationMetadata(
+                api_version=prepared.manifest_api_version,
+                key=prepared.payload.key,
+                name=prepared.payload.name,
+                description=prepared.payload.description,
+            ),
+            compiled_payload=prepared.compiled_payload,
+            run_input_schema=cast(dict[str, object], prepared.state["input_schema"]),
+        )
+
     def create_agent(self, payload: AgentCreate) -> AgentRead:
-        if self.repository.list_versions(payload.key):
+        del payload
+        self._raise_structured_write_unsupported()
+
+    def create_agent_from_manifest(self, manifest_source: str) -> AgentRead:
+        prepared = self._prepare_manifest_write_or_raise(manifest_source)
+        if self.repository.list_versions(prepared.payload.key):
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="agent_duplicate_key",
                 message="An agent with this key already exists",
             )
 
-        state = self._build_state(
-            name=payload.name,
-            description=payload.description,
-            model_connection_id=payload.model_connection_id,
-            system_prompt=payload.system_prompt,
-            input_schema=payload.input_schema,
-            output_schema_key=payload.output_schema_key,
-            output_schema_version=payload.output_schema_version,
-            skills=payload.skills,
-            mcp_servers=payload.mcp_servers,
-            budget_usd=payload.budget_usd,
+        agent = Agent(
+            key=prepared.payload.key,
+            version=1,
+            status=AgentStatus.PUBLISHED.value,
+            **prepared.state,
         )
-        agent = Agent(key=payload.key, version=1, status=AgentStatus.PUBLISHED.value, **state)
         try:
             _ = self.repository.add(agent)
             self.session.commit()
@@ -116,24 +165,25 @@ class AgentService:
         return self._to_read_model(agent)
 
     def update_agent(self, agent_id: int, payload: AgentUpdate) -> AgentRead:
+        del agent_id, payload
+        self._raise_structured_write_unsupported()
+
+    def update_agent_from_manifest(self, agent_id: int, manifest_source: str) -> AgentRead:
         source = self._get_model(agent_id)
-        state = self._build_state(
-            name=payload.name,
-            description=payload.description,
-            model_connection_id=payload.model_connection_id,
-            system_prompt=payload.system_prompt,
-            input_schema=payload.input_schema,
-            output_schema_key=payload.output_schema_key,
-            output_schema_version=payload.output_schema_version,
-            skills=payload.skills,
-            mcp_servers=payload.mcp_servers,
-            budget_usd=payload.budget_usd,
-        )
+        prepared = self._prepare_manifest_write_or_raise(manifest_source)
+        if prepared.payload.key != source.key:
+            diagnostic = self._manifest_diagnostic(
+                manifest_source,
+                "metadata.key",
+                f"Manifest key must remain {source.key!r} for agent updates",
+            )
+            self._raise_manifest_validation([diagnostic])
+
         agent = Agent(
             key=source.key,
             version=self._next_version(source.key),
             status=AgentStatus.PUBLISHED.value,
-            **state,
+            **prepared.state,
         )
 
         current_published = self.repository.get_published_by_key(source.key)
@@ -190,17 +240,27 @@ class AgentService:
         skills: Sequence[AgentSkillRefWrite],
         mcp_servers: Sequence[AgentMcpServerRefWrite],
         budget_usd: Decimal,
+        manifest_api_version: str,
+        manifest_source: str,
+        manifest_hash: str,
+        compiler_version: str,
     ) -> dict[str, object]:
         normalized_input_schema = self._normalize_input_schema(input_schema)
         output_schema = self._resolve_output_schema(output_schema_key, output_schema_version)
         skill_rows = self._resolve_skill_rows(skills)
         mcp_server_rows = self._resolve_mcp_server_rows(mcp_servers)
         model_connection = self._resolve_model_connection_for_save(model_connection_id)
+        model_connection_snapshot = build_model_connection_runtime_snapshot(model_connection)
         return {
             "name": name,
             "description": description,
+            "manifest_api_version": manifest_api_version,
+            "manifest_source": manifest_source,
+            "manifest_hash": manifest_hash,
+            "compiler_version": compiler_version,
             "model_connection_id": model_connection.id,
-            "model": model_connection.model_id,
+            "model_connection_snapshot": model_connection_snapshot,
+            "model": model_connection_snapshot["model_id"],
             "system_prompt": system_prompt,
             "input_schema": normalized_input_schema,
             "output_schema_id": output_schema.id,
@@ -219,6 +279,141 @@ class AgentService:
             ],
             "budget_usd": budget_usd,
         }
+
+    def _prepare_manifest_write_or_raise(
+        self,
+        manifest_source: str,
+    ) -> _PreparedAgentManifestWrite:
+        try:
+            return self._prepare_manifest_write(manifest_source)
+        except _AgentManifestDiagnosticsError as exc:
+            self._raise_manifest_validation(exc.diagnostics)
+
+    def _prepare_manifest_write(self, manifest_source: str) -> _PreparedAgentManifestWrite:
+        parse_result = parse_agent_manifest(manifest_source)
+        if parse_result.manifest is None or parse_result.diagnostics:
+            raise _AgentManifestDiagnosticsError(parse_result.diagnostics)
+
+        manifest = parse_result.manifest
+        try:
+            compiled_payload = self.manifest_compiler.compile(manifest_source)
+            payload = AgentCreate.model_validate(compiled_payload)
+            state = self._build_state(
+                name=payload.name,
+                description=payload.description,
+                model_connection_id=payload.model_connection_id,
+                system_prompt=payload.system_prompt,
+                input_schema=payload.input_schema,
+                output_schema_key=payload.output_schema_key,
+                output_schema_version=payload.output_schema_version,
+                skills=payload.skills,
+                mcp_servers=payload.mcp_servers,
+                budget_usd=payload.budget_usd,
+                manifest_api_version=manifest.api_version,
+                manifest_source=manifest_source,
+                manifest_hash=self._manifest_hash(manifest_source),
+                compiler_version=AGENT_MANIFEST_COMPILER_VERSION,
+            )
+        except AgentManifestCompilerError as exc:
+            raise _AgentManifestDiagnosticsError(exc.diagnostics) from exc
+        except ApiError as exc:
+            raise _AgentManifestDiagnosticsError(
+                self._api_error_to_manifest_diagnostics(manifest_source, exc.details)
+            ) from exc
+
+        return _PreparedAgentManifestWrite(
+            payload=payload,
+            state=state,
+            manifest_api_version=manifest.api_version,
+            manifest_source=manifest_source,
+            manifest_hash=self._manifest_hash(manifest_source),
+            compiler_version=AGENT_MANIFEST_COMPILER_VERSION,
+            compiled_payload=compiled_payload,
+        )
+
+    def _api_error_to_manifest_diagnostics(
+        self,
+        manifest_source: str,
+        details: list[dict[str, object]],
+    ) -> list[AgentManifestDiagnostic]:
+        if not details:
+            return [
+                self._manifest_diagnostic(
+                    manifest_source,
+                    "$",
+                    "Agent manifest validation failed",
+                )
+            ]
+
+        diagnostics: list[AgentManifestDiagnostic] = []
+        for detail in details:
+            field = str(detail.get("field") or "$")
+            issue = str(detail.get("issue") or "Invalid agent manifest value")
+            diagnostics.append(
+                self._manifest_diagnostic(
+                    manifest_source,
+                    self._agent_field_to_manifest_path(field),
+                    issue,
+                )
+            )
+        return diagnostics
+
+    @staticmethod
+    def _agent_field_to_manifest_path(field: str) -> str:
+        field_map = {
+            "modelConnectionId": "spec.modelConnection",
+            "inputSchema": "spec.inputSchema",
+            "outputSchemaKey": "spec.outputSchema",
+            "outputSchemaVersion": "spec.outputSchema",
+            "systemPrompt": "spec.systemPrompt",
+            "budgetUsd": "spec.budgetUsd",
+        }
+        if field.startswith("inputSchema."):
+            return field.replace("inputSchema", "spec.inputSchema", 1)
+        if field.startswith("skills["):
+            return field.replace("skills", "spec.skills", 1)
+        if field.startswith("mcpServers["):
+            return field.replace("mcpServers", "spec.mcpServers", 1)
+        return field_map.get(field, field)
+
+    @staticmethod
+    def _manifest_diagnostic(
+        manifest_source: str,
+        path: str,
+        message: str,
+    ) -> AgentManifestDiagnostic:
+        line, column = locate_agent_manifest_path(manifest_source, path)
+        return AgentManifestDiagnostic(
+            severity=AgentManifestDiagnosticSeverity.ERROR,
+            message=message,
+            path=path,
+            line=line,
+            column=column,
+        )
+
+    @staticmethod
+    def _manifest_diagnostic_detail(diagnostic: AgentManifestDiagnostic) -> dict[str, object]:
+        return {
+            "field": "manifestSource",
+            "issue": diagnostic.message,
+            "severity": diagnostic.severity.value,
+            "path": diagnostic.path,
+            "line": diagnostic.line,
+            "column": diagnostic.column,
+        }
+
+    def _raise_manifest_validation(
+        self,
+        diagnostics: list[AgentManifestDiagnostic],
+    ) -> NoReturn:
+        raise validation_error(
+            "Agent manifest validation failed",
+            [self._manifest_diagnostic_detail(diagnostic) for diagnostic in diagnostics],
+        )
+
+    @staticmethod
+    def _manifest_hash(manifest_source: str) -> str:
+        return hashlib.sha256(manifest_source.encode("utf-8")).hexdigest()
 
     def _normalize_input_schema(self, input_schema: JsonObject) -> JsonObject:
         try:
@@ -357,6 +552,19 @@ class AgentService:
             )
         return connection
 
+    def _raise_structured_write_unsupported(self) -> NoReturn:
+        raise validation_error(
+            "Structured agent writes are not supported",
+            [
+                {
+                    "field": "manifestSource",
+                    "issue": (
+                        "Agent create/update writes must use ledger.agent/v1 manifest source"
+                    ),
+                }
+            ],
+        )
+
     def _resolve_stored_model_connection_row(self, agent: Agent) -> ModelConnection:
         model_connection_id = cast(int | None, agent.model_connection_id)
         if model_connection_id is None:
@@ -418,9 +626,17 @@ class AgentService:
             )
 
         output_schema = self.output_schema_service.get_schema(output_schema_row.id)
-        model_connection = ModelConnectionListItemRead.model_validate(
-            self._resolve_stored_model_connection_row(agent)
-        )
+        model_connection_row = self._resolve_stored_model_connection_row(agent)
+        model_connection = ModelConnectionListItemRead.model_validate(model_connection_row)
+        try:
+            model_connection_snapshot = snapshot_to_json(
+                parse_model_connection_runtime_snapshot(agent.model_connection_snapshot)
+            )
+        except ValueError as exc:
+            raise business_rule_error(
+                "agent_model_connection_snapshot_invalid",
+                f"Agent {agent.key!r} has an invalid saved model connection snapshot",
+            ) from exc
         skills = [
             self.skill_service.get_skill(skill.id)
             for skill in self._resolve_stored_skill_rows(agent.skills)
@@ -437,8 +653,13 @@ class AgentService:
                 "status": agent.status,
                 "name": agent.name,
                 "description": agent.description,
+                "manifestApiVersion": agent.manifest_api_version,
+                "manifestSource": agent.manifest_source,
+                "manifestHash": agent.manifest_hash,
+                "compilerVersion": agent.compiler_version,
                 "modelConnectionId": model_connection.id,
                 "modelConnection": model_connection,
+                "modelConnectionSnapshot": model_connection_snapshot,
                 "systemPrompt": agent.system_prompt,
                 "inputSchema": agent.input_schema,
                 "outputSchema": output_schema,

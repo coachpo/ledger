@@ -5,7 +5,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_agent_service
-from app.schemas.agent import AgentCreate, AgentListRead, AgentRead, AgentStatus, AgentUpdate
+from app.schemas.agent import (
+    AgentListRead,
+    AgentManifestValidationRead,
+    AgentManifestValidationRequest,
+    AgentManifestWriteRequest,
+    AgentRead,
+    AgentStatus,
+)
 from app.schemas.run import RunCreatedRead
 from app.services.agent_service import AgentService
 
@@ -23,10 +30,18 @@ def list_agents(
 
 @router.post("", response_model=AgentRead, status_code=status.HTTP_201_CREATED)
 def create_agent(
-    payload: AgentCreate,
+    payload: AgentManifestWriteRequest,
     service: Annotated[AgentService, Depends(get_agent_service)],
 ) -> AgentRead:
-    return service.create_agent(payload)
+    return service.create_agent_from_manifest(payload.manifest_source)
+
+
+@router.post("/validate-manifest", response_model=AgentManifestValidationRead)
+def validate_agent_manifest(
+    payload: AgentManifestValidationRequest,
+    service: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentManifestValidationRead:
+    return service.validate_agent_manifest(payload)
 
 
 @router.get("/{agent_id}", response_model=AgentRead)
@@ -41,10 +56,10 @@ def get_agent(
 @router.post("/{agent_id}", response_model=AgentRead)
 def update_agent(
     agent_id: int,
-    payload: AgentUpdate,
+    payload: AgentManifestWriteRequest,
     service: Annotated[AgentService, Depends(get_agent_service)],
 ) -> AgentRead:
-    return service.update_agent(agent_id, payload)
+    return service.update_agent_from_manifest(agent_id, payload.manifest_source)
 
 
 @router.delete("/{agent_id}", response_model=AgentRead)
