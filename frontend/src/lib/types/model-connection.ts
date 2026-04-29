@@ -2,6 +2,7 @@ export type ModelConnectionStatus = "active" | "archived";
 export type ModelConnectionReasoningEffort = "low" | "medium" | "high";
 
 export interface ModelConnectionCreateInput {
+  key: string;
   name: string;
   description?: string;
   baseUrl: string;
@@ -27,6 +28,7 @@ export interface ModelConnectionUpdateInput {
 
 export interface ModelConnectionListItemRead {
   id: number;
+  key: string;
   status: ModelConnectionStatus;
   name: string;
   description: string;

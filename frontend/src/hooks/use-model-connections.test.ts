@@ -103,6 +103,7 @@ describe("useModelConnections", () => {
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     const payload = {
       baseUrl: "https://api.openai.com/v1",
+      key: "primary_openai",
       modelId: "gpt-4.1",
       name: "Primary OpenAI",
       reasoningEffort: "medium",

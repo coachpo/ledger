@@ -21,6 +21,7 @@ const existingConnection = {
   description: "Production OpenAI connection.",
   hasApiKey: true,
   id: 4,
+  key: "primary_openai",
   lastTestMessage: "Healthy",
   lastTestOk: true,
   lastTestedAt: "2026-04-22T08:30:00Z",
@@ -75,10 +76,12 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
+    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
 
     expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
       stringifyJson({
+        key: "primary_openai",
         name: "Primary OpenAI",
         baseUrl: "https://api.openai.com/v1",
         modelId: "gpt-4.1",
@@ -92,6 +95,7 @@ describe("ModelConnectionsEditorPage", () => {
     await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
     expect(createModelConnectionMock).toHaveBeenCalledWith({
       baseUrl: "https://api.openai.com/v1",
+      key: "primary_openai",
       modelId: "gpt-4.1",
       name: "Primary OpenAI",
       reasoningEffort: "medium",
@@ -104,11 +108,13 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
+    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
     fireEvent.change(screen.getByLabelText(/^API Key$/i), { target: { value: "sk-live-secret" } });
 
     expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
       stringifyJson({
+        key: "primary_openai",
         name: "Primary OpenAI",
         baseUrl: "https://api.openai.com/v1",
         modelId: "gpt-4.1",
@@ -129,6 +135,8 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
+    expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
+    expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
     expect(screen.getByText(/leave blank to keep current key ending in ••••4242\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/exact config json/i)).toHaveValue(

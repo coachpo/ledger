@@ -51,6 +51,7 @@ type ModelConnectionEditorValues = {
   apiKey: string;
   baseUrl: string;
   description: string;
+  key: string;
   modelId: string;
   name: string;
   organization: string;
@@ -63,6 +64,7 @@ const initialValues: ModelConnectionEditorValues = {
   apiKey: "",
   baseUrl: "https://api.openai.com/v1",
   description: "",
+  key: "",
   modelId: "",
   name: "",
   organization: "",
@@ -78,6 +80,7 @@ function buildValuesFromConnection(connection: ModelConnectionRead): ModelConnec
     apiKey: "",
     baseUrl: connection.baseUrl,
     description: connection.description ?? "",
+    key: connection.key,
     modelId: connection.modelId,
     name: connection.name,
     organization: connection.organization ?? "",
@@ -104,6 +107,7 @@ function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectio
   const apiKey = values.apiKey.trim();
 
   return {
+    key: parseRequiredText("Key", values.key).toLowerCase(),
     name: parseRequiredText("Name", values.name),
     description: values.description.trim() || undefined,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
@@ -311,6 +315,16 @@ export function ModelConnectionsEditorPage() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="model-connection-key">Key</Label>
+              <Input
+                id="model-connection-key"
+                aria-label="Key"
+                disabled={isSaving || isEditing}
+                value={values.key}
+                onChange={(event) => updateValue("key", event.target.value)}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="model-connection-name">Name</Label>
               <Input
