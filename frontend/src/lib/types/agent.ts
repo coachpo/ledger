@@ -5,6 +5,8 @@ import type { OutputSchemaRead } from "./output-schema";
 import type { SkillRead } from "./skill";
 
 export type AgentStatus = "draft" | "published" | "deprecated" | "archived";
+export type AgentManifestApiVersion = "ledger.agent/v1";
+export type AgentManifestDiagnosticSeverity = "error" | "warning";
 
 export interface AgentSkillRefWrite {
   skillKey: string;
@@ -16,7 +18,7 @@ export interface AgentMcpServerRefWrite {
   mcpServerVersion?: number | null;
 }
 
-export interface AgentCreateInput {
+export interface AgentCompiledCreateInput {
   key: string;
   name: string;
   description?: string;
@@ -30,7 +32,40 @@ export interface AgentCreateInput {
   budgetUsd?: string;
 }
 
-export type AgentUpdateInput = Omit<AgentCreateInput, "key">;
+export type AgentCompiledUpdateInput = Omit<AgentCompiledCreateInput, "key">;
+
+export interface AgentManifestWriteInput {
+  manifestSource: string;
+}
+
+export type AgentManifestCreateInput = AgentManifestWriteInput;
+export type AgentManifestUpdateInput = AgentManifestWriteInput;
+export type AgentCreateInput = AgentManifestCreateInput;
+export type AgentUpdateInput = AgentManifestUpdateInput;
+
+export interface AgentManifestDiagnostic {
+  severity: AgentManifestDiagnosticSeverity;
+  message: string;
+  path: string;
+  line: number | null;
+  column: number | null;
+}
+
+export interface AgentManifestValidationMetadata {
+  apiVersion: AgentManifestApiVersion;
+  key: string;
+  name: string;
+  description: string;
+}
+
+export type AgentManifestValidationInput = AgentManifestWriteInput;
+
+export interface AgentManifestValidationRead {
+  diagnostics: AgentManifestDiagnostic[];
+  metadata: AgentManifestValidationMetadata | null;
+  compiledPayload: AgentCompiledCreateInput | null;
+  runInputSchema: UnknownRecord | null;
+}
 
 export interface AgentMcpServerRead {
   id: number;
@@ -51,6 +86,10 @@ export interface AgentRead {
   status: AgentStatus;
   name: string;
   description: string;
+  manifestApiVersion: AgentManifestApiVersion;
+  manifestSource: string;
+  manifestHash: string;
+  compilerVersion: string;
   modelConnectionId: number;
   modelConnection: ModelConnectionListItemRead;
   systemPrompt: string;

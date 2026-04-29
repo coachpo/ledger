@@ -4,6 +4,9 @@ import type {
   AgentCreateInput,
   AgentListParams,
   AgentListRead,
+  AgentManifestValidationInput,
+  AgentManifestValidationRead,
+  AgentManifestWriteInput,
   AgentRead,
   AgentRunCreateInput,
   AgentUpdateInput,
@@ -11,6 +14,10 @@ import type {
 
 function agentPath(agentId: IdParam): string {
   return `/agents/${toPathSegment(agentId)}`;
+}
+
+function manifestWriteBody(payload: AgentManifestWriteInput): AgentManifestWriteInput {
+  return { manifestSource: payload.manifestSource };
 }
 
 export function listAgents(
@@ -38,7 +45,7 @@ export function createAgent(
   signal?: AbortSignal,
 ): Promise<AgentRead> {
   return requestPlatform<AgentRead>("/agents", {
-    body: payload,
+    body: manifestWriteBody(payload),
     method: "POST",
     signal,
   });
@@ -50,7 +57,18 @@ export function updateAgent(
   signal?: AbortSignal,
 ): Promise<AgentRead> {
   return requestPlatform<AgentRead>(agentPath(agentId), {
-    body: payload,
+    body: manifestWriteBody(payload),
+    method: "POST",
+    signal,
+  });
+}
+
+export function validateAgentManifest(
+  payload: AgentManifestValidationInput,
+  signal?: AbortSignal,
+): Promise<AgentManifestValidationRead> {
+  return requestPlatform<AgentManifestValidationRead>("/agents/validate-manifest", {
+    body: manifestWriteBody(payload),
     method: "POST",
     signal,
   });
@@ -83,4 +101,5 @@ export const agentsApi = {
   get: getAgent,
   list: listAgents,
   update: updateAgent,
+  validateManifest: validateAgentManifest,
 } as const;
