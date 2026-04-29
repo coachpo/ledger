@@ -1,6 +1,8 @@
 import type { UnknownRecord } from "./common";
 
 export type WorkflowStatus = "draft" | "published" | "deprecated" | "archived";
+export type WorkflowManifestApiVersion = "ledger.workflow/v1";
+export type WorkflowManifestDiagnosticSeverity = "error" | "warning";
 
 export interface WorkflowWireSource {
   from: "input" | "step";
@@ -62,7 +64,7 @@ export interface WorkflowOutputSlotRead {
 
 export type WorkflowOutputSpecRead = WorkflowOutputSlotRead;
 
-export interface WorkflowCreateInput {
+export interface WorkflowCompiledCreateInput {
   key: string;
   name: string;
   description?: string;
@@ -71,8 +73,44 @@ export interface WorkflowCreateInput {
   outputSpec: WorkflowOutputSpecWrite;
 }
 
-export type WorkflowUpdateInput = Omit<WorkflowCreateInput, "key">;
+export type WorkflowCompiledUpdateInput = Omit<WorkflowCompiledCreateInput, "key">;
+
+export interface WorkflowManifestWriteInput {
+  manifestSource: string;
+}
+
+export type WorkflowManifestCreateInput = WorkflowManifestWriteInput;
+export type WorkflowManifestUpdateInput = WorkflowManifestWriteInput;
+
+export type WorkflowCreateInput = Partial<WorkflowCompiledCreateInput> & Partial<WorkflowManifestWriteInput>;
+
+export type WorkflowUpdateInput = Partial<WorkflowCompiledUpdateInput> & Partial<WorkflowManifestWriteInput>;
+
 export type WorkflowRunCreateInput = UnknownRecord;
+
+export interface WorkflowManifestDiagnostic {
+  severity: WorkflowManifestDiagnosticSeverity;
+  message: string;
+  path: string;
+  line: number | null;
+  column: number | null;
+}
+
+export interface WorkflowManifestValidationMetadata {
+  apiVersion: WorkflowManifestApiVersion;
+  key: string;
+  name: string;
+  description: string;
+}
+
+export type WorkflowManifestValidationInput = WorkflowManifestWriteInput;
+
+export interface WorkflowManifestValidationRead {
+  diagnostics: WorkflowManifestDiagnostic[];
+  metadata: WorkflowManifestValidationMetadata | null;
+  compiledPayload: WorkflowCompiledCreateInput | null;
+  runInputSchema: UnknownRecord | null;
+}
 
 export interface WorkflowRead {
   id: number;
@@ -81,6 +119,8 @@ export interface WorkflowRead {
   status: WorkflowStatus;
   name: string;
   description: string;
+  manifestApiVersion: WorkflowManifestApiVersion;
+  manifestSource: string;
   inputSchema: UnknownRecord;
   steps: WorkflowStepRead[];
   outputSpec: WorkflowOutputSpecRead;
