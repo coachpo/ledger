@@ -1,38 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowRight,
+  Braces,
+  CheckCircle2,
+  Code2,
+  FileText,
+  Keyboard,
+  Loader2,
   PlayCircle,
-  Plus,
   Save,
-  Trash2,
+  ShieldCheck,
+  Wand2,
 } from "lucide-react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
-import { useAgents } from "@/hooks/use-agents";
-import {
-  useCreateWorkflow,
-  useCreateWorkflowRun,
-  useUpdateWorkflow,
-  useWorkflow,
-} from "@/hooks/use-workflows";
-import { ApiRequestError } from "@/lib/api-client";
-import { parseSchemaJsonText, schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
-import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
-import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
-import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
-import {
-  encodeValueEntry,
-  validateAndDecodeValueEntry,
-} from "@/lib/platform-authoring/values/codec";
-import type { ValueEntry } from "@/lib/platform-authoring/values/types";
-import type { AgentRead } from "@/lib/types/agent";
-import type { UnknownRecord } from "@/lib/types/common";
+import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,1152 +28,849 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-
-import { PlatformResourceBadges, stringifyJson } from "../platform-resource-shared";
 import {
-  buildWorkflowPayload,
-  createEmptyWorkflowAgent,
-  createEmptyWorkflowStep,
-  createInitialWorkflowDraft,
-  findAgentByKey,
-  getSchemaFieldNames,
-  type WiringSourceDraft,
-  type WorkflowDraft,
-  type WorkflowDraftAgent,
-  type WorkflowDraftOutput,
-  type WorkflowSection,
-  type WorkflowValidationIssue,
-  validateWorkflowDraft,
-  workflowDraftFromRead,
-  WORKFLOW_SECTIONS,
-} from "./shared";
+  useCreateWorkflow,
+  useCreateWorkflowRun,
+  useUpdateWorkflow,
+  useValidateWorkflowManifest,
+  useWorkflow,
+} from "@/hooks/use-workflows";
+import { ApiRequestError } from "@/lib/api-client";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { parseSchemaJsonText } from "@/lib/platform-authoring/schema/codec";
+import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
+import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
+import type { ValueEntry } from "@/lib/platform-authoring/values/types";
+import {
+  createWorkflowManifestScaffold,
+  extractWorkflowManifestOutline,
+  formatWorkflowManifestYaml,
+  mapWorkflowManifestDiagnosticsForEditor,
+  parseWorkflowManifestLocallyForEditor,
+  type WorkflowManifestOutlineSection,
+} from "@/lib/platform-authoring/workflows/manifest";
+import type { UnknownRecord } from "@/lib/types/common";
+import type { WorkflowManifestValidationRead } from "@/lib/types/workflow";
 
-const NONE_OPTION = "__none__";
-const DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER =
-  parseSchemaJsonText(createInitialWorkflowDraft().inputSchemaText).builder ??
-  createDefaultSchemaNode("object");
+type WorkflowSnippet = {
+  description: string;
+  id: string;
+  label: string;
+  shortcut: string;
+  text: string;
+};
 
-function createEmptySourceDraft(): WiringSourceDraft {
-  return { from: "none", path: "", slot: "", stepIndex: "" };
-}
+type RunLaunchFeedback = {
+  message: string;
+  title: string;
+  variant: "default" | "destructive";
+};
 
-function stringifyWorkflowInputSchema(builder: SchemaIRNode): string {
-  return stringifyJson(schemaBuilderToJsonSchema(builder));
-}
+const WORKFLOW_SNIPPETS: WorkflowSnippet[] = [
+  {
+    description: "Adds a string property for inputSchema.properties.",
+    id: "input-property",
+    label: "Input property",
+    shortcut: "input",
+    text: "newField:\n  type: string\n  description: Describe this workflow input.\n",
+  },
+  {
+    description: "Adds an agent slot entry for a step agents list.",
+    id: "agent-slot",
+    label: "Step agent slot",
+    shortcut: "agent",
+    text: "- slot: analysis\n  uses: research_agent@1\n  with:\n    ticker: ${{ inputs.ticker }}\n",
+  },
+  {
+    description: "Adds a reference to a previous step output.",
+    id: "step-output-ref",
+    label: "Step output reference",
+    shortcut: "ref",
+    text: "${{ steps.research.outputs.analysis }}",
+  },
+  {
+    description: "Adds a workflow output mapping from a step slot.",
+    id: "output-from",
+    label: "Output mapping",
+    shortcut: "output",
+    text: "from: ${{ steps.research.outputs.analysis }}\n",
+  },
+];
 
-function sortAgents(agents: readonly AgentRead[]): AgentRead[] {
-  return [...agents].sort((left, right) => left.key.localeCompare(right.key));
-}
-
-function sectionForIssue(field: string): WorkflowSection {
-  if (field === "key" || field === "name" || field.startsWith("inputSchema")) {
-    return "input";
-  }
-
-  if (field.startsWith("steps")) {
-    return "steps";
-  }
-
-  if (field.startsWith("outputSpec")) {
-    return "output";
-  }
-
-  return "review";
-}
-
-function isUnknownRecord(value: unknown): value is UnknownRecord {
+function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
   const previewValue = buildPreviewValue(schema);
 
-  if (isUnknownRecord(previewValue) && typeof previewValue.ticker === "string") {
+  if (isRecord(previewValue) && typeof previewValue.ticker === "string") {
     return encodeValueEntry({ ...previewValue, ticker: "AAPL" });
   }
 
-  if (isUnknownRecord(previewValue)) {
+  if (isRecord(previewValue)) {
     return encodeValueEntry(previewValue);
   }
 
   return encodeValueEntry({});
 }
 
-function parseRunInputValue(value: ValueEntry): UnknownRecord {
+function decodeRunInputValue(value: ValueEntry): UnknownRecord {
   const decoded = validateAndDecodeValueEntry(value);
-  if (!decoded.ok || !isUnknownRecord(decoded.value)) {
-    throw new Error("Run input must be a JSON object.");
+
+  if (!decoded.ok || !isRecord(decoded.value)) {
+    return {};
   }
 
   return decoded.value;
 }
 
-type StepSlotOption = {
-  optional: boolean;
-  slot: string;
-  stepNumber: number;
-};
+function getManifestMetadata(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.metadata)) {
+    return { description: "", key: "", name: "" };
+  }
 
-function collectPreviousStepSlots(
-  draft: WorkflowDraft,
-  currentStepNumber: number,
-): StepSlotOption[] {
-  const options: StepSlotOption[] = [];
-
-  draft.steps.slice(0, Math.max(0, currentStepNumber - 1)).forEach((step, index) => {
-    step.agents.forEach((agent) => {
-      const slot = agent.slot.trim();
-      if (slot) {
-        options.push({
-          optional: agent.optional,
-          slot,
-          stepNumber: index + 1,
-        });
-      }
-    });
-  });
-
-  return options;
-}
-
-function getStepOptions(draft: WorkflowDraft): string[] {
-  return draft.steps.map((_, index) => String(index + 1));
-}
-
-type WiringFieldEditorProps = {
-  currentStepNumber: number;
-  fieldName: string;
-  onChange: (nextSource: WiringSourceDraft) => void;
-  source: WiringSourceDraft;
-  workflowDraft: WorkflowDraft;
-};
-
-function WiringFieldEditor(props: WiringFieldEditorProps) {
-  const { currentStepNumber, fieldName, onChange, source, workflowDraft } = props;
-  const stepSlots = collectPreviousStepSlots(workflowDraft, currentStepNumber);
-  const stepNumbers = Array.from(new Set(stepSlots.map((entry) => String(entry.stepNumber))));
-  const slotOptions = source.stepIndex
-    ? stepSlots.filter((entry) => String(entry.stepNumber) === source.stepIndex)
-    : [];
-
-  const updateSource = (patch: Partial<WiringSourceDraft>) => {
-    onChange({ ...source, ...patch });
+  return {
+    description: typeof value.metadata.description === "string" ? value.metadata.description : "",
+    key: typeof value.metadata.key === "string" ? value.metadata.key : "",
+    name: typeof value.metadata.name === "string" ? value.metadata.name : "",
   };
-
-  return (
-    <div className="rounded-md border p-4">
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="flex flex-col gap-2">
-          <Label>{fieldName}</Label>
-          <Select
-            value={source.from}
-            onValueChange={(value: WiringSourceDraft["from"]) => {
-              if (value === "none") {
-                onChange(createEmptySourceDraft());
-                return;
-              }
-
-              if (value === "input") {
-                onChange({ from: "input", path: source.path || fieldName, slot: "", stepIndex: "" });
-                return;
-              }
-
-              onChange({
-                from: "step",
-                path: source.path,
-                slot: "",
-                stepIndex: stepNumbers[stepNumbers.length - 1] ?? "",
-              });
-            }}
-          >
-            <SelectTrigger aria-label={`${fieldName} source`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="none">Not wired</SelectItem>
-                <SelectItem value="input">Workflow input</SelectItem>
-                <SelectItem value="step">Previous step slot</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-        {source.from === "input" ? (
-          <div className="flex flex-col gap-2 md:col-span-3">
-            <Label htmlFor={`${fieldName}-input-path`}>Input path</Label>
-            <Input
-              id={`${fieldName}-input-path`}
-              aria-label={`${fieldName} input path`}
-              placeholder={fieldName}
-              value={source.path}
-              onChange={(event) => updateSource({ path: event.target.value })}
-            />
-          </div>
-        ) : null}
-
-        {source.from === "step" ? (
-          <>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${fieldName}-step-index`}>Step</Label>
-              <Select
-                value={source.stepIndex || NONE_OPTION}
-                onValueChange={(value) => {
-                  updateSource({ slot: "", stepIndex: value === NONE_OPTION ? "" : value });
-                }}
-              >
-                <SelectTrigger aria-label={`${fieldName} step`} id={`${fieldName}-step-index`}>
-                  <SelectValue placeholder="Select step" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={NONE_OPTION}>Select step</SelectItem>
-                    {stepNumbers.map((stepNumber) => (
-                      <SelectItem key={`${fieldName}-${stepNumber}`} value={stepNumber}>
-                        Step {stepNumber}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${fieldName}-slot-name`}>Slot</Label>
-              <Select
-                value={source.slot || NONE_OPTION}
-                onValueChange={(value) => updateSource({ slot: value === NONE_OPTION ? "" : value })}
-              >
-                <SelectTrigger aria-label={`${fieldName} slot`} id={`${fieldName}-slot-name`}>
-                  <SelectValue placeholder="Select slot" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={NONE_OPTION}>Select slot</SelectItem>
-                    {slotOptions.map((option) => (
-                      <SelectItem
-                        key={`${fieldName}-${option.stepNumber}-${option.slot}`}
-                        value={option.slot}
-                      >
-                        {option.slot}{option.optional ? " (optional)" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2 md:col-span-2">
-              <Label htmlFor={`${fieldName}-slot-path`}>Slot path</Label>
-              <Input
-                id={`${fieldName}-slot-path`}
-                aria-label={`${fieldName} slot path`}
-                placeholder="summary"
-                value={source.path}
-                onChange={(event) => updateSource({ path: event.target.value })}
-              />
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
-type AgentEditorCardProps = {
-  currentStepNumber: number;
-  draftAgent: WorkflowDraftAgent;
-  heading: string;
-  onChange: (nextAgent: WorkflowDraftAgent) => void;
-  onRemove?: () => void;
-  workflowAgents: readonly AgentRead[];
-  workflowDraft: WorkflowDraft;
-};
+function formatLocation(line: number | null, column: number | null) {
+  if (line === null) {
+    return "No source location";
+  }
 
-function AgentEditorCard(props: AgentEditorCardProps) {
-  const {
-    currentStepNumber,
-    draftAgent,
-    heading,
-    onChange,
-    onRemove,
-    workflowAgents,
-    workflowDraft,
-  } = props;
-  const resolvedAgent = findAgentByKey(workflowAgents, draftAgent.agentKey);
-  const fieldNames = getSchemaFieldNames(resolvedAgent?.inputSchema, draftAgent.wiring);
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="text-base">{heading}</CardTitle>
-            <CardDescription>
-              Pin an agent version, assign its slot name, and map every required input field.
-            </CardDescription>
-          </div>
-          {onRemove ? (
-            <Button size="sm" variant="outline" onClick={onRemove}>
-              <Trash2 data-icon="inline-start" />
-              Remove Agent
-            </Button>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <Label>Agent</Label>
-            <Select
-              value={draftAgent.agentKey || NONE_OPTION}
-              onValueChange={(value) =>
-                onChange({
-                  ...draftAgent,
-                  agentKey: value === NONE_OPTION ? "" : value,
-                })
-              }
-            >
-              <SelectTrigger aria-label={`${heading} agent`}>
-                <SelectValue placeholder="Select agent" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NONE_OPTION}>Select agent</SelectItem>
-                  {workflowAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.key}>
-                      {agent.name} ({agent.key}@{agent.version})
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${heading}-version`}>Pinned version</Label>
-            <Input
-              id={`${heading}-version`}
-              aria-label={`${heading} version`}
-              placeholder={resolvedAgent ? String(resolvedAgent.version) : "1"}
-              value={draftAgent.agentVersion}
-              onChange={(event) => onChange({ ...draftAgent, agentVersion: event.target.value })}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${heading}-slot`}>Slot</Label>
-            <Input
-              id={`${heading}-slot`}
-              aria-label={`${heading} slot`}
-              placeholder="analysis"
-              value={draftAgent.slot}
-              onChange={(event) => onChange({ ...draftAgent, slot: event.target.value })}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between rounded-md border p-4">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor={`${heading}-optional`}>Optional slot</Label>
-            <p className="text-sm text-muted-foreground">
-              Optional agents may fail and provide a null slot for downstream wiring.
-            </p>
-          </div>
-          <Switch
-            id={`${heading}-optional`}
-            checked={draftAgent.optional}
-            onCheckedChange={(checked) => onChange({ ...draftAgent, optional: checked })}
-          />
-        </div>
-
-        {!resolvedAgent && draftAgent.agentKey.trim() ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Agent not found</AlertTitle>
-            <AlertDescription>
-              The saved workflow references `{draftAgent.agentKey}`, but that agent is not in the
-              current latest-version catalog.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-medium">Slot wiring</h3>
-              <p className="text-sm text-muted-foreground">
-                Map each agent input field from the workflow input or an earlier slot.
-              </p>
-            </div>
-            {resolvedAgent ? (
-              <Badge variant="outline">{fieldNames.length} mapped field(s)</Badge>
-            ) : null}
-          </div>
-
-          {fieldNames.length === 0 ? (
-            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              Select an agent with an object input schema to configure slot wiring controls.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {fieldNames.map((fieldName) => (
-                <WiringFieldEditor
-                  currentStepNumber={currentStepNumber}
-                  fieldName={fieldName}
-                  key={`${heading}-${fieldName}`}
-                  onChange={(nextSource) =>
-                    onChange({
-                      ...draftAgent,
-                      wiring: { ...draftAgent.wiring, [fieldName]: nextSource },
-                    })
-                  }
-                  source={draftAgent.wiring[fieldName] ?? createEmptySourceDraft()}
-                  workflowDraft={workflowDraft}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return column === null ? `Line ${line}` : `Line ${line}, column ${column}`;
 }
 
-type OutputEditorProps = {
-  onChange: (nextOutput: WorkflowDraftOutput) => void;
-  workflowDraft: WorkflowDraft;
-};
+function getSectionDescription(section: WorkflowManifestOutlineSection) {
+  if (!section.present) {
+    return "Missing";
+  }
 
-function OutputEditor(props: OutputEditorProps) {
-  const { onChange, workflowDraft } = props;
-  const stepOptions = getStepOptions(workflowDraft);
-  const output = workflowDraft.output;
-  const slots = collectPreviousStepSlots(workflowDraft, workflowDraft.steps.length + 1).filter(
-    (entry) => String(entry.stepNumber) === output.stepIndex,
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Final output slot</CardTitle>
-        <CardDescription>
-          Choose which step slot becomes the workflow result. If you need another agent invocation,
-          add it as the last step and select that step’s slot here.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
-          Model any synthesizer or post-processing agent as a normal final workflow step, then point the final output at that step’s slot.
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="flex flex-col gap-2">
-            <Label>Step</Label>
-            <Select
-              value={output.stepIndex || NONE_OPTION}
-              onValueChange={(value) =>
-                onChange({
-                  kind: "slot",
-                  path: output.path,
-                  slot: "",
-                  stepIndex: value === NONE_OPTION ? "" : value,
-                })
-              }
-            >
-              <SelectTrigger aria-label="Output step">
-                <SelectValue placeholder="Select step" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NONE_OPTION}>Select step</SelectItem>
-                  {stepOptions.map((stepValue) => (
-                    <SelectItem key={`output-step-${stepValue}`} value={stepValue}>
-                      Step {stepValue}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Slot</Label>
-            <Select
-              value={output.slot || NONE_OPTION}
-              onValueChange={(value) =>
-                onChange({
-                  kind: "slot",
-                  path: output.path,
-                  slot: value === NONE_OPTION ? "" : value,
-                  stepIndex: output.stepIndex,
-                })
-              }
-            >
-              <SelectTrigger aria-label="Output slot">
-                <SelectValue placeholder="Select slot" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NONE_OPTION}>Select slot</SelectItem>
-                  {slots.map((slotOption) => (
-                    <SelectItem key={`output-slot-${slotOption.slot}`} value={slotOption.slot}>
-                      {slotOption.slot}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2 md:col-span-3">
-            <Label htmlFor="workflow-output-path">Output path</Label>
-            <Input
-              id="workflow-output-path"
-              aria-label="Output path"
-              placeholder="summary"
-              value={output.path}
-              onChange={(event) =>
-                onChange({
-                  kind: "slot",
-                  path: event.target.value,
-                  slot: output.slot,
-                  stepIndex: output.stepIndex,
-                })
-              }
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return formatLocation(section.line, section.column);
 }
 
 export function WorkflowsEditorPage() {
   const { workflowId } = useParams<{ workflowId: string }>();
-  const location = useLocation();
   const navigate = useNavigate();
   const isEditing = Boolean(workflowId);
-  const workflowQuery = useWorkflow(workflowId);
-  const agentsQuery = useAgents();
-  const createMutation = useCreateWorkflow();
-  const updateMutation = useUpdateWorkflow();
-  const createRunMutation = useCreateWorkflowRun();
-  const workflowAgents = useMemo(() => sortAgents(agentsQuery.data?.items ?? []), [agentsQuery.data?.items]);
-  const [activeSection, setActiveSection] = useState<WorkflowSection>("input");
-  const [draft, setDraft] = useState<WorkflowDraft>(createInitialWorkflowDraft);
-  const [inputSchemaBuilder, setInputSchemaBuilder] =
-    useState<SchemaIRNode>(DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER);
-  const [runInputValue, setRunInputValue] = useState<ValueEntry>(() =>
-    createDefaultRunInputValue(DEFAULT_WORKFLOW_INPUT_SCHEMA_BUILDER),
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [manifestSource, setManifestSource] = useState(() => createWorkflowManifestScaffold());
+  const [cleanManifestSource, setCleanManifestSource] = useState(manifestSource);
+  const [isSnippetPaletteOpen, setIsSnippetPaletteOpen] = useState(false);
+  const [validationResult, setValidationResult] = useState<WorkflowManifestValidationRead | null>(null);
+  const [validatedManifestSource, setValidatedManifestSource] = useState<string | null>(null);
+  const { data: workflow, error: workflowError, isError, isPending } = useWorkflow(workflowId);
+  const createWorkflow = useCreateWorkflow();
+  const updateWorkflow = useUpdateWorkflow();
+  const createWorkflowRun = useCreateWorkflowRun();
+  const validateWorkflowManifest = useValidateWorkflowManifest();
+  const [runInput, setRunInput] = useState<ValueEntry>(() =>
+    createDefaultRunInputValue(createDefaultSchemaNode("object")),
   );
-  const [validationIssues, setValidationIssues] = useState<WorkflowValidationIssue[]>([]);
+  const [runLaunchFeedback, setRunLaunchFeedback] = useState<RunLaunchFeedback | null>(null);
 
   useEffect(() => {
-    if (!workflowQuery.data) {
+    if (workflow?.manifestSource) {
+      setManifestSource(workflow.manifestSource);
+      setCleanManifestSource(workflow.manifestSource);
+      setValidationResult(null);
+      setValidatedManifestSource(null);
+    }
+  }, [workflow?.manifestSource]);
+
+  const isDirty = manifestSource !== cleanManifestSource;
+
+  useEffect(() => {
+    if (!isDirty) {
       return;
     }
 
-    const nextDraft = workflowDraftFromRead(workflowQuery.data);
-    const decodedSchema = parseSchemaJsonText(nextDraft.inputSchemaText);
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const legacyReturnValueKey = "returnValue";
+      event.preventDefault();
+      Object.assign(event, { [legacyReturnValueKey]: "" });
+    };
 
-    const nextInputSchemaBuilder = decodedSchema.builder ?? createDefaultSchemaNode("object");
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
-    setDraft(nextDraft);
-    setInputSchemaBuilder(nextInputSchemaBuilder);
-    setRunInputValue(createDefaultRunInputValue(nextInputSchemaBuilder));
-    setValidationIssues([]);
-  }, [workflowQuery.data]);
+  const localParse = useMemo(
+    () => parseWorkflowManifestLocallyForEditor(manifestSource),
+    [manifestSource],
+  );
+  const outlineResult = useMemo(
+    () => extractWorkflowManifestOutline(manifestSource),
+    [manifestSource],
+  );
+  const diagnostics = useMemo(
+    () =>
+      mapWorkflowManifestDiagnosticsForEditor(localParse.diagnostics, {
+        manifestSource,
+        origin: "local",
+      }),
+    [localParse.diagnostics, manifestSource],
+  );
+  const metadata = useMemo(() => getManifestMetadata(localParse.value), [localParse.value]);
+  const lineCount = useMemo(() => manifestSource.split(/\r\n|\r|\n/).length, [manifestSource]);
+  const hasErrors = diagnostics.some((diagnostic) => diagnostic.severity === "error");
+  const validationDiagnostics = useMemo(
+    () =>
+      validationResult
+        ? mapWorkflowManifestDiagnosticsForEditor(validationResult.diagnostics, {
+            manifestSource: validatedManifestSource ?? manifestSource,
+            origin: "backend",
+          })
+        : [],
+    [manifestSource, validatedManifestSource, validationResult],
+  );
+  const hasBackendErrors = validationDiagnostics.some((diagnostic) => diagnostic.severity === "error");
+  const hasBackendWarnings = validationDiagnostics.some((diagnostic) => diagnostic.severity === "warning");
+  const isValidationStale = Boolean(validationResult && validatedManifestSource !== manifestSource);
+  const compiledPayloadJson = useMemo(
+    () => stringifyJson(validationResult?.compiledPayload),
+    [validationResult?.compiledPayload],
+  );
+  const activeRunInputSchema = validationResult?.runInputSchema ?? workflow?.inputSchema ?? null;
+  const activeRunInputSchemaJson = useMemo(
+    () => stringifyJson(activeRunInputSchema ?? { additionalProperties: false, properties: {}, type: "object" }),
+    [activeRunInputSchema],
+  );
+  const activeRunInputSchemaBuilder = useMemo(() => {
+    const parsedSchema = parseSchemaJsonText(activeRunInputSchemaJson);
+    return parsedSchema.builder ?? createDefaultSchemaNode("object");
+  }, [activeRunInputSchemaJson]);
+  const runInputPayload = useMemo(() => decodeRunInputValue(runInput), [runInput]);
+  const rawRunInputJson = useMemo(() => stringifyJson(runInputPayload), [runInputPayload]);
+  const runInputSchemaJson = useMemo(
+    () => stringifyJson(validationResult?.runInputSchema),
+    [validationResult?.runInputSchema],
+  );
+  const isSaving = createWorkflow.isPending || updateWorkflow.isPending;
+  const isValidating = validateWorkflowManifest.isPending;
+  const isLaunchingRun = createWorkflowRun.isPending;
 
   useEffect(() => {
-    if (location.hash === "#review") {
-      setActiveSection("review");
-    }
-  }, [location.hash]);
+    setRunInput(createDefaultRunInputValue(activeRunInputSchemaBuilder));
+  }, [activeRunInputSchemaBuilder]);
 
-  const activeIndex = WORKFLOW_SECTIONS.findIndex((section) => section.value === activeSection);
-  const progressValue = ((activeIndex + 1) / WORKFLOW_SECTIONS.length) * 100;
-  const isSaving = createMutation.isPending || updateMutation.isPending;
-  const canRunNow = Boolean(isEditing && workflowQuery.data);
-  const derivedInputSchema = useMemo(
-    () => schemaBuilderToJsonSchema(inputSchemaBuilder),
-    [inputSchemaBuilder],
-  );
-  const rawInputSchemaJson = useMemo(
-    () => stringifyJson(derivedInputSchema),
-    [derivedInputSchema],
-  );
-  const inputSchemaPreviewValue = useMemo(
-    () => buildPreviewValue(inputSchemaBuilder),
-    [inputSchemaBuilder],
-  );
-  const rawInputSchemaPreviewJson = useMemo(
-    () => stringifyJson(inputSchemaPreviewValue),
-    [inputSchemaPreviewValue],
-  );
-  const parsedRunInputPayload = useMemo(() => {
+  const handleClose = () => navigate("/workflows");
+
+  const jumpToLine = (line: number | null) => {
+    if (!line || !textareaRef.current) {
+      return;
+    }
+
+    const lines = manifestSource.split(/\r\n|\r|\n/);
+    const offset = lines.slice(0, Math.max(0, line - 1)).join("\n").length + (line > 1 ? 1 : 0);
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(offset, offset);
+  };
+
+  const handleFormat = () => {
+    const result = formatWorkflowManifestYaml(manifestSource);
+    if (!result.formatted) {
+      toast.error(result.diagnostics[0]?.message ?? "Fix YAML errors before formatting");
+      return;
+    }
+
+    if (result.formatted === manifestSource) {
+      toast.success("Workflow manifest already formatted");
+      return;
+    }
+
+    setManifestSource(result.formatted);
+    toast.success("Workflow manifest formatted");
+  };
+
+  const handleValidate = async () => {
+    if (!manifestSource.trim()) {
+      toast.error("Workflow manifest is required");
+      return;
+    }
+
     try {
-      return parseRunInputValue(runInputValue);
-    } catch {
-      return null;
-    }
-  }, [runInputValue]);
-  const rawRunInputJson = useMemo(
-    () => stringifyJson(parsedRunInputPayload),
-    [parsedRunInputPayload],
-  );
+      const result = await validateWorkflowManifest.mutateAsync({ manifestSource });
+      setValidationResult(result);
+      setValidatedManifestSource(manifestSource);
 
-  const reviewPayload = useMemo(() => {
-    try {
-      return buildWorkflowPayload(draft);
-    } catch {
-      return null;
-    }
-  }, [draft]);
-  const rawReviewPayloadJson = useMemo(
-    () => stringifyJson(reviewPayload),
-    [reviewPayload],
-  );
+      if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+        toast.error("Backend validation found manifest errors");
+        return;
+      }
 
-  const handleInputSchemaBuilderChange = (nextBuilder: SchemaIRNode) => {
-    setInputSchemaBuilder(nextBuilder);
-    setRunInputValue(createDefaultRunInputValue(nextBuilder));
-    setDraft((current) => ({
-      ...current,
-      inputSchemaText: stringifyWorkflowInputSchema(nextBuilder),
-    }));
-  };
+      if (result.diagnostics.some((diagnostic) => diagnostic.severity === "warning")) {
+        toast.success("Backend validation completed with warnings");
+        return;
+      }
 
-  const setIssueState = (issues: WorkflowValidationIssue[]) => {
-    setValidationIssues(issues);
-    if (issues.length > 0) {
-      setActiveSection(sectionForIssue(issues[0].field));
+      toast.success("Backend validation passed");
+    } catch (error) {
+      const message = error instanceof ApiRequestError ? error.message : "Failed to validate workflow manifest";
+      toast.error(message);
     }
   };
 
-  const applyApiIssues = (error: unknown) => {
-    if (error instanceof ApiRequestError && error.details.length > 0) {
-      const issues = error.details.map((detail) => ({ field: detail.field, issue: detail.issue }));
-      setIssueState(issues);
-    }
-  };
+  const insertSnippet = (snippet: WorkflowSnippet) => {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? manifestSource.length;
+    const selectionEnd = textarea?.selectionEnd ?? manifestSource.length;
+    const beforeSelection = manifestSource.slice(0, selectionStart);
+    const afterSelection = manifestSource.slice(selectionEnd);
+    const leadingBreak = beforeSelection && !beforeSelection.endsWith("\n") ? "\n" : "";
+    const trailingBreak = afterSelection && snippet.text && !snippet.text.endsWith("\n") ? "\n" : "";
+    const insertion = `${leadingBreak}${snippet.text}${trailingBreak}`;
+    const nextSource = `${beforeSelection}${insertion}${afterSelection}`;
+    const nextCursor = beforeSelection.length + insertion.length;
 
-  const validateCurrentDraft = () => {
-    const issues = validateWorkflowDraft(draft, workflowAgents);
-    setIssueState(issues);
-    return issues;
-  };
+    setManifestSource(nextSource);
+    setIsSnippetPaletteOpen(false);
 
-  const saveWorkflow = async () => {
-    const issues = validateCurrentDraft();
-    if (issues.length > 0) {
-      throw new Error("Resolve workflow validation issues before saving.");
-    }
-
-    const payload = buildWorkflowPayload(draft);
-    if (isEditing && workflowId) {
-      const { key: _ignored, ...updatePayload } = payload;
-      const updated = await updateMutation.mutateAsync({ payload: updatePayload, workflowId });
-      toast.success("Workflow updated");
-      navigate(`/workflows/${updated.id}/edit`);
-      return updated;
-    }
-
-    const created = await createMutation.mutateAsync(payload);
-    toast.success("Workflow created");
-    navigate(`/workflows/${created.id}/edit`);
-    return created;
+    const scheduleSelection = window.requestAnimationFrame ?? ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+    scheduleSelection(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
   };
 
   const handleSave = async () => {
-    try {
-      await saveWorkflow();
-    } catch (error) {
-      applyApiIssues(error);
-      toast.error(error instanceof Error ? error.message : "Failed to save workflow");
-    }
-  };
-
-  const handleRunNow = async () => {
-    if (!workflowQuery.data) {
-      toast.error("Save the workflow before running it.");
+    if (!manifestSource.trim()) {
+      toast.error("Workflow manifest is required");
       return;
     }
 
     try {
-      const issues = validateCurrentDraft();
-      if (issues.length > 0) {
-        throw new Error("Resolve workflow validation issues before running.");
+      if (isEditing && workflowId) {
+        const updatedWorkflow = await updateWorkflow.mutateAsync({
+          payload: { manifestSource },
+          workflowId,
+        });
+        setCleanManifestSource(manifestSource);
+        toast.success("Workflow manifest saved");
+        if (String(updatedWorkflow.id) !== workflowId) {
+          navigate(`/workflows/${updatedWorkflow.id}/edit`, { replace: true });
+        }
+        return;
       }
 
-      if (!parsedRunInputPayload) {
-        throw new Error("Run input must be a JSON object.");
-      }
+      const createdWorkflow = await createWorkflow.mutateAsync({ manifestSource });
+      setCleanManifestSource(manifestSource);
+      toast.success("Workflow created from manifest");
+      navigate(`/workflows/${createdWorkflow.id}/edit`);
+    } catch (error) {
+      const message = error instanceof ApiRequestError ? error.message : "Failed to save workflow manifest";
+      toast.error(message);
+    }
+  };
 
-      const run = await createRunMutation.mutateAsync({
-        payload: parsedRunInputPayload,
-        version: workflowQuery.data.version,
-        workflowId: workflowQuery.data.id,
+  const handleLaunchRun = async () => {
+    if (!workflowId) {
+      setRunLaunchFeedback({
+        message: "Save the workflow before launching a run.",
+        title: "Run launch unavailable",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const run = await createWorkflowRun.mutateAsync({
+        payload: runInputPayload,
+        version: workflow?.version,
+        workflowId,
       });
       toast.success("Workflow run started");
       navigate(`/runs/${run.id}`);
     } catch (error) {
-      applyApiIssues(error);
-      toast.error(error instanceof Error ? error.message : "Failed to start workflow run");
+      const message = error instanceof Error ? error.message : "Failed to start workflow run";
+      setRunLaunchFeedback({
+        message,
+        title: "Run launch failed",
+        variant: "destructive",
+      });
     }
   };
 
-  if (isEditing && workflowQuery.isPending) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading workflow details...</div>;
+  if (isEditing && isPending) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background" data-testid="workflow-yaml-editor-shell">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
-  if (isEditing && workflowQuery.isError) {
+  if (isEditing && isError) {
     return (
-      <div className="p-4 text-sm text-muted-foreground">
-        {workflowQuery.error instanceof Error ? workflowQuery.error.message : "Workflow not found."}
+      <div className="flex h-full items-center justify-center bg-background p-6" data-testid="workflow-yaml-editor-shell">
+        <Alert variant="destructive" className="max-w-xl">
+          <AlertCircle />
+          <AlertTitle>Unable to load workflow</AlertTitle>
+          <AlertDescription>
+            {workflowError instanceof Error ? workflowError.message : "The workflow could not be loaded."}
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4" data-testid="workflows-editor">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {isEditing ? "Edit Workflow" : "Create Workflow"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Build a version-pinned workflow through four sections: Input, Steps, Output,
-              and Review.
-            </p>
+    <div className="flex h-full min-h-0 flex-col bg-background" data-testid="workflow-yaml-editor-shell">
+      <div
+        className="sticky top-0 border-b border-border bg-card px-4 py-3"
+        data-testid="workflow-command-bar"
+      >
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-1">
+            <Button aria-label="Back to workflows" onClick={handleClose} size="icon" variant="ghost">
+              <ArrowLeft data-icon="inline-start" />
+            </Button>
+            <Separator className="hidden h-5 sm:block" orientation="vertical" />
+            <Badge variant="secondary">YAML manifest</Badge>
+            {isDirty ? (
+              <Badge data-testid="workflow-dirty-indicator" variant="outline">
+                Unsaved changes
+              </Badge>
+            ) : (
+              <Badge data-testid="workflow-dirty-indicator" variant="secondary">
+                Saved baseline
+              </Badge>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {metadata.name || workflow?.name || (isEditing ? "Workflow manifest" : "New Workflow")}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {metadata.key || workflow?.key || "metadata.key will identify this workflow"}
+              </p>
+            </div>
           </div>
-          {workflowQuery.data ? (
-            <PlatformResourceBadges
-              status={workflowQuery.data.status}
-              version={workflowQuery.data.version}
-            />
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button data-testid="workflow-save" disabled={isSaving} size="sm" onClick={() => void handleSave()}>
-            <Save data-icon="inline-start" />
-            Save Workflow
-          </Button>
-          <Button
-            data-testid="workflow-run-now"
-            disabled={!canRunNow || createRunMutation.isPending}
-            size="sm"
-            variant="outline"
-            onClick={() => void handleRunNow()}
-          >
-            <PlayCircle data-icon="inline-start" />
-            Run Now
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:justify-end xl:ml-auto xl:border-t-0 xl:pt-0">
+            <Button data-testid="workflow-open-snippets" onClick={() => setIsSnippetPaletteOpen(true)} size="sm" variant="outline">
+              <Keyboard data-icon="inline-start" />
+              Snippets
+            </Button>
+            <Button data-testid="workflow-format-manifest" onClick={handleFormat} size="sm" variant="ghost">
+              <Wand2 data-icon="inline-start" />
+              Format
+            </Button>
+            <Button data-testid="workflow-validate-manifest" disabled={isValidating} onClick={() => void handleValidate()} size="sm" variant="outline">
+              {isValidating ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <ShieldCheck data-icon="inline-start" />}
+              Validate
+            </Button>
+            <Button data-testid="workflow-cancel" onClick={handleClose} size="sm" variant="outline">
+              Cancel
+            </Button>
+            <Button data-testid="workflow-save" disabled={isSaving} onClick={handleSave} size="sm">
+              {isSaving ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+              Save manifest
+            </Button>
+          </div>
         </div>
       </div>
 
-      {validationIssues.length > 0 ? (
-        <Alert data-testid="workflow-validation-feedback" variant="destructive">
-          <AlertCircle />
-          <AlertTitle>Workflow validation needs attention</AlertTitle>
-          <AlertDescription>
-            <ul className="list-disc pl-5">
-              {validationIssues.map((issue) => (
-                <li key={`${issue.field}-${issue.issue}`}>{`${issue.field}: ${issue.issue}`}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <Card>
-        <CardContent className="flex flex-col gap-4 pt-6">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>
-                Step {activeIndex + 1} of {WORKFLOW_SECTIONS.length}
-              </span>
-              <span>{WORKFLOW_SECTIONS[activeIndex]?.title}</span>
-            </div>
-            <Progress value={progressValue} />
-          </div>
-          <Tabs value={activeSection} onValueChange={(value) => setActiveSection(value as WorkflowSection)}>
-            <TabsList className="w-full justify-start">
-              {WORKFLOW_SECTIONS.map((section) => (
-                <TabsTrigger key={section.value} value={section.value}>
-                  {section.title}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            <TabsContent forceMount value="input">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Input</CardTitle>
-                  <CardDescription>
-                    Set the workflow identity and define the request schema that step wiring can reference.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="workflow-key">Workflow Key</Label>
-                      <Input
-                        id="workflow-key"
-                        aria-label="Workflow Key"
-                        disabled={isEditing || isSaving}
-                        value={draft.key}
-                        onChange={(event) => setDraft((current) => ({ ...current, key: event.target.value }))}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="workflow-name">Workflow Name</Label>
-                      <Input
-                        id="workflow-name"
-                        aria-label="Workflow Name"
-                        value={draft.name}
-                        onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="workflow-description">Description</Label>
-                    <Textarea
-                      id="workflow-description"
-                      aria-label="Workflow Description"
-                      rows={3}
-                      value={draft.description}
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, description: event.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1">
-                      <Label>Workflow Input Schema</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Define the workflow request shape with the shared schema builder instead of editing JSON directly.
-                      </p>
-                    </div>
-                    <SchemaComposer
-                      label="Workflow input schema"
-                      node={inputSchemaBuilder}
-                      onChange={handleInputSchemaBuilderChange}
-                    />
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Exact raw schema JSON</CardTitle>
-                          <CardDescription>
-                            Read-only canonical JSON derived from the same schema object used in the save payload.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ExactJsonPreview
-                            ariaLabel="Exact raw schema JSON"
-                            data-testid="workflow-input-schema-raw-json"
-                            value={rawInputSchemaJson}
-                          />
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Sample run input</CardTitle>
-                          <CardDescription>
-                            Derived sample run input from the current builder state.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ExactJsonPreview
-                            ariaLabel="Derived sample run input"
-                            data-testid="workflow-input-schema-preview"
-                            value={rawInputSchemaPreviewJson}
-                          />
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent forceMount value="steps">
-              <div className="flex flex-col gap-4">
-                {draft.steps.map((step, stepIndex) => (
-                  <Card key={step.id}>
-                    <CardHeader>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex flex-col gap-1">
-                          <CardTitle>Step {stepIndex + 1}</CardTitle>
-                          <CardDescription>
-                            Agents in the same step run together and publish their outputs to named slots.
-                          </CardDescription>
-                        </div>
-                        {draft.steps.length > 1 ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setDraft((current) => ({
-                                ...current,
-                                steps: current.steps.filter((_, index) => index !== stepIndex),
-                              }))
-                            }
-                          >
-                            <Trash2 data-icon="inline-start" />
-                            Remove Step
-                          </Button>
-                        ) : null}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-4">
-                      {step.agents.map((agentDraft, agentIndex) => (
-                        <AgentEditorCard
-                          currentStepNumber={stepIndex + 1}
-                          draftAgent={agentDraft}
-                          heading={`Step ${stepIndex + 1} Agent ${agentIndex + 1}`}
-                          key={agentDraft.id}
-                          onChange={(nextAgent) =>
-                            setDraft((current) => ({
-                              ...current,
-                              steps: current.steps.map((item, index) =>
-                                index === stepIndex
-                                  ? {
-                                      ...item,
-                                      agents: item.agents.map((agent, currentAgentIndex) =>
-                                        currentAgentIndex === agentIndex ? nextAgent : agent,
-                                      ),
-                                    }
-                                  : item,
-                              ),
-                            }))
-                          }
-                          onRemove={
-                            step.agents.length > 1
-                              ? () =>
-                                  setDraft((current) => ({
-                                    ...current,
-                                    steps: current.steps.map((item, index) =>
-                                      index === stepIndex
-                                        ? {
-                                            ...item,
-                                            agents: item.agents.filter(
-                                              (_, currentAgentIndex) => currentAgentIndex !== agentIndex,
-                                            ),
-                                          }
-                                        : item,
-                                    ),
-                                  }))
-                              : undefined
-                          }
-                          workflowAgents={workflowAgents}
-                          workflowDraft={draft}
-                        />
-                      ))}
-
-                      <Button
-                        className="w-fit"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setDraft((current) => ({
-                            ...current,
-                            steps: current.steps.map((item, index) =>
-                              index === stepIndex
-                                ? { ...item, agents: [...item.agents, createEmptyWorkflowAgent()] }
-                                : item,
-                            ),
-                          }))
-                        }
-                      >
-                        <Plus data-icon="inline-start" />
-                        Add Agent
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-
-                <Button
-                  className="w-fit"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      steps: [...current.steps, createEmptyWorkflowStep()],
-                    }))
-                  }
-                >
-                  <Plus data-icon="inline-start" />
-                  Add Step
-                </Button>
-              </div>
-            </TabsContent>
-
-            <TabsContent forceMount value="output">
-              <OutputEditor
-                onChange={(nextOutput) => setDraft((current) => ({ ...current, output: nextOutput }))}
-                workflowDraft={draft}
-              />
-            </TabsContent>
-
-            <TabsContent forceMount value="review">
-              <div className="flex flex-col gap-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Input</CardTitle>
-                      <CardDescription>Request contract and identity.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      <p>{draft.key || "unsaved_workflow"}</p>
-                      <p>{draft.name || "Workflow name pending"}</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Steps</CardTitle>
-                      <CardDescription>Parallel groups and pinned agent refs.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      <p>{draft.steps.length} step(s)</p>
-                      <p>
-                        {draft.steps.reduce((count, step) => count + step.agents.length, 0)} agent placement(s)
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Output</CardTitle>
-                      <CardDescription>Final slot selected from the workflow steps.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      <p>Slot output</p>
-                      <p>{`Step ${draft.output.stepIndex || "?"} · ${draft.output.slot || "slot pending"}`}</p>
-                    </CardContent>
-                  </Card>
+      <CommandDialog
+        description="Insert small YAML snippets at the current cursor without switching away from source editing."
+        onOpenChange={setIsSnippetPaletteOpen}
+        open={isSnippetPaletteOpen}
+        title="Workflow YAML snippets"
+      >
+        <CommandInput placeholder="Search workflow snippets..." />
+        <CommandList>
+          <CommandEmpty>No snippets found.</CommandEmpty>
+          <CommandGroup heading="Insert at cursor">
+            {WORKFLOW_SNIPPETS.map((snippet) => (
+              <CommandItem
+                data-testid={`workflow-snippet-${snippet.id}`}
+                key={snippet.id}
+                onSelect={() => insertSnippet(snippet)}
+                value={`${snippet.label} ${snippet.description} ${snippet.shortcut}`}
+              >
+                <Code2 />
+                <div className="min-w-0">
+                  <p className="truncate">{snippet.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{snippet.description}</p>
                 </div>
+                <CommandShortcut>{snippet.shortcut}</CommandShortcut>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Run input</CardTitle>
-                    <CardDescription>
-                      Save the workflow, then run the currently saved version with structured inputs derived from the workflow request schema.
-                    </CardDescription>
+      <ResizablePanelGroup className="min-h-0 flex-1" direction="horizontal">
+        <ResizablePanel defaultSize={20} minSize={16}>
+          <aside
+            className="flex h-full min-h-0 flex-col border-r border-border bg-muted/20"
+            data-testid="workflow-outline-rail"
+          >
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <Braces className="size-4 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Manifest outline</p>
+                <p className="text-xs text-muted-foreground">Jump by source section</p>
+              </div>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col gap-4 p-3">
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Sections</CardTitle>
+                    <CardDescription>Required v1 manifest blocks</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-4">
-                    {!canRunNow ? (
-                      <Alert>
-                        <AlertCircle />
-                        <AlertTitle>Run now becomes available after the first save</AlertTitle>
-                        <AlertDescription>
-                          Create the workflow once, then the Review step can launch real runs into `/runs/:runId`.
-                        </AlertDescription>
-                      </Alert>
-                    ) : null}
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <div data-testid="workflow-review-run-input-form">
-                        <SchemaForm
-                          description="Enter the run payload through the shared schema-driven form instead of authoring JSON."
-                          label="Run input"
-                          onChange={setRunInputValue}
-                          schema={inputSchemaBuilder}
-                          value={runInputValue}
-                        />
-                      </div>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Exact raw run-input JSON</CardTitle>
-                          <CardDescription>
-                            Read-only canonical JSON from the same parsed payload used when creating a run.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ExactJsonPreview
-                            ariaLabel="Exact raw run-input JSON"
-                            data-testid="workflow-review-run-input-raw-json"
-                            value={rawRunInputJson}
-                          />
-                        </CardContent>
-                      </Card>
-                    </div>
+                  <CardContent className="flex flex-col gap-1 px-3 pb-3">
+                    {outlineResult.outline.sections.map((section) => (
+                      <button
+                        className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!section.present}
+                        key={section.id}
+                        onClick={() => jumpToLine(section.line)}
+                        type="button"
+                      >
+                        <span className="truncate">{section.label}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {getSectionDescription(section)}
+                        </span>
+                      </button>
+                    ))}
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Workflow summary</CardTitle>
-                    <CardDescription>
-                      Review the structured workflow payload produced by the current builder state.
-                    </CardDescription>
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Execution path</CardTitle>
+                    <CardDescription>Steps and published agent pins</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-4">
-                    {reviewPayload ? (
-                      <ExactJsonPreview
-                        ariaLabel="Workflow payload"
-                        data-testid="workflow-review-summary"
-                        value={rawReviewPayloadJson}
-                      />
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3">
+                    {outlineResult.outline.steps.length ? (
+                      outlineResult.outline.steps.map((step) => (
+                        <div className="rounded-md border border-border bg-background p-2" key={step.path}>
+                          <button
+                            className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium"
+                            onClick={() => jumpToLine(step.line)}
+                            type="button"
+                          >
+                            <span className="truncate">{step.id}</span>
+                            <span className="text-xs text-muted-foreground">Step {step.index + 1}</span>
+                          </button>
+                          <div className="mt-2 flex flex-col gap-1">
+                            {step.agentSlots.map((slot) => (
+                              <button
+                                className="flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                                key={slot.path}
+                                onClick={() => jumpToLine(slot.line)}
+                                type="button"
+                              >
+                                <span className="truncate">{slot.slot}</span>
+                                <span className="truncate text-muted-foreground">{slot.uses ?? "Unpinned"}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))
                     ) : (
-                      <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                        Resolve validation issues to preview the workflow summary.
-                      </div>
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        Add a steps list to populate the execution outline.
+                      </p>
                     )}
                   </CardContent>
                 </Card>
               </div>
-            </TabsContent>
-          </Tabs>
+            </ScrollArea>
+          </aside>
+        </ResizablePanel>
 
-          <Separator />
+        <ResizableHandle withHandle />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              disabled={activeIndex === 0}
-              size="sm"
-              variant="outline"
-              onClick={() => setActiveSection(WORKFLOW_SECTIONS[Math.max(0, activeIndex - 1)].value)}
-            >
-              <ArrowLeft data-icon="inline-start" />
-              Back
-            </Button>
-            {activeSection !== "review" ? (
-              <Button
-                data-testid="workflow-wizard-next"
-                size="sm"
-                onClick={() => setActiveSection(WORKFLOW_SECTIONS[Math.min(WORKFLOW_SECTIONS.length - 1, activeIndex + 1)].value)}
-              >
-                Next
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => void handleSave()}>
-                  <Save data-icon="inline-start" />
-                  Save Workflow
-                </Button>
-                <Button
-                  disabled={!canRunNow || createRunMutation.isPending}
-                  size="sm"
-                  onClick={() => void handleRunNow()}
-                >
-                  <PlayCircle data-icon="inline-start" />
-                  Run Now
-                </Button>
+        <ResizablePanel defaultSize={55} minSize={34}>
+          <section className="flex h-full min-h-0 flex-col bg-background">
+            <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-2">
+              <Code2 className="size-4 text-muted-foreground" />
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Source editor
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">{lineCount} lines</span>
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              <Textarea
+                aria-label="Workflow manifest YAML"
+                className="h-full min-h-0 resize-none rounded-lg border-border bg-background font-mono text-sm leading-6 shadow-none focus-visible:ring-1"
+                data-testid="workflow-yaml-editor"
+                onChange={(event) => setManifestSource(event.target.value)}
+                ref={textareaRef}
+                spellCheck={false}
+                value={manifestSource}
+              />
+            </div>
+          </section>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={25} minSize={20}>
+          <aside className="flex h-full min-h-0 flex-col border-l border-border bg-muted/20" data-testid="workflow-inspector-shell">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <FileText className="size-4 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Inspector</p>
+                <p className="text-xs text-muted-foreground">Local YAML structure only</p>
               </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col gap-4 p-3">
+                <Alert variant={hasErrors ? "destructive" : "default"} data-testid="workflow-local-parse-status">
+                  {hasErrors ? <AlertCircle /> : <CheckCircle2 />}
+                  <AlertTitle>{hasErrors ? "Local parse needs attention" : "Local parse ready"}</AlertTitle>
+                  <AlertDescription>
+                    {hasErrors
+                      ? "Fix local YAML errors before relying on outline details. Backend validation remains authoritative for persisted workflow rules."
+                      : "YAML is locally parseable. Use Validate for backend-authoritative workflow checks."}
+                  </AlertDescription>
+                </Alert>
+
+                <Alert
+                  data-testid="workflow-backend-validation-status"
+                  variant={validationResult && hasBackendErrors ? "destructive" : "default"}
+                >
+                  {validationResult && hasBackendErrors ? <AlertCircle /> : <ShieldCheck />}
+                  <AlertTitle>
+                    {!validationResult
+                      ? "Backend validation not run"
+                      : isValidationStale
+                        ? "Backend validation is stale"
+                        : hasBackendErrors
+                          ? "Backend validation found errors"
+                          : hasBackendWarnings
+                            ? "Backend validation has warnings"
+                            : "Backend validation passed"}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {!validationResult
+                      ? "Run Validate to resolve agents, schemas, wiring, and compiled workflow output against the backend."
+                      : isValidationStale
+                        ? "The YAML changed after the last backend response. Validate again before trusting these results."
+                        : hasBackendErrors
+                          ? "Backend diagnostics must be resolved before this manifest can compile cleanly."
+                          : hasBackendWarnings
+                            ? "The backend returned warnings; review them before saving or running this workflow."
+                            : "The backend returned a compiled payload and run input schema for this manifest."}
+                  </AlertDescription>
+                </Alert>
+
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Workflow metadata</CardTitle>
+                    <CardDescription>Read from the manifest source</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3 text-sm">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Key</p>
+                      <p className="break-words font-mono">{metadata.key || "Not available"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</p>
+                      <p className="break-words">{metadata.name || "Not available"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+                      <p className="break-words text-muted-foreground">
+                        {metadata.description || "Not available"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Local diagnostics</CardTitle>
+                    <CardDescription>Local YAML parser feedback</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3" data-testid="workflow-validation-feedback">
+                    {diagnostics.length ? (
+                      diagnostics.map((diagnostic) => (
+                        <button
+                          className="rounded-md border border-border bg-background p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                          key={diagnostic.id}
+                          onClick={() => jumpToLine(diagnostic.line)}
+                          type="button"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Badge variant={diagnostic.severity === "error" ? "destructive" : "secondary"}>
+                              {diagnostic.severity}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{diagnostic.locationLabel}</span>
+                          </span>
+                          <span className="mt-2 block">{diagnostic.message}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        No local diagnostics.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Backend validation</CardTitle>
+                    <CardDescription>Authoritative manifest validation response</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3" data-testid="workflow-backend-validation-feedback">
+                    {!validationResult ? (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        Run Validate to populate backend diagnostics.
+                      </p>
+                    ) : validationDiagnostics.length ? (
+                      validationDiagnostics.map((diagnostic) => (
+                        <button
+                          className="rounded-md border border-border bg-background p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                          key={diagnostic.id}
+                          onClick={() => jumpToLine(diagnostic.line)}
+                          type="button"
+                        >
+                          <span className="flex flex-wrap items-center gap-2">
+                            <Badge variant={diagnostic.severity === "error" ? "destructive" : "secondary"}>
+                              {diagnostic.severity}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{diagnostic.locationLabel}</span>
+                            {diagnostic.path ? (
+                              <span className="break-all font-mono text-xs text-muted-foreground">
+                                {diagnostic.path}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="mt-2 block">{diagnostic.message}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        No backend diagnostics.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {validationResult ? (
+                  <Card className="gap-3">
+                    <CardHeader className="px-3 pt-3">
+                      <CardTitle className="text-sm">Compiled workflow preview</CardTitle>
+                      <CardDescription>Exact raw JSON returned by backend validation</CardDescription>
+                    </CardHeader>
+                    <CardContent className="px-3 pb-3">
+                      {validationResult.compiledPayload ? (
+                        <ExactJsonPreview
+                          ariaLabel="Exact raw compiled workflow JSON"
+                          data-testid="workflow-compiled-preview"
+                          textareaClassName="min-h-52"
+                          value={compiledPayloadJson}
+                        />
+                      ) : (
+                        <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                          Backend validation did not return a compiled payload.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {validationResult ? (
+                  <Card className="gap-3">
+                    <CardHeader className="px-3 pt-3">
+                      <CardTitle className="text-sm">Run input schema preview</CardTitle>
+                      <CardDescription>Exact raw JSON schema returned by backend validation</CardDescription>
+                    </CardHeader>
+                    <CardContent className="px-3 pb-3">
+                      {validationResult.runInputSchema ? (
+                        <ExactJsonPreview
+                          ariaLabel="Exact raw workflow run input schema JSON"
+                          data-testid="workflow-run-input-preview"
+                          textareaClassName="min-h-52"
+                          value={runInputSchemaJson}
+                        />
+                      ) : (
+                        <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                          Backend validation did not return a run input schema.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                <Card className="gap-3" data-testid="workflow-run-panel">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Launch run</CardTitle>
+                    <CardDescription>Submit a saved workflow run through the compiled input schema.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3">
+                    {!isEditing ? (
+                      <Alert data-testid="workflow-run-unavailable" variant="destructive">
+                        <AlertTitle>Run launch unavailable</AlertTitle>
+                        <AlertDescription>Save the workflow before launching a run.</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {runLaunchFeedback ? (
+                      <Alert data-testid="workflow-run-feedback" variant={runLaunchFeedback.variant}>
+                        <AlertTitle>{runLaunchFeedback.title}</AlertTitle>
+                        <AlertDescription>{runLaunchFeedback.message}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <div data-testid="workflow-run-input-form">
+                      <SchemaForm
+                        description="Fill the workflow run input through the shared schema-driven form instead of editing JSON directly."
+                        disabled={!isEditing || isLaunchingRun}
+                        label="Run input"
+                        schema={activeRunInputSchemaBuilder}
+                        value={runInput}
+                        onChange={setRunInput}
+                      />
+                    </div>
+                    <ExactJsonPreview
+                      ariaLabel="Exact raw workflow run-input JSON"
+                      data-testid="workflow-run-input-raw-json"
+                      textareaClassName="min-h-32"
+                      value={rawRunInputJson}
+                    />
+                    <Button
+                      data-testid="workflow-run-now"
+                      disabled={!isEditing || isLaunchingRun}
+                      onClick={() => void handleLaunchRun()}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {isLaunchingRun ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <PlayCircle data-icon="inline-start" />}
+                      Launch Run
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </ScrollArea>
+          </aside>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }

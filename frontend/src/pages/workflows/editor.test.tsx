@@ -1,197 +1,56 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
-import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
+import { createWorkflowManifestScaffold } from "@/lib/platform-authoring/workflows/manifest";
+import type { WorkflowRead } from "@/lib/types/workflow";
 
 import { WorkflowsEditorPage } from "./editor";
 
 const navigateMock = vi.fn();
 const paramsMock: { workflowId?: string } = {};
 const createWorkflowMock = vi.fn();
-const updateWorkflowMock = vi.fn();
 const createWorkflowRunMock = vi.fn();
+const updateWorkflowMock = vi.fn();
+const validateWorkflowManifestMock = vi.fn();
 const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
-const agents = [
-  {
-    id: 1,
-    budgetUsd: "0.50000000",
-    createdAt: "2026-04-20T10:00:00Z",
-    description: "Researches a ticker.",
-    inputSchema: {
-      properties: { ticker: { type: "string" } },
-      required: ["ticker"],
-      type: "object",
-      },
-      key: "research_agent",
-      mcpServers: [],
-      name: "Research Agent",
-    outputSchema: {
-      id: 11,
-      jsonSchema: {
-        additionalProperties: false,
-        properties: { summary: { type: "string" } },
-        required: ["summary"],
-        type: "object",
-      },
-      key: "decision_schema",
-      version: 1,
-      },
-      skills: [],
-      status: "published",
-      systemPrompt: "Research clearly.",
-      updatedAt: "2026-04-20T10:00:00Z",
-      version: 3,
-  },
-  {
-    id: 2,
-    budgetUsd: "0.75000000",
-    createdAt: "2026-04-20T10:00:00Z",
-    description: "Consumes prior analysis.",
-    inputSchema: {
-      properties: {
-        analysis: {
-          properties: { summary: { type: "string" } },
-          required: ["summary"],
-          type: "object",
-        },
-      },
-      required: ["analysis"],
-      type: "object",
-      },
-      key: "consumer_agent",
-      mcpServers: [],
-      name: "Consumer Agent",
-    outputSchema: {
-      id: 11,
-      jsonSchema: {
-        additionalProperties: false,
-        properties: { summary: { type: "string" } },
-        required: ["summary"],
-        type: "object",
-      },
-      key: "decision_schema",
-      version: 1,
-      },
-      skills: [],
-      status: "published",
-      systemPrompt: "Consume clearly.",
-      updatedAt: "2026-04-20T10:00:00Z",
-      version: 2,
-  },
-];
-
-const brokenWorkflow = {
-  id: 77,
-  aggregateBudgetUsd: "1.25000000",
-  createdAt: "2026-04-20T10:00:00Z",
-  description: "Broken workflow for validation.",
-  inputSchema: {
-    properties: { ticker: { type: "string" } },
-    required: ["ticker"],
-    type: "object",
-  },
+const savedManifest = createWorkflowManifestScaffold({
+  agentSlot: "decision",
+  agentUse: "research_agent@3",
+  description: "Reviews market context.",
   key: "market_review",
   name: "Market Review",
-  outputSpec: { agentId: 1, agentKey: "consumer_agent", agentVersion: 2, kind: "slot", outputSchemaId: 11, outputSchemaVersion: 1, slot: "decision", stepIndex: 2 },
+  stepId: "review_market",
+});
+
+const savedWorkflow: WorkflowRead = {
+  id: 88,
+  aggregateBudgetUsd: "1.25000000",
+  createdAt: "2026-04-20T10:00:00Z",
+  description: "Reviews market context.",
+  inputSchema: {},
+  key: "market_review",
+  manifestApiVersion: "ledger.workflow/v1",
+  manifestSource: savedManifest,
+  name: "Market Review",
+  outputSpec: {
+    agentId: 1,
+    agentKey: "research_agent",
+    agentVersion: 3,
+    kind: "slot",
+    outputSchemaId: 11,
+    outputSchemaVersion: 1,
+    slot: "decision",
+    stepIndex: 1,
+  },
   status: "published",
-  steps: [
-    {
-      agents: [
-        {
-          agentId: 1,
-          agentKey: "research_agent",
-          agentVersion: 3,
-          budgetUsd: "0.50000000",
-          optional: false,
-          outputSchemaId: 11,
-          outputSchemaVersion: 1,
-          slot: "analysis",
-          wiring: { ticker: { from: "input", path: "ticker" } },
-        },
-      ],
-      index: 1,
-    },
-    {
-      agents: [
-        {
-          agentId: 2,
-          agentKey: "consumer_agent",
-          agentVersion: 2,
-          budgetUsd: "0.75000000",
-          optional: false,
-          outputSchemaId: 11,
-          outputSchemaVersion: 1,
-          slot: "decision",
-          wiring: { analysis: { from: "step", slot: "missing_slot", stepIndex: 1 } },
-        },
-      ],
-      index: 2,
-    },
-  ],
+  steps: [],
   updatedAt: "2026-04-20T10:00:00Z",
   version: 2,
 };
 
-const validWorkflow = {
-  ...brokenWorkflow,
-  id: 88,
-  steps: [
-    brokenWorkflow.steps[0],
-    {
-      ...brokenWorkflow.steps[1],
-      agents: [
-        {
-          ...brokenWorkflow.steps[1].agents[0],
-          wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-        },
-      ],
-    },
-  ],
-};
-
-const validWorkflowReviewPayload = {
-  description: "Broken workflow for validation.",
-  inputSchema: {
-    properties: { ticker: { type: "string" } },
-    required: ["ticker"],
-    type: "object",
-  },
-  key: "market_review",
-  name: "Market Review",
-  outputSpec: { kind: "slot", slot: "decision", stepIndex: 2 },
-  steps: [
-    {
-      agents: [
-        {
-          agentKey: "research_agent",
-          agentVersion: 3,
-          optional: false,
-          slot: "analysis",
-          wiring: { ticker: { from: "input", path: "ticker" } },
-        },
-      ],
-      index: 1,
-    },
-    {
-      agents: [
-        {
-          agentKey: "consumer_agent",
-          agentVersion: 2,
-          optional: false,
-          slot: "decision",
-          wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-        },
-      ],
-      index: 2,
-    },
-  ],
-};
-
 vi.mock("react-router", () => ({
-  useLocation: () => ({ hash: "" }),
   useNavigate: () => navigateMock,
   useParams: () => paramsMock,
 }));
@@ -203,25 +62,22 @@ vi.mock("sonner", () => ({
   },
 }));
 
-vi.mock("@/hooks/use-agents", () => ({
-  useAgents: () => ({ data: { items: agents }, isError: false, isPending: false }),
-}));
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(),
+});
 
 vi.mock("@/hooks/use-workflows", () => ({
   useCreateWorkflow: () => ({ isPending: false, mutateAsync: createWorkflowMock }),
   useCreateWorkflowRun: () => ({ isPending: false, mutateAsync: createWorkflowRunMock }),
   useUpdateWorkflow: () => ({ isPending: false, mutateAsync: updateWorkflowMock }),
+  useValidateWorkflowManifest: () => ({ isPending: false, mutateAsync: validateWorkflowManifestMock }),
   useWorkflow: (workflowId?: string) => {
     if (!workflowId) {
       return { data: undefined, error: null, isError: false, isPending: false };
     }
 
-    return {
-      data: workflowId === "88" ? validWorkflow : brokenWorkflow,
-      error: null,
-      isError: false,
-      isPending: false,
-    };
+    return { data: savedWorkflow, error: null, isError: false, isPending: false };
   },
 }));
 
@@ -232,128 +88,149 @@ describe("WorkflowsEditorPage", () => {
     createWorkflowMock.mockReset();
     createWorkflowRunMock.mockReset();
     updateWorkflowMock.mockReset();
+    validateWorkflowManifestMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
   });
 
-  it("shows builder, exact raw schema JSON, and derived sample run input together in the input step", async () => {
+  it("renders the YAML-first full-height editor shell without wizard tabs", () => {
     render(<WorkflowsEditorPage />);
 
-    expect(screen.getByRole("tab", { name: /input/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /steps/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /output/i })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /review/i })).toBeVisible();
-    expect(screen.queryByLabelText("Input Schema JSON")).not.toBeInTheDocument();
-    expect(screen.getByText("Workflow Input Schema")).toBeVisible();
-    expect(screen.getByTestId("output-schema-add-field")).toBeVisible();
-    expect(screen.getByTestId("workflow-input-schema-raw-json")).toBeVisible();
-    expect(screen.getByTestId("workflow-input-schema-preview")).toBeVisible();
-
-    fireEvent.click(screen.getByTestId("output-schema-add-field"));
-    fireEvent.change(screen.getByTestId("output-schema-field-name-1"), {
-      target: { value: "region" },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("workflow-input-schema-preview")).toHaveTextContent("region");
-    });
-
-    expect(screen.getByLabelText("Exact raw schema JSON")).toHaveValue(
-      stringifyJson(
-        schemaBuilderToJsonSchema({
-          kind: "object",
-          allowAdditionalProperties: false,
-          fields: [
-            { name: "ticker", required: true, schema: { kind: "string" } },
-            { name: "region", required: true, schema: { kind: "string" } },
-          ],
-        }),
-      ),
-    );
-    expect(screen.getByLabelText("Exact raw schema JSON")).toHaveAttribute("readonly");
-
-    fireEvent.change(screen.getByLabelText("Workflow Key"), { target: { value: "market_review" } });
-    fireEvent.change(screen.getByLabelText("Workflow Name"), { target: { value: "Market Review" } });
-
-    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
-    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
-    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
-
-    expect(screen.getAllByText(/run input/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/run now becomes available after the first save/i)).toBeVisible();
-    expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
-    expect(screen.getByTestId("workflow-review-run-input-form")).toBeVisible();
-    expect(screen.getByTestId("workflow-review-run-input-raw-json")).toBeVisible();
-    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveAttribute("readonly");
-    expect(screen.getAllByText(/workflow summary/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/resolve validation issues to preview the workflow summary/i)).toBeVisible();
-    expect(screen.getByText(/enter the run payload through the shared schema-driven form/i)).toBeVisible();
+    expect(screen.getByTestId("workflow-yaml-editor-shell")).toBeVisible();
+    expect(screen.getByTestId("workflow-command-bar")).toBeVisible();
+    expect(screen.getByTestId("workflow-outline-rail")).toBeVisible();
+    expect(screen.getByTestId("workflow-yaml-editor")).toBeVisible();
+    expect(screen.getByTestId("workflow-inspector-shell")).toBeVisible();
+    expect(screen.queryByRole("tab", { name: /input/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /steps/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /output/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /review/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-wizard-next")).not.toBeInTheDocument();
   });
 
-  it("surfaces invalid slot wiring feedback and blocks save", async () => {
-    paramsMock.workflowId = "77";
+  it("scaffolds new workflows and saves manifestSource through create", async () => {
+    createWorkflowMock.mockResolvedValue({ id: 123 });
 
     render(<WorkflowsEditorPage />);
+
+    const editor = screen.getByTestId("workflow-yaml-editor");
+    expect((editor as HTMLTextAreaElement).value).toContain("apiVersion: ledger.workflow/v1");
+    expect((editor as HTMLTextAreaElement).value).toContain("key: new_workflow");
+
     fireEvent.click(screen.getByTestId("workflow-save"));
 
-    expect(await screen.findByTestId("workflow-validation-feedback")).toHaveTextContent(
-      "Slot 'missing_slot' was not found on step 1",
-    );
-    expect(updateWorkflowMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(createWorkflowMock).toHaveBeenCalledTimes(1));
+    expect(createWorkflowMock).toHaveBeenCalledWith({ manifestSource: expect.stringContaining("key: new_workflow") });
+    expect(navigateMock).toHaveBeenCalledWith("/workflows/123/edit");
   });
 
-  it("keeps final output slot-only and tells users to model extra agent calls as the last step", () => {
-    render(<WorkflowsEditorPage />);
-
-    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
-    fireEvent.click(screen.getByTestId("workflow-wizard-next"));
-
-    expect(screen.getByText("Final output slot")).toBeVisible();
-    expect(
-      screen.getByText(/model any synthesizer or post-processing agent as a normal final workflow step/i),
-    ).toBeVisible();
-    expect(screen.queryByRole("button", { name: /switch to output agent/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Output kind")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Output step")).toBeVisible();
-    expect(screen.getByLabelText("Output slot")).toBeVisible();
-  });
-
-  it("renders the raw review summary JSON and starts a run from the saved workflow detail", async () => {
+  it("loads existing workflow manifestSource and saves through update", async () => {
     paramsMock.workflowId = "88";
-    createWorkflowRunMock.mockResolvedValue({ id: 901 });
+    updateWorkflowMock.mockResolvedValue(savedWorkflow);
 
     render(<WorkflowsEditorPage />);
 
-    expect(screen.getByTestId("workflow-review-summary")).toBeVisible();
-    expect(screen.getByLabelText("Workflow payload")).toHaveValue(
-      stringifyJson(validWorkflowReviewPayload),
-    );
-    expect(screen.getByLabelText("Workflow payload")).toHaveAttribute("readonly");
-    expect(screen.queryByLabelText("Run Input JSON")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("workflow-review-payload")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(
-      stringifyJson({ ticker: "AAPL" }),
-    );
+    expect(screen.getByTestId("workflow-yaml-editor")).toHaveValue(savedManifest);
+    expect(screen.getAllByText("Market Review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("market_review").length).toBeGreaterThan(0);
 
-    fireEvent.change(within(screen.getByTestId("workflow-review-run-input-form")).getByRole("textbox"), {
-      target: { value: "MSFT" },
+    fireEvent.click(screen.getByTestId("workflow-save"));
+
+    await waitFor(() => expect(updateWorkflowMock).toHaveBeenCalledTimes(1));
+    expect(updateWorkflowMock).toHaveBeenCalledWith({
+      payload: { manifestSource: savedManifest },
+      workflowId: "88",
+    });
+  });
+
+  it("surfaces local YAML diagnostics in the inspector shell", () => {
+    render(<WorkflowsEditorPage />);
+
+    fireEvent.change(screen.getByTestId("workflow-yaml-editor"), {
+      target: { value: "apiVersion: ledger.workflow/v1\nkind: [" },
     });
 
+    expect(screen.getByTestId("workflow-local-parse-status")).toHaveTextContent(
+      "Local parse needs attention",
+    );
+    expect(within(screen.getByTestId("workflow-validation-feedback")).getByText(/malformed yaml/i)).toBeVisible();
+  });
+
+  it("runs backend manifest validation and renders diagnostics plus raw JSON previews", async () => {
+    const compiledPayload = {
+      key: "new_workflow",
+      name: "New Workflow",
+      inputSchema: { type: "object" },
+      steps: [{ index: 1, agents: [{ agentKey: "research_agent", agentVersion: 1, slot: "analysis" }] }],
+      outputSpec: { kind: "slot", stepIndex: 1, slot: "analysis" },
+    };
+    const runInputSchema = { type: "object", properties: { ticker: { type: "string" } } };
+    validateWorkflowManifestMock.mockResolvedValue({
+      compiledPayload,
+      diagnostics: [
+        {
+          column: 9,
+          line: 12,
+          message: "Agent pin resolves with a warning",
+          path: "steps[0].agents[0].uses",
+          severity: "warning",
+        },
+      ],
+      metadata: {
+        apiVersion: "ledger.workflow/v1",
+        description: "Describe what this workflow does.",
+        key: "new_workflow",
+        name: "New Workflow",
+      },
+      runInputSchema,
+    });
+
+    render(<WorkflowsEditorPage />);
+
+    const manifestSource = (screen.getByTestId("workflow-yaml-editor") as HTMLTextAreaElement).value;
+    fireEvent.click(screen.getByTestId("workflow-validate-manifest"));
+
+    await waitFor(() => expect(validateWorkflowManifestMock).toHaveBeenCalledWith({ manifestSource }));
+    expect(screen.getByTestId("workflow-backend-validation-status")).toHaveTextContent(
+      "Backend validation has warnings",
+    );
+    expect(within(screen.getByTestId("workflow-backend-validation-feedback")).getByText("Agent pin resolves with a warning")).toBeVisible();
+    expect(within(screen.getByTestId("workflow-backend-validation-feedback")).getByText("steps[0].agents[0].uses")).toBeVisible();
+    expect(screen.getByLabelText("Exact raw compiled workflow JSON")).toHaveValue(JSON.stringify(compiledPayload, null, 2));
+    expect(screen.getByLabelText("Exact raw workflow run input schema JSON")).toHaveValue(JSON.stringify(runInputSchema, null, 2));
+  });
+
+  it("tracks dirty state, protects beforeunload, and clears after a successful save", async () => {
+    createWorkflowMock.mockResolvedValue({ id: 123 });
+
+    render(<WorkflowsEditorPage />);
+
+    expect(screen.getByTestId("workflow-dirty-indicator")).toHaveTextContent("Saved baseline");
+    fireEvent.change(screen.getByTestId("workflow-yaml-editor"), {
+      target: { value: `${createWorkflowManifestScaffold()}\n# edited\n` },
+    });
+
+    expect(screen.getByTestId("workflow-dirty-indicator")).toHaveTextContent("Unsaved changes");
     await waitFor(() => {
-      expect(screen.getByLabelText("Exact raw run-input JSON")).toHaveValue(
-        stringifyJson({ ticker: "MSFT" }),
-      );
+      const beforeUnloadEvent = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnloadEvent);
+      expect(beforeUnloadEvent.defaultPrevented).toBe(true);
     });
 
-    fireEvent.click(screen.getByTestId("workflow-run-now"));
+    fireEvent.click(screen.getByTestId("workflow-save"));
 
-    await waitFor(() => expect(createWorkflowRunMock).toHaveBeenCalledTimes(1));
-    expect(createWorkflowRunMock).toHaveBeenCalledWith({
-      payload: { ticker: "MSFT" },
-      version: 2,
-      workflowId: 88,
-    });
-    expect(navigateMock).toHaveBeenCalledWith("/runs/901");
+    await waitFor(() => expect(createWorkflowMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("workflow-dirty-indicator")).toHaveTextContent("Saved baseline");
+  });
+
+  it("opens command snippets and inserts YAML text at the cursor", async () => {
+    render(<WorkflowsEditorPage />);
+
+    const editor = screen.getByTestId("workflow-yaml-editor") as HTMLTextAreaElement;
+    fireEvent.click(screen.getByTestId("workflow-open-snippets"));
+    fireEvent.click(screen.getByText("Input property"));
+
+    await waitFor(() => expect(editor.value).toContain("newField:"));
+    expect(editor.value).toContain("description: Describe this workflow input.");
   });
 });

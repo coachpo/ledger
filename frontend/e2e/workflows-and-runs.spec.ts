@@ -1,502 +1,321 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-import { stringifyJson } from "../src/lib/platform-authoring/common/serialization";
-import { schemaBuilderToJsonSchema } from "../src/lib/platform-authoring/schema/codec";
-import { createInitialWorkflowDraft } from "../src/pages/workflows/shared";
+const PLATFORM_API = "http://127.0.0.1:8001/api";
 
-type WorkflowCreatePayload = {
-  description?: string;
-  inputSchema: {
-    properties: Record<string, unknown>;
-    required?: string[];
-    type: "object";
-  };
+type OutputSchemaRead = {
+  id: number;
   key: string;
-  name: string;
-  outputSpec: {
-    kind: "slot";
-    slot: string;
-    stepIndex: number;
-  };
-  steps: Array<{
-    agents: Array<{
-      agentKey: string;
-      agentVersion: number | null;
-      optional: boolean;
-      slot: string;
-      wiring: Record<string, unknown>;
-    }>;
-    index: number;
-  }>;
+  version: number;
 };
 
-function runInputForm(page: Page) {
-  return page.getByTestId("workflow-review-run-input-form");
+type ModelConnectionRead = {
+  id: number;
+};
+
+type AgentRead = {
+  id: number;
+  key: string;
+  version: number;
+};
+
+async function createPublishedOutputSchema(
+  request: APIRequestContext,
+  key: string,
+): Promise<OutputSchemaRead> {
+  const createResponse = await request.post(`${PLATFORM_API}/output-schemas`, {
+    data: {
+      builder: {
+        allowAdditionalProperties: false,
+        fields: [{ name: "summary", required: true, schema: { kind: "string" } }],
+        kind: "object",
+      },
+      key,
+      kind: "standalone",
+      name: `Schema ${key}`,
+    },
+  });
+
+  expect(createResponse.ok()).toBeTruthy();
+  const draft = (await createResponse.json()) as OutputSchemaRead;
+  const activateResponse = await request.post(`${PLATFORM_API}/output-schemas/${draft.id}/activate`);
+  expect(activateResponse.ok()).toBeTruthy();
+  return (await activateResponse.json()) as OutputSchemaRead;
 }
 
-function runInputRawPreview(page: Page) {
-  return page.getByTestId("workflow-review-run-input-raw-json");
+async function createModelConnection(
+  request: APIRequestContext,
+  key: string,
+): Promise<ModelConnectionRead> {
+  const response = await request.post(`${PLATFORM_API}/model-connections`, {
+    data: {
+      apiKey: "sk-playwright-workflow-yaml",
+      baseUrl: "https://api.openai.com/v1",
+      description: "Playwright-only workflow YAML model connection.",
+      modelId: `gpt-${key}`,
+      name: `Model ${key}`,
+      reasoningEffort: "low",
+      timeoutSeconds: 10,
+    },
+  });
+
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as ModelConnectionRead;
 }
 
-async function expectLegacyWorkflowJsonAuthoringAbsent(page: Page) {
-  await expect(page.getByLabel("Input Schema JSON")).toHaveCount(0);
-  await expect(page.getByLabel("Run Input JSON")).toHaveCount(0);
-  await expect(page.getByTestId("workflow-review-payload")).toHaveCount(0);
-}
-
-test("workflow wizard uses structured authoring and opens the runs monitor", async ({ page }) => {
-  const agents = [
-    {
-      id: 1,
-      budgetUsd: "0.50000000",
-      createdAt: "2026-04-20T10:00:00Z",
-      description: "Researches a ticker.",
+async function createPublishedAgent(
+  request: APIRequestContext,
+  options: {
+    key: string;
+    modelConnectionId: number;
+    outputSchemaKey: string;
+    outputSchemaVersion: number;
+  },
+): Promise<AgentRead> {
+  const response = await request.post(`${PLATFORM_API}/agents`, {
+    data: {
+      budgetUsd: "0.25000000",
+      description: "Summarizes ticker research for a workflow YAML E2E test.",
       inputSchema: {
+        additionalProperties: false,
         properties: { ticker: { type: "string" } },
         required: ["ticker"],
         type: "object",
       },
-      key: "research_agent",
+      key: options.key,
       mcpServers: [],
-      model: "openai:gpt-5.4-mini",
-      name: "Research Agent",
-      outputSchema: {
-        id: 11,
-        jsonSchema: {
-          additionalProperties: false,
-          properties: { summary: { type: "string" } },
-          required: ["summary"],
-          type: "object",
-        },
-        key: "decision_schema",
-        version: 1,
-      },
+      modelConnectionId: options.modelConnectionId,
+      name: `Agent ${options.key}`,
+      outputSchemaKey: options.outputSchemaKey,
+      outputSchemaVersion: options.outputSchemaVersion,
       skills: [],
-      status: "published",
-      systemPrompt: "Research clearly.",
-      updatedAt: "2026-04-20T10:00:00Z",
-      version: 3,
+      systemPrompt: "Return a concise summary.",
     },
-    {
-      id: 2,
-      budgetUsd: "0.75000000",
-      createdAt: "2026-04-20T10:00:00Z",
-      description: "Consumes prior analysis.",
-      inputSchema: {
-        properties: {
-          analysis: {
-            properties: { summary: { type: "string" } },
-            required: ["summary"],
-            type: "object",
-          },
-        },
-        required: ["analysis"],
-        type: "object",
-      },
-      key: "consumer_agent",
-      mcpServers: [],
-      model: "openai:gpt-5.4-mini",
-      name: "Consumer Agent",
-      outputSchema: {
-        id: 11,
-        jsonSchema: {
-          additionalProperties: false,
-          properties: { summary: { type: "string" } },
-          required: ["summary"],
-          type: "object",
-        },
-        key: "decision_schema",
-        version: 1,
-      },
-      skills: [],
-      status: "published",
-      systemPrompt: "Consume clearly.",
-      updatedAt: "2026-04-20T10:00:00Z",
-      version: 2,
-    },
-  ];
-
-  let createdWorkflowPayload: WorkflowCreatePayload | null = null;
-  let createdRunPayload: Record<string, unknown> | null = null;
-
-  const workflowPayloadInputSchema = JSON.parse(
-    createInitialWorkflowDraft().inputSchemaText,
-  ) as WorkflowCreatePayload["inputSchema"];
-
-  const workflow = {
-    aggregateBudgetUsd: "1.25000000",
-    createdAt: "2026-04-20T10:00:00Z",
-    description: "Runs research then produces a decision.",
-    id: 501,
-    inputSchema: workflowPayloadInputSchema,
-    key: "market_review",
-    name: "Market Review",
-    outputSpec: {
-      agentId: 2,
-      agentKey: "consumer_agent",
-      agentVersion: 2,
-      kind: "slot",
-      outputSchemaId: 11,
-      outputSchemaVersion: 1,
-      slot: "decision",
-      stepIndex: 2,
-    },
-    status: "published",
-    steps: [
-      {
-        agents: [
-          {
-            agentId: 1,
-            agentKey: "research_agent",
-            agentVersion: 3,
-            budgetUsd: "0.50000000",
-            optional: false,
-            outputSchemaId: 11,
-            outputSchemaVersion: 1,
-            slot: "analysis",
-            wiring: { ticker: { from: "input", path: "ticker" } },
-          },
-        ],
-        index: 1,
-      },
-      {
-        agents: [
-          {
-            agentId: 2,
-            agentKey: "consumer_agent",
-            agentVersion: 2,
-            budgetUsd: "0.75000000",
-            optional: false,
-            outputSchemaId: 11,
-            outputSchemaVersion: 1,
-            slot: "decision",
-            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-          },
-        ],
-        index: 2,
-      },
-    ],
-    updatedAt: "2026-04-20T10:00:00Z",
-    version: 1,
-  };
-
-  const draftReviewPayload = {
-    inputSchema: workflowPayloadInputSchema,
-    key: "market_review",
-    name: "Market Review",
-    outputSpec: {
-      kind: "slot",
-      slot: "decision",
-      stepIndex: 2,
-    },
-    steps: [
-      {
-        agents: [
-          {
-            agentKey: "research_agent",
-            agentVersion: null,
-            optional: false,
-            slot: "analysis",
-            wiring: { ticker: { from: "input", path: "ticker" } },
-          },
-        ],
-        index: 1,
-      },
-      {
-        agents: [
-          {
-            agentKey: "consumer_agent",
-            agentVersion: null,
-            optional: false,
-            slot: "decision",
-            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-          },
-        ],
-        index: 2,
-      },
-    ],
-  };
-
-  const savedReviewPayload = {
-    description: "Runs research then produces a decision.",
-    inputSchema: workflowPayloadInputSchema,
-    key: "market_review",
-    name: "Market Review",
-    outputSpec: {
-      kind: "slot",
-      slot: "decision",
-      stepIndex: 2,
-    },
-    steps: [
-      {
-        agents: [
-          {
-            agentKey: "research_agent",
-            agentVersion: 3,
-            optional: false,
-            slot: "analysis",
-            wiring: { ticker: { from: "input", path: "ticker" } },
-          },
-        ],
-        index: 1,
-      },
-      {
-        agents: [
-          {
-            agentKey: "consumer_agent",
-            agentVersion: 2,
-            optional: false,
-            slot: "decision",
-            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-          },
-        ],
-        index: 2,
-      },
-    ],
-  };
-
-  const runCreated = {
-    createdAt: "2026-04-20T10:00:02Z",
-    id: 901,
-    status: "running",
-    traceId: "trace-901",
-    workflowId: 501,
-    workflowKey: "market_review",
-    workflowVersion: 1,
-  };
-
-  const runDetail = {
-    createdAt: "2026-04-20T10:00:02Z",
-    error: null,
-    finalOutput: { summary: "decision" },
-    finishedAt: "2026-04-20T10:00:05Z",
-    id: 901,
-    input: { ticker: "MSFT" },
-    perStepOutputs: {
-      "1": [
-        {
-          agentId: 1,
-          agentKey: "research_agent",
-          agentVersion: 3,
-          costUsd: "0.02000000",
-          durationMs: 8,
-          error: null,
-          output: { summary: "analysis" },
-          outputSchemaId: 11,
-          outputSchemaVersion: 1,
-          resolvedInput: { ticker: "MSFT" },
-          slot: "analysis",
-          status: "succeeded",
-          tokens: 21,
-          traceSpanId: "span-1",
-        },
-      ],
-      "2": [
-        {
-          agentId: 2,
-          agentKey: "consumer_agent",
-          agentVersion: 2,
-          costUsd: "0.03000000",
-          durationMs: 12,
-          error: null,
-          output: { summary: "decision" },
-          outputSchemaId: 11,
-          outputSchemaVersion: 1,
-          resolvedInput: { analysis: { summary: "analysis" } },
-          slot: "decision",
-          status: "succeeded",
-          tokens: 30,
-          traceSpanId: "span-2",
-        },
-      ],
-    },
-    startedAt: "2026-04-20T10:00:02Z",
-    status: "succeeded",
-    totalCostUsd: "0.05000000",
-    totalTokens: 51,
-    traceId: "trace-901",
-    updatedAt: "2026-04-20T10:00:05Z",
-    workflowId: 501,
-    workflowKey: "market_review",
-    workflowVersion: 1,
-  };
-
-  await page.route("**/api/agents**", async (route) => {
-    await route.fulfill({ body: JSON.stringify({ items: agents }), contentType: "application/json" });
   });
 
-  await page.route("**/api/workflows?*", async (route) => {
-    await route.fulfill({ body: JSON.stringify({ items: [workflow] }), contentType: "application/json" });
-  });
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as AgentRead;
+}
 
-  await page.route("**/api/workflows/501*", async (route) => {
-    await route.fulfill({ body: JSON.stringify(workflow), contentType: "application/json" });
-  });
+function workflowManifest(options: {
+  agentKey: string;
+  description: string;
+  key: string;
+  name: string;
+}): string {
+  return `apiVersion: ledger.workflow/v1
+kind: Workflow
+metadata:
+  key: ${options.key}
+  name: ${options.name}
+  description: ${options.description}
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+  additionalProperties: false
+steps:
+  - id: research
+    agents:
+      - slot: analysis
+        uses: ${options.agentKey}@1
+        with:
+          ticker: \${{ inputs.ticker }}
+output:
+  from: \${{ steps.research.outputs.analysis }}
+`;
+}
 
-  await page.route("**/api/workflows", async (route) => {
-    if (route.request().method() === "POST") {
-      createdWorkflowPayload = route.request().postDataJSON() as WorkflowCreatePayload;
-      await route.fulfill({ body: JSON.stringify(workflow), contentType: "application/json" });
-      return;
-    }
+async function expectYamlOnlyEditor(page: Page) {
+  await expect(page.getByTestId("workflow-yaml-editor-shell")).toBeVisible();
+  await expect(page.getByTestId("workflow-yaml-editor")).toBeVisible();
+  await expect(page.getByTestId("workflow-validate-manifest")).toBeVisible();
+  await expect(page.getByTestId("workflow-save")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /input|steps|output|review/i })).toHaveCount(0);
+  await expect(page.getByTestId("workflow-wizard-next")).toHaveCount(0);
+  await expect(page.getByLabel("Input Schema JSON")).toHaveCount(0);
+  await expect(page.getByLabel("Run Input JSON")).toHaveCount(0);
+}
 
-    await route.continue();
-  });
-
-  await page.route("**/api/workflows/501/runs?*", async (route) => {
-    createdRunPayload = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({ body: JSON.stringify(runCreated), contentType: "application/json", status: 201 });
-  });
-
-  await page.route("**/api/runs/901", async (route) => {
-    await route.fulfill({ body: JSON.stringify(runDetail), contentType: "application/json" });
-  });
-
-  await page.route("**/api/runs?*", async (route) => {
-    await route.fulfill({
-      body: JSON.stringify({
-        items: [
-          {
-            finishedAt: runDetail.finishedAt,
-            id: runDetail.id,
-            startedAt: runDetail.startedAt,
-            status: runDetail.status,
-            targetId: 501,
-            targetKey: "market_review",
-            targetKind: "workflow",
-            targetVersion: 1,
-            totalCostUsd: runDetail.totalCostUsd,
-            totalTokens: runDetail.totalTokens,
-            traceId: runDetail.traceId,
-          },
-        ],
-      }),
-      contentType: "application/json",
+test.describe("Workflow YAML editor", () => {
+  test("covers create, reopen, edit, invalid diagnostics, and run launch", async ({
+    page,
+    request,
+  }) => {
+    const timestamp = Date.now();
+    const schema = await createPublishedOutputSchema(request, `workflow_yaml_schema_${timestamp}`);
+    const modelConnection = await createModelConnection(request, `workflow_yaml_${timestamp}`);
+    const agent = await createPublishedAgent(request, {
+      key: `workflow_yaml_agent_${timestamp}`,
+      modelConnectionId: modelConnection.id,
+      outputSchemaKey: schema.key,
+      outputSchemaVersion: schema.version,
     });
-  });
+    const workflowKey = `workflow_yaml_${timestamp}`;
+    const initialManifest = workflowManifest({
+      agentKey: agent.key,
+      description: "Reviews YAML-created workflow input.",
+      key: workflowKey,
+      name: `Workflow YAML ${timestamp}`,
+    });
+    const editedManifest = workflowManifest({
+      agentKey: agent.key,
+      description: "Updated YAML workflow description.",
+      key: workflowKey,
+      name: `Workflow YAML ${timestamp}`,
+    });
+    let runPayload: Record<string, unknown> | null = null;
 
-  await page.goto("/workflows/new");
-  await expect(page.getByTestId("workflows-editor")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /workflow input schema/i })).toBeVisible();
-  await expectLegacyWorkflowJsonAuthoringAbsent(page);
-  await expect(page.getByTestId("workflow-input-schema-raw-json")).toBeVisible();
-  await expect(page.getByTestId("workflow-input-schema-preview")).toBeVisible();
-  await expect(page.getByLabel("Exact raw schema JSON")).toHaveValue(
-    stringifyJson(
-      schemaBuilderToJsonSchema({
-        kind: "object",
-        allowAdditionalProperties: false,
-        fields: [{ name: "ticker", required: true, schema: { kind: "string" } }],
-      }),
-    ),
-  );
-  await expect(page.getByTestId("workflow-input-schema-preview")).toContainText("ticker");
+    await page.route("**/api/workflows/*/runs?*", async (route) => {
+      runPayload = route.request().postDataJSON() as Record<string, unknown>;
+      const workflowId = Number(route.request().url().match(/\/workflows\/(\d+)\/runs/)?.[1] ?? 0);
+      await route.fulfill({
+        body: JSON.stringify({
+          createdAt: "2026-04-29T10:00:00Z",
+          id: 8801,
+          status: "running",
+          targetId: workflowId,
+          targetKey: workflowKey,
+          targetKind: "workflow",
+          targetVersion: 1,
+          traceId: "trace-workflow-yaml-8801",
+        }),
+        contentType: "application/json",
+        status: 201,
+      });
+    });
 
-  await page.getByLabel("Workflow Key").fill("market_review");
-  await page.getByLabel("Workflow Name").fill("Market Review");
-  await page.getByTestId("output-schema-field-name-0").fill("ticker");
-  await page.getByTestId("workflow-wizard-next").click();
-
-  await page.getByLabel("Step 1 Agent 1 agent").click();
-  await page.getByText("Research Agent (research_agent@3)").click();
-  await page.getByLabel("Step 1 Agent 1 slot").fill("analysis");
-  await page.getByLabel("ticker source").click();
-  await page.getByText("Workflow input", { exact: true }).click();
-
-  await page.getByRole("button", { name: /add step/i }).click();
-  await page.getByLabel("Step 2 Agent 1 agent").click();
-  await page.getByText("Consumer Agent (consumer_agent@2)", { exact: true }).click();
-  await page.getByLabel("Step 2 Agent 1 slot").fill("decision");
-  await page.getByLabel("analysis source").click();
-  await page.getByText("Previous step slot", { exact: true }).click();
-  await page.getByRole("combobox", { name: "analysis slot" }).click();
-  await page.getByRole("option", { name: "analysis" }).click();
-
-  await page.getByTestId("workflow-wizard-next").click();
-  await page.getByLabel("Output step").click();
-  await page.getByRole("option", { name: "Step 2" }).click();
-  await page.getByLabel("Output slot").click();
-  await page.getByRole("option", { name: "decision" }).click();
-
-  await page.getByTestId("workflow-wizard-next").click();
-  await expectLegacyWorkflowJsonAuthoringAbsent(page);
-  await expect(page.getByTestId("workflow-review-summary")).toBeVisible();
-  await expect(page.getByLabel("Workflow payload")).toHaveValue(stringifyJson(draftReviewPayload));
-  await expect(page.getByLabel("Workflow payload")).toHaveAttribute("readonly", "");
-  await expect(runInputForm(page)).toContainText(
-    "Enter the run payload through the shared schema-driven form instead of authoring JSON.",
-  );
-  await expect(runInputRawPreview(page)).toBeVisible();
-  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
-    stringifyJson({ ticker: "AAPL" }),
-  );
-  await expect(runInputForm(page)).toContainText("ticker");
-  await expect(runInputForm(page).getByRole("textbox")).toHaveCount(1);
-  await runInputForm(page).getByRole("textbox").fill("MSFT");
-  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
-    stringifyJson({ ticker: "MSFT" }),
-  );
-
-  await page.getByTestId("workflow-save").click();
-  await expect(page).toHaveURL(/\/workflows\/501\/edit$/);
-  await expectLegacyWorkflowJsonAuthoringAbsent(page);
-  await expect(page.getByLabel("Workflow payload")).toHaveValue(stringifyJson(savedReviewPayload));
-  await expect(page.getByLabel("Workflow payload")).toHaveAttribute("readonly", "");
-  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
-    stringifyJson({ ticker: "AAPL" }),
-  );
-
-  expect(createdWorkflowPayload).not.toBeNull();
-  expect(createdWorkflowPayload).not.toHaveProperty("inputSchemaText");
-  expect(createdWorkflowPayload).toMatchObject({
-    inputSchema: workflowPayloadInputSchema,
-    key: "market_review",
-    name: "Market Review",
-    outputSpec: {
-      kind: "slot",
-      slot: "decision",
-      stepIndex: 2,
-    },
-    steps: [
-      {
-        agents: [
-          {
-            agentKey: "research_agent",
-            agentVersion: null,
-            optional: false,
-            slot: "analysis",
-            wiring: { ticker: { from: "input", path: "ticker" } },
+    await page.route("**/api/runs/8801", async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({
+          createdAt: "2026-04-29T10:00:00Z",
+          error: null,
+          finalOutput: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+          finishedAt: "2026-04-29T10:00:04Z",
+          id: 8801,
+          input: runPayload ?? {},
+          perStepOutputs: {
+            "1": [
+              {
+                agentId: agent.id,
+                agentKey: agent.key,
+                agentVersion: agent.version,
+                costUsd: "0.01000000",
+                durationMs: 5,
+                error: null,
+                output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                outputSchemaId: schema.id,
+                outputSchemaVersion: schema.version,
+                resolvedInput: runPayload ?? {},
+                slot: "analysis",
+                status: "succeeded",
+                tokens: 18,
+                traceSpanId: "span-workflow-yaml-1",
+              },
+            ],
           },
-        ],
-        index: 1,
-      },
-      {
-        agents: [
-          {
-            agentKey: "consumer_agent",
-            agentVersion: null,
-            optional: false,
-            slot: "decision",
-            wiring: { analysis: { from: "step", slot: "analysis", stepIndex: 1 } },
-          },
-        ],
-        index: 2,
-      },
-    ],
+          startedAt: "2026-04-29T10:00:00Z",
+          status: "succeeded",
+          targetId: 1,
+          targetKey: workflowKey,
+          targetKind: "workflow",
+          targetVersion: 1,
+          totalCostUsd: "0.01000000",
+          totalTokens: 18,
+          traceId: "trace-workflow-yaml-8801",
+          updatedAt: "2026-04-29T10:00:04Z",
+        }),
+        contentType: "application/json",
+      });
+    });
+
+    await page.goto("/workflows/new");
+    await expectYamlOnlyEditor(page);
+    await expect(page.getByTestId("workflow-run-unavailable")).toBeVisible();
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
+    await page.getByTestId("workflow-yaml-editor").fill(initialManifest);
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Unsaved changes");
+
+    await page.getByTestId("workflow-validate-manifest").click();
+    await expect(page.getByTestId("workflow-backend-validation-status")).toContainText(
+      "Backend validation passed",
+    );
+    await expect(page.getByTestId("workflow-backend-validation-feedback")).toContainText(
+      "No backend diagnostics",
+    );
+    await expect(page.getByTestId("workflow-compiled-preview").locator("textarea")).toHaveValue(
+      /workflow_yaml_/,
+    );
+    await expect(page.getByTestId("workflow-run-input-preview").locator("textarea")).toHaveValue(
+      /"ticker"/,
+    );
+
+    await Promise.all([
+      page.waitForURL(/\/workflows\/\d+\/edit$/),
+      page.getByTestId("workflow-save").click(),
+    ]);
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
+    const workflowEditUrl = page.url();
+
+    await page.goto("/workflows");
+    await expect(page.getByTestId(`workflows-row-${workflowKey}`)).toContainText(
+      "Reviews YAML-created workflow input.",
+    );
+    await page.getByTestId(`workflows-open-${workflowKey}`).click();
+    await expect(page).toHaveURL(/\/workflows\/\d+\/edit$/);
+    await expectYamlOnlyEditor(page);
+    await expect(page.getByTestId("workflow-yaml-editor")).toHaveValue(initialManifest);
+
+    await page.getByTestId("workflow-yaml-editor").fill(editedManifest);
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Unsaved changes");
+    await page.getByTestId("workflow-save").click();
+    await expect(page.getByText("Workflow manifest saved")).toBeVisible();
+    await expect(page).toHaveURL(/\/workflows\/\d+\/edit$/);
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
+    await page.reload();
+    await expect(page.getByTestId("workflow-yaml-editor")).toHaveValue(editedManifest);
+
+    const invalidManifest = editedManifest.replace(`${agent.key}@1`, `missing_${agent.key}@1`);
+    await page.getByTestId("workflow-yaml-editor").fill(invalidManifest);
+    await page.getByTestId("workflow-validate-manifest").click();
+    await expect(page.getByTestId("workflow-backend-validation-status")).toContainText(
+      "Backend validation found errors",
+    );
+    const backendDiagnostic = page
+      .getByTestId("workflow-backend-validation-feedback")
+      .getByRole("button")
+      .filter({ hasText: `missing_${agent.key}` })
+      .first();
+    await expect(backendDiagnostic).toBeVisible();
+    await backendDiagnostic.click();
+    await expect(page.getByTestId("workflow-yaml-editor")).toBeFocused();
+
+    await page.getByTestId("workflow-yaml-editor").fill(editedManifest);
+    await page.getByTestId("workflow-save").click();
+    await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
+
+    await page.goto("/workflows");
+    await page.getByTestId(`workflows-run-${workflowKey}`).click();
+    await expect(page).toHaveURL(/\/workflows\/\d+\/edit#review$/);
+    await expect(page.getByTestId("workflow-yaml-editor")).toHaveValue(editedManifest);
+    await expect(page.getByTestId("workflow-run-panel")).toBeVisible();
+    await expect(page.getByTestId("workflow-run-input-raw-json").locator("textarea")).toHaveValue(
+      /"ticker": "AAPL"/,
+    );
+    await page.getByTestId("workflow-run-input-form").getByRole("textbox").fill("MSFT");
+    await expect(page.getByTestId("workflow-run-input-raw-json").locator("textarea")).toHaveValue(
+      /"ticker": "MSFT"/,
+    );
+    await page.getByTestId("workflow-run-now").click();
+    await expect(page).toHaveURL(/\/runs\/8801$/);
+    expect(runPayload).toEqual({ ticker: "MSFT" });
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText(
+      "Workflow summary for MSFT",
+    );
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-workflow-yaml-8801");
+    expect(workflowEditUrl).toMatch(/\/workflows\/\d+\/edit$/);
   });
-
-  await runInputForm(page).getByRole("textbox").fill("MSFT");
-  await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(
-    stringifyJson({ ticker: "MSFT" }),
-  );
-
-  await page.getByTestId("workflow-run-now").click();
-  await expect(page).toHaveURL(/\/runs\/901$/);
-  expect(createdRunPayload).toEqual({ ticker: "MSFT" });
-  await expect(page.getByTestId("runs-detail-page")).toBeVisible();
-  await expect(page.getByTestId("runs-detail-final-output")).toContainText("decision");
-  await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-901");
-
-  await page.goto("/runs");
-  await expect(page.getByTestId("runs-row-901")).toContainText("market_review");
 });

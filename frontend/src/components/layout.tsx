@@ -238,6 +238,9 @@ export function Layout() {
   const isTemplateEditorRoute =
     location.pathname === "/templates/new" ||
     (location.pathname.startsWith("/templates/") && location.pathname.endsWith("/edit"));
+  const isWorkflowEditorRoute =
+    location.pathname === "/workflows/new" ||
+    (location.pathname.startsWith("/workflows/") && location.pathname.endsWith("/edit"));
 
   return (
     <SidebarProvider>
@@ -272,7 +275,7 @@ export function Layout() {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {isTemplateEditorRoute ? (
+          {isTemplateEditorRoute || isWorkflowEditorRoute ? (
             <div className="h-full [&>*]:h-full [&>*]:w-full">
               <Outlet />
             </div>
