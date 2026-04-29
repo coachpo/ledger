@@ -6,12 +6,14 @@ import {
   getWorkflow,
   listWorkflows,
   updateWorkflow,
+  validateWorkflowManifest,
 } from "@/lib/api/workflows";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   WorkflowCreateInput,
   WorkflowListParams,
+  WorkflowManifestValidationInput,
   WorkflowRunCreateInput,
   WorkflowUpdateInput,
 } from "@/lib/types/workflow";
@@ -49,6 +51,12 @@ export function useWorkflow(workflowId: IdParam | undefined, version?: number) {
     queryKey: queryKeys.platform.workflows.detail(resolvedWorkflowId, version),
     queryFn: ({ signal }) => getWorkflow(resolvedWorkflowId, { signal, version }),
     enabled: Boolean(workflowId),
+  });
+}
+
+export function useValidateWorkflowManifest() {
+  return useMutation({
+    mutationFn: (payload: WorkflowManifestValidationInput) => validateWorkflowManifest(payload),
   });
 }
 
