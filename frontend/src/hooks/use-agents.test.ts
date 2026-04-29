@@ -7,6 +7,7 @@ const apiState = vi.hoisted(() => ({
   getAgentMock: vi.fn(),
   listAgentsMock: vi.fn(),
   updateAgentMock: vi.fn(),
+  validateAgentManifestMock: vi.fn(),
 }));
 
 const reactQueryState = vi.hoisted(() => ({
@@ -39,10 +40,17 @@ vi.mock("@/lib/api/agents", () => ({
   getAgent: apiState.getAgentMock,
   listAgents: apiState.listAgentsMock,
   updateAgent: apiState.updateAgentMock,
+  validateAgentManifest: apiState.validateAgentManifestMock,
 }));
 
 import { queryKeys } from "@/lib/query-keys";
-import { useAgent, useCreateAgent, useCreateAgentRun } from "./use-agents";
+import {
+  useAgent,
+  useCreateAgent,
+  useCreateAgentRun,
+  useUpdateAgent,
+  useValidateAgentManifest,
+} from "./use-agents";
 
 type CapturedMutationOptions = {
   mutationFn?: (variables: unknown) => unknown;
@@ -57,6 +65,7 @@ describe("useAgents", () => {
     apiState.getAgentMock.mockReset();
     apiState.listAgentsMock.mockReset();
     apiState.updateAgentMock.mockReset();
+    apiState.validateAgentManifestMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     reactQueryState.invalidateQueriesMock.mockReset();
     reactQueryState.useQueryMock.mockClear();
@@ -74,20 +83,29 @@ describe("useAgents", () => {
     );
   });
 
-  it("delegates create payloads with modelConnectionId and invalidates platform agent scopes after create", async () => {
+  it("passes manifest validation payloads through without invalidating caches", async () => {
+    apiState.validateAgentManifestMock.mockResolvedValue({
+      diagnostics: [],
+      metadata: null,
+      compiledPayload: null,
+      runInputSchema: null,
+    });
+
+    useValidateAgentManifest();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    const payload = { manifestSource: "apiVersion: ledger.agent/v1" };
+
+    await mutationOptions.mutationFn?.(payload);
+    expect(apiState.validateAgentManifestMock).toHaveBeenCalledWith(payload);
+    expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalled();
+  });
+
+  it("delegates manifest create payloads and invalidates platform agent scopes after create", async () => {
     useCreateAgent();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const payload = {
-      inputSchema: { type: "object" },
-      key: "research_agent",
-      mcpServers: [],
-      modelConnectionId: 44,
-      name: "Research Agent",
-      outputSchemaKey: "summary_schema",
-      skills: [],
-      systemPrompt: "Analyze carefully.",
-    };
+    const payload = { manifestSource: "apiVersion: ledger.agent/v1" };
 
     await mutationOptions.mutationFn?.(payload);
     expect(apiState.createAgentMock).toHaveBeenCalledWith(payload);
@@ -101,6 +119,33 @@ describe("useAgents", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.agents.detail(11, 1),
+    });
+  });
+
+  it("delegates manifest update payloads and invalidates submitted and created agent scopes", async () => {
+    useUpdateAgent();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    const variables = {
+      agentId: "9",
+      payload: { manifestSource: "apiVersion: ledger.agent/v1" },
+    };
+
+    await mutationOptions.mutationFn?.(variables);
+    expect(apiState.updateAgentMock).toHaveBeenCalledWith("9", variables.payload);
+
+    await mutationOptions.onSuccess?.({ id: 11, version: 3 }, variables);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.agents.detail("9"),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.agents.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.agents.detail(11),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.agents.detail(11, 3),
     });
   });
 

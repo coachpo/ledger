@@ -6,10 +6,17 @@ import {
   getAgent,
   listAgents,
   updateAgent,
+  validateAgentManifest,
 } from "@/lib/api/agents";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import type { AgentCreateInput, AgentListParams, AgentRunCreateInput, AgentUpdateInput } from "@/lib/types/agent";
+import type {
+  AgentCreateInput,
+  AgentListParams,
+  AgentManifestValidationInput,
+  AgentRunCreateInput,
+  AgentUpdateInput,
+} from "@/lib/types/agent";
 
 type UpdateAgentVariables = {
   agentId: IdParam;
@@ -44,6 +51,12 @@ export function useAgent(agentId: IdParam | undefined, version?: number) {
     queryKey: queryKeys.platform.agents.detail(resolvedAgentId, version),
     queryFn: ({ signal }) => getAgent(resolvedAgentId, { signal, version }),
     enabled: Boolean(agentId),
+  });
+}
+
+export function useValidateAgentManifest() {
+  return useMutation({
+    mutationFn: (payload: AgentManifestValidationInput) => validateAgentManifest(payload),
   });
 }
 
