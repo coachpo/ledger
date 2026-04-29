@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import type { SkillRead } from "../src/lib/types/skill";
 
@@ -10,9 +10,15 @@ type OutputSchemaRead = {
   version: number;
 };
 
+type ModelConnectionRead = {
+  id: number;
+  key: string;
+};
+
 type McpServerRead = {
   id: number;
   key: string;
+  version: number;
 };
 
 function readTickerFromPayload(payload: Record<string, unknown> | null): string {
@@ -51,7 +57,31 @@ async function createOutputSchema(
   });
 
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as OutputSchemaRead;
+  const created = (await response.json()) as OutputSchemaRead;
+  const activateResponse = await request.post(`${PLATFORM_API}/output-schemas/${created.id}/activate`);
+  expect(activateResponse.ok()).toBeTruthy();
+  return (await activateResponse.json()) as OutputSchemaRead;
+}
+
+async function createModelConnection(
+  request: APIRequestContext,
+  key: string,
+): Promise<ModelConnectionRead> {
+  const response = await request.post(`${PLATFORM_API}/model-connections`, {
+    data: {
+      apiKey: "sk-playwright-agent-platform",
+      baseUrl: "https://api.openai.com/v1",
+      description: "Playwright-only agent-platform model connection.",
+      key,
+      modelId: `gpt-${key}`,
+      name: `Model ${key}`,
+      reasoningEffort: "low",
+      timeoutSeconds: 10,
+    },
+  });
+
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as ModelConnectionRead;
 }
 
 async function createAndActivateSkill(
@@ -99,26 +129,77 @@ async function createAndActivateMcpServer(
   return (await activateResponse.json()) as McpServerRead;
 }
 
-function cardByHeading(page: Page, heading: RegExp): Locator {
-  return page
-    .getByRole("heading", { name: heading })
-    .locator("xpath=ancestor::*[@data-slot='card'][1]");
-}
-
 async function expectLegacyAgentAuthoringAbsent(page: Page) {
+  await expect(page.getByTestId("agents-editor")).toHaveCount(0);
   await expect(page.getByLabel("Input Schema JSON")).toHaveCount(0);
   await expect(page.getByLabel("Sample Input JSON")).toHaveCount(0);
   await expect(page.getByLabel("Skills")).toHaveCount(0);
   await expect(page.getByLabel("MCP Servers")).toHaveCount(0);
+  await expect(page.getByTestId("agent-input-schema-raw-json")).toHaveCount(0);
+  await expect(page.getByTestId("output-schema-add-field")).toHaveCount(0);
+}
+
+async function expectYamlOnlyAgentEditor(page: Page) {
+  await expect(page.getByTestId("agent-yaml-editor-shell")).toBeVisible();
+  await expect(page.getByTestId("agent-yaml-editor")).toBeVisible();
+  await expect(page.getByTestId("agent-outline-rail")).toBeVisible();
+  await expect(page.getByTestId("agent-inspector-shell")).toBeVisible();
+  await expect(page.getByTestId("agents-validate-manifest")).toBeVisible();
+  await expect(page.getByTestId("agents-save")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /configuration/i })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /^run$/i })).toHaveCount(0);
+  await expect(page.getByLabel("Key")).toHaveCount(0);
+  await expect(page.getByLabel("Name")).toHaveCount(0);
+  await expect(page.getByLabel("Model Connection")).toHaveCount(0);
+  await expect(page.getByLabel("System Prompt")).toHaveCount(0);
+  await expectLegacyAgentAuthoringAbsent(page);
+}
+
+function agentManifest(options: {
+  description: string;
+  key: string;
+  mcpServerRef: string;
+  modelConnectionKey: string;
+  name: string;
+  outputSchemaRef: string;
+  skillRef: string;
+  systemPrompt: string;
+}): string {
+  return `apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: ${options.key}
+  name: ${options.name}
+  description: ${options.description}
+spec:
+  modelConnection: ${options.modelConnectionKey}
+  systemPrompt: |
+    ${options.systemPrompt}
+  inputSchema:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required:
+      - ticker
+    additionalProperties: false
+  outputSchema: ${options.outputSchemaRef}
+  skills:
+    - ${options.skillRef}
+  mcpServers:
+    - ${options.mcpServerRef}
+  budgetUsd: "0.25"
+`;
 }
 
 test.describe("Agent platform CRUD flows", () => {
-  test("covers schema transparency, duplicate behavior, and structured agent run launch", async ({
+  test("covers YAML-only agent authoring, duplicate behavior, and saved run launch", async ({
     page,
     request,
   }) => {
     const timestamp = Date.now();
     const outputSchema = await createOutputSchema(request, `summary_schema_${timestamp}`);
+    const modelConnection = await createModelConnection(request, `macro_model_${timestamp}`);
     const skillKey = `summarize_skill_${timestamp}`;
     const serverKey = `quotes_mcp_${timestamp}`;
     const agentKey = `macro_agent_${timestamp}`;
@@ -127,6 +208,26 @@ test.describe("Agent platform CRUD flows", () => {
     let createdRunRequestUrl: string | null = null;
     const skill = await createAndActivateSkill(request, skillKey);
     const server = await createAndActivateMcpServer(request, serverKey);
+    const initialManifest = agentManifest({
+      description: "Tracks macro context.",
+      key: agentKey,
+      mcpServerRef: `${server.key}@${server.version}`,
+      modelConnectionKey: modelConnection.key,
+      name: `Macro Agent ${timestamp}`,
+      outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
+      skillRef: `${skill.key}@${skill.version}`,
+      systemPrompt: "Summarize macro context clearly.",
+    });
+    const duplicateManifest = agentManifest({
+      description: "Tracks macro context as a duplicate.",
+      key: duplicateAgentKey,
+      mcpServerRef: `${server.key}@${server.version}`,
+      modelConnectionKey: modelConnection.key,
+      name: `Macro Agent ${timestamp} Copy`,
+      outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
+      skillRef: `${skill.key}@${skill.version}`,
+      systemPrompt: "Summarize macro context clearly.",
+    });
 
     await page.route(/\/api\/skills(?:\?.*)?$/, async (route) => {
       await route.fulfill({
@@ -211,76 +312,34 @@ test.describe("Agent platform CRUD flows", () => {
     await expect(page.getByTestId("mcp-server-connection-feedback")).toBeVisible();
 
     await page.goto("/agents/new");
-    await expect(page.getByTestId("agents-editor")).toBeVisible();
-    await expectLegacyAgentAuthoringAbsent(page);
-    await expect(page.getByRole("heading", { name: /^Input schema$/i })).toBeVisible();
-    await expect(page.getByTestId("agent-input-schema-raw-json")).toBeVisible();
-    await expect(page.getByTestId("agent-input-schema-preview")).toBeVisible();
-    await expect(page.getByRole("heading", { name: /output schema binding/i })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /skill bindings/i })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /mcp server bindings/i })).toBeVisible();
+    await expectYamlOnlyAgentEditor(page);
+    await expect(page.getByTestId("agent-run-unavailable")).toBeVisible();
+    await page.getByTestId("agent-yaml-editor").fill(initialManifest);
+    await page.getByTestId("agents-validate-manifest").click();
+    await expect(page.getByTestId("agent-backend-validation-status")).toContainText("Backend validation passed");
+    await expect(page.getByTestId("agent-compiled-preview").locator("textarea")).toHaveValue(/macro_agent_/);
+    await expect(page.getByTestId("agent-run-input-preview").locator("textarea")).toHaveValue(/"ticker"/);
 
-    await page.getByRole("button", { name: /save agent/i }).click();
-    await expect(page.getByText("Key is required.")).toBeVisible();
-
-    await page.getByLabel("Key").fill(agentKey);
-    await page.getByLabel("Name").fill(`Macro Agent ${timestamp}`);
-    await page.getByLabel("Model Connection").click();
-    await page.getByRole("option").filter({ hasText: / · / }).first().click();
-    await page.getByLabel("System Prompt").fill("Summarize macro context clearly.");
-    await page.getByLabel("Description").fill("Tracks macro context.");
-
-    await page.getByTestId("output-schema-add-field").click();
-    await page.getByTestId("output-schema-field-name-0").fill("ticker");
-    await expect(
-      cardByHeading(page, /exact raw schema json/i).getByRole("textbox", {
-        name: /exact raw schema json/i,
-      }),
-    ).toHaveValue(/"ticker"/);
-    await expect(
-      cardByHeading(page, /^sample input$/i).getByRole("textbox", {
-        name: /^sample input$/i,
-      }),
-    ).toHaveValue(/"ticker": "AAPL"/);
-    await expect(
-      cardByHeading(page, /^sample input$/i).getByRole("textbox", {
-        name: /^sample input$/i,
-      }),
-    ).toHaveJSProperty("readOnly", true);
-
-    const outputSchemaCard = cardByHeading(page, /output schema binding/i);
-    await outputSchemaCard.getByRole("combobox").first().click();
-    await page.getByText(`Schema ${outputSchema.key}`, { exact: true }).click();
-
-    const skillBindingsCard = cardByHeading(page, /skill bindings/i);
-    await expect(skillBindingsCard.getByRole("button", { name: /add skill binding/i })).toBeEnabled();
-    await skillBindingsCard.getByRole("button", { name: /add skill binding/i }).click();
-    await skillBindingsCard.getByRole("combobox").first().click();
-    await page.getByLabel("Suggestions").getByText(`Skill ${skillKey}`, { exact: true }).click();
-    await expect(skillBindingsCard.getByText(skillKey, { exact: true })).toBeVisible();
-
-    const mcpBindingsCard = cardByHeading(page, /mcp server bindings/i);
-    await mcpBindingsCard.getByRole("button", { name: /add mcp server binding/i }).click();
-    await mcpBindingsCard.getByRole("combobox").first().click();
-    await page.getByLabel("Suggestions").getByText(`MCP ${serverKey}`, { exact: true }).click();
-    await expect(mcpBindingsCard.getByText(serverKey, { exact: true })).toBeVisible();
-
-    await page.getByRole("button", { name: /save agent/i }).click();
+    await page.getByTestId("agents-save").click();
     await expect(page).toHaveURL(/\/agents\/\d+\/edit$/);
     const agentEditUrl = page.url();
-    await expectLegacyAgentAuthoringAbsent(page);
+    await expectYamlOnlyAgentEditor(page);
+    await expect(page.getByTestId("agent-yaml-editor")).toHaveValue(initialManifest);
 
     await expect(page.getByRole("tab", { name: /test panel/i })).toHaveCount(0);
-    await page.getByRole("tab", { name: /^run$/i }).click();
     await expect(page.getByLabel("Sample Input JSON")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /^launch run$/i })).toBeVisible();
     await expect(page.getByTestId("agent-run-panel-input-form")).toBeVisible();
     await expect(page.getByTestId("agent-run-panel-input-raw-json")).toBeVisible();
     await expect(page.getByTestId("agent-test-panel-result")).toHaveCount(0);
     await expect(page.getByLabel("Exact raw result JSON")).toHaveCount(0);
-    await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(/"ticker": "AAPL"/);
+    await expect(page.getByTestId("agent-run-panel-input-raw-json").locator("textarea")).toHaveValue(
+      /"ticker": "example"/,
+    );
     await page.getByTestId("agent-run-panel-input-form").getByRole("textbox").fill("MSFT");
-    await expect(page.getByLabel("Exact raw run-input JSON")).toHaveValue(/"ticker": "MSFT"/);
+    await expect(page.getByTestId("agent-run-panel-input-raw-json").locator("textarea")).toHaveValue(
+      /"ticker": "MSFT"/,
+    );
     await page.getByTestId("agent-run-panel-launch").click();
     await expect(page.getByText("Agent run started")).toBeVisible();
     await expect(page).toHaveURL(/\/runs\/321$/);
@@ -295,11 +354,14 @@ test.describe("Agent platform CRUD flows", () => {
     await expect(page).toHaveURL(/\/agents\/\d+\/edit$/);
     await page.getByTestId("agents-duplicate").click();
     await expect(page).toHaveURL(/\/agents\/new\?duplicateFrom=\d+$/);
-    await expect(page.getByRole("heading", { name: /duplicate agent/i })).toBeVisible();
-    await expectLegacyAgentAuthoringAbsent(page);
-    await expect(page.getByRole("textbox", { name: /^Name$/i })).toHaveValue(`Macro Agent ${timestamp} Copy`);
-    await page.getByRole("textbox", { name: /^Key$/i }).fill(duplicateAgentKey);
-    await page.getByRole("button", { name: /save agent/i }).click();
+    await expectYamlOnlyAgentEditor(page);
+    await expect(page.getByText("Duplicate source")).toBeVisible();
+    await expect(page.getByTestId("agent-yaml-editor")).toHaveValue(/key: new_agent/);
+    await expect(page.getByTestId("agent-yaml-editor")).toHaveValue(
+      new RegExp(`name: Macro Agent ${timestamp} Copy`),
+    );
+    await page.getByTestId("agent-yaml-editor").fill(duplicateManifest);
+    await page.getByTestId("agents-save").click();
     await expect(page).toHaveURL(/\/agents\/\d+\/edit$/);
 
     await page.getByTestId("agents-archive").click();

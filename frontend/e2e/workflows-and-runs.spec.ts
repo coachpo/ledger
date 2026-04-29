@@ -10,6 +10,7 @@ type OutputSchemaRead = {
 
 type ModelConnectionRead = {
   id: number;
+  key: string;
 };
 
 type AgentRead = {
@@ -51,6 +52,7 @@ async function createModelConnection(
       apiKey: "sk-playwright-workflow-yaml",
       baseUrl: "https://api.openai.com/v1",
       description: "Playwright-only workflow YAML model connection.",
+      key,
       modelId: `gpt-${key}`,
       name: `Model ${key}`,
       reasoningEffort: "low",
@@ -66,29 +68,36 @@ async function createPublishedAgent(
   request: APIRequestContext,
   options: {
     key: string;
-    modelConnectionId: number;
+    modelConnectionKey: string;
     outputSchemaKey: string;
     outputSchemaVersion: number;
   },
 ): Promise<AgentRead> {
+  const manifestSource = `apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: ${options.key}
+  name: Agent ${options.key}
+  description: Summarizes ticker research for a workflow YAML E2E test.
+spec:
+  modelConnection: ${options.modelConnectionKey}
+  systemPrompt: Return a concise summary.
+  inputSchema:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required:
+      - ticker
+    additionalProperties: false
+  outputSchema: ${options.outputSchemaKey}@${options.outputSchemaVersion}
+  skills: []
+  mcpServers: []
+  budgetUsd: "0.25"
+`;
   const response = await request.post(`${PLATFORM_API}/agents`, {
     data: {
-      budgetUsd: "0.25000000",
-      description: "Summarizes ticker research for a workflow YAML E2E test.",
-      inputSchema: {
-        additionalProperties: false,
-        properties: { ticker: { type: "string" } },
-        required: ["ticker"],
-        type: "object",
-      },
-      key: options.key,
-      mcpServers: [],
-      modelConnectionId: options.modelConnectionId,
-      name: `Agent ${options.key}`,
-      outputSchemaKey: options.outputSchemaKey,
-      outputSchemaVersion: options.outputSchemaVersion,
-      skills: [],
-      systemPrompt: "Return a concise summary.",
+      manifestSource,
     },
   });
 
@@ -149,7 +158,7 @@ test.describe("Workflow YAML editor", () => {
     const modelConnection = await createModelConnection(request, `workflow_yaml_${timestamp}`);
     const agent = await createPublishedAgent(request, {
       key: `workflow_yaml_agent_${timestamp}`,
-      modelConnectionId: modelConnection.id,
+      modelConnectionKey: modelConnection.key,
       outputSchemaKey: schema.key,
       outputSchemaVersion: schema.version,
     });
