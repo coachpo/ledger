@@ -4,6 +4,8 @@ import type {
   WorkflowCreateInput,
   WorkflowListParams,
   WorkflowListRead,
+  WorkflowManifestValidationInput,
+  WorkflowManifestValidationRead,
   WorkflowRead,
   WorkflowRunCreateInput,
   WorkflowUpdateInput,
@@ -30,6 +32,17 @@ export function getWorkflow(
   return requestPlatform<WorkflowRead>(workflowPath(workflowId), {
     query: toQueryRecord({ version: options.version }),
     signal: options.signal,
+  });
+}
+
+export function validateWorkflowManifest(
+  payload: WorkflowManifestValidationInput,
+  signal?: AbortSignal,
+): Promise<WorkflowManifestValidationRead> {
+  return requestPlatform<WorkflowManifestValidationRead>("/workflows/validate-manifest", {
+    body: payload,
+    method: "POST",
+    signal,
   });
 }
 
@@ -86,4 +99,5 @@ export const workflowsApi = {
   get: getWorkflow,
   list: listWorkflows,
   update: updateWorkflow,
+  validateManifest: validateWorkflowManifest,
 } as const;
