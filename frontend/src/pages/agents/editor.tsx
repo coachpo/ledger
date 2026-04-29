@@ -1,56 +1,81 @@
-import { useEffect, useMemo, useState } from "react";
-import { Archive, Copy, PlayCircle, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  Archive,
+  ArrowLeft,
+  Braces,
+  CheckCircle2,
+  Code2,
+  Copy,
+  FileText,
+  Keyboard,
+  Loader2,
+  PlayCircle,
+  Save,
+  ShieldCheck,
+  Wand2,
+} from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-import { ResourceMultiRefSelect } from "@/components/platform-authoring/refs/resource-multi-ref-select";
-import {
-  ResourceRefSelect,
-  type ResourceRefSelectOption,
-} from "@/components/platform-authoring/refs/resource-ref-select";
-import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
-import { useAgent, useArchiveAgent, useCreateAgent, useCreateAgentRun, useUpdateAgent } from "@/hooks/use-agents";
-import { useMcpServers } from "@/hooks/use-mcp-servers";
-import { useModelConnections } from "@/hooks/use-model-connections";
-import { useOutputSchemas } from "@/hooks/use-output-schemas";
-import { useSkills } from "@/hooks/use-skills";
-import { agentBindingRefsFromRead } from "@/lib/platform-authoring/agents/codec";
-import type { AgentAuthoringDraft } from "@/lib/platform-authoring/agents/types";
-import { validateAgentDraft } from "@/lib/platform-authoring/agents/validation";
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  parseSchemaJsonText,
-  schemaBuilderToJsonSchema,
-  type SchemaCodecIssue,
-} from "@/lib/platform-authoring/schema/codec";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useAgent,
+  useArchiveAgent,
+  useCreateAgent,
+  useCreateAgentRun,
+  useUpdateAgent,
+  useValidateAgentManifest,
+} from "@/hooks/use-agents";
+import { ApiRequestError } from "@/lib/api-client";
+import {
+  createAgentManifestScaffold,
+  createAgentManifestSource,
+  extractAgentManifestOutline,
+  formatAgentManifestYaml,
+  mapAgentManifestDiagnosticsForEditor,
+  parseAgentManifestLocallyForEditor,
+  type AgentManifestOutlineSection,
+} from "@/lib/platform-authoring/agents/manifest";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { parseSchemaJsonText } from "@/lib/platform-authoring/schema/codec";
 import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
 import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
 import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
 import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
 import type { ValueEntry } from "@/lib/platform-authoring/values/types";
-import type { ResourceRef } from "@/lib/platform-authoring/common/resource-ref";
-import type { AgentCreateInput, AgentRead, AgentUpdateInput } from "@/lib/types/agent";
+import type { AgentManifestValidationRead, AgentRead } from "@/lib/types/agent";
 import type { UnknownRecord } from "@/lib/types/common";
-import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 
-import { parseOptionalNumber, parseRequiredText, PlatformResourceBadges, sortByKey } from "../platform-resource-shared";
+import { PlatformResourceBadges } from "../platform-resource-shared";
 
 type RunLaunchFeedback = {
   message: string;
@@ -58,176 +83,147 @@ type RunLaunchFeedback = {
   variant: "default" | "destructive";
 };
 
-type HydratedAgentEditorState = {
-  draft: AgentAuthoringDraft;
-  issues: SchemaCodecIssue[];
-  sampleInput: ValueEntry;
+type AgentSnippet = {
+  description: string;
+  id: string;
+  label: string;
+  shortcut: string;
+  text: string;
 };
 
-const UNSELECTED_MODEL_CONNECTION = "__unselected_model_connection__";
+const AGENT_SNIPPETS: AgentSnippet[] = [
+  {
+    description: "Adds the manifest metadata block with key, name, and description.",
+    id: "metadata",
+    label: "Metadata block",
+    shortcut: "meta",
+    text: "metadata:\n  key: new_agent\n  name: New Agent\n  description: Describe what this agent does.\n",
+  },
+  {
+    description: "Adds a block-style system prompt under spec.",
+    id: "prompt",
+    label: "System prompt",
+    shortcut: "prompt",
+    text: "systemPrompt: |\n  You are a concise portfolio research assistant.\n",
+  },
+  {
+    description: "Adds a string property for spec.inputSchema.properties.",
+    id: "input-schema-field",
+    label: "Input schema field",
+    shortcut: "input",
+    text: "newField:\n  type: string\n  description: Describe this agent input.\n",
+  },
+  {
+    description: "Pins a published output schema by key and version.",
+    id: "output-schema-pin",
+    label: "Output schema pin",
+    shortcut: "schema",
+    text: "outputSchema: summary_schema@1\n",
+  },
+  {
+    description: "Adds a published skill pin to spec.skills.",
+    id: "skill-pin",
+    label: "Skill pin",
+    shortcut: "skill",
+    text: "- summarize_skill@1\n",
+  },
+  {
+    description: "Adds a published MCP server pin to spec.mcpServers.",
+    id: "mcp-pin",
+    label: "MCP server pin",
+    shortcut: "mcp",
+    text: "- quotes_mcp@1\n",
+  },
+];
 
-function compareModelConnections(
-  left: ModelConnectionListItemRead,
-  right: ModelConnectionListItemRead,
-): number {
-  const nameComparison = left.name.localeCompare(right.name);
-  if (nameComparison !== 0) {
-    return nameComparison;
-  }
-
-  const modelComparison = left.modelId.localeCompare(right.modelId);
-  if (modelComparison !== 0) {
-    return modelComparison;
-  }
-
-  return left.id - right.id;
-}
-
-function formatModelConnectionLabel(connection: ModelConnectionListItemRead): string {
-  return `${connection.name} · ${connection.modelId}`;
-}
-
-function formatModelConnectionMeta(connection: ModelConnectionListItemRead): string {
-  return `${connection.baseUrl} · ${connection.reasoningEffort} reasoning`;
-}
-
-function parseModelConnectionId(value: string) {
-  const modelConnectionId = parseOptionalNumber("Model connection", value, {
-    integer: true,
-    min: 1,
-  });
-
-  if (modelConnectionId === undefined) {
-    throw new Error("Model connection is required.");
-  }
-
-  return modelConnectionId;
-}
-
-function createInitialDraft(): AgentAuthoringDraft {
-  return {
-    budgetUsd: "",
-    description: "",
-    inputSchema: createDefaultSchemaNode("object"),
-    bindings: {
-      outputSchema: { key: "", version: null },
-      skills: [],
-      mcpServers: [],
-    },
-    key: "",
-    modelConnectionId: "",
-    name: "",
-    systemPrompt: "",
-  };
-}
-
-function isUnknownRecord(value: unknown): value is UnknownRecord {
+function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function createDefaultSampleInputValue(schema: SchemaIRNode): ValueEntry {
-  const previewValue = buildPreviewValue(schema);
-
-  if (isUnknownRecord(previewValue) && typeof previewValue.ticker === "string") {
-    return encodeValueEntry({ ...previewValue, ticker: "AAPL" });
+function getManifestMetadata(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.metadata)) {
+    return { description: "", key: "", name: "" };
   }
 
-  if (isUnknownRecord(previewValue)) {
+  return {
+    description: typeof value.metadata.description === "string" ? value.metadata.description : "",
+    key: typeof value.metadata.key === "string" ? value.metadata.key : "",
+    name: typeof value.metadata.name === "string" ? value.metadata.name : "",
+  };
+}
+
+function formatLocation(line: number | null, column: number | null) {
+  if (line === null) {
+    return "No source location";
+  }
+
+  return column === null ? `Line ${line}` : `Line ${line}, column ${column}`;
+}
+
+function getSectionDescription(section: AgentManifestOutlineSection) {
+  if (!section.present) {
+    return "Missing";
+  }
+
+  return formatLocation(section.line, section.column);
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readString(value: unknown, fallback: string): string {
+  return readOptionalString(value) ?? fallback;
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
+  const previewValue = buildPreviewValue(schema);
+
+  if (isRecord(previewValue)) {
     return encodeValueEntry(previewValue);
   }
 
   return encodeValueEntry({});
 }
 
-function decodeSampleInputValue(value: ValueEntry): UnknownRecord {
+function decodeRunInputValue(value: ValueEntry): UnknownRecord {
   const decoded = validateAndDecodeValueEntry(value);
 
-  if (!decoded.ok || !isUnknownRecord(decoded.value)) {
-    throw new Error("Sample input must be a JSON object.");
+  if (!decoded.ok || !isRecord(decoded.value)) {
+    return {};
   }
 
   return decoded.value;
 }
 
-function decodePersistedInputSchema(
-  agent: AgentRead,
-  options: { clearArchivedModelConnection?: boolean; clearKey?: boolean; duplicateName?: boolean } = {},
-): HydratedAgentEditorState {
-  const decoded = parseSchemaJsonText(stringifyJson(agent.inputSchema));
-  const builder = decoded.builder ?? createDefaultSchemaNode("object");
-  const shouldClearArchivedModelConnection =
-    options.clearArchivedModelConnection && agent.modelConnection.status === "archived";
-
-  return {
-      draft: {
-        budgetUsd: agent.budgetUsd,
-        description: agent.description ?? "",
-        inputSchema: builder,
-        bindings: agentBindingRefsFromRead(agent),
-        key: options.clearKey ? "" : agent.key,
-        modelConnectionId: shouldClearArchivedModelConnection ? "" : String(agent.modelConnectionId),
-        name: options.duplicateName ? `${agent.name} Copy` : agent.name,
-        systemPrompt: agent.systemPrompt,
-      },
-    issues: decoded.issues,
-    sampleInput: createDefaultSampleInputValue(builder),
-  };
+function getConfirmNavigationMessage() {
+  return "You have unsaved agent YAML changes. Leave this editor and discard them?";
 }
 
-function toResourceRefOptions<T extends {
-  description?: string | null;
-  key: string;
-  name: string;
-  status?: string;
-  version: number;
-}>(items: readonly T[]): ResourceRefSelectOption[] {
-  return items.map((item) => ({
-    description: item.description ?? undefined,
-    key: item.key,
-    keywords: [item.key],
-    label: item.name,
-    status: item.status,
-    version: item.version,
-  }));
-}
+function createDuplicateAgentManifestScaffold(agent: AgentRead): string {
+  const parsed = parseAgentManifestLocallyForEditor(agent.manifestSource);
+  const manifest = parsed.value;
 
-function cloneResourceRef(ref: ResourceRef): ResourceRef {
-  return { key: ref.key, version: ref.version };
-}
-
-function cloneResourceRefs(refs: readonly ResourceRef[]): ResourceRef[] {
-  return refs.map((ref) => cloneResourceRef(ref));
-}
-
-function buildPayload(
-  draft: AgentAuthoringDraft,
-  inputSchema = schemaBuilderToJsonSchema(draft.inputSchema),
-): AgentCreateInput | AgentUpdateInput {
-  const [issue] = validateAgentDraft(draft);
-
-  if (issue) {
-    throw new Error(issue.issue);
+  if (parsed.isValidYaml && isRecord(manifest) && isRecord(manifest.metadata) && isRecord(manifest.spec)) {
+    return createAgentManifestSource({
+      budgetUsd: readOptionalString(manifest.spec.budgetUsd),
+      description: readOptionalString(manifest.metadata.description),
+      inputSchema: manifest.spec.inputSchema ?? { additionalProperties: false, properties: {}, type: "object" },
+      key: "new_agent",
+      mcpServers: readStringList(manifest.spec.mcpServers),
+      modelConnection: readString(manifest.spec.modelConnection, "primary_model_connection"),
+      name: `${readString(manifest.metadata.name, agent.name)} Copy`,
+      outputSchema: readString(manifest.spec.outputSchema, "summary_schema@1"),
+      skills: readStringList(manifest.spec.skills),
+      systemPrompt: readString(manifest.spec.systemPrompt, "You are a concise portfolio research assistant."),
+    });
   }
 
-  return {
-    budgetUsd: draft.budgetUsd.trim() || undefined,
-    description: draft.description.trim() || undefined,
-    inputSchema,
-    key: parseRequiredText("Key", draft.key).toLowerCase(),
-    mcpServers: draft.bindings.mcpServers.map((server) => ({
-      mcpServerKey: server.key.trim(),
-      mcpServerVersion: server.version ?? null,
-    })),
-    modelConnectionId: parseModelConnectionId(draft.modelConnectionId),
-    name: parseRequiredText("Name", draft.name),
-    outputSchemaKey: draft.bindings.outputSchema.key.trim(),
-    outputSchemaVersion: draft.bindings.outputSchema.version ?? null,
-    skills: draft.bindings.skills.map((skill) => ({
-      skillKey: skill.key.trim(),
-      skillVersion: skill.version ?? null,
-    })),
-    systemPrompt: parseRequiredText("System prompt", draft.systemPrompt),
-  };
+  return createAgentManifestScaffold({ key: "new_agent", name: "New Agent Copy" });
 }
 
 export function AgentsEditorPage() {
@@ -236,132 +232,265 @@ export function AgentsEditorPage() {
   const navigate = useNavigate();
   const duplicateFromId = !agentId ? searchParams.get("duplicateFrom") ?? undefined : undefined;
   const isEditing = Boolean(agentId);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const initializedSourceRef = useRef<string | null>(duplicateFromId || isEditing ? null : "new");
+
+  const [manifestSource, setManifestSource] = useState(() => createAgentManifestScaffold());
+  const [cleanManifestSource, setCleanManifestSource] = useState(manifestSource);
+  const [isSnippetPaletteOpen, setIsSnippetPaletteOpen] = useState(false);
+  const [validationResult, setValidationResult] = useState<AgentManifestValidationRead | null>(null);
+  const [validatedManifestSource, setValidatedManifestSource] = useState<string | null>(null);
+  const [runInput, setRunInput] = useState<ValueEntry>(() => createDefaultRunInputValue(createDefaultSchemaNode("object")));
+  const [runLaunchFeedback, setRunLaunchFeedback] = useState<RunLaunchFeedback | null>(null);
+
   const agentQuery = useAgent(agentId);
   const duplicateQuery = useAgent(duplicateFromId);
   const createMutation = useCreateAgent();
   const updateMutation = useUpdateAgent();
   const archiveMutation = useArchiveAgent();
-  const createRunMutation = useCreateAgentRun();
-  const outputSchemasQuery = useOutputSchemas();
-  const skillsQuery = useSkills();
-  const mcpServersQuery = useMcpServers();
-  const modelConnectionsQuery = useModelConnections({ status: "active" });
-  const [draft, setDraft] = useState<AgentAuthoringDraft>(() => createInitialDraft());
-  const [sampleInput, setSampleInput] = useState<ValueEntry>(() =>
-    createDefaultSampleInputValue(createInitialDraft().inputSchema),
-  );
-  const [unsupportedRecordIssues, setUnsupportedRecordIssues] = useState<SchemaCodecIssue[]>([]);
-  const [runLaunchFeedback, setRunLaunchFeedback] = useState<RunLaunchFeedback | null>(null);
-
-  const outputSchemas = useMemo(
-    () => sortByKey(outputSchemasQuery.data?.items ?? []),
-    [outputSchemasQuery.data?.items],
-  );
-  const skills = useMemo(() => sortByKey(skillsQuery.data?.items ?? []), [skillsQuery.data?.items]);
-  const mcpServers = useMemo(
-    () => sortByKey(mcpServersQuery.data?.items ?? []),
-    [mcpServersQuery.data?.items],
-  );
-  const outputSchemaOptions = useMemo(() => toResourceRefOptions(outputSchemas), [outputSchemas]);
-  const skillOptions = useMemo(() => toResourceRefOptions(skills), [skills]);
-  const mcpServerOptions = useMemo(() => toResourceRefOptions(mcpServers), [mcpServers]);
-  const activeModelConnections = useMemo(
-    () => [...(modelConnectionsQuery.data?.items ?? [])].sort(compareModelConnections),
-    [modelConnectionsQuery.data?.items],
-  );
-  const currentArchivedModelConnection = useMemo(() => {
-    const currentAgent = isEditing ? agentQuery.data : null;
-    if (!currentAgent || currentAgent.modelConnection.status !== "archived") {
-      return null;
-    }
-
-    return currentAgent.modelConnection;
-  }, [agentQuery.data, isEditing]);
-  const selectedModelConnection = useMemo(() => {
-    return (
-      activeModelConnections.find((connection) => String(connection.id) === draft.modelConnectionId) ??
-      (currentArchivedModelConnection &&
-      String(currentArchivedModelConnection.id) === draft.modelConnectionId
-        ? currentArchivedModelConnection
-        : null)
-    );
-  }, [activeModelConnections, currentArchivedModelConnection, draft.modelConnectionId]);
-  const selectedModelConnectionIsArchived = selectedModelConnection?.status === "archived";
-  const derivedInputSchema = useMemo(
-    () => schemaBuilderToJsonSchema(draft.inputSchema),
-    [draft.inputSchema],
-  );
-  const rawInputSchemaJson = useMemo(
-    () => stringifyJson(derivedInputSchema),
-    [derivedInputSchema],
-  );
-  const sampleInputPayload = useMemo(() => decodeSampleInputValue(sampleInput), [sampleInput]);
-  const rawSampleInputJson = useMemo(
-    () => stringifyJson(sampleInputPayload),
-    [sampleInputPayload],
-  );
+  const createAgentRun = useCreateAgentRun();
+  const validateAgentManifest = useValidateAgentManifest();
 
   useEffect(() => {
-    if (!agentQuery.data) {
+    if (!isEditing || !agentQuery.data?.manifestSource) {
       return;
     }
 
-    const hydrated = decodePersistedInputSchema(agentQuery.data);
-    setDraft(hydrated.draft);
-    setSampleInput(hydrated.sampleInput);
-    setUnsupportedRecordIssues(hydrated.issues);
-  }, [agentQuery.data]);
-
-  useEffect(() => {
-    if (isEditing || !duplicateQuery.data) {
+    const sourceKey = `edit:${agentQuery.data.id}:${agentQuery.data.manifestHash}`;
+    if (initializedSourceRef.current === sourceKey) {
       return;
     }
 
-    const hydrated = decodePersistedInputSchema(duplicateQuery.data, {
-      clearArchivedModelConnection: true,
-      clearKey: true,
-      duplicateName: true,
-    });
-    setDraft(hydrated.draft);
-    setSampleInput(hydrated.sampleInput);
-    setUnsupportedRecordIssues(hydrated.issues);
-  }, [duplicateQuery.data, isEditing]);
+    initializedSourceRef.current = sourceKey;
+    setManifestSource(agentQuery.data.manifestSource);
+    setCleanManifestSource(agentQuery.data.manifestSource);
+    setValidationResult(null);
+    setValidatedManifestSource(null);
+  }, [agentQuery.data?.id, agentQuery.data?.manifestHash, agentQuery.data?.manifestSource, isEditing]);
 
+  useEffect(() => {
+    if (isEditing || !duplicateFromId || !duplicateQuery.data?.manifestSource) {
+      return;
+    }
+
+    const sourceKey = `duplicate:${duplicateQuery.data.id}:${duplicateQuery.data.manifestHash}`;
+    if (initializedSourceRef.current === sourceKey) {
+      return;
+    }
+
+    const duplicateManifestSource = createDuplicateAgentManifestScaffold(duplicateQuery.data);
+    initializedSourceRef.current = sourceKey;
+    setManifestSource(duplicateManifestSource);
+    setCleanManifestSource(duplicateManifestSource);
+    setValidationResult(null);
+    setValidatedManifestSource(null);
+  }, [duplicateFromId, duplicateQuery.data, isEditing]);
+
+  const isDirty = manifestSource !== cleanManifestSource;
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const legacyReturnValueKey = "returnValue";
+      event.preventDefault();
+      Object.assign(event, { [legacyReturnValueKey]: "" });
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsSnippetPaletteOpen((isOpen) => !isOpen);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const localParse = useMemo(() => parseAgentManifestLocallyForEditor(manifestSource), [manifestSource]);
+  const outlineResult = useMemo(() => extractAgentManifestOutline(manifestSource), [manifestSource]);
+  const diagnostics = useMemo(
+    () =>
+      mapAgentManifestDiagnosticsForEditor(localParse.diagnostics, {
+        manifestSource,
+        origin: "local",
+      }),
+    [localParse.diagnostics, manifestSource],
+  );
+  const validationDiagnostics = useMemo(
+    () =>
+      validationResult
+        ? mapAgentManifestDiagnosticsForEditor(validationResult.diagnostics, {
+            manifestSource: validatedManifestSource ?? manifestSource,
+            origin: "backend",
+          })
+        : [],
+    [manifestSource, validatedManifestSource, validationResult],
+  );
+  const metadata = useMemo(() => getManifestMetadata(localParse.value), [localParse.value]);
+  const lineCount = useMemo(() => manifestSource.split(/\r\n|\r|\n/).length, [manifestSource]);
+  const compiledPayloadJson = useMemo(
+    () => stringifyJson(validationResult?.compiledPayload),
+    [validationResult?.compiledPayload],
+  );
+  const activeRunInputSchema = validationResult?.runInputSchema ?? agentQuery.data?.inputSchema ?? null;
+  const activeRunInputSchemaJson = useMemo(
+    () => stringifyJson(activeRunInputSchema ?? { additionalProperties: false, properties: {}, type: "object" }),
+    [activeRunInputSchema],
+  );
+  const activeRunInputSchemaBuilder = useMemo(() => {
+    const parsedSchema = parseSchemaJsonText(activeRunInputSchemaJson);
+    return parsedSchema.builder ?? createDefaultSchemaNode("object");
+  }, [activeRunInputSchemaJson]);
+  const runInputPayload = useMemo(() => decodeRunInputValue(runInput), [runInput]);
+  const rawRunInputJson = useMemo(() => stringifyJson(runInputPayload), [runInputPayload]);
+  const runInputSchemaJson = useMemo(
+    () => stringifyJson(validationResult?.runInputSchema),
+    [validationResult?.runInputSchema],
+  );
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const hasUnsupportedPersistedRecord = unsupportedRecordIssues.length > 0;
+  const isValidating = validateAgentManifest.isPending;
+  const isLaunchingRun = createAgentRun.isPending;
+  const hasLocalErrors = diagnostics.some((diagnostic) => diagnostic.severity === "error");
+  const hasBackendErrors = validationDiagnostics.some((diagnostic) => diagnostic.severity === "error");
+  const hasBackendWarnings = validationDiagnostics.some((diagnostic) => diagnostic.severity === "warning");
+  const isValidationStale = Boolean(validationResult && validatedManifestSource !== manifestSource);
 
-  const updateDraft = <Key extends keyof AgentAuthoringDraft>(
-    key: Key,
-    value: AgentAuthoringDraft[Key],
-  ) => {
-    setDraft((current) => ({ ...current, [key]: value }));
+  useEffect(() => {
+    setRunInput(createDefaultRunInputValue(activeRunInputSchemaBuilder));
+  }, [activeRunInputSchemaBuilder]);
+
+  const confirmDiscardIfDirty = () => !isDirty || window.confirm(getConfirmNavigationMessage());
+
+  const handleClose = () => {
+    if (!confirmDiscardIfDirty()) {
+      return;
+    }
+
+    navigate("/agents");
   };
 
-  const handleSave = async () => {
+  const jumpToLine = (line: number | null) => {
+    if (!line || !textareaRef.current) {
+      return;
+    }
+
+    const lines = manifestSource.split(/\r\n|\r|\n/);
+    const offset = lines.slice(0, Math.max(0, line - 1)).join("\n").length + (line > 1 ? 1 : 0);
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(offset, offset);
+  };
+
+  const handleFormat = () => {
+    const result = formatAgentManifestYaml(manifestSource);
+    if (!result.formatted) {
+      toast.error(result.diagnostics[0]?.message ?? "Fix YAML errors before formatting");
+      return;
+    }
+
+    if (result.formatted === manifestSource) {
+      toast.success("Agent manifest already formatted");
+      return;
+    }
+
+    setManifestSource(result.formatted);
+    toast.success("Agent manifest formatted");
+  };
+
+  const insertSnippet = (snippet: AgentSnippet) => {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? manifestSource.length;
+    const selectionEnd = textarea?.selectionEnd ?? manifestSource.length;
+    const beforeSelection = manifestSource.slice(0, selectionStart);
+    const afterSelection = manifestSource.slice(selectionEnd);
+    const leadingBreak = beforeSelection && !beforeSelection.endsWith("\n") ? "\n" : "";
+    const trailingBreak = afterSelection && snippet.text && !snippet.text.endsWith("\n") ? "\n" : "";
+    const insertion = `${leadingBreak}${snippet.text}${trailingBreak}`;
+    const nextSource = `${beforeSelection}${insertion}${afterSelection}`;
+    const nextCursor = beforeSelection.length + insertion.length;
+
+    setManifestSource(nextSource);
+    setIsSnippetPaletteOpen(false);
+
+    const scheduleSelection = window.requestAnimationFrame ?? ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+    scheduleSelection(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
+  const handleValidate = async () => {
+    if (!manifestSource.trim()) {
+      toast.error("Agent manifest is required");
+      return;
+    }
+
     try {
-      if (hasUnsupportedPersistedRecord) {
-        throw new Error("Unsupported retired input schema shape");
-      }
+      const result = await validateAgentManifest.mutateAsync({ manifestSource });
+      setValidationResult(result);
+      setValidatedManifestSource(manifestSource);
 
-      const payload = buildPayload(draft, derivedInputSchema);
-
-      if (isEditing && agentId) {
-        const { key: _ignored, ...updatePayload } = payload as AgentCreateInput;
-        await updateMutation.mutateAsync({ agentId, payload: updatePayload });
-        toast.success("Agent updated");
+      if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+        toast.error("Backend validation found manifest errors");
         return;
       }
 
-      const created = await createMutation.mutateAsync(payload as AgentCreateInput);
-      toast.success("Agent created");
-      navigate(`/agents/${created.id}/edit`);
+      if (result.diagnostics.some((diagnostic) => diagnostic.severity === "warning")) {
+        toast.success("Backend validation completed with warnings");
+        return;
+      }
+
+      toast.success("Backend validation passed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save agent");
+      const message = error instanceof ApiRequestError ? error.message : "Failed to validate agent manifest";
+      toast.error(message);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!manifestSource.trim()) {
+      toast.error("Agent manifest is required");
+      return;
+    }
+
+    try {
+      if (isEditing && agentId) {
+        const updatedAgent = await updateMutation.mutateAsync({
+          agentId,
+          payload: { manifestSource },
+        });
+        setCleanManifestSource(manifestSource);
+        toast.success("Agent manifest saved");
+        if (String(updatedAgent.id) !== agentId) {
+          navigate(`/agents/${updatedAgent.id}/edit`, { replace: true });
+        }
+        return;
+      }
+
+      const createdAgent = await createMutation.mutateAsync({ manifestSource });
+      setCleanManifestSource(manifestSource);
+      toast.success("Agent created from manifest");
+      navigate(`/agents/${createdAgent.id}/edit`);
+    } catch (error) {
+      const message = error instanceof ApiRequestError ? error.message : "Failed to save agent manifest";
+      toast.error(message);
     }
   };
 
   const handleDuplicate = () => {
     if (!agentId) {
+      return;
+    }
+
+    if (!confirmDiscardIfDirty()) {
       return;
     }
 
@@ -373,17 +502,22 @@ export function AgentsEditorPage() {
       return;
     }
 
+    if (!confirmDiscardIfDirty()) {
+      return;
+    }
+
     try {
       await archiveMutation.mutateAsync(agentId);
       toast.success("Agent archived");
       navigate("/agents");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to archive agent");
+      const message = error instanceof ApiRequestError ? error.message : "Failed to archive agent";
+      toast.error(message);
     }
   };
 
   const handleLaunchRun = async () => {
-    if (!agentId) {
+    if (!agentId || !agentQuery.data) {
       setRunLaunchFeedback({
         message: "Save the agent before launching a run.",
         title: "Run launch unavailable",
@@ -392,20 +526,20 @@ export function AgentsEditorPage() {
       return;
     }
 
-    if (hasUnsupportedPersistedRecord) {
+    if (isDirty) {
       setRunLaunchFeedback({
-        message: "This agent uses an unsupported retired input schema shape.",
-        title: "Run launch unavailable",
+        message: "Save the YAML first. Runs always launch the last saved agent version, not unsaved editor text.",
+        title: "Save required before run",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const run = await createRunMutation.mutateAsync({
+      const run = await createAgentRun.mutateAsync({
         agentId,
-        payload: sampleInputPayload,
-        version: agentQuery.data?.version,
+        payload: runInputPayload,
+        version: agentQuery.data.version,
       });
       toast.success("Agent run started");
       navigate(`/runs/${run.id}`);
@@ -420,385 +554,448 @@ export function AgentsEditorPage() {
   };
 
   if (isEditing && agentQuery.isPending) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading agent details...</div>;
+    return (
+      <div className="flex h-full items-center justify-center bg-background" data-testid="agent-yaml-editor-shell">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   if (isEditing && agentQuery.isError) {
     return (
-      <div className="p-4 text-sm text-muted-foreground">
-        {agentQuery.error instanceof Error ? agentQuery.error.message : "Agent not found."}
+      <div className="flex h-full items-center justify-center bg-background p-6" data-testid="agent-yaml-editor-shell">
+        <Alert variant="destructive" className="max-w-xl">
+          <AlertCircle />
+          <AlertTitle>Unable to load agent</AlertTitle>
+          <AlertDescription>
+            {agentQuery.error instanceof Error ? agentQuery.error.message : "The agent could not be loaded."}
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 p-4" data-testid="agents-editor">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            {isEditing ? "Edit Agent" : duplicateFromId ? "Duplicate Agent" : "Create Agent"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Configure the core prompt, saved model connection, input schema, output schema binding, attached skills and MCP servers, and a structured run-launch input surface.
-          </p>
-          {agentQuery.data ? (
-            <PlatformResourceBadges status={agentQuery.data.status} version={agentQuery.data.version} />
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {isEditing ? (
-            <Button data-testid="agents-duplicate" size="sm" variant="outline" onClick={handleDuplicate}>
+    <div className="flex h-full min-h-0 flex-col bg-background" data-testid="agent-yaml-editor-shell">
+      <div className="sticky top-0 border-b border-border bg-card px-4 py-3" data-testid="agent-command-bar">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-1">
+            <Button aria-label="Back to agents" onClick={handleClose} size="icon" variant="ghost">
+              <ArrowLeft data-icon="inline-start" />
+            </Button>
+            <Separator className="hidden h-5 sm:block" orientation="vertical" />
+            <Badge variant="secondary">YAML manifest</Badge>
+            {duplicateFromId ? <Badge variant="outline">Duplicate source</Badge> : null}
+            {agentQuery.data ? (
+              <PlatformResourceBadges status={agentQuery.data.status} version={agentQuery.data.version} />
+            ) : null}
+            {isDirty ? (
+              <Badge data-testid="agent-dirty-indicator" variant="outline">
+                Unsaved changes
+              </Badge>
+            ) : (
+              <Badge data-testid="agent-dirty-indicator" variant="secondary">
+                Saved baseline
+              </Badge>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {metadata.name || agentQuery.data?.name || (duplicateFromId ? "Duplicate Agent" : isEditing ? "Agent manifest" : "New Agent")}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {metadata.key || agentQuery.data?.key || "metadata.key will identify this agent"}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:justify-end xl:ml-auto xl:border-t-0 xl:pt-0">
+            <Button data-testid="agents-open-snippets" onClick={() => setIsSnippetPaletteOpen(true)} size="sm" variant="outline">
+              <Keyboard data-icon="inline-start" />
+              Snippets
+            </Button>
+            <Button data-testid="agents-format-manifest" onClick={handleFormat} size="sm" variant="ghost">
+              <Wand2 data-icon="inline-start" />
+              Format YAML
+            </Button>
+            <Button data-testid="agents-validate-manifest" disabled={isValidating} onClick={() => void handleValidate()} size="sm" variant="outline">
+              {isValidating ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <ShieldCheck data-icon="inline-start" />}
+              Validate
+            </Button>
+            <Button data-testid="agents-save" disabled={isSaving} onClick={() => void handleSave()} size="sm">
+              {isSaving ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+              Save Agent
+            </Button>
+            <Button data-testid="agents-duplicate" disabled={!agentId} onClick={handleDuplicate} size="sm" variant="outline">
               <Copy data-icon="inline-start" />
               Duplicate Agent
             </Button>
-          ) : null}
-          {isEditing && agentQuery.data?.status !== "archived" ? (
-            <Button data-testid="agents-archive" disabled={archiveMutation.isPending} size="sm" variant="outline" onClick={() => void handleArchive()}>
-              <Archive data-icon="inline-start" />
+            <Button
+              data-testid="agents-archive"
+              disabled={!agentId || archiveMutation.isPending || agentQuery.data?.status === "archived"}
+              onClick={() => void handleArchive()}
+              size="sm"
+              variant="outline"
+            >
+              {archiveMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
               Archive Agent
             </Button>
-          ) : null}
-          <Button disabled={isSaving || hasUnsupportedPersistedRecord} size="sm" onClick={handleSave}>
-            <Save data-icon="inline-start" />
-            Save Agent
-          </Button>
+          </div>
         </div>
       </div>
 
-      {hasUnsupportedPersistedRecord ? (
-        <Alert data-testid="agent-input-schema-unsupported-record" variant="destructive">
-          <AlertTitle>Unsupported retired input schema shape</AlertTitle>
-          <AlertDescription>
-            <p>
-              This persisted agent cannot be edited in the structured authoring flow because its
-              input schema does not decode into the supported shared schema model.
-            </p>
-            <ul className="list-disc pl-5">
-              {unsupportedRecordIssues.map((issue) => (
-                <li key={`${issue.field}-${issue.issue}`}>{`${issue.field}: ${issue.issue}`}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <Tabs defaultValue="configuration" data-testid="agents-editor-tabs">
-        <TabsList className="h-8">
-          <TabsTrigger className="text-xs" value="configuration">
-            Configuration
-          </TabsTrigger>
-          <TabsTrigger className="text-xs" value="run">
-            Run
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent forceMount value="configuration">
-          <Card>
-            <CardHeader>
-              <CardTitle>Agent details</CardTitle>
-              <CardDescription>
-                Keys are immutable after creation, while the model connection, prompt, schema, and bindings remain editable.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="agent-key">Key</Label>
-                  <Input
-                    id="agent-key"
-                    aria-label="Key"
-                    disabled={isEditing || isSaving}
-                    value={draft.key}
-                    onChange={(event) => updateDraft("key", event.target.value)}
-                  />
+      <CommandDialog
+        description="Insert small YAML snippets at the current cursor without replacing the manifest source."
+        onOpenChange={setIsSnippetPaletteOpen}
+        open={isSnippetPaletteOpen}
+        title="Agent YAML snippets"
+      >
+        <CommandInput placeholder="Search agent snippets..." />
+        <CommandList>
+          <CommandEmpty>No snippets found.</CommandEmpty>
+          <CommandGroup heading="Insert at cursor">
+            {AGENT_SNIPPETS.map((snippet) => (
+              <CommandItem
+                data-testid={`agent-snippet-${snippet.id}`}
+                key={snippet.id}
+                onSelect={() => insertSnippet(snippet)}
+                value={`${snippet.label} ${snippet.description} ${snippet.shortcut}`}
+              >
+                <Code2 />
+                <div className="min-w-0">
+                  <p className="truncate">{snippet.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{snippet.description}</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="agent-name">Name</Label>
-                  <Input
-                    id="agent-name"
-                    aria-label="Name"
-                    disabled={isSaving}
-                    value={draft.name}
-                    onChange={(event) => updateDraft("name", event.target.value)}
-                  />
-                </div>
+                <CommandShortcut>{snippet.shortcut}</CommandShortcut>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+
+      <ResizablePanelGroup className="min-h-0 flex-1" direction="horizontal">
+        <ResizablePanel defaultSize={20} minSize={16}>
+          <aside className="flex h-full min-h-0 flex-col border-r border-border bg-muted/20" data-testid="agent-outline-rail">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <Braces className="size-4 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Manifest outline</p>
+                <p className="text-xs text-muted-foreground">Jump by source section</p>
               </div>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col gap-4 p-3">
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Sections</CardTitle>
+                    <CardDescription>Required v1 manifest blocks</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-1 px-3 pb-3">
+                    {outlineResult.outline.sections.map((section) => (
+                      <button
+                        className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!section.present}
+                        key={section.id}
+                        onClick={() => jumpToLine(section.line)}
+                        type="button"
+                      >
+                        <span className="truncate">{section.label}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{getSectionDescription(section)}</span>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="agent-model-connection">Model Connection</Label>
-                  <Select
-                    disabled={
-                      isSaving ||
-                      modelConnectionsQuery.isPending ||
-                      (activeModelConnections.length === 0 && !currentArchivedModelConnection)
-                    }
-                    value={draft.modelConnectionId || UNSELECTED_MODEL_CONNECTION}
-                    onValueChange={(value) =>
-                      updateDraft(
-                        "modelConnectionId",
-                        value === UNSELECTED_MODEL_CONNECTION ? "" : value,
-                      )
-                    }
-                  >
-                    <SelectTrigger aria-label="Model Connection" id="agent-model-connection">
-                      <SelectValue placeholder="Select a model connection" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem disabled value={UNSELECTED_MODEL_CONNECTION}>
-                          Select a model connection
-                        </SelectItem>
-                        {currentArchivedModelConnection ? (
-                          <SelectItem disabled value={String(currentArchivedModelConnection.id)}>
-                            {formatModelConnectionLabel(currentArchivedModelConnection)} (archived current selection)
-                          </SelectItem>
-                        ) : null}
-                        {activeModelConnections.map((connection) => (
-                          <SelectItem key={connection.id} value={String(connection.id)}>
-                            {formatModelConnectionLabel(connection)}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-muted-foreground">
-                    {modelConnectionsQuery.isError
-                      ? modelConnectionsQuery.error instanceof Error
-                        ? modelConnectionsQuery.error.message
-                        : "Failed to load active model connections."
-                      : selectedModelConnection
-                        ? `${formatModelConnectionMeta(selectedModelConnection)}${selectedModelConnectionIsArchived ? " · archived" : ""}`
-                        : activeModelConnections.length > 0
-                          ? "Choose an active model connection for this agent."
-                          : "No active model connections are available yet."}
-                  </p>
-                </div>
-                <ResourceRefSelect
-                  description="Bind the agent to one published output schema without typing a versioned ref string."
-                  disabled={isSaving}
-                  label="Output schema binding"
-                  options={outputSchemaOptions}
-                  resourceLabel="Output schema"
-                  resourcePlaceholder="Select an output schema"
-                  searchPlaceholder="Search output schemas..."
-                  value={draft.bindings.outputSchema.key ? draft.bindings.outputSchema : null}
-                  onChange={(nextValue) =>
-                    setDraft((current) => ({
-                      ...current,
-                      bindings: {
-                        ...current.bindings,
-                        outputSchema: nextValue ? cloneResourceRef(nextValue) : { key: "", version: null },
-                      },
-                    }))
-                  }
-                />
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">References</CardTitle>
+                    <CardDescription>Stable model, schema, skill, and MCP pins</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3">
+                    {outlineResult.outline.refs.length ? (
+                      outlineResult.outline.refs.map((ref) => (
+                        <button
+                          className="rounded-md border border-border bg-background p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                          key={ref.path}
+                          onClick={() => jumpToLine(ref.line)}
+                          type="button"
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium">{ref.label}</span>
+                            <span className="shrink-0 text-xs text-muted-foreground">{formatLocation(ref.line, ref.column)}</span>
+                          </span>
+                          <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">{ref.ref || "Unpinned"}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        Add spec references to populate the outline.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
+            </ScrollArea>
+          </aside>
+        </ResizablePanel>
 
-              {selectedModelConnectionIsArchived ? (
-                <Alert>
-                  <AlertTitle>Archived model connection in use</AlertTitle>
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={55} minSize={34}>
+          <section className="flex h-full min-h-0 flex-col bg-background">
+            <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-2">
+              <Code2 className="size-4 text-muted-foreground" />
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Source editor</span>
+              <span className="ml-auto text-xs text-muted-foreground">{lineCount} lines</span>
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              <Textarea
+                aria-label="Agent manifest YAML"
+                className="h-full min-h-0 resize-none rounded-lg border-border bg-background font-mono text-sm leading-6 shadow-none focus-visible:ring-1"
+                data-testid="agent-yaml-editor"
+                onChange={(event) => setManifestSource(event.target.value)}
+                ref={textareaRef}
+                spellCheck={false}
+                value={manifestSource}
+              />
+            </div>
+          </section>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={25} minSize={20}>
+          <aside className="flex h-full min-h-0 flex-col border-l border-border bg-muted/20" data-testid="agent-inspector-shell">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <FileText className="size-4 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Inspector</p>
+                <p className="text-xs text-muted-foreground">YAML-only agent authoring</p>
+              </div>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col gap-4 p-3">
+                <Alert variant={hasLocalErrors ? "destructive" : "default"} data-testid="agent-local-parse-status">
+                  {hasLocalErrors ? <AlertCircle /> : <CheckCircle2 />}
+                  <AlertTitle>{hasLocalErrors ? "Local parse needs attention" : "Local parse ready"}</AlertTitle>
                   <AlertDescription>
-                    This agent still points to an archived connection. You can keep the current binding on edit, but archived connections are not available as new selections.
+                    {hasLocalErrors
+                      ? "Fix local YAML errors before relying on outline details. Backend validation remains authoritative for saved agent rules."
+                      : "YAML is locally parseable. Use Validate for backend-authoritative agent checks."}
                   </AlertDescription>
                 </Alert>
-              ) : null}
 
-              <div className="space-y-2">
-                <Label htmlFor="agent-description">Description</Label>
-                <Textarea
-                  id="agent-description"
-                  aria-label="Description"
-                  disabled={isSaving}
-                  rows={3}
-                  value={draft.description}
-                  onChange={(event) => updateDraft("description", event.target.value)}
-                />
-              </div>
+                <Card className="gap-3" data-testid="agent-validation-panel">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Validation</CardTitle>
+                    <CardDescription>Local parser feedback and backend diagnostics</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3">
+                    <Alert data-testid="agent-backend-validation-status" variant={validationResult && hasBackendErrors ? "destructive" : "default"}>
+                      {validationResult && hasBackendErrors ? <AlertCircle /> : <ShieldCheck />}
+                      <AlertTitle>
+                        {!validationResult
+                          ? "Backend validation not run"
+                          : isValidationStale
+                            ? "Backend validation is stale"
+                            : hasBackendErrors
+                              ? "Backend validation found errors"
+                              : hasBackendWarnings
+                                ? "Backend validation has warnings"
+                                : "Backend validation passed"}
+                      </AlertTitle>
+                      <AlertDescription>
+                        {!validationResult
+                          ? "Run Validate to resolve model connections, schema pins, skills, MCP servers, and compiled agent output against the backend."
+                          : isValidationStale
+                            ? "The YAML changed after the last backend response. Validate again before trusting these results."
+                            : hasBackendErrors
+                              ? "Backend diagnostics must be resolved before this manifest can compile cleanly."
+                              : hasBackendWarnings
+                                ? "The backend returned warnings; review them before saving or running this agent."
+                                : "The backend returned a compiled payload and run input schema for this manifest."}
+                      </AlertDescription>
+                    </Alert>
 
-              <div className="space-y-2">
-                <Label htmlFor="agent-system-prompt">System Prompt</Label>
-                <Textarea
-                  id="agent-system-prompt"
-                  aria-label="System Prompt"
-                  disabled={isSaving}
-                  rows={10}
-                  value={draft.systemPrompt}
-                  onChange={(event) => updateDraft("systemPrompt", event.target.value)}
-                />
-              </div>
+                    <div className="flex flex-col gap-2" data-testid="agent-validation-feedback">
+                      {[...diagnostics, ...validationDiagnostics].length ? (
+                        [...diagnostics, ...validationDiagnostics].map((diagnostic) => (
+                          <button
+                            className="rounded-md border border-border bg-background p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                            key={diagnostic.id}
+                            onClick={() => jumpToLine(diagnostic.line)}
+                            type="button"
+                          >
+                            <span className="flex flex-wrap items-center gap-2">
+                              <Badge variant={diagnostic.severity === "error" ? "destructive" : "secondary"}>
+                                {diagnostic.severity}
+                              </Badge>
+                              <Badge variant="outline">{diagnostic.origin}</Badge>
+                              <span className="text-xs text-muted-foreground">{diagnostic.locationLabel}</span>
+                              {diagnostic.path ? <span className="break-all font-mono text-xs text-muted-foreground">{diagnostic.path}</span> : null}
+                            </span>
+                            <span className="mt-2 block">{diagnostic.message}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                          No diagnostics yet.
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
 
-              {!hasUnsupportedPersistedRecord ? (
-                <div className="flex flex-col gap-4">
-                  <SchemaComposer
-                    label="Input schema"
-                    node={draft.inputSchema}
-                    onChange={(nextSchema) => {
-                      updateDraft("inputSchema", nextSchema);
-                      setSampleInput(createDefaultSampleInputValue(nextSchema));
-                    }}
-                  />
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Exact raw schema JSON</CardTitle>
-                        <CardDescription>
-                          Read-only canonical JSON derived from the same schema object used in the save payload.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ExactJsonPreview
-                          ariaLabel="Exact raw schema JSON"
-                          data-testid="agent-input-schema-raw-json"
-                          value={rawInputSchemaJson}
-                        />
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Sample input</CardTitle>
-                        <CardDescription>
-                          Derived sample input stays aligned with the current schema builder state.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ExactJsonPreview
-                          ariaLabel="Sample input"
-                          data-testid="agent-input-schema-preview"
-                          value={rawSampleInputJson}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-              ) : null}
+                <Card className="gap-3">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Agent metadata</CardTitle>
+                    <CardDescription>Read locally and from backend validation</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3 text-sm">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Key</p>
+                      <p className="break-words font-mono">{metadata.key || "Not available"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</p>
+                      <p className="break-words">{metadata.name || "Not available"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+                      <p className="break-words text-muted-foreground">{metadata.description || "Not available"}</p>
+                    </div>
+                    {validationResult?.metadata ? (
+                      <div className="rounded-md border border-border bg-background p-2" data-testid="agent-validation-metadata">
+                        <div className="mb-2 flex items-center gap-2">
+                          <Badge variant="secondary">backend</Badge>
+                          {isValidationStale ? <Badge variant="outline">stale</Badge> : null}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">API version</p>
+                            <p className="break-words font-mono">{validationResult.metadata.apiVersion}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Key</p>
+                            <p className="break-words font-mono">{validationResult.metadata.key}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</p>
+                            <p className="break-words">{validationResult.metadata.name}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+                            <p className="break-words text-muted-foreground">{validationResult.metadata.description || "Not available"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
 
-              <div className="space-y-2">
-                <div className="space-y-2">
-                  <Label htmlFor="agent-budget-usd">Budget USD</Label>
-                  <Input
-                    id="agent-budget-usd"
-                    aria-label="Budget USD"
-                    disabled={isSaving}
-                    value={draft.budgetUsd}
-                    onChange={(event) => updateDraft("budgetUsd", event.target.value)}
-                  />
-                </div>
-              </div>
-
-              <ResourceMultiRefSelect
-                addLabel="Add skill binding"
-                description="Attach one or more published skills without editing newline-delimited versioned ref text."
-                disabled={isSaving}
-                label="Skill bindings"
-                options={skillOptions}
-                resourceLabel="Skill"
-                resourcePlaceholder="Select a skill"
-                searchPlaceholder="Search skills..."
-                value={draft.bindings.skills}
-                onChange={(nextValue) =>
-                  setDraft((current) => ({
-                    ...current,
-                    bindings: {
-                      ...current.bindings,
-                      skills: cloneResourceRefs(nextValue),
-                    },
-                  }))
-                }
-              />
-
-              <ResourceMultiRefSelect
-                addLabel="Add MCP server binding"
-                description="Attach one or more MCP servers through structured bindings instead of raw versioned ref text."
-                disabled={isSaving}
-                label="MCP server bindings"
-                options={mcpServerOptions}
-                resourceLabel="MCP server"
-                resourcePlaceholder="Select an MCP server"
-                searchPlaceholder="Search MCP servers..."
-                value={draft.bindings.mcpServers}
-                onChange={(nextValue) =>
-                  setDraft((current) => ({
-                    ...current,
-                    bindings: {
-                      ...current.bindings,
-                      mcpServers: cloneResourceRefs(nextValue),
-                    },
-                  }))
-                }
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent forceMount value="run">
-          <Card data-testid="agent-run-panel">
-            <CardHeader>
-              <CardTitle>Launch run</CardTitle>
-              <CardDescription>
-                Launch the current saved agent version with structured input, then continue in the shared run detail view.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              {!isEditing ? (
-                <Alert data-testid="agent-run-panel-unavailable" variant="destructive">
-                  <AlertTitle>Run launch unavailable</AlertTitle>
-                  <AlertDescription>Save the agent before launching a run.</AlertDescription>
-                </Alert>
-              ) : null}
-              {runLaunchFeedback ? (
-                <Alert data-testid="agent-run-panel-feedback" variant={runLaunchFeedback.variant}>
-                  <AlertTitle>{runLaunchFeedback.title}</AlertTitle>
-                  <AlertDescription>{runLaunchFeedback.message}</AlertDescription>
-                </Alert>
-              ) : null}
-
-              {!hasUnsupportedPersistedRecord ? (
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <div data-testid="agent-run-panel-input-form">
-                    <SchemaForm
-                      description="Fill the run input through the shared schema-driven form instead of editing JSON directly."
-                      disabled={!isEditing || createRunMutation.isPending}
-                      label="Run input"
-                      schema={draft.inputSchema}
-                      value={sampleInput}
-                      onChange={setSampleInput}
-                    />
-                  </div>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Exact raw run-input JSON</CardTitle>
-                      <CardDescription>
-                        Read-only canonical JSON from the same decoded payload used when launching the run.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                <Card className="gap-3" data-testid="agent-compiled-panel">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Compiled</CardTitle>
+                    <CardDescription>Exact raw JSON returned by backend validation</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3">
+                    {isValidationStale ? (
+                      <Alert data-testid="agent-compiled-stale" variant="default">
+                        <AlertTitle>Compiled preview is stale</AlertTitle>
+                        <AlertDescription>Validate again to refresh the backend compiled payload for the edited YAML.</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {validationResult?.compiledPayload ? (
                       <ExactJsonPreview
-                        ariaLabel="Exact raw run-input JSON"
-                        data-testid="agent-run-panel-input-raw-json"
-                        value={rawSampleInputJson}
+                        ariaLabel="Exact raw compiled agent JSON"
+                        data-testid="agent-compiled-preview"
+                        textareaClassName="min-h-52"
+                        value={compiledPayloadJson}
                       />
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : null}
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        Run Validate to populate the compiled agent preview.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <div className="flex justify-end">
-                <Button
-                  data-testid="agent-run-panel-launch"
-                  disabled={!isEditing || createRunMutation.isPending || hasUnsupportedPersistedRecord}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleLaunchRun()}
-                >
-                  <PlayCircle data-icon="inline-start" />
-                  Launch Run
-                </Button>
+                <Card className="gap-3" data-testid="agent-run-input-panel">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Launch run</CardTitle>
+                    <CardDescription>Submit only the persisted agent version through the compiled input schema.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 px-3 pb-3">
+                    {!agentId ? (
+                      <Alert data-testid="agent-run-unavailable" variant="destructive">
+                        <PlayCircle />
+                        <AlertTitle>Run launch unavailable</AlertTitle>
+                        <AlertDescription>Save the agent before launching a run.</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {agentId && isDirty ? (
+                      <Alert data-testid="agent-run-unsaved-blocked" variant="destructive">
+                        <AlertTitle>Save required before run</AlertTitle>
+                        <AlertDescription>
+                          Runs always launch the saved agent version. Save the YAML first so the run cannot drift from the persisted manifest.
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {isValidationStale ? (
+                      <Alert data-testid="agent-run-input-stale" variant="default">
+                        <AlertTitle>Run input schema preview is stale</AlertTitle>
+                        <AlertDescription>Validate again to refresh the backend run input schema for the edited YAML.</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {validationResult?.runInputSchema ? (
+                      <ExactJsonPreview
+                        ariaLabel="Exact raw agent run input schema JSON"
+                        data-testid="agent-run-input-preview"
+                        textareaClassName="min-h-52"
+                        value={runInputSchemaJson}
+                      />
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        Run Validate to preview the run input schema returned by the backend, or use the saved agent schema below for existing agents.
+                      </p>
+                    )}
+                    {runLaunchFeedback ? (
+                      <Alert data-testid="agent-run-feedback" variant={runLaunchFeedback.variant}>
+                        <AlertTitle>{runLaunchFeedback.title}</AlertTitle>
+                        <AlertDescription>{runLaunchFeedback.message}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <div data-testid="agent-run-panel-input-form">
+                      <SchemaForm
+                        description="Fill the agent run input through the shared schema-driven form instead of editing JSON directly."
+                        disabled={!agentId || isDirty || isLaunchingRun}
+                        label="Run input"
+                        schema={activeRunInputSchemaBuilder}
+                        value={runInput}
+                        onChange={setRunInput}
+                      />
+                    </div>
+                    <ExactJsonPreview
+                      ariaLabel="Exact raw agent run-input JSON"
+                      data-testid="agent-run-panel-input-raw-json"
+                      textareaClassName="min-h-32"
+                      value={rawRunInputJson}
+                    />
+                    <Button
+                      data-testid="agent-run-panel-launch"
+                      disabled={!agentId || isDirty || isLaunchingRun}
+                      onClick={() => void handleLaunchRun()}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {isLaunchingRun ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <PlayCircle data-icon="inline-start" />}
+                      Launch saved version {agentQuery.data ? `v${agentQuery.data.version}` : ""}
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </ScrollArea>
+          </aside>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }

@@ -114,6 +114,14 @@ function getPageMeta(pathname: string) {
     return { section: "Agents", title: "Agents" };
   }
 
+  if (pathname === "/agents/new") {
+    return { section: "Agents", sectionHref: "/agents", title: "New Agent" };
+  }
+
+  if (pathname.startsWith("/agents/") && pathname.endsWith("/edit")) {
+    return { section: "Agents", sectionHref: "/agents", title: "Edit Agent" };
+  }
+
   if (pathname === "/skills") {
     return { section: "Skills", title: "Skills" };
   }
@@ -241,6 +249,9 @@ export function Layout() {
   const isWorkflowEditorRoute =
     location.pathname === "/workflows/new" ||
     (location.pathname.startsWith("/workflows/") && location.pathname.endsWith("/edit"));
+  const isAgentEditorRoute =
+    location.pathname === "/agents/new" ||
+    (location.pathname.startsWith("/agents/") && location.pathname.endsWith("/edit"));
 
   return (
     <SidebarProvider>
@@ -275,7 +286,7 @@ export function Layout() {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {isTemplateEditorRoute || isWorkflowEditorRoute ? (
+          {isTemplateEditorRoute || isWorkflowEditorRoute || isAgentEditorRoute ? (
             <div className="h-full [&>*]:h-full [&>*]:w-full">
               <Outlet />
             </div>
