@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, agents, skills, MCP servers, model connections, output schemas, workflows, runs, and one small UI debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, agents, capabilities, MCP servers, model connections, output schemas, workflows, runs, and one small UI debounce helper.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -16,7 +16,7 @@
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Agent flows | `use-agents.ts` | agent CRUD, archive, duplicate/run helpers |
-| Skill flows | `use-skills.ts` | skill list/detail and activation |
+| Capability flows | `use-capabilities.ts` | capability list/detail and activation |
 | MCP server flows | `use-mcp-servers.ts` | CRUD and connection-test helpers |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, archive, connection-test helpers |
 | Output schema flows | `use-output-schemas.ts` | schema list/detail/create/update |

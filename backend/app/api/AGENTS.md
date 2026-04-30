@@ -17,7 +17,7 @@
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Agent-platform routes | `agents.py`, `skills.py`, `mcp_servers.py`, `model_connections.py`, `output_schemas.py`, `workflows.py`, `runs.py` | live `/api/*` routes for the current agent platform |
+| Agent-platform routes | `agents.py`, `skills.py`, `mcp_servers.py`, `model_connections.py`, `output_schemas.py`, `workflows.py`, `runs.py` | live `/api/*` routes for the current agent platform, with capabilities canonical and `skills.py` retaining the `/api/skills` alias |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
@@ -30,6 +30,7 @@
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`, upload uses `multipart/form-data` markdown plus optional metadata, and `POST /reports` supports direct external JSON creation.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
+- Capability routes are canonical: `/api/capabilities` emits `toolGrants`; `/api/skills` is a legacy alias that emits `toolDefinitions`. Do not change runtime tool keys or OpenAI function names in route docs or payload examples.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.
@@ -50,5 +51,5 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_legacy_back
 
 ## NOTES
 - `router.py` mounts the live `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
-- `platform_router.py` mounts the live `/api/*` routers for agents, skills, MCP servers, model connections, output schemas, workflows, and runs.
+- `platform_router.py` mounts the live `/api/*` routers for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs, plus the legacy `/api/skills` compatibility alias.
 - `dependencies.py` constructs services with a shared request `Session` and wires the preserved product services, model-connection service, and current agent-platform services into the live API.

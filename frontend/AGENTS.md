@@ -13,7 +13,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/agents/AGENTS.md` — agents list, editor, duplicate, archive, and run-launch flows
-- `src/pages/skills/AGENTS.md` — skills list, editor, activation, archive, and tool-definition flows
+- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, tool-grant flows, and legacy skill-route redirects
 - `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
 - `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, and builder/json-schema/preview flows
@@ -51,7 +51,7 @@ frontend/
 | Portfolio routes | `src/pages/portfolios/*.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/*.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/skills/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, skills, MCP servers, model connections, output schemas, workflows, runs |
+| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/capabilities/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, capabilities, MCP servers, model connections, output schemas, workflows, runs |
 | Preserved product routes | `src/pages/portfolios/AGENTS.md`, `src/pages/templates/AGENTS.md`, `src/pages/reports/AGENTS.md` | portfolio, template, and report routes |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, platform-authoring widgets, dialog forms, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |

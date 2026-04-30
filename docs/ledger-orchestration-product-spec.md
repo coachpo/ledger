@@ -17,9 +17,9 @@ Frontend routes from `frontend/src/routes.ts`:
 - `/agents`
 - `/agents/new`
 - `/agents/:agentId/edit`
-- `/skills`
-- `/skills/new`
-- `/skills/:skillId/edit`
+- `/capabilities`
+- `/capabilities/new`
+- `/capabilities/:capabilityId/edit`
 - `/mcp-servers`
 - `/mcp-servers/new`
 - `/mcp-servers/:serverId/edit`
@@ -35,7 +35,7 @@ Frontend routes from `frontend/src/routes.ts`:
 Backend API routes:
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
 - `/api/agents`
-- `/api/skills`
+- `/api/capabilities`
 - `/api/mcp-servers`
 - `/api/output-schemas`
 - `/api/workflows`
@@ -44,6 +44,10 @@ Backend API routes:
 ## Response and compatibility notes
 
 - JSON is camelCase externally.
+- Capabilities are canonical. `/api/capabilities` emits `toolGrants`; `/api/skills` remains a legacy alias that emits `toolDefinitions`.
+- Frontend `/skills*` routes are compatibility redirects to `/capabilities*`.
+- Canonical manifests use `spec.capabilities`; legacy `spec.skills` is import-only when `spec.capabilities` is absent.
+- Runtime tool keys and OpenAI function names stay unchanged.
 - Runs expose typed input, per-step outputs, final output, status, timing, and trace identifiers through the current run schemas.
 - Retired `/api/v1/orchestration/*` and `/api/v2/*` surfaces are not part of the current contract and should not be treated as live documentation targets.
 

@@ -14,7 +14,7 @@
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
-| Platform config contracts | `agent.ts`, `skill.ts`, `mcp-server.ts`, `model-connection.ts`, `output-schema.ts` | current agent-platform CRUD, saved model connections, and versioned reference payloads |
+| Platform config contracts | `agent.ts`, `capability.ts`, `mcp-server.ts`, `model-connection.ts`, `output-schema.ts` | current agent-platform CRUD, saved model connections, and versioned reference payloads |
 | Platform execution contracts | `workflow.ts`, `run.ts` | workflow authoring, wiring, run detail, and monitor payloads |
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.

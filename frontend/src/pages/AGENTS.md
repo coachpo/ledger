@@ -4,7 +4,7 @@
 
 ## CHILD DOCS
 - `agents/AGENTS.md` — agents list and editor route family
-- `skills/AGENTS.md` — skills list and editor route family
+- `capabilities/AGENTS.md` — capabilities list/editor route family plus legacy skill-route redirects
 - `mcp-servers/AGENTS.md` — MCP servers list and editor route family
 - `model-connections/AGENTS.md` — saved model connection list/editor route family
 - `output-schemas/AGENTS.md` — output schemas list and editor route family
@@ -15,14 +15,14 @@
 - `reports/AGENTS.md` — report list/detail routes and markdown workflows
 
 ## OVERVIEW
-`src/pages/` contains the routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, preserved portfolio/template/report pages, and the current agent-platform pages for agents, skills, MCP servers, model connections, output schemas, workflows, and runs.
+`src/pages/` contains the routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, preserved portfolio/template/report pages, and the current agent-platform pages for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
 
 ## STRUCTURE
 ```text
 src/pages/
 ├── dashboard.tsx                # home route summary
 ├── agents/                      # agent list and editor routes
-├── skills/                      # skill list and editor routes
+├── capabilities/                # capability list/editor routes and legacy skill-route redirects
 ├── mcp-servers/                 # MCP server list and editor routes
 ├── model-connections/           # saved model connection list and editor routes
 ├── output-schemas/              # output schema list and editor routes
@@ -38,7 +38,7 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
-| Agent-platform pages | `agents/AGENTS.md`, `skills/AGENTS.md`, `mcp-servers/AGENTS.md`, `model-connections/AGENTS.md`, `output-schemas/AGENTS.md`, `workflows/AGENTS.md`, `runs/AGENTS.md` | routed CRUD, saved connections, authoring, review, and run inspection |
+| Agent-platform pages | `agents/AGENTS.md`, `capabilities/AGENTS.md`, `mcp-servers/AGENTS.md`, `model-connections/AGENTS.md`, `output-schemas/AGENTS.md`, `workflows/AGENTS.md`, `runs/AGENTS.md` | routed CRUD, saved connections, authoring, review, and run inspection |
 | Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
 | Template list/editor | `templates/AGENTS.md` | stored-template CRUD, inline compile preview, placeholder browser |
 | Report routes | `reports/AGENTS.md` | list/detail, upload/generate, markdown view/edit/download |

@@ -26,7 +26,8 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 
 - `/health` for backend health
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
-- `/api/*` for agents, skills, MCP servers, model connections, output schemas, workflows, and runs
+- `/api/*` for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs
+- `/api/skills` as a legacy compatibility alias for capabilities. It returns legacy `toolDefinitions`; canonical `/api/capabilities` returns `toolGrants`.
 
 ## Tests
 

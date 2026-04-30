@@ -21,7 +21,7 @@ platform-authoring/
 | Generated input forms | `generated-form/schema-form.tsx` | schema IR + value-entry rendering and validation display |
 | Schema builder UI | `schema-composer/schema-composer.tsx` | object/array/scalar/discriminated-union editor surface |
 | Workflow builder UI | `workflow-builder/workflow-builder-wizard.tsx` | step composition, slots, wire bindings, validation feedback |
-| Resource selectors | `refs/*.tsx` | versioned agent/skill/MCP/output-schema ref inputs |
+| Resource selectors | `refs/*.tsx` | versioned agent/capability/MCP/output-schema ref inputs |
 | Structured previews | `inspectors/structured-value-inspector.tsx` | read-only nested value display |
 
 ## CONVENTIONS

@@ -6,7 +6,7 @@ This file is retained as a cutover reference only. The orchestration, Studio, Tr
 
 ## Current product summary
 
-Ledger now ships a stateless agent platform alongside the preserved portfolio, template, and report product areas. Users create agents, skills, MCP servers, output schemas, and workflows in the browser, then trigger and inspect runs from the routed workspace.
+Ledger now ships a stateless agent platform alongside the preserved portfolio, template, and report product areas. Users create agents, capabilities, MCP servers, output schemas, and workflows in the browser, then trigger and inspect runs from the routed workspace.
 
 ## Current scope
 
@@ -14,7 +14,7 @@ The shipped browser-facing surface includes:
 - portfolio list/detail routes
 - template list/editor routes
 - report list/detail routes
-- agents, skills, MCP servers, output schemas, workflows, and runs routes
+- agents, capabilities, MCP servers, output schemas, workflows, and runs routes
 - backend `/api/v1` preserved-product routes plus `/api/*` agent-platform routes
 
 ## Non-goals

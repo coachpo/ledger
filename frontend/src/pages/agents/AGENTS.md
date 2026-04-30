@@ -8,7 +8,7 @@
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Agent inventory | `list.tsx` | list query, duplicate, edit, archive, and output schema/skill/MCP summaries |
+| Agent inventory | `list.tsx` | list query, duplicate, edit, archive, and output schema/capability/MCP summaries |
 | Agent editor | `editor.tsx` | create/update, saved model-connection selector, duplicate-from route, archive, and run launch |
 | Agent hooks | `../../hooks/use-agents.ts` | list/detail CRUD, archive, and run creation |
 | Shared platform helpers | `../platform-resource-shared.tsx` | versioned refs, JSON helpers, badges, and key sorting |
@@ -18,7 +18,7 @@
 - `list.tsx` stays read-only except for navigation and archive actions.
 - `editor.tsx` owns the duplicate-from query param, loads the source agent when cloning, and resets the key for new drafts.
 - Agents require a saved model connection; active connections are selectable for new saves while an archived current connection can render as a disabled edit-mode selection.
-- Output schema, skill, and MCP bindings stay in newline-delimited versioned refs so the page can parse them with the shared platform helpers.
+- Output schema, capability, and MCP bindings stay in newline-delimited versioned refs so the page can parse them with the shared platform helpers.
 - Run launch starts from the editor only, after the agent has an id.
 - Hooks own cache invalidation, while the page owns toasts, navigation, and draft state.
 
