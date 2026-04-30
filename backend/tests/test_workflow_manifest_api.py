@@ -53,7 +53,7 @@ def _seed_manifest_agent(
                 },
                 output_schema_id=output_schema.id,
                 output_schema_version=output_schema.version,
-                skills=[],
+                capabilities=[],
                 mcp_servers=[],
                 budget_usd=Decimal("0.05000000"),
             )

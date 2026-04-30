@@ -62,7 +62,7 @@ def _seed_agent(session: Session) -> None:
             input_schema=_workflow_input_schema(),
             output_schema_id=output_schema.id,
             output_schema_version=output_schema.version,
-            skills=[],
+            capabilities=[],
             mcp_servers=[],
             budget_usd=Decimal("0.05000000"),
         )
