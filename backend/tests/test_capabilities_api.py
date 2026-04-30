@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.agent import Agent
+from app.models.capability import Capability
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
-from app.models.skill import Skill
 from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from tests.test_agent_manifest_compiler import _seed_manifest_refs
 
@@ -20,7 +20,7 @@ def _create_capability(client: TestClient, payload: dict[str, object]) -> dict[s
     return cast(dict[str, object], response.json())
 
 
-def test_capability_crud_uses_tool_grants_while_skills_stay_legacy(
+def test_capability_crud_uses_tool_grants(
     client: TestClient,
 ) -> None:
     created = _create_capability(
@@ -41,16 +41,6 @@ def test_capability_crud_uses_tool_grants_while_skills_stay_legacy(
     assert "toolDefinitions" not in created
     created_grants = cast(list[dict[str, object]], created["toolGrants"])
     assert [item["tool"] for item in created_grants] == [
-        "ledger.positions.lookup",
-        "ledger.reports.lookup",
-    ]
-
-    legacy_detail = client.get(f"/api/skills/{created['id']}")
-    assert legacy_detail.status_code == 200, legacy_detail.json()
-    legacy_payload = legacy_detail.json()
-    assert "toolDefinitions" in legacy_payload
-    assert "toolGrants" not in legacy_payload
-    assert [item["tool"] for item in legacy_payload["toolDefinitions"]] == [
         "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
@@ -83,25 +73,20 @@ def test_capability_crud_uses_tool_grants_while_skills_stay_legacy(
     assert archive_response.json()["status"] == "archived"
 
 
-def test_capability_create_accepts_legacy_tool_definitions_as_import_alias(
+def test_legacy_skill_routes_return_404_and_openapi_omits_them(
     client: TestClient,
 ) -> None:
-    created = _create_capability(
-        client,
-        {
-            "key": "legacy_import_tools",
-            "name": "Legacy Import Tools",
-            "toolDefinitions": [{"tool": "ledger.reports.lookup"}],
-        },
-    )
+    assert client.get("/api/skills").status_code == 404
+    assert client.post("/api/skills", json={}).status_code == 404
+    assert client.get("/api/skills/1").status_code == 404
+    assert client.post("/api/skills/1/activate").status_code == 404
 
-    assert "toolGrants" in created
-    assert "toolDefinitions" not in created
-    tool_grants = cast(list[dict[str, object]], created["toolGrants"])
-    assert tool_grants[0]["tool"] == "ledger.reports.lookup"
+    paths = cast(dict[str, object], client.get("/openapi.json").json()["paths"])
+    assert "/api/capabilities" in paths
+    assert all(not path.startswith("/api/skills") for path in paths)
 
 
-def test_capability_request_rejects_tool_grants_and_tool_definitions_conflict(
+def test_capability_request_rejects_tool_definitions(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -110,38 +95,18 @@ def test_capability_request_rejects_tool_grants_and_tool_definitions_conflict(
         json={
             "key": "conflicting_tools",
             "name": "Conflicting Tools",
-            "toolGrants": [{"tool": "ledger.reports.lookup"}],
             "toolDefinitions": [{"tool": "ledger.positions.lookup"}],
         },
     )
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
+    assert any(detail["field"].endswith("toolDefinitions") for detail in response.json()["details"])
     with session_factory() as session:
-        assert session.query(Skill).filter(Skill.key == "conflicting_tools").count() == 0
+        assert session.query(Capability).filter(Capability.key == "conflicting_tools").count() == 0
 
 
-def test_legacy_skill_request_rejects_tool_grants_and_tool_definitions_conflict(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    response = client.post(
-        "/api/skills",
-        json={
-            "key": "legacy_conflicting_tools",
-            "name": "Legacy Conflicting Tools",
-            "toolGrants": [{"tool": "ledger.reports.lookup"}],
-            "toolDefinitions": [{"tool": "ledger.positions.lookup"}],
-        },
-    )
-
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
-    with session_factory() as session:
-        assert session.query(Skill).filter(Skill.key == "legacy_conflicting_tools").count() == 0
-
-
-def test_capability_patch_conflict_does_not_archive_existing_draft(
+def test_capability_patch_rejects_tool_definitions_without_archiving_existing_draft(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -157,7 +122,6 @@ def test_capability_patch_conflict_does_not_archive_existing_draft(
     response = client.patch(
         f"/api/capabilities/{created['id']}",
         json={
-            "toolGrants": [{"tool": "ledger.reports.lookup"}],
             "toolDefinitions": [{"tool": "ledger.positions.lookup"}],
         },
     )
@@ -165,12 +129,12 @@ def test_capability_patch_conflict_does_not_archive_existing_draft(
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
     with session_factory() as session:
-        rows = session.query(Skill).filter(Skill.key == "patch_conflict_tools").all()
+        rows = session.query(Capability).filter(Capability.key == "patch_conflict_tools").all()
         assert len(rows) == 1
         assert rows[0].status == "draft"
 
 
-def test_persisted_legacy_skill_refs_resolve_as_agent_capabilities(
+def test_persisted_capability_refs_resolve_as_agent_capabilities(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -178,13 +142,13 @@ def test_persisted_legacy_skill_refs_resolve_as_agent_capabilities(
         refs = _seed_manifest_refs(session)
         connection = cast(ModelConnection, refs["connection"])
         output_schema = cast(OutputSchema, refs["output_schema"])
-        skill = cast(Skill, refs["skill"])
+        capability = cast(Capability, refs["capability"])
         agent = Agent(
-            key="legacy_skill_ref_agent",
+            key="capability_ref_agent",
             version=1,
             status="published",
-            name="Legacy Skill Ref Agent",
-            description="Reads persisted skill refs through capability API aliases.",
+            name="Capability Ref Agent",
+            description="Reads persisted capability refs.",
             model_connection_id=connection.id,
             model_connection_snapshot=build_model_connection_runtime_snapshot(connection),
             model=connection.model_id,
@@ -192,7 +156,13 @@ def test_persisted_legacy_skill_refs_resolve_as_agent_capabilities(
             input_schema={"type": "object", "additionalProperties": False},
             output_schema_id=output_schema.id,
             output_schema_version=output_schema.version,
-            skills=[{"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}],
+            capabilities=[
+                {
+                    "capabilityId": capability.id,
+                    "capabilityKey": capability.key,
+                    "capabilityVersion": capability.version,
+                }
+            ],
             mcp_servers=[],
             budget_usd=Decimal("0"),
         )
@@ -205,7 +175,6 @@ def test_persisted_legacy_skill_refs_resolve_as_agent_capabilities(
     assert response.status_code == 200, response.json()
     body = response.json()
     capabilities = cast(list[dict[str, object]], body["capabilities"])
-    skills = cast(list[dict[str, object]], body["skills"])
     assert capabilities[0]["key"] == "sec_filing_lookup"
     assert capabilities[0]["toolGrants"] == [
         {
@@ -215,5 +184,4 @@ def test_persisted_legacy_skill_refs_resolve_as_agent_capabilities(
         }
     ]
     assert "toolDefinitions" not in capabilities[0]
-    assert skills[0]["toolDefinitions"] == capabilities[0]["toolGrants"]
-    assert "toolGrants" not in skills[0]
+    assert "skills" not in body

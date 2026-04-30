@@ -6,12 +6,13 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.agents import SkillRegistry, get_default_skill_registry
+from app.agents import ToolCatalog, get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester, McpConnectionTester
 from app.core.config import get_settings
 from app.db.session import get_db_session, get_session_factory
 from app.services.agent_service import AgentService
 from app.services.balance_service import BalanceService
+from app.services.capability_service import CapabilityService
 from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService
 from app.services.mcp_server_service import McpServerService
@@ -26,7 +27,6 @@ from app.services.quote_provider import (
 )
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
-from app.services.skill_service import SkillService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 from app.services.trading_operation_service import TradingOperationService
@@ -95,22 +95,15 @@ def get_report_service(
     return ReportService(session)
 
 
-def get_skill_registry() -> SkillRegistry:
-    return get_default_skill_registry()
-
-
-def get_skill_service(
-    session: Annotated[Session, Depends(get_session)],
-    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
-) -> SkillService:
-    return SkillService(session, skill_registry)
+def get_tool_catalog() -> ToolCatalog:
+    return get_default_tool_catalog()
 
 
 def get_capability_service(
     session: Annotated[Session, Depends(get_session)],
-    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
-) -> SkillService:
-    return SkillService(session, skill_registry)
+    tool_catalog: Annotated[ToolCatalog, Depends(get_tool_catalog)],
+) -> CapabilityService:
+    return CapabilityService(session, tool_catalog)
 
 
 def get_mcp_connection_tester() -> McpConnectionTester:
@@ -138,10 +131,10 @@ def get_output_schema_service(
 
 def get_agent_service(
     session: Annotated[Session, Depends(get_session)],
-    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
+    tool_catalog: Annotated[ToolCatalog, Depends(get_tool_catalog)],
     connection_tester: Annotated[McpConnectionTester, Depends(get_mcp_connection_tester)],
 ) -> AgentService:
-    return AgentService(session, skill_registry, connection_tester)
+    return AgentService(session, tool_catalog, connection_tester)
 
 
 def get_workflow_service(
