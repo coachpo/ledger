@@ -218,7 +218,7 @@ function createDuplicateAgentManifestScaffold(agent: AgentRead): string {
       modelConnection: readString(manifest.spec.modelConnection, "primary_model_connection"),
       name: `${readString(manifest.metadata.name, agent.name)} Copy`,
       outputSchema: readString(manifest.spec.outputSchema, "summary_schema@1"),
-      capabilities: readStringList(manifest.spec.capabilities ?? manifest.spec.skills),
+      capabilities: readStringList(manifest.spec.capabilities),
       systemPrompt: readString(manifest.spec.systemPrompt, "You are a concise portfolio research assistant."),
     });
   }

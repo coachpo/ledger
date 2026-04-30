@@ -280,6 +280,16 @@ function collectLocalManifestDiagnostics(
         ),
       );
     }
+    const legacySkillsNode = getMapKey(specNode, "skills");
+    if (legacySkillsNode) {
+      diagnostics.push(
+        createLocalDiagnostic(
+          "Use spec.capabilities; legacy spec.skills is not supported",
+          "spec.skills",
+          locationFromNode(legacySkillsNode, lineCounter),
+        ),
+      );
+    }
   }
 
   return diagnostics;
@@ -480,14 +490,10 @@ function extractOutlineFromDocument(document: ParsedYamlDocument, lineCounter: L
   outline.refs = [
     ...extractScalarRef(specNode, "modelConnection", "modelConnection", lineCounter),
     ...extractScalarRef(specNode, "outputSchema", "outputSchema", lineCounter),
-    ...extractSequenceRefs(specNode, getCapabilityFieldName(specNode), "capability", lineCounter),
+    ...extractSequenceRefs(specNode, "capabilities", "capability", lineCounter),
     ...extractSequenceRefs(specNode, "mcpServers", "mcpServer", lineCounter),
   ];
   return outline;
-}
-
-function getCapabilityFieldName(specNode: YAMLMap<unknown, unknown>): "capabilities" | "skills" {
-  return getMapPair(specNode, "capabilities") ? "capabilities" : "skills";
 }
 
 function extractScalarRef(
