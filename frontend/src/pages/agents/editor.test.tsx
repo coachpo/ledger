@@ -211,6 +211,14 @@ describe("AgentsEditorPage", () => {
     expect(screen.getByTestId("agent-validation-panel")).toBeVisible();
     expect(screen.getByTestId("agent-compiled-panel")).toBeVisible();
     expect(screen.getByTestId("agent-run-input-panel")).toBeVisible();
+    const guide = within(screen.getByTestId("agent-manifest-101"));
+    expect(guide.getByText("Agent Manifest 101")).toBeVisible();
+    expect(guide.getByText("Describe one runnable agent, then pin the resources it needs.")).toBeVisible();
+    expect(guide.getByText("apiVersion + kind")).toBeVisible();
+    expect(guide.getByText("Use ledger.agent/v1 and kind: Agent.")).toBeVisible();
+    expect(guide.getByText("spec.systemPrompt")).toBeVisible();
+    expect(guide.getByText("Pin outputSchema as <key>@<version>, then add capabilities and mcpServers as needed.")).toBeVisible();
+    expect(guide.getByText("Validate before Save.")).toBeVisible();
     expect(screen.getByRole("button", { name: /format yaml/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /snippets/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /validate/i })).toBeVisible();

@@ -683,6 +683,36 @@ export function AgentsEditorPage() {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col gap-4 p-3">
+                <Card className="gap-3" data-testid="agent-manifest-101">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Agent Manifest 101</CardTitle>
+                    <CardDescription>Describe one runnable agent, then pin the resources it needs.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3">
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">apiVersion + kind</Badge>
+                      <p className="text-xs text-muted-foreground">Use ledger.agent/v1 and kind: Agent.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">metadata</Badge>
+                      <p className="text-xs text-muted-foreground">Set the key, name, and short purpose users will recognize.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">spec.systemPrompt</Badge>
+                      <p className="text-xs text-muted-foreground">Tell the model how this agent should behave during a run.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">spec.inputSchema</Badge>
+                      <p className="text-xs text-muted-foreground">Define the structured input fields the agent can receive.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">refs</Badge>
+                      <p className="text-xs text-muted-foreground">Pin outputSchema as &lt;key&gt;@&lt;version&gt;, then add capabilities and mcpServers as needed.</p>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground">Validate before Save.</p>
+                  </CardContent>
+                </Card>
+
                 <Card className="gap-3">
                   <CardHeader className="px-3 pt-3">
                     <CardTitle className="text-sm">Sections</CardTitle>
