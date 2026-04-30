@@ -10,11 +10,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.agent import Agent
 from app.models.base import Base
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
-from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
 from app.services.output_schema_service import OutputSchemaService
@@ -36,7 +36,7 @@ LEGACY_BACKEND_TABLE_NAMES = {
     "orchestration_characters",
 }
 AGENT_PLATFORM_CONFIG_TABLE_NAMES = {
-    "skills",
+    "capabilities",
     "mcp_servers",
     "model_connections",
     "output_schemas",
@@ -48,14 +48,14 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
 }
 
 
-def _build_skill(*, key: str, version: int, status: str) -> Skill:
-    return Skill(
+def _build_capability(*, key: str, version: int, status: str) -> Capability:
+    return Capability(
         key=key,
         version=version,
         status=status,
         name=f"{key}-{version}",
         description="Toolset description",
-        tool_definitions=[{"tool": f"{key}.lookup"}],
+        tool_grants=[{"tool": f"{key}.lookup"}],
     )
 
 
@@ -107,7 +107,7 @@ def _build_agent(
     version: int,
     status: str,
     output_schema: OutputSchema,
-    skills: list[Skill],
+    capabilities: list[Capability],
     mcp_servers: list[McpServer],
     budget_usd: Decimal = Decimal("1.25000000"),
     model_connection_id: int = 1,
@@ -124,9 +124,13 @@ def _build_agent(
         input_schema={"type": "object", "required": ["ticker"]},
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[
-            {"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}
-            for skill in skills
+        capabilities=[
+            {
+                "capabilityId": capability.id,
+                "capabilityKey": capability.key,
+                "capabilityVersion": capability.version,
+            }
+            for capability in capabilities
         ],
         mcp_servers=[
             {
@@ -228,13 +232,13 @@ def test_legacy_backend_tables_are_not_registered_on_metadata() -> None:
 def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert AGENT_PLATFORM_CONFIG_TABLE_NAMES <= set(Base.metadata.tables)
 
-    skill_table = Base.metadata.tables["skills"]
+    capability_table = Base.metadata.tables["capabilities"]
     mcp_server_table = Base.metadata.tables["mcp_servers"]
     model_connection_table = Base.metadata.tables["model_connections"]
     output_schema_table = Base.metadata.tables["output_schemas"]
 
-    assert {"uq_skills_published_key", "uq_skills_draft_key"} <= {
-        index.name for index in skill_table.indexes
+    assert {"uq_capabilities_published_key", "uq_capabilities_draft_key"} <= {
+        index.name for index in capability_table.indexes
     }
     assert {"uq_mcp_servers_published_key", "uq_mcp_servers_draft_key"} <= {
         index.name for index in mcp_server_table.indexes
@@ -328,7 +332,11 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
     assert {"temperature", "max_tool_rounds", "streaming"}.isdisjoint(agent_table.c.keys())
 
     with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_capability = _build_capability(
+            key="research_capability",
+            version=1,
+            status="published",
+        )
         published_schema = _build_output_schema(
             key="decision_schema",
             version=1,
@@ -340,7 +348,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_skill, published_schema, published_server])
+        session.add_all([published_capability, published_schema, published_server])
         session.flush()
 
         published_agent = _build_agent(
@@ -348,7 +356,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
             version=1,
             status="published",
             output_schema=published_schema,
-            skills=[published_skill],
+            capabilities=[published_capability],
             mcp_servers=[published_server],
         )
         session.add(published_agent)
@@ -358,8 +366,12 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
         stored_agent = session.get(Agent, published_agent.id)
         assert stored_agent is not None
         assert stored_agent.output_schema_version == 1
-        assert stored_agent.skills == [
-            {"skillId": published_skill.id, "skillKey": "research_skill", "skillVersion": 1}
+        assert stored_agent.capabilities == [
+            {
+                "capabilityId": published_capability.id,
+                "capabilityKey": "research_capability",
+                "capabilityVersion": 1,
+            }
         ]
         assert stored_agent.mcp_servers == [
             {
@@ -383,7 +395,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 version=2,
                 status="published",
                 output_schema=draft_schema,
-                skills=[published_skill],
+                capabilities=[published_capability],
                 mcp_servers=[published_server],
                 budget_usd=Decimal("2.50000000"),
             )
@@ -406,7 +418,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 version=2,
                 status="draft",
                 output_schema=draft_schema,
-                skills=[published_skill],
+                capabilities=[published_capability],
                 mcp_servers=[published_server],
                 budget_usd=Decimal("2.50000000"),
             )
@@ -419,7 +431,7 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 version=3,
                 status="draft",
                 output_schema=draft_schema,
-                skills=[published_skill],
+                capabilities=[published_capability],
                 mcp_servers=[published_server],
                 budget_usd=Decimal("3.00000000"),
             )
@@ -433,18 +445,18 @@ def test_agent_platform_skill_models_enforce_single_published_and_single_draft_v
     session_factory,
 ) -> None:
     with session_factory() as session:
-        session.add(_build_skill(key="market_lookup", version=1, status="published"))
+        session.add(_build_capability(key="market_lookup", version=1, status="published"))
         session.commit()
 
-        session.add(_build_skill(key="market_lookup", version=2, status="published"))
+        session.add(_build_capability(key="market_lookup", version=2, status="published"))
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()
 
-        session.add(_build_skill(key="market_lookup", version=2, status="draft"))
+        session.add(_build_capability(key="market_lookup", version=2, status="draft"))
         session.commit()
 
-        session.add(_build_skill(key="market_lookup", version=3, status="draft"))
+        session.add(_build_capability(key="market_lookup", version=3, status="draft"))
         with pytest.raises(IntegrityError):
             session.commit()
 
@@ -727,7 +739,11 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
     }
 
     with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_capability = _build_capability(
+            key="research_capability",
+            version=1,
+            status="published",
+        )
         published_schema = _build_output_schema(
             key="decision_schema",
             version=1,
@@ -739,7 +755,7 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_skill, published_schema, published_server])
+        session.add_all([published_capability, published_schema, published_server])
         session.flush()
 
         published_agent = _build_agent(
@@ -747,7 +763,7 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             version=1,
             status="published",
             output_schema=published_schema,
-            skills=[published_skill],
+            capabilities=[published_capability],
             mcp_servers=[published_server],
             budget_usd=Decimal("1.50000000"),
         )
@@ -784,7 +800,7 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             version=2,
             status="draft",
             output_schema=draft_schema,
-            skills=[published_skill],
+            capabilities=[published_capability],
             mcp_servers=[published_server],
             budget_usd=Decimal("2.75000000"),
         )
@@ -813,7 +829,11 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
     assert {"workflow_id", "workflow_key", "workflow_version"}.isdisjoint(run_table.c.keys())
 
     with session_factory() as session:
-        published_skill = _build_skill(key="research_skill", version=1, status="published")
+        published_capability = _build_capability(
+            key="research_capability",
+            version=1,
+            status="published",
+        )
         published_schema = _build_output_schema(
             key="decision_schema",
             version=1,
@@ -825,7 +845,7 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_skill, published_schema, published_server])
+        session.add_all([published_capability, published_schema, published_server])
         session.flush()
 
         published_agent = _build_agent(
@@ -833,7 +853,7 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
             version=1,
             status="published",
             output_schema=published_schema,
-            skills=[published_skill],
+            capabilities=[published_capability],
             mcp_servers=[published_server],
         )
         session.add(published_agent)

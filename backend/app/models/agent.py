@@ -101,7 +101,7 @@ class Agent(IdMixin, TimestampMixin, Base):
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     output_schema_id: Mapped[int] = mapped_column(nullable=False)
     output_schema_version: Mapped[int] = mapped_column(nullable=False)
-    skills: Mapped[list[dict[str, Any]]] = mapped_column(
+    capabilities: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
         default=list,
