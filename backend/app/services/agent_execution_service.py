@@ -12,19 +12,19 @@ from openai import OpenAI
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools import (
     RuntimeToolContext,
     RuntimeToolError,
     RuntimeToolRegistry,
     get_default_runtime_tool_registry,
 )
-from app.agents.skill_registry import get_default_skill_registry
 from app.core.formatting import parse_decimal_string
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
+from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
-from app.services.skill_service import RuntimeToolGrantError, SkillService
 
 
 class RunExecutionError(Exception):
@@ -146,10 +146,10 @@ class AgentExecutionService:
         del trace_id, step_index, slot
         with self.session_factory() as session:
             model_connection = self._resolve_runtime_model_connection(session, agent)
-            granted_tool_keys = SkillService(
+            granted_tool_keys = CapabilityService(
                 session,
-                get_default_skill_registry(),
-            ).resolve_granted_tool_keys(agent.skills)
+                get_default_tool_catalog(),
+            ).resolve_granted_tool_keys(agent.capabilities)
         try:
             return self._invoke_saved_model_connection_agent(
                 agent=agent,
@@ -157,7 +157,7 @@ class AgentExecutionService:
                 resolved_input=resolved_input,
                 output_model=output_model,
                 openai_client_factory=openai_client_factory,
-                skill_references=agent.skills,
+                capability_references=agent.capabilities,
                 granted_tool_keys=granted_tool_keys,
             )
         except RuntimeToolGrantError as exc:
@@ -223,7 +223,7 @@ class AgentExecutionService:
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         openai_client_factory: type[Any],
-        skill_references: list[dict[str, Any]],
+        capability_references: list[dict[str, Any]],
         granted_tool_keys: set[str],
     ) -> RunAgentInvocationResult:
         if model_connection.api_key is None:
@@ -236,7 +236,7 @@ class AgentExecutionService:
             )
 
         runtime_tool_registry = get_default_runtime_tool_registry()
-        available_tools = runtime_tool_registry.get_openai_tool_definitions(granted_tool_keys)
+        available_tools = runtime_tool_registry.get_openai_tools(granted_tool_keys)
         instructions = self._build_openai_instructions(
             agent,
             output_model,
@@ -284,7 +284,7 @@ class AgentExecutionService:
                     previous_response_id = self._extract_response_id(response)
                     response_input = self._build_function_call_outputs(
                         pending_tool_calls=pending_tool_calls,
-                        skill_references=skill_references,
+                        capability_references=capability_references,
                         granted_tool_keys=granted_tool_keys,
                         runtime_tool_registry=runtime_tool_registry,
                     )
@@ -424,14 +424,14 @@ class AgentExecutionService:
         self,
         *,
         pending_tool_calls: list[_PendingToolCall],
-        skill_references: list[dict[str, Any]],
+        capability_references: list[dict[str, Any]],
         granted_tool_keys: set[str],
         runtime_tool_registry: RuntimeToolRegistry,
     ) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
         runtime_tool_context = RuntimeToolContext(
             session_factory=self.session_factory,
-            skill_references=skill_references,
+            capability_references=capability_references,
         )
         for tool_call in pending_tool_calls:
             output_payload = runtime_tool_registry.dispatch(

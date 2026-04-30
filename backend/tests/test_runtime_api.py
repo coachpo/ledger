@@ -14,11 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents import get_default_skill_registry
+from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
 from app.core.config import reset_settings_cache
 from app.core.errors import ApiError
 from app.models.agent import Agent
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
@@ -26,23 +27,22 @@ from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
 from app.models.run import Run
-from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
+from app.services.capability_service import (
+    POSITION_LOOKUP_ACCESS_DENIED_CODE,
+    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
+    REPORT_LOOKUP_ACCESS_DENIED_CODE,
+    REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
+    CapabilityService,
+)
 from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from app.services.position_service import PositionService
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
-from app.services.skill_service import (
-    POSITION_LOOKUP_ACCESS_DENIED_CODE,
-    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
-    REPORT_LOOKUP_ACCESS_DENIED_CODE,
-    REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
-    SkillService,
-)
 from app.services.workflow_service import WorkflowService
 
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
@@ -70,7 +70,7 @@ REFERENCE_STEP_ONE_AGENT_KEYS = (
     "history_reader",
 )
 REFERENCE_SYNTHESIZER_KEY = "decision_synthesizer"
-REFERENCE_SKILL_KEY = "reference_runtime_tools"
+REFERENCE_CAPABILITY_KEY = "reference_runtime_tools"
 REFERENCE_MCP_SERVER_KEY = "reference_runtime_data"
 REFERENCE_DECISION_SCHEMA_KEY = "reference_trading_decision"
 
@@ -168,14 +168,14 @@ def _reference_workflow_payload(*, optional_agents: set[str] | None = None) -> d
     }
 
 
-def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Skill:
-    return Skill(
+def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Capability:
+    return Capability(
         key=key,
         version=version,
         status=status,
         name=f"{key}-{version}",
-        description="Skill toolset",
-        tool_definitions=[{"tool": tool} for tool in tools],
+        description="Capability toolset",
+        tool_grants=[{"tool": tool} for tool in tools],
     )
 
 
@@ -280,7 +280,7 @@ def _build_agent_platform_agent(
     version: int,
     status: str,
     output_schema: OutputSchema,
-    skill: Skill,
+    skill: Capability,
     mcp_server: McpServer,
     model_connection: ModelConnection | None = None,
     input_schema: dict[str, Any] | None = None,
@@ -308,7 +308,13 @@ def _build_agent_platform_agent(
         },
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[{"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}],
+        capabilities=[
+            {
+                "capabilityId": skill.id,
+                "capabilityKey": skill.key,
+                "capabilityVersion": skill.version,
+            }
+        ],
         mcp_servers=[
             {
                 "mcpServerId": mcp_server.id,
@@ -331,7 +337,7 @@ def _seed_reference_workflow(
     workflow_name: str = "Report Lookup Reference",
     note_schema_key: str = "reference_analysis_note",
     decision_schema_key: str = REFERENCE_DECISION_SCHEMA_KEY,
-    skill_key: str = REFERENCE_SKILL_KEY,
+    skill_key: str = REFERENCE_CAPABILITY_KEY,
     mcp_server_key: str = REFERENCE_MCP_SERVER_KEY,
     connection_name: str = "Reference Runtime Connection",
 ) -> WorkflowRead:
@@ -993,7 +999,7 @@ def _build_api_connection_error(
     return openai.APIConnectionError(message=message, request=request)
 
 
-def test_agent_platform_skill_registry_resolves_versioned_rows_to_server_declared_toolsets(
+def test_agent_platform_capability_service_resolves_versioned_rows_to_server_declared_toolsets(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -1015,17 +1021,17 @@ def test_agent_platform_skill_registry_resolves_versioned_rows_to_server_declare
         )
         session.commit()
 
-        service = SkillService(session, skill_registry=get_default_skill_registry())
+        service = CapabilityService(session, tool_catalog=get_default_tool_catalog())
         published = service.resolve_toolset_version("market_research", None)
         draft = service.resolve_toolset_version("market_research", 2)
 
-        assert published.skill_version == 1
+        assert published.capability_version == 1
         assert [tool.key for tool in published.tools] == [
             "ledger.market_data.quote_lookup",
             "ledger.reports.lookup",
         ]
-        assert published.tools[0].module == "app.agents.skills.server_declared"
-        assert draft.skill_version == 2
+        assert published.tools[0].module == "app.agents.tool_catalog.server_declared"
+        assert draft.capability_version == 2
         assert [tool.key for tool in draft.tools] == [
             "ledger.market_data.history_lookup",
             "ledger.reports.lookup",
@@ -1504,7 +1510,7 @@ spec:
     required:
       - ticker
   outputSchema: {output_schema.key}@{output_schema.version}
-  skills:
+  capabilities:
     - {skill.key}@{skill.version}
   mcpServers:
     - {mcp_server.key}@{mcp_server.version}
@@ -2636,7 +2642,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     def fake_lookup_reports(
         self: ReportService,
         *,
-        skill_references: list[dict[str, Any]],
+        capability_references: list[dict[str, Any]],
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
@@ -2647,7 +2653,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     ) -> list[ReportRead]:
         captured_lookup_calls.append(
             {
-                "skill_references": skill_references,
+                "capability_references": capability_references,
                 "ticker": ticker,
                 "tag": tag,
                 "review_type": review_type,
@@ -2659,7 +2665,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
         )
         return original_lookup_reports(
             self,
-            skill_references=skill_references,
+            capability_references=capability_references,
             ticker=ticker,
             tag=tag,
             review_type=review_type,
@@ -2716,7 +2722,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     assert captured_lookup_calls[0]["source"] is None
     assert captured_lookup_calls[0]["limit"] == 50
     assert captured_lookup_calls[0]["offset"] == 0
-    assert isinstance(captured_lookup_calls[0]["skill_references"], list)
+    assert isinstance(captured_lookup_calls[0]["capability_references"], list)
     assert (
         _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"][0]["name"]
         == "ledger_reports_lookup"
@@ -2803,7 +2809,7 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
     def fake_lookup_positions(
         self: PositionService,
         *,
-        skill_references: list[dict[str, object]],
+        capability_references: list[dict[str, object]],
         portfolio_slug: str,
         symbol: str | None = None,
         limit: int | None = None,
@@ -2811,7 +2817,7 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
     ) -> list[PositionRead]:
         captured_lookup_calls.append(
             {
-                "skill_references": skill_references,
+                "capability_references": capability_references,
                 "portfolio_slug": portfolio_slug,
                 "symbol": symbol,
                 "limit": limit,
@@ -2821,7 +2827,7 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
         )
         return original_lookup_positions(
             self,
-            skill_references=skill_references,
+            capability_references=capability_references,
             portfolio_slug=portfolio_slug,
             symbol=symbol,
             limit=limit,
@@ -2861,8 +2867,8 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
     assert captured_lookup_calls[0]["limit"] == 1
     assert captured_lookup_calls[0]["offset"] == 0
     assert captured_lookup_calls[0]["quote_provider"] is None
-    assert isinstance(captured_lookup_calls[0]["skill_references"], list)
-    assert captured_lookup_calls[0]["skill_references"][0]["skillKey"] == (
+    assert isinstance(captured_lookup_calls[0]["capability_references"], list)
+    assert captured_lookup_calls[0]["capability_references"][0]["capabilityKey"] == (
         "backend_position_lookup_runtime_skill"
     )
     assert (

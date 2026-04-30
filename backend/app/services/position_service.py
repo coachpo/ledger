@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.agents import get_default_skill_registry
+from app.agents import get_default_tool_catalog
 from app.core.errors import business_rule_error, not_found_error
 from app.core.formatting import normalize_symbol, utcnow
 from app.models.position import Position
@@ -14,9 +14,9 @@ from app.schemas.position import (
     PositionSymbolLookupRead,
     PositionUpdate,
 )
+from app.services.capability_service import CapabilityService
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
-from app.services.skill_service import SkillService
 
 
 class PositionService:
@@ -30,14 +30,14 @@ class PositionService:
     def lookup_positions(
         self,
         *,
-        skill_references: list[dict[str, object]],
+        capability_references: list[dict[str, object]],
         portfolio_slug: str,
         symbol: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[PositionRead]:
-        SkillService(self.session, get_default_skill_registry()).require_position_lookup_grant(
-            skill_references=skill_references
+        CapabilityService(self.session, get_default_tool_catalog()).require_position_lookup_grant(
+            capability_references=capability_references
         )
         portfolio = self.portfolio_service.get_portfolio_model_by_slug_or_none(portfolio_slug)
         if portfolio is None:

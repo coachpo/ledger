@@ -8,14 +8,14 @@ from typing import Any
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.agents import get_default_skill_registry
+from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
 from app.schemas.report import ReportMetadata, ReportRead, ReportUpdate
-from app.services.skill_service import SkillService
+from app.services.capability_service import CapabilityService
 
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
@@ -51,7 +51,7 @@ class ReportService:
     def lookup_reports(
         self,
         *,
-        skill_references: Sequence[dict[str, object]],
+        capability_references: Sequence[dict[str, object]],
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
@@ -60,8 +60,8 @@ class ReportService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ReportRead]:
-        SkillService(self.session, get_default_skill_registry()).require_report_lookup_grant(
-            skill_references=skill_references
+        CapabilityService(self.session, get_default_tool_catalog()).require_report_lookup_grant(
+            capability_references=capability_references
         )
         return self._list_report_reads(
             ticker=ticker,
