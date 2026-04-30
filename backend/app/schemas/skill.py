@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from enum import Enum
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
 
@@ -46,6 +46,12 @@ def _normalize_tool_key(value: object) -> str:
     return normalized
 
 
+def _reject_conflicting_tool_aliases(value: object) -> object:
+    if isinstance(value, dict) and "toolGrants" in value and "toolDefinitions" in value:
+        raise ValueError("Use either toolGrants or legacy toolDefinitions, not both")
+    return value
+
+
 class SkillStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -71,7 +77,16 @@ class SkillDraftCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    tool_definitions: list[SkillToolDefinitionWrite] = Field(min_length=1)
+    tool_definitions: list[SkillToolDefinitionWrite] = Field(
+        min_length=1,
+        alias="toolDefinitions",
+        validation_alias=AliasChoices("toolDefinitions", "toolGrants"),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_tool_aliases(cls, value: object) -> object:
+        return _reject_conflicting_tool_aliases(value)
 
     @field_validator("key", mode="before")
     @classmethod
@@ -92,7 +107,16 @@ class SkillDraftCreate(CamelModel):
 class SkillDraftUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
-    tool_definitions: list[SkillToolDefinitionWrite] | None = None
+    tool_definitions: list[SkillToolDefinitionWrite] | None = Field(
+        default=None,
+        alias="toolDefinitions",
+        validation_alias=AliasChoices("toolDefinitions", "toolGrants"),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_tool_aliases(cls, value: object) -> object:
+        return _reject_conflicting_tool_aliases(value)
 
     @field_validator("tool_definitions", mode="before")
     @classmethod
@@ -134,7 +158,115 @@ class SkillListRead(CamelModel):
     items: list[SkillRead]
 
 
+class CapabilityToolGrantWrite(SkillToolDefinitionWrite):
+    pass
+
+
+class CapabilityToolGrantRead(CapabilityToolGrantWrite):
+    display_name: str
+    description: str
+
+
+class CapabilityDraftCreate(CamelModel):
+    key: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    tool_grants: list[CapabilityToolGrantWrite] = Field(
+        min_length=1,
+        alias="toolGrants",
+        validation_alias=AliasChoices("toolGrants", "toolDefinitions"),
+    )
+
+    @property
+    def tool_definitions(self) -> list[CapabilityToolGrantWrite]:
+        return self.tool_grants
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_tool_aliases(cls, value: object) -> object:
+        return _reject_conflicting_tool_aliases(value)
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def validate_key(cls, value: object) -> str:
+        return _normalize_skill_key(value)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Name")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def validate_description(cls, value: object) -> str:
+        return _normalize_optional_text(value) or ""
+
+
+class CapabilityDraftUpdate(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    tool_grants: list[CapabilityToolGrantWrite] | None = Field(
+        default=None,
+        alias="toolGrants",
+        validation_alias=AliasChoices("toolGrants", "toolDefinitions"),
+    )
+
+    @property
+    def tool_definitions(self) -> list[CapabilityToolGrantWrite] | None:
+        return self.tool_grants
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_tool_aliases(cls, value: object) -> object:
+        return _reject_conflicting_tool_aliases(value)
+
+    @field_validator("tool_grants", mode="before")
+    @classmethod
+    def reject_null_tool_grants(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("toolGrants must be an array")
+        return value
+
+    @field_validator("name", "description", mode="before")
+    @classmethod
+    def validate_optional_text_fields(cls, value: object) -> str | None:
+        return _normalize_optional_text(value)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> CapabilityDraftUpdate:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+        return self
+
+
+class CapabilityRead(CamelModel):
+    id: int
+    key: str
+    version: int = Field(ge=1)
+    status: SkillStatus
+    name: str
+    description: str
+    tool_grants: list[CapabilityToolGrantRead]
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class CapabilityListRead(CamelModel):
+    items: list[CapabilityRead]
+
+
 __all__ = [
+    "CapabilityDraftCreate",
+    "CapabilityDraftUpdate",
+    "CapabilityListRead",
+    "CapabilityRead",
+    "CapabilityToolGrantRead",
+    "CapabilityToolGrantWrite",
     "SkillDraftCreate",
     "SkillDraftUpdate",
     "SkillListRead",

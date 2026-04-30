@@ -15,6 +15,10 @@ from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.skill import Skill
 from app.repositories.skill import SkillRepository
 from app.schemas.skill import (
+    CapabilityDraftCreate,
+    CapabilityDraftUpdate,
+    CapabilityListRead,
+    CapabilityRead,
     SkillDraftCreate,
     SkillDraftUpdate,
     SkillListRead,
@@ -57,19 +61,49 @@ class SkillService:
         )
         return SkillListRead(items=[self._to_read_model(item) for item in items])
 
+    def list_capabilities(
+        self,
+        *,
+        status_filter: SkillStatus | None = None,
+    ) -> CapabilityListRead:
+        items = self.repository.list_latest_versions(
+            status=status_filter.value if status_filter is not None else None
+        )
+        return CapabilityListRead(items=[self._to_capability_read_model(item) for item in items])
+
     def get_skill(self, skill_id: int) -> SkillRead:
         return self._to_read_model(self._get_model(skill_id))
 
+    def get_capability(self, capability_id: int) -> CapabilityRead:
+        return self._to_capability_read_model(self._get_model(capability_id))
+
     def create_draft(self, payload: SkillDraftCreate) -> SkillRead:
+        return self._to_read_model(self._create_draft_model(payload, resource_name="Skill"))
+
+    def create_capability_draft(self, payload: CapabilityDraftCreate) -> CapabilityRead:
+        return self._to_capability_read_model(
+            self._create_draft_model(payload, resource_name="Capability")
+        )
+
+    def _create_draft_model(
+        self,
+        payload: SkillDraftCreate | CapabilityDraftCreate,
+        *,
+        resource_name: str,
+    ) -> Skill:
         if self.repository.get_draft_by_key(payload.key) is not None:
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="skill_duplicate_draft",
-                message="A draft skill already exists for this key",
+                message=f"A draft {resource_name.lower()} already exists for this key",
             )
 
         tool_definitions = self._normalize_tool_definitions(payload.tool_definitions)
-        self._resolve_tool_definitions(tool_definitions)
+        self._resolve_tool_definitions(
+            tool_definitions,
+            field_prefix="toolGrants" if resource_name == "Capability" else "toolDefinitions",
+            resource_name=resource_name,
+        )
         skill = Skill(
             key=payload.key,
             version=self._next_version(payload.key),
@@ -85,18 +119,42 @@ class SkillService:
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(skill)
+        return skill
 
     def update_draft(self, skill_id: int, payload: SkillDraftUpdate) -> SkillRead:
+        return self._to_read_model(
+            self._update_draft_model(skill_id, payload, resource_name="Skill")
+        )
+
+    def update_capability_draft(
+        self,
+        capability_id: int,
+        payload: CapabilityDraftUpdate,
+    ) -> CapabilityRead:
+        return self._to_capability_read_model(
+            self._update_draft_model(capability_id, payload, resource_name="Capability")
+        )
+
+    def _update_draft_model(
+        self,
+        skill_id: int,
+        payload: SkillDraftUpdate | CapabilityDraftUpdate,
+        *,
+        resource_name: str,
+    ) -> Skill:
         source = self._get_model(skill_id)
-        self._ensure_status(source, SkillStatus.DRAFT, action="patch")
+        self._ensure_status(source, SkillStatus.DRAFT, action="patch", resource_name=resource_name)
 
         tool_definitions = (
             self._normalize_tool_definitions(payload.tool_definitions)
             if payload.tool_definitions is not None
             else list(source.tool_definitions)
         )
-        self._resolve_tool_definitions(tool_definitions)
+        self._resolve_tool_definitions(
+            tool_definitions,
+            field_prefix="toolGrants" if resource_name == "Capability" else "toolDefinitions",
+            resource_name=resource_name,
+        )
         updated = Skill(
             key=source.key,
             version=self._next_version(source.key),
@@ -119,12 +177,29 @@ class SkillService:
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(updated)
+        return updated
 
     def activate(self, skill_id: int) -> SkillRead:
+        return self._to_read_model(self._activate_model(skill_id, resource_name="Skill"))
+
+    def activate_capability(self, capability_id: int) -> CapabilityRead:
+        return self._to_capability_read_model(
+            self._activate_model(capability_id, resource_name="Capability")
+        )
+
+    def _activate_model(self, skill_id: int, *, resource_name: str) -> Skill:
         skill = self._get_model(skill_id)
-        self._ensure_status(skill, SkillStatus.DRAFT, action="activate")
-        self._resolve_toolset_model(skill)
+        self._ensure_status(
+            skill,
+            SkillStatus.DRAFT,
+            action="activate",
+            resource_name=resource_name,
+        )
+        self._resolve_toolset_model(
+            skill,
+            field_prefix="toolGrants" if resource_name == "Capability" else "toolDefinitions",
+            resource_name=resource_name,
+        )
 
         current_published = self.repository.get_published_by_key(skill.key)
         try:
@@ -137,12 +212,18 @@ class SkillService:
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(skill)
+        return skill
 
     def archive(self, skill_id: int) -> SkillRead:
+        return self._to_read_model(self._archive_model(skill_id))
+
+    def archive_capability(self, capability_id: int) -> CapabilityRead:
+        return self._to_capability_read_model(self._archive_model(capability_id))
+
+    def _archive_model(self, skill_id: int) -> Skill:
         skill = self._get_model(skill_id)
         if skill.status == SkillStatus.ARCHIVED.value:
-            return self._to_read_model(skill)
+            return skill
 
         try:
             skill.status = SkillStatus.ARCHIVED.value
@@ -151,7 +232,7 @@ class SkillService:
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(skill)
+        return skill
 
     def resolve_toolset(self, skill_id: int) -> ResolvedSkillToolset:
         return self._resolve_toolset_model(self._get_model(skill_id))
@@ -224,14 +305,21 @@ class SkillService:
         return skill
 
     @staticmethod
-    def _ensure_status(skill: Skill, expected: SkillStatus, *, action: str) -> None:
+    def _ensure_status(
+        skill: Skill,
+        expected: SkillStatus,
+        *,
+        action: str,
+        resource_name: str = "Skill",
+    ) -> None:
         if skill.status != expected.value:
             raise validation_error(
-                "Skill validation failed",
+                f"{resource_name} validation failed",
                 [
                     {
                         "field": "status",
-                        "issue": f"Only {expected.value} skills can be used for {action}",
+                        "issue": f"Only {expected.value} {resource_name.lower()}s can be used for "
+                        f"{action}",
                     }
                 ],
             )
@@ -249,21 +337,53 @@ class SkillService:
     def _resolve_tool_definitions(
         self,
         tool_definitions: Sequence[dict[str, str]],
+        *,
+        field_prefix: str = "toolDefinitions",
+        resource_name: str = "Skill",
     ) -> tuple[ResolvedSkillTool, ...]:
         try:
             return self.skill_registry.resolve_tool_definitions(tool_definitions)
         except SkillRegistryValidationError as exc:
-            raise validation_error("Skill validation failed", exc.details) from exc
+            raise validation_error(
+                f"{resource_name} validation failed",
+                self._rewrite_tool_definition_fields(exc.details, field_prefix=field_prefix),
+            ) from exc
 
-    def _resolve_toolset_model(self, skill: Skill) -> ResolvedSkillToolset:
+    def _resolve_toolset_model(
+        self,
+        skill: Skill,
+        *,
+        field_prefix: str = "toolDefinitions",
+        resource_name: str = "Skill",
+    ) -> ResolvedSkillToolset:
         return ResolvedSkillToolset(
             skill_id=skill.id,
             skill_key=skill.key,
             skill_version=skill.version,
             name=skill.name,
             description=skill.description,
-            tools=self._resolve_tool_definitions(skill.tool_definitions),
+            tools=self._resolve_tool_definitions(
+                skill.tool_definitions,
+                field_prefix=field_prefix,
+                resource_name=resource_name,
+            ),
         )
+
+    @staticmethod
+    def _rewrite_tool_definition_fields(
+        details: Sequence[dict[str, str]],
+        *,
+        field_prefix: str,
+    ) -> list[dict[str, str]]:
+        if field_prefix == "toolDefinitions":
+            return list(details)
+        return [
+            {
+                "field": detail["field"].replace("toolDefinitions", field_prefix, 1),
+                "issue": detail["issue"],
+            }
+            for detail in details
+        ]
 
     def _to_read_model(self, skill: Skill) -> SkillRead:
         resolved_toolset = self._resolve_toolset_model(skill)
@@ -276,6 +396,33 @@ class SkillService:
                 "name": skill.name,
                 "description": skill.description,
                 "toolDefinitions": [
+                    {
+                        "tool": tool.key,
+                        "displayName": tool.display_name,
+                        "description": tool.description,
+                    }
+                    for tool in resolved_toolset.tools
+                ],
+                "createdAt": skill.created_at,
+                "updatedAt": skill.updated_at,
+            }
+        )
+
+    def _to_capability_read_model(self, skill: Skill) -> CapabilityRead:
+        resolved_toolset = self._resolve_toolset_model(
+            skill,
+            field_prefix="toolGrants",
+            resource_name="Capability",
+        )
+        return CapabilityRead.model_validate(
+            {
+                "id": skill.id,
+                "key": skill.key,
+                "version": skill.version,
+                "status": skill.status,
+                "name": skill.name,
+                "description": skill.description,
+                "toolGrants": [
                     {
                         "tool": tool.key,
                         "displayName": tool.display_name,

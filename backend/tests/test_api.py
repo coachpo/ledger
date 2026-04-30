@@ -248,11 +248,17 @@ def _agent_manifest_source(payload: dict[str, object]) -> str:
     key = str(payload.get("key") or "research_agent")
     description = str(payload.get("description") or "")
     output_schema_version = _coerce_manifest_version(payload.get("outputSchemaVersion"))
-    skill_refs = cast(list[dict[str, object]], payload.get("skills") or [])
+    capability_refs = cast(
+        list[dict[str, object]],
+        payload.get("capabilities") or payload.get("skills") or [],
+    )
     mcp_server_refs = cast(list[dict[str, object]], payload.get("mcpServers") or [])
-    skill_lines = [
-        f"    - {ref['skillKey']}@{_coerce_manifest_version(ref.get('skillVersion'))}"
-        for ref in skill_refs
+    capability_lines = [
+        (
+            f"    - {ref.get('capabilityKey') or ref['skillKey']}@"
+            f"{_coerce_manifest_version(ref.get('capabilityVersion') or ref.get('skillVersion'))}"
+        )
+        for ref in capability_refs
     ]
     mcp_server_lines = [
         f"    - {ref['mcpServerKey']}@{_coerce_manifest_version(ref.get('mcpServerVersion'))}"
@@ -274,7 +280,9 @@ def _agent_manifest_source(payload: dict[str, object]) -> str:
         f"  inputSchema: {json.dumps(payload['inputSchema'])}",
         f"  outputSchema: {payload['outputSchemaKey']}@{output_schema_version}",
     ]
-    lines.extend(["  skills:", *skill_lines] if skill_lines else ["  skills: []"])
+    lines.extend(
+        ["  capabilities:", *capability_lines] if capability_lines else ["  capabilities: []"]
+    )
     lines.extend(["  mcpServers:", *mcp_server_lines] if mcp_server_lines else ["  mcpServers: []"])
     lines.extend([f"  budgetUsd: {json.dumps(str(payload.get('budgetUsd') or '0'))}", ""])
     return "\n".join(lines)
@@ -563,6 +571,9 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
         "/api/agents",
         "/api/agents/{agent_id}",
         "/api/agents/{agent_id}/runs",
+        "/api/capabilities",
+        "/api/capabilities/{capability_id}",
+        "/api/capabilities/{capability_id}/activate",
         "/api/skills",
         "/api/skills/{skill_id}",
         "/api/skills/{skill_id}/activate",
@@ -615,6 +626,7 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
     "path",
     [
         "/api/agents",
+        "/api/capabilities",
         "/api/skills",
         "/api/mcp-servers",
         "/api/output-schemas",

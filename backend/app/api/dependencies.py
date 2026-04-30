@@ -106,6 +106,13 @@ def get_skill_service(
     return SkillService(session, skill_registry)
 
 
+def get_capability_service(
+    session: Annotated[Session, Depends(get_session)],
+    skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
+) -> SkillService:
+    return SkillService(session, skill_registry)
+
+
 def get_mcp_connection_tester() -> McpConnectionTester:
     return DefaultMcpConnectionTester()
 
