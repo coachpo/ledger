@@ -8,32 +8,32 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.models.agent import Agent
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
-from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
+from app.repositories.capability import CapabilityRepository
 from app.repositories.mcp_server import McpServerRepository
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
-from app.repositories.skill import SkillRepository
 from app.repositories.workflow import WorkflowRepository
 from app.services.model_connection_service import ModelConnectionService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
 
-def _build_skill(*, key: str, version: int, status: str) -> Skill:
-    return Skill(
+def _build_skill(*, key: str, version: int, status: str) -> Capability:
+    return Capability(
         key=key,
         version=version,
         status=status,
         name=f"{key}-{version}",
-        description="Skill description",
-        tool_definitions=[{"tool": f"{key}.lookup"}],
+        description="Capability description",
+        tool_grants=[{"tool": f"{key}.lookup"}],
     )
 
 
@@ -110,7 +110,7 @@ def _build_agent(
     version: int,
     status: str,
     output_schema: OutputSchema,
-    skills: list[Skill],
+    capabilities: list[Capability],
     mcp_servers: list[McpServer],
     budget_usd: Decimal,
     model_connection_id: int = 1,
@@ -128,9 +128,13 @@ def _build_agent(
         input_schema={"type": "object", "required": ["ticker"]},
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[
-            {"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}
-            for skill in skills
+        capabilities=[
+            {
+                "capabilityId": capability.id,
+                "capabilityKey": capability.key,
+                "capabilityVersion": capability.version,
+            }
+            for capability in capabilities
         ],
         mcp_servers=[
             {
@@ -277,27 +281,28 @@ def _seed_agent_platform_versioned_rows(session: Session) -> None:
     session.commit()
 
 
-def test_agent_platform_skill_repository_resolves_published_versions_and_latest_rows(
+def test_agent_platform_capability_repository_resolves_published_versions_and_latest_rows(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         _seed_agent_platform_versioned_rows(session)
 
-        skill_repo = SkillRepository(session)
+        capability_repo = CapabilityRepository(session)
 
-        published_skill = skill_repo.resolve_version("research_skill", None)
-        draft_skill = skill_repo.resolve_version("research_skill", 2)
-        assert published_skill is not None
-        assert published_skill.version == 1
-        assert draft_skill is not None
-        assert draft_skill.status == "draft"
-        assert [item.version for item in skill_repo.list_versions("research_skill")] == [2, 1]
-        assert [(item.key, item.version) for item in skill_repo.list_latest_versions()] == [
+        published_capability = capability_repo.resolve_version("research_skill", None)
+        draft_capability = capability_repo.resolve_version("research_skill", 2)
+        assert published_capability is not None
+        assert published_capability.version == 1
+        assert draft_capability is not None
+        assert draft_capability.status == "draft"
+        assert [item.version for item in capability_repo.list_versions("research_skill")] == [2, 1]
+        assert [(item.key, item.version) for item in capability_repo.list_latest_versions()] == [
             ("research_skill", 2),
             ("summarize_skill", 1),
         ]
         assert [
-            (item.key, item.version) for item in skill_repo.list_latest_versions(status="published")
+            (item.key, item.version)
+            for item in capability_repo.list_latest_versions(status="published")
         ] == [
             ("research_skill", 1),
             ("summarize_skill", 1),
@@ -472,7 +477,7 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             version=1,
             status="published",
             output_schema=published_schema,
-            skills=[published_skill],
+            capabilities=[published_skill],
             mcp_servers=[published_server],
             budget_usd=Decimal("1.50000000"),
         )
@@ -500,7 +505,7 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             version=2,
             status="draft",
             output_schema=draft_schema,
-            skills=[published_skill],
+            capabilities=[published_skill],
             mcp_servers=[published_server],
             budget_usd=Decimal("2.75000000"),
         )
@@ -566,7 +571,7 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
                     version=1,
                     status="published",
                     output_schema=published_schema,
-                    skills=[published_skill],
+                    capabilities=[published_skill],
                     mcp_servers=[published_server],
                     budget_usd=Decimal("1.00000000"),
                     model="gpt-snapshot-v1",
@@ -576,7 +581,7 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
                     version=1,
                     status="published",
                     output_schema=published_schema,
-                    skills=[published_skill],
+                    capabilities=[published_skill],
                     mcp_servers=[published_server],
                     budget_usd=Decimal("1.00000000"),
                     model="gpt-live-v2",
@@ -616,7 +621,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             version=1,
             status="published",
             output_schema=published_schema,
-            skills=[published_skill],
+            capabilities=[published_skill],
             mcp_servers=[published_server],
             budget_usd=Decimal("1.25000000"),
         )
