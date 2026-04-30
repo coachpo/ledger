@@ -5,11 +5,6 @@ import { Dashboard } from "./pages/dashboard";
 import { AgentsEditorPage } from "./pages/agents/editor";
 import { AgentsListPage } from "./pages/agents/list";
 import { CapabilitiesEditorPage } from "./pages/capabilities/editor";
-import {
-  LegacySkillsEditRedirect,
-  LegacySkillsListRedirect,
-  LegacySkillsNewRedirect,
-} from "./pages/capabilities/legacy-redirect";
 import { CapabilitiesListPage } from "./pages/capabilities/list";
 import { McpServersEditorPage } from "./pages/mcp-servers/editor";
 import { McpServersListPage } from "./pages/mcp-servers/list";
@@ -47,9 +42,6 @@ export const router = createBrowserRouter([
       { path: "capabilities", Component: CapabilitiesListPage },
       { path: "capabilities/new", Component: CapabilitiesEditorPage },
       { path: "capabilities/:capabilityId/edit", Component: CapabilitiesEditorPage },
-      { path: "skills", Component: LegacySkillsListRedirect },
-      { path: "skills/new", Component: LegacySkillsNewRedirect },
-      { path: "skills/:skillId/edit", Component: LegacySkillsEditRedirect },
       { path: "mcp-servers", Component: McpServersListPage },
       { path: "mcp-servers/new", Component: McpServersEditorPage },
       { path: "mcp-servers/:serverId/edit", Component: McpServersEditorPage },

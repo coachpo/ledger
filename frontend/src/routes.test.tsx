@@ -19,13 +19,13 @@ describe("router", () => {
     expect(matchRoutes(router.routes, "/backtests/123")).toBeNull();
   });
 
-  it("registers canonical capability routes and keeps legacy skill redirects", () => {
+  it("registers canonical capability routes without legacy skill redirects", () => {
     expect(matchRoutes(router.routes, "/capabilities")).not.toBeNull();
     expect(matchRoutes(router.routes, "/capabilities/new")).not.toBeNull();
     expect(matchRoutes(router.routes, "/capabilities/123/edit")).not.toBeNull();
 
-    expect(matchRoutes(router.routes, "/skills")).not.toBeNull();
-    expect(matchRoutes(router.routes, "/skills/new")).not.toBeNull();
-    expect(matchRoutes(router.routes, "/skills/123/edit")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/skills")).toBeNull();
+    expect(matchRoutes(router.routes, "/skills/new")).toBeNull();
+    expect(matchRoutes(router.routes, "/skills/123/edit")).toBeNull();
   });
 });
