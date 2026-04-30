@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import cast
 
-from ruamel.yaml import YAML
-from ruamel.yaml.error import YAMLError
 from sqlalchemy.orm import Session
 
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
-from app.models.skill import Skill
+from app.repositories.capability import CapabilityRepository
 from app.repositories.mcp_server import McpServerRepository
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
-from app.repositories.skill import SkillRepository
 from app.schemas.agent import AgentCreate
 from app.schemas.agent_manifest import (
     AgentManifest,
@@ -42,7 +39,7 @@ class AgentManifestCompiler:
             session
         )
         self.output_schema_repository: OutputSchemaRepository = OutputSchemaRepository(session)
-        self.skill_repository: SkillRepository = SkillRepository(session)
+        self.capability_repository: CapabilityRepository = CapabilityRepository(session)
         self.mcp_server_repository: McpServerRepository = McpServerRepository(session)
         self.schema_compiler: OutputSchemaCompiler = OutputSchemaCompiler(
             self.output_schema_repository
@@ -86,7 +83,11 @@ class AgentManifestCompiler:
             source=source_text,
             diagnostics=diagnostics,
         )
-        skills = self._resolve_capabilities(manifest, source=source_text, diagnostics=diagnostics)
+        capabilities = self._resolve_capabilities(
+            manifest,
+            source=source_text,
+            diagnostics=diagnostics,
+        )
         mcp_servers = self._resolve_mcp_servers(
             manifest,
             source=source_text,
@@ -108,9 +109,9 @@ class AgentManifestCompiler:
             "outputSchemaKey": output_schema.key,
             "outputSchemaVersion": output_schema.version,
             "capabilities": [
-                {"capabilityKey": skill.key, "capabilityVersion": skill.version} for skill in skills
+                {"capabilityKey": capability.key, "capabilityVersion": capability.version}
+                for capability in capabilities
             ],
-            "skills": [{"skillKey": skill.key, "skillVersion": skill.version} for skill in skills],
             "mcpServers": [
                 {"mcpServerKey": server.key, "mcpServerVersion": server.version}
                 for server in mcp_servers
@@ -159,42 +160,21 @@ class AgentManifestCompiler:
         *,
         source: str | None,
         diagnostics: list[AgentManifestDiagnostic],
-    ) -> list[Skill]:
-        rows: list[Skill] = []
-        capability_source_field = self._capability_source_field(source)
+    ) -> list[Capability]:
+        rows: list[Capability] = []
         for index, ref in enumerate(manifest.spec.capabilities):
-            row = self.skill_repository.get_by_key_version(ref.key, ref.version)
+            row = self.capability_repository.get_by_key_version(ref.key, ref.version)
             if row is None:
                 diagnostics.append(
                     self._diagnostic(
                         f"Capability {ref.key!r} version {ref.version} was not found",
-                        path=f"spec.{capability_source_field}[{index}]",
+                        path=f"spec.capabilities[{index}]",
                         source=source,
                     )
                 )
                 continue
             rows.append(row)
         return rows
-
-    @staticmethod
-    def _capability_source_field(source: str | None) -> str:
-        if source is None:
-            return "capabilities"
-        try:
-            data = YAML(typ="safe").load(source)
-        except YAMLError:
-            return "capabilities"
-        if not isinstance(data, Mapping):
-            return "capabilities"
-        spec = cast(Mapping[object, object], data).get("spec")
-        if not isinstance(spec, Mapping):
-            return "capabilities"
-        spec_mapping = cast(Mapping[object, object], spec)
-        if "capabilities" in spec_mapping:
-            return "capabilities"
-        if "skills" in spec_mapping:
-            return "skills"
-        return "capabilities"
 
     def _resolve_mcp_servers(
         self,
