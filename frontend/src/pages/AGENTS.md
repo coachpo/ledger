@@ -4,7 +4,7 @@
 
 ## CHILD DOCS
 - `agents/AGENTS.md` — agents list and editor route family
-- `capabilities/AGENTS.md` — capabilities list/editor route family plus legacy skill-route redirects
+- `capabilities/AGENTS.md` — capabilities list/editor route family
 - `mcp-servers/AGENTS.md` — MCP servers list and editor route family
 - `model-connections/AGENTS.md` — saved model connection list/editor route family
 - `output-schemas/AGENTS.md` — output schemas list and editor route family
@@ -22,7 +22,7 @@
 src/pages/
 ├── dashboard.tsx                # home route summary
 ├── agents/                      # agent list and editor routes
-├── capabilities/                # capability list/editor routes and legacy skill-route redirects
+├── capabilities/                # capability list/editor routes
 ├── mcp-servers/                 # MCP server list and editor routes
 ├── model-connections/           # saved model connection list and editor routes
 ├── output-schemas/              # output schema list and editor routes

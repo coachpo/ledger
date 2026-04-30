@@ -13,7 +13,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/agents/AGENTS.md` — agents list, editor, duplicate, archive, and run-launch flows
-- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, tool-grant flows, and legacy skill-route redirects
+- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, and tool-grant flows
 - `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
 - `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, and builder/json-schema/preview flows
