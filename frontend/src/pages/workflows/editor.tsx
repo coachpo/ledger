@@ -536,6 +536,36 @@ export function WorkflowsEditorPage() {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col gap-4 p-3">
+                <Card className="gap-3" data-testid="workflow-manifest-101">
+                  <CardHeader className="px-3 pt-3">
+                    <CardTitle className="text-sm">Workflow Manifest 101</CardTitle>
+                    <CardDescription>Describe the run input, ordered agent steps, and final output slot.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2 px-3 pb-3">
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">apiVersion + kind</Badge>
+                      <p className="text-xs text-muted-foreground">Use ledger.workflow/v1 and kind: Workflow.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">metadata</Badge>
+                      <p className="text-xs text-muted-foreground">Set the key, name, and short purpose for the workflow.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">inputSchema</Badge>
+                      <p className="text-xs text-muted-foreground">Define the run input fields that steps can reference.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">steps[].agents[].uses</Badge>
+                      <p className="text-xs text-muted-foreground">Order agent steps and pin each published agent version.</p>
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <Badge className="w-fit" variant="outline">expressions</Badge>
+                      <p className="text-xs text-muted-foreground">Wire values with {"${{ inputs.* }}"} and {"${{ steps.*.outputs.* }}"}.</p>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground">Validate before Save or Run.</p>
+                  </CardContent>
+                </Card>
+
                 <Card className="gap-3">
                   <CardHeader className="px-3 pt-3">
                     <CardTitle className="text-sm">Sections</CardTitle>

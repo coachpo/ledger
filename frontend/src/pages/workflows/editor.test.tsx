@@ -101,6 +101,14 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByTestId("workflow-outline-rail")).toBeVisible();
     expect(screen.getByTestId("workflow-yaml-editor")).toBeVisible();
     expect(screen.getByTestId("workflow-inspector-shell")).toBeVisible();
+    const guide = within(screen.getByTestId("workflow-manifest-101"));
+    expect(guide.getByText("Workflow Manifest 101")).toBeVisible();
+    expect(guide.getByText("Describe the run input, ordered agent steps, and final output slot.")).toBeVisible();
+    expect(guide.getByText("apiVersion + kind")).toBeVisible();
+    expect(guide.getByText("Use ledger.workflow/v1 and kind: Workflow.")).toBeVisible();
+    expect(guide.getByText("steps[].agents[].uses")).toBeVisible();
+    expect(guide.getByText(/\$\{\{ inputs\.\* \}\} and \$\{\{ steps\.\*\.outputs\.\* \}\}/i)).toBeVisible();
+    expect(guide.getByText("Validate before Save or Run.")).toBeVisible();
     expect(screen.queryByRole("tab", { name: /input/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /steps/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /output/i })).not.toBeInTheDocument();
