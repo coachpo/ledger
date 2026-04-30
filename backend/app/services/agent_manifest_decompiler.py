@@ -52,7 +52,7 @@ class AgentManifestSource(Protocol):
     def output_schema_version(self) -> int: ...
 
     @property
-    def skills(self) -> list[dict[str, JsonValue]]: ...
+    def capabilities(self) -> list[dict[str, JsonValue]]: ...
 
     @property
     def mcp_servers(self) -> list[dict[str, JsonValue]]: ...
@@ -133,17 +133,10 @@ class AgentManifestDecompiler:
             "outputSchemaVersion": agent.output_schema_version,
             "capabilities": [
                 {
-                    "capabilityKey": item.get("skillKey"),
-                    "capabilityVersion": item.get("skillVersion"),
+                    "capabilityKey": item.get("capabilityKey"),
+                    "capabilityVersion": item.get("capabilityVersion"),
                 }
-                for item in agent.skills
-            ],
-            "skills": [
-                {
-                    "skillKey": item.get("skillKey"),
-                    "skillVersion": item.get("skillVersion"),
-                }
-                for item in agent.skills
+                for item in agent.capabilities
             ],
             "mcpServers": [
                 {

@@ -37,8 +37,12 @@ def _agent_row(refs: dict[str, object]) -> Agent:
         },
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[
-            {"skillId": 999, "skillKey": "sec_filing_lookup", "skillVersion": 2},
+        capabilities=[
+            {
+                "capabilityId": 999,
+                "capabilityKey": "sec_filing_lookup",
+                "capabilityVersion": 2,
+            },
         ],
         mcp_servers=[
             {"mcpServerId": 888, "mcpServerKey": "market_data", "mcpServerVersion": 1},
@@ -79,7 +83,7 @@ def test_decompile_agent_manifest_omits_runtime_only_fields(
         result = decompile_agent_model(_agent_row(refs), session)
 
     assert "modelConnectionId" not in result.source
-    assert "skillId" not in result.source
-    assert "skillKey" not in result.source
+    assert "capabilityId" not in result.source
+    assert "capabilityKey" not in result.source
     assert "mcpServerId" not in result.source
     assert "outputSchemaId" not in result.source
