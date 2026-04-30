@@ -13,9 +13,9 @@ from app.reset_seed import (
     STARTER_PORTFOLIO_SLUG,
     STARTER_TEMPLATE_NAMES,
     STARTER_WORKFLOW_KEY,
+    STOCK_ANALYSIS_CAPABILITY_KEY,
     STOCK_ANALYSIS_MCP_SERVER_KEY,
     STOCK_ANALYSIS_NOTE_SCHEMA_KEY,
-    STOCK_ANALYSIS_SKILL_KEY,
     STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS,
     STOCK_ANALYSIS_SYNTHESIZER_KEY,
     TRADING_DECISION_SCHEMA_KEY,
@@ -27,7 +27,7 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "model_connections",
     "output_schemas",
     "runs",
-    "skills",
+    "capabilities",
     "workflows",
 }
 LEGACY_BACKEND_TABLE_NAMES = {
@@ -53,7 +53,7 @@ RETIRED_STOCK_ANALYSIS_AGENT_KEYS = STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS + (
 )
 RETIRED_STOCK_ANALYSIS_REPORT_SLUGS = tuple(company["reportSlug"] for company in MAG7_COMPANIES)
 _LIVE_OUTPUT_SCHEMA_KEY = "market_review_note"
-_LIVE_SKILL_KEY = "market_review_tools"
+_LIVE_CAPABILITY_KEY = "market_review_tools"
 _LIVE_MCP_SERVER_KEY = "market_review_data"
 _LIVE_AGENT_KEY = "market_review_agent"
 _LIVE_WORKFLOW_KEY = "market_review"
@@ -137,25 +137,25 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     ).scalar_one()
     connection.execute(
         text(
-            "INSERT INTO skills ("
-            "key, version, status, name, description, tool_definitions, created_at, updated_at"
+            "INSERT INTO capabilities ("
+            "key, version, status, name, description, tool_grants, created_at, updated_at"
             ") VALUES ("
             ":key, 1, 'published', :name, :description, "
-            "CAST(:tool_definitions AS jsonb), NOW(), NOW()"
+            "CAST(:tool_grants AS jsonb), NOW(), NOW()"
             ")"
         ),
         [
             {
-                "key": _LIVE_SKILL_KEY,
+                "key": _LIVE_CAPABILITY_KEY,
                 "name": "Market Review Tools",
-                "description": "Live skill that must remain after startup sanitation.",
-                "tool_definitions": json.dumps([{"tool": "ledger.reports.lookup"}]),
+                "description": "Live capability that must remain after startup sanitation.",
+                "tool_grants": json.dumps([{"tool": "ledger.reports.lookup"}]),
             },
             {
-                "key": STOCK_ANALYSIS_SKILL_KEY,
+                "key": STOCK_ANALYSIS_CAPABILITY_KEY,
                 "name": "Stock Analysis Tools",
-                "description": "Retired stock-analysis skill persisted before upgrade.",
-                "tool_definitions": json.dumps([{"tool": "ledger.stock_analysis.report_lookup"}]),
+                "description": "Retired stock-analysis capability persisted before upgrade.",
+                "tool_grants": json.dumps([{"tool": "ledger.stock_analysis.report_lookup"}]),
             },
         ],
     )
@@ -197,12 +197,12 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
         text(
             "INSERT INTO agents ("
             "key, version, status, name, description, model_connection_id, model, "
-            "system_prompt, input_schema, output_schema_id, output_schema_version, skills, "
+            "system_prompt, input_schema, output_schema_id, output_schema_version, capabilities, "
             "mcp_servers, budget_usd, created_at, updated_at"
             ") VALUES ("
             ":key, 1, 'published', :name, :description, :model_connection_id, :model, "
             ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, 1, "
-            "CAST(:skills AS jsonb), CAST(:mcp_servers AS jsonb), 0, NOW(), NOW()"
+            "CAST(:capabilities AS jsonb), CAST(:mcp_servers AS jsonb), 0, NOW(), NOW()"
             ")"
         ),
         [
@@ -215,7 +215,9 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
                 "system_prompt": "Summarize the market review context.",
                 "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
                 "output_schema_id": live_output_schema_id,
-                "skills": json.dumps([{"skillKey": _LIVE_SKILL_KEY, "skillVersion": 1}]),
+                "capabilities": json.dumps(
+                    [{"capabilityKey": _LIVE_CAPABILITY_KEY, "capabilityVersion": 1}]
+                ),
                 "mcp_servers": json.dumps(
                     [{"mcpServerKey": _LIVE_MCP_SERVER_KEY, "mcpServerVersion": 1}]
                 ),
@@ -234,8 +236,13 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
                         if agent_key == STOCK_ANALYSIS_SYNTHESIZER_KEY
                         else retired_note_schema_id
                     ),
-                    "skills": json.dumps(
-                        [{"skillKey": STOCK_ANALYSIS_SKILL_KEY, "skillVersion": 1}]
+                    "capabilities": json.dumps(
+                        [
+                            {
+                                "capabilityKey": STOCK_ANALYSIS_CAPABILITY_KEY,
+                                "capabilityVersion": 1,
+                            }
+                        ]
                     ),
                     "mcp_servers": json.dumps(
                         [
@@ -456,7 +463,9 @@ def _stock_analysis_sanitation_snapshot(
     output_schema_keys = (
         connection.execute(text("SELECT key FROM output_schemas ORDER BY key")).scalars().all()
     )
-    skill_keys = connection.execute(text("SELECT key FROM skills ORDER BY key")).scalars().all()
+    capability_keys = (
+        connection.execute(text("SELECT key FROM capabilities ORDER BY key")).scalars().all()
+    )
     mcp_server_keys = (
         connection.execute(text("SELECT key FROM mcp_servers ORDER BY key")).scalars().all()
     )
@@ -500,7 +509,7 @@ def _stock_analysis_sanitation_snapshot(
 
     return {
         "output_schema_keys": output_schema_keys,
-        "skill_keys": skill_keys,
+        "capability_keys": capability_keys,
         "mcp_server_keys": mcp_server_keys,
         "agent_keys": agent_keys,
         "workflow_keys": workflow_keys,
@@ -524,6 +533,195 @@ def test_init_db_creates_agent_platform_tables_and_drops_legacy_backend_tables(
         table_names = set(inspect(engine).get_table_names())
         assert AGENT_PLATFORM_TABLE_NAMES <= table_names
         assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
+        capability_columns = {
+            column["name"] for column in inspect(engine).get_columns("capabilities")
+        }
+        agent_columns = {column["name"] for column in inspect(engine).get_columns("agents")}
+        assert "tool_grants" in capability_columns
+        assert "tool_definitions" not in capability_columns
+        assert "capabilities" in agent_columns
+        assert "skills" not in agent_columns
+    finally:
+        engine.dispose()
+
+
+def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempotently(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE skills (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    key VARCHAR(120) NOT NULL,
+                    version INTEGER NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    tool_definitions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            capability_id = connection.execute(
+                text(
+                    "INSERT INTO skills ("
+                    "key, version, status, name, description, tool_definitions"
+                    ") VALUES ("
+                    ":key, 1, 'published', :name, :description, "
+                    "CAST(:tool_definitions AS jsonb)"
+                    ") RETURNING id"
+                ),
+                {
+                    "key": "legacy_report_lookup",
+                    "name": "Legacy Report Lookup",
+                    "description": "Migrated from legacy Skill storage.",
+                    "tool_definitions": json.dumps([{"tool": "ledger.reports.lookup"}]),
+                },
+            ).scalar_one()
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE agents (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    key VARCHAR(120) NOT NULL,
+                    version INTEGER NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    model VARCHAR(200) NOT NULL,
+                    system_prompt TEXT NOT NULL,
+                    input_schema JSONB NOT NULL,
+                    output_schema_id INTEGER NOT NULL,
+                    output_schema_version INTEGER NOT NULL,
+                    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    budget_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO agents ("
+                    "key, version, status, name, model, system_prompt, input_schema, "
+                    "output_schema_id, output_schema_version, skills, mcp_servers"
+                    ") VALUES ("
+                    ":key, 1, 'published', :name, 'gpt-5.4-mini', :system_prompt, "
+                    "CAST(:input_schema AS jsonb), 1, 1, CAST(:skills AS jsonb), '[]'::jsonb"
+                    ")"
+                ),
+                {
+                    "key": "legacy_agent",
+                    "name": "Legacy Agent",
+                    "system_prompt": "Use reports.",
+                    "input_schema": json.dumps({"type": "object", "additionalProperties": False}),
+                    "skills": json.dumps(
+                        [
+                            {
+                                "skillId": capability_id,
+                                "skillKey": "legacy_report_lookup",
+                                "skillVersion": 1,
+                            }
+                        ]
+                    ),
+                },
+            )
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            inspector = inspect(connection)
+            table_names = set(inspector.get_table_names())
+            capability_columns = {
+                column["name"] for column in inspector.get_columns("capabilities")
+            }
+            agent_columns = {column["name"] for column in inspector.get_columns("agents")}
+            capability_row = (
+                connection.execute(
+                    text("SELECT key, tool_grants FROM capabilities WHERE key = :key"),
+                    {"key": "legacy_report_lookup"},
+                )
+                .mappings()
+                .one()
+            )
+            agent_refs = connection.execute(
+                text("SELECT capabilities FROM agents WHERE key = :key"),
+                {"key": "legacy_agent"},
+            ).scalar_one()
+
+        assert "skills" not in table_names
+        assert "tool_definitions" not in capability_columns
+        assert "skills" not in agent_columns
+        assert capability_row["tool_grants"] == [{"tool": "ledger.reports.lookup"}]
+        assert agent_refs == [
+            {
+                "capabilityId": capability_id,
+                "capabilityKey": "legacy_report_lookup",
+                "capabilityVersion": 1,
+            }
+        ]
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT COUNT(*) FROM capabilities")).scalar_one() == 1
+    finally:
+        engine.dispose()
+
+
+def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_data(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE skills (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    key VARCHAR(120) NOT NULL,
+                    version INTEGER NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    tool_definitions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE capabilities (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    key VARCHAR(120) NOT NULL,
+                    version INTEGER NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    tool_grants JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO skills (key, version, status, name, tool_definitions) "
+                "VALUES ('legacy_capability', 1, 'published', 'Legacy', '[]'::jsonb)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO capabilities (key, version, status, name, tool_grants) "
+                "VALUES ('canonical_capability', 1, 'published', 'Canonical', '[]'::jsonb)"
+            )
+
+        with pytest.raises(RuntimeError, match="legacy Skill storage and canonical Capability"):
+            init_db(database_url)
     finally:
         engine.dispose()
 
@@ -571,7 +769,7 @@ def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: s
 
         assert first_snapshot == {
             "output_schema_keys": [_LIVE_OUTPUT_SCHEMA_KEY],
-            "skill_keys": [_LIVE_SKILL_KEY],
+            "capability_keys": [_LIVE_CAPABILITY_KEY],
             "mcp_server_keys": [_LIVE_MCP_SERVER_KEY],
             "agent_keys": [_LIVE_AGENT_KEY],
             "workflow_keys": [_LIVE_WORKFLOW_KEY],
@@ -597,7 +795,7 @@ def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: s
         engine.dispose()
 
 
-def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
+def test_init_db_repairs_custom_key_stale_capability_tool_grants_idempotently(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -605,21 +803,21 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
 
     try:
         with engine.begin() as connection:
-            stale_skill_id = connection.execute(
+            stale_capability_id = connection.execute(
                 text(
-                    "INSERT INTO skills ("
-                    "key, version, status, name, description, tool_definitions, "
+                    "INSERT INTO capabilities ("
+                    "key, version, status, name, description, tool_grants, "
                     "created_at, updated_at"
                     ") VALUES ("
-                    ":key, 1, 'draft', :name, :description, CAST(:tool_definitions AS jsonb), "
+                    ":key, 1, 'draft', :name, :description, CAST(:tool_grants AS jsonb), "
                     "NOW(), NOW()"
                     ") RETURNING id"
                 ),
                 {
                     "key": _CUSTOM_STALE_SKILL_KEY,
                     "name": "Stock Analysis Workspace Verify",
-                    "description": "Custom-key stale tool definition repaired during startup.",
-                    "tool_definitions": json.dumps(
+                    "description": "Custom-key stale tool grant repaired during startup.",
+                    "tool_grants": json.dumps(
                         [{"tool": _RETIRED_REPORT_LOOKUP_TOOL}],
                         separators=(",", ":"),
                     ),
@@ -632,18 +830,18 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
             first_row = (
                 connection.execute(
                     text(
-                        "SELECT key, version, status, tool_definitions, ctid::text AS row_pointer "
-                        "FROM skills WHERE id = :skill_id"
+                        "SELECT key, version, status, tool_grants, ctid::text AS row_pointer "
+                        "FROM capabilities WHERE id = :capability_id"
                     ),
-                    {"skill_id": stale_skill_id},
+                    {"capability_id": stale_capability_id},
                 )
                 .mappings()
                 .one()
             )
             retired_reference_count = connection.execute(
                 text(
-                    "SELECT COUNT(*) FROM skills "
-                    "WHERE tool_definitions @> CAST(:retired_tool_filter AS jsonb)"
+                    "SELECT COUNT(*) FROM capabilities "
+                    "WHERE tool_grants @> CAST(:retired_tool_filter AS jsonb)"
                 ),
                 {
                     "retired_tool_filter": json.dumps(
@@ -656,7 +854,7 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
         assert first_row["key"] == _CUSTOM_STALE_SKILL_KEY
         assert first_row["version"] == 1
         assert first_row["status"] == "draft"
-        assert first_row["tool_definitions"] == [{"tool": _REPAIRED_REPORT_LOOKUP_TOOL}]
+        assert first_row["tool_grants"] == [{"tool": _REPAIRED_REPORT_LOOKUP_TOOL}]
         assert retired_reference_count == 0
 
         init_db(database_url)
@@ -665,16 +863,16 @@ def test_init_db_repairs_custom_key_stale_skill_tool_definitions_idempotently(
             second_row = (
                 connection.execute(
                     text(
-                        "SELECT tool_definitions, ctid::text AS row_pointer "
-                        "FROM skills WHERE id = :skill_id"
+                        "SELECT tool_grants, ctid::text AS row_pointer "
+                        "FROM capabilities WHERE id = :capability_id"
                     ),
-                    {"skill_id": stale_skill_id},
+                    {"capability_id": stale_capability_id},
                 )
                 .mappings()
                 .one()
             )
 
-        assert second_row["tool_definitions"] == first_row["tool_definitions"]
+        assert second_row["tool_grants"] == first_row["tool_grants"]
         assert second_row["row_pointer"] == first_row["row_pointer"]
     finally:
         engine.dispose()
@@ -1141,12 +1339,14 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
                 text(
                     "INSERT INTO agents ("
                     "key, version, status, name, description, model_connection_id, model, "
-                    "system_prompt, input_schema, output_schema_id, output_schema_version, skills, "
+                    "system_prompt, input_schema, output_schema_id, "
+                    "output_schema_version, capabilities, "
                     "mcp_servers, budget_usd"
                     ") VALUES ("
                     ":key, :version, :status, :name, :description, NULL, :model, "
                     ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
-                    ":output_schema_version, CAST(:skills AS jsonb), CAST(:mcp_servers AS jsonb), "
+                    ":output_schema_version, CAST(:capabilities AS jsonb), "
+                    "CAST(:mcp_servers AS jsonb), "
                     ":budget_usd"
                     ")"
                 ),
@@ -1161,7 +1361,7 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
                     "input_schema": '{"type":"object"}',
                     "output_schema_id": 1,
                     "output_schema_version": 1,
-                    "skills": "[]",
+                    "capabilities": "[]",
                     "mcp_servers": "[]",
                     "budget_usd": 0,
                 },
@@ -1229,12 +1429,14 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                 text(
                     "INSERT INTO agents ("
                     "key, version, status, name, description, model_connection_id, model, "
-                    "system_prompt, input_schema, output_schema_id, output_schema_version, skills, "
+                    "system_prompt, input_schema, output_schema_id, "
+                    "output_schema_version, capabilities, "
                     "mcp_servers, budget_usd"
                     ") VALUES ("
                     ":key, :version, :status, :name, :description, :model_connection_id, :model, "
                     ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
-                    ":output_schema_version, CAST(:skills AS jsonb), CAST(:mcp_servers AS jsonb), "
+                    ":output_schema_version, CAST(:capabilities AS jsonb), "
+                    "CAST(:mcp_servers AS jsonb), "
                     ":budget_usd"
                     ")"
                 ),
@@ -1250,7 +1452,7 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "input_schema": '{"type":"object"}',
                     "output_schema_id": 1,
                     "output_schema_version": 1,
-                    "skills": "[]",
+                    "capabilities": "[]",
                     "mcp_servers": "[]",
                     "budget_usd": 0,
                 },
