@@ -44,9 +44,9 @@ Backend API routes:
 ## Response and compatibility notes
 
 - JSON is camelCase externally.
-- Capabilities are canonical. `/api/capabilities` emits `toolGrants`; `/api/skills` remains a legacy alias that emits `toolDefinitions`.
-- Frontend `/skills*` routes are compatibility redirects to `/capabilities*`.
-- Canonical manifests use `spec.capabilities`; legacy `spec.skills` is import-only when `spec.capabilities` is absent.
+- Capabilities are canonical. `/api/capabilities` emits `toolGrants`; `/api/skills` and `toolDefinitions` are retired and unsupported.
+- Frontend `/capabilities*` routes are canonical. `/skills*` routes are retired and unsupported.
+- Manifests use `spec.capabilities`; `spec.skills` is retired and rejected.
 - Runtime tool keys and OpenAI function names stay unchanged.
 - Runs expose typed input, per-step outputs, final output, status, timing, and trace identifiers through the current run schemas.
 - Retired `/api/v1/orchestration/*` and `/api/v2/*` surfaces are not part of the current contract and should not be treated as live documentation targets.

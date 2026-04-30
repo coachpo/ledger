@@ -14,13 +14,13 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 - Frontend routes for `portfolios`, `templates`, `reports`, and the agent-platform routes for `agents`, `capabilities`, `mcp-servers`, `model-connections`, `output-schemas`, `workflows`, and `runs`
 - Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
-- Backend `/api/*` platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs; `/api/skills` remains a legacy compatibility alias
+- Backend `/api/*` platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs
 
-## Capability Compatibility
+## Capability Contract
 
 Capabilities are the canonical product and API term for agent tool-grant configuration. `/api/capabilities` returns Capability-shaped payloads with `toolGrants`.
 
-Legacy Skill aliases remain for one compatibility window: `/api/skills` still serves the same persisted rows with legacy `toolDefinitions`, frontend `/skills*` routes redirect to `/capabilities*`, and imported manifests may use `spec.skills` only when `spec.capabilities` is absent. Runtime tool grant keys and OpenAI function names stay unchanged.
+Legacy Skill contracts are unsupported after the hard cutover. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must use `toolGrants`. Runtime tool grant keys and OpenAI function names stay unchanged.
 
 ## Prerequisites
 
@@ -113,7 +113,7 @@ Visit `http://127.0.0.1:25173/`.
 ## Runtime Notes
 
 - The normal browser-facing execution surfaces are the agent-platform routes for agents, capabilities, MCP servers, model-connections, output-schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
-- Canonical agent manifests use `spec.capabilities`; legacy `spec.skills` is accepted for import compatibility only when `spec.capabilities` is absent.
+- Agent manifests use `spec.capabilities`; `spec.skills` is rejected as a retired contract.
 - Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
