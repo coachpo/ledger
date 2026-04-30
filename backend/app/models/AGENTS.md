@@ -17,7 +17,7 @@
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
-| Platform config entities | `skill.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned capabilities, MCP servers, saved model connections, and output schemas; `skill.py` keeps the deferred physical table name |
+| Platform config entities | `capability.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned capabilities, MCP servers, saved model connections, and output schemas |
 | Platform execution entities | `agent.py`, `workflow.py`, `run.py` | versioned agents and workflows plus persisted run detail |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
@@ -33,7 +33,7 @@
 - Do not omit indexes for frequently queried lookup paths.
 - Do not create relationships just for convenience when ids suffice.
 - Do not rename tables or columns casually; tests and upgrade helpers depend on them.
-- Do not rename deferred capability storage names in docs as if implementation already changed. The physical `skills` table and related stored keys remain intentional compatibility details until a later migration.
+- Do not document retired capability storage names as live behavior. The canonical persisted table is `capabilities`, agent capability grants are stored on `agents.capabilities`, and capability grant payloads use `tool_grants`.
 
 ## VALIDATION
 ```bash

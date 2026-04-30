@@ -33,7 +33,7 @@ backend/
 |---|---|---|
 | API route handlers | `app/api/AGENTS.md` | route handler rules, service delegation, error translation |
 | Service construction | `app/api/dependencies.py` | constructs CRUD, template, report, model-connection, agent-platform, and quote-provider services |
-| Platform route families | `app/api/agents.py`, `app/api/skills.py`, `app/api/mcp_servers.py`, `app/api/model_connections.py`, `app/api/output_schemas.py`, `app/api/workflows.py`, `app/api/runs.py` | agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs; `app/api/skills.py` also keeps `/api/skills` compatibility |
+| Platform route families | `app/api/agents.py`, `app/api/capabilities.py`, `app/api/mcp_servers.py`, `app/api/model_connections.py`, `app/api/output_schemas.py`, `app/api/workflows.py`, `app/api/runs.py` | agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs |
 | Preserved v1 route families | `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
 | Shared config / errors / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, decimal/symbol/currency helpers |
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades |
@@ -51,7 +51,7 @@ backend/
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics.
 - Legacy orchestration, Studio, Tryout, and runtime-v2 routes are retired. Keep docs aligned with the current agent-platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
-- Capabilities are canonical in backend API docs. Use Skill wording only for `/api/skills`, legacy `toolDefinitions`, `spec.skills` import compatibility, deferred physical names such as `skills` and `agents.skills`, or historical context.
+- Capabilities are canonical in backend API docs. Use `/api/capabilities`, `toolGrants`, `spec.capabilities`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, and `capabilities` storage for live behavior. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`ChatOpenAI`, `OpenAI`) rather than ad-hoc raw HTTP request code.
 
 ## ANTI-PATTERNS
