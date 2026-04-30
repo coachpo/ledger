@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.agent import Agent
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
-from app.models.skill import Skill
 from app.models.workflow import Workflow
 from app.schemas.workflow import WorkflowCreate
 from app.services.execution_plan_builder import ExecutionPlanBuilder
@@ -48,14 +48,14 @@ def _build_agent_platform_output_schema(*, key: str, version: int, status: str) 
     )
 
 
-def _build_agent_platform_skill(*, key: str, version: int, status: str) -> Skill:
-    return Skill(
+def _build_agent_platform_skill(*, key: str, version: int, status: str) -> Capability:
+    return Capability(
         key=key,
         version=version,
         status=status,
         name=f"{key}-{version}",
-        description="Skill toolset",
-        tool_definitions=[{"tool": "ledger.market_data.quote_lookup"}],
+        description="Capability toolset",
+        tool_grants=[{"tool": "ledger.market_data.quote_lookup"}],
     )
 
 
@@ -106,7 +106,7 @@ def _build_agent_platform_agent(
     version: int,
     status: str,
     output_schema: OutputSchema,
-    skill: Skill,
+    skill: Capability,
     mcp_server: McpServer,
     model_connection: ModelConnection | None = None,
     input_schema: dict[str, Any] | None = None,
@@ -134,7 +134,13 @@ def _build_agent_platform_agent(
         },
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[{"skillId": skill.id, "skillKey": skill.key, "skillVersion": skill.version}],
+        capabilities=[
+            {
+                "capabilityId": skill.id,
+                "capabilityKey": skill.key,
+                "capabilityVersion": skill.version,
+            }
+        ],
         mcp_servers=[
             {
                 "mcpServerId": mcp_server.id,
