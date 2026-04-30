@@ -16,7 +16,7 @@
 | Symbol-name cache queries | `symbol_name_cache.py` | symbol lookup plus `insert_if_missing()` |
 | Text-template queries | `text_template.py` | list_all, get_by_name |
 | Report queries | `report.py` | newest-first listing, slug lookup, and name lookup |
-| Platform config queries | `skill.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned catalog reads, saved model connections, and lifecycle lookups |
+| Platform config queries | `capability.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned catalog reads, saved model connections, and lifecycle lookups |
 | Platform execution queries | `agent.py`, `workflow.py`, `run.py` | version pinning, workflow reads, and run list/detail helpers |
 ## CONVENTIONS
 - Each repository is constructed with a `Session` and exposes query methods.

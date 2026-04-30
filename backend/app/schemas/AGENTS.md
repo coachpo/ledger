@@ -16,7 +16,7 @@
 | CSV import schemas | `csv_import.py` | preview and commit payloads |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
-| Agent-platform schemas | `agent.py`, `skill.py`, `mcp_server.py`, `output_schema.py`, `workflow.py`, `run.py` | current `/api/*` request and response models |
+| Agent-platform schemas | `agent.py`, `capability.py`, `mcp_server.py`, `output_schema.py`, `workflow.py`, `run.py` | current `/api/*` request and response models |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
 ## CONVENTIONS

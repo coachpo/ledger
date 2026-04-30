@@ -18,7 +18,7 @@
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote provider contract | `quote_provider.py` | provider protocol, DTOs, Yahoo Finance adapter, provider errors |
-| Agent-platform catalog services | `agent_service.py`, `skill_service.py`, `mcp_server_service.py`, `output_schema_service.py`, `workflow_service.py` | immutable versioned CRUD and validation; `skill_service.py` backs canonical capabilities while storage names are deferred |
+| Agent-platform catalog services | `agent_service.py`, `capability_service.py`, `mcp_server_service.py`, `output_schema_service.py`, `workflow_service.py` | immutable versioned CRUD and validation for agents, capabilities, MCP servers, output schemas, and workflows |
 | Run execution service | `run_service.py` | persisted run lifecycle, per-step detail, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
@@ -34,7 +34,7 @@
 - `TemplateCompilerService` resolves the `{{portfolios...}}` and `{{reports...}}` placeholder contract against repositories and powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
 - `ReportService` treats compiled reports as timestamped snapshots, uploaded reports as slug-addressed markdown documents with optional metadata, and external JSON reports as first-class persisted sources.
 - Agent-platform services keep versioned config immutable, validate typed contracts before save, preserve secret-safe model-connection semantics, and keep run persistence detailed enough for the run monitor.
-- Capability terminology is canonical in service docs and API-facing examples. Keep `skill_service.py`, `skills`, `agents.skills`, `skillId`, `skillKey`, and `skillVersion` references only when describing deferred storage or code-level compatibility.
+- Capability terminology is canonical in service docs and API-facing examples. Use `capability_service.py`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, `capabilities`, `toolGrants`, `capabilityId`, `capabilityKey`, and `capabilityVersion` for live behavior.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from model connections.
 
 ## ANTI-PATTERNS
