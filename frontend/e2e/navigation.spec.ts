@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const platformRoutes = [
   { pageTestId: "platform-agents-page", testId: "nav-agents", url: /\/agents$/ },
-  { pageTestId: "platform-skills-page", testId: "nav-skills", url: /\/skills$/ },
+  {
+    pageTestId: "platform-capabilities-page",
+    testId: "nav-capabilities",
+    url: /\/capabilities$/,
+  },
   {
     pageTestId: "platform-mcp-servers-page",
     testId: "nav-mcp-servers",

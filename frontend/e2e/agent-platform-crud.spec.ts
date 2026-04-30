@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-import type { SkillRead } from "../src/lib/types/skill";
+import type { CapabilityRead } from "../src/lib/types/capability";
 
 const PLATFORM_API = "http://127.0.0.1:8001/api";
 
@@ -84,25 +84,25 @@ async function createModelConnection(
   return (await response.json()) as ModelConnectionRead;
 }
 
-async function createAndActivateSkill(
+async function createAndActivateCapability(
   request: APIRequestContext,
   key: string,
-): Promise<SkillRead> {
-  const createResponse = await request.post(`${PLATFORM_API}/skills`, {
+): Promise<CapabilityRead> {
+  const createResponse = await request.post(`${PLATFORM_API}/capabilities`, {
     data: {
       key,
-      name: `Skill ${key}`,
+      name: `Capability ${key}`,
       description: "Condenses responses.",
-      toolDefinitions: [{ tool: "ledger.market_data.quote_lookup" }],
+      toolGrants: [{ tool: "ledger.market_data.quote_lookup" }],
     },
   });
 
   expect(createResponse.ok()).toBeTruthy();
-  const created = (await createResponse.json()) as SkillRead;
+  const created = (await createResponse.json()) as CapabilityRead;
 
-  const activateResponse = await request.post(`${PLATFORM_API}/skills/${created.id}/activate`);
+  const activateResponse = await request.post(`${PLATFORM_API}/capabilities/${created.id}/activate`);
   expect(activateResponse.ok()).toBeTruthy();
-  return (await activateResponse.json()) as SkillRead;
+  return (await activateResponse.json()) as CapabilityRead;
 }
 
 async function createAndActivateMcpServer(
@@ -133,7 +133,7 @@ async function expectLegacyAgentAuthoringAbsent(page: Page) {
   await expect(page.getByTestId("agents-editor")).toHaveCount(0);
   await expect(page.getByLabel("Input Schema JSON")).toHaveCount(0);
   await expect(page.getByLabel("Sample Input JSON")).toHaveCount(0);
-  await expect(page.getByLabel("Skills")).toHaveCount(0);
+  await expect(page.getByLabel("Capabilities")).toHaveCount(0);
   await expect(page.getByLabel("MCP Servers")).toHaveCount(0);
   await expect(page.getByTestId("agent-input-schema-raw-json")).toHaveCount(0);
   await expect(page.getByTestId("output-schema-add-field")).toHaveCount(0);
@@ -162,7 +162,7 @@ function agentManifest(options: {
   modelConnectionKey: string;
   name: string;
   outputSchemaRef: string;
-  skillRef: string;
+  capabilityRef: string;
   systemPrompt: string;
 }): string {
   return `apiVersion: ledger.agent/v1
@@ -184,8 +184,8 @@ spec:
       - ticker
     additionalProperties: false
   outputSchema: ${options.outputSchemaRef}
-  skills:
-    - ${options.skillRef}
+  capabilities:
+    - ${options.capabilityRef}
   mcpServers:
     - ${options.mcpServerRef}
   budgetUsd: "0.25"
@@ -200,13 +200,13 @@ test.describe("Agent platform CRUD flows", () => {
     const timestamp = Date.now();
     const outputSchema = await createOutputSchema(request, `summary_schema_${timestamp}`);
     const modelConnection = await createModelConnection(request, `macro_model_${timestamp}`);
-    const skillKey = `summarize_skill_${timestamp}`;
+    const capabilityKey = `summarize_capability_${timestamp}`;
     const serverKey = `quotes_mcp_${timestamp}`;
     const agentKey = `macro_agent_${timestamp}`;
     const duplicateAgentKey = `macro_agent_copy_${timestamp}`;
     let createdRunPayload: Record<string, unknown> | null = null;
     let createdRunRequestUrl: string | null = null;
-    const skill = await createAndActivateSkill(request, skillKey);
+    const capability = await createAndActivateCapability(request, capabilityKey);
     const server = await createAndActivateMcpServer(request, serverKey);
     const initialManifest = agentManifest({
       description: "Tracks macro context.",
@@ -215,7 +215,7 @@ test.describe("Agent platform CRUD flows", () => {
       modelConnectionKey: modelConnection.key,
       name: `Macro Agent ${timestamp}`,
       outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
-      skillRef: `${skill.key}@${skill.version}`,
+      capabilityRef: `${capability.key}@${capability.version}`,
       systemPrompt: "Summarize macro context clearly.",
     });
     const duplicateManifest = agentManifest({
@@ -225,13 +225,13 @@ test.describe("Agent platform CRUD flows", () => {
       modelConnectionKey: modelConnection.key,
       name: `Macro Agent ${timestamp} Copy`,
       outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
-      skillRef: `${skill.key}@${skill.version}`,
+      capabilityRef: `${capability.key}@${capability.version}`,
       systemPrompt: "Summarize macro context clearly.",
     });
 
-    await page.route(/\/api\/skills(?:\?.*)?$/, async (route) => {
+    await page.route(/\/api\/capabilities(?:\?.*)?$/, async (route) => {
       await route.fulfill({
-        body: JSON.stringify({ items: [skill] }),
+        body: JSON.stringify({ items: [capability] }),
         contentType: "application/json",
       });
     });
@@ -303,8 +303,12 @@ test.describe("Agent platform CRUD flows", () => {
       });
     });
 
-    await page.goto(`/skills/${skill.id}/edit`);
-    await expect(page).toHaveURL(new RegExp(`/skills/${skill.id}/edit$`));
+    await page.goto("/skills");
+    await expect(page).toHaveURL(/\/capabilities$/);
+    await page.goto("/skills/new");
+    await expect(page).toHaveURL(/\/capabilities\/new$/);
+    await page.goto(`/skills/${capability.id}/edit`);
+    await expect(page).toHaveURL(new RegExp(`/capabilities/${capability.id}/edit$`));
 
     await page.goto(`/mcp-servers/${server.id}/edit`);
     await expect(page).toHaveURL(new RegExp(`/mcp-servers/${server.id}/edit$`));

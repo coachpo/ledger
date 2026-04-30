@@ -13,7 +13,7 @@ type OutputSchemaRead = {
   version: number;
 };
 
-type SkillRead = {
+type CapabilityRead = {
   id: number;
   key: string;
   version: number;
@@ -64,21 +64,24 @@ async function createPublishedOutputSchema(request: APIRequestContext, key: stri
   return (await activateResponse.json()) as OutputSchemaRead;
 }
 
-async function createPublishedSkill(request: APIRequestContext, key: string): Promise<SkillRead> {
-  const createResponse = await request.post(`${PLATFORM_API}/skills`, {
+async function createPublishedCapability(
+  request: APIRequestContext,
+  key: string,
+): Promise<CapabilityRead> {
+  const createResponse = await request.post(`${PLATFORM_API}/capabilities`, {
     data: {
       description: "Summarizes deterministic E2E inputs.",
       key,
-      name: `Skill ${key}`,
-      toolDefinitions: [{ tool: "ledger.market_data.quote_lookup" }],
+      name: `Capability ${key}`,
+      toolGrants: [{ tool: "ledger.market_data.quote_lookup" }],
     },
   });
 
   expect(createResponse.ok()).toBeTruthy();
-  const draft = (await createResponse.json()) as SkillRead;
-  const activateResponse = await request.post(`${PLATFORM_API}/skills/${draft.id}/activate`);
+  const draft = (await createResponse.json()) as CapabilityRead;
+  const activateResponse = await request.post(`${PLATFORM_API}/capabilities/${draft.id}/activate`);
   expect(activateResponse.ok()).toBeTruthy();
-  return (await activateResponse.json()) as SkillRead;
+  return (await activateResponse.json()) as CapabilityRead;
 }
 
 async function createPublishedMcpServer(request: APIRequestContext, key: string): Promise<McpServerRead> {
@@ -108,7 +111,7 @@ function agentManifest(options: {
   modelConnectionKey: string;
   name: string;
   outputSchemaRef: string;
-  skillRef: string;
+  capabilityRef: string;
   systemPrompt: string;
 }): string {
   return `apiVersion: ledger.agent/v1
@@ -130,8 +133,8 @@ spec:
       - ticker
     additionalProperties: false
   outputSchema: ${options.outputSchemaRef}
-  skills:
-    - ${options.skillRef}
+  capabilities:
+    - ${options.capabilityRef}
   mcpServers:
     - ${options.mcpServerRef}
   budgetUsd: "0.25"
@@ -165,7 +168,7 @@ test.describe("Agent YAML editor", () => {
     const timestamp = Date.now();
     const modelConnection = await createModelConnection(request, `agent_yaml_model_${timestamp}`);
     const outputSchema = await createPublishedOutputSchema(request, `agent_yaml_schema_${timestamp}`);
-    const skill = await createPublishedSkill(request, `agent_yaml_skill_${timestamp}`);
+    const capability = await createPublishedCapability(request, `agent_yaml_capability_${timestamp}`);
     const mcpServer = await createPublishedMcpServer(request, `agent_yaml_mcp_${timestamp}`);
     const agentKey = `agent_yaml_${timestamp}`;
     const initialManifest = agentManifest({
@@ -175,7 +178,7 @@ test.describe("Agent YAML editor", () => {
       modelConnectionKey: modelConnection.key,
       name: `Agent YAML ${timestamp}`,
       outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
-      skillRef: `${skill.key}@${skill.version}`,
+      capabilityRef: `${capability.key}@${capability.version}`,
       systemPrompt: "Summarize the requested ticker.",
     });
     const editedManifest = agentManifest({
@@ -185,7 +188,7 @@ test.describe("Agent YAML editor", () => {
       modelConnectionKey: modelConnection.key,
       name: `Agent YAML ${timestamp}`,
       outputSchemaRef: `${outputSchema.key}@${outputSchema.version}`,
-      skillRef: `${skill.key}@${skill.version}`,
+      capabilityRef: `${capability.key}@${capability.version}`,
       systemPrompt: "Summarize the requested ticker with one actionable note.",
     });
     let runPayload: Record<string, unknown> | null = null;

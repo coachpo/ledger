@@ -91,7 +91,7 @@ spec:
       - ticker
     additionalProperties: false
   outputSchema: ${options.outputSchemaKey}@${options.outputSchemaVersion}
-  skills: []
+  capabilities: []
   mcpServers: []
   budgetUsd: "0.25"
 `;
