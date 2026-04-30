@@ -303,12 +303,13 @@ test.describe("Agent platform CRUD flows", () => {
       });
     });
 
-    await page.goto("/skills");
-    await expect(page).toHaveURL(/\/capabilities$/);
-    await page.goto("/skills/new");
-    await expect(page).toHaveURL(/\/capabilities\/new$/);
-    await page.goto(`/skills/${capability.id}/edit`);
-    await expect(page).toHaveURL(new RegExp(`/capabilities/${capability.id}/edit$`));
+    for (const staleSkillPath of ["/skills", "/skills/new", `/skills/${capability.id}/edit`]) {
+      await page.goto(staleSkillPath);
+      expect(new URL(page.url()).pathname).toBe(staleSkillPath);
+      await expect(page.getByText("404 Not Found")).toBeVisible();
+      await expect(page.getByTestId("platform-capabilities-page")).toHaveCount(0);
+      await expect(page.getByTestId("capabilities-editor")).toHaveCount(0);
+    }
 
     await page.goto(`/mcp-servers/${server.id}/edit`);
     await expect(page).toHaveURL(new RegExp(`/mcp-servers/${server.id}/edit$`));
