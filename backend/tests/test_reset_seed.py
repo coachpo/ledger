@@ -5,12 +5,12 @@ from sqlalchemy import select
 from app.db.session import get_session_factory, init_db, reset_db_caches
 from app.models.agent import Agent
 from app.models.balance import Balance
+from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.output_schema import OutputSchema
 from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
-from app.models.skill import Skill
 from app.models.text_template import TextTemplate
 from app.models.workflow import Workflow
 from app.reset_seed import reset_and_seed_database
@@ -39,7 +39,7 @@ def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_works
     assert summary.portfolio_slugs == ()
     assert summary.template_names == ()
     assert summary.output_schema_keys == ()
-    assert summary.skill_keys == ()
+    assert summary.capability_keys == ()
     assert summary.mcp_server_keys == ()
     assert summary.agent_keys == ()
     assert summary.report_slugs == ()
@@ -55,6 +55,6 @@ def test_reset_and_seed_database_replaces_existing_data_with_a_clean_empty_works
         assert session.scalars(select(Report)).all() == []
         assert session.scalars(select(Workflow)).all() == []
         assert session.scalars(select(OutputSchema)).all() == []
-        assert session.scalars(select(Skill)).all() == []
+        assert session.scalars(select(Capability)).all() == []
         assert session.scalars(select(McpServer)).all() == []
         assert session.scalars(select(Agent)).all() == []

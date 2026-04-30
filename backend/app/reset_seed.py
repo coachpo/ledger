@@ -25,7 +25,7 @@ STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS = (
 STOCK_ANALYSIS_SYNTHESIZER_KEY = "decision_synthesizer"
 STOCK_ANALYSIS_NOTE_SCHEMA_KEY = "stock_analysis_note"
 TRADING_DECISION_SCHEMA_KEY = "trading_decision"
-STOCK_ANALYSIS_SKILL_KEY = "stock_analysis_tools"
+STOCK_ANALYSIS_CAPABILITY_KEY = "stock_analysis_tools"
 STOCK_ANALYSIS_MCP_SERVER_KEY = "stock_analysis_data"
 STARTER_TEMPLATE_NAMES = (
     "Mag7 Portfolio Snapshot",
@@ -47,7 +47,7 @@ class ResetSeedSummary:
     portfolio_slugs: tuple[str, ...]
     template_names: tuple[str, ...]
     output_schema_keys: tuple[str, ...]
-    skill_keys: tuple[str, ...]
+    capability_keys: tuple[str, ...]
     mcp_server_keys: tuple[str, ...]
     agent_keys: tuple[str, ...]
     report_slugs: tuple[str, ...]
@@ -101,7 +101,7 @@ def seed_initial_data(database_url: str | None = None) -> ResetSeedSummary:
         portfolio_slugs=(),
         template_names=(),
         output_schema_keys=(),
-        skill_keys=(),
+        capability_keys=(),
         mcp_server_keys=(),
         agent_keys=(),
         report_slugs=(),
@@ -141,7 +141,7 @@ def main() -> int:
     print(f"Reports: {', '.join(summary.report_slugs)}")
     print(f"Workflows: {', '.join(summary.workflow_keys)}")
     print(f"Output schemas: {', '.join(summary.output_schema_keys)}")
-    print(f"Skills: {', '.join(summary.skill_keys)}")
+    print(f"Capabilities: {', '.join(summary.capability_keys)}")
     print(f"MCP servers: {', '.join(summary.mcp_server_keys)}")
     print(f"Agents: {', '.join(summary.agent_keys)}")
     return 0
