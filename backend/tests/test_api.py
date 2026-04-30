@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.agents.mcp import McpClientBoundary, McpConnectionTestResult
 from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
 from app.db.session import init_db, validate_supported_database_engine
+from app.models.capability import Capability
 from app.models.market_quote import MarketQuote
-from app.models.skill import Skill
 from app.models.symbol_name_cache import SymbolNameCache
 from app.services.quote_provider import (
     ProviderHistoryPoint,
@@ -145,18 +145,18 @@ class _FakeMcpConnectionTester:
         return McpConnectionTestResult(ok=self.ok, message=self.message)
 
 
-def create_skill(
+def create_capability(
     client: TestClient,
     *,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    response = client.post("/api/skills", json=payload)
+    response = client.post("/api/capabilities", json=payload)
     assert response.status_code == 201, response.json()
     return response.json()
 
 
-def activate_skill(client: TestClient, skill_id: int | str) -> dict[str, object]:
-    response = client.post(f"/api/skills/{skill_id}/activate")
+def activate_capability(client: TestClient, capability_id: int | str) -> dict[str, object]:
+    response = client.post(f"/api/capabilities/{capability_id}/activate")
     assert response.status_code == 200, response.json()
     return response.json()
 
@@ -250,13 +250,13 @@ def _agent_manifest_source(payload: dict[str, object]) -> str:
     output_schema_version = _coerce_manifest_version(payload.get("outputSchemaVersion"))
     capability_refs = cast(
         list[dict[str, object]],
-        payload.get("capabilities") or payload.get("skills") or [],
+        payload.get("capabilities") or [],
     )
     mcp_server_refs = cast(list[dict[str, object]], payload.get("mcpServers") or [])
     capability_lines = [
         (
-            f"    - {ref.get('capabilityKey') or ref['skillKey']}@"
-            f"{_coerce_manifest_version(ref.get('capabilityVersion') or ref.get('skillVersion'))}"
+            f"    - {ref['capabilityKey']}@"
+            f"{_coerce_manifest_version(ref.get('capabilityVersion'))}"
         )
         for ref in capability_refs
     ]
@@ -329,9 +329,9 @@ STUB_ANALYSIS_AGENT_KEYS = ("report_researcher", "market_researcher")
 STUB_SYNTHESIZER_KEY = "decision_synthesizer"
 STUB_NOTE_SCHEMA_KEY = "stub_analysis_note"
 STUB_DECISION_SCHEMA_KEY = "stub_trading_decision"
-STUB_SKILL_KEY = "stub_workspace_tools"
+STUB_CAPABILITY_KEY = "stub_workspace_tools"
 STUB_MCP_SERVER_KEY = "stub_workspace_data"
-STALE_SKILL_KEY = "stock_analysis_ws1_verify"
+STALE_CAPABILITY_KEY = "stock_analysis_ws1_verify"
 RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
 REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
 POSITION_LOOKUP_DISPLAY_NAME = "Position Lookup"
@@ -405,7 +405,7 @@ def _stub_agent_payload(
         "systemPrompt": f"Return the deterministic stub analysis for {key}.",
         "inputSchema": _stub_workflow_input_schema(),
         "outputSchemaKey": STUB_NOTE_SCHEMA_KEY,
-        "skills": [{"skillKey": STUB_SKILL_KEY}],
+        "capabilities": [{"capabilityKey": STUB_CAPABILITY_KEY}],
         "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
         "budgetUsd": "0.05000000",
     }
@@ -425,7 +425,7 @@ def _stub_synthesizer_payload(
         "systemPrompt": "Combine the wired analyses into a deterministic trading decision.",
         "inputSchema": _stub_synthesizer_input_schema(),
         "outputSchemaKey": STUB_DECISION_SCHEMA_KEY,
-        "skills": [{"skillKey": STUB_SKILL_KEY}],
+        "capabilities": [{"capabilityKey": STUB_CAPABILITY_KEY}],
         "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
         "budgetUsd": "0.10000000",
     }
@@ -511,18 +511,18 @@ def _seed_stub_platform_workflow(client: TestClient) -> None:
         },
     )
     activate_output_schema(client, cast(int, created_decision_schema["id"]))
-    created_skill = create_skill(
+    created_capability = create_capability(
         client,
         payload={
-            "key": STUB_SKILL_KEY,
+            "key": STUB_CAPABILITY_KEY,
             "name": "Stub Workspace Tools",
-            "toolDefinitions": [
+            "toolGrants": [
                 {"tool": "ledger.market_data.quote_lookup"},
                 {"tool": "ledger.reports.lookup"},
             ],
         },
     )
-    activate_skill(client, cast(int, created_skill["id"]))
+    activate_capability(client, cast(int, created_capability["id"]))
     created_mcp_server = create_mcp_server(
         client,
         payload=mcp_http_sse_payload(
@@ -574,9 +574,6 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
         "/api/capabilities",
         "/api/capabilities/{capability_id}",
         "/api/capabilities/{capability_id}/activate",
-        "/api/skills",
-        "/api/skills/{skill_id}",
-        "/api/skills/{skill_id}/activate",
         "/api/mcp-servers",
         "/api/mcp-servers/{server_id}",
         "/api/mcp-servers/{server_id}/activate",
@@ -627,7 +624,6 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
     [
         "/api/agents",
         "/api/capabilities",
-        "/api/skills",
         "/api/mcp-servers",
         "/api/output-schemas",
         "/api/workflows",
@@ -795,16 +791,16 @@ def test_agent_platform_output_schema_invalid_unsupported_keywords_return_field_
     )
 
 
-def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared_tool_metadata(
+def test_agent_platform_capability_reports_lookup_crud_routes_resolve_server_declared_tool_metadata(
     client: TestClient,
 ) -> None:
-    created = create_skill(
+    created = create_capability(
         client,
         payload={
             "key": "market_research",
             "name": "Market Research",
             "description": "Server-declared research toolset.",
-            "toolDefinitions": [
+            "toolGrants": [
                 {"tool": "ledger.market_data.quote_lookup"},
                 {"tool": "ledger.positions.lookup"},
                 {"tool": "ledger.reports.lookup"},
@@ -814,23 +810,23 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
 
     assert created["status"] == "draft"
     assert created["version"] == 1
-    created_tool_definitions = cast(list[dict[str, object]], created["toolDefinitions"])
-    assert [item["tool"] for item in created_tool_definitions] == [
+    created_tool_grants = cast(list[dict[str, object]], created["toolGrants"])
+    assert [item["tool"] for item in created_tool_grants] == [
         "ledger.market_data.quote_lookup",
         "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
-    assert created_tool_definitions[0]["displayName"] == "Market Data Quote Lookup"
-    assert created_tool_definitions[1]["displayName"] == POSITION_LOOKUP_DISPLAY_NAME
-    assert created_tool_definitions[1]["description"] == POSITION_LOOKUP_DESCRIPTION
-    assert created_tool_definitions[2]["displayName"] == REPORT_LOOKUP_DISPLAY_NAME
-    assert created_tool_definitions[2]["description"] == REPORT_LOOKUP_DESCRIPTION
+    assert created_tool_grants[0]["displayName"] == "Market Data Quote Lookup"
+    assert created_tool_grants[1]["displayName"] == POSITION_LOOKUP_DISPLAY_NAME
+    assert created_tool_grants[1]["description"] == POSITION_LOOKUP_DESCRIPTION
+    assert created_tool_grants[2]["displayName"] == REPORT_LOOKUP_DISPLAY_NAME
+    assert created_tool_grants[2]["description"] == REPORT_LOOKUP_DESCRIPTION
 
     update_response = client.patch(
-        f"/api/skills/{created['id']}",
+        f"/api/capabilities/{created['id']}",
         json={
             "name": "Market Research v2",
-            "toolDefinitions": [
+            "toolGrants": [
                 {"tool": "ledger.market_data.history_lookup"},
                 {"tool": "ledger.positions.lookup"},
                 {"tool": "ledger.reports.lookup"},
@@ -842,51 +838,49 @@ def test_agent_platform_skill_reports_lookup_crud_routes_resolve_server_declared
     assert updated["id"] != created["id"]
     assert updated["version"] == 2
     assert updated["name"] == "Market Research v2"
-    assert [item["tool"] for item in updated["toolDefinitions"]] == [
+    assert [item["tool"] for item in updated["toolGrants"]] == [
         "ledger.market_data.history_lookup",
         "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
 
-    original_detail = client.get(f"/api/skills/{created['id']}")
+    original_detail = client.get(f"/api/capabilities/{created['id']}")
     assert original_detail.status_code == 200, original_detail.json()
     assert original_detail.json()["status"] == "archived"
     assert original_detail.json()["version"] == 1
 
-    get_response = client.get(f"/api/skills/{updated['id']}")
+    get_response = client.get(f"/api/capabilities/{updated['id']}")
     assert get_response.status_code == 200, get_response.json()
     assert get_response.json() == updated
 
-    list_response = client.get("/api/skills", params={"status": "draft"})
+    list_response = client.get("/api/capabilities", params={"status": "draft"})
     assert list_response.status_code == 200, list_response.json()
     assert list_response.json()["items"] == [updated]
 
-    activated = activate_skill(client, str(updated["id"]))
+    activated = activate_capability(client, str(updated["id"]))
     assert activated["status"] == "published"
-    assert [
-        item["tool"] for item in cast(list[dict[str, object]], activated["toolDefinitions"])
-    ] == [
+    assert [item["tool"] for item in cast(list[dict[str, object]], activated["toolGrants"])] == [
         "ledger.market_data.history_lookup",
         "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
 
-    archive_response = client.delete(f"/api/skills/{updated['id']}")
+    archive_response = client.delete(f"/api/capabilities/{updated['id']}")
     assert archive_response.status_code == 200, archive_response.json()
     assert archive_response.json()["status"] == "archived"
 
 
-def test_agent_platform_skill_create_rejects_removed_tool_without_persisting_draft(
+def test_agent_platform_capability_create_rejects_removed_tool_without_persisting_draft(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     response = client.post(
-        "/api/skills",
+        "/api/capabilities",
         json={
             "key": "stock_analysis_tools",
             "name": "Stock Analysis Tools",
             "description": "Removed stock-analysis toolset should fail validation.",
-            "toolDefinitions": [{"tool": "ledger.stock_analysis.report_lookup"}],
+            "toolGrants": [{"tool": "ledger.stock_analysis.report_lookup"}],
         },
     )
 
@@ -894,33 +888,35 @@ def test_agent_platform_skill_create_rejects_removed_tool_without_persisting_dra
     body = response.json()
     assert body["code"] == "validation_error"
     assert any(
-        detail["field"] == "toolDefinitions.0.tool"
+        detail["field"] == "toolGrants.0.tool"
         and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
         for detail in body["details"]
     )
 
     with session_factory() as session:
-        assert session.query(Skill).filter(Skill.key == "stock_analysis_tools").all() == []
+        assert (
+            session.query(Capability).filter(Capability.key == "stock_analysis_tools").all() == []
+        )
 
 
-def test_agent_platform_skill_update_rejects_removed_tool_without_archiving_draft(
+def test_agent_platform_capability_update_rejects_removed_tool_without_archiving_draft(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    created = create_skill(
+    created = create_capability(
         client,
         payload={
             "key": "market_research",
             "name": "Market Research",
             "description": "Valid draft before invalid patch attempt.",
-            "toolDefinitions": [{"tool": "ledger.reports.lookup"}],
+            "toolGrants": [{"tool": "ledger.reports.lookup"}],
         },
     )
 
     response = client.patch(
-        f"/api/skills/{created['id']}",
+        f"/api/capabilities/{created['id']}",
         json={
-            "toolDefinitions": [{"tool": "ledger.stock_analysis.report_lookup"}],
+            "toolGrants": [{"tool": "ledger.stock_analysis.report_lookup"}],
         },
     )
 
@@ -928,16 +924,16 @@ def test_agent_platform_skill_update_rejects_removed_tool_without_archiving_draf
     body = response.json()
     assert body["code"] == "validation_error"
     assert any(
-        detail["field"] == "toolDefinitions.0.tool"
+        detail["field"] == "toolGrants.0.tool"
         and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
         for detail in body["details"]
     )
 
     with session_factory() as session:
         versions = (
-            session.query(Skill)
-            .filter(Skill.key == "market_research")
-            .order_by(Skill.version.asc())
+            session.query(Capability)
+            .filter(Capability.key == "market_research")
+            .order_by(Capability.version.asc())
             .all()
         )
 
@@ -947,40 +943,40 @@ def test_agent_platform_skill_update_rejects_removed_tool_without_archiving_draf
     assert versions[0].version == 1
 
 
-def test_agent_platform_skill_reads_succeed_after_startup_repairs_custom_key_stale_tool_row(
+def test_agent_platform_capability_reads_succeed_after_startup_repairs_custom_key_stale_tool_row(
     client: TestClient,
     session_factory: sessionmaker[Session],
     database_url: str,
 ) -> None:
     with session_factory() as session:
-        stale_skill = Skill(
-            key=STALE_SKILL_KEY,
+        stale_capability = Capability(
+            key=STALE_CAPABILITY_KEY,
             version=1,
             status="draft",
             name="Stock Analysis Workspace Verify",
             description="Custom-key stale row repaired during startup.",
-            tool_definitions=[{"tool": RETIRED_REPORT_LOOKUP_TOOL}],
+            tool_grants=[{"tool": RETIRED_REPORT_LOOKUP_TOOL}],
         )
-        session.add(stale_skill)
+        session.add(stale_capability)
         session.commit()
-        stale_skill_id = stale_skill.id
+        stale_capability_id = stale_capability.id
 
     init_db(database_url)
 
     with session_factory() as session:
-        repaired_skill = session.get(Skill, stale_skill_id)
+        repaired_capability = session.get(Capability, stale_capability_id)
 
-    assert repaired_skill is not None
-    assert repaired_skill.key == STALE_SKILL_KEY
-    assert repaired_skill.status == "draft"
-    assert repaired_skill.tool_definitions == [{"tool": REPAIRED_REPORT_LOOKUP_TOOL}]
+    assert repaired_capability is not None
+    assert repaired_capability.key == STALE_CAPABILITY_KEY
+    assert repaired_capability.status == "draft"
+    assert repaired_capability.tool_grants == [{"tool": REPAIRED_REPORT_LOOKUP_TOOL}]
 
-    detail_response = client.get(f"/api/skills/{stale_skill_id}")
+    detail_response = client.get(f"/api/capabilities/{stale_capability_id}")
     assert detail_response.status_code == 200, detail_response.json()
     detail_payload = detail_response.json()
-    assert detail_payload["id"] == stale_skill_id
-    assert detail_payload["key"] == STALE_SKILL_KEY
-    assert detail_payload["toolDefinitions"] == [
+    assert detail_payload["id"] == stale_capability_id
+    assert detail_payload["key"] == STALE_CAPABILITY_KEY
+    assert detail_payload["toolGrants"] == [
         {
             "tool": REPAIRED_REPORT_LOOKUP_TOOL,
             "displayName": REPORT_LOOKUP_DISPLAY_NAME,
@@ -988,7 +984,7 @@ def test_agent_platform_skill_reads_succeed_after_startup_repairs_custom_key_sta
         }
     ]
 
-    list_response = client.get("/api/skills")
+    list_response = client.get("/api/capabilities")
     assert list_response.status_code == 200, list_response.json()
     assert list_response.json()["items"] == [detail_payload]
 
@@ -1166,7 +1162,7 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
                 "additionalProperties": False,
             },
             output_schema_key=cast(str, seeded["outputSchema"]["key"]),
-            skills=[{"skillKey": seeded["skill"]["key"]}],
+            capabilities=[{"capabilityKey": seeded["capability"]["key"]}],
             mcp_servers=[{"mcpServerKey": activated_server["key"]}],
             budget_usd="0.50000000",
         ),
@@ -1221,15 +1217,15 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
     )
     output_schema = activate_output_schema(client, cast(int, created_output_schema["id"]))
 
-    created_skill = create_skill(
+    created_capability = create_capability(
         client,
         payload={
             "key": "market_research",
             "name": "Market Research",
-            "toolDefinitions": [{"tool": "ledger.market_data.quote_lookup"}],
+            "toolGrants": [{"tool": "ledger.market_data.quote_lookup"}],
         },
     )
-    skill = activate_skill(client, cast(int, created_skill["id"]))
+    capability = activate_capability(client, cast(int, created_capability["id"]))
 
     created_mcp_server = create_mcp_server(
         client,
@@ -1256,7 +1252,7 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
     )
     return {
         "outputSchema": output_schema,
-        "skill": skill,
+        "capability": capability,
         "mcpServer": mcp_server,
         "modelConnection": model_connection,
     }
@@ -1271,7 +1267,7 @@ def _agent_payload(
     system_prompt: str,
     input_schema: dict[str, object],
     output_schema_key: str,
-    skills: list[dict[str, object]],
+    capabilities: list[dict[str, object]],
     mcp_servers: list[dict[str, object]],
     include_key: bool = True,
     output_schema_version: int | None = None,
@@ -1285,7 +1281,7 @@ def _agent_payload(
         "systemPrompt": system_prompt,
         "inputSchema": input_schema,
         "outputSchemaKey": output_schema_key,
-        "skills": skills,
+        "capabilities": capabilities,
         "mcpServers": mcp_servers,
     }
     if include_key:
@@ -1319,7 +1315,7 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
             budget_usd="1.25000000",
         ),
@@ -1335,8 +1331,11 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
         cast(dict[str, object], created["outputSchema"])["id"] == dependencies["outputSchema"]["id"]
     )
     assert cast(dict[str, object], created["outputSchema"])["version"] == 1
-    assert cast(list[dict[str, object]], created["skills"])[0]["id"] == dependencies["skill"]["id"]
-    assert cast(list[dict[str, object]], created["skills"])[0]["version"] == 1
+    assert (
+        cast(list[dict[str, object]], created["capabilities"])[0]["id"]
+        == dependencies["capability"]["id"]
+    )
+    assert cast(list[dict[str, object]], created["capabilities"])[0]["version"] == 1
     assert (
         cast(list[dict[str, object]], created["mcpServers"])[0]["id"]
         == dependencies["mcpServer"]["id"]
@@ -1377,7 +1376,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -1397,12 +1396,12 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
             },
         },
     )
-    skill_v2 = create_skill(
+    capability_v2 = create_capability(
         client,
         payload={
             "key": "market_research",
             "name": "Market Research v2",
-            "toolDefinitions": [{"tool": "ledger.market_data.history_lookup"}],
+            "toolGrants": [{"tool": "ledger.market_data.history_lookup"}],
         },
     )
     mcp_server_v2 = create_mcp_server(
@@ -1435,7 +1434,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
                 output_schema_key="decision_schema",
                 include_key=False,
                 output_schema_version=2,
-                skills=[{"skillKey": "market_research", "skillVersion": 2}],
+                capabilities=[{"capabilityKey": "market_research", "capabilityVersion": 2}],
                 mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 2}],
                 budget_usd="2.50000000",
             )
@@ -1450,8 +1449,8 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
     assert updated["name"] == "Research Agent v2"
     assert cast(dict[str, object], updated["outputSchema"])["id"] == output_schema_v2["id"]
     assert cast(dict[str, object], updated["outputSchema"])["version"] == 2
-    assert cast(list[dict[str, object]], updated["skills"])[0]["id"] == skill_v2["id"]
-    assert cast(list[dict[str, object]], updated["skills"])[0]["version"] == 2
+    assert cast(list[dict[str, object]], updated["capabilities"])[0]["id"] == capability_v2["id"]
+    assert cast(list[dict[str, object]], updated["capabilities"])[0]["version"] == 2
     assert cast(list[dict[str, object]], updated["mcpServers"])[0]["id"] == mcp_server_v2["id"]
     assert cast(list[dict[str, object]], updated["mcpServers"])[0]["transport"] == "stdio"
     assert "temperature" not in updated
@@ -1465,7 +1464,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
     assert previous["version"] == 1
     assert previous["status"] == "deprecated"
     assert cast(dict[str, object], previous["outputSchema"])["version"] == 1
-    assert cast(list[dict[str, object]], previous["skills"])[0]["version"] == 1
+    assert cast(list[dict[str, object]], previous["capabilities"])[0]["version"] == 1
     assert cast(list[dict[str, object]], previous["mcpServers"])[0]["version"] == 1
 
 
@@ -1487,7 +1486,7 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -1510,7 +1509,7 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
                 },
                 output_schema_key="decision_schema",
                 include_key=False,
-                skills=[{"skillKey": "market_research"}],
+                capabilities=[{"capabilityKey": "market_research"}],
                 mcp_servers=[{"mcpServerKey": "market_data"}],
             )
         ),
@@ -1557,7 +1556,7 @@ def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
                     "allOf": [{"type": "object"}, {"type": "string"}],
                 },
                 output_schema_key="decision_schema",
-                skills=[{"skillKey": "market_research"}],
+                capabilities=[{"capabilityKey": "market_research"}],
                 mcp_servers=[{"mcpServerKey": "market_data"}],
             )
         ),
@@ -1591,7 +1590,7 @@ def test_agent_platform_agent_removed_runtime_fields_are_rejected(
                     "required": ["ticker"],
                 },
                 output_schema_key="decision_schema",
-                skills=[{"skillKey": "market_research"}],
+                capabilities=[{"capabilityKey": "market_research"}],
                 mcp_servers=[{"mcpServerKey": "market_data"}],
             ),
             "temperature": 0.2,
@@ -1625,7 +1624,7 @@ def test_agent_platform_agent_missing_output_schema_returns_field_errors(
                     "required": ["ticker"],
                 },
                 output_schema_key="missing_schema",
-                skills=[{"skillKey": "market_research", "skillVersion": 1}],
+                capabilities=[{"capabilityKey": "market_research", "capabilityVersion": 1}],
                 mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             )
         ),
@@ -1662,7 +1661,7 @@ def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resol
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
             budget_usd="1.25000000",
         ),
@@ -1747,7 +1746,7 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
             budget_usd="1.25000000",
         ),
@@ -1816,7 +1815,7 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
                 output_schema_key="decision_schema",
                 include_key=False,
                 output_schema_version=2,
-                skills=[{"skillKey": "market_research"}],
+                capabilities=[{"capabilityKey": "market_research"}],
                 mcp_servers=[{"mcpServerKey": "market_data"}],
                 budget_usd="2.50000000",
             )
@@ -1897,7 +1896,7 @@ def test_agent_platform_workflow_rejects_agent_output_kind(client: TestClient) -
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -1951,7 +1950,7 @@ def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -2014,7 +2013,7 @@ def test_agent_platform_workflow_wiring_rejects_unresolved_slots(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -2088,7 +2087,7 @@ def test_agent_platform_workflow_wiring_rejects_forward_step_references(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -2162,7 +2161,7 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
                 "required": ["ticker"],
             },
             output_schema_key="decision_schema",
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
@@ -2180,7 +2179,7 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
                 "required": ["score"],
             },
             output_schema_key=cast(str, dependencies["outputSchema"]["key"]),
-            skills=[{"skillKey": "market_research"}],
+            capabilities=[{"capabilityKey": "market_research"}],
             mcp_servers=[{"mcpServerKey": "market_data"}],
         ),
     )
