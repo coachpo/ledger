@@ -1,15 +1,15 @@
-from app.agents.skill_registry import (
-    ResolvedSkillTool,
-    ResolvedSkillToolset,
-    SkillRegistry,
-    SkillRegistryValidationError,
-    get_default_skill_registry,
+from app.agents.tool_catalog import (
+    ResolvedCapabilityToolset,
+    ResolvedTool,
+    ToolCatalog,
+    ToolCatalogValidationError,
+    get_default_tool_catalog,
 )
 
 __all__ = [
-    "ResolvedSkillTool",
-    "ResolvedSkillToolset",
-    "SkillRegistry",
-    "SkillRegistryValidationError",
-    "get_default_skill_registry",
+    "ResolvedCapabilityToolset",
+    "ResolvedTool",
+    "ToolCatalog",
+    "ToolCatalogValidationError",
+    "get_default_tool_catalog",
 ]
