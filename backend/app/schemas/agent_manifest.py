@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Literal, cast
 
-from pydantic import AliasChoices, Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator
 
 from app.schemas.common import CamelModel
 
@@ -109,23 +109,9 @@ class AgentManifestSpec(CamelModel):
     system_prompt: str = Field(alias="systemPrompt", min_length=1)
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")
     output_schema: AgentManifestPinnedRef = Field(alias="outputSchema")
-    capabilities: list[AgentManifestPinnedRef] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("capabilities", "skills"),
-    )
+    capabilities: list[AgentManifestPinnedRef] = Field(default_factory=list)
     mcp_servers: list[AgentManifestPinnedRef] = Field(default_factory=list, alias="mcpServers")
     budget_usd: str = Field(default="0", alias="budgetUsd")
-
-    @property
-    def skills(self) -> list[AgentManifestPinnedRef]:
-        return self.capabilities
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_conflicting_capability_aliases(cls, value: object) -> object:
-        if isinstance(value, dict) and "capabilities" in value and "skills" in value:
-            raise ValueError("Use either spec.capabilities or legacy spec.skills, not both")
-        return value
 
     @field_validator("model_connection", mode="before")
     @classmethod
