@@ -5,12 +5,12 @@ from typing import cast
 
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 from app.core.formatting import normalize_symbol
-from app.services.report_service import ReportService
-from app.services.skill_service import (
+from app.services.capability_service import (
     REPORT_LOOKUP_ACCESS_DENIED_CODE,
     REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
     REPORT_LOOKUP_TOOL_KEY,
 )
+from app.services.report_service import ReportService
 
 REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_reports_lookup"
 
@@ -117,7 +117,7 @@ def execute_report_lookup(
 ) -> dict[str, object]:
     with context.session_factory() as session:
         reports = ReportService(session).lookup_reports(
-            skill_references=context.skill_references,
+            capability_references=context.capability_references,
             ticker=cast(str | None, arguments["ticker"]),
             tag=cast(str | None, arguments["tag"]),
             review_type=cast(str | None, arguments["review_type"]),

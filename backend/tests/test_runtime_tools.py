@@ -24,14 +24,14 @@ from app.agents.runtime_tools.positions import parse_position_lookup_arguments
 from app.agents.runtime_tools.reports import parse_report_lookup_arguments
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
-from app.services.position_service import PositionService
-from app.services.report_service import ReportService
-from app.services.skill_service import (
+from app.services.capability_service import (
     POSITION_LOOKUP_ACCESS_DENIED_CODE,
     POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
     POSITION_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
 )
+from app.services.position_service import PositionService
+from app.services.report_service import ReportService
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
@@ -60,18 +60,18 @@ def _failing_session_factory() -> _SessionScope:
 
 def _runtime_context(
     *,
-    skill_references: Sequence[dict[str, object]] | None = None,
+    capability_references: Sequence[dict[str, object]] | None = None,
     fail_on_session: bool = False,
 ) -> RuntimeToolContext:
     session_factory = _failing_session_factory if fail_on_session else _session_factory
     return RuntimeToolContext(
         session_factory=cast(sessionmaker[Session], session_factory),
-        skill_references=list(
-            skill_references
+        capability_references=list(
+            capability_references
             or [
                 {
-                    "skillKey": "runtime_tool_test_skill",
-                    "skillVersion": 1,
+                    "capabilityKey": "runtime_tool_test_capability",
+                    "capabilityVersion": 1,
                 }
             ]
         ),
@@ -181,12 +181,14 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
         setattr(REPORT_LOOKUP_TOOL_SPEC, field_name, "ledger.changed")
 
 
-def test_runtime_tool_context_carries_session_factory_and_skill_references() -> None:
-    skill_references: list[dict[str, object]] = [{"skillKey": "report_reader", "skillVersion": 3}]
-    context = _runtime_context(skill_references=skill_references)
+def test_runtime_tool_context_carries_session_factory_and_capability_references() -> None:
+    capability_references: list[dict[str, object]] = [
+        {"capabilityKey": "report_reader", "capabilityVersion": 3}
+    ]
+    context = _runtime_context(capability_references=capability_references)
 
     assert context.session_factory is not None
-    assert context.skill_references == skill_references
+    assert context.capability_references == capability_references
 
 
 def test_runtime_tool_registry_rejects_duplicate_keys_and_openai_function_names() -> None:
@@ -204,7 +206,7 @@ def test_runtime_tool_registry_rejects_duplicate_keys_and_openai_function_names(
 def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order() -> None:
     registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
 
-    tools = registry.get_openai_tool_definitions({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY})
+    tools = registry.get_openai_tools({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY})
     assert [tool["name"] for tool in tools] == [
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
         POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -244,19 +246,19 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
     position_limit_property = cast(dict[str, object], position_properties["limit"])
     assert position_limit_property["maximum"] == 200
 
-    position_only_tools = registry.get_openai_tool_definitions({POSITION_LOOKUP_TOOL_KEY})
+    position_only_tools = registry.get_openai_tools({POSITION_LOOKUP_TOOL_KEY})
     assert [tool["name"] for tool in position_only_tools] == [POSITION_LOOKUP_OPENAI_FUNCTION_NAME]
 
 
 def test_runtime_tool_registry_deep_copies_openai_parameter_schemas() -> None:
     registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC])
-    tools = registry.get_openai_tool_definitions({REPORT_LOOKUP_TOOL_KEY})
+    tools = registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY})
     parameters = cast(dict[str, object], tools[0]["parameters"])
     properties = cast(dict[str, object], parameters["properties"])
     ticker_property = cast(dict[str, object], properties["ticker"])
     ticker_property["type"] = "mutated"
 
-    fresh_tools = registry.get_openai_tool_definitions({REPORT_LOOKUP_TOOL_KEY})
+    fresh_tools = registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY})
 
     fresh_parameters = cast(dict[str, object], fresh_tools[0]["parameters"])
     fresh_properties = cast(dict[str, object], fresh_parameters["properties"])
@@ -412,7 +414,7 @@ def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_outp
     def fake_lookup_reports(
         self: ReportService,
         *,
-        skill_references: Sequence[dict[str, object]],
+        capability_references: Sequence[dict[str, object]],
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
@@ -424,7 +426,7 @@ def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_outp
         del self
         captured_calls.append(
             {
-                "skill_references": skill_references,
+                "capability_references": capability_references,
                 "ticker": ticker,
                 "tag": tag,
                 "review_type": review_type,
@@ -447,7 +449,12 @@ def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_outp
 
     assert captured_calls == [
         {
-            "skill_references": [{"skillKey": "runtime_tool_test_skill", "skillVersion": 1}],
+            "capability_references": [
+                {
+                    "capabilityKey": "runtime_tool_test_capability",
+                    "capabilityVersion": 1,
+                }
+            ],
             "ticker": "NVDA",
             "tag": None,
             "review_type": None,
@@ -479,7 +486,7 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
     def fake_lookup_positions(
         self: PositionService,
         *,
-        skill_references: list[dict[str, object]],
+        capability_references: list[dict[str, object]],
         portfolio_slug: str,
         symbol: str | None = None,
         limit: int | None = None,
@@ -487,7 +494,7 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
     ) -> list[PositionRead]:
         captured_calls.append(
             {
-                "skill_references": skill_references,
+                "capability_references": capability_references,
                 "portfolio_slug": portfolio_slug,
                 "symbol": symbol,
                 "limit": limit,
@@ -509,7 +516,9 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
     )
 
     assert captured_calls[0] == {
-        "skill_references": [{"skillKey": "runtime_tool_test_skill", "skillVersion": 1}],
+        "capability_references": [
+            {"capabilityKey": "runtime_tool_test_capability", "capabilityVersion": 1}
+        ],
         "portfolio_slug": "position_lookup_reference",
         "symbol": "NVDA",
         "limit": 50,

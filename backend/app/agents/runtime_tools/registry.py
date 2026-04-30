@@ -19,7 +19,7 @@ class RuntimeToolRegistry:
     def list_specs(self) -> tuple[RuntimeToolSpec, ...]:
         return self._specs
 
-    def get_openai_tool_definitions(
+    def get_openai_tools(
         self,
         granted_tool_keys: Collection[str],
     ) -> list[dict[str, object]]:

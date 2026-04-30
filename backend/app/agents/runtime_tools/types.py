@@ -24,7 +24,7 @@ class RuntimeToolError(Exception):
 @dataclass(frozen=True)
 class RuntimeToolContext:
     session_factory: sessionmaker[Session]
-    skill_references: Sequence[dict[str, object]]
+    capability_references: Sequence[dict[str, object]]
 
 
 class RuntimeToolParser(Protocol):

@@ -5,12 +5,12 @@ from typing import cast
 
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 from app.core.formatting import normalize_symbol
-from app.services.position_service import PositionService
-from app.services.skill_service import (
+from app.services.capability_service import (
     POSITION_LOOKUP_ACCESS_DENIED_CODE,
     POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
     POSITION_LOOKUP_TOOL_KEY,
 )
+from app.services.position_service import PositionService
 
 POSITION_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_positions_lookup"
 
@@ -104,7 +104,7 @@ def execute_position_lookup(
 ) -> dict[str, object]:
     with context.session_factory() as session:
         positions = PositionService(session, quote_provider=None).lookup_positions(
-            skill_references=list(context.skill_references),
+            capability_references=list(context.capability_references),
             portfolio_slug=cast(str, arguments["portfolio_slug"]),
             symbol=cast(str | None, arguments["symbol"]),
             limit=cast(int, arguments["limit"]),
