@@ -39,7 +39,7 @@ export function AgentsListPage() {
           <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
           <p className="text-sm text-muted-foreground">
             Create and update primary workspace agents, including saved model connections,
-            output schema bindings, attached skill or MCP references, and editor-ready run-launch inputs.
+            output schema bindings, attached capability or MCP references, and editor-ready run-launch inputs.
           </p>
         </div>
         <Button data-testid="agents-new" size="sm" onClick={() => navigate("/agents/new")}>
@@ -130,7 +130,7 @@ export function AgentsListPage() {
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 <p>{agent.description || "No description provided."}</p>
                 <p>
-                  Output schema: {agent.outputSchema.key} · Skills: {agent.skills.length} · MCP servers: {agent.mcpServers.length}
+                  Output schema: {agent.outputSchema.key} · Capabilities: {agent.capabilities.length} · MCP servers: {agent.mcpServers.length}
                 </p>
               </CardContent>
             </Card>

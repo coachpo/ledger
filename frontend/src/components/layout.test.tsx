@@ -30,7 +30,7 @@ describe("Layout", () => {
     );
 
     expect(screen.getByRole("link", { name: /agents/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /skills/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /capabilities/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /mcp servers/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /output schemas/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /workflows/i })).toBeInTheDocument();

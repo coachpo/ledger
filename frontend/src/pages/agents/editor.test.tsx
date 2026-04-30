@@ -57,7 +57,7 @@ const savedManifest = createAgentManifestSource({
   modelConnection: "primary_openai",
   name: "Macro Agent",
   outputSchema: "summary_schema@5",
-  skills: ["summarize_skill@3"],
+  capabilities: ["summarize_capability@3"],
   systemPrompt: "Summarize clearly.",
 });
 
@@ -109,15 +109,15 @@ const existingAgent = {
     updatedAt: "2026-04-20T10:00:00Z",
     version: 5,
   },
-  skills: [
+  capabilities: [
     {
       createdAt: "2026-04-20T10:00:00Z",
       description: "Summaries",
       id: 7,
-      key: "summarize_skill",
+      key: "summarize_capability",
       name: "Summarize",
       status: "published",
-      toolDefinitions: [],
+      toolGrants: [],
       updatedAt: "2026-04-20T10:00:00Z",
       version: 3,
     },
@@ -175,11 +175,11 @@ function expectLegacyStructuredAuthoringControlsAbsent() {
   expect(screen.queryByLabelText(/^System Prompt$/i)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/^Input Schema JSON$/i)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/^Sample Input JSON$/i)).not.toBeInTheDocument();
-  expect(screen.queryByLabelText(/^Skills$/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Capabilities$/i)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/^MCP Servers$/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/output schema binding/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/schema builder/i)).not.toBeInTheDocument();
-  expect(screen.queryByText(/add skill binding/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/add capability binding/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/add mcp server binding/i)).not.toBeInTheDocument();
   expect(screen.queryByTestId("agent-input-schema-raw-json")).not.toBeInTheDocument();
   expect(screen.queryByTestId("output-schema-add-field")).not.toBeInTheDocument();
@@ -297,7 +297,7 @@ apiVersion: ledger.agent/v1
 spec:
   budgetUsd: "0"
   mcpServers: []
-  skills: []
+  capabilities: []
   outputSchema: summary_schema@1
   inputSchema:
     required: [ticker]
@@ -342,8 +342,8 @@ metadata:
         {
           column: 9,
           line: 12,
-          message: "Skill pin resolves with a warning",
-          path: "spec.skills[0]",
+          message: "Capability pin resolves with a warning",
+          path: "spec.capabilities[0]",
           severity: "warning",
         },
       ],
@@ -365,8 +365,8 @@ metadata:
     expect(screen.getByTestId("agent-backend-validation-status")).toHaveTextContent(
       "Backend validation has warnings",
     );
-    expect(within(screen.getByTestId("agent-validation-feedback")).getByText("Skill pin resolves with a warning")).toBeVisible();
-    expect(within(screen.getByTestId("agent-validation-feedback")).getByText("spec.skills[0]")).toBeVisible();
+    expect(within(screen.getByTestId("agent-validation-feedback")).getByText("Capability pin resolves with a warning")).toBeVisible();
+    expect(within(screen.getByTestId("agent-validation-feedback")).getByText("spec.capabilities[0]")).toBeVisible();
     expect(screen.getByTestId("agent-validation-metadata")).toHaveTextContent("ledger.agent/v1");
     expect(screen.getByTestId("agent-validation-metadata")).toHaveTextContent("new_agent");
     expect(screen.getByLabelText("Exact raw compiled agent JSON")).toHaveValue(JSON.stringify(compiledPayload, null, 2));

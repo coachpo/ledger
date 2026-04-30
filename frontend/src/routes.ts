@@ -4,6 +4,13 @@ import { Layout } from "./components/layout";
 import { Dashboard } from "./pages/dashboard";
 import { AgentsEditorPage } from "./pages/agents/editor";
 import { AgentsListPage } from "./pages/agents/list";
+import { CapabilitiesEditorPage } from "./pages/capabilities/editor";
+import {
+  LegacySkillsEditRedirect,
+  LegacySkillsListRedirect,
+  LegacySkillsNewRedirect,
+} from "./pages/capabilities/legacy-redirect";
+import { CapabilitiesListPage } from "./pages/capabilities/list";
 import { McpServersEditorPage } from "./pages/mcp-servers/editor";
 import { McpServersListPage } from "./pages/mcp-servers/list";
 import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
@@ -16,8 +23,6 @@ import { ReportDetailPage } from "./pages/reports/detail";
 import { ReportListPage } from "./pages/reports/list";
 import { RunsDetailPage } from "./pages/runs/detail";
 import { RunsListPage } from "./pages/runs/list";
-import { SkillsEditorPage } from "./pages/skills/editor";
-import { SkillsListPage } from "./pages/skills/list";
 import { TemplateEditorPage } from "./pages/templates/editor";
 import { TemplateListPage } from "./pages/templates/list";
 import { WorkflowsEditorPage } from "./pages/workflows/editor";
@@ -39,9 +44,12 @@ export const router = createBrowserRouter([
       { path: "agents", Component: AgentsListPage },
       { path: "agents/new", Component: AgentsEditorPage },
       { path: "agents/:agentId/edit", Component: AgentsEditorPage },
-      { path: "skills", Component: SkillsListPage },
-      { path: "skills/new", Component: SkillsEditorPage },
-      { path: "skills/:skillId/edit", Component: SkillsEditorPage },
+      { path: "capabilities", Component: CapabilitiesListPage },
+      { path: "capabilities/new", Component: CapabilitiesEditorPage },
+      { path: "capabilities/:capabilityId/edit", Component: CapabilitiesEditorPage },
+      { path: "skills", Component: LegacySkillsListRedirect },
+      { path: "skills/new", Component: LegacySkillsNewRedirect },
+      { path: "skills/:skillId/edit", Component: LegacySkillsEditRedirect },
       { path: "mcp-servers", Component: McpServersListPage },
       { path: "mcp-servers/new", Component: McpServersEditorPage },
       { path: "mcp-servers/:serverId/edit", Component: McpServersEditorPage },

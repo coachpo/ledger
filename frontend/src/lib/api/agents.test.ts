@@ -45,7 +45,7 @@ spec:
   inputSchema:
     type: object
   outputSchema: summary_schema@1
-  skills: []
+  capabilities: []
   mcpServers: []
   budgetUsd: "0"`;
 
@@ -82,7 +82,7 @@ describe("agents api", () => {
         inputSchema: { type: "object" },
         outputSchemaKey: "summary_schema",
         outputSchemaVersion: 1,
-        skills: [],
+        capabilities: [],
         mcpServers: [],
         budgetUsd: "0",
       },

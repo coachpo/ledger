@@ -1,16 +1,16 @@
 import type { UnknownRecord } from "./common";
+import type { CapabilityRead } from "./capability";
 import type { McpClientBoundaryRead, McpServerStatus, McpServerTransport } from "./mcp-server";
 import type { ModelConnectionListItemRead } from "./model-connection";
 import type { OutputSchemaRead } from "./output-schema";
-import type { SkillRead } from "./skill";
 
 export type AgentStatus = "draft" | "published" | "deprecated" | "archived";
 export type AgentManifestApiVersion = "ledger.agent/v1";
 export type AgentManifestDiagnosticSeverity = "error" | "warning";
 
-export interface AgentSkillRefWrite {
-  skillKey: string;
-  skillVersion?: number | null;
+export interface AgentCapabilityRefWrite {
+  capabilityKey: string;
+  capabilityVersion?: number | null;
 }
 
 export interface AgentMcpServerRefWrite {
@@ -27,7 +27,7 @@ export interface AgentCompiledCreateInput {
   inputSchema: UnknownRecord;
   outputSchemaKey: string;
   outputSchemaVersion?: number | null;
-  skills?: AgentSkillRefWrite[];
+  capabilities?: AgentCapabilityRefWrite[];
   mcpServers?: AgentMcpServerRefWrite[];
   budgetUsd?: string;
 }
@@ -95,7 +95,7 @@ export interface AgentRead {
   systemPrompt: string;
   inputSchema: UnknownRecord;
   outputSchema: OutputSchemaRead;
-  skills: SkillRead[];
+  capabilities: CapabilityRead[];
   mcpServers: AgentMcpServerRead[];
   budgetUsd: string;
   createdAt: string;

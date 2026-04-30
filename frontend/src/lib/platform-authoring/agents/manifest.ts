@@ -36,9 +36,9 @@ const SECTION_LABELS: Record<AgentManifestSectionId, string> = {
 };
 
 const SPEC_REF_LABELS: Record<AgentManifestOutlineRefKind, string> = {
+  capability: "Capability",
   modelConnection: "Model connection",
   outputSchema: "Output schema",
-  skill: "Skill",
   mcpServer: "MCP server",
 };
 
@@ -71,7 +71,7 @@ type ParsedYamlDocument = Document<ParsedNode, true>;
 
 export type AgentManifestSectionId = (typeof AGENT_MANIFEST_SECTION_IDS)[number];
 export type AgentManifestDiagnosticOrigin = "backend" | "local";
-export type AgentManifestOutlineRefKind = "modelConnection" | "outputSchema" | "skill" | "mcpServer";
+export type AgentManifestOutlineRefKind = "modelConnection" | "outputSchema" | "capability" | "mcpServer";
 
 export interface AgentManifestSourceLocation {
   column: number | null;
@@ -133,7 +133,7 @@ export interface AgentManifestSourceInput {
   modelConnection: string;
   name: string;
   outputSchema: string;
-  skills?: readonly string[];
+  capabilities?: readonly string[];
   systemPrompt: string;
 }
 
@@ -480,10 +480,14 @@ function extractOutlineFromDocument(document: ParsedYamlDocument, lineCounter: L
   outline.refs = [
     ...extractScalarRef(specNode, "modelConnection", "modelConnection", lineCounter),
     ...extractScalarRef(specNode, "outputSchema", "outputSchema", lineCounter),
-    ...extractSequenceRefs(specNode, "skills", "skill", lineCounter),
+    ...extractSequenceRefs(specNode, getCapabilityFieldName(specNode), "capability", lineCounter),
     ...extractSequenceRefs(specNode, "mcpServers", "mcpServer", lineCounter),
   ];
   return outline;
+}
+
+function getCapabilityFieldName(specNode: YAMLMap<unknown, unknown>): "capabilities" | "skills" {
+  return getMapPair(specNode, "capabilities") ? "capabilities" : "skills";
 }
 
 function extractScalarRef(
@@ -659,7 +663,7 @@ function normalizeManifestForStringify(value: unknown, path: readonly PathToken[
   if (pathKey === "spec") {
     return orderedRecord(
       value,
-      ["modelConnection", "systemPrompt", "inputSchema", "outputSchema", "skills", "mcpServers", "budgetUsd"],
+      ["modelConnection", "systemPrompt", "inputSchema", "outputSchema", "capabilities", "mcpServers", "budgetUsd"],
       path,
     );
   }
@@ -695,7 +699,7 @@ export function createAgentManifestSource(input: AgentManifestSourceInput): stri
         systemPrompt: input.systemPrompt.trim(),
         inputSchema: input.inputSchema,
         outputSchema: input.outputSchema.trim(),
-        skills: [...(input.skills ?? [])].map((ref) => ref.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
+        capabilities: [...(input.capabilities ?? [])].map((ref) => ref.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
         mcpServers: [...(input.mcpServers ?? [])].map((ref) => ref.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
         budgetUsd: input.budgetUsd?.trim() || "0",
       },
@@ -723,7 +727,7 @@ export function createAgentManifestScaffold(options: AgentManifestScaffoldOption
     modelConnection: options.modelConnection?.trim() || "primary_model_connection",
     name: options.name?.trim() || "New Agent",
     outputSchema: options.outputSchema?.trim() || "summary_schema@1",
-    skills: [],
+    capabilities: [],
     systemPrompt: options.systemPrompt?.trim() || "You are a concise portfolio research assistant.",
   });
 }

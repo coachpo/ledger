@@ -121,11 +121,11 @@ const AGENT_SNIPPETS: AgentSnippet[] = [
     text: "outputSchema: summary_schema@1\n",
   },
   {
-    description: "Adds a published skill pin to spec.skills.",
-    id: "skill-pin",
-    label: "Skill pin",
-    shortcut: "skill",
-    text: "- summarize_skill@1\n",
+    description: "Adds a published capability pin to spec.capabilities.",
+    id: "capability-pin",
+    label: "Capability pin",
+    shortcut: "capability",
+    text: "- summarize_capability@1\n",
   },
   {
     description: "Adds a published MCP server pin to spec.mcpServers.",
@@ -218,7 +218,7 @@ function createDuplicateAgentManifestScaffold(agent: AgentRead): string {
       modelConnection: readString(manifest.spec.modelConnection, "primary_model_connection"),
       name: `${readString(manifest.metadata.name, agent.name)} Copy`,
       outputSchema: readString(manifest.spec.outputSchema, "summary_schema@1"),
-      skills: readStringList(manifest.spec.skills),
+      capabilities: readStringList(manifest.spec.capabilities ?? manifest.spec.skills),
       systemPrompt: readString(manifest.spec.systemPrompt, "You are a concise portfolio research assistant."),
     });
   }
@@ -707,7 +707,7 @@ export function AgentsEditorPage() {
                 <Card className="gap-3">
                   <CardHeader className="px-3 pt-3">
                     <CardTitle className="text-sm">References</CardTitle>
-                    <CardDescription>Stable model, schema, skill, and MCP pins</CardDescription>
+                    <CardDescription>Stable model, schema, capability, and MCP pins</CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-2 px-3 pb-3">
                     {outlineResult.outline.refs.length ? (
@@ -804,7 +804,7 @@ export function AgentsEditorPage() {
                       </AlertTitle>
                       <AlertDescription>
                         {!validationResult
-                          ? "Run Validate to resolve model connections, schema pins, skills, MCP servers, and compiled agent output against the backend."
+                          ? "Run Validate to resolve model connections, schema pins, capabilities, MCP servers, and compiled agent output against the backend."
                           : isValidationStale
                             ? "The YAML changed after the last backend response. Validate again before trusting these results."
                             : hasBackendErrors

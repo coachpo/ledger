@@ -29,9 +29,9 @@ spec:
       - ticker
     additionalProperties: false
   outputSchema: summary_schema@5
-  skills:
-    - summarize_skill@3
-    - filings_skill@2
+  capabilities:
+    - summarize_capability@3
+    - filings_capability@2
   mcpServers:
     - quotes-mcp@2
   budgetUsd: "2.50"
@@ -89,11 +89,31 @@ describe("agent manifest helpers", () => {
     expect(result.outline.refs.map((ref) => [ref.kind, ref.path, ref.ref])).toEqual([
       ["modelConnection", "spec.modelConnection", "primary_openai"],
       ["outputSchema", "spec.outputSchema", "summary_schema@5"],
-      ["skill", "spec.skills[0]", "summarize_skill@3"],
-      ["skill", "spec.skills[1]", "filings_skill@2"],
+      ["capability", "spec.capabilities[0]", "summarize_capability@3"],
+      ["capability", "spec.capabilities[1]", "filings_capability@2"],
       ["mcpServer", "spec.mcpServers[0]", "quotes-mcp@2"],
     ]);
     expect(result.outline.refs.every((ref) => ref.line !== null)).toBe(true);
+  });
+
+  it("keeps legacy spec.skills references locatable for compatibility diagnostics", () => {
+    const legacyManifest = fullAgentManifest.replace(
+      "capabilities:\n    - summarize_capability@3\n    - filings_capability@2",
+      "skills:\n    - summarize_skill@3",
+    );
+
+    const result = extractAgentManifestOutline(legacyManifest);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.outline.refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "capability",
+          path: "spec.skills[0]",
+          ref: "summarize_skill@3",
+        }),
+      ]),
+    );
   });
 
   it("returns lightweight local diagnostics for malformed YAML without claiming backend authority", () => {
@@ -129,9 +149,9 @@ spec:
   inputSchema:
     type: object
   outputSchema: summary_schema@5
-  skills:
-    - &skill summarize_skill@3
-    - *skill
+  capabilities:
+    - &capability summarize_capability@3
+    - *capability
   <<: {}
 `);
 
@@ -191,8 +211,8 @@ spec:
         {
           column: null,
           line: null,
-          message: "Skill version was not found.",
-          path: "spec.skills[1]",
+          message: "Capability version was not found.",
+          path: "spec.capabilities[1]",
           severity: "error",
         },
       ],
@@ -204,7 +224,7 @@ spec:
       canJump: true,
       locationLabel: expect.stringContaining("Line"),
       origin: "backend",
-      path: "spec.skills[1]",
+      path: "spec.capabilities[1]",
     });
     expect(diagnostics[0]?.line).toBeGreaterThan(0);
     expect(diagnostics[0]?.column).toBeGreaterThan(0);
@@ -265,7 +285,7 @@ apiVersion: ledger.agent/v1
 spec:
   budgetUsd: "2.50"
   mcpServers: [quotes-mcp@2]
-  skills: [summarize_skill@3]
+  capabilities: [summarize_capability@3]
   outputSchema: summary_schema@5
   inputSchema:
     required: [ticker]
@@ -301,8 +321,8 @@ spec:
       - ticker
     additionalProperties: false
   outputSchema: summary_schema@5
-  skills:
-    - summarize_skill@3
+  capabilities:
+    - summarize_capability@3
   mcpServers:
     - quotes-mcp@2
   budgetUsd: "2.50"

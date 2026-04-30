@@ -27,8 +27,8 @@ describe("resource-ref", () => {
   });
 
   it("rejects invalid versions with current caller-facing wording", () => {
-    expect(() => parseVersionedRef("Skill", "summarize@beta")).toThrowError(
-      "Skill entries must use key or key@version.",
+    expect(() => parseVersionedRef("Capability", "summarize@beta")).toThrowError(
+      "Capability entries must use key or key@version.",
     );
   });
 
@@ -45,14 +45,14 @@ describe("resource-ref", () => {
   });
 
   it("parses line-delimited refs and tracks indexed validation paths", () => {
-    expect(parseVersionedRefs("Skill", "summarize@3\nquotes")).toEqual([
+    expect(parseVersionedRefs("Capability", "summarize@3\nquotes")).toEqual([
       { key: "summarize", version: 3 },
       { key: "quotes", version: null },
     ]);
-    expect(validateResourceRefs("Skill", "summarize@3\nbroken@beta")).toEqual([
+    expect(validateResourceRefs("Capability", "summarize@3\nbroken@beta")).toEqual([
       {
-        field: "Skill[1]",
-        issue: "Skill entries must use key or key@version.",
+        field: "Capability[1]",
+        issue: "Capability entries must use key or key@version.",
       },
     ]);
   });

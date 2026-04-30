@@ -53,7 +53,7 @@ const navItems: NavItem[] = [
   { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
   { icon: Bot, label: "Agents", testId: "nav-agents", to: "/agents" },
-  { icon: Sparkles, label: "Skills", testId: "nav-skills", to: "/skills" },
+  { icon: Sparkles, label: "Capabilities", testId: "nav-capabilities", to: "/capabilities" },
   { icon: Server, label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
   {
     icon: Link2,
@@ -122,8 +122,16 @@ function getPageMeta(pathname: string) {
     return { section: "Agents", sectionHref: "/agents", title: "Edit Agent" };
   }
 
-  if (pathname === "/skills") {
-    return { section: "Skills", title: "Skills" };
+  if (pathname === "/capabilities") {
+    return { section: "Capabilities", title: "Capabilities" };
+  }
+
+  if (pathname === "/capabilities/new") {
+    return { section: "Capabilities", sectionHref: "/capabilities", title: "New Capability" };
+  }
+
+  if (pathname.startsWith("/capabilities/") && pathname.endsWith("/edit")) {
+    return { section: "Capabilities", sectionHref: "/capabilities", title: "Edit Capability" };
   }
 
   if (pathname === "/mcp-servers") {

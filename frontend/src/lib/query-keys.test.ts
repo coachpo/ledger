@@ -46,6 +46,15 @@ describe("query keys", () => {
       { status: "published" },
     ]);
 
+    expect(queryKeys.platform.capabilities.detail("7")).toEqual(queryKeys.platform.capabilities.detail(7));
+    expect(queryKeys.platform.capabilities.list({ status: "published" })).toEqual([
+      "api",
+      "platform",
+      "capabilities",
+      "list",
+      { status: "published" },
+    ]);
+
     expect(queryKeys.platform.workflows.detail("9", 2)).toEqual(
       queryKeys.platform.workflows.detail(9, 2),
     );

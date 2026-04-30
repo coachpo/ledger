@@ -1,11 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
 import type { AgentListParams } from "./types/agent";
+import type { CapabilityListParams } from "./types/capability";
 import type { McpServerListParams } from "./types/mcp-server";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { OutputSchemaListParams } from "./types/output-schema";
 import type { RunListParams } from "./types/run";
-import type { SkillListParams } from "./types/skill";
 import type { WorkflowListParams } from "./types/workflow";
 
 const apiRoot = ["api"] as const;
@@ -74,7 +74,7 @@ function normalizeAgentListParams(params: AgentListParams = {}) {
   });
 }
 
-function normalizeSkillListParams(params: SkillListParams = {}) {
+function normalizeCapabilityListParams(params: CapabilityListParams = {}) {
   return omitUndefined({
     status: params.status,
   });
@@ -184,12 +184,12 @@ const platformQueryKeys = {
     list: (params: AgentListParams = {}) =>
       [...platformApiRoot, "agents", "list", normalizeAgentListParams(params)] as const,
   },
-  skills: {
-    all: [...platformApiRoot, "skills"] as const,
-    detail: (skillId: IdParam) =>
-      [...platformApiRoot, "skills", "detail", normalizeId(skillId)] as const,
-    list: (params: SkillListParams = {}) =>
-      [...platformApiRoot, "skills", "list", normalizeSkillListParams(params)] as const,
+  capabilities: {
+    all: [...platformApiRoot, "capabilities"] as const,
+    detail: (capabilityId: IdParam) =>
+      [...platformApiRoot, "capabilities", "detail", normalizeId(capabilityId)] as const,
+    list: (params: CapabilityListParams = {}) =>
+      [...platformApiRoot, "capabilities", "list", normalizeCapabilityListParams(params)] as const,
   },
   mcpServers: {
     all: [...platformApiRoot, "mcpServers"] as const,

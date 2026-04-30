@@ -39,7 +39,7 @@ describe("AgentsListPage", () => {
             description: "Summarizes macro context.",
             modelConnection: { modelId: "gpt-5.4" },
             outputSchema: { key: "summary_schema" },
-            skills: [{ id: 1 }],
+            capabilities: [{ id: 1 }],
             mcpServers: [{ id: 2 }],
             status: "draft",
             version: 3,
