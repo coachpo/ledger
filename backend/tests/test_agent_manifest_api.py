@@ -114,7 +114,7 @@ def test_create_and_update_manifest_persist_source_and_compiled_projection(
     assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
     assert cast(dict[str, object], created["outputSchema"])["version"] == 3
     assert cast(list[dict[str, object]], created["capabilities"])[0]["key"] == "sec_filing_lookup"
-    assert cast(list[dict[str, object]], created["skills"])[0]["key"] == "sec_filing_lookup"
+    assert "skills" not in created
 
     update_response = client.post(
         f"/api/agents/{created['id']}",

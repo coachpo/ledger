@@ -52,8 +52,12 @@ def _create_legacy_agent(session: Session, refs: dict[str, object], key: str) ->
         },
         output_schema_id=output_schema.id,
         output_schema_version=output_schema.version,
-        skills=[
-            {"skillId": 999, "skillKey": "sec_filing_lookup", "skillVersion": 2},
+        capabilities=[
+            {
+                "capabilityId": 999,
+                "capabilityKey": "sec_filing_lookup",
+                "capabilityVersion": 2,
+            },
         ],
         mcp_servers=[
             {"mcpServerId": 888, "mcpServerKey": "market_data", "mcpServerVersion": 1},
@@ -151,7 +155,7 @@ def test_agent_manifest_backfill_rewrites_lossless_noncanonical_manifest_source(
             '  systemPrompt: "You are a research analyst.\\nReturn concise output."\n'
             "  outputSchema: research_summary@3\n"
             "  mcpServers: [market_data@1]\n"
-            "  skills: [sec_filing_lookup@2]\n"
+            "  capabilities: [sec_filing_lookup@2]\n"
             '  budgetUsd: "1.25000000"\n'
             "  inputSchema: {required: [ticker], properties: {ticker: {type: string}}, "
             "additionalProperties: false, type: object}\n"

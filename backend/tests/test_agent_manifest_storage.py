@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents import get_default_skill_registry
+from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
 from app.core.errors import ApiError
 from app.db.upgrades import upgrade_legacy_schema
@@ -33,7 +33,7 @@ from tests.test_agent_manifest_parser import _valid_manifest_source
 def _agent_service(session: Session) -> AgentService:
     return AgentService(
         session,
-        get_default_skill_registry(),
+        get_default_tool_catalog(),
         DefaultMcpConnectionTester(),
     )
 
