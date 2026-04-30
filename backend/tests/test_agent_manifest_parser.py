@@ -27,7 +27,7 @@ spec:
     required:
       - ticker
   outputSchema: {output_schema}
-  skills:
+  capabilities:
     - sec_filing_lookup@2
   mcpServers:
     - market_data@1
@@ -62,8 +62,35 @@ def test_parse_valid_agent_manifest_returns_typed_manifest() -> None:
 
     dumped = result.manifest.model_dump(mode="json", by_alias=True)
     assert dumped["spec"]["outputSchema"] == "research_summary@3"
-    assert dumped["spec"]["skills"] == ["sec_filing_lookup@2"]
+    assert dumped["spec"]["capabilities"] == ["sec_filing_lookup@2"]
+    assert "skills" not in dumped["spec"]
     assert dumped["spec"]["mcpServers"] == ["market_data@1"]
+
+
+def test_parse_legacy_skills_manifest_imports_as_capabilities() -> None:
+    source = _valid_manifest_source().replace("  capabilities:", "  skills:", 1)
+
+    result = parse_agent_manifest(source)
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    assert result.manifest.spec.capabilities[0].key == "sec_filing_lookup"
+    dumped = result.manifest.model_dump(mode="json", by_alias=True)
+    assert dumped["spec"]["capabilities"] == ["sec_filing_lookup@2"]
+    assert "skills" not in dumped["spec"]
+
+
+def test_parse_rejects_capabilities_and_legacy_skills_together() -> None:
+    source = _valid_manifest_source().replace(
+        "  capabilities:\n    - sec_filing_lookup@2\n",
+        "  capabilities:\n    - sec_filing_lookup@2\n  skills:\n    - sec_filing_lookup@2\n",
+        1,
+    )
+
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == "spec.capabilities"
+    assert "Use either spec.capabilities or legacy spec.skills" in diagnostic.message
 
 
 def test_parser_rejects_malformed_yaml_with_location() -> None:
@@ -206,14 +233,26 @@ def test_parser_rejects_invalid_pin_syntax(output_schema: str) -> None:
 
 def test_parser_rejects_duplicate_refs_with_manifest_paths() -> None:
     source = _valid_manifest_source().replace(
-        "  skills:\n    - sec_filing_lookup@2\n",
+        "  capabilities:\n    - sec_filing_lookup@2\n",
+        "  capabilities:\n    - sec_filing_lookup@2\n    - sec_filing_lookup@2\n",
+        1,
+    )
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == "spec.capabilities[1]"
+    assert "Duplicate capability selection" in diagnostic.message
+
+
+def test_parser_rejects_duplicate_legacy_skill_refs_with_legacy_path() -> None:
+    source = _valid_manifest_source().replace(
+        "  capabilities:\n    - sec_filing_lookup@2\n",
         "  skills:\n    - sec_filing_lookup@2\n    - sec_filing_lookup@2\n",
         1,
     )
     diagnostic = _single_diagnostic(source)
 
     assert diagnostic.path == "spec.skills[1]"
-    assert "Duplicate skill selection" in diagnostic.message
+    assert "Duplicate capability selection" in diagnostic.message
 
 
 __all__ = ["_valid_manifest_source"]

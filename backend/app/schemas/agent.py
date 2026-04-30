@@ -6,14 +6,14 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from app.schemas.agent_manifest import AgentManifestDiagnostic
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.mcp_server import McpClientBoundaryRead, McpServerStatus, McpServerTransport
 from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionReasoningEffort
 from app.schemas.output_schema import OutputSchemaRead
-from app.schemas.skill import SkillRead
+from app.schemas.skill import CapabilityRead, SkillRead
 
 _STABLE_AGENT_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 _STABLE_MCP_SERVER_KEY_RE = r"^[a-z][a-z0-9_-]{0,119}$"
@@ -86,6 +86,16 @@ class AgentSkillRefWrite(CamelModel):
         return _normalize_agent_key(value)
 
 
+class AgentCapabilityRefWrite(CamelModel):
+    capability_key: str = Field(min_length=1, max_length=120)
+    capability_version: int | None = Field(default=None, ge=1)
+
+    @field_validator("capability_key", mode="before")
+    @classmethod
+    def validate_capability_key(cls, value: object) -> str:
+        return _normalize_agent_key(value)
+
+
 class AgentMcpServerRefWrite(CamelModel):
     mcp_server_key: str = Field(min_length=1, max_length=120)
     mcp_server_version: int | None = Field(default=None, ge=1)
@@ -104,6 +114,7 @@ class AgentVersionBase(CamelModel):
     input_schema: dict[str, Any]
     output_schema_key: str = Field(min_length=1, max_length=120)
     output_schema_version: int | None = Field(default=None, ge=1)
+    capabilities: list[AgentCapabilityRefWrite] = Field(default_factory=list)
     skills: list[AgentSkillRefWrite] = Field(default_factory=list)
     mcp_servers: list[AgentMcpServerRefWrite] = Field(default_factory=list)
     budget_usd: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
@@ -127,6 +138,35 @@ class AgentVersionBase(CamelModel):
     @classmethod
     def validate_output_schema_key(cls, value: object) -> str:
         return _normalize_agent_key(value)
+
+    @model_validator(mode="after")
+    def sync_capability_aliases(self) -> AgentVersionBase:
+        capability_refs = [
+            (item.capability_key, item.capability_version) for item in self.capabilities
+        ]
+        skill_refs = [(item.skill_key, item.skill_version) for item in self.skills]
+        if capability_refs and skill_refs:
+            if capability_refs != skill_refs:
+                raise ValueError("capabilities and skills must reference the same entries")
+            return self
+        if skill_refs:
+            self.capabilities = [
+                AgentCapabilityRefWrite(
+                    capability_key=item.skill_key,
+                    capability_version=item.skill_version,
+                )
+                for item in self.skills
+            ]
+            return self
+        if capability_refs:
+            self.skills = [
+                AgentSkillRefWrite(
+                    skill_key=item.capability_key,
+                    skill_version=item.capability_version,
+                )
+                for item in self.capabilities
+            ]
+        return self
 
 
 class AgentCreate(AgentVersionBase):
@@ -207,6 +247,7 @@ class AgentRead(CamelModel):
     system_prompt: str
     input_schema: dict[str, Any]
     output_schema: OutputSchemaRead
+    capabilities: list[CapabilityRead]
     skills: list[SkillRead]
     mcp_servers: list[AgentMcpServerRead]
     budget_usd: Decimal
@@ -225,6 +266,7 @@ class AgentListRead(CamelModel):
 
 __all__ = [
     "AGENT_MANIFEST_SOURCE_MAX_LENGTH",
+    "AgentCapabilityRefWrite",
     "AgentCreate",
     "AgentListRead",
     "AgentManifestValidationMetadata",

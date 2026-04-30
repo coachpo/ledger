@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Literal, cast
 
-from pydantic import Field, field_serializer, field_validator
+from pydantic import AliasChoices, Field, field_serializer, field_validator, model_validator
 
 from app.schemas.common import CamelModel
 
@@ -109,9 +109,23 @@ class AgentManifestSpec(CamelModel):
     system_prompt: str = Field(alias="systemPrompt", min_length=1)
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")
     output_schema: AgentManifestPinnedRef = Field(alias="outputSchema")
-    skills: list[AgentManifestPinnedRef] = Field(default_factory=list)
+    capabilities: list[AgentManifestPinnedRef] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("capabilities", "skills"),
+    )
     mcp_servers: list[AgentManifestPinnedRef] = Field(default_factory=list, alias="mcpServers")
     budget_usd: str = Field(default="0", alias="budgetUsd")
+
+    @property
+    def skills(self) -> list[AgentManifestPinnedRef]:
+        return self.capabilities
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_capability_aliases(cls, value: object) -> object:
+        if isinstance(value, dict) and "capabilities" in value and "skills" in value:
+            raise ValueError("Use either spec.capabilities or legacy spec.skills, not both")
+        return value
 
     @field_validator("model_connection", mode="before")
     @classmethod
@@ -135,10 +149,10 @@ class AgentManifestSpec(CamelModel):
     def validate_output_schema(cls, value: object) -> AgentManifestPinnedRef:
         return AgentManifestPinnedRef.parse(value, field_name="outputSchema")
 
-    @field_validator("skills", mode="before")
+    @field_validator("capabilities", mode="before")
     @classmethod
-    def validate_skills(cls, value: object) -> list[AgentManifestPinnedRef]:
-        return _parse_ref_list(value, field_name="skills")
+    def validate_capabilities(cls, value: object) -> list[AgentManifestPinnedRef]:
+        return _parse_ref_list(value, field_name="capabilities")
 
     @field_validator("mcp_servers", mode="before")
     @classmethod
@@ -167,7 +181,7 @@ class AgentManifestSpec(CamelModel):
     def serialize_output_schema(self, value: AgentManifestPinnedRef) -> str:
         return value.to_pin()
 
-    @field_serializer("skills", "mcp_servers", when_used="json")
+    @field_serializer("capabilities", "mcp_servers", when_used="json")
     def serialize_ref_list(self, value: list[AgentManifestPinnedRef]) -> list[str]:
         return [item.to_pin() for item in value]
 

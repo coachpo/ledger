@@ -93,6 +93,7 @@ def _expected_payload(connection_id: int) -> dict[str, object]:
         },
         "outputSchemaKey": "research_summary",
         "outputSchemaVersion": 3,
+        "capabilities": [{"capabilityKey": "sec_filing_lookup", "capabilityVersion": 2}],
         "skills": [{"skillKey": "sec_filing_lookup", "skillVersion": 2}],
         "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         "budgetUsd": "1.25",
@@ -131,6 +132,36 @@ def test_compile_agent_manifest_accepts_validated_manifest(
     assert payload == _expected_payload(cast(ModelConnection, refs["connection"]).id)
 
 
+def test_compile_agent_manifest_accepts_legacy_skills_manifest(
+    session_factory: sessionmaker[Session],
+) -> None:
+    source = _valid_manifest_source().replace("  capabilities:", "  skills:", 1)
+
+    with session_factory() as session:
+        refs = _seed_manifest_refs(session)
+        payload = compile_agent_manifest(source, session)
+
+    assert payload == _expected_payload(cast(ModelConnection, refs["connection"]).id)
+
+
+def test_compile_agent_manifest_rejects_capability_alias_conflict(
+    session_factory: sessionmaker[Session],
+) -> None:
+    source = _valid_manifest_source().replace(
+        "  capabilities:\n    - sec_filing_lookup@2\n",
+        "  capabilities:\n    - sec_filing_lookup@2\n  skills:\n    - sec_filing_lookup@2\n",
+        1,
+    )
+
+    with session_factory() as session:
+        _refs = _seed_manifest_refs(session)
+        with pytest.raises(AgentManifestCompilerError) as excinfo:
+            _ = compile_agent_manifest(source, session)
+
+    assert len(excinfo.value.diagnostics) == 1
+    assert excinfo.value.diagnostics[0].path == "spec.capabilities"
+
+
 def test_compile_agent_manifest_resolves_by_model_connection_key_not_raw_id(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -157,6 +188,27 @@ def test_compile_agent_manifest_reports_unresolved_refs_with_paths(
     assert diagnostic.path == "spec.outputSchema"
     assert diagnostic.line is not None
     assert "Output schema 'missing_schema' version 9 was not found" in diagnostic.message
+
+
+def test_compile_agent_manifest_reports_unresolved_legacy_skill_refs_with_legacy_path(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _refs = _seed_manifest_refs(session)
+        source = _valid_manifest_source().replace(
+            "  capabilities:\n    - sec_filing_lookup@2\n",
+            "  skills:\n    - missing_capability@9\n",
+            1,
+        )
+
+        with pytest.raises(AgentManifestCompilerError) as excinfo:
+            _ = compile_agent_manifest(source, session)
+
+    assert len(excinfo.value.diagnostics) == 1
+    diagnostic = excinfo.value.diagnostics[0]
+    assert diagnostic.path == "spec.skills[0]"
+    assert diagnostic.line is not None
+    assert "Capability 'missing_capability' version 9 was not found" in diagnostic.message
 
 
 def test_compile_agent_manifest_rejects_unsupported_input_schema_constructs(

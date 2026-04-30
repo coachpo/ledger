@@ -74,6 +74,10 @@ class AgentManifestParser:
         if json_diagnostics:
             return AgentManifestParseResult(diagnostics=json_diagnostics)
 
+        capability_alias_diagnostics = self._validate_capability_aliases(data)
+        if capability_alias_diagnostics:
+            return AgentManifestParseResult(diagnostics=capability_alias_diagnostics)
+
         try:
             manifest = AgentManifest.model_validate(data)
         except ValidationError as exc:
@@ -218,18 +222,19 @@ class AgentManifestParser:
         data: object,
     ) -> list[AgentManifestDiagnostic]:
         diagnostics: list[AgentManifestDiagnostic] = []
-        seen_skills: set[tuple[str, int]] = set()
-        for index, ref in enumerate(manifest.spec.skills):
+        capability_source_field = self._capability_source_field(data)
+        seen_capabilities: set[tuple[str, int]] = set()
+        for index, ref in enumerate(manifest.spec.capabilities):
             identity = (ref.key, ref.version)
-            if identity in seen_skills:
+            if identity in seen_capabilities:
                 diagnostics.append(
                     self._diagnostic(
-                        "Duplicate skill selection",
-                        path=f"spec.skills[{index}]",
-                        location=self._location_for(data, ("spec", "skills", index)),
+                        "Duplicate capability selection",
+                        path=f"spec.{capability_source_field}[{index}]",
+                        location=self._location_for(data, ("spec", capability_source_field, index)),
                     )
                 )
-            seen_skills.add(identity)
+            seen_capabilities.add(identity)
 
         seen_mcp_servers: set[tuple[str, int]] = set()
         for index, ref in enumerate(manifest.spec.mcp_servers):
@@ -244,6 +249,37 @@ class AgentManifestParser:
                 )
             seen_mcp_servers.add(identity)
         return diagnostics
+
+    def _validate_capability_aliases(self, data: object) -> list[AgentManifestDiagnostic]:
+        if not isinstance(data, Mapping):
+            return []
+        spec = cast(Mapping[object, object], data).get("spec")
+        if not isinstance(spec, Mapping):
+            return []
+        spec_mapping = cast(Mapping[object, object], spec)
+        if "capabilities" not in spec_mapping or "skills" not in spec_mapping:
+            return []
+        return [
+            self._diagnostic(
+                "Use either spec.capabilities or legacy spec.skills, not both",
+                path="spec.capabilities",
+                location=self._location_for(data, ("spec", "capabilities")),
+            )
+        ]
+
+    @staticmethod
+    def _capability_source_field(data: object) -> str:
+        if not isinstance(data, Mapping):
+            return "capabilities"
+        spec = cast(Mapping[object, object], data).get("spec")
+        if not isinstance(spec, Mapping):
+            return "capabilities"
+        spec_mapping = cast(Mapping[object, object], spec)
+        if "capabilities" in spec_mapping:
+            return "capabilities"
+        if "skills" in spec_mapping:
+            return "skills"
+        return "capabilities"
 
     @staticmethod
     def _new_yaml() -> YAML:
@@ -300,6 +336,7 @@ class AgentManifestParser:
             "system_prompt": "systemPrompt",
             "input_schema": "inputSchema",
             "output_schema": "outputSchema",
+            "capabilities": "capabilities",
             "mcp_servers": "mcpServers",
             "budget_usd": "budgetUsd",
         }

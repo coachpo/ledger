@@ -98,7 +98,10 @@ class AgentManifestDecompiler:
                     agent.output_schema_id,
                     agent.output_schema_version,
                 ),
-                "skills": _sorted_pins(cast(list[dict[str, object]], payload["skills"]), "skill"),
+                "capabilities": _sorted_pins(
+                    cast(list[dict[str, object]], payload["capabilities"]),
+                    "capability",
+                ),
                 "mcpServers": _sorted_pins(
                     cast(list[dict[str, object]], payload["mcpServers"]),
                     "mcpServer",
@@ -128,6 +131,13 @@ class AgentManifestDecompiler:
                 agent.output_schema_version,
             ),
             "outputSchemaVersion": agent.output_schema_version,
+            "capabilities": [
+                {
+                    "capabilityKey": item.get("skillKey"),
+                    "capabilityVersion": item.get("skillVersion"),
+                }
+                for item in agent.skills
+            ],
             "skills": [
                 {
                     "skillKey": item.get("skillKey"),

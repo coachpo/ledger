@@ -1,7 +1,12 @@
+# pyright: reportMissingImports=false
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 from sqlalchemy.orm import Session
 
 from app.models.mcp_server import McpServer
@@ -81,7 +86,7 @@ class AgentManifestCompiler:
             source=source_text,
             diagnostics=diagnostics,
         )
-        skills = self._resolve_skills(manifest, source=source_text, diagnostics=diagnostics)
+        skills = self._resolve_capabilities(manifest, source=source_text, diagnostics=diagnostics)
         mcp_servers = self._resolve_mcp_servers(
             manifest,
             source=source_text,
@@ -102,6 +107,9 @@ class AgentManifestCompiler:
             "inputSchema": input_schema,
             "outputSchemaKey": output_schema.key,
             "outputSchemaVersion": output_schema.version,
+            "capabilities": [
+                {"capabilityKey": skill.key, "capabilityVersion": skill.version} for skill in skills
+            ],
             "skills": [{"skillKey": skill.key, "skillVersion": skill.version} for skill in skills],
             "mcpServers": [
                 {"mcpServerKey": server.key, "mcpServerVersion": server.version}
@@ -145,7 +153,7 @@ class AgentManifestCompiler:
             return None
         return schema
 
-    def _resolve_skills(
+    def _resolve_capabilities(
         self,
         manifest: AgentManifest,
         *,
@@ -153,19 +161,40 @@ class AgentManifestCompiler:
         diagnostics: list[AgentManifestDiagnostic],
     ) -> list[Skill]:
         rows: list[Skill] = []
-        for index, ref in enumerate(manifest.spec.skills):
+        capability_source_field = self._capability_source_field(source)
+        for index, ref in enumerate(manifest.spec.capabilities):
             row = self.skill_repository.get_by_key_version(ref.key, ref.version)
             if row is None:
                 diagnostics.append(
                     self._diagnostic(
-                        f"Skill {ref.key!r} version {ref.version} was not found",
-                        path=f"spec.skills[{index}]",
+                        f"Capability {ref.key!r} version {ref.version} was not found",
+                        path=f"spec.{capability_source_field}[{index}]",
                         source=source,
                     )
                 )
                 continue
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _capability_source_field(source: str | None) -> str:
+        if source is None:
+            return "capabilities"
+        try:
+            data = YAML(typ="safe").load(source)
+        except YAMLError:
+            return "capabilities"
+        if not isinstance(data, Mapping):
+            return "capabilities"
+        spec = cast(Mapping[object, object], data).get("spec")
+        if not isinstance(spec, Mapping):
+            return "capabilities"
+        spec_mapping = cast(Mapping[object, object], spec)
+        if "capabilities" in spec_mapping:
+            return "capabilities"
+        if "skills" in spec_mapping:
+            return "skills"
+        return "capabilities"
 
     def _resolve_mcp_servers(
         self,

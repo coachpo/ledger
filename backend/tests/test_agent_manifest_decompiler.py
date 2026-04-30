@@ -58,6 +58,8 @@ def test_decompile_agent_manifest_round_trips_stored_payload_to_canonical_yaml(
 
         assert result.source.startswith("apiVersion: ledger.agent/v1\nkind: Agent\n")
         assert "systemPrompt: |" in result.source
+        assert "capabilities:" in result.source
+        assert "skills:" not in result.source
         assert 'budgetUsd: "1.25"' in result.source
         assert parsed.diagnostics == []
         assert parsed.manifest is not None
@@ -78,5 +80,6 @@ def test_decompile_agent_manifest_omits_runtime_only_fields(
 
     assert "modelConnectionId" not in result.source
     assert "skillId" not in result.source
+    assert "skillKey" not in result.source
     assert "mcpServerId" not in result.source
     assert "outputSchemaId" not in result.source
