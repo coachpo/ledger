@@ -23,7 +23,16 @@ const toastSuccessMock = vi.fn();
 const existingInputSchema = {
   additionalProperties: false,
   properties: {
-    ticker: { type: "string" },
+    ticker: {
+      description: "Use the exchange ticker exactly as the run expects.",
+      title: "Ticker Symbol",
+      type: "string",
+    },
+    dryRun: {
+      description: "Preview execution without sending orders.",
+      title: "Dry Run",
+      type: "boolean",
+    },
   },
   required: ["ticker"],
   type: "object",
@@ -454,7 +463,8 @@ metadata:
     fireEvent.click(screen.getByText("Input schema field"));
 
     await waitFor(() => expect(editor.value).toContain("newField:"));
-    expect(editor.value).toContain("description: Describe this agent input.");
+    expect(editor.value).toContain("title: New field");
+    expect(editor.value).toContain("description: Help text shown with this agent input.");
     expect(editor.value).toContain(originalManifest);
   });
 
@@ -489,7 +499,15 @@ metadata:
 
     renderAgentsEditorPage();
 
-    await waitFor(() => expect(screen.getByLabelText("Exact raw agent run-input JSON")).toHaveValue(JSON.stringify({ ticker: "example" }, null, 2)));
+    const rawInput = screen.getByLabelText("Exact raw agent run-input JSON") as HTMLTextAreaElement;
+    await waitFor(() => expect(rawInput).toHaveValue(JSON.stringify({ ticker: "example" }, null, 2)));
+    expect(screen.getByLabelText("Ticker Symbol")).toHaveValue("example");
+    expect(screen.getByText("Use the exchange ticker exactly as the run expects.")).toBeVisible();
+    expect(screen.getByText("Preview execution without sending orders.")).toBeVisible();
+    expect(screen.getByRole("button", { name: /add field/i })).toBeVisible();
+    expect(rawInput.value).not.toContain("Ticker Symbol");
+    expect(rawInput.value).not.toContain("dryRun");
+
     fireEvent.click(screen.getByTestId("agent-run-panel-launch"));
 
     await waitFor(() => expect(createAgentRunMock).toHaveBeenCalledTimes(1));

@@ -68,7 +68,7 @@ import {
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { parseSchemaJsonText } from "@/lib/platform-authoring/schema/codec";
 import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
-import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import { buildRunInputDefaultValue } from "@/lib/platform-authoring/schema/preview";
 import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
 import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
 import type { ValueEntry } from "@/lib/platform-authoring/values/types";
@@ -107,11 +107,11 @@ const AGENT_SNIPPETS: AgentSnippet[] = [
     text: "systemPrompt: |\n  You are a concise portfolio research assistant.\n",
   },
   {
-    description: "Adds a string property for spec.inputSchema.properties.",
+    description: "Adds a string property for spec.inputSchema.properties with display metadata.",
     id: "input-schema-field",
     label: "Input schema field",
     shortcut: "input",
-    text: "newField:\n  type: string\n  description: Describe this agent input.\n",
+    text: "newField:\n  type: string\n  title: New field\n  description: Help text shown with this agent input.\n",
   },
   {
     description: "Pins a published output schema by key and version.",
@@ -181,10 +181,10 @@ function readStringList(value: unknown): string[] {
 }
 
 function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
-  const previewValue = buildPreviewValue(schema);
+  const defaultValue = buildRunInputDefaultValue(schema);
 
-  if (isRecord(previewValue)) {
-    return encodeValueEntry(previewValue);
+  if (isRecord(defaultValue)) {
+    return encodeValueEntry(defaultValue);
   }
 
   return encodeValueEntry({});
