@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSchemaJsonText, schemaBuilderToJsonSchema } from "./codec";
+import {
+  parseSchemaJsonText,
+  schemaBuilderToJsonSchema,
+  validateSchemaDefaultValue,
+} from "./codec";
 
 type SchemaBuilderInput = Parameters<typeof schemaBuilderToJsonSchema>[0];
+type JsonDefaultValue = null | boolean | number | string | JsonDefaultValue[] | { [key: string]: JsonDefaultValue };
+
+function builderWithDefault(builder: SchemaBuilderInput, defaultValue: JsonDefaultValue): SchemaBuilderInput {
+  return { ...builder, defaultValue } as unknown as SchemaBuilderInput;
+}
 
 const metadataRichBuilder = {
   kind: "object",
@@ -178,6 +187,119 @@ describe("schema codec", () => {
 
     expect(result.issues).toEqual([]);
     expect(result.builder).toEqual(metadataRichBuilder);
+  });
+
+  it("writes primitive builder defaultValue entries as JSON Schema defaults", () => {
+    expect(schemaBuilderToJsonSchema(builderWithDefault({ kind: "string" }, "AAPL"))).toEqual({
+      default: "AAPL",
+      type: "string",
+    });
+    expect(schemaBuilderToJsonSchema(builderWithDefault({ kind: "integer" }, 10))).toEqual({
+      default: 10,
+      type: "integer",
+    });
+    expect(schemaBuilderToJsonSchema(builderWithDefault({ kind: "number" }, 10.5))).toEqual({
+      default: 10.5,
+      type: "number",
+    });
+    expect(schemaBuilderToJsonSchema(builderWithDefault({ kind: "boolean" }, false))).toEqual({
+      default: false,
+      type: "boolean",
+    });
+  });
+
+  it("round-trips nested object and array defaultValue entries through JSON Schema defaults", () => {
+    const defaultedBuilder = builderWithDefault(
+      {
+        allowAdditionalProperties: false,
+        fields: [
+          {
+            name: "filters",
+            required: false,
+            schema: builderWithDefault(
+              {
+                allowAdditionalProperties: false,
+                fields: [{ name: "sector", required: false, schema: { kind: "string" } }],
+                kind: "object",
+              },
+              { sector: "technology" },
+            ),
+          },
+          {
+            name: "lots",
+            required: false,
+            schema: builderWithDefault({ items: { kind: "integer" }, kind: "array" }, [10, 20]),
+          },
+          {
+            name: "ticker",
+            required: false,
+            schema: builderWithDefault({ kind: "string", title: "Ticker" }, "AAPL"),
+          },
+        ],
+        kind: "object",
+      },
+      { ticker: "MSFT", lots: [5], filters: {} },
+    );
+    const defaultedJsonSchema = {
+      additionalProperties: false,
+      default: { ticker: "MSFT", lots: [5], filters: {} },
+      properties: {
+        filters: {
+          additionalProperties: false,
+          default: { sector: "technology" },
+          properties: { sector: { type: "string" } },
+          required: [],
+          type: "object",
+        },
+        lots: {
+          default: [10, 20],
+          items: { type: "integer" },
+          type: "array",
+        },
+        ticker: { default: "AAPL", title: "Ticker", type: "string" },
+      },
+      required: [],
+      type: "object",
+    };
+
+    expect(schemaBuilderToJsonSchema(defaultedBuilder)).toEqual(defaultedJsonSchema);
+
+    const result = parseSchemaJsonText(JSON.stringify(defaultedJsonSchema, null, 2));
+
+    expect(result.issues).toEqual([]);
+    expect(result.builder).toEqual(defaultedBuilder);
+  });
+
+  it("reads primitive JSON Schema defaults into builder defaultValue entries", () => {
+    const result = parseSchemaJsonText(
+      JSON.stringify(
+        {
+          default: "AAPL",
+          type: "string",
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.builder).toEqual(builderWithDefault({ kind: "string", title: null, description: null }, "AAPL"));
+  });
+
+  it("rejects nulls recursively in allowed additional-property defaults", () => {
+    const openObjectBuilder = {
+      allowAdditionalProperties: true,
+      fields: [{ name: "ticker", required: false, schema: { kind: "string" } }],
+      kind: "object",
+    } satisfies SchemaBuilderInput;
+
+    expect(
+      validateSchemaDefaultValue(openObjectBuilder, {
+        extra: { nested: null },
+        ticker: "AAPL",
+      }),
+    ).toEqual([{ field: "defaultValue.extra.nested", issue: "Default values cannot be null" }]);
+    expect(validateSchemaDefaultValue(openObjectBuilder, { extra: { nested: ["ok"] } })).toEqual([]);
   });
 
   it("reports unsupported keywords with the current parser wording", () => {

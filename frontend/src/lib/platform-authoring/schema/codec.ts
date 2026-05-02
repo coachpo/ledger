@@ -1,5 +1,5 @@
 import type { UnknownRecord } from "@/lib/types/common";
-import type { JsonPrimitive, SchemaIRNode, SchemaIRRef } from "./types";
+import type { JsonPrimitive, JsonValue, SchemaIRNode, SchemaIRRef } from "./types";
 import { createDefaultSchemaNode } from "./factories";
 import {
   createSchemaValidationIssue,
@@ -40,6 +40,26 @@ function addIssue(issues: SchemaCodecIssue[], field: string, issue: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOwnKey(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return typeof value !== "number" || Number.isFinite(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+
+  if (isRecord(value)) {
+    return Object.values(value).every(isJsonValue);
+  }
+
+  return false;
 }
 
 function toOptionalText(value: string | null | undefined) {
@@ -113,19 +133,39 @@ export function parsePrimitiveList(value: string): JsonPrimitive[] {
     .map(parseLinePrimitive);
 }
 
+type ParsedDefaultValue =
+  | { hasDefault: false }
+  | { defaultValue: JsonValue; hasDefault: true };
+
+function shouldPreserveEmptyMetadata(node: SchemaIRNode, context?: SchemaNodeContext): boolean {
+  return context?.path === "jsonSchema" && (node.kind === "boolean" || node.kind === "integer" || node.kind === "number" || node.kind === "ref" || node.kind === "string");
+}
+
 function withMetadata<T extends SchemaIRNode>(
   node: T,
   title?: string,
   description?: string,
+  parsedDefault: ParsedDefaultValue = { hasDefault: false },
+  context?: SchemaNodeContext,
 ): T {
-  return {
+  const titleText = toOptionalText(title);
+  const descriptionText = toOptionalText(description);
+  const keepEmptyMetadata = shouldPreserveEmptyMetadata(node, context);
+  const nextNode = {
     ...node,
-    description: toOptionalText(description) ?? null,
-    title: toOptionalText(title) ?? null,
-  };
+    ...(parsedDefault.hasDefault ? { defaultValue: parsedDefault.defaultValue } : {}),
+    ...(descriptionText ? { description: descriptionText } : keepEmptyMetadata ? { description: null } : {}),
+    ...(titleText ? { title: titleText } : keepEmptyMetadata ? { title: null } : {}),
+  } as T;
+
+  if (parsedDefault.hasDefault && context) {
+    validateDefaultValue(nextNode, parsedDefault.defaultValue, joinSchemaPath(context.path as never, "default"), context.issues);
+  }
+
+  return nextNode;
 }
 
-function withJsonMetadata(payload: UnknownRecord, node: { description?: string | null; title?: string | null }) {
+function withJsonMetadata(payload: UnknownRecord, node: { defaultValue?: JsonValue; description?: string | null; title?: string | null }) {
   const nextPayload = { ...payload };
 
   if (toOptionalText(node.title ?? undefined)) {
@@ -134,6 +174,10 @@ function withJsonMetadata(payload: UnknownRecord, node: { description?: string |
 
   if (toOptionalText(node.description ?? undefined)) {
     nextPayload.description = node.description;
+  }
+
+  if (hasOwnKey(node, "defaultValue")) {
+    nextPayload.default = node.defaultValue;
   }
 
   return nextPayload;
@@ -185,6 +229,178 @@ export function schemaBuilderToJsonSchema(node: SchemaIRNode): UnknownRecord {
   }
 }
 
+function readDefaultValue(schema: Record<string, unknown>, context: SchemaNodeContext): ParsedDefaultValue {
+  if (!hasOwnKey(schema, "default")) {
+    return { hasDefault: false };
+  }
+
+  if (!isJsonValue(schema.default)) {
+    addIssue(context.issues, joinSchemaPath(context.path as never, "default"), "Default values must be valid JSON values");
+    return { hasDefault: false };
+  }
+
+  return { defaultValue: schema.default, hasDefault: true };
+}
+
+function validateDefaultValue(node: SchemaIRNode, value: JsonValue, path: string, issues: SchemaCodecIssue[]) {
+  if (value === null) {
+    addIssue(issues, path, "Default values cannot be null");
+    return;
+  }
+
+  switch (node.kind) {
+    case "string":
+      if (typeof value !== "string") {
+        addIssue(issues, path, "Default value must be a string");
+      }
+      return;
+    case "integer":
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        addIssue(issues, path, "Default value must be an integer");
+      }
+      return;
+    case "number":
+      if (typeof value !== "number") {
+        addIssue(issues, path, "Default value must be a number");
+      }
+      return;
+    case "boolean":
+      if (typeof value !== "boolean") {
+        addIssue(issues, path, "Default value must be a boolean");
+      }
+      return;
+    case "enum":
+      if (typeof value !== "boolean" && typeof value !== "number" && typeof value !== "string") {
+        addIssue(issues, path, "Default value must be one of the enum values");
+        return;
+      }
+      if (!node.values.some((entry) => entry === value)) {
+        addIssue(issues, path, "Default value must be one of the enum values");
+      }
+      return;
+    case "literal":
+      if (node.value !== value) {
+        addIssue(issues, path, "Default value must match the literal value");
+      }
+      return;
+    case "array":
+      if (!Array.isArray(value)) {
+        addIssue(issues, path, "Default value must be an array");
+        return;
+      }
+      value.forEach((item, index) => validateDefaultValue(node.items, item, joinSchemaPath(path as never, `[${index}]`), issues));
+      return;
+    case "object":
+      validateObjectDefaultValue(node, value, path, issues);
+      return;
+    case "discriminated_union":
+      if (!node.variants.some((variant) => collectDefaultIssues(variant, value, path).length === 0)) {
+        addIssue(issues, path, "Default value must match one discriminated union variant");
+      }
+      return;
+    case "ref":
+      return;
+  }
+}
+
+function collectDefaultIssues(node: SchemaIRNode, value: JsonValue, path: string): SchemaCodecIssue[] {
+  const issues: SchemaCodecIssue[] = [];
+  validateDefaultValue(node, value, path, issues);
+  return issues;
+}
+
+export type SchemaDefaultValueTextResult =
+  | { defaultValue: JsonValue; hasDefault: true; issues: SchemaCodecIssue[] }
+  | { hasDefault: false; issues: SchemaCodecIssue[] };
+
+export function validateSchemaDefaultValue(
+  node: SchemaIRNode,
+  value: JsonValue,
+  path = "defaultValue",
+): SchemaCodecIssue[] {
+  return collectDefaultIssues(node, value, path);
+}
+
+export function parseSchemaDefaultValueText(
+  node: SchemaIRNode,
+  value: string,
+  path = "defaultValue",
+): SchemaDefaultValueTextResult {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { hasDefault: false, issues: [] };
+  }
+
+  try {
+    const parsedValue = JSON.parse(trimmed) as unknown;
+    if (!isJsonValue(parsedValue)) {
+      return {
+        hasDefault: false,
+        issues: [createSchemaValidationIssue(path, "Default values must be valid JSON values")],
+      };
+    }
+
+    return {
+      defaultValue: parsedValue,
+      hasDefault: true,
+      issues: validateSchemaDefaultValue(node, parsedValue, path),
+    };
+  } catch {
+    return {
+      hasDefault: false,
+      issues: [createSchemaValidationIssue(path, "Default value must be valid JSON.")],
+    };
+  }
+}
+
+function validateObjectDefaultValue(node: Extract<SchemaIRNode, { kind: "object" }>, value: JsonValue, path: string, issues: SchemaCodecIssue[]) {
+  if (!isRecord(value)) {
+    addIssue(issues, path, "Default value must be an object");
+    return;
+  }
+
+  const fields = node.fields ?? [];
+  const fieldMap = new Map(fields.map((field) => [field.name, field]));
+
+  for (const field of fields) {
+    if (field.required !== false && !hasOwnKey(value, field.name)) {
+      addIssue(issues, joinSchemaPath(path as never, field.name), "Required field is missing from the default value");
+    }
+  }
+
+  for (const [key, entryValue] of Object.entries(value)) {
+    const field = fieldMap.get(key);
+    if (!field) {
+      if (node.allowAdditionalProperties) {
+        validateDefaultJsonValue(entryValue, joinSchemaPath(path as never, key), issues);
+      } else {
+        addIssue(issues, joinSchemaPath(path as never, key), "Default object contains an unsupported field");
+      }
+      continue;
+    }
+
+    validateDefaultValue(field.schema, entryValue, joinSchemaPath(path as never, key), issues);
+  }
+}
+
+function validateDefaultJsonValue(value: JsonValue, path: string, issues: SchemaCodecIssue[]) {
+  if (value === null) {
+    addIssue(issues, path, "Default values cannot be null");
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateDefaultJsonValue(item, joinSchemaPath(path as never, `[${index}]`), issues));
+    return;
+  }
+
+  if (isRecord(value)) {
+    Object.entries(value).forEach(([key, entryValue]) => {
+      validateDefaultJsonValue(entryValue, joinSchemaPath(path as never, key), issues);
+    });
+  }
+}
+
 export function parseSchemaJsonText(value: string): SchemaCodecParseResult {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -225,6 +441,7 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
     joinSchemaPath(context.path as never, "description"),
     context.issues,
   );
+  const parsedDefault = readDefaultValue(schema, context);
 
   for (const key of ["allOf", "if", "then", "else", "not", "oneOf"] as const) {
     if (key in schema) {
@@ -233,12 +450,12 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
   }
 
   if ("$ref" in schema) {
-    validateAllowedKeys(schema, new Set(["$ref", "title", "description"]), context);
-    return withMetadata(parseRefBuilder(schema.$ref, context), title, description);
+    validateAllowedKeys(schema, new Set(["$ref", "default", "title", "description"]), context);
+    return withMetadata(parseRefBuilder(schema.$ref, context), title, description, parsedDefault, context);
   }
 
   if ("anyOf" in schema) {
-    validateAllowedKeys(schema, new Set(["anyOf", "discriminator", "title", "description"]), context);
+    validateAllowedKeys(schema, new Set(["anyOf", "default", "discriminator", "title", "description"]), context);
     const anyOf = schema.anyOf;
     if (!Array.isArray(anyOf) || anyOf.length < 2) {
       addIssue(
@@ -246,7 +463,7 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
         joinSchemaPath(context.path as never, "anyOf"),
         "Discriminated unions must include at least two variants",
       );
-      return withMetadata(createDefaultSchemaNode("discriminated_union"), title, description);
+      return withMetadata(createDefaultSchemaNode("discriminated_union"), title, description, parsedDefault, context);
     }
 
     if (!("discriminator" in schema)) {
@@ -276,21 +493,23 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
       },
       title,
       description,
+      parsedDefault,
+      context,
     );
   }
 
   if ("const" in schema) {
-    validateAllowedKeys(schema, new Set(["const", "type", "title", "description"]), context);
+    validateAllowedKeys(schema, new Set(["const", "default", "type", "title", "description"]), context);
     const literal = parseJsonPrimitive(schema.const, joinSchemaPath(context.path as never, "const"), context.issues);
-    validateDeclaredPrimitiveType(schema.type, literal ? primitiveKindForValue(literal) : undefined, context);
-    return withMetadata({ kind: "literal", value: literal ?? "value" }, title, description);
+    validateDeclaredPrimitiveType(schema.type, literal !== null ? primitiveKindForValue(literal) : undefined, context);
+    return withMetadata({ kind: "literal", value: literal ?? "value" }, title, description, parsedDefault, context);
   }
 
   if ("enum" in schema) {
-    validateAllowedKeys(schema, new Set(["enum", "type", "title", "description"]), context);
+    validateAllowedKeys(schema, new Set(["default", "enum", "type", "title", "description"]), context);
     if (!Array.isArray(schema.enum) || schema.enum.length === 0) {
       addIssue(context.issues, joinSchemaPath(context.path as never, "enum"), "Enum values must be a non-empty array");
-      return withMetadata(createDefaultSchemaNode("enum"), title, description);
+      return withMetadata(createDefaultSchemaNode("enum"), title, description, parsedDefault, context);
     }
 
     const values = schema.enum
@@ -301,30 +520,30 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
       addIssue(context.issues, joinSchemaPath(context.path as never, "enum"), "Enum values must all use the same primitive type");
     }
 
-    validateDeclaredPrimitiveType(schema.type, values[0] ? primitiveKindForValue(values[0]) : undefined, context);
-    return withMetadata({ kind: "enum", values: values.length > 0 ? values : ["value"] }, title, description);
+    validateDeclaredPrimitiveType(schema.type, values[0] !== undefined ? primitiveKindForValue(values[0]) : undefined, context);
+    return withMetadata({ kind: "enum", values: values.length > 0 ? values : ["value"] }, title, description, parsedDefault, context);
   }
 
   if (typeof schema.type !== "string") {
     addIssue(context.issues, joinSchemaPath(context.path as never, "type"), "Schema type is required");
-    return withMetadata(createDefaultSchemaNode("string"), title, description);
+    return withMetadata(createDefaultSchemaNode("string"), title, description, parsedDefault, context);
   }
 
   if (PRIMITIVE_TYPES.has(schema.type)) {
-    validateAllowedKeys(schema, new Set(["type", "title", "description"]), context);
-    return withMetadata({ kind: schema.type as PrimitiveKind }, title, description);
+    validateAllowedKeys(schema, new Set(["default", "type", "title", "description"]), context);
+    return withMetadata({ kind: schema.type as PrimitiveKind }, title, description, parsedDefault, context);
   }
 
   if (schema.type === "array") {
-    validateAllowedKeys(schema, new Set(["type", "items", "title", "description"]), context);
+    validateAllowedKeys(schema, new Set(["default", "type", "items", "title", "description"]), context);
     if (Array.isArray(schema.items)) {
       addIssue(context.issues, joinSchemaPath(context.path as never, "items"), "Tuple arrays are not supported");
-      return withMetadata(createDefaultSchemaNode("array"), title, description);
+      return withMetadata(createDefaultSchemaNode("array"), title, description, parsedDefault, context);
     }
 
     if (schema.items === undefined) {
       addIssue(context.issues, joinSchemaPath(context.path as never, "items"), "Array items are required");
-      return withMetadata(createDefaultSchemaNode("array"), title, description);
+      return withMetadata(createDefaultSchemaNode("array"), title, description, parsedDefault, context);
     }
 
     return withMetadata(
@@ -334,20 +553,22 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
       },
       title,
       description,
+      parsedDefault,
+      context,
     );
   }
 
   if (schema.type === "object") {
     validateAllowedKeys(
       schema,
-      new Set(["type", "properties", "required", "additionalProperties", "title", "description"]),
+      new Set(["default", "type", "properties", "required", "additionalProperties", "title", "description"]),
       context,
     );
 
     const properties = schema.properties ?? {};
     if (!isRecord(properties)) {
       addIssue(context.issues, joinSchemaPath(context.path as never, "properties"), "Object properties must be an object");
-      return withMetadata(createDefaultSchemaNode("object"), title, description);
+      return withMetadata(createDefaultSchemaNode("object"), title, description, parsedDefault, context);
     }
 
     const rawRequired = Array.isArray(schema.required) ? schema.required : [];
@@ -411,11 +632,13 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
       },
       title,
       description,
+      parsedDefault,
+      context,
     );
   }
 
   addIssue(context.issues, joinSchemaPath(context.path as never, "type"), `Schema type ${JSON.stringify(schema.type)} is not supported`);
-  return withMetadata(createDefaultSchemaNode("string"), title, description);
+  return withMetadata(createDefaultSchemaNode("string"), title, description, parsedDefault, context);
 }
 
 function validateAllowedKeys(schema: Record<string, unknown>, allowedKeys: Set<string>, context: SchemaNodeContext) {
