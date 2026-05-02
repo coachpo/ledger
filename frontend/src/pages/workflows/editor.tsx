@@ -56,7 +56,7 @@ import { ApiRequestError } from "@/lib/api-client";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { parseSchemaJsonText } from "@/lib/platform-authoring/schema/codec";
 import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
-import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
+import { buildRunInputDefaultValue } from "@/lib/platform-authoring/schema/preview";
 import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
 import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
 import type { ValueEntry } from "@/lib/platform-authoring/values/types";
@@ -87,11 +87,11 @@ type RunLaunchFeedback = {
 
 const WORKFLOW_SNIPPETS: WorkflowSnippet[] = [
   {
-    description: "Adds a string property for inputSchema.properties.",
+    description: "Adds a string property for inputSchema.properties with display metadata.",
     id: "input-property",
     label: "Input property",
     shortcut: "input",
-    text: "newField:\n  type: string\n  description: Describe this workflow input.\n",
+    text: "newField:\n  type: string\n  title: New field\n  description: Help text shown with this workflow input.\n",
   },
   {
     description: "Adds an agent slot entry for a step agents list.",
@@ -121,14 +121,14 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
-  const previewValue = buildPreviewValue(schema);
+  const defaultValue = buildRunInputDefaultValue(schema);
 
-  if (isRecord(previewValue) && typeof previewValue.ticker === "string") {
-    return encodeValueEntry({ ...previewValue, ticker: "AAPL" });
+  if (isRecord(defaultValue) && typeof defaultValue.ticker === "string") {
+    return encodeValueEntry({ ...defaultValue, ticker: "AAPL" });
   }
 
-  if (isRecord(previewValue)) {
-    return encodeValueEntry(previewValue);
+  if (isRecord(defaultValue)) {
+    return encodeValueEntry(defaultValue);
   }
 
   return encodeValueEntry({});

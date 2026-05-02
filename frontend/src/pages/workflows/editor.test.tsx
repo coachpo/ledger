@@ -24,12 +24,30 @@ const savedManifest = createWorkflowManifestScaffold({
   stepId: "review_market",
 });
 
+const workflowInputSchema = {
+  additionalProperties: false,
+  properties: {
+    limit: {
+      description: "Optional cap applied only when the workflow needs a guardrail.",
+      title: "Risk Limit",
+      type: "number",
+    },
+    symbol: {
+      description: "Portfolio symbol supplied at launch time.",
+      title: "Portfolio Symbol",
+      type: "string",
+    },
+  },
+  required: ["symbol"],
+  type: "object",
+};
+
 const savedWorkflow: WorkflowRead = {
   id: 88,
   aggregateBudgetUsd: "1.25000000",
   createdAt: "2026-04-20T10:00:00Z",
   description: "Reviews market context.",
-  inputSchema: {},
+  inputSchema: workflowInputSchema,
   key: "market_review",
   manifestApiVersion: "ledger.workflow/v1",
   manifestSource: savedManifest,
@@ -231,6 +249,32 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByTestId("workflow-dirty-indicator")).toHaveTextContent("Saved baseline");
   });
 
+  it("launches a run with required inputs only and navigates to the run detail", async () => {
+    paramsMock.workflowId = "88";
+    createWorkflowRunMock.mockResolvedValue({ id: 904 });
+
+    render(<WorkflowsEditorPage />);
+
+    const rawInput = screen.getByLabelText("Exact raw workflow run-input JSON") as HTMLTextAreaElement;
+    await waitFor(() => expect(rawInput).toHaveValue(JSON.stringify({ symbol: "example" }, null, 2)));
+    expect(screen.getByLabelText("Portfolio Symbol")).toHaveValue("example");
+    expect(screen.getByText("Portfolio symbol supplied at launch time.")).toBeVisible();
+    expect(screen.getByText("Optional cap applied only when the workflow needs a guardrail.")).toBeVisible();
+    expect(screen.getByRole("button", { name: /add field/i })).toBeVisible();
+    expect(rawInput.value).not.toContain("Portfolio Symbol");
+    expect(rawInput.value).not.toContain("limit");
+
+    fireEvent.click(screen.getByTestId("workflow-run-now"));
+
+    await waitFor(() => expect(createWorkflowRunMock).toHaveBeenCalledTimes(1));
+    expect(createWorkflowRunMock).toHaveBeenCalledWith({
+      payload: { symbol: "example" },
+      version: 2,
+      workflowId: "88",
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/runs/904");
+  });
+
   it("opens command snippets and inserts YAML text at the cursor", async () => {
     render(<WorkflowsEditorPage />);
 
@@ -239,6 +283,7 @@ describe("WorkflowsEditorPage", () => {
     fireEvent.click(screen.getByText("Input property"));
 
     await waitFor(() => expect(editor.value).toContain("newField:"));
-    expect(editor.value).toContain("description: Describe this workflow input.");
+    expect(editor.value).toContain("title: New field");
+    expect(editor.value).toContain("description: Help text shown with this workflow input.");
   });
 });
