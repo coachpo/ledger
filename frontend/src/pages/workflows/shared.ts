@@ -115,7 +115,13 @@ export function createInitialWorkflowDraft(): WorkflowDraft {
     inputSchemaText: JSON.stringify(
       {
         type: "object",
-        properties: { ticker: { type: "string" } },
+        properties: {
+          ticker: {
+            type: "string",
+            title: "Ticker",
+            description: "Ticker symbol to research, such as AAPL.",
+          },
+        },
         required: ["ticker"],
       },
       null,
