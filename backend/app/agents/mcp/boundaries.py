@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.agents.mcp.security import McpSecurityError, validate_http_sse_url, validate_stdio_command
+from app.core.config import get_settings
 from app.models.mcp_server import McpServer
 
 
@@ -70,22 +72,37 @@ class DefaultMcpConnectionTester:
         if boundary.url is None:
             return McpConnectionTestResult(ok=False, message="No HTTP/SSE URL was configured")
         try:
-            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-                headers = {"accept": "text/event-stream", **boundary.headers}
-                with client.stream("GET", boundary.url, headers=headers) as response:
-                    if 200 <= response.status_code < 300:
-                        return McpConnectionTestResult(
-                            ok=True,
-                            message=f"Received HTTP {response.status_code} from MCP endpoint",
-                            status_code=response.status_code,
-                        )
-                    return McpConnectionTestResult(
-                        ok=False,
-                        message=f"Received HTTP {response.status_code} from MCP endpoint",
-                        status_code=response.status_code,
-                    )
+            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                return self._test_http_sse_with_client(boundary, client)
         except httpx.HTTPError as exc:
             return McpConnectionTestResult(ok=False, message=str(exc))
+
+    @staticmethod
+    def _test_http_sse_with_client(
+        boundary: McpClientBoundary,
+        client: httpx.Client,
+    ) -> McpConnectionTestResult:
+        if boundary.url is None:
+            return McpConnectionTestResult(ok=False, message="No HTTP/SSE URL was configured")
+        headers = {"accept": "text/event-stream", **boundary.headers}
+        with client.stream("GET", boundary.url, headers=headers) as response:
+            if 300 <= response.status_code < 400:
+                return McpConnectionTestResult(
+                    ok=False,
+                    message="MCP HTTP/SSE redirects are not followed",
+                    status_code=response.status_code,
+                )
+            if 200 <= response.status_code < 300:
+                return McpConnectionTestResult(
+                    ok=True,
+                    message=f"Received HTTP {response.status_code} from MCP endpoint",
+                    status_code=response.status_code,
+                )
+            return McpConnectionTestResult(
+                ok=False,
+                message=f"Received HTTP {response.status_code} from MCP endpoint",
+                status_code=response.status_code,
+            )
 
     @staticmethod
     def _resolve_executable_path(executable: str) -> str | None:
@@ -104,6 +121,8 @@ def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
     headers = _normalize_headers(config, transport, details)
     env = _normalize_env(config, transport, details)
 
+    if not details:
+        _validate_transport_security(transport=transport, command=command, url=url, details=details)
     if details:
         raise McpClientConfigError(details)
 
@@ -209,6 +228,25 @@ def _normalize_env(
             details.append({"field": "env", "issue": "env is only supported for stdio"})
         return {}
     return _normalize_string_mapping(config.get("env"), field_name="env", details=details)
+
+
+def _validate_transport_security(
+    *,
+    transport: str,
+    command: tuple[str, ...] | None,
+    url: str | None,
+    details: list[dict[str, str]],
+) -> None:
+    try:
+        if transport == "stdio":
+            validate_stdio_command(
+                command or (),
+                allowed_commands=get_settings().mcp_stdio_allowed_commands,
+            )
+        elif transport == "http-sse":
+            validate_http_sse_url(url or "")
+    except McpSecurityError as exc:
+        details.append({"field": "transport", "issue": str(exc)})
 
 
 def _normalize_string_mapping(

@@ -25,6 +25,12 @@ class Settings(BaseSettings):
         alias="MARKET_DATA_CACHE_DIR",
     )
     public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
+    mcp_runtime_enabled: bool = Field(default=False, alias="MCP_RUNTIME_ENABLED")
+    mcp_runtime_timeout_seconds: float = Field(default=5.0, alias="MCP_RUNTIME_TIMEOUT")
+    mcp_stdio_allowed_commands: Annotated[list[str], NoDecode] = Field(
+        default=["node", "npx", "python", "python3"],
+        alias="MCP_STDIO_ALLOWED_COMMANDS",
+    )
     cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default=[
             "http://127.0.0.1:25173",
@@ -46,9 +52,9 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    @field_validator("cors_allowed_origins", mode="before")
+    @field_validator("cors_allowed_origins", "mcp_stdio_allowed_commands", mode="before")
     @classmethod
-    def split_cors_allowed_origins(cls, value: object) -> object:
+    def split_string_lists(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
