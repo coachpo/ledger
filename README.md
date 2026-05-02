@@ -117,6 +117,7 @@ Visit `http://127.0.0.1:25173/`.
 - Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
+- `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
 
 ## Validation
