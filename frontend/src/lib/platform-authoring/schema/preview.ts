@@ -29,10 +29,10 @@ function createDefaultVariantObject(tag: string): SchemaIRObject {
   };
 }
 
-export function buildPreviewValue(node: SchemaIRNode): unknown {
+function buildSampleValue(node: SchemaIRNode, options: { includeOptionalFields: boolean }): unknown {
   switch (node.kind) {
     case "string":
-      return node.title || "example";
+      return "example";
     case "integer":
       return 1;
     case "number":
@@ -44,15 +44,27 @@ export function buildPreviewValue(node: SchemaIRNode): unknown {
     case "literal":
       return node.value;
     case "array":
-      return [buildPreviewValue(node.items)];
+      return [buildSampleValue(node.items, options)];
     case "ref":
       return `registry://${node.schemaKey}${node.schemaVersion ? `@${node.schemaVersion}` : ""}`;
     case "discriminated_union":
-      return buildPreviewValue(node.variants[0] ?? createDefaultVariantObject("variant"));
+      return buildSampleValue(node.variants[0] ?? createDefaultVariantObject("variant"), options);
     case "object":
     default:
-      return Object.fromEntries((node.fields ?? []).map((field) => [field.name, buildPreviewValue(field.schema)]));
+      return Object.fromEntries(
+        (node.fields ?? [])
+          .filter((field) => options.includeOptionalFields || field.required !== false)
+          .map((field) => [field.name, buildSampleValue(field.schema, options)]),
+      );
   }
+}
+
+export function buildPreviewValue(node: SchemaIRNode): unknown {
+  return buildSampleValue(node, { includeOptionalFields: true });
+}
+
+export function buildRunInputDefaultValue(node: SchemaIRNode): unknown {
+  return buildSampleValue(node, { includeOptionalFields: false });
 }
 
 export function stringifyPreviewJson(value: unknown) {
