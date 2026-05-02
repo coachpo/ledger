@@ -723,6 +723,8 @@ export function createAgentManifestScaffold(options: AgentManifestScaffoldOption
       properties: {
         ticker: {
           type: "string",
+          title: "Ticker",
+          description: "Ticker symbol to research, such as AAPL.",
         },
       },
       required: ["ticker"],

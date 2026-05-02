@@ -311,10 +311,14 @@ spec:
   capabilities: [summarize_capability@3]
   outputSchema: summary_schema@5
   inputSchema:
+    description: Inputs for macro analysis runs.
     required: [ticker]
     additionalProperties: false
+    title: Macro Agent Input
     properties:
       ticker:
+        description: Symbol to analyze.
+        title: Ticker Symbol
         type: string
     type: object
   systemPrompt: Analyze carefully.
@@ -337,9 +341,13 @@ spec:
   systemPrompt: Analyze carefully.
   inputSchema:
     type: object
+    title: Macro Agent Input
+    description: Inputs for macro analysis runs.
     properties:
       ticker:
         type: string
+        title: Ticker Symbol
+        description: Symbol to analyze.
     required:
       - ticker
     additionalProperties: false
