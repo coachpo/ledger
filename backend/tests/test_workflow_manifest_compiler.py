@@ -271,6 +271,65 @@ def test_compile_workflow_manifest_preserves_input_schema_metadata() -> None:
     )
 
 
+def test_compile_workflow_manifest_preserves_valid_input_schema_defaults() -> None:
+    source = _manifest_source().replace(
+        """    ticker:
+      type: string
+    horizon_days:
+      type: integer
+""",
+        """    ticker:
+      type: string
+      default: NVDA
+    horizon_days:
+      type: integer
+      default: 30
+""",
+        1,
+    )
+
+    payload = compile_workflow_manifest(source)
+
+    input_schema = cast(dict[str, object], payload["inputSchema"])
+    properties = cast(dict[str, dict[str, object]], input_schema["properties"])
+    assert properties["ticker"]["default"] == "NVDA"
+    assert properties["horizon_days"]["default"] == 30
+    assert "horizon_days" not in cast(list[str], input_schema["required"])
+    assert (
+        WorkflowCreate.model_validate(payload).model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+        == payload
+    )
+
+
+def test_compile_workflow_manifest_rejects_invalid_input_schema_default_with_property_path() -> (
+    None
+):
+    source = _manifest_source().replace(
+        """    ticker:
+      type: string
+""",
+        """    ticker:
+      type: string
+      default: 123
+""",
+        1,
+    )
+
+    with pytest.raises(WorkflowManifestCompilerError) as excinfo:
+        _ = compile_workflow_manifest(source)
+
+    compiler_error = cast(_CompilerError, cast(object, excinfo.value))
+    assert any(
+        diagnostic.path == "inputSchema.properties.ticker.default"
+        and "Default value must match schema type 'string'" in diagnostic.message
+        for diagnostic in compiler_error.diagnostics
+    )
+
+
 def test_compile_workflow_manifest_omits_output_path_when_reference_has_no_path() -> None:
     payload = compile_workflow_manifest(
         _manifest_source(output_reference="${{ steps.synthesize.outputs.decision }}")

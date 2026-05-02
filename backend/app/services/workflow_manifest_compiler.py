@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from app.schemas.workflow import WorkflowCreate
 from app.schemas.workflow_manifest import (
     WorkflowManifest,
     WorkflowManifestDiagnostic,
+    WorkflowManifestDiagnosticSeverity,
     WorkflowManifestReference,
 )
-from app.services.workflow_manifest_parser import parse_workflow_manifest
+from app.services.output_schema_compiler import OutputSchemaCompiler, OutputSchemaValidationFailure
+from app.services.workflow_manifest_parser import (
+    locate_workflow_manifest_path,
+    parse_workflow_manifest,
+)
 
 
 class WorkflowManifestCompilerError(ValueError):
@@ -17,14 +22,28 @@ class WorkflowManifestCompilerError(ValueError):
         self.diagnostics: list[WorkflowManifestDiagnostic] = diagnostics
 
 
-def compile_workflow_manifest(source: str | WorkflowManifest) -> dict[str, object]:
-    manifest = _resolve_manifest(source)
+class _UnavailableOutputSchemaRepository:
+    def resolve_registry_ref(self, key: str, version: int | None) -> None:
+        return None
+
+
+def compile_workflow_manifest(
+    source: str | WorkflowManifest,
+    *,
+    schema_compiler: OutputSchemaCompiler | None = None,
+) -> dict[str, object]:
+    manifest, source_text = _resolve_manifest(source)
+    input_schema = _normalize_input_schema(
+        manifest.input_schema,
+        source=source_text,
+        schema_compiler=schema_compiler,
+    )
     step_index_by_id = {step.id: index for index, step in enumerate(manifest.steps, start=1)}
     payload = {
         "key": manifest.metadata.key,
         "name": manifest.metadata.name,
         "description": manifest.metadata.description,
-        "inputSchema": manifest.input_schema,
+        "inputSchema": input_schema,
         "steps": [
             {
                 "index": step_index,
@@ -56,14 +75,68 @@ def compile_workflow_manifest(source: str | WorkflowManifest) -> dict[str, objec
     )
 
 
-def _resolve_manifest(source: str | WorkflowManifest) -> WorkflowManifest:
+def _resolve_manifest(source: str | WorkflowManifest) -> tuple[WorkflowManifest, str | None]:
     if isinstance(source, WorkflowManifest):
-        return source
+        return source, None
 
     result = parse_workflow_manifest(source)
     if result.manifest is None or result.diagnostics:
         raise WorkflowManifestCompilerError(result.diagnostics)
-    return result.manifest
+    return result.manifest, source
+
+
+def _normalize_input_schema(
+    input_schema: dict[str, Any],
+    *,
+    source: str | None,
+    schema_compiler: OutputSchemaCompiler | None,
+) -> dict[str, object]:
+    compiler = schema_compiler or OutputSchemaCompiler(
+        cast(Any, _UnavailableOutputSchemaRepository())
+    )
+    try:
+        prepared_schema = compiler.normalize_payload(
+            builder=None,
+            json_schema=input_schema,
+        )
+    except OutputSchemaValidationFailure as exc:
+        raise WorkflowManifestCompilerError(
+            [
+                _diagnostic(
+                    issue.get("issue", "Invalid input schema"),
+                    path=_input_schema_issue_path(issue.get("field", "jsonSchema")),
+                    source=source,
+                )
+                for issue in exc.issues
+            ]
+        ) from exc
+    return cast(dict[str, object], prepared_schema.json_schema)
+
+
+def _input_schema_issue_path(field: str) -> str:
+    if field == "jsonSchema":
+        return "inputSchema"
+    if field.startswith("jsonSchema."):
+        return field.replace("jsonSchema", "inputSchema", 1)
+    return f"inputSchema.{field}"
+
+
+def _diagnostic(
+    message: str,
+    *,
+    path: str,
+    source: str | None,
+) -> WorkflowManifestDiagnostic:
+    line, column = (
+        locate_workflow_manifest_path(source, path) if source is not None else (None, None)
+    )
+    return WorkflowManifestDiagnostic(
+        severity=WorkflowManifestDiagnosticSeverity.ERROR,
+        message=message,
+        path=path,
+        line=line,
+        column=column,
+    )
 
 
 def _compile_reference(

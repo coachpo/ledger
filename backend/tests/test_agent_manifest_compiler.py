@@ -234,6 +234,72 @@ def test_compile_agent_manifest_preserves_input_schema_metadata(
     )
 
 
+def test_compile_agent_manifest_preserves_valid_input_schema_defaults(
+    session_factory: sessionmaker[Session],
+) -> None:
+    source = _valid_manifest_source().replace(
+        """      ticker:
+        type: string
+    required:
+      - ticker
+""",
+        """      ticker:
+        type: string
+        default: NVDA
+      horizon_days:
+        type: integer
+        default: 30
+    required:
+      - ticker
+""",
+        1,
+    )
+
+    with session_factory() as session:
+        _refs = _seed_manifest_refs(session)
+        payload = compile_agent_manifest(source, session)
+
+    input_schema = cast(dict[str, object], payload["inputSchema"])
+    properties = cast(dict[str, dict[str, object]], input_schema["properties"])
+    assert properties["ticker"]["default"] == "NVDA"
+    assert properties["horizon_days"]["default"] == 30
+    assert "horizon_days" not in cast(list[str], input_schema["required"])
+    assert (
+        AgentCreate.model_validate(payload).model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+        == payload
+    )
+
+
+def test_compile_agent_manifest_rejects_invalid_input_schema_default_with_property_path(
+    session_factory: sessionmaker[Session],
+) -> None:
+    source = _valid_manifest_source().replace(
+        """      ticker:
+        type: string
+""",
+        """      ticker:
+        type: string
+        default: 123
+""",
+        1,
+    )
+
+    with session_factory() as session:
+        _refs = _seed_manifest_refs(session)
+        with pytest.raises(AgentManifestCompilerError) as excinfo:
+            _ = compile_agent_manifest(source, session)
+
+    assert any(
+        diagnostic.path == "spec.inputSchema.properties.ticker.default"
+        and "Default value must match schema type 'string'" in diagnostic.message
+        for diagnostic in excinfo.value.diagnostics
+    )
+
+
 def test_compile_agent_manifest_rejects_legacy_skills_manifest(
     session_factory: sessionmaker[Session],
 ) -> None:

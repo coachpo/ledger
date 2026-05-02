@@ -52,7 +52,10 @@ from app.services.output_schema_compiler import (
     SchemaPrimitive,
     SchemaRef,
 )
-from app.services.workflow_manifest_compiler import compile_workflow_manifest
+from app.services.workflow_manifest_compiler import (
+    WorkflowManifestCompilerError,
+    compile_workflow_manifest,
+)
 from app.services.workflow_manifest_parser import (
     locate_workflow_manifest_path,
     parse_workflow_manifest,
@@ -356,7 +359,13 @@ class WorkflowService:
             raise _WorkflowManifestDiagnosticsError(parse_result.diagnostics)
 
         manifest = parse_result.manifest
-        compiled_payload = compile_workflow_manifest(manifest)
+        try:
+            compiled_payload = compile_workflow_manifest(
+                manifest_source,
+                schema_compiler=self.schema_compiler,
+            )
+        except WorkflowManifestCompilerError as exc:
+            raise _WorkflowManifestDiagnosticsError(exc.diagnostics) from exc
         payload = WorkflowCreate.model_validate(compiled_payload)
         try:
             state = self._build_state(
