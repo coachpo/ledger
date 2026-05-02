@@ -2,16 +2,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
-from typing import Protocol, cast
+from decimal import Decimal, InvalidOperation
+from typing import Literal, Protocol, cast
 
 import httpx
 
-from app.core.formatting import normalize_currency, normalize_symbol
+from app.core.formatting import normalize_currency, normalize_symbol, to_utc
 
 
 class QuoteProviderError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        details: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code: str = code
+        self.details: dict[str, str] = details or {}
+
+
+class QuoteProviderMissingKeyError(QuoteProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_api_key_missing", details=details)
+
+
+class QuoteProviderTimeoutError(QuoteProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_timeout", details=details)
 
 
 @dataclass(slots=True)
@@ -39,6 +58,94 @@ class ProviderHistorySeries:
     points: list[ProviderHistoryPoint]
 
 
+@dataclass(slots=True)
+class ProviderOhlcvRow:
+    at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int | None = None
+    adjusted_close: Decimal | None = None
+
+
+@dataclass(slots=True)
+class ProviderOhlcvSeries:
+    symbol: str
+    currency: str | None
+    provider: str
+    rows: list[ProviderOhlcvRow]
+
+
+@dataclass(slots=True)
+class ProviderFundamentalMetric:
+    name: str
+    value: Decimal | str | None
+    currency: str | None = None
+    period: str | None = None
+    as_of: datetime | None = None
+
+
+@dataclass(slots=True)
+class ProviderFinancialStatementLine:
+    name: str
+    value: Decimal | None
+    currency: str | None = None
+
+
+@dataclass(slots=True)
+class ProviderFinancialStatement:
+    statement_type: Literal["income_statement", "balance_sheet", "cash_flow"]
+    period: Literal["annual", "quarterly", "trailing_twelve_months"]
+    period_end: datetime
+    lines: list[ProviderFinancialStatementLine]
+
+
+@dataclass(slots=True)
+class ProviderFundamentals:
+    symbol: str
+    provider: str
+    as_of: datetime
+    metrics: list[ProviderFundamentalMetric]
+    statements: list[ProviderFinancialStatement]
+
+
+@dataclass(slots=True)
+class ProviderNewsItem:
+    title: str
+    source: str
+    published_at: datetime
+    url: str | None = None
+    summary: str | None = None
+    symbols: list[str] | None = None
+    sentiment: Literal["positive", "neutral", "negative", "mixed"] | None = None
+
+
+@dataclass(slots=True)
+class ProviderNewsResult:
+    provider: str
+    items: list[ProviderNewsItem]
+
+
+@dataclass(slots=True)
+class ProviderInsiderTransaction:
+    insider_name: str
+    transaction_type: str
+    transaction_date: datetime
+    role: str | None = None
+    shares: Decimal | None = None
+    price: Decimal | None = None
+    value: Decimal | None = None
+    filed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class ProviderInsiderData:
+    symbol: str
+    provider: str
+    transactions: list[ProviderInsiderTransaction]
+
+
 class QuoteProvider(Protocol):
     def fetch_symbol_name(self, symbol: str) -> str | None: ...
 
@@ -48,12 +155,37 @@ class QuoteProvider(Protocol):
         self, symbol: str, *, range_value: str, interval: str
     ) -> ProviderHistorySeries: ...
 
+    def fetch_ohlcv(
+        self, symbol: str, *, start_date: datetime, end_date: datetime, interval: str
+    ) -> ProviderOhlcvSeries: ...
+
+    def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals: ...
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult: ...
+
+    def fetch_insider_transactions(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderInsiderData: ...
+
 
 class YahooFinanceQuoteProvider:
-    provider_name = "yahoo_finance"
+    provider_name: str = "yahoo_finance"
 
     def __init__(self, timeout: float) -> None:
-        self.timeout = timeout
+        self.timeout: float = timeout
 
     def fetch_symbol_name(self, symbol: str) -> str | None:
         meta = self._fetch_chart_meta(symbol, interval="1d", range_value="1d")
@@ -134,6 +266,139 @@ class YahooFinanceQuoteProvider:
             points=points,
         )
 
+    def fetch_ohlcv(
+        self, symbol: str, *, start_date: datetime, end_date: datetime, interval: str
+    ) -> ProviderOhlcvSeries:
+        result = self._fetch_chart_result(
+            symbol,
+            interval=interval,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        meta = _as_object_dict(result.get("meta", {}), context=f"OHLCV meta for {symbol}")
+        indicators = _as_object_dict(
+            result.get("indicators", {}),
+            context=f"OHLCV indicators for {symbol}",
+        )
+        indicator_items = _as_object_list(
+            indicators.get("quote", []),
+            context=f"OHLCV quote indicator items for {symbol}",
+        )
+        quote_items = (
+            _as_object_dict(indicator_items[0], context=f"OHLCV quote items for {symbol}")
+            if indicator_items
+            else {}
+        )
+        adjclose_items = _as_object_list(
+            indicators.get("adjclose", []),
+            context=f"OHLCV adjusted-close indicator items for {symbol}",
+        )
+        adjusted_close_items = (
+            _as_object_list(
+                _as_object_dict(
+                    adjclose_items[0],
+                    context=f"OHLCV adjusted-close items for {symbol}",
+                ).get("adjclose", []),
+                context=f"OHLCV adjusted-close series for {symbol}",
+            )
+            if adjclose_items
+            else []
+        )
+        timestamps = _as_object_list(
+            result.get("timestamp", []),
+            context=f"OHLCV timestamps for {symbol}",
+        )
+        opens = _as_object_list(
+            quote_items.get("open", []), context=f"OHLCV open series for {symbol}"
+        )
+        highs = _as_object_list(
+            quote_items.get("high", []), context=f"OHLCV high series for {symbol}"
+        )
+        lows = _as_object_list(quote_items.get("low", []), context=f"OHLCV low series for {symbol}")
+        closes = _as_object_list(
+            quote_items.get("close", []), context=f"OHLCV close series for {symbol}"
+        )
+        volumes = _as_object_list(
+            quote_items.get("volume", []), context=f"OHLCV volume series for {symbol}"
+        )
+        currency = meta.get("currency")
+
+        rows: list[ProviderOhlcvRow] = []
+        for index, timestamp_value in enumerate(timestamps):
+            timestamp = _coerce_timestamp(timestamp_value)
+            open_price = _coerce_decimal(_list_item(opens, index))
+            high_price = _coerce_decimal(_list_item(highs, index))
+            low_price = _coerce_decimal(_list_item(lows, index))
+            close_price = _coerce_decimal(_list_item(closes, index))
+            if (
+                timestamp is None
+                or open_price is None
+                or high_price is None
+                or low_price is None
+                or close_price is None
+            ):
+                continue
+
+            rows.append(
+                ProviderOhlcvRow(
+                    at=datetime.fromtimestamp(timestamp, tz=UTC),
+                    open=open_price,
+                    high=high_price,
+                    low=low_price,
+                    close=close_price,
+                    volume=_coerce_volume(_list_item(volumes, index)),
+                    adjusted_close=_coerce_decimal(_list_item(adjusted_close_items, index)),
+                )
+            )
+
+        if not rows:
+            raise QuoteProviderError(f"OHLCV payload was empty for {symbol}")
+
+        return ProviderOhlcvSeries(
+            symbol=normalize_symbol(symbol),
+            currency=(normalize_currency(str(currency)) if currency is not None else None),
+            provider=self.provider_name,
+            rows=rows,
+        )
+
+    def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals:
+        raise QuoteProviderError(
+            f"Fundamentals are unavailable for {normalize_symbol(symbol)}",
+            code="provider_unavailable",
+            details={"provider": self.provider_name, "symbol": normalize_symbol(symbol)},
+        )
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult:
+        del query, start_date, end_date, limit
+        raise QuoteProviderError(
+            "News is unavailable from yahoo_finance",
+            code="provider_unavailable",
+            details={"provider": self.provider_name, "symbols": ",".join(symbols)},
+        )
+
+    def fetch_insider_transactions(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderInsiderData:
+        del start_date, end_date, limit
+        raise QuoteProviderError(
+            f"Insider transactions are unavailable for {normalize_symbol(symbol)}",
+            code="provider_unavailable",
+            details={"provider": self.provider_name, "symbol": normalize_symbol(symbol)},
+        )
+
     def _fetch_chart_meta(
         self, symbol: str, *, interval: str, range_value: str
     ) -> dict[str, object]:
@@ -144,20 +409,35 @@ class YahooFinanceQuoteProvider:
         )
 
     def _fetch_chart_result(
-        self, symbol: str, *, interval: str, range_value: str
+        self,
+        symbol: str,
+        *,
+        interval: str,
+        range_value: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> dict[str, object]:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        params = {"interval": interval, "range": range_value}
+        params: dict[str, str | int] = {"interval": interval}
+        if range_value is not None:
+            params["range"] = range_value
+        elif start_date is not None and end_date is not None:
+            params["period1"] = int(to_utc(start_date).timestamp())
+            params["period2"] = int(to_utc(end_date).timestamp()) + 1
+        else:
+            raise QuoteProviderError(f"Quote request bounds were incomplete for {symbol}")
         headers = {"User-Agent": "ledger-backend/0.1"}
 
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url, params=params, headers=headers)
-                response.raise_for_status()
+                _ = response.raise_for_status()
         except httpx.HTTPError as exc:
             raise QuoteProviderError(f"Quote request failed for {symbol}") from exc
 
-        payload = _as_object_dict(response.json(), context=f"Quote payload for {symbol}")
+        payload = _as_object_dict(
+            cast(object, response.json()), context=f"Quote payload for {symbol}"
+        )
         chart = _as_object_dict(payload.get("chart", {}), context=f"Quote payload for {symbol}")
         result_items = _as_object_list(
             chart.get("result", []),
@@ -170,10 +450,10 @@ class YahooFinanceQuoteProvider:
 
 
 class DeterministicQuoteProvider:
-    provider_name = "deterministic_test"
+    provider_name: str = "deterministic_test"
 
     def __init__(self, *, anchor_date: date | None = None) -> None:
-        self.anchor_date = anchor_date or date(2024, 1, 1)
+        self.anchor_date: date = anchor_date or date(2024, 1, 1)
 
     def fetch_symbol_name(self, symbol: str) -> str | None:
         names = {
@@ -213,6 +493,115 @@ class DeterministicQuoteProvider:
             currency="USD",
             provider=self.provider_name,
             points=points,
+        )
+
+    def fetch_ohlcv(
+        self, symbol: str, *, start_date: datetime, end_date: datetime, interval: str
+    ) -> ProviderOhlcvSeries:
+        _ = interval
+        rows: list[ProviderOhlcvRow] = []
+        for point_date in self._iter_days(to_utc(start_date).date(), to_utc(end_date).date()):
+            open_price = self._price_for_day(symbol, point_date)
+            close_price = open_price + Decimal("0.5")
+            rows.append(
+                ProviderOhlcvRow(
+                    at=datetime.combine(point_date, datetime.min.time(), tzinfo=UTC),
+                    open=open_price,
+                    high=open_price + Decimal("1.0"),
+                    low=open_price - Decimal("1.0"),
+                    close=close_price,
+                    volume=1_000_000 + (point_date - self.anchor_date).days * 100,
+                    adjusted_close=close_price - Decimal("0.05"),
+                )
+            )
+
+        return ProviderOhlcvSeries(
+            symbol=normalize_symbol(symbol),
+            currency="USD",
+            provider=self.provider_name,
+            rows=rows,
+        )
+
+    def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals:
+        normalized_symbol = normalize_symbol(symbol)
+        as_of = datetime.combine(date(2024, 3, 29), datetime.min.time(), tzinfo=UTC)
+        return ProviderFundamentals(
+            symbol=normalized_symbol,
+            provider=self.provider_name,
+            as_of=as_of,
+            metrics=[
+                ProviderFundamentalMetric(
+                    name="market_cap",
+                    value=Decimal("1000000000"),
+                    currency="USD",
+                    period="ttm",
+                    as_of=as_of,
+                )
+            ],
+            statements=[
+                ProviderFinancialStatement(
+                    statement_type="income_statement",
+                    period="annual",
+                    period_end=as_of,
+                    lines=[
+                        ProviderFinancialStatementLine(
+                            name="revenue",
+                            value=Decimal("100000000"),
+                            currency="USD",
+                        )
+                    ],
+                )
+            ],
+        )
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult:
+        del query, start_date, end_date
+        items = [
+            ProviderNewsItem(
+                title=f"{normalize_symbol(symbol)} deterministic market update",
+                source="deterministic_test",
+                published_at=datetime.combine(date(2024, 3, 29), datetime.min.time(), tzinfo=UTC),
+                symbols=[normalize_symbol(symbol)],
+                sentiment="neutral",
+            )
+            for symbol in symbols[:limit]
+        ]
+        return ProviderNewsResult(provider=self.provider_name, items=items)
+
+    def fetch_insider_transactions(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderInsiderData:
+        del start_date, end_date
+        normalized_symbol = normalize_symbol(symbol)
+        transaction_date = datetime.combine(date(2024, 3, 29), datetime.min.time(), tzinfo=UTC)
+        return ProviderInsiderData(
+            symbol=normalized_symbol,
+            provider=self.provider_name,
+            transactions=[
+                ProviderInsiderTransaction(
+                    insider_name="Deterministic Insider",
+                    role="Director",
+                    transaction_type="BUY",
+                    shares=Decimal("10"),
+                    price=Decimal("100"),
+                    value=Decimal("1000"),
+                    filed_at=transaction_date,
+                    transaction_date=transaction_date,
+                )
+            ][:limit],
         )
 
     def download_history(self, symbol: str, start: date, end: date) -> list[dict[str, object]]:
@@ -265,12 +654,42 @@ def _as_object_list(value: object, *, context: str) -> list[object]:
     return cast(list[object], value)
 
 
+def _list_item(items: list[object], index: int) -> object:
+    if index >= len(items):
+        return None
+    return items[index]
+
+
 def _coerce_name(value: object) -> str | None:
     if not isinstance(value, str):
         return None
 
     name = value.strip()
     return name or None
+
+
+def _coerce_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation:
+        return None
+
+
+def _coerce_volume(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _coerce_timestamp(value: object) -> int | None:
