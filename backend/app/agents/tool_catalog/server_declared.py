@@ -38,6 +38,12 @@ SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
         description="Read persisted Ledger reports through server-owned report lookups.",
         module=_SERVER_DECLARED_MODULE,
     ),
+    ServerDeclaredToolSpec(
+        key="ledger.reports.write",
+        display_name="Report Memory Write",
+        description="Create pending agent-memory reports through server-owned memory writes.",
+        module=_SERVER_DECLARED_MODULE,
+    ),
 )
 
 SERVER_DECLARED_TOOL_REGISTRY: dict[str, ServerDeclaredToolSpec] = {
