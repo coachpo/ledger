@@ -44,6 +44,7 @@ describe("ModelConnectionsListPage", () => {
         items: [
           {
             apiKeyLast4: "4242",
+            apiStyle: "responses",
             baseUrl: "https://api.openai.com/v1",
             description: "Production traffic",
             hasApiKey: true,
@@ -61,8 +62,9 @@ describe("ModelConnectionsListPage", () => {
           },
           {
             apiKeyLast4: null,
+            apiStyle: "chat_completions",
             baseUrl: "https://archive.openai.com/v1",
-            description: "Historical fallback",
+            description: "Historical archive",
             hasApiKey: false,
             id: 4,
             lastTestMessage: "Key rejected",
@@ -92,6 +94,8 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByText(/ending in ••••4242/i)).toBeVisible();
+    expect(screen.getByText("Responses API")).toBeVisible();
+    expect(screen.getByText("Chat Completions API - legacy / OpenAI-compatible")).toBeVisible();
     expect(screen.getByText(/no api key saved\./i)).toBeVisible();
     expect(screen.getByText(/^passed$/i)).toBeVisible();
     expect(screen.getByText(/^failed$/i)).toBeVisible();

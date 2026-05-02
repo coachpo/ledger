@@ -7,7 +7,10 @@ import {
   useModelConnections,
 } from "@/hooks/use-model-connections";
 import { formatDateTime } from "@/lib/format";
-import type { ModelConnectionListItemRead } from "@/lib/types/model-connection";
+import type {
+  ModelConnectionApiStyle,
+  ModelConnectionListItemRead,
+} from "@/lib/types/model-connection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +28,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
+  chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
+  responses: "Responses API",
+};
 
 function sortConnections(items: readonly ModelConnectionListItemRead[]) {
   return [...items].sort((left, right) => {
@@ -164,6 +172,7 @@ export function ModelConnectionsListPage() {
                         <Badge variant="outline" className="capitalize">
                           {connection.reasoningEffort}
                         </Badge>
+                        <p>{API_STYLE_LABELS[connection.apiStyle]}</p>
                         <p>{connection.timeoutSeconds}s timeout</p>
                       </div>
                     </TableCell>
