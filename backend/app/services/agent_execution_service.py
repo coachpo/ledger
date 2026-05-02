@@ -64,6 +64,7 @@ class _ResolvedModelConnectionConfig:
     project: str | None
     model_id: str
     reasoning_effort: str
+    api_style: str
     timeout_seconds: int
     api_key: str | None
 
@@ -224,6 +225,7 @@ class AgentExecutionService:
             project=snapshot.project,
             model_id=snapshot.model_id,
             reasoning_effort=snapshot.reasoning_effort,
+            api_style=snapshot.api_style,
             timeout_seconds=snapshot.timeout_seconds,
             api_key=self._extract_model_connection_api_key(connection),
         )
@@ -292,9 +294,8 @@ class AgentExecutionService:
             output_model,
             runtime_tool_guidance=runtime_tool_registry.get_guidance(granted_tool_keys),
         )
-        response_input: str | list[dict[str, str]] = self._build_openai_input(resolved_input)
-        previous_response_id: str | None = None
-        total_tokens = 0
+        response_input = self._build_openai_input(resolved_input)
+        text_format = self._build_responses_text_format(output_model)
         started_at = time.monotonic()
         client_kwargs: dict[str, Any] = {
             "api_key": model_connection.api_key,
@@ -308,37 +309,42 @@ class AgentExecutionService:
 
         try:
             with openai_client_factory(**client_kwargs) as client:
-                for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS):
-                    request_kwargs: dict[str, Any] = {
-                        "model": model_connection.model_id,
-                        "instructions": instructions,
-                        "input": response_input,
-                        "reasoning": cast(Any, {"effort": model_connection.reasoning_effort}),
-                    }
-                    if previous_response_id is not None:
-                        request_kwargs["previous_response_id"] = previous_response_id
-                    if available_tools:
-                        request_kwargs["tools"] = available_tools
-                    response = client.responses.create(**request_kwargs)
-                    total_tokens += self._extract_total_tokens(response)
-                    pending_tool_calls = self._extract_pending_tool_calls(response)
-                    if not pending_tool_calls:
-                        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-                        response_text = self._extract_response_text(response)
-                        return RunAgentInvocationResult(
-                            output=self._parse_response_output(response_text),
-                            tokens=total_tokens,
-                            cost_usd=Decimal("0"),
-                            duration_ms=duration_ms,
-                        )
-                    previous_response_id = self._extract_response_id(response)
-                    response_input = self._build_function_call_outputs(
-                        pending_tool_calls=pending_tool_calls,
+                if model_connection.api_style == "responses":
+                    return self._invoke_responses_agent(
+                        client=client,
+                        model_connection=model_connection,
+                        instructions=instructions,
+                        response_input=response_input,
+                        text_format=text_format,
+                        available_tools=available_tools,
                         granted_tool_keys=granted_tool_keys,
                         runtime_tool_registry=runtime_tool_registry,
                         runtime_tool_context=runtime_tool_context,
                         mcp_dispatcher=mcp_dispatcher,
+                        started_at=started_at,
                     )
+                if model_connection.api_style == "chat_completions":
+                    return self._invoke_chat_completions_agent(
+                        client=client,
+                        model_connection=model_connection,
+                        instructions=instructions,
+                        response_input=response_input,
+                        output_model=output_model,
+                        available_tools=available_tools,
+                        granted_tool_keys=granted_tool_keys,
+                        runtime_tool_registry=runtime_tool_registry,
+                        runtime_tool_context=runtime_tool_context,
+                        mcp_dispatcher=mcp_dispatcher,
+                        started_at=started_at,
+                    )
+                raise RunExecutionError(
+                    code="agent_model_connection_api_style_unsupported",
+                    message=(
+                        f"Agent {agent.key!r} cannot run because model connection "
+                        f"{model_connection.name!r} uses unsupported API style "
+                        f"{model_connection.api_style!r}."
+                    ),
+                )
         except RuntimeToolError as exc:
             raise self._runtime_tool_error_to_run_execution_error(exc) from exc
         except (RuntimeToolGrantError, RunExecutionError):
@@ -375,10 +381,335 @@ class AgentExecutionService:
                 ),
             ) from exc
 
+    def _invoke_responses_agent(
+        self,
+        *,
+        client: Any,
+        model_connection: _ResolvedModelConnectionConfig,
+        instructions: str,
+        response_input: str | list[dict[str, str]],
+        text_format: dict[str, Any],
+        available_tools: list[dict[str, Any]],
+        granted_tool_keys: set[str],
+        runtime_tool_registry: RuntimeToolRegistry,
+        runtime_tool_context: RuntimeToolContext,
+        mcp_dispatcher: McpRuntimeDispatcher,
+        started_at: float,
+    ) -> RunAgentInvocationResult:
+        previous_response_id: str | None = None
+        total_tokens = 0
+        for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS):
+            request_kwargs: dict[str, Any] = {
+                "model": model_connection.model_id,
+                "instructions": instructions,
+                "input": response_input,
+                "reasoning": cast(Any, {"effort": model_connection.reasoning_effort}),
+                "text": text_format,
+            }
+            if previous_response_id is not None:
+                request_kwargs["previous_response_id"] = previous_response_id
+            if available_tools:
+                request_kwargs["tools"] = available_tools
+            response = self._create_response_with_stateless_fallback(
+                client=client,
+                request_kwargs=request_kwargs,
+                previous_response_id=previous_response_id,
+            )
+            total_tokens += self._extract_total_tokens(response)
+            pending_tool_calls = self._extract_pending_tool_calls(response)
+            if not pending_tool_calls:
+                duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+                response_text = self._extract_response_text(response)
+                return RunAgentInvocationResult(
+                    output=self._parse_response_output(response_text),
+                    tokens=total_tokens,
+                    cost_usd=Decimal("0"),
+                    duration_ms=duration_ms,
+                )
+            previous_response_id = self._extract_response_id(response)
+            response_input = self._build_function_call_outputs(
+                pending_tool_calls=pending_tool_calls,
+                granted_tool_keys=granted_tool_keys,
+                runtime_tool_registry=runtime_tool_registry,
+                runtime_tool_context=runtime_tool_context,
+                mcp_dispatcher=mcp_dispatcher,
+            )
+
         raise RunExecutionError(
             code="agent_tool_round_limit_exceeded",
             message="Agent exceeded the supported server tool call round limit.",
         )
+
+    def _invoke_chat_completions_agent(
+        self,
+        *,
+        client: Any,
+        model_connection: _ResolvedModelConnectionConfig,
+        instructions: str,
+        response_input: str | list[dict[str, str]],
+        output_model: type[BaseModel],
+        available_tools: list[dict[str, Any]],
+        granted_tool_keys: set[str],
+        runtime_tool_registry: RuntimeToolRegistry,
+        runtime_tool_context: RuntimeToolContext,
+        mcp_dispatcher: McpRuntimeDispatcher,
+        started_at: float,
+    ) -> RunAgentInvocationResult:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": response_input},
+        ]
+        chat_tools = self._convert_responses_tools_to_chat_tools(available_tools)
+        response_format = self._build_chat_response_format(output_model)
+        total_tokens = 0
+
+        for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS):
+            request_kwargs: dict[str, Any] = {
+                "model": model_connection.model_id,
+                "messages": messages,
+                "response_format": response_format,
+            }
+            if chat_tools:
+                request_kwargs["tools"] = chat_tools
+            response = client.chat.completions.create(**request_kwargs)
+            total_tokens += self._extract_total_tokens(response)
+            message = self._extract_first_chat_choice_message(response)
+            pending_tool_calls = self._extract_pending_chat_tool_calls(message)
+            if not pending_tool_calls:
+                duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+                response_text = self._extract_chat_message_content(message)
+                return RunAgentInvocationResult(
+                    output=self._parse_response_output(response_text),
+                    tokens=total_tokens,
+                    cost_usd=Decimal("0"),
+                    duration_ms=duration_ms,
+                )
+
+            messages.append(
+                self._build_chat_assistant_tool_call_message(
+                    message=message,
+                    pending_tool_calls=pending_tool_calls,
+                )
+            )
+            messages.extend(
+                self._build_chat_tool_result_messages(
+                    pending_tool_calls=pending_tool_calls,
+                    granted_tool_keys=granted_tool_keys,
+                    runtime_tool_registry=runtime_tool_registry,
+                    runtime_tool_context=runtime_tool_context,
+                    mcp_dispatcher=mcp_dispatcher,
+                )
+            )
+
+        raise RunExecutionError(
+            code="agent_tool_round_limit_exceeded",
+            message="Agent exceeded the supported server tool call round limit.",
+        )
+
+    @staticmethod
+    def _build_responses_text_format(output_model: type[BaseModel]) -> dict[str, Any]:
+        return {
+            "format": {
+                "type": "json_schema",
+                "name": output_model.__name__,
+                "schema": output_model.model_json_schema(),
+            }
+        }
+
+    @staticmethod
+    def _build_chat_response_format(output_model: type[BaseModel]) -> dict[str, Any]:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": output_model.__name__,
+                "schema": output_model.model_json_schema(),
+            },
+        }
+
+    @staticmethod
+    def _convert_responses_tools_to_chat_tools(
+        available_tools: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        chat_tools: list[dict[str, Any]] = []
+        for tool in available_tools:
+            chat_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name"),
+                        "description": tool.get("description"),
+                        "parameters": tool.get("parameters"),
+                        "strict": tool.get("strict", True),
+                    },
+                }
+            )
+        return chat_tools
+
+    @classmethod
+    def _extract_first_chat_choice_message(cls, response: Any) -> Any:
+        choices = cls._read_field(response, "choices")
+        if not isinstance(choices, list) or not choices:
+            raise RunExecutionError(
+                code="agent_provider_response_empty",
+                message="OpenAI chat response did not include a choice message.",
+            )
+        message = cls._read_field(choices[0], "message")
+        if message is None:
+            raise RunExecutionError(
+                code="agent_provider_response_empty",
+                message="OpenAI chat response did not include a choice message.",
+            )
+        return message
+
+    @classmethod
+    def _extract_pending_chat_tool_calls(cls, message: Any) -> list[_PendingToolCall]:
+        raw_tool_calls = cls._read_field(message, "tool_calls")
+        if raw_tool_calls is None:
+            return []
+        if not isinstance(raw_tool_calls, list):
+            raw_tool_calls = [raw_tool_calls]
+
+        pending: list[_PendingToolCall] = []
+        for raw_tool_call in raw_tool_calls:
+            call_id = cls._read_field(raw_tool_call, "id")
+            function = cls._read_field(raw_tool_call, "function")
+            name = cls._read_field(function, "name") if function is not None else None
+            arguments = cls._read_field(function, "arguments") if function is not None else None
+            if not isinstance(name, str) or not name.strip():
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message="OpenAI chat response requested a server tool without a valid name.",
+                )
+            if not isinstance(arguments, str):
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message=(
+                        f"OpenAI chat response requested server tool {name!r} "
+                        "without JSON arguments."
+                    ),
+                )
+            if not isinstance(call_id, str) or not call_id.strip():
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message=(
+                        f"OpenAI chat response requested server tool {name!r} " "without a call id."
+                    ),
+                )
+            pending.append(
+                _PendingToolCall(
+                    name=name.strip(),
+                    arguments_json=arguments,
+                    call_id=call_id.strip(),
+                )
+            )
+        return pending
+
+    @classmethod
+    def _build_chat_assistant_tool_call_message(
+        cls,
+        *,
+        message: Any,
+        pending_tool_calls: list[_PendingToolCall],
+    ) -> dict[str, Any]:
+        assistant_message: dict[str, Any] = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": tool_call.call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": tool_call.arguments_json,
+                    },
+                }
+                for tool_call in pending_tool_calls
+            ],
+        }
+        content = cls._read_field(message, "content")
+        if content is not None:
+            assistant_message["content"] = content
+        return assistant_message
+
+    def _build_chat_tool_result_messages(
+        self,
+        *,
+        pending_tool_calls: list[_PendingToolCall],
+        granted_tool_keys: set[str],
+        runtime_tool_registry: RuntimeToolRegistry,
+        runtime_tool_context: RuntimeToolContext,
+        mcp_dispatcher: McpRuntimeDispatcher,
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        for tool_call in pending_tool_calls:
+            output_payload = self._dispatch_function_call(
+                tool_call=tool_call,
+                granted_tool_keys=granted_tool_keys,
+                runtime_tool_registry=runtime_tool_registry,
+                runtime_tool_context=runtime_tool_context,
+                mcp_dispatcher=mcp_dispatcher,
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.call_id,
+                    "content": json.dumps(output_payload, ensure_ascii=False, sort_keys=True),
+                }
+            )
+        return messages
+
+    @classmethod
+    def _extract_chat_message_content(cls, message: Any) -> str:
+        content = cls._read_field(message, "content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        fragments = cls._collect_response_text_fragments(content)
+        normalized = "\n".join(
+            fragment.strip() for fragment in fragments if fragment.strip()
+        ).strip()
+        if normalized:
+            return normalized
+        raise RunExecutionError(
+            code="agent_provider_response_empty",
+            message="OpenAI chat response did not contain text output.",
+        )
+
+    @staticmethod
+    def _read_field(value: Any, field: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(field)
+        return getattr(value, field, None)
+
+    def _create_response_with_stateless_fallback(
+        self,
+        *,
+        client: Any,
+        request_kwargs: dict[str, Any],
+        previous_response_id: str | None,
+    ) -> Any:
+        try:
+            return client.responses.create(**request_kwargs)
+        except openai.APIStatusError as exc:
+            if previous_response_id is None or not self._is_previous_response_rejection(exc):
+                raise
+            stateless_kwargs = dict(request_kwargs)
+            stateless_kwargs.pop("previous_response_id", None)
+            return client.responses.create(**stateless_kwargs)
+
+    @classmethod
+    def _is_previous_response_rejection(cls, exc: openai.APIStatusError) -> bool:
+        status_code = getattr(exc, "status_code", None)
+        if status_code not in {400, 404}:
+            return False
+        normalized = cls._extract_api_status_message(exc).lower()
+        rejection_markers = (
+            "previous_response_id",
+            "previous response",
+            "previous_response",
+            "response not found",
+            "no response found",
+            "does not exist",
+        )
+        return any(marker in normalized for marker in rejection_markers)
 
     @staticmethod
     def _build_openai_instructions(

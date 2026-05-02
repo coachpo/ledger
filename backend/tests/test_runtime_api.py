@@ -7,6 +7,7 @@ import threading
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
@@ -268,6 +269,7 @@ def _build_model_connection(
     timeout_seconds: int = 60,
     organization: str | None = None,
     project: str | None = None,
+    api_style: str = "responses",
 ) -> ModelConnection:
     payload = {} if api_key is None else {"apiKey": api_key}
     return ModelConnection(
@@ -280,6 +282,7 @@ def _build_model_connection(
         project=project,
         model_id=model_id,
         reasoning_effort=reasoning_effort,
+        api_style=api_style,
         timeout_seconds=timeout_seconds,
         secret_payload=payload,
         has_api_key=api_key is not None,
@@ -435,6 +438,7 @@ def _seed_backend_report_lookup_workflow(
     workflow_key: str = "backend_report_lookup_runtime",
     skill_key: str = "backend_report_lookup_runtime_skill",
     agent_key: str = "report_lookup_reader",
+    api_style: str = "responses",
 ) -> WorkflowRead:
     note_schema = _build_output_schema(
         key=f"{workflow_key}_note",
@@ -467,7 +471,10 @@ def _seed_backend_report_lookup_workflow(
         "args": ["-V"],
         "env": {},
     }
-    connection = _build_model_connection(name=f"{workflow_key} connection")
+    connection = _build_model_connection(
+        name=f"{workflow_key} connection",
+        api_style=api_style,
+    )
     session.add_all([note_schema, skill, mcp_server, connection])
     session.flush()
     agent = _build_agent_platform_agent(
@@ -918,6 +925,7 @@ def _model_connection_payload(
     reasoning_effort: str = "medium",
     timeout_seconds: int = 60,
     api_key: str | None = "sk-test-secret-1234",
+    api_style: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "key": key,
@@ -934,6 +942,8 @@ def _model_connection_payload(
         payload["project"] = project
     if api_key is not None:
         payload["apiKey"] = api_key
+    if api_style is not None:
+        payload["apiStyle"] = api_style
     return payload
 
 
@@ -980,6 +990,46 @@ class _FailingOpenAIClient(_RecordingOpenAIClient):
     def reset(cls) -> None:
         super().reset()
         cls.failure_message = "Provider rejected sk-test-secret-1234"
+
+
+class _ApiStyleRecordingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    responses_create_calls: list[dict[str, Any]] = []
+    chat_create_calls: list[dict[str, Any]] = []
+    fail_responses = False
+    fail_chat = False
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = SimpleNamespace(create=self.create_response)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create_chat_completion))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create_response(self, **kwargs: Any) -> _FakeOpenAIResponse:
+        type(self).responses_create_calls.append(kwargs)
+        if type(self).fail_responses:
+            raise Exception("Responses provider rejected sk-api-style-1234")
+        return _FakeOpenAIResponse("req_responses_connection_test")
+
+    def create_chat_completion(self, **kwargs: Any) -> _FakeOpenAIResponse:
+        type(self).chat_create_calls.append(kwargs)
+        if type(self).fail_chat:
+            raise Exception("Chat provider rejected sk-api-style-1234")
+        return _FakeOpenAIResponse("req_chat_connection_test")
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.responses_create_calls = []
+        cls.chat_create_calls = []
+        cls.fail_responses = False
+        cls.fail_chat = False
 
 
 class _RuntimeOpenAIUsage:
@@ -1036,6 +1086,106 @@ class _RuntimeFailingOpenAIClient(_RuntimeRecordingOpenAIClient):
     def reset(cls) -> None:
         super().reset()
         cls.exception_factory = staticmethod(lambda: Exception("provider failure"))
+
+
+class _UnexpectedRuntimeResponsesNamespace:
+    def create(self, **kwargs: Any) -> object:
+        del kwargs
+        raise AssertionError("Responses API must not be called for chat_completions")
+
+
+class _RuntimeChatCompletionsOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    chat_create_calls: list[dict[str, Any]] = []
+    output_text = '{"summary": "chat runtime output"}'
+    total_tokens = 19
+    tool_call_name: str | None = None
+    tool_arguments_json = '{"ticker":"NVDA","limit":1}'
+    final_output_text = '{"summary":"chat tool loop output","signal":"bullish"}'
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = _UnexpectedRuntimeResponsesNamespace()
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create_chat_completion))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create_chat_completion(self, **kwargs: Any) -> object:
+        type(self).chat_create_calls.append(kwargs)
+        call_number = len(type(self).chat_create_calls)
+        if call_number == 1 and type(self).tool_call_name is not None:
+            tools = kwargs.get("tools")
+            assert isinstance(tools, list)
+            assert tools[0]["type"] == "function"
+            assert tools[0]["function"]["name"] == type(self).tool_call_name
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    id="chat_call_report_lookup_1",
+                                    function=SimpleNamespace(
+                                        name=type(self).tool_call_name,
+                                        arguments=type(self).tool_arguments_json,
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ],
+                usage=_RuntimeOpenAIUsage(7),
+            )
+        if call_number > 1:
+            messages = kwargs["messages"]
+            assert messages[-1]["role"] == "tool"
+            assert messages[-1]["tool_call_id"] == "chat_call_report_lookup_1"
+            assert messages[-2]["role"] == "assistant"
+            assert messages[-2]["tool_calls"][0]["id"] == "chat_call_report_lookup_1"
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=(
+                            type(self).final_output_text
+                            if call_number > 1
+                            else type(self).output_text
+                        ),
+                        tool_calls=None,
+                    )
+                )
+            ],
+            usage=_RuntimeOpenAIUsage(type(self).total_tokens),
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.chat_create_calls = []
+        cls.output_text = '{"summary": "chat runtime output"}'
+        cls.total_tokens = 19
+        cls.tool_call_name = None
+        cls.tool_arguments_json = '{"ticker":"NVDA","limit":1}'
+        cls.final_output_text = '{"summary":"chat tool loop output","signal":"bullish"}'
+
+
+class _RuntimeFailingChatCompletionsOpenAIClient(_RuntimeChatCompletionsOpenAIClient):
+    exception_factory = staticmethod(lambda: Exception("chat provider failure"))
+
+    def create_chat_completion(self, **kwargs: Any) -> object:
+        type(self).chat_create_calls.append(kwargs)
+        raise type(self).exception_factory()
+
+    @classmethod
+    def reset(cls) -> None:
+        super().reset()
+        cls.exception_factory = staticmethod(lambda: Exception("chat provider failure"))
 
 
 class _RuntimeToolCallResponse:
@@ -1498,6 +1648,7 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     listed_item = listed.json()["items"][0]
     assert listed_item["id"] == connection_id
     assert listed_item["key"] == "primary_openai"
+    assert listed_item["apiStyle"] == "responses"
     assert listed_item["hasApiKey"] is True
     assert listed_item["apiKeyLast4"] == "1234"
     assert "apiKey" not in listed_item and "sk-test-secret-1234" not in json.dumps(listed_item)
@@ -1518,6 +1669,7 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
         row = session.get(ModelConnection, connection_id)
         assert row is not None
         assert row.secret_payload == {"apiKey": "sk-test-secret-1234"}
+        assert row.api_style == "responses"
         assert row.timeout_seconds == 90
 
     replacement = client.patch(
@@ -1548,6 +1700,21 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
         assert row.last_test_ok is True
         assert row.last_test_message == body["message"]
 
+    style_update = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"apiStyle": "chat_completions"},
+    )
+    assert style_update.status_code == 200, style_update.json()
+    assert style_update.json()["apiStyle"] == "chat_completions"
+
+    with session_factory() as session:
+        row = session.get(ModelConnection, connection_id)
+        assert row is not None
+        assert row.api_style == "chat_completions"
+        assert row.last_tested_at is None
+        assert row.last_test_ok is None
+        assert row.last_test_message is None
+
     archived = client.delete(f"/api/model-connections/{connection_id}")
     assert archived.status_code == 200, archived.json()
     assert archived.json()["status"] == "archived"
@@ -1558,6 +1725,122 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     ).json()["items"]
     assert archived_items[0]["id"] == connection_id
     assert archived_items[0]["key"] == "primary_openai"
+
+
+def test_agent_platform_model_connections_create_and_test_selected_api_style(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ApiStyleRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _ApiStyleRecordingOpenAIClient,
+    )
+
+    responses_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="responses_connection",
+            name="Responses Connection",
+            api_key="sk-api-style-1234",
+        ),
+    )
+    assert responses_create.status_code == 201, responses_create.json()
+    responses_connection_id = responses_create.json()["id"]
+    assert responses_create.json()["apiStyle"] == "responses"
+
+    chat_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="chat_connection",
+            name="Chat Connection",
+            api_key="sk-api-style-1234",
+            api_style="chat_completions",
+        ),
+    )
+    assert chat_create.status_code == 201, chat_create.json()
+    chat_connection_id = chat_create.json()["id"]
+    assert chat_create.json()["apiStyle"] == "chat_completions"
+
+    responses_test = client.post(
+        f"/api/model-connections/{responses_connection_id}/connection-test"
+    )
+    assert responses_test.status_code == 200, responses_test.json()
+    assert responses_test.json()["ok"] is True
+    assert len(_ApiStyleRecordingOpenAIClient.responses_create_calls) == 1
+    assert _ApiStyleRecordingOpenAIClient.responses_create_calls[0]["model"] == "gpt-5.4-mini"
+    assert _ApiStyleRecordingOpenAIClient.responses_create_calls[0]["reasoning"] == {
+        "effort": "medium"
+    }
+    assert _ApiStyleRecordingOpenAIClient.chat_create_calls == []
+
+    chat_test = client.post(f"/api/model-connections/{chat_connection_id}/connection-test")
+    assert chat_test.status_code == 200, chat_test.json()
+    assert chat_test.json()["ok"] is True
+    assert len(_ApiStyleRecordingOpenAIClient.responses_create_calls) == 1
+    assert len(_ApiStyleRecordingOpenAIClient.chat_create_calls) == 1
+    assert _ApiStyleRecordingOpenAIClient.chat_create_calls[0] == {
+        "model": "gpt-5.4-mini",
+        "messages": [
+            {"role": "system", "content": "Reply with the single word OK."},
+            {"role": "user", "content": "Connection test."},
+        ],
+    }
+
+    with session_factory() as session:
+        responses_row = session.get(ModelConnection, responses_connection_id)
+        chat_row = session.get(ModelConnection, chat_connection_id)
+        assert responses_row is not None and responses_row.api_style == "responses"
+        assert chat_row is not None and chat_row.api_style == "chat_completions"
+
+
+def test_agent_platform_model_connections_selected_api_style_failure_does_not_fallback(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ApiStyleRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _ApiStyleRecordingOpenAIClient,
+    )
+
+    responses_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="responses_failure_connection",
+            name="Responses Failure Connection",
+            api_key="sk-api-style-1234",
+        ),
+    )
+    assert responses_create.status_code == 201, responses_create.json()
+    chat_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="chat_failure_connection",
+            name="Chat Failure Connection",
+            api_key="sk-api-style-1234",
+            api_style="chat_completions",
+        ),
+    )
+    assert chat_create.status_code == 201, chat_create.json()
+
+    _ApiStyleRecordingOpenAIClient.fail_responses = True
+    responses_failure = client.post(
+        f"/api/model-connections/{responses_create.json()['id']}/connection-test"
+    )
+    assert responses_failure.status_code == 200, responses_failure.json()
+    assert responses_failure.json()["ok"] is False
+    assert len(_ApiStyleRecordingOpenAIClient.responses_create_calls) == 1
+    assert _ApiStyleRecordingOpenAIClient.chat_create_calls == []
+
+    _ApiStyleRecordingOpenAIClient.reset()
+    _ApiStyleRecordingOpenAIClient.fail_chat = True
+    chat_failure = client.post(f"/api/model-connections/{chat_create.json()['id']}/connection-test")
+    assert chat_failure.status_code == 200, chat_failure.json()
+    assert chat_failure.json()["ok"] is False
+    assert _ApiStyleRecordingOpenAIClient.responses_create_calls == []
+    assert len(_ApiStyleRecordingOpenAIClient.chat_create_calls) == 1
 
 
 def test_agent_platform_model_connections_require_unique_immutable_keys(
@@ -1962,6 +2245,7 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
         connection.reasoning_effort = "low"
         connection.timeout_seconds = 91
         connection.organization = "org-v2"
+        assert _agent.model_connection_snapshot["api_style"] == "responses"
         connection.project = "proj-v2"
         connection.secret_payload = {"apiKey": "sk-rotated-secret-2222"}
         connection.has_api_key = True
@@ -1983,6 +2267,112 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
     }
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-snapshot-v1"
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
+
+
+def test_agent_platform_run_chat_completions_snapshot_parses_message_content_json(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeChatCompletionsOpenAIClient.reset()
+    _RuntimeChatCompletionsOpenAIClient.output_text = '{"summary": "chat snapshot output"}'
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeChatCompletionsOpenAIClient,
+    )
+
+    with session_factory() as session:
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="chat_snapshot_agent",
+            workflow_key="chat_snapshot_workflow",
+            connection=_build_model_connection(
+                name="Chat Snapshot Connection",
+                api_key="sk-chat-runtime-1111",
+                base_url="https://chat-runtime.example.com/v1",
+                model_id="gpt-chat-runtime",
+                api_style="chat_completions",
+            ),
+        )
+        assert _agent.model_connection_snapshot["api_style"] == "chat_completions"
+
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "MSFT"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "chat snapshot output"}
+    assert _RuntimeChatCompletionsOpenAIClient.init_calls[-1] == {
+        "api_key": "sk-chat-runtime-1111",
+        "base_url": "https://chat-runtime.example.com/v1",
+        "timeout": 60.0,
+    }
+    chat_request = _RuntimeChatCompletionsOpenAIClient.chat_create_calls[-1]
+    assert chat_request["model"] == "gpt-chat-runtime"
+    assert [message["role"] for message in chat_request["messages"]] == ["system", "user"]
+    assert chat_request["response_format"]["type"] == "json_schema"
+    assert "previous_response_id" not in chat_request
+    assert "input" not in chat_request
+
+
+def test_agent_platform_run_chat_completions_tool_call_round_appends_tool_messages(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeChatCompletionsOpenAIClient.reset()
+    _RuntimeChatCompletionsOpenAIClient.tool_call_name = "ledger_reports_lookup"
+    _RuntimeChatCompletionsOpenAIClient.tool_arguments_json = (
+        '{"ticker":"NVDA","tag":null,"reviewType":null,'
+        '"portfolioSlug":null,"source":null,"limit":1,"offset":null}'
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeChatCompletionsOpenAIClient,
+    )
+
+    with session_factory() as session:
+        session.add(
+            Report(
+                name="nvda_chat_lookup",
+                slug="nvda_chat_lookup",
+                source="external",
+                content="# NVDA chat lookup\n\nRevenue acceleration remains intact.",
+                metadata_={
+                    "tags": ["earnings"],
+                    "analysis": {"ticker": "NVDA", "reviewType": "fundamental"},
+                },
+            )
+        )
+        session.commit()
+        workflow = _seed_backend_report_lookup_workflow(
+            session,
+            grant_report_lookup=True,
+            workflow_key="chat_report_lookup_runtime",
+            skill_key="chat_report_lookup_runtime_skill",
+            api_style="chat_completions",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "chat tool loop output",
+        "signal": "bullish",
+    }
+    assert len(_RuntimeChatCompletionsOpenAIClient.chat_create_calls) == 2
+    followup_messages = _RuntimeChatCompletionsOpenAIClient.chat_create_calls[1]["messages"]
+    assert followup_messages[-2]["role"] == "assistant"
+    assert followup_messages[-1]["role"] == "tool"
+    assert followup_messages[-1]["tool_call_id"] == "chat_call_report_lookup_1"
+    tool_payload = json.loads(followup_messages[-1]["content"])
+    assert tool_payload["count"] == 1
+    assert tool_payload["reports"][0]["slug"] == "nvda_chat_lookup"
 
 
 @pytest.mark.parametrize(
@@ -2043,6 +2433,45 @@ def test_agent_platform_run_surfaces_saved_connection_provider_failures(
     assert step_error["code"] == expected_code
     assert step_error["message"] == expected_message
     assert "sk-db-fail-4444" not in json.dumps(detail)
+
+
+def test_agent_platform_run_chat_completions_provider_failure_does_not_use_responses(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeFailingChatCompletionsOpenAIClient.reset()
+    _RuntimeFailingChatCompletionsOpenAIClient.exception_factory = staticmethod(
+        lambda: _build_api_status_error(
+            message="Chat model rejected sk-chat-fail-4444",
+            status_code=404,
+        )
+    )
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeFailingChatCompletionsOpenAIClient,
+    )
+
+    with session_factory() as session:
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="chat_provider_failure_agent",
+            workflow_key="chat_provider_failure_workflow",
+            connection=_build_model_connection(
+                name="Chat provider failure connection",
+                api_key="sk-chat-fail-4444",
+                api_style="chat_completions",
+            ),
+        )
+
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AAPL"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "failed"
+    assert detail["error"] == "Chat model rejected [REDACTED]"
+    assert len(_RuntimeFailingChatCompletionsOpenAIClient.chat_create_calls) == 1
+    assert "sk-chat-fail-4444" not in json.dumps(detail)
 
 
 def test_agent_platform_run_fails_when_saved_model_connection_has_no_api_key(

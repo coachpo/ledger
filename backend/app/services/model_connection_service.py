@@ -90,6 +90,7 @@ class ModelConnectionService:
             status=ModelConnectionStatus.ACTIVE.value,
             name=payload.name,
             description=payload.description,
+            api_style=payload.api_style.value,
             base_url=payload.base_url,
             organization=payload.organization,
             project=payload.project,
@@ -119,20 +120,35 @@ class ModelConnectionService:
             connection.name = payload.name
         if "description" in payload.model_fields_set:
             connection.description = payload.description or ""
+        reset_connection_test_result = False
+
+        if "api_style" in payload.model_fields_set and payload.api_style is not None:
+            connection.api_style = payload.api_style.value
+            reset_connection_test_result = True
         if "base_url" in payload.model_fields_set and payload.base_url is not None:
             connection.base_url = payload.base_url
+            reset_connection_test_result = True
         if "organization" in payload.model_fields_set:
             connection.organization = payload.organization
+            reset_connection_test_result = True
         if "project" in payload.model_fields_set:
             connection.project = payload.project
+            reset_connection_test_result = True
         if "model_id" in payload.model_fields_set and payload.model_id is not None:
             connection.model_id = payload.model_id
+            reset_connection_test_result = True
         if "reasoning_effort" in payload.model_fields_set and payload.reasoning_effort is not None:
             connection.reasoning_effort = payload.reasoning_effort.value
+            reset_connection_test_result = True
         if "timeout_seconds" in payload.model_fields_set and payload.timeout_seconds is not None:
             connection.timeout_seconds = payload.timeout_seconds
+            reset_connection_test_result = True
         if "api_key" in payload.model_fields_set:
             self._set_api_key(connection, payload.api_key)
+            reset_connection_test_result = True
+
+        if reset_connection_test_result:
+            self._clear_connection_test_result(connection)
 
         try:
             self.session.commit()
@@ -217,18 +233,30 @@ class ModelConnectionService:
             client_kwargs["project"] = connection.project
 
         try:
-            with OpenAI(**client_kwargs) as client:
-                response = client.responses.create(
-                    model=connection.model_id,
-                    instructions="Reply with the single word OK.",
-                    input="Connection test.",
-                    reasoning=cast(Any, {"effort": connection.reasoning_effort}),
+            if connection.api_style == "responses":
+                return self._run_responses_connection_test(
+                    connection,
+                    client_kwargs,
+                    tested_at,
                 )
-            request_id = getattr(response, "_request_id", None)
-            message = "Connection test succeeded."
-            if isinstance(request_id, str) and request_id.strip():
-                message = f"Connection test succeeded (request {request_id.strip()})."
-            return _ModelConnectionTestResult(ok=True, message=message, tested_at=tested_at)
+            if connection.api_style == "chat_completions":
+                return self._run_chat_completions_connection_test(
+                    connection,
+                    client_kwargs,
+                    tested_at,
+                )
+            api_style = connection.api_style
+            unsupported_api_style_message = (
+                "Model connection validation failed: unsupported API style " f"{api_style!r}."
+            )
+            return _ModelConnectionTestResult(
+                ok=False,
+                message=self._normalize_test_message(
+                    unsupported_api_style_message,
+                    api_key=api_key,
+                ),
+                tested_at=tested_at,
+            )
         except openai.APITimeoutError:
             return _ModelConnectionTestResult(
                 ok=False,
@@ -263,6 +291,53 @@ class ModelConnectionService:
                 tested_at=tested_at,
             )
 
+    def _run_responses_connection_test(
+        self,
+        connection: ModelConnection,
+        client_kwargs: dict[str, Any],
+        tested_at: datetime,
+    ) -> _ModelConnectionTestResult:
+        with OpenAI(**client_kwargs) as client:
+            response = client.responses.create(
+                model=connection.model_id,
+                instructions="Reply with the single word OK.",
+                input="Connection test.",
+                reasoning=cast(Any, {"effort": connection.reasoning_effort}),
+            )
+        return _ModelConnectionTestResult(
+            ok=True,
+            message=self._success_message(response),
+            tested_at=tested_at,
+        )
+
+    def _run_chat_completions_connection_test(
+        self,
+        connection: ModelConnection,
+        client_kwargs: dict[str, Any],
+        tested_at: datetime,
+    ) -> _ModelConnectionTestResult:
+        with OpenAI(**client_kwargs) as client:
+            response = client.chat.completions.create(
+                model=connection.model_id,
+                messages=[
+                    {"role": "system", "content": "Reply with the single word OK."},
+                    {"role": "user", "content": "Connection test."},
+                ],
+            )
+        return _ModelConnectionTestResult(
+            ok=True,
+            message=self._success_message(response),
+            tested_at=tested_at,
+        )
+
+    @staticmethod
+    def _success_message(response: Any) -> str:
+        request_id = getattr(response, "_request_id", None)
+        message = "Connection test succeeded."
+        if isinstance(request_id, str) and request_id.strip():
+            message = f"Connection test succeeded (request {request_id.strip()})."
+        return message
+
     @staticmethod
     def _get_api_key(connection: ModelConnection) -> str | None:
         payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
@@ -284,6 +359,12 @@ class ModelConnectionService:
         connection.secret_payload = payload
         connection.has_api_key = bool(api_key)
         connection.api_key_last4 = api_key[-4:] if api_key else None
+
+    @staticmethod
+    def _clear_connection_test_result(connection: ModelConnection) -> None:
+        connection.last_tested_at = None
+        connection.last_test_ok = None
+        connection.last_test_message = None
 
     def _format_api_status_error(
         self,
