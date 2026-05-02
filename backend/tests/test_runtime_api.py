@@ -52,6 +52,8 @@ from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
+    ProviderOhlcvRow,
+    ProviderOhlcvSeries,
     ProviderQuote,
     QuoteProviderError,
 )
@@ -778,6 +780,7 @@ class _RuntimeMarketDataQuoteProvider:
         self.failing_symbols: set[str] = failing_symbols or set()
         self.quote_calls: list[str] = []
         self.history_calls: list[tuple[str, str, str]] = []
+        self.ohlcv_calls: list[tuple[str, datetime, datetime, str]] = []
 
     def fetch_symbol_name(self, symbol: str) -> str | None:
         return f"{symbol.upper()} Incorporated"
@@ -823,6 +826,43 @@ class _RuntimeMarketDataQuoteProvider:
                     close=Decimal("119.75"),
                 ),
                 ProviderHistoryPoint(at=datetime_from_api_fake(), close=Decimal("120.25")),
+            ],
+        )
+
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime,
+        end_date: datetime,
+        interval: str,
+    ) -> ProviderOhlcvSeries:
+        normalized_symbol = symbol.upper()
+        self.ohlcv_calls.append((normalized_symbol, start_date, end_date, interval))
+        if normalized_symbol in self.failing_symbols:
+            raise QuoteProviderError(f"OHLCV unavailable for {normalized_symbol}")
+        return ProviderOhlcvSeries(
+            symbol=normalized_symbol,
+            currency="USD",
+            provider="api_fake_provider",
+            rows=[
+                ProviderOhlcvRow(
+                    at=start_date,
+                    open=Decimal("118.00"),
+                    high=Decimal("121.00"),
+                    low=Decimal("117.00"),
+                    close=Decimal("119.75"),
+                    volume=1000,
+                    adjusted_close=Decimal("119.50"),
+                ),
+                ProviderOhlcvRow(
+                    at=end_date,
+                    open=Decimal("119.75"),
+                    high=Decimal("121.50"),
+                    low=Decimal("119.00"),
+                    close=Decimal("120.25"),
+                    volume=1200,
+                ),
             ],
         )
 
@@ -4172,6 +4212,172 @@ def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
     assert tool_output["series"][0]["points"] == [
         {"at": "2026-01-02T00:04:05Z", "close": "119.75"},
         {"at": "2026-01-02T03:04:05Z", "close": "120.25"},
+    ]
+
+
+def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
+        "ledger_market_data_quote_lookup"
+    ]
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_ohlcv_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = json.dumps(
+        {
+            "symbols": ["NVDA"],
+            "startDate": "2026-01-01",
+            "endDate": "2026-01-03T16:00:00Z",
+            "rowLimit": 2,
+        }
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+    quote_provider = _RuntimeMarketDataQuoteProvider()
+    app = cast(Any, client.app)
+    app.dependency_overrides[get_quote_provider] = lambda: quote_provider
+
+    with session_factory() as session:
+        workflow = _seed_backend_market_data_lookup_workflow(
+            session,
+            tool_key="ledger.market_data.quote_lookup",
+            workflow_key="backend_ohlcv_lookup_without_grant",
+            skill_key="backend_ohlcv_lookup_without_grant_skill",
+            agent_key="ohlcv_lookup_denied_reader",
+        )
+
+    try:
+        trigger = client.post(
+            f"/api/workflows/{workflow.id}/runs",
+            json={"ticker": "NVDA", "horizon_days": 30},
+        )
+        assert trigger.status_code == 201, trigger.json()
+        detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    finally:
+        app.dependency_overrides.pop(get_quote_provider, None)
+
+    step_entry = detail["perStepOutputs"]["1"][0]
+    expected_message = "Agent is not authorized to use ledger.market_data.ohlcv_lookup."
+
+    assert detail["status"] == "failed"
+    assert detail["finalOutput"] is None
+    assert detail["error"] == expected_message
+    assert step_entry["agentKey"] == "ohlcv_lookup_denied_reader"
+    assert step_entry["status"] == "failed"
+    assert step_entry["output"] is None
+    assert step_entry["error"] == {
+        "code": "agent_execution_access_denied",
+        "message": expected_message,
+        "details": [],
+    }
+    first_tool_names = [
+        tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
+    ]
+    assert first_tool_names == ["ledger_market_data_quote_lookup"]
+    assert "ledger_market_data_ohlcv_lookup" not in first_tool_names
+    assert len(_RuntimePositionToolCallingOpenAIClient.create_calls) == 1
+    assert quote_provider.ohlcv_calls == []
+
+
+def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
+        "ledger_market_data_ohlcv_lookup"
+    ]
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_ohlcv_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = json.dumps(
+        {
+            "symbols": [" nvda "],
+            "startDate": "2026-01-01",
+            "endDate": "2026-01-03T16:00:00Z",
+            "rowLimit": 2,
+        }
+    )
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"ohlcv lookup used injected provider","signal":"bullish"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+    quote_provider = _RuntimeMarketDataQuoteProvider()
+    app = cast(Any, client.app)
+    app.dependency_overrides[get_quote_provider] = lambda: quote_provider
+
+    with session_factory() as session:
+        workflow = _seed_backend_market_data_lookup_workflow(
+            session,
+            tool_key="ledger.market_data.ohlcv_lookup",
+            workflow_key="backend_ohlcv_lookup_runtime",
+            skill_key="backend_ohlcv_lookup_runtime_skill",
+            agent_key="ohlcv_lookup_reader",
+        )
+
+    try:
+        trigger = client.post(
+            f"/api/workflows/{workflow.id}/runs",
+            json={"ticker": "NVDA", "horizon_days": 30},
+        )
+        assert trigger.status_code == 201, trigger.json()
+        detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    finally:
+        app.dependency_overrides.pop(get_quote_provider, None)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "ohlcv lookup used injected provider",
+        "signal": "bullish",
+    }
+    assert quote_provider.ohlcv_calls == [
+        (
+            "NVDA",
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 1, 3, 16, tzinfo=UTC),
+            "1d",
+        )
+    ]
+    first_tool = _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"][0]
+    assert first_tool["name"] == "ledger_market_data_ohlcv_lookup"
+    assert first_tool["parameters"]["required"] == [
+        "symbols",
+        "startDate",
+        "endDate",
+        "rowLimit",
+    ]
+    assert first_tool["parameters"]["properties"]["rowLimit"]["maximum"] == 500
+
+    tool_output = json.loads(
+        _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    output_json = json.dumps(tool_output)
+    assert "adjusted_close" not in output_json
+    assert tool_output["toolKey"] == "ledger.market_data.ohlcv_lookup"
+    assert tool_output["startDate"] == "2026-01-01T00:00:00Z"
+    assert tool_output["endDate"] == "2026-01-03T16:00:00Z"
+    assert tool_output["warnings"] == []
+    assert tool_output["series"][0]["symbol"] == "NVDA"
+    assert tool_output["series"][0]["provider"] == "api_fake_provider"
+    assert tool_output["series"][0]["rows"] == [
+        {
+            "at": "2026-01-01T00:00:00Z",
+            "open": "118.00",
+            "high": "121.00",
+            "low": "117.00",
+            "close": "119.75",
+            "volume": 1000,
+            "adjustedClose": "119.50",
+        },
+        {
+            "at": "2026-01-03T16:00:00Z",
+            "open": "119.75",
+            "high": "121.50",
+            "low": "119.00",
+            "close": "120.25",
+            "volume": 1200,
+            "adjustedClose": None,
+        },
     ]
 
 
