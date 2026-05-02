@@ -1,12 +1,14 @@
 import type { UnknownRecord } from "./common";
 
 export type JsonPrimitive = boolean | number | string;
+export type JsonValue = boolean | number | string | null | JsonValue[] | { [key: string]: JsonValue };
 export type OutputSchemaStatus = "draft" | "published" | "deprecated" | "archived";
 export type OutputSchemaKind = "standalone" | "shared";
 
 interface OutputSchemaBuilderBase {
   title?: string | null;
   description?: string | null;
+  defaultValue?: JsonValue;
 }
 
 export interface OutputSchemaBuilderString extends OutputSchemaBuilderBase {

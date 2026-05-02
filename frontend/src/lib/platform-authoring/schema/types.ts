@@ -1,5 +1,6 @@
 import type {
   JsonPrimitive,
+  JsonValue,
   OutputSchemaBuilderArray,
   OutputSchemaBuilderBoolean,
   OutputSchemaBuilderDiscriminatedUnion,
@@ -21,7 +22,7 @@ import type {
   OutputSchemaUpdateInput,
 } from "@/lib/types/output-schema";
 
-export type { JsonPrimitive, OutputSchemaKind, OutputSchemaStatus };
+export type { JsonPrimitive, JsonValue, OutputSchemaKind, OutputSchemaStatus };
 export type { OutputSchemaCreateInput, OutputSchemaListParams, OutputSchemaListRead, OutputSchemaRead, OutputSchemaUpdateInput };
 
 export type SchemaIRNode = OutputSchemaBuilderNode;
