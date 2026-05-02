@@ -261,10 +261,15 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
         "last_tested_at",
         "last_test_ok",
         "last_test_message",
+        "api_style",
     } <= set(model_connection_table.c.keys())
+    assert model_connection_table.c.api_style.nullable is False
+    assert model_connection_table.c.api_style.default is not None
+    assert model_connection_table.c.api_style.server_default is not None
     assert {
         "ck_model_connections_status",
         "ck_model_connections_reasoning_effort",
+        "ck_model_connections_api_style",
         "ck_model_connections_timeout_seconds_positive",
         "uq_model_connections_key",
     } <= {constraint.name for constraint in model_connection_table.constraints if constraint.name}

@@ -23,6 +23,10 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
             name="ck_model_connections_reasoning_effort",
         ),
         CheckConstraint(
+            "api_style IN ('responses', 'chat_completions')",
+            name="ck_model_connections_api_style",
+        ),
+        CheckConstraint(
             "timeout_seconds > 0",
             name="ck_model_connections_timeout_seconds_positive",
         ),
@@ -50,6 +54,12 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         nullable=False,
         default="medium",
         server_default="medium",
+    )
+    api_style: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="responses",
+        server_default="responses",
     )
     timeout_seconds: Mapped[int] = mapped_column(nullable=False, default=60, server_default="60")
     secret_payload: Mapped[dict[str, Any]] = mapped_column(

@@ -48,7 +48,15 @@ def _normalize_base_url(value: object) -> str:
     path = parsed.path.rstrip("/")
     lower_path = path.lower()
     if lower_path.endswith("/v1/responses"):
-        raise ValueError("Base URL must point to the /v1 root, not /v1/responses")
+        raise ValueError(
+            "Base URL must point to the /v1 root; "
+            + "set apiStyle to responses instead of using /v1/responses"
+        )
+    if lower_path.endswith("/v1/chat/completions"):
+        raise ValueError(
+            "Base URL must point to the /v1 root; "
+            + "set apiStyle to chat_completions instead of using /v1/chat/completions"
+        )
     if "/v1/" in lower_path:
         raise ValueError("Base URL must point to the /v1 root")
     if not path:
@@ -79,6 +87,11 @@ class ModelConnectionReasoningEffort(str, Enum):  # noqa: UP042
     HIGH = "high"
 
 
+class ModelConnectionApiStyle(str, Enum):  # noqa: UP042
+    RESPONSES = "responses"
+    CHAT_COMPLETIONS = "chat_completions"
+
+
 class ModelConnectionCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
@@ -88,6 +101,7 @@ class ModelConnectionCreate(CamelModel):
     project: str | None = Field(default=None, max_length=200)
     model_id: str = Field(min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort = ModelConnectionReasoningEffort.MEDIUM
+    api_style: ModelConnectionApiStyle = ModelConnectionApiStyle.RESPONSES
     timeout_seconds: int = Field(default=60, ge=1)
     api_key: str | None = None
 
@@ -131,6 +145,7 @@ class ModelConnectionUpdate(CamelModel):
     project: str | None = Field(default=None, max_length=200)
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = None
+    api_style: ModelConnectionApiStyle | None = None
     timeout_seconds: int | None = Field(default=None, ge=1)
     api_key: str | None = None
 
@@ -154,7 +169,7 @@ class ModelConnectionUpdate(CamelModel):
     def validate_optional_base_url(cls, value: object) -> str:
         return _normalize_base_url(value)
 
-    @field_validator("timeout_seconds", "reasoning_effort", mode="before")
+    @field_validator("timeout_seconds", "reasoning_effort", "api_style", mode="before")
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -187,6 +202,7 @@ class ModelConnectionListItemRead(CamelModel):
     project: str | None = None
     model_id: str
     reasoning_effort: ModelConnectionReasoningEffort
+    api_style: ModelConnectionApiStyle
     timeout_seconds: int = Field(ge=1)
     has_api_key: bool
     api_key_last4: str | None = None
@@ -229,6 +245,7 @@ class ModelConnectionConnectionTestRead(CamelModel):
 
 
 __all__ = [
+    "ModelConnectionApiStyle",
     "ModelConnectionConnectionTestRead",
     "ModelConnectionCreate",
     "ModelConnectionListItemRead",
