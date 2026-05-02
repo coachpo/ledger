@@ -116,7 +116,6 @@ def _risk_debate_state_payload() -> dict[str, object]:
 def test_tradingagents_contracts_validate_full_state_transitions_and_round_config() -> None:
     investment_transition = TradingAgentsInvestmentDebateTransition.model_validate(
         {
-            "priorState": _investment_debate_state_payload(bull_case="", bear_case=""),
             "nextState": _investment_debate_state_payload(
                 bull_case="Bull case updated after the first unrolled round.",
                 bear_case="",
@@ -125,7 +124,6 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
     )
     risk_transition = TradingAgentsRiskDebateTransition.model_validate(
         {
-            "priorState": _risk_debate_state_payload(),
             "nextState": _risk_debate_state_payload()
             | {"neutralCase": "Maintain exposure after risk review."},
         }
@@ -143,11 +141,9 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
     )
 
     investment_dump = investment_transition.model_dump(mode="json", by_alias=True)
+    assert set(investment_dump) == {"nextState"}
     assert investment_dump["nextState"]["bullCase"] == (
         "Bull case updated after the first unrolled round."
-    )
-    assert investment_dump["priorState"]["analystReports"]["socialSentimentReport"] == (
-        "Social sentiment is balanced."
     )
     assert risk_transition.next_state.neutral_case == "Maintain exposure after risk review."
     assert decision.action == "hold"
@@ -155,6 +151,30 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
         "investmentDebateRounds": 2,
         "riskDebateRounds": 3,
     }
+
+    with pytest.raises(ValidationError) as investment_prior_exc:
+        _ = TradingAgentsInvestmentDebateTransition.model_validate(
+            {
+                "priorState": _investment_debate_state_payload(),
+                "nextState": _investment_debate_state_payload(),
+            }
+        )
+    assert any(
+        error["type"] == "extra_forbidden" and error["loc"] == ("priorState",)
+        for error in investment_prior_exc.value.errors()
+    )
+
+    with pytest.raises(ValidationError) as risk_prior_exc:
+        _ = TradingAgentsRiskDebateTransition.model_validate(
+            {
+                "priorState": _risk_debate_state_payload(),
+                "nextState": _risk_debate_state_payload(),
+            }
+        )
+    assert any(
+        error["type"] == "extra_forbidden" and error["loc"] == ("priorState",)
+        for error in risk_prior_exc.value.errors()
+    )
 
 
 @pytest.mark.parametrize(
@@ -174,7 +194,6 @@ def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> N
     with pytest.raises(ValidationError) as partial_exc:
         _ = TradingAgentsInvestmentDebateTransition.model_validate(
             {
-                "priorState": _investment_debate_state_payload(),
                 "nextState": {"bullCase": "Only the updated delta."},
             }
         )
@@ -186,7 +205,6 @@ def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> N
     with pytest.raises(ValidationError) as patch_exc:
         _ = TradingAgentsRiskDebateTransition.model_validate(
             {
-                "priorState": _risk_debate_state_payload(),
                 "nextState": _risk_debate_state_payload()
                 | {"patch": {"neutralCase": "Only a patch."}},
             }

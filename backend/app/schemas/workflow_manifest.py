@@ -158,12 +158,10 @@ class TradingAgentsPortfolioDecision(CamelModel):
 
 
 class TradingAgentsInvestmentDebateTransition(CamelModel):
-    prior_state: TradingAgentsInvestmentDebateState
     next_state: TradingAgentsInvestmentDebateState
 
 
 class TradingAgentsRiskDebateTransition(CamelModel):
-    prior_state: TradingAgentsRiskDebateState
     next_state: TradingAgentsRiskDebateState
 
 

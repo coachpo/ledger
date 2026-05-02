@@ -117,7 +117,9 @@ metadata:
   description: Advances the bullish side of a bounded investment debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Accept priorState and return nextState for the bullish debate turn.
+  systemPrompt: >
+    Return JSON with exactly one top-level key, nextState, containing the complete
+    updated investment debate state. Do not include priorState or return patches.
   inputSchema:
     type: object
     additionalProperties: false
@@ -140,7 +142,9 @@ metadata:
   description: Advances the bearish side of a bounded investment debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Accept priorState and return nextState for the bearish debate turn.
+  systemPrompt: >
+    Return JSON with exactly one top-level key, nextState, containing the complete
+    updated investment debate state. Do not include priorState or return patches.
   inputSchema:
     type: object
     additionalProperties: false
@@ -163,7 +167,8 @@ metadata:
   description: Seeds and summarizes the fixed investment debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Produce full investment debate state or a final research plan.
+  systemPrompt: >
+    Produce full investment debate state or a final research plan.
   inputSchema:
     type: object
     title: Research manager input
@@ -209,7 +214,9 @@ metadata:
   description: Advances the aggressive side of a bounded risk debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Accept priorState and return nextState for the aggressive risk turn.
+  systemPrompt: >
+    Return JSON with exactly one top-level key, nextState, containing the complete
+    updated risk debate state. Do not include priorState or return patches.
   inputSchema:
     type: object
     additionalProperties: false
@@ -232,7 +239,9 @@ metadata:
   description: Seeds or advances the neutral side of a bounded risk debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Accept risk inputs or priorState and return full risk state.
+  systemPrompt: >
+    Return JSON with exactly one top-level key, nextState, containing the complete
+    updated risk debate state. Do not include priorState or return patches.
   inputSchema:
     type: object
     title: Neutral risk input
@@ -251,7 +260,9 @@ metadata:
   description: Advances the conservative side of a bounded risk debate.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Accept priorState and return nextState for the conservative risk turn.
+  systemPrompt: >
+    Return JSON with exactly one top-level key, nextState, containing the complete
+    updated risk debate state. Do not include priorState or return patches.
   inputSchema:
     type: object
     additionalProperties: false
