@@ -756,8 +756,7 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
     listed = next(item for item in listed_items if item["id"] == created["id"])
     listed_builder = cast(dict[str, object], listed["builder"])
     listed_field_map = {
-        field["name"]: field
-        for field in cast(list[dict[str, object]], listed_builder["fields"])
+        field["name"]: field for field in cast(list[dict[str, object]], listed_builder["fields"])
     }
     assert "defaultValue" not in cast(dict[str, object], listed_field_map["action"]["schema"])
     assert cast(dict[str, object], listed_field_map["summary"]["schema"])["defaultValue"] == (
@@ -772,8 +771,7 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
     updated = update_response.json()
     updated_builder = cast(dict[str, object], updated["builder"])
     updated_field_map = {
-        field["name"]: field
-        for field in cast(list[dict[str, object]], updated_builder["fields"])
+        field["name"]: field for field in cast(list[dict[str, object]], updated_builder["fields"])
     }
     assert "defaultValue" not in cast(dict[str, object], updated_field_map["action"]["schema"])
     assert cast(dict[str, object], updated_field_map["summary"]["schema"])["defaultValue"] == (
@@ -783,8 +781,7 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
     activated = activate_output_schema(client, cast(int, updated["id"]))
     activated_builder = cast(dict[str, object], activated["builder"])
     activated_field_map = {
-        field["name"]: field
-        for field in cast(list[dict[str, object]], activated_builder["fields"])
+        field["name"]: field for field in cast(list[dict[str, object]], activated_builder["fields"])
     }
     assert "defaultValue" not in cast(dict[str, object], activated_field_map["action"]["schema"])
     assert cast(dict[str, object], activated_field_map["summary"]["schema"])["defaultValue"] == (
