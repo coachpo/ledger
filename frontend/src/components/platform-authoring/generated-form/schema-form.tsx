@@ -9,15 +9,19 @@ import type {
 } from "@/lib/platform-authoring/schema/types";
 import { valueEntryPathToString } from "@/lib/platform-authoring/values/codec";
 import {
+  coerceValueEntryForSchema,
   createArrayValueEntry,
   createBooleanValueEntry,
   createIntegerValueEntry,
-  createNullValueEntry,
   createNumberValueEntry,
   createObjectValueEntry,
+  createPrimitiveValueEntry,
   createStringValueEntry,
   createValueEntryArrayItem,
+  createValueEntryForSchema,
   createValueEntryObjectField,
+  getPrimitiveValue,
+  rebaseValueEntryPaths,
 } from "@/lib/platform-authoring/values/factories";
 import { validateValueEntryNode, type ValueEntryValidationIssue } from "@/lib/platform-authoring/values/validation";
 import type {
@@ -83,103 +87,6 @@ function extendPath(pathTokens: ValueEntryPath, token: string): ValueEntryPath {
   return [...pathTokens, token];
 }
 
-function createPrimitiveValueEntry(value: JsonPrimitive | null, pathTokens: ValueEntryPath): ValueEntry {
-  if (value === null) {
-    return createNullValueEntry(pathTokens);
-  }
-
-  switch (typeof value) {
-    case "boolean":
-      return createBooleanValueEntry(value, pathTokens);
-    case "number":
-      return Number.isInteger(value)
-        ? createIntegerValueEntry(value, pathTokens)
-        : createNumberValueEntry(value, pathTokens);
-    case "string":
-      return createStringValueEntry(value, pathTokens);
-  }
-}
-
-function getPrimitiveValue(value: ValueEntry): JsonPrimitive | null | undefined {
-  switch (value.kind) {
-    case "null":
-    case "boolean":
-    case "integer":
-    case "number":
-    case "string":
-      return value.value;
-    case "array":
-    case "object":
-      return undefined;
-  }
-}
-
-function rebaseValueEntryPaths(value: ValueEntry, pathTokens: ValueEntryPath): ValueEntry {
-  switch (value.kind) {
-    case "null":
-    case "boolean":
-    case "integer":
-    case "number":
-    case "string":
-      return createPrimitiveValueEntry(value.value, pathTokens);
-    case "array":
-      return createArrayValueEntry(
-        value.items.map((item, index) => {
-          const itemPath = extendPath(pathTokens, String(index));
-          return createValueEntryArrayItem(index, rebaseValueEntryPaths(item.value, itemPath), itemPath);
-        }),
-        pathTokens,
-      );
-    case "object":
-      return createObjectValueEntry(
-        value.fields.map((field) => {
-          const fieldPath = extendPath(pathTokens, field.key);
-          return createValueEntryObjectField(field.key, rebaseValueEntryPaths(field.value, fieldPath), fieldPath);
-        }),
-        pathTokens,
-      );
-  }
-}
-
-function createValueEntryForSchema(schema: SchemaIRNode, pathTokens: ValueEntryPath = []): ValueEntry {
-  switch (schema.kind) {
-    case "string":
-      return createStringValueEntry("", pathTokens);
-    case "integer":
-      return createIntegerValueEntry(0, pathTokens);
-    case "number":
-      return createNumberValueEntry(0, pathTokens);
-    case "boolean":
-      return createBooleanValueEntry(false, pathTokens);
-    case "enum":
-      return createPrimitiveValueEntry(schema.values[0] ?? "", pathTokens);
-    case "literal":
-      return createPrimitiveValueEntry(schema.value, pathTokens);
-    case "array":
-      return createArrayValueEntry([], pathTokens);
-    case "ref":
-      return createStringValueEntry("", pathTokens);
-    case "discriminated_union":
-      return createValueEntryForSchema(schema.variants[0] ?? { kind: "object", fields: [] }, pathTokens);
-    case "object":
-    default:
-      return createObjectValueEntry(
-        (schema.fields ?? [])
-          .filter((field) => field.required !== false)
-          .map((field) => {
-            const fieldPath = extendPath(pathTokens, field.name);
-            return createValueEntryObjectField(field.name, createValueEntryForSchema(field.schema, fieldPath), fieldPath);
-          }),
-        pathTokens,
-      );
-  }
-}
-
-function isEnumValueAllowed(schema: Extract<SchemaIRNode, { kind: "enum" }>, value: ValueEntry): boolean {
-  const primitiveValue = getPrimitiveValue(value);
-  return primitiveValue != null && schema.values.some((option) => option === primitiveValue);
-}
-
 function getDiscriminatedUnionOptions(schema: SchemaIRDiscriminatedUnion): DiscriminatedUnionOption[] {
   return schema.variants.map((variant, index) => {
     if (variant.kind === "object") {
@@ -215,77 +122,6 @@ function getSelectedDiscriminatedUnionIndex(schema: SchemaIRDiscriminatedUnion, 
   }
 
   return getDiscriminatedUnionOptions(schema).find((option) => option.discriminatorValue === discriminatorValue)?.index ?? 0;
-}
-
-function coerceValueEntryForSchema(schema: SchemaIRNode, value: ValueEntry | null | undefined, pathTokens: ValueEntryPath = []): ValueEntry {
-  switch (schema.kind) {
-    case "string":
-      return value?.kind === "string" ? createStringValueEntry(value.value, pathTokens) : createStringValueEntry("", pathTokens);
-    case "integer":
-      if (value?.kind === "integer") {
-        return createIntegerValueEntry(value.value, pathTokens);
-      }
-      if (value?.kind === "number" && Number.isInteger(value.value)) {
-        return createIntegerValueEntry(value.value, pathTokens);
-      }
-      return createIntegerValueEntry(0, pathTokens);
-    case "number":
-      if (value?.kind === "number" || value?.kind === "integer") {
-        return createNumberValueEntry(value.value, pathTokens);
-      }
-      return createNumberValueEntry(0, pathTokens);
-
-    case "boolean":
-      return value?.kind === "boolean" ? createBooleanValueEntry(value.value, pathTokens) : createBooleanValueEntry(false, pathTokens);
-    case "enum":
-      return value && isEnumValueAllowed(schema, value)
-        ? createPrimitiveValueEntry(getPrimitiveValue(value) ?? schema.values[0] ?? "", pathTokens)
-        : createPrimitiveValueEntry(schema.values[0] ?? "", pathTokens);
-    case "literal":
-      return createPrimitiveValueEntry(schema.value, pathTokens);
-    case "array":
-      if (value?.kind !== "array") {
-        return createArrayValueEntry([], pathTokens);
-      }
-
-      return createArrayValueEntry(
-        value.items.map((item, index) => {
-          const itemPath = extendPath(pathTokens, String(index));
-          return createValueEntryArrayItem(index, coerceValueEntryForSchema(schema.items, item.value, itemPath), itemPath);
-        }),
-        pathTokens,
-      );
-    case "ref":
-      return value ? rebaseValueEntryPaths(value, pathTokens) : createStringValueEntry("", pathTokens);
-    case "discriminated_union": {
-      const selectedIndex = getSelectedDiscriminatedUnionIndex(schema, value);
-      return coerceValueEntryForSchema(schema.variants[selectedIndex] ?? schema.variants[0] ?? { kind: "object", fields: [] }, value, pathTokens);
-    }
-    case "object": {
-      const objectValue = value?.kind === "object" ? value : undefined;
-      const knownFields = schema.fields ?? [];
-      const knownFieldNames = new Set(knownFields.map((field) => field.name));
-      const existingFields = new Map(objectValue?.fields.map((field) => [field.key, field]));
-      const nextFields = knownFields
-        .filter((field) => field.required !== false || existingFields.has(field.name))
-        .map((field) => {
-          const fieldPath = extendPath(pathTokens, field.name);
-          return createValueEntryObjectField(
-            field.name,
-            coerceValueEntryForSchema(field.schema, existingFields.get(field.name)?.value, fieldPath),
-            fieldPath,
-          );
-        });
-      const extraFields = (objectValue?.fields ?? [])
-        .filter((field) => !knownFieldNames.has(field.key))
-        .map((field) => {
-          const fieldPath = extendPath(pathTokens, field.key);
-          return createValueEntryObjectField(field.key, rebaseValueEntryPaths(field.value, fieldPath), fieldPath);
-        });
-
-      return createObjectValueEntry([...nextFields, ...extraFields], pathTokens);
-    }
-  }
 }
 
 function getFieldPathLabel(pathTokens: ValueEntryPath): string {

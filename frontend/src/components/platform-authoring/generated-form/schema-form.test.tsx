@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import { decodeValueEntry, encodeValueEntry } from "@/lib/platform-authoring/values/codec";
 import {
   createObjectValueEntry,
   createStringValueEntry,
@@ -52,6 +53,15 @@ function openSelect(label: string) {
   const trigger = screen.getByLabelText(label);
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
   return trigger;
+}
+
+function schemaWithDefaults(schema: unknown): SchemaIRNode {
+  return schema as SchemaIRNode;
+}
+
+function lastDecodedChange(onChange: ReturnType<typeof vi.fn>) {
+  const lastValue = onChange.mock.calls.at(-1)?.[0] as ValueEntry | undefined;
+  return lastValue ? decodeValueEntry(lastValue) : undefined;
 }
 
 describe("SchemaForm", () => {
@@ -168,6 +178,96 @@ describe("SchemaForm", () => {
         ],
       }),
     );
+  });
+
+  it("materializes optional absent fields from schema defaultValue entries", () => {
+    const schema = schemaWithDefaults({
+      fields: [
+        {
+          name: "ticker",
+          required: false,
+          schema: { defaultValue: "AAPL", kind: "string", title: "Ticker" },
+        },
+      ],
+      kind: "object",
+    });
+
+    render(<StatefulSchemaForm schema={schema} value={encodeValueEntry({})} />);
+
+    expect(screen.getByRole("textbox", { name: "Ticker" })).toHaveValue("AAPL");
+    expect(screen.queryByRole("button", { name: /add field/i })).not.toBeInTheDocument();
+  });
+
+  it("leaves optional absent fields without defaultValue out of the generated value", () => {
+    const schema = schemaWithDefaults({
+      fields: [
+        {
+          name: "comment",
+          required: false,
+          schema: { kind: "string", title: "Comment" },
+        },
+      ],
+      kind: "object",
+    });
+
+    render(<StatefulSchemaForm schema={schema} value={encodeValueEntry({})} />);
+
+    expect(screen.queryByRole("textbox", { name: "Comment" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add field/i })).toBeVisible();
+  });
+
+  it("preserves explicit empty values instead of replacing them with schema defaults", () => {
+    const onChange = vi.fn();
+    const schema = schemaWithDefaults({
+      fields: [
+        {
+          name: "ticker",
+          required: false,
+          schema: { defaultValue: "AAPL", kind: "string", title: "Ticker" },
+        },
+        {
+          name: "quantity",
+          required: false,
+          schema: { defaultValue: 100, kind: "number", title: "Quantity" },
+        },
+        {
+          name: "dryRun",
+          required: false,
+          schema: { defaultValue: true, kind: "boolean", title: "Dry Run" },
+        },
+        {
+          name: "lots",
+          required: false,
+          schema: { defaultValue: [10], items: { kind: "number" }, kind: "array", title: "Lots" },
+        },
+        {
+          name: "filters",
+          required: false,
+          schema: { defaultValue: { sector: "technology" }, fields: [], kind: "object", title: "Filters" },
+        },
+      ],
+      kind: "object",
+    });
+
+    render(
+      <StatefulSchemaForm
+        onChange={onChange}
+        schema={schema}
+        value={encodeValueEntry({ ticker: "", quantity: 0, dryRun: false, lots: [], filters: {} })}
+      />,
+    );
+
+    const tickerInput = screen.getByRole("textbox", { name: "Ticker" });
+    expect(tickerInput).toHaveValue("");
+    expect(screen.getByRole("spinbutton", { name: "Quantity" })).toHaveValue(0);
+    expect(screen.getByRole("switch", { name: "Dry Run" })).not.toBeChecked();
+    expect(screen.getByText("No items yet. Add one to start capturing repeated values.")).toBeVisible();
+    expect(screen.getByText("This object schema does not define any editable fields yet.")).toBeVisible();
+
+    fireEvent.change(tickerInput, { target: { value: "MSFT" } });
+    fireEvent.change(tickerInput, { target: { value: "" } });
+
+    expect(lastDecodedChange(onChange)).toEqual({ ticker: "", quantity: 0, dryRun: false, lots: [], filters: {} });
   });
 
   it("uses enum descriptions while keeping the allowed option list constrained", () => {
