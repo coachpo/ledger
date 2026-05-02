@@ -9,7 +9,11 @@ metadata:
   description: Produces a market technical report for the fixed TradingAgents workflow.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Return a market analysis report for the supplied ticker and date.
+  systemPrompt: >
+    Call granted quote, history, OHLCV, and indicator tools instead of inventing
+    market prices. Disclose tool warnings or empty payloads as data quality or
+    provider limitations in the market analysis report for the supplied ticker
+    and date.
   inputSchema:
     type: object
     additionalProperties: false
@@ -25,7 +29,7 @@ spec:
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
-    - ledger_market_data@1
+    - tradingagents_market_data@1
   budgetUsd: "0.25"
 """,
     "social_analyst": """apiVersion: ledger.agent/v1
@@ -36,7 +40,11 @@ metadata:
   description: Produces a social sentiment report for the fixed TradingAgents workflow.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Return a social sentiment report for the supplied ticker and date.
+  systemPrompt: >
+    Call granted news tools instead of inventing articles, then synthesize
+    social sentiment only from returned news. Disclose tool warnings, empty
+    payloads, and that no direct social feed or social sentiment tool exists.
+    Return a social sentiment report for the supplied ticker and date.
   inputSchema:
     type: object
     additionalProperties: false
@@ -52,7 +60,7 @@ spec:
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
-    - ledger_news@1
+    - tradingagents_news@1
   budgetUsd: "0.25"
 """,
     "news_analyst": """apiVersion: ledger.agent/v1
@@ -63,7 +71,10 @@ metadata:
   description: Produces a news report for the fixed TradingAgents workflow.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Return a news report for the supplied ticker and date.
+  systemPrompt: >
+    Call granted company and global/query news tools instead of inventing
+    articles. Disclose warnings or empty payloads as data quality or provider
+    limitations in the news report for the supplied ticker and date.
   inputSchema:
     type: object
     additionalProperties: false
@@ -79,7 +90,7 @@ spec:
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
-    - ledger_news@1
+    - tradingagents_news@1
   budgetUsd: "0.25"
 """,
     "fundamentals_analyst": """apiVersion: ledger.agent/v1
@@ -90,7 +101,10 @@ metadata:
   description: Produces a fundamentals report for the fixed TradingAgents workflow.
 spec:
   modelConnection: primary_openai
-  systemPrompt: Return a fundamentals report for the supplied ticker and date.
+  systemPrompt: >
+    Call granted fundamentals and statement tools instead of inventing metrics
+    or filings. Disclose warnings or empty payloads as data quality or provider
+    limitations in the fundamentals report for the supplied ticker and date.
   inputSchema:
     type: object
     additionalProperties: false
@@ -106,7 +120,7 @@ spec:
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
-    - ledger_fundamentals@1
+    - tradingagents_fundamentals@1
   budgetUsd: "0.25"
 """,
     "bull_researcher": """apiVersion: ledger.agent/v1

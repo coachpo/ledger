@@ -14,6 +14,7 @@ from app.models.output_schema import OutputSchema
 from app.schemas.agent import AgentCreate
 from app.services.agent_manifest_compiler import AgentManifestCompilerError, compile_agent_manifest
 from app.services.agent_manifest_parser import parse_agent_manifest
+from app.services.workflow_manifest_examples import TRADINGAGENTS_AGENT_MANIFEST_SOURCES
 from tests.test_agent_manifest_parser import _valid_manifest_source
 
 
@@ -78,6 +79,71 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
     }
 
 
+def _seed_tradingagents_manifest_refs(session: Session) -> None:
+    connection = ModelConnection(
+        key="primary_openai",
+        status="active",
+        name="Primary OpenAI",
+        description="Primary model connection.",
+        base_url="https://api.openai.com/v1",
+        model_id="gpt-5.4-mini",
+        reasoning_effort="medium",
+        timeout_seconds=60,
+        secret_payload={"apiKey": "sk-test-secret-1234"},
+        has_api_key=True,
+        api_key_last4="1234",
+    )
+    schema_keys = {
+        "tradingagents_analyst_report": "TradingAgents Analyst Report",
+        "tradingagents_investment_debate_transition": "TradingAgents Investment Debate Transition",
+        "tradingagents_research_plan": "TradingAgents Research Plan",
+        "tradingagents_trader_proposal": "TradingAgents Trader Proposal",
+        "tradingagents_risk_debate_transition": "TradingAgents Risk Debate Transition",
+        "tradingagents_portfolio_decision": "TradingAgents Portfolio Decision",
+    }
+    output_schemas = [
+        OutputSchema(
+            key=key,
+            version=1,
+            status="published",
+            kind="standalone",
+            name=name,
+            description=f"{name} schema.",
+            json_schema={"type": "object", "additionalProperties": True},
+            registry_refs=[],
+        )
+        for key, name in schema_keys.items()
+    ]
+    capability_grants = {
+        "tradingagents_market_data": [
+            {"tool": "ledger.market_data.quote_lookup"},
+            {"tool": "ledger.market_data.history_lookup"},
+            {"tool": "ledger.market_data.ohlcv_lookup"},
+            {"tool": "ledger.indicators.lookup"},
+        ],
+        "tradingagents_fundamentals": [{"tool": "ledger.fundamentals.lookup"}],
+        "tradingagents_news": [
+            {"tool": "ledger.news.lookup"},
+            {"tool": "ledger.insider_data.lookup"},
+        ],
+        "ledger_reports": [{"tool": "ledger.reports.lookup"}],
+        "ledger_positions": [{"tool": "ledger.positions.lookup"}],
+    }
+    capabilities = [
+        Capability(
+            key=key,
+            version=1,
+            status="published",
+            name=key.replace("_", " ").title(),
+            description=f"{key} capability for manifest compilation.",
+            tool_grants=tool_grants,
+        )
+        for key, tool_grants in capability_grants.items()
+    ]
+    session.add_all([connection, *output_schemas, *capabilities])
+    session.commit()
+
+
 def _expected_payload(connection_id: int) -> dict[str, object]:
     return {
         "key": "research_agent",
@@ -129,6 +195,39 @@ def test_compile_agent_manifest_accepts_validated_manifest(
         payload = compile_agent_manifest(result.manifest, session)
 
     assert payload == _expected_payload(cast(ModelConnection, refs["connection"]).id)
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_capability_ref"),
+    [
+        ("market_analyst", "tradingagents_market_data@1"),
+        ("social_analyst", "tradingagents_news@1"),
+        ("news_analyst", "tradingagents_news@1"),
+        ("fundamentals_analyst", "tradingagents_fundamentals@1"),
+        ("bull_researcher", "ledger_reports@1"),
+        ("bear_researcher", "ledger_reports@1"),
+        ("research_manager", "ledger_reports@1"),
+        ("trader", "ledger_positions@1"),
+        ("aggressive_risk_analyst", "ledger_reports@1"),
+        ("neutral_risk_analyst", "ledger_reports@1"),
+        ("conservative_risk_analyst", "ledger_reports@1"),
+        ("portfolio_manager", "ledger_reports@1"),
+    ],
+)
+def test_compile_tradingagents_example_agent_manifest_resolves_expected_capability(
+    session_factory: sessionmaker[Session],
+    role: str,
+    expected_capability_ref: str,
+) -> None:
+    expected_key, raw_expected_version = expected_capability_ref.split("@", 1)
+
+    with session_factory() as session:
+        _seed_tradingagents_manifest_refs(session)
+        payload = compile_agent_manifest(TRADINGAGENTS_AGENT_MANIFEST_SOURCES[role], session)
+
+    assert payload["capabilities"] == [
+        {"capabilityKey": expected_key, "capabilityVersion": int(raw_expected_version)}
+    ]
 
 
 def test_compile_agent_manifest_preserves_input_schema_metadata(

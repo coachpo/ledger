@@ -445,12 +445,51 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
         "portfolio_manager",
     }
 
+    expected_capability_refs = {
+        "market_analyst": ["tradingagents_market_data@1"],
+        "social_analyst": ["tradingagents_news@1"],
+        "news_analyst": ["tradingagents_news@1"],
+        "fundamentals_analyst": ["tradingagents_fundamentals@1"],
+        "bull_researcher": ["ledger_reports@1"],
+        "bear_researcher": ["ledger_reports@1"],
+        "research_manager": ["ledger_reports@1"],
+        "trader": ["ledger_positions@1"],
+        "aggressive_risk_analyst": ["ledger_reports@1"],
+        "neutral_risk_analyst": ["ledger_reports@1"],
+        "conservative_risk_analyst": ["ledger_reports@1"],
+        "portfolio_manager": ["ledger_reports@1"],
+    }
+    expected_prompt_fragments = {
+        "market_analyst": [
+            "instead of inventing market prices",
+            "data quality or provider limitations",
+        ],
+        "social_analyst": [
+            "synthesize social sentiment only from returned news",
+            "no direct social feed or social sentiment tool exists",
+        ],
+        "news_analyst": [
+            "instead of inventing articles",
+            "data quality or provider limitations",
+        ],
+        "fundamentals_analyst": [
+            "instead of inventing metrics or filings",
+            "data quality or provider limitations",
+        ],
+    }
+
     for role, source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.items():
         result = parse_agent_manifest(source)
         assert result.diagnostics == [], role
         assert result.manifest is not None
         assert result.manifest.metadata.key == role
         assert result.manifest.spec.output_schema.version == 1
+        assert [
+            f"{capability.key}@{capability.version}"
+            for capability in result.manifest.spec.capabilities
+        ] == expected_capability_refs[role]
+        for expected_fragment in expected_prompt_fragments.get(role, []):
+            assert expected_fragment in result.manifest.spec.system_prompt
 
 
 def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
