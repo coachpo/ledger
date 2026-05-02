@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type {
+  ModelConnectionApiStyle,
   ModelConnectionCreateInput,
   ModelConnectionRead,
   ModelConnectionReasoningEffort,
@@ -47,8 +48,14 @@ type ConnectionFeedback = {
   variant: "default" | "destructive";
 };
 
+const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
+  chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
+  responses: "Responses API",
+};
+
 type ModelConnectionEditorValues = {
   apiKey: string;
+  apiStyle: ModelConnectionApiStyle;
   baseUrl: string;
   description: string;
   key: string;
@@ -62,6 +69,7 @@ type ModelConnectionEditorValues = {
 
 const initialValues: ModelConnectionEditorValues = {
   apiKey: "",
+  apiStyle: "responses",
   baseUrl: "https://api.openai.com/v1",
   description: "",
   key: "",
@@ -78,6 +86,7 @@ const MASKED_SECRET_VALUE = "••••••••";
 function buildValuesFromConnection(connection: ModelConnectionRead): ModelConnectionEditorValues {
   return {
     apiKey: "",
+    apiStyle: connection.apiStyle,
     baseUrl: connection.baseUrl,
     description: connection.description ?? "",
     key: connection.key,
@@ -110,6 +119,7 @@ function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectio
     key: parseRequiredText("Key", values.key).toLowerCase(),
     name: parseRequiredText("Name", values.name),
     description: values.description.trim() || undefined,
+    apiStyle: values.apiStyle,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     organization: values.organization.trim() || undefined,
     project: values.project.trim() || undefined,
@@ -126,6 +136,7 @@ function buildUpdatePayload(values: ModelConnectionEditorValues): ModelConnectio
   return {
     name: parseRequiredText("Name", values.name),
     description: values.description.trim(),
+    apiStyle: values.apiStyle,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
     organization: values.organization.trim(),
     project: values.project.trim(),
@@ -359,7 +370,7 @@ export function ModelConnectionsEditorPage() {
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="model-connection-base-url">Base URL</Label>
               <Input
@@ -369,6 +380,30 @@ export function ModelConnectionsEditorPage() {
                 value={values.baseUrl}
                 onChange={(event) => updateValue("baseUrl", event.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="model-connection-api-style">API Style</Label>
+              <Select
+                value={values.apiStyle}
+                disabled={isSaving}
+                onValueChange={(value: ModelConnectionApiStyle) => updateValue("apiStyle", value)}
+              >
+                <SelectTrigger id="model-connection-api-style" aria-label="API Style">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="responses">{API_STYLE_LABELS.responses}</SelectItem>
+                    <SelectItem value="chat_completions">
+                      {API_STYLE_LABELS.chat_completions}
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Keep <code>baseUrl</code> at the provider&apos;s `/v1` root. Chat Completions is for
+                legacy/OpenAI-compatible third-party models.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="model-connection-timeout-seconds">Timeout Seconds</Label>

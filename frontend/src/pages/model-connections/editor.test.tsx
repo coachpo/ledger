@@ -16,6 +16,7 @@ const toastSuccessMock = vi.fn();
 
 const existingConnection = {
   apiKeyLast4: "4242",
+  apiStyle: "chat_completions",
   baseUrl: "https://api.openai.com/v1",
   createdAt: "2026-04-21T12:00:00Z",
   description: "Production OpenAI connection.",
@@ -46,6 +47,11 @@ vi.mock("sonner", () => ({
     success: (...args: unknown[]) => toastSuccessMock(...args),
   },
 }));
+
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(),
+});
 
 vi.mock("@/hooks/use-model-connections", () => ({
   useCreateModelConnection: () => ({ isPending: false, mutateAsync: createModelConnectionMock }),
@@ -83,6 +89,7 @@ describe("ModelConnectionsEditorPage", () => {
       stringifyJson({
         key: "primary_openai",
         name: "Primary OpenAI",
+        apiStyle: "responses",
         baseUrl: "https://api.openai.com/v1",
         modelId: "gpt-4.1",
         reasoningEffort: "medium",
@@ -94,6 +101,7 @@ describe("ModelConnectionsEditorPage", () => {
 
     await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
     expect(createModelConnectionMock).toHaveBeenCalledWith({
+      apiStyle: "responses",
       baseUrl: "https://api.openai.com/v1",
       key: "primary_openai",
       modelId: "gpt-4.1",
@@ -102,6 +110,28 @@ describe("ModelConnectionsEditorPage", () => {
       timeoutSeconds: 60,
     });
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
+  });
+
+  it("submits Chat Completions API style when selected", async () => {
+    createModelConnectionMock.mockResolvedValue({ id: 10 });
+
+    render(<ModelConnectionsEditorPage />);
+
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Compatible Chat" } });
+    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "compatible_chat" } });
+    fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "third-party-chat" } });
+    const apiStyleSelect = screen.getByLabelText(/^API Style$/i);
+    apiStyleSelect.focus();
+    fireEvent.keyDown(apiStyleSelect, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", {
+      name: /chat completions api - legacy \/ openai-compatible/i,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiStyle: "chat_completions" }),
+    );
   });
 
   it("masks an entered apiKey in the exact config preview", () => {
@@ -116,6 +146,7 @@ describe("ModelConnectionsEditorPage", () => {
       stringifyJson({
         key: "primary_openai",
         name: "Primary OpenAI",
+        apiStyle: "responses",
         baseUrl: "https://api.openai.com/v1",
         modelId: "gpt-4.1",
         reasoningEffort: "medium",
@@ -139,10 +170,14 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
     expect(screen.getByText(/leave blank to keep current key ending in ••••4242\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
+    expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
+      "Chat Completions API - legacy / OpenAI-compatible",
+    );
     expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
       stringifyJson({
         name: "Primary OpenAI",
         description: "Production OpenAI connection.",
+        apiStyle: "chat_completions",
         baseUrl: "https://api.openai.com/v1",
         organization: "org_live",
         project: "proj_live",
@@ -162,6 +197,7 @@ describe("ModelConnectionsEditorPage", () => {
     const updateCall = updateModelConnectionMock.mock.calls[0][0];
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
+      apiStyle: "chat_completions",
       baseUrl: "https://api.openai.com/v1",
       description: "Production OpenAI connection.",
       modelId: "gpt-4.1",
