@@ -4633,6 +4633,12 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         "rationale": "Risk debate completed.",
         "history": ["aggressive", "neutral", "conservative"],
     }
+    assert detail["perStepOutputs"]["2"][0]["output"] == {
+        "nextState": {"history": ["bull_round_1"]}
+    }
+    assert "priorState" not in detail["perStepOutputs"]["2"][0]["output"]
+    assert detail["perStepOutputs"]["8"][0]["output"] == {"nextState": {"history": ["aggressive"]}}
+    assert "priorState" not in detail["perStepOutputs"]["8"][0]["output"]
     assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == [
         "market_report",
         "social_report",
