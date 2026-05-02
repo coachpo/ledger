@@ -26,9 +26,22 @@ from app.schemas.capability import (
 REPORT_LOOKUP_TOOL_KEY = "ledger.reports.lookup"
 REPORT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.lookup."
+REPORT_MEMORY_WRITE_TOOL_KEY = "ledger.reports.write"
+REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.write."
 POSITION_LOOKUP_TOOL_KEY = "ledger.positions.lookup"
 POSITION_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 POSITION_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.positions.lookup."
+MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "ledger.market_data.quote_lookup"
+MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use ledger.market_data.quote_lookup."
+)
+MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "ledger.market_data.history_lookup"
+MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use ledger.market_data.history_lookup."
+)
 
 
 class RuntimeToolGrantError(Exception):
@@ -211,6 +224,18 @@ class CapabilityService:
             denied_message=REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
         )
 
+    def require_report_memory_write_grant(
+        self,
+        *,
+        capability_references: Sequence[dict[str, object]],
+    ) -> None:
+        self.require_runtime_tool_grant(
+            capability_references=capability_references,
+            tool_key=REPORT_MEMORY_WRITE_TOOL_KEY,
+            denied_code=REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+            denied_message=REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+        )
+
     def require_position_lookup_grant(
         self,
         *,
@@ -221,6 +246,30 @@ class CapabilityService:
             tool_key=POSITION_LOOKUP_TOOL_KEY,
             denied_code=POSITION_LOOKUP_ACCESS_DENIED_CODE,
             denied_message=POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
+        )
+
+    def require_market_data_quote_lookup_grant(
+        self,
+        *,
+        capability_references: Sequence[dict[str, object]],
+    ) -> None:
+        self.require_runtime_tool_grant(
+            capability_references=capability_references,
+            tool_key=MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+            denied_code=MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE,
+            denied_message=MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE,
+        )
+
+    def require_market_data_history_lookup_grant(
+        self,
+        *,
+        capability_references: Sequence[dict[str, object]],
+    ) -> None:
+        self.require_runtime_tool_grant(
+            capability_references=capability_references,
+            tool_key=MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+            denied_code=MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE,
+            denied_message=MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
         )
 
     def _next_version(self, key: str) -> int:
@@ -303,11 +352,20 @@ class CapabilityService:
 
 __all__ = [
     "CapabilityService",
+    "MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE",
+    "MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY",
+    "MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE",
+    "MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY",
     "POSITION_LOOKUP_ACCESS_DENIED_CODE",
     "POSITION_LOOKUP_ACCESS_DENIED_MESSAGE",
     "POSITION_LOOKUP_TOOL_KEY",
     "REPORT_LOOKUP_ACCESS_DENIED_CODE",
     "REPORT_LOOKUP_ACCESS_DENIED_MESSAGE",
     "REPORT_LOOKUP_TOOL_KEY",
+    "REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE",
+    "REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE",
+    "REPORT_MEMORY_WRITE_TOOL_KEY",
     "RuntimeToolGrantError",
 ]
