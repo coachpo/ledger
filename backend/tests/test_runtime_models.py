@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.models.agent import Agent
@@ -668,6 +670,315 @@ def test_agent_platform_schema_compiler_preserves_metadata_without_changing_vali
 
         with pytest.raises(ValidationError):
             model_type.model_validate({"horizonDays": 30})
+
+
+def test_agent_platform_schema_compiler_imports_and_renders_json_schema_defaults(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+
+        schema = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "defaulted_runtime_input",
+                    "name": "Defaulted Runtime Input",
+                    "jsonSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string", "default": "NVDA"},
+                            "request": {
+                                "type": "object",
+                                "properties": {
+                                    "horizonDays": {"type": "integer", "default": 30},
+                                },
+                                "default": {"horizonDays": 30},
+                            },
+                        },
+                        "required": ["ticker"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        )
+        stored_schema = session.get(OutputSchema, schema.id)
+        assert stored_schema is not None
+        rendered = service.get_schema(schema.id)
+
+    properties = cast(dict[str, object], schema.json_schema["properties"])
+    ticker = cast(dict[str, object], properties["ticker"])
+    request = cast(dict[str, object], properties["request"])
+    request_properties = cast(dict[str, object], request["properties"])
+    horizon_days = cast(dict[str, object], request_properties["horizonDays"])
+    assert ticker["default"] == "NVDA"
+    assert request["default"] == {"horizonDays": 30}
+    assert horizon_days["default"] == 30
+    assert stored_schema.json_schema == schema.json_schema
+    assert rendered.json_schema == schema.json_schema
+
+    builder_payload = cast(
+        dict[str, object],
+        schema.builder.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
+    builder_field_payloads = cast(list[dict[str, object]], builder_payload["fields"])
+    builder_fields = {
+        str(field["name"]): cast(dict[str, object], field["schema"])
+        for field in builder_field_payloads
+    }
+    assert builder_fields["ticker"]["defaultValue"] == "NVDA"
+    assert builder_fields["request"]["defaultValue"] == {"horizonDays": 30}
+
+
+def test_agent_platform_schema_compiler_exports_builder_default_value_as_json_schema_default(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+
+        schema = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "builder_defaulted_runtime_input",
+                    "name": "Builder Defaulted Runtime Input",
+                    "builder": {
+                        "kind": "object",
+                        "allowAdditionalProperties": False,
+                        "fields": [
+                            {
+                                "name": "ticker",
+                                "required": False,
+                                "schema": {"kind": "string", "defaultValue": "NVDA"},
+                            },
+                            {
+                                "name": "horizonDays",
+                                "required": False,
+                                "schema": {"kind": "integer", "defaultValue": 30},
+                            },
+                        ],
+                    },
+                }
+            )
+        )
+
+    properties = cast(dict[str, object], schema.json_schema["properties"])
+    ticker = cast(dict[str, object], properties["ticker"])
+    horizon_days = cast(dict[str, object], properties["horizonDays"])
+    required = cast(list[str], schema.json_schema["required"])
+    assert ticker["default"] == "NVDA"
+    assert horizon_days["default"] == 30
+    assert required == []
+
+
+@pytest.mark.parametrize(
+    ("schema_key", "property_schema", "expected_field", "expected_issue"),
+    [
+        (
+            "string_default_number",
+            {"ticker": {"type": "string", "default": 123}},
+            "jsonSchema.properties.ticker.default",
+            "Default value must match schema type 'string'",
+        ),
+        (
+            "integer_default_bool",
+            {"horizonDays": {"type": "integer", "default": True}},
+            "jsonSchema.properties.horizonDays.default",
+            "Default value must match schema type 'integer'",
+        ),
+        (
+            "object_default_missing_required",
+            {
+                "request": {
+                    "type": "object",
+                    "properties": {
+                        "ticker": {"type": "string"},
+                        "horizonDays": {"type": "integer"},
+                    },
+                    "required": ["ticker", "horizonDays"],
+                    "default": {"ticker": "NVDA"},
+                }
+            },
+            "jsonSchema.properties.request.default.horizonDays",
+            "Default object is missing required field 'horizonDays'",
+        ),
+        (
+            "null_default",
+            {"ticker": {"type": "string", "default": None}},
+            "jsonSchema.properties.ticker.default",
+            "Null defaults are not supported",
+        ),
+        (
+            "enum_default_wrong_value",
+            {"action": {"type": "string", "enum": ["buy", "sell"], "default": "hold"}},
+            "jsonSchema.properties.action.default",
+            "Default value must equal one enum value",
+        ),
+        (
+            "enum_default_null",
+            {"action": {"type": "string", "enum": ["buy", "sell"], "default": None}},
+            "jsonSchema.properties.action.default",
+            "Null defaults are not supported",
+        ),
+        (
+            "literal_default_wrong_value",
+            {"action": {"type": "string", "const": "buy", "default": "sell"}},
+            "jsonSchema.properties.action.default",
+            "Default value must equal the literal value",
+        ),
+        (
+            "literal_default_null",
+            {"action": {"type": "string", "const": "buy", "default": None}},
+            "jsonSchema.properties.action.default",
+            "Null defaults are not supported",
+        ),
+    ],
+)
+def test_agent_platform_schema_compiler_rejects_invalid_json_schema_defaults(
+    session_factory: sessionmaker[Session],
+    schema_key: str,
+    property_schema: dict[str, object],
+    expected_field: str,
+    expected_issue: str,
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+
+        with pytest.raises(ApiError) as excinfo:
+            _ = service.create_draft(
+                OutputSchemaDraftCreate.model_validate(
+                    {
+                        "key": schema_key,
+                        "name": schema_key.replace("_", " ").title(),
+                        "jsonSchema": {
+                            "type": "object",
+                            "properties": property_schema,
+                            "additionalProperties": False,
+                        },
+                    }
+                )
+            )
+
+    assert excinfo.value.code == "validation_error"
+    assert any(
+        detail["field"] == expected_field and expected_issue in detail["issue"]
+        for detail in excinfo.value.details
+    )
+
+
+@pytest.mark.parametrize(
+    ("default_value", "expected_issue"),
+    [
+        (None, "Null defaults are not supported"),
+        ("hold", "Default value must equal one enum value"),
+    ],
+)
+def test_agent_platform_schema_compiler_validates_ref_defaults_against_resolved_schema(
+    session_factory: sessionmaker[Session],
+    default_value: object,
+    expected_issue: str,
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+        shared_action = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "default_ref_action_type",
+                    "kind": "shared",
+                    "name": "Default Ref Action Type",
+                    "jsonSchema": {"type": "string", "enum": ["buy", "sell"]},
+                }
+            )
+        )
+        service.activate(shared_action.id)
+
+        accepted_schema = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "default_ref_valid",
+                    "name": "Default Ref Valid",
+                    "jsonSchema": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "$ref": "registry://default_ref_action_type",
+                                "default": "buy",
+                            }
+                        },
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        )
+        accepted_action = cast(
+            dict[str, object],
+            cast(dict[str, object], accepted_schema.json_schema["properties"])["action"],
+        )
+        assert accepted_action["$ref"] == "registry://default_ref_action_type@1"
+        assert accepted_action["default"] == "buy"
+
+        with pytest.raises(ApiError) as excinfo:
+            service.create_draft(
+                OutputSchemaDraftCreate.model_validate(
+                    {
+                        "key": "default_ref_invalid",
+                        "name": "Default Ref Invalid",
+                        "jsonSchema": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "$ref": "registry://default_ref_action_type",
+                                    "default": default_value,
+                                }
+                            },
+                            "additionalProperties": False,
+                        },
+                    }
+                )
+            )
+
+    assert excinfo.value.code == "validation_error"
+    assert any(
+        detail["field"] == "jsonSchema.properties.action.default"
+        and expected_issue in detail["issue"]
+        for detail in excinfo.value.details
+    )
+
+
+def test_agent_platform_runtime_model_keeps_defaulted_required_fields_required(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+        schema = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "runtime_default_strictness",
+                    "name": "Runtime Default Strictness",
+                    "jsonSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string", "default": "NVDA"},
+                            "horizonDays": {"type": "integer", "default": 30},
+                        },
+                        "required": ["ticker"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        )
+        model_type = service.compile_schema_model(schema.id)
+
+    with pytest.raises(ValidationError) as excinfo:
+        _ = model_type.model_validate({"horizonDays": 45})
+    assert any(
+        error["loc"] == ("ticker",) and error["type"] == "missing"
+        for error in excinfo.value.errors()
+    )
+
+    validated = model_type.model_validate({"ticker": "MSFT"})
+    assert validated.model_dump() == {"ticker": "MSFT", "horizonDays": 30}
+
+    explicit_value = model_type.model_validate({"ticker": "AAPL", "horizonDays": 60})
+    assert explicit_value.model_dump() == {"ticker": "AAPL", "horizonDays": 60}
 
 
 def test_agent_platform_schema_compiler_supports_discriminated_union_models(

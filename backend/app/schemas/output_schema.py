@@ -4,15 +4,22 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal, Union, cast
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from app.schemas.common import CamelModel, ensure_timezone
 
 _STABLE_OUTPUT_SCHEMA_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
 
 JsonPrimitive = Union[str, int, float, bool]  # noqa: UP007
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -71,11 +78,23 @@ class OutputSchemaKind(str, Enum):  # noqa: UP042
 class OutputSchemaBuilderBase(CamelModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = None
+    default_value: JsonValue | None = Field(default=None, alias="defaultValue")
 
     @field_validator("title", "description", mode="before")
     @classmethod
     def validate_optional_text(cls, value: object) -> str | None:
         return _normalize_optional_text(value)
+
+    @model_serializer(mode="wrap")
+    def serialize_without_absent_default_value(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        serialized = cast(dict[str, object], handler(self))
+        if "default_value" not in self.model_fields_set:
+            serialized.pop("defaultValue", None)
+            serialized.pop("default_value", None)
+        return serialized
 
 
 class OutputSchemaBuilderString(OutputSchemaBuilderBase):
@@ -274,6 +293,7 @@ OutputSchemaDraftUpdate.model_rebuild()
 
 __all__ = [
     "JsonPrimitive",
+    "JsonValue",
     "OutputSchemaBuilderArray",
     "OutputSchemaBuilderBoolean",
     "OutputSchemaBuilderDiscriminatedUnion",

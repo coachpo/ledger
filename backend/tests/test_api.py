@@ -686,7 +686,11 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
             "builder": {
                 "kind": "object",
                 "fields": [
-                    {"name": "summary", "required": True, "schema": {"kind": "string"}},
+                    {
+                        "name": "summary",
+                        "required": True,
+                        "schema": {"kind": "string", "defaultValue": "Draft summary"},
+                    },
                     {
                         "name": "action",
                         "required": True,
@@ -697,7 +701,7 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
             "jsonSchema": {
                 "type": "object",
                 "properties": {
-                    "summary": {"type": "string"},
+                    "summary": {"type": "string", "default": "Draft summary"},
                     "action": {"$ref": "registry://action_type"},
                 },
                 "required": ["summary", "action"],
@@ -717,11 +721,15 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
 
     created_builder = cast(dict[str, object], created["builder"])
     created_fields = cast(list[dict[str, object]], created_builder["fields"])
+    summary_field = next(field for field in created_fields if field["name"] == "summary")
+    summary_field_schema = cast(dict[str, object], summary_field["schema"])
+    assert summary_field_schema["defaultValue"] == "Draft summary"
     action_field = next(field for field in created_fields if field["name"] == "action")
     action_field_schema = cast(dict[str, object], action_field["schema"])
     assert action_field_schema["kind"] == "ref"
     assert action_field_schema["schemaKey"] == "action_type"
     assert action_field_schema["schemaVersion"] == 1
+    assert "defaultValue" not in action_field_schema
 
     fetched = client.get(f"/api/output-schemas/{created['id']}")
     assert fetched.status_code == 200
@@ -741,6 +749,47 @@ def test_agent_platform_output_schema_save_round_trips_builder_json_and_pins_reg
     assert fetched_builder["kind"] == created_builder["kind"]
     assert fetched_builder["allowAdditionalProperties"] is False
     assert fetched_field_map == created_field_map
+
+    list_response = client.get("/api/output-schemas", params={"status": "draft"})
+    assert list_response.status_code == 200, list_response.json()
+    listed_items = cast(list[dict[str, object]], list_response.json()["items"])
+    listed = next(item for item in listed_items if item["id"] == created["id"])
+    listed_builder = cast(dict[str, object], listed["builder"])
+    listed_field_map = {
+        field["name"]: field
+        for field in cast(list[dict[str, object]], listed_builder["fields"])
+    }
+    assert "defaultValue" not in cast(dict[str, object], listed_field_map["action"]["schema"])
+    assert cast(dict[str, object], listed_field_map["summary"]["schema"])["defaultValue"] == (
+        "Draft summary"
+    )
+
+    update_response = client.patch(
+        f"/api/output-schemas/{created['id']}",
+        json={"name": "Trading Decision v2"},
+    )
+    assert update_response.status_code == 200, update_response.json()
+    updated = update_response.json()
+    updated_builder = cast(dict[str, object], updated["builder"])
+    updated_field_map = {
+        field["name"]: field
+        for field in cast(list[dict[str, object]], updated_builder["fields"])
+    }
+    assert "defaultValue" not in cast(dict[str, object], updated_field_map["action"]["schema"])
+    assert cast(dict[str, object], updated_field_map["summary"]["schema"])["defaultValue"] == (
+        "Draft summary"
+    )
+
+    activated = activate_output_schema(client, cast(int, updated["id"]))
+    activated_builder = cast(dict[str, object], activated["builder"])
+    activated_field_map = {
+        field["name"]: field
+        for field in cast(list[dict[str, object]], activated_builder["fields"])
+    }
+    assert "defaultValue" not in cast(dict[str, object], activated_field_map["action"]["schema"])
+    assert cast(dict[str, object], activated_field_map["summary"]["schema"])["defaultValue"] == (
+        "Draft summary"
+    )
 
 
 @pytest.mark.parametrize(

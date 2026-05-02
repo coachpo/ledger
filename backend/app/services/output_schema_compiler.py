@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from dataclasses import dataclass
+from math import isfinite
 from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, create_model
@@ -10,6 +12,7 @@ from app.models.output_schema import OutputSchema
 from app.repositories.output_schema import OutputSchemaRepository
 from app.schemas.output_schema import (
     JsonPrimitive,
+    JsonValue,
     OutputSchemaBuilderArray,
     OutputSchemaBuilderBoolean,
     OutputSchemaBuilderDiscriminatedUnion,
@@ -75,6 +78,8 @@ class RegistryTarget:
 class SchemaNodeBase:
     title: str | None
     description: str | None
+    default_value: JsonValue | None
+    has_default: bool
 
 
 @dataclass
@@ -288,8 +293,79 @@ class OutputSchemaCompiler:
         normalized = value.strip()
         return normalized or None
 
+    def _builder_metadata(self, builder: OutputSchemaBuilderNode) -> dict[str, Any]:
+        return {
+            "title": builder.title,
+            "description": builder.description,
+            "default_value": builder.default_value,
+            "has_default": "default_value" in builder.model_fields_set,
+        }
+
+    def _json_schema_metadata(
+        self,
+        schema: dict[str, Any],
+        *,
+        path: str,
+        issues: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        default_value: JsonValue | None = None
+        has_default = "default" in schema
+        if has_default:
+            default_value = self._parse_json_value(
+                schema.get("default"),
+                path=_join_path(path, "default"),
+                issues=issues,
+            )
+        return {
+            "title": self._read_optional_string(
+                schema.get("title"),
+                path=_join_path(path, "title"),
+                field_name="title",
+                issues=issues,
+            ),
+            "description": self._read_optional_string(
+                schema.get("description"),
+                path=_join_path(path, "description"),
+                field_name="description",
+                issues=issues,
+            ),
+            "default_value": default_value,
+            "has_default": has_default,
+        }
+
+    def _builder_metadata_kwargs(self, node: SchemaNodeBase) -> dict[str, Any]:
+        metadata: dict[str, Any] = {"title": node.title, "description": node.description}
+        if node.has_default:
+            metadata["default_value"] = node.default_value
+        return metadata
+
     def _placeholder_node(self) -> SchemaPrimitive:
-        return SchemaPrimitive(title=None, description=None, schema_type="string")
+        return SchemaPrimitive(
+            title=None,
+            description=None,
+            default_value=None,
+            has_default=False,
+            schema_type="string",
+        )
+
+    def _with_validated_default(
+        self,
+        node: SchemaNode,
+        *,
+        path: str,
+        default_key: str,
+        seen_refs: tuple[RegistryTarget, ...],
+        issues: list[dict[str, str]],
+    ) -> SchemaNode:
+        if node.has_default:
+            self._validate_default_value(
+                node.default_value,
+                node,
+                path=_join_path(path, default_key),
+                seen_refs=seen_refs,
+                issues=issues,
+            )
+        return node
 
     def _node_from_builder(
         self,
@@ -299,39 +375,21 @@ class OutputSchemaCompiler:
         seen_refs: tuple[RegistryTarget, ...],
         issues: list[dict[str, str]],
     ) -> SchemaNode:
+        metadata = self._builder_metadata(builder)
+        node: SchemaNode
         if isinstance(builder, OutputSchemaBuilderString):
-            return SchemaPrimitive(
-                schema_type="string",
-                title=builder.title,
-                description=builder.description,
-            )
-        if isinstance(builder, OutputSchemaBuilderInteger):
-            return SchemaPrimitive(
-                schema_type="integer", title=builder.title, description=builder.description
-            )
-        if isinstance(builder, OutputSchemaBuilderNumber):
-            return SchemaPrimitive(
-                schema_type="number",
-                title=builder.title,
-                description=builder.description,
-            )
-        if isinstance(builder, OutputSchemaBuilderBoolean):
-            return SchemaPrimitive(
-                schema_type="boolean", title=builder.title, description=builder.description
-            )
-        if isinstance(builder, OutputSchemaBuilderEnum):
-            return SchemaEnum(
-                values=tuple(builder.values),
-                title=builder.title,
-                description=builder.description,
-            )
-        if isinstance(builder, OutputSchemaBuilderLiteral):
-            return SchemaLiteral(
-                value=builder.value,
-                title=builder.title,
-                description=builder.description,
-            )
-        if isinstance(builder, OutputSchemaBuilderObject):
+            node = SchemaPrimitive(schema_type="string", **metadata)
+        elif isinstance(builder, OutputSchemaBuilderInteger):
+            node = SchemaPrimitive(schema_type="integer", **metadata)
+        elif isinstance(builder, OutputSchemaBuilderNumber):
+            node = SchemaPrimitive(schema_type="number", **metadata)
+        elif isinstance(builder, OutputSchemaBuilderBoolean):
+            node = SchemaPrimitive(schema_type="boolean", **metadata)
+        elif isinstance(builder, OutputSchemaBuilderEnum):
+            node = SchemaEnum(values=tuple(builder.values), **metadata)
+        elif isinstance(builder, OutputSchemaBuilderLiteral):
+            node = SchemaLiteral(value=builder.value, **metadata)
+        elif isinstance(builder, OutputSchemaBuilderObject):
             fields = tuple(
                 SchemaField(
                     name=field.name,
@@ -345,24 +403,22 @@ class OutputSchemaCompiler:
                 )
                 for index, field in enumerate(builder.fields)
             )
-            return SchemaObject(
+            node = SchemaObject(
                 fields=fields,
                 allow_additional_properties=builder.allow_additional_properties,
-                title=builder.title,
-                description=builder.description,
+                **metadata,
             )
-        if isinstance(builder, OutputSchemaBuilderArray):
-            return SchemaArray(
+        elif isinstance(builder, OutputSchemaBuilderArray):
+            node = SchemaArray(
                 items=self._node_from_builder(
                     builder.items,
                     path=_join_path(path, "items"),
                     seen_refs=seen_refs,
                     issues=issues,
                 ),
-                title=builder.title,
-                description=builder.description,
+                **metadata,
             )
-        if isinstance(builder, OutputSchemaBuilderRef):
+        elif isinstance(builder, OutputSchemaBuilderRef):
             target = self._resolve_registry_target(
                 builder.schema_key,
                 builder.schema_version,
@@ -377,34 +433,36 @@ class OutputSchemaCompiler:
                 seen_refs=seen_refs,
                 issues=issues,
             )
-            return SchemaRef(
-                key=target.key,
-                version=target.version,
-                title=builder.title,
-                description=builder.description,
+            node = SchemaRef(key=target.key, version=target.version, **metadata)
+        else:
+            variant_nodes = tuple(
+                self._node_from_builder(
+                    variant,
+                    path=_join_path(path, f"variants[{index}]"),
+                    seen_refs=seen_refs,
+                    issues=issues,
+                )
+                for index, variant in enumerate(builder.variants)
             )
-        variant_nodes = tuple(
-            self._node_from_builder(
-                variant,
-                path=_join_path(path, f"variants[{index}]"),
+            self._validate_discriminator_variants(
+                variant_nodes,
+                builder.discriminator,
+                path=path,
+                variant_segment="variants",
                 seen_refs=seen_refs,
                 issues=issues,
             )
-            for index, variant in enumerate(builder.variants)
-        )
-        self._validate_discriminator_variants(
-            variant_nodes,
-            builder.discriminator,
+            node = SchemaDiscriminatedUnion(
+                discriminator=builder.discriminator,
+                variants=variant_nodes,
+                **metadata,
+            )
+        return self._with_validated_default(
+            node,
             path=path,
-            variant_segment="variants",
+            default_key="defaultValue",
             seen_refs=seen_refs,
             issues=issues,
-        )
-        return SchemaDiscriminatedUnion(
-            discriminator=builder.discriminator,
-            variants=variant_nodes,
-            title=builder.title,
-            description=builder.description,
         )
 
     def _node_from_json_schema(
@@ -419,18 +477,17 @@ class OutputSchemaCompiler:
             self._add_issue(issues, path, "Schema nodes must be objects")
             return self._placeholder_node()
 
-        title = self._read_optional_string(
-            schema.get("title"),
-            path=_join_path(path, "title"),
-            field_name="title",
-            issues=issues,
-        )
-        description = self._read_optional_string(
-            schema.get("description"),
-            path=_join_path(path, "description"),
-            field_name="description",
-            issues=issues,
-        )
+        metadata = self._json_schema_metadata(schema, path=path, issues=issues)
+
+        def with_default(node: SchemaNode) -> SchemaNode:
+            return self._with_validated_default(
+                node,
+                path=path,
+                default_key="default",
+                seen_refs=seen_refs,
+                issues=issues,
+            )
+
         for key, message in (
             ("allOf", "allOf is not supported"),
             ("if", "if/then/else is not supported"),
@@ -445,7 +502,7 @@ class OutputSchemaCompiler:
         if "$ref" in schema:
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"$ref", "title", "description"},
+                allowed_keys={"$ref", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
@@ -458,17 +515,12 @@ class OutputSchemaCompiler:
                 seen_refs=seen_refs,
                 issues=issues,
             )
-            return SchemaRef(
-                key=target.key,
-                version=target.version,
-                title=title,
-                description=description,
-            )
+            return with_default(SchemaRef(key=target.key, version=target.version, **metadata))
 
         if "anyOf" in schema:
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"anyOf", "discriminator", "title", "description"},
+                allowed_keys={"anyOf", "discriminator", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
@@ -510,17 +562,18 @@ class OutputSchemaCompiler:
                 seen_refs=seen_refs,
                 issues=issues,
             )
-            return SchemaDiscriminatedUnion(
-                discriminator=discriminator,
-                variants=variant_nodes,
-                title=title,
-                description=description,
+            return with_default(
+                SchemaDiscriminatedUnion(
+                    discriminator=discriminator,
+                    variants=variant_nodes,
+                    **metadata,
+                )
             )
 
         if "const" in schema:
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"const", "type", "title", "description"},
+                allowed_keys={"const", "type", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
@@ -537,12 +590,12 @@ class OutputSchemaCompiler:
             )
             if value is None:
                 return self._placeholder_node()
-            return SchemaLiteral(value=value, title=title, description=description)
+            return with_default(SchemaLiteral(value=value, **metadata))
 
         if "enum" in schema:
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"enum", "type", "title", "description"},
+                allowed_keys={"enum", "type", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
@@ -577,7 +630,7 @@ class OutputSchemaCompiler:
             )
             if not values:
                 return self._placeholder_node()
-            return SchemaEnum(values=tuple(values), title=title, description=description)
+            return with_default(SchemaEnum(values=tuple(values), **metadata))
 
         schema_type = schema.get("type")
         if not isinstance(schema_type, str):
@@ -586,19 +639,15 @@ class OutputSchemaCompiler:
         if schema_type in _PRIMITIVE_TYPES:
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"type", "title", "description"},
+                allowed_keys={"type", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
-            return SchemaPrimitive(
-                schema_type=schema_type,
-                title=title,
-                description=description,
-            )
+            return with_default(SchemaPrimitive(schema_type=schema_type, **metadata))
         if schema_type == "array":
             self._validate_allowed_keys(
                 schema,
-                allowed_keys={"type", "items", "title", "description"},
+                allowed_keys={"type", "items", "title", "description", "default"},
                 path=path,
                 issues=issues,
             )
@@ -613,15 +662,16 @@ class OutputSchemaCompiler:
             if raw_items is None:
                 self._add_issue(issues, _join_path(path, "items"), "Array items are required")
                 return self._placeholder_node()
-            return SchemaArray(
-                items=self._node_from_json_schema(
-                    raw_items,
-                    path=_join_path(path, "items"),
-                    seen_refs=seen_refs,
-                    issues=issues,
-                ),
-                title=title,
-                description=description,
+            return with_default(
+                SchemaArray(
+                    items=self._node_from_json_schema(
+                        raw_items,
+                        path=_join_path(path, "items"),
+                        seen_refs=seen_refs,
+                        issues=issues,
+                    ),
+                    **metadata,
+                )
             )
         if schema_type == "object":
             self._validate_allowed_keys(
@@ -633,6 +683,7 @@ class OutputSchemaCompiler:
                     "additionalProperties",
                     "title",
                     "description",
+                    "default",
                 },
                 path=path,
                 issues=issues,
@@ -700,11 +751,12 @@ class OutputSchemaCompiler:
                     _join_path(path, "required"),
                     f"Required field {name!r} is not defined in properties",
                 )
-            return SchemaObject(
-                fields=fields,
-                allow_additional_properties=allow_additional_properties,
-                title=title,
-                description=description,
+            return with_default(
+                SchemaObject(
+                    fields=fields,
+                    allow_additional_properties=allow_additional_properties,
+                    **metadata,
+                )
             )
 
         self._add_issue(
@@ -751,6 +803,272 @@ class OutputSchemaCompiler:
             return value
         self._add_issue(issues, path, "Values must be JSON primitives")
         return None
+
+    def _parse_json_value(
+        self,
+        value: object,
+        *,
+        path: str,
+        issues: list[dict[str, str]],
+    ) -> JsonValue:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return value
+        if isinstance(value, list):
+            return [
+                self._parse_json_value(
+                    item,
+                    path=_join_path(path, f"[{index}]"),
+                    issues=issues,
+                )
+                for index, item in enumerate(value)
+            ]
+        if isinstance(value, dict):
+            parsed: dict[str, JsonValue] = {}
+            for index, (key, item) in enumerate(value.items()):
+                if not isinstance(key, str):
+                    self._add_issue(
+                        issues,
+                        _join_path(path, f"[{index}].key"),
+                        "Default object keys must be strings",
+                    )
+                    continue
+                parsed[key] = self._parse_json_value(
+                    item,
+                    path=_join_path(path, key),
+                    issues=issues,
+                )
+            return parsed
+        self._add_issue(issues, path, "Default values must be valid JSON values")
+        return None
+
+    def _validate_default_value(
+        self,
+        value: JsonValue | None,
+        node: SchemaNode,
+        *,
+        path: str,
+        seen_refs: tuple[RegistryTarget, ...],
+        issues: list[dict[str, str]],
+    ) -> None:
+        if value is None:
+            self._add_issue(issues, path, "Null defaults are not supported")
+            return
+        if isinstance(node, SchemaPrimitive):
+            self._validate_primitive_default(value, node.schema_type, path=path, issues=issues)
+            return
+        if isinstance(node, SchemaEnum):
+            if not any(self._json_values_equal(value, candidate) for candidate in node.values):
+                self._add_issue(issues, path, "Default value must equal one enum value")
+            return
+        if isinstance(node, SchemaLiteral):
+            if not self._json_values_equal(value, node.value):
+                self._add_issue(issues, path, "Default value must equal the literal value")
+            return
+        if isinstance(node, SchemaArray):
+            if not isinstance(value, list):
+                self._add_issue(issues, path, "Default value must match schema type 'array'")
+                return
+            for index, item in enumerate(value):
+                self._validate_default_value(
+                    item,
+                    node.items,
+                    path=_join_path(path, f"[{index}]"),
+                    seen_refs=seen_refs,
+                    issues=issues,
+                )
+            return
+        if isinstance(node, SchemaObject):
+            self._validate_object_default(
+                value,
+                node,
+                path=path,
+                seen_refs=seen_refs,
+                issues=issues,
+            )
+            return
+        if isinstance(node, SchemaRef):
+            target = RegistryTarget(node.key, node.version)
+            resolved_node = self._load_registry_node_by_target(
+                target,
+                path=path,
+                seen_refs=seen_refs,
+                issues=issues,
+            )
+            self._validate_default_value(
+                value,
+                resolved_node,
+                path=path,
+                seen_refs=seen_refs + (target,),
+                issues=issues,
+            )
+            return
+        self._validate_discriminated_union_default(
+            value,
+            node,
+            path=path,
+            seen_refs=seen_refs,
+            issues=issues,
+        )
+
+    def _validate_primitive_default(
+        self,
+        value: JsonValue,
+        schema_type: str,
+        *,
+        path: str,
+        issues: list[dict[str, str]],
+    ) -> None:
+        valid = False
+        if schema_type == "string":
+            valid = isinstance(value, str)
+        elif schema_type == "integer":
+            valid = isinstance(value, int) and not isinstance(value, bool)
+        elif schema_type == "number":
+            valid = self._is_finite_json_number(value)
+        elif schema_type == "boolean":
+            valid = isinstance(value, bool)
+        if not valid:
+            self._add_issue(issues, path, f"Default value must match schema type {schema_type!r}")
+
+    def _validate_object_default(
+        self,
+        value: JsonValue,
+        node: SchemaObject,
+        *,
+        path: str,
+        seen_refs: tuple[RegistryTarget, ...],
+        issues: list[dict[str, str]],
+    ) -> None:
+        if not isinstance(value, dict):
+            self._add_issue(issues, path, "Default value must match schema type 'object'")
+            return
+        fields_by_name = {field.name: field for field in node.fields}
+        for field in node.fields:
+            if field.required and field.name not in value:
+                self._add_issue(
+                    issues,
+                    _join_path(path, field.name),
+                    f"Default object is missing required field {field.name!r}",
+                )
+        for key, item in value.items():
+            schema_field = fields_by_name.get(key)
+            item_path = _join_path(path, key)
+            if schema_field is None:
+                if node.allow_additional_properties:
+                    self._validate_default_json_value(item, path=item_path, issues=issues)
+                else:
+                    self._add_issue(
+                        issues,
+                        item_path,
+                        f"Default object field {key!r} is not defined",
+                    )
+                continue
+            self._validate_default_value(
+                item,
+                schema_field.schema,
+                path=item_path,
+                seen_refs=seen_refs,
+                issues=issues,
+            )
+
+    def _validate_discriminated_union_default(
+        self,
+        value: JsonValue,
+        node: SchemaDiscriminatedUnion,
+        *,
+        path: str,
+        seen_refs: tuple[RegistryTarget, ...],
+        issues: list[dict[str, str]],
+    ) -> None:
+        if not isinstance(value, dict):
+            self._add_issue(issues, path, "Default value must match discriminated union schema")
+            return
+        discriminator_path = _join_path(path, node.discriminator)
+        if node.discriminator not in value:
+            self._add_issue(
+                issues,
+                discriminator_path,
+                f"Default object must include discriminator field {node.discriminator!r}",
+            )
+            return
+        discriminator_value = value[node.discriminator]
+        if discriminator_value is None:
+            self._add_issue(issues, discriminator_path, "Null defaults are not supported")
+            return
+        matches: list[SchemaNode] = []
+        for variant in node.variants:
+            variant_issues: list[dict[str, str]] = []
+            tag = self._extract_discriminator_tag(
+                variant,
+                node.discriminator,
+                path=path,
+                seen_refs=seen_refs,
+                issues=variant_issues,
+            )
+            if tag is not None and self._json_values_equal(discriminator_value, tag):
+                matches.append(variant)
+        if len(matches) != 1:
+            self._add_issue(
+                issues,
+                discriminator_path,
+                "Default discriminator value must match exactly one variant",
+            )
+            return
+        self._validate_default_value(
+            value,
+            matches[0],
+            path=path,
+            seen_refs=seen_refs,
+            issues=issues,
+        )
+
+    def _validate_default_json_value(
+        self,
+        value: JsonValue,
+        *,
+        path: str,
+        issues: list[dict[str, str]],
+    ) -> None:
+        if value is None:
+            self._add_issue(issues, path, "Null defaults are not supported")
+            return
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                self._validate_default_json_value(
+                    item,
+                    path=_join_path(path, f"[{index}]"),
+                    issues=issues,
+                )
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                self._validate_default_json_value(
+                    item,
+                    path=_join_path(path, key),
+                    issues=issues,
+                )
+
+    @staticmethod
+    def _is_finite_json_number(value: JsonValue) -> bool:
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, (int, float)):
+            return isfinite(value)
+        return False
+
+    @staticmethod
+    def _json_values_equal(left: JsonValue | None, right: JsonPrimitive) -> bool:
+        if isinstance(left, bool) or isinstance(right, bool):
+            return isinstance(left, bool) and isinstance(right, bool) and left == right
+        return left == right
 
     def _validate_declared_primitive_type(
         self,
@@ -979,38 +1297,19 @@ class OutputSchemaCompiler:
         return None
 
     def _node_to_builder(self, node: SchemaNode) -> OutputSchemaBuilderNode:
+        metadata = self._builder_metadata_kwargs(node)
         if isinstance(node, SchemaPrimitive):
             if node.schema_type == "string":
-                return OutputSchemaBuilderString(
-                    title=node.title,
-                    description=node.description,
-                )
+                return OutputSchemaBuilderString(**metadata)
             if node.schema_type == "integer":
-                return OutputSchemaBuilderInteger(
-                    title=node.title,
-                    description=node.description,
-                )
+                return OutputSchemaBuilderInteger(**metadata)
             if node.schema_type == "number":
-                return OutputSchemaBuilderNumber(
-                    title=node.title,
-                    description=node.description,
-                )
-            return OutputSchemaBuilderBoolean(
-                title=node.title,
-                description=node.description,
-            )
+                return OutputSchemaBuilderNumber(**metadata)
+            return OutputSchemaBuilderBoolean(**metadata)
         if isinstance(node, SchemaEnum):
-            return OutputSchemaBuilderEnum(
-                values=list(node.values),
-                title=node.title,
-                description=node.description,
-            )
+            return OutputSchemaBuilderEnum(values=list(node.values), **metadata)
         if isinstance(node, SchemaLiteral):
-            return OutputSchemaBuilderLiteral(
-                value=node.value,
-                title=node.title,
-                description=node.description,
-            )
+            return OutputSchemaBuilderLiteral(value=node.value, **metadata)
         if isinstance(node, SchemaObject):
             return OutputSchemaBuilderObject(
                 fields=[
@@ -1022,27 +1321,23 @@ class OutputSchemaCompiler:
                     for field in node.fields
                 ],
                 allow_additional_properties=node.allow_additional_properties,
-                title=node.title,
-                description=node.description,
+                **metadata,
             )
         if isinstance(node, SchemaArray):
             return OutputSchemaBuilderArray(
                 items=self._node_to_builder(node.items),
-                title=node.title,
-                description=node.description,
+                **metadata,
             )
         if isinstance(node, SchemaRef):
             return OutputSchemaBuilderRef(
                 schema_key=node.key,
                 schema_version=node.version,
-                title=node.title,
-                description=node.description,
+                **metadata,
             )
         return OutputSchemaBuilderDiscriminatedUnion(
             discriminator=node.discriminator,
             variants=[self._node_to_builder(variant) for variant in node.variants],
-            title=node.title,
-            description=node.description,
+            **metadata,
         )
 
     def _node_to_json_schema(self, node: SchemaNode) -> dict[str, Any]:
@@ -1082,6 +1377,8 @@ class OutputSchemaCompiler:
             payload["title"] = node.title
         if node.description is not None:
             payload["description"] = node.description
+        if node.has_default:
+            payload["default"] = node.default_value
         return payload
 
     def _collect_direct_registry_refs(self, node: SchemaNode) -> list[str]:
@@ -1155,15 +1452,32 @@ class OutputSchemaCompiler:
                 field.schema,
                 model_name=f"{model_name}{_pascal_case(field.name)}",
             )
-            default = ... if field.required else None
-            field_definitions[field.name] = (
-                annotation,
-                Field(
-                    default=default,
+            if field.required:
+                pydantic_field = Field(
+                    default=...,
                     title=field.schema.title,
                     description=field.schema.description,
-                ),
-            )
+                )
+            elif field.schema.has_default and isinstance(field.schema.default_value, (dict, list)):
+                default_value = field.schema.default_value
+                pydantic_field = Field(
+                    default_factory=lambda value=default_value: deepcopy(value),
+                    title=field.schema.title,
+                    description=field.schema.description,
+                )
+            elif field.schema.has_default:
+                pydantic_field = Field(
+                    default=field.schema.default_value,
+                    title=field.schema.title,
+                    description=field.schema.description,
+                )
+            else:
+                pydantic_field = Field(
+                    default=None,
+                    title=field.schema.title,
+                    description=field.schema.description,
+                )
+            field_definitions[field.name] = (annotation, pydantic_field)
         create_model_fn = cast(Any, create_model)
         return cast(
             type[BaseModel],
