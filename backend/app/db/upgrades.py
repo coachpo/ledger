@@ -1427,6 +1427,63 @@ def _repair_retired_capability_tool_grants(engine: Engine, table_names: set[str]
         )
 
 
+def _repair_tradingagents_transition_output_schemas(engine: Engine, table_names: set[str]) -> None:
+    if "output_schemas" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    output_schema_columns = {column["name"] for column in inspector.get_columns("output_schemas")}
+    if "json_schema" not in output_schema_columns:
+        return
+
+    target_keys = (
+        "tradingagents_investment_debate_transition",
+        "tradingagents_risk_debate_transition",
+    )
+
+    with engine.begin() as connection:
+        rows = connection.execute(
+            text("SELECT id, json_schema FROM output_schemas WHERE key = ANY(:target_keys)"),
+            {"target_keys": list(target_keys)},
+        ).all()
+        for schema_id, json_schema in rows:
+            if not isinstance(json_schema, dict):
+                continue
+
+            raw_properties = json_schema.get("properties")
+            properties = raw_properties if isinstance(raw_properties, dict) else {}
+            next_state = properties.get("nextState")
+            if not isinstance(next_state, dict):
+                next_state = {"type": "object", "additionalProperties": False}
+
+            repaired_schema = dict(json_schema)
+            properties = dict(properties)
+            properties["nextState"] = next_state
+            properties.pop("priorState", None)
+            repaired_schema["properties"] = properties
+            repaired_schema["required"] = ["nextState"]
+            repaired_schema["additionalProperties"] = False
+            repaired_schema["type"] = "object"
+
+            if repaired_schema == json_schema:
+                continue
+
+            connection.execute(
+                text(
+                    "UPDATE output_schemas SET json_schema = CAST(:json_schema AS jsonb), "
+                    "updated_at = NOW() WHERE id = :schema_id"
+                ),
+                {
+                    "json_schema": json.dumps(
+                        repaired_schema,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "schema_id": schema_id,
+                },
+            )
+
+
 def _sanitize_retired_stock_analysis_resources(engine: Engine, table_names: set[str]) -> None:
     targets = _load_retired_stock_analysis_sanitation_targets()
 
@@ -1534,6 +1591,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _reset_legacy_mcp_server_table(engine, table_names)
     _flatten_legacy_mcp_server_rows(engine, table_names)
     _repair_retired_capability_tool_grants(engine, table_names)
+    _repair_tradingagents_transition_output_schemas(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
     if "portfolios" in table_names:

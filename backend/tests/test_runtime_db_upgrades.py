@@ -878,6 +878,174 @@ def test_init_db_repairs_custom_key_stale_capability_tool_grants_idempotently(
         engine.dispose()
 
 
+def test_init_db_repairs_tradingagents_transition_output_schemas_idempotently(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    stale_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {
+                "priorState": {"type": "object"},
+                "nextState": {"type": "object"},
+            },
+            "required": ["priorState", "nextState"],
+            "additionalProperties": False,
+        },
+        separators=(",", ":"),
+    )
+    malformed_stale_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": ["unexpected"],
+            "required": ["priorState", "nextState"],
+            "additionalProperties": False,
+        },
+        separators=(",", ":"),
+    )
+
+    try:
+        with engine.begin() as connection:
+            [
+                connection.execute(
+                    text(
+                        "INSERT INTO output_schemas ("
+                        "key, version, status, kind, name, description, json_schema, "
+                        "registry_refs, created_at, updated_at"
+                        ") VALUES ("
+                        ":key, 1, 'published', 'standalone', :name, :description, "
+                        "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
+                        ") RETURNING id"
+                    ),
+                    {
+                        "key": "tradingagents_investment_debate_transition",
+                        "name": "TradingAgents Investment Debate Transition",
+                        "description": "Stale transition schema repaired during startup.",
+                        "json_schema": stale_schema,
+                    },
+                ).scalar_one(),
+                connection.execute(
+                    text(
+                        "INSERT INTO output_schemas ("
+                        "key, version, status, kind, name, description, json_schema, "
+                        "registry_refs, created_at, updated_at"
+                        ") VALUES ("
+                        ":key, 1, 'published', 'standalone', :name, :description, "
+                        "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
+                        ") RETURNING id"
+                    ),
+                    {
+                        "key": "tradingagents_risk_debate_transition",
+                        "name": "TradingAgents Risk Debate Transition",
+                        "description": "Malformed transition schema repaired during startup.",
+                        "json_schema": malformed_stale_schema,
+                    },
+                ).scalar_one(),
+                connection.execute(
+                    text(
+                        "INSERT INTO output_schemas ("
+                        "key, version, status, kind, name, description, json_schema, "
+                        "registry_refs, created_at, updated_at"
+                        ") VALUES ("
+                        ":key, 1, 'published', 'standalone', :name, :description, "
+                        "CAST(:json_schema AS jsonb), '[]'::jsonb, NOW(), NOW()"
+                        ") RETURNING id"
+                    ),
+                    {
+                        "key": "retained_custom_schema",
+                        "name": "Retained Custom Schema",
+                        "description": "Unrelated schema that should not be modified.",
+                        "json_schema": json.dumps(
+                            {
+                                "type": "object",
+                                "properties": {"example": {"type": "string"}},
+                                "required": ["example"],
+                                "additionalProperties": False,
+                            },
+                            separators=(",", ":"),
+                        ),
+                    },
+                ).scalar_one(),
+            ]
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            first_rows = (
+                connection.execute(
+                    text(
+                        "SELECT key, json_schema, ctid::text AS row_pointer "
+                        "FROM output_schemas WHERE key = ANY(:schema_keys) ORDER BY key"
+                    ),
+                    {
+                        "schema_keys": [
+                            "tradingagents_investment_debate_transition",
+                            "tradingagents_risk_debate_transition",
+                        ]
+                    },
+                )
+                .mappings()
+                .all()
+            )
+            retained_row = (
+                connection.execute(
+                    text("SELECT json_schema FROM output_schemas WHERE key = :key"),
+                    {"key": "retained_custom_schema"},
+                )
+                .mappings()
+                .one()
+            )
+
+        assert [row["key"] for row in first_rows] == [
+            "tradingagents_investment_debate_transition",
+            "tradingagents_risk_debate_transition",
+        ]
+        for row in first_rows:
+            schema = row["json_schema"]
+            assert schema["required"] == ["nextState"]
+            assert "priorState" not in schema["properties"]
+            assert "nextState" in schema["properties"]
+            assert schema["additionalProperties"] is False
+
+        assert retained_row["json_schema"] == {
+            "type": "object",
+            "properties": {"example": {"type": "string"}},
+            "required": ["example"],
+            "additionalProperties": False,
+        }
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            second_rows = (
+                connection.execute(
+                    text(
+                        "SELECT key, json_schema, ctid::text AS row_pointer "
+                        "FROM output_schemas WHERE key = ANY(:schema_keys) ORDER BY key"
+                    ),
+                    {
+                        "schema_keys": [
+                            "tradingagents_investment_debate_transition",
+                            "tradingagents_risk_debate_transition",
+                        ]
+                    },
+                )
+                .mappings()
+                .all()
+            )
+
+        assert [row["json_schema"] for row in second_rows] == [
+            row["json_schema"] for row in first_rows
+        ]
+        assert [row["row_pointer"] for row in second_rows] == [
+            row["row_pointer"] for row in first_rows
+        ]
+    finally:
+        engine.dispose()
+
+
 def test_init_db_repairs_legacy_run_identity_columns_to_target_columns(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
 
