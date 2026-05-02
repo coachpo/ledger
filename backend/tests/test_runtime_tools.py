@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
@@ -14,10 +14,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.runtime_tools import (
+    FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+    FUNDAMENTALS_LOOKUP_TOOL_SPEC,
+    INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
+    INDICATORS_LOOKUP_TOOL_SPEC,
+    INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME,
+    INSIDER_DATA_LOOKUP_TOOL_SPEC,
     MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
     MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC,
+    MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME,
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_SPEC,
     MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
     MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
+    NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+    NEWS_LOOKUP_TOOL_SPEC,
     POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
     POSITION_LOOKUP_TOOL_SPEC,
     REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -32,7 +42,12 @@ from app.agents.runtime_tools import (
     get_default_runtime_tool_registry,
 )
 from app.agents.runtime_tools.market_data import (
+    parse_fundamentals_lookup_arguments,
     parse_history_lookup_arguments,
+    parse_indicators_lookup_arguments,
+    parse_insider_data_lookup_arguments,
+    parse_news_lookup_arguments,
+    parse_ohlcv_lookup_arguments,
     parse_quote_lookup_arguments,
 )
 from app.agents.runtime_tools.positions import parse_position_lookup_arguments
@@ -113,6 +128,33 @@ from app.services.quote_provider import (
 from app.services.report_service import ReportService
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+_TRADINGAGENTS_RUNTIME_TOOL_KEYS = (
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
+    INDICATORS_LOOKUP_TOOL_KEY,
+    FUNDAMENTALS_LOOKUP_TOOL_KEY,
+    NEWS_LOOKUP_TOOL_KEY,
+    INSIDER_DATA_LOOKUP_TOOL_KEY,
+)
+_TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY: "ledger_market_data_ohlcv_lookup",
+    INDICATORS_LOOKUP_TOOL_KEY: "ledger_indicators_lookup",
+    FUNDAMENTALS_LOOKUP_TOOL_KEY: "ledger_fundamentals_lookup",
+    NEWS_LOOKUP_TOOL_KEY: "ledger_news_lookup",
+    INSIDER_DATA_LOOKUP_TOOL_KEY: "ledger_insider_data_lookup",
+}
+_EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
+    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
+    INDICATORS_LOOKUP_TOOL_KEY,
+    FUNDAMENTALS_LOOKUP_TOOL_KEY,
+    NEWS_LOOKUP_TOOL_KEY,
+    INSIDER_DATA_LOOKUP_TOOL_KEY,
+    POSITION_LOOKUP_TOOL_KEY,
+    REPORT_LOOKUP_TOOL_KEY,
+    REPORT_MEMORY_WRITE_TOOL_KEY,
+}
 
 
 class _SessionScope:
@@ -586,7 +628,31 @@ class _FinancialContractProvider(_RecordingQuoteProvider):
                             currency="USD",
                         )
                     ],
-                )
+                ),
+                ProviderFinancialStatement(
+                    statement_type="balance_sheet",
+                    period="quarterly",
+                    period_end=datetime(2025, 10, 31, 21, tzinfo=timezone(timedelta(hours=-5))),
+                    lines=[
+                        ProviderFinancialStatementLine(
+                            name="assets",
+                            value=Decimal("750000.00"),
+                            currency="USD",
+                        )
+                    ],
+                ),
+                ProviderFinancialStatement(
+                    statement_type="cash_flow",
+                    period="trailing_twelve_months",
+                    period_end=datetime(2026, 1, 1, 21, tzinfo=timezone(timedelta(hours=-5))),
+                    lines=[
+                        ProviderFinancialStatementLine(
+                            name="operating_cash_flow",
+                            value=Decimal("125000.75"),
+                            currency="USD",
+                        )
+                    ],
+                ),
             ],
         )
 
@@ -688,23 +754,41 @@ def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contr
         REPORT_MEMORY_WRITE_TOOL_KEY,
     )
     assert all(tool_key.startswith("ledger.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
-    assert {spec.key for spec in RUNTIME_TOOL_SPECS} == {
-        MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
-        MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
-        REPORT_LOOKUP_TOOL_KEY,
-        REPORT_MEMORY_WRITE_TOOL_KEY,
-        POSITION_LOOKUP_TOOL_KEY,
-    }
-
-    server_declared_keys = {spec.key for spec in SERVER_DECLARED_TOOL_SPECS}
-    assert MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY in server_declared_keys
-    assert MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY in server_declared_keys
-    assert REPORT_MEMORY_WRITE_TOOL_KEY in server_declared_keys
+    assert set(_TRADINGAGENTS_RUNTIME_TOOL_KEYS) <= set(NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
 
     with pytest.raises(ValidationError, match="Native runtime tool keys must start with ledger"):
         _ = RuntimeNativeToolResult.model_validate({"toolKey": "external.market_data.quote_lookup"})
     with pytest.raises(ValidationError, match="not registered as a financial tool result"):
         _ = RuntimeNativeToolResult.model_validate({"toolKey": "ledger.unregistered.lookup"})
+
+
+def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
+    runtime_spec_keys = {spec.key for spec in RUNTIME_TOOL_SPECS}
+    server_declared_keys = {spec.key for spec in SERVER_DECLARED_TOOL_SPECS}
+
+    assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
+    assert server_declared_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
+    assert runtime_spec_keys == server_declared_keys
+
+
+def test_tradingagents_runtime_tool_specs_have_expected_openai_function_names() -> None:
+    target_function_names = tuple(_TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY.values())
+    assert len(target_function_names) == len(set(target_function_names))
+
+    runtime_function_names = [spec.openai_function_name for spec in RUNTIME_TOOL_SPECS]
+    assert len(runtime_function_names) == len(set(runtime_function_names))
+
+    runtime_function_names_by_key = {
+        spec.key: spec.openai_function_name for spec in RUNTIME_TOOL_SPECS
+    }
+    actual_target_function_names_by_key = {
+        tool_key: runtime_function_names_by_key.get(tool_key)
+        for tool_key in _TRADINGAGENTS_RUNTIME_TOOL_KEYS
+    }
+    assert (
+        actual_target_function_names_by_key
+        == _TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY
+    )
 
 
 def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> None:
@@ -1613,6 +1697,24 @@ def test_runtime_tool_registry_aggregates_guidance_in_sort_order() -> None:
     assert registry.get_guidance(set()) == ""
 
 
+def test_tradingagents_runtime_guidance_discloses_provider_limitations() -> None:
+    registry = get_default_runtime_tool_registry()
+
+    guidance = registry.get_guidance(set(_TRADINGAGENTS_RUNTIME_TOOL_KEYS))
+
+    assert "call ledger_market_data_ohlcv_lookup" in guidance
+    assert "call ledger_indicators_lookup" in guidance
+    assert "call ledger_fundamentals_lookup" in guidance
+    assert "instead of inventing metrics" in guidance
+    assert "call ledger_news_lookup" in guidance
+    assert "instead of inventing articles" in guidance
+    assert "call ledger_insider_data_lookup" in guidance
+    assert "Disclose warnings or empty results as data quality" in guidance
+    assert guidance.count("data quality or provider limitations") >= 5
+    assert "do not claim unavailable coverage" in guidance
+    assert "do not present unsupported provider coverage" in guidance
+
+
 def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsing() -> None:
     registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
     context = _runtime_context(fail_on_session=True)
@@ -2047,6 +2149,351 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
     assert exc_info.value.details == []
 
 
+@pytest.mark.parametrize(
+    ("parser", "arguments_json", "expected_arguments"),
+    [
+        (
+            parse_ohlcv_lookup_arguments,
+            json.dumps(
+                {
+                    "symbols": [" nvda ", "NVDA", "aapl"],
+                    "startDate": "2026-01-01",
+                    "endDate": "2026-01-03T16:00:00-05:00",
+                    "rowLimit": 3,
+                }
+            ),
+            {
+                "symbols": ["NVDA", "AAPL"],
+                "start_date": datetime(2026, 1, 1, tzinfo=UTC),
+                "end_date": datetime(2026, 1, 3, 21, tzinfo=UTC),
+                "row_limit": 3,
+            },
+        ),
+        (
+            parse_indicators_lookup_arguments,
+            json.dumps(
+                {
+                    "symbol": " nvda ",
+                    "currentDate": "2026-01-03T16:00:00Z",
+                    "startDate": "2026-01-01",
+                    "endDate": "2026-01-03T12:00:00-04:00",
+                    "smaWindows": [20, 5, 20],
+                    "rowLimit": None,
+                }
+            ),
+            {
+                "symbol": "NVDA",
+                "current_date": datetime(2026, 1, 3, 16, tzinfo=UTC),
+                "start_date": datetime(2026, 1, 1, tzinfo=UTC),
+                "end_date": datetime(2026, 1, 3, 16, tzinfo=UTC),
+                "sma_windows": (20, 5),
+                "row_limit": 250,
+            },
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            json.dumps(
+                {
+                    "symbol": " nvda ",
+                    "statementTypes": [" Income_Statement ", "cash_flow", "cash_flow"],
+                    "periods": ["ANNUAL", "trailing_twelve_months"],
+                    "statementLimit": 2,
+                }
+            ),
+            {
+                "symbol": "NVDA",
+                "statement_types": ("income_statement", "cash_flow"),
+                "periods": ("annual", "trailing_twelve_months"),
+                "statement_limit": 2,
+            },
+        ),
+        (
+            parse_news_lookup_arguments,
+            json.dumps(
+                {
+                    "symbols": [" nvda ", "AAPL", "NVDA"],
+                    "query": " earnings ",
+                    "startDate": "2026-01-01",
+                    "endDate": None,
+                    "itemLimit": 2,
+                }
+            ),
+            {
+                "symbols": ["NVDA", "AAPL"],
+                "query": "earnings",
+                "start_date": datetime(2026, 1, 1, tzinfo=UTC),
+                "end_date": None,
+                "item_limit": 2,
+            },
+        ),
+        (
+            parse_insider_data_lookup_arguments,
+            json.dumps(
+                {
+                    "symbol": " nvda ",
+                    "startDate": None,
+                    "endDate": "2026-01-03T16:00:00+00:00",
+                    "transactionLimit": None,
+                }
+            ),
+            {
+                "symbol": "NVDA",
+                "start_date": None,
+                "end_date": datetime(2026, 1, 3, 16, tzinfo=UTC),
+                "transaction_limit": 50,
+            },
+        ),
+    ],
+)
+def test_tradingagents_market_data_runtime_tool_parsers_normalize_happy_paths(
+    parser: Callable[[str], dict[str, object]],
+    arguments_json: str,
+    expected_arguments: dict[str, object],
+) -> None:
+    assert parser(arguments_json) == expected_arguments
+
+
+@pytest.mark.parametrize(
+    ("parser", "function_name", "valid_arguments"),
+    [
+        (
+            parse_ohlcv_lookup_arguments,
+            MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbols": ["NVDA"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "rowLimit": 3,
+            },
+        ),
+        (
+            parse_indicators_lookup_arguments,
+            INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbol": "NVDA",
+                "currentDate": "2026-01-03",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "smaWindows": [2],
+                "rowLimit": 3,
+            },
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbol": "NVDA",
+                "statementTypes": None,
+                "periods": None,
+                "statementLimit": 3,
+            },
+        ),
+        (
+            parse_news_lookup_arguments,
+            NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbols": ["NVDA"],
+                "query": None,
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "itemLimit": 2,
+            },
+        ),
+        (
+            parse_insider_data_lookup_arguments,
+            INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbol": "NVDA",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "transactionLimit": 2,
+            },
+        ),
+    ],
+)
+def test_tradingagents_market_data_runtime_tool_parsers_reject_boundary_payloads(
+    parser: Callable[[str], dict[str, object]],
+    function_name: str,
+    valid_arguments: dict[str, object],
+) -> None:
+    with pytest.raises(RuntimeToolError) as invalid_json_error:
+        _ = parser("{")
+    assert invalid_json_error.value.code == "agent_tool_call_invalid"
+    assert invalid_json_error.value.message == (
+        f"OpenAI response requested {function_name} with invalid JSON arguments."
+    )
+
+    with pytest.raises(RuntimeToolError) as non_object_error:
+        _ = parser("[]")
+    assert non_object_error.value.code == "agent_tool_call_invalid"
+    assert non_object_error.value.message == f"{function_name} arguments must be a JSON object."
+
+    invalid_arguments = {**valid_arguments, "unsupported": True}
+    with pytest.raises(RuntimeToolError) as unexpected_field_error:
+        _ = parser(json.dumps(invalid_arguments))
+    assert unexpected_field_error.value.code == "agent_tool_call_invalid"
+    assert unexpected_field_error.value.message == (
+        f"{function_name} arguments contained unsupported fields: unsupported"
+    )
+
+
+@pytest.mark.parametrize(
+    ("parser", "arguments", "expected_message"),
+    [
+        (
+            parse_ohlcv_lookup_arguments,
+            {
+                "symbols": ["NVDA"],
+                "startDate": "2026-01-04",
+                "endDate": "2026-01-03",
+                "rowLimit": 3,
+            },
+            "ledger_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
+        ),
+        (
+            parse_ohlcv_lookup_arguments,
+            {
+                "symbols": ["A", "B", "C", "D", "E", "F"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "rowLimit": 3,
+            },
+            "ledger_market_data_ohlcv_lookup symbols must contain at most 5 symbols.",
+        ),
+        (
+            parse_ohlcv_lookup_arguments,
+            {
+                "symbols": ["NVDA"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "rowLimit": 501,
+            },
+            "ledger_market_data_ohlcv_lookup rowLimit must be at most 500.",
+        ),
+        (
+            parse_indicators_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "currentDate": "2026-01-02",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "smaWindows": [2],
+                "rowLimit": 3,
+            },
+            "ledger_indicators_lookup endDate cannot be after currentDate.",
+        ),
+        (
+            parse_indicators_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "currentDate": "2026-01-03",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "smaWindows": [2],
+                "rowLimit": 501,
+            },
+            "ledger_indicators_lookup rowLimit must be at most 500.",
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "statementTypes": ["statement"],
+                "periods": None,
+                "statementLimit": 3,
+            },
+            "ledger_fundamentals_lookup statementTypes must use: "
+            + "balance_sheet, cash_flow, income_statement.",
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "statementTypes": None,
+                "periods": ["daily"],
+                "statementLimit": 3,
+            },
+            "ledger_fundamentals_lookup periods must use: "
+            + "annual, quarterly, trailing_twelve_months.",
+        ),
+        (
+            parse_fundamentals_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "statementTypes": None,
+                "periods": None,
+                "statementLimit": 13,
+            },
+            "ledger_fundamentals_lookup statementLimit must be at most 12.",
+        ),
+        (
+            parse_news_lookup_arguments,
+            {
+                "symbols": ["NVDA"],
+                "query": None,
+                "startDate": "2026-01-04",
+                "endDate": "2026-01-03",
+                "itemLimit": 2,
+            },
+            "ledger_news_lookup startDate must be before or equal to endDate.",
+        ),
+        (
+            parse_news_lookup_arguments,
+            {
+                "symbols": ["A", "B", "C", "D", "E", "F"],
+                "query": None,
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": 2,
+            },
+            "ledger_news_lookup symbols must contain at most 5 symbols.",
+        ),
+        (
+            parse_news_lookup_arguments,
+            {
+                "symbols": ["NVDA"],
+                "query": None,
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": 51,
+            },
+            "ledger_news_lookup itemLimit must be at most 50.",
+        ),
+        (
+            parse_insider_data_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "startDate": "2026-01-04",
+                "endDate": "2026-01-03",
+                "transactionLimit": 2,
+            },
+            "ledger_insider_data_lookup startDate must be before or equal to endDate.",
+        ),
+        (
+            parse_insider_data_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "startDate": None,
+                "endDate": None,
+                "transactionLimit": 101,
+            },
+            "ledger_insider_data_lookup transactionLimit must be at most 100.",
+        ),
+    ],
+)
+def test_tradingagents_market_data_runtime_tool_parsers_reject_limits_and_bounds(
+    parser: Callable[[str], dict[str, object]],
+    arguments: dict[str, object],
+    expected_message: str,
+) -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = parser(json.dumps(arguments))
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert exc_info.value.message == expected_message
+    assert exc_info.value.details == []
+
+
 def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() -> None:
     registry = RuntimeToolRegistry(
         [
@@ -2330,4 +2777,412 @@ def test_market_data_history_lookup_dispatches_to_service_with_injected_provider
             "message": "No history available for BAD",
             "details": {"symbol": "BAD"},
         }
+    ]
+
+
+def test_market_data_ohlcv_lookup_dispatches_to_service_with_injected_provider(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([MARKET_DATA_OHLCV_LOOKUP_TOOL_SPEC])
+    quote_provider = _RecordingQuoteProvider()
+
+    payload = registry.dispatch(
+        name=MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbols": [" nvda ", "NVDA"],
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03T16:00:00Z",
+                "rowLimit": 2,
+            }
+        ),
+        granted_tool_keys={MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.ohlcv_calls == [
+        (
+            "NVDA",
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 1, 3, 16, tzinfo=UTC),
+            "1d",
+        )
+    ]
+    assert payload["toolKey"] == MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY
+    assert payload["startDate"] == "2026-01-01T00:00:00Z"
+    assert payload["endDate"] == "2026-01-03T16:00:00Z"
+    series = cast(list[dict[str, object]], payload["series"])
+    assert len(series) == 1
+    rows = cast(list[dict[str, object]], series[0]["rows"])
+    assert [row["at"] for row in rows] == [
+        "2026-01-02T17:00:00Z",
+        "2026-01-03T16:00:00Z",
+    ]
+    assert rows[0]["open"] == "119.00"
+    assert rows[0]["adjustedClose"] == "119.80"
+    assert rows[1]["close"] == "120.25"
+    assert payload["warnings"] == []
+
+
+def test_indicators_lookup_dispatches_success_and_insufficient_history_nulls(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([INDICATORS_LOOKUP_TOOL_SPEC])
+    quote_provider = _RecordingQuoteProvider()
+
+    payload = registry.dispatch(
+        name=INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": " nvda ",
+                "currentDate": "2026-01-03T16:00:00Z",
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03T16:00:00Z",
+                "smaWindows": [2, 5],
+                "rowLimit": 3,
+            }
+        ),
+        granted_tool_keys={INDICATORS_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.ohlcv_calls == [
+        (
+            "NVDA",
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 1, 3, 16, tzinfo=UTC),
+            "1d",
+        )
+    ]
+    assert payload["toolKey"] == INDICATORS_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "NVDA"
+    assert payload["provider"] == "fake_runtime_provider"
+    rows = cast(list[dict[str, object]], payload["rows"])
+    assert rows[0]["values"] == [
+        {"name": "close", "value": "119.75", "nullReason": None},
+        {"name": "sma_2", "value": None, "nullReason": "warmup"},
+        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
+    ]
+    assert rows[1]["values"] == [
+        {"name": "close", "value": "120.00", "nullReason": None},
+        {"name": "sma_2", "value": "119.875", "nullReason": None},
+        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
+    ]
+    assert rows[2]["values"] == [
+        {"name": "close", "value": "120.25", "nullReason": None},
+        {"name": "sma_2", "value": "120.125", "nullReason": None},
+        {"name": "sma_5", "value": None, "nullReason": "insufficient_history"},
+    ]
+    assert payload["warnings"] == []
+
+
+def test_fundamentals_lookup_dispatches_success_filters_and_limits_statements(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([FUNDAMENTALS_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(provider_name="fundamentals_primary")
+    context = _runtime_context(
+        session_factory_override=session_factory,
+        quote_provider=quote_provider,
+    )
+
+    payload = registry.dispatch(
+        name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": " nvda ",
+                "statementTypes": None,
+                "periods": None,
+                "statementLimit": 3,
+            }
+        ),
+        granted_tool_keys={FUNDAMENTALS_LOOKUP_TOOL_KEY},
+        context=context,
+    )
+    filtered_payload = registry.dispatch(
+        name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": "NVDA",
+                "statementTypes": ["cash_flow", "balance_sheet"],
+                "periods": ["quarterly", "trailing_twelve_months"],
+                "statementLimit": 1,
+            }
+        ),
+        granted_tool_keys={FUNDAMENTALS_LOOKUP_TOOL_KEY},
+        context=context,
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    _assert_native_runtime_payload_is_json_safe_and_camel(filtered_payload)
+    assert quote_provider.fundamental_calls == ["NVDA", "NVDA"]
+    assert payload["toolKey"] == FUNDAMENTALS_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "NVDA"
+    assert payload["provider"] == "fundamentals_primary"
+    metrics = cast(list[dict[str, object]], payload["metrics"])
+    assert metrics == [
+        {
+            "name": "market_cap",
+            "value": "1000000.50",
+            "currency": "USD",
+            "period": "ttm",
+            "asOf": "2026-01-02T02:00:00Z",
+        }
+    ]
+    statements = cast(list[dict[str, object]], payload["statements"])
+    assert [statement["statementType"] for statement in statements] == [
+        "income_statement",
+        "balance_sheet",
+        "cash_flow",
+    ]
+    assert [statement["period"] for statement in statements] == [
+        "annual",
+        "quarterly",
+        "trailing_twelve_months",
+    ]
+    filtered_statements = cast(list[dict[str, object]], filtered_payload["statements"])
+    assert filtered_statements == [
+        {
+            "statementType": "balance_sheet",
+            "period": "quarterly",
+            "periodEnd": "2025-11-01T02:00:00Z",
+            "lines": [{"name": "assets", "value": "750000.00", "currency": "USD"}],
+        }
+    ]
+    assert payload["warnings"] == []
+    assert filtered_payload["warnings"] == []
+
+
+def test_news_lookup_dispatches_success_and_truncates(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([NEWS_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(provider_name="news_primary", news_count=4)
+
+    payload = registry.dispatch(
+        name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbols": [" nvda ", "AAPL", "NVDA"],
+                "query": " earnings ",
+                "startDate": "2026-01-01T19:00:00-05:00",
+                "endDate": "2026-01-02T19:00:00-05:00",
+                "itemLimit": 2,
+            }
+        ),
+        granted_tool_keys={NEWS_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.news_calls == [
+        (
+            ["NVDA", "AAPL"],
+            "earnings",
+            datetime(2026, 1, 2, tzinfo=UTC),
+            datetime(2026, 1, 3, tzinfo=UTC),
+            3,
+        )
+    ]
+    assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
+    assert payload["symbols"] == ["NVDA", "AAPL"]
+    assert payload["query"] == "earnings"
+    items = cast(list[dict[str, object]], payload["items"])
+    assert [item["title"] for item in items] == ["News 3", "News 2"]
+    assert payload["warnings"] == [
+        {
+            "code": "news_truncated",
+            "message": "News results were truncated to 2 items",
+            "details": {"limit": "2"},
+        }
+    ]
+
+
+def test_insider_data_lookup_dispatches_success_and_truncates(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([INSIDER_DATA_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(provider_name="insider_primary", insider_count=3)
+
+    payload = registry.dispatch(
+        name=INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": " nvda ",
+                "startDate": "2026-01-01T00:00:00Z",
+                "endDate": "2026-01-03T00:00:00Z",
+                "transactionLimit": 2,
+            }
+        ),
+        granted_tool_keys={INSIDER_DATA_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.insider_calls == [
+        (
+            "NVDA",
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 1, 3, tzinfo=UTC),
+            3,
+        )
+    ]
+    assert payload["toolKey"] == INSIDER_DATA_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "NVDA"
+    assert payload["provider"] == "insider_primary"
+    transactions = cast(list[dict[str, object]], payload["transactions"])
+    assert [transaction["insiderName"] for transaction in transactions] == [
+        "Insider 2",
+        "Insider 1",
+    ]
+    assert payload["warnings"] == [
+        {
+            "code": "insider_truncated",
+            "message": "Insider transactions were truncated to 2 rows",
+            "details": {"limit": "2", "symbol": "NVDA"},
+        }
+    ]
+
+
+def test_fundamentals_lookup_provider_unavailable_returns_typed_empty_payload(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([FUNDAMENTALS_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(
+        provider_name="unsupported_fundamentals",
+        failure=QuoteProviderError(
+            "Fundamentals unsupported",
+            code="provider_unavailable",
+            details={"provider": "unsupported_fundamentals", "symbol": "NVDA"},
+        ),
+    )
+
+    payload = registry.dispatch(
+        name=FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": "NVDA",
+                "statementTypes": None,
+                "periods": None,
+                "statementLimit": 3,
+            }
+        ),
+        granted_tool_keys={FUNDAMENTALS_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.fundamental_calls == ["NVDA"]
+    assert payload["toolKey"] == FUNDAMENTALS_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "NVDA"
+    assert payload["provider"] == ""
+    assert payload["metrics"] == []
+    assert payload["statements"] == []
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "fundamentals_provider_unavailable",
+        "fundamentals_unavailable",
+    ]
+
+
+def test_news_lookup_provider_unavailable_returns_typed_empty_payload(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([NEWS_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(
+        provider_name="unsupported_news",
+        failure=QuoteProviderError(
+            "News unsupported",
+            code="provider_unavailable",
+            details={"provider": "unsupported_news", "symbols": "NVDA"},
+        ),
+    )
+
+    payload = registry.dispatch(
+        name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbols": ["NVDA"],
+                "query": "earnings",
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": 2,
+            }
+        ),
+        granted_tool_keys={NEWS_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.news_calls == [(["NVDA"], "earnings", None, None, 3)]
+    assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
+    assert payload["symbols"] == ["NVDA"]
+    assert payload["items"] == []
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "news_provider_unavailable",
+        "news_unavailable",
+    ]
+
+
+def test_insider_data_lookup_provider_unavailable_returns_typed_empty_payload(
+    session_factory: sessionmaker[Session],
+) -> None:
+    registry = RuntimeToolRegistry([INSIDER_DATA_LOOKUP_TOOL_SPEC])
+    quote_provider = _FinancialContractProvider(
+        provider_name="unsupported_insider",
+        failure=QuoteProviderError(
+            "Insider unsupported",
+            code="provider_unavailable",
+            details={"provider": "unsupported_insider", "symbol": "NVDA"},
+        ),
+    )
+
+    payload = registry.dispatch(
+        name=INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "symbol": "NVDA",
+                "startDate": None,
+                "endDate": None,
+                "transactionLimit": 2,
+            }
+        ),
+        granted_tool_keys={INSIDER_DATA_LOOKUP_TOOL_KEY},
+        context=_runtime_context(
+            session_factory_override=session_factory,
+            quote_provider=quote_provider,
+        ),
+    )
+
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    assert quote_provider.insider_calls == [("NVDA", None, None, 3)]
+    assert payload["toolKey"] == INSIDER_DATA_LOOKUP_TOOL_KEY
+    assert payload["symbol"] == "NVDA"
+    assert payload["provider"] == ""
+    assert payload["transactions"] == []
+    warnings = cast(list[dict[str, object]], payload["warnings"])
+    assert [warning["code"] for warning in warnings] == [
+        "insider_provider_unavailable",
+        "insider_unavailable",
     ]
