@@ -643,6 +643,8 @@ export function createWorkflowManifestScaffold(options: WorkflowManifestScaffold
         properties: {
           ticker: {
             type: "string",
+            title: "Ticker",
+            description: "Ticker symbol to research, such as AAPL.",
           },
         },
         required: ["ticker"],

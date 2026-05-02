@@ -199,10 +199,14 @@ steps:
         slot: analysis
     id: research
 inputSchema:
+  description: Inputs used to launch the market review.
   required: [ticker]
   additionalProperties: false
+  title: Market Review Input
   properties:
     ticker:
+      description: Symbol to research.
+      title: Ticker Symbol
       type: string
   type: object
 metadata:
@@ -220,9 +224,13 @@ metadata:
   description: Runs research.
 inputSchema:
   type: object
+  title: Market Review Input
+  description: Inputs used to launch the market review.
   properties:
     ticker:
       type: string
+      title: Ticker Symbol
+      description: Symbol to research.
   required:
     - ticker
   additionalProperties: false
