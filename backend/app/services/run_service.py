@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -56,12 +57,21 @@ from app.services.output_schema_compiler import (
     SchemaObject,
     SchemaRef,
 )
+from app.services.quote_provider import QuoteProvider
 
 logger = logging.getLogger(__name__)
 
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class _RuntimeInvocationContext:
+    run_id: int
+    target_kind: str
+    target_key: str
+    target_version: int
 
 
 @dataclass
@@ -73,6 +83,13 @@ class _PreparedAgentInvocation:
     optional: bool
     step_index: int
     slot: str
+    runtime_context: _RuntimeInvocationContext
+
+
+_CURRENT_RUNTIME_INVOCATION_CONTEXT: ContextVar[_RuntimeInvocationContext | None] = ContextVar(
+    "ledger_runtime_invocation_context",
+    default=None,
+)
 
 
 class RunService:
@@ -80,14 +97,19 @@ class RunService:
         self,
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
+        quote_provider: QuoteProvider | None = None,
     ) -> None:
         self.session = session
         self.session_factory = session_factory or get_session_factory()
+        self.quote_provider: QuoteProvider | None = quote_provider
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
-        self.agent_execution_service = AgentExecutionService(self.session_factory)
+        self.agent_execution_service = AgentExecutionService(
+            self.session_factory,
+            quote_provider=quote_provider,
+        )
         self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
 
@@ -227,6 +249,7 @@ class RunService:
                 step_cost,
                 fatal_error,
             ) = await self._execute_step(
+                run=run,
                 plan=plan,
                 step=step,
                 initial_input=run.input,
@@ -292,6 +315,7 @@ class RunService:
     async def _execute_step(
         self,
         *,
+        run: Run,
         plan: ExecutionPlan,
         step: ExecutionPlanStep,
         initial_input: dict[str, Any],
@@ -307,6 +331,12 @@ class RunService:
 
         for plan_agent in step.agents:
             prepared, entry = self._prepare_agent_invocation(
+                runtime_context=_RuntimeInvocationContext(
+                    run_id=run.id,
+                    target_kind=plan.target.kind,
+                    target_key=plan.target.key,
+                    target_version=plan.target.version,
+                ),
                 step_index=step_index,
                 plan_agent=plan_agent,
                 initial_input=initial_input,
@@ -385,6 +415,7 @@ class RunService:
     def _prepare_agent_invocation(
         self,
         *,
+        runtime_context: _RuntimeInvocationContext,
         step_index: int,
         plan_agent: ExecutionPlanAgent,
         initial_input: dict[str, Any],
@@ -420,6 +451,7 @@ class RunService:
                     optional=plan_agent.optional,
                     step_index=step_index,
                     slot=plan_agent.slot,
+                    runtime_context=runtime_context,
                 ),
                 entry,
             )
@@ -663,14 +695,18 @@ class RunService:
         trace_span_id: str | None,
     ) -> RunAgentInvocationResult:
         try:
-            raw_result = await self._invoke_agent(
-                agent=prepared.agent,
-                resolved_input=prepared.resolved_input,
-                output_model=prepared.output_model,
-                trace_id=trace_id,
-                step_index=prepared.step_index,
-                slot=prepared.slot,
-            )
+            context_token = _CURRENT_RUNTIME_INVOCATION_CONTEXT.set(prepared.runtime_context)
+            try:
+                raw_result = await self._invoke_agent(
+                    agent=prepared.agent,
+                    resolved_input=prepared.resolved_input,
+                    output_model=prepared.output_model,
+                    trace_id=trace_id,
+                    step_index=prepared.step_index,
+                    slot=prepared.slot,
+                )
+            finally:
+                _CURRENT_RUNTIME_INVOCATION_CONTEXT.reset(context_token)
             result = self._coerce_invocation_result(raw_result)
             validated_output = prepared.output_model.model_validate(result.output)
         except ValidationError as exc:
@@ -708,6 +744,17 @@ class RunService:
         step_index: int,
         slot: str,
     ) -> RunAgentInvocationResult:
+        runtime_context = _CURRENT_RUNTIME_INVOCATION_CONTEXT.get()
+        workflow_key = (
+            runtime_context.target_key
+            if runtime_context is not None and runtime_context.target_kind == "workflow"
+            else None
+        )
+        workflow_version = (
+            runtime_context.target_version
+            if runtime_context is not None and runtime_context.target_kind == "workflow"
+            else None
+        )
         return await self.agent_execution_service.invoke(
             agent=agent,
             resolved_input=resolved_input,
@@ -716,6 +763,9 @@ class RunService:
             step_index=step_index,
             slot=slot,
             openai_client_factory=OpenAI,
+            run_id=None if runtime_context is None else runtime_context.run_id,
+            workflow_key=workflow_key,
+            workflow_version=workflow_version,
         )
 
     @staticmethod
@@ -864,7 +914,11 @@ class RunService:
     def _dispatch_run_in_background(self, run_id: int) -> None:
         def _run() -> None:
             with self.session_factory() as session:
-                RunService(session, self.session_factory).execute_run(run_id)
+                RunService(
+                    session,
+                    self.session_factory,
+                    quote_provider=self.quote_provider,
+                ).execute_run(run_id)
 
         thread = threading.Thread(
             target=_run,
@@ -875,7 +929,7 @@ class RunService:
 
     def _mark_run_failed_in_fresh_session(self, run_id: int, *, code: str, message: str) -> None:
         with self.session_factory() as session:
-            service = RunService(session, self.session_factory)
+            service = RunService(session, self.session_factory, quote_provider=self.quote_provider)
             run = service.run_repository.get(run_id)
             if run is None or run.status != _RUN_STATUS_RUNNING:
                 return

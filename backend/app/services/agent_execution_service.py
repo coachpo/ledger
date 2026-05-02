@@ -13,18 +13,21 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
+from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
 from app.agents.runtime_tools import (
     RuntimeToolContext,
     RuntimeToolError,
     RuntimeToolRegistry,
     get_default_runtime_tool_registry,
 )
+from app.core.config import get_settings
 from app.core.formatting import parse_decimal_string
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
+from app.services.quote_provider import QuoteProvider
 
 
 class RunExecutionError(Exception):
@@ -105,10 +108,14 @@ class AgentExecutionService:
         self,
         session_factory: sessionmaker[Session],
         *,
+        quote_provider: QuoteProvider | None = None,
         openai_client_factory: type[Any] = OpenAI,
+        mcp_tool_client: McpToolClient | None = None,
     ) -> None:
-        self.session_factory = session_factory
-        self.openai_client_factory = openai_client_factory
+        self.session_factory: sessionmaker[Session] = session_factory
+        self.quote_provider: QuoteProvider | None = quote_provider
+        self.openai_client_factory: type[Any] = openai_client_factory
+        self.mcp_tool_client: McpToolClient | None = mcp_tool_client
 
     async def invoke(
         self,
@@ -120,6 +127,9 @@ class AgentExecutionService:
         step_index: int,
         slot: str,
         openai_client_factory: type[Any] | None = None,
+        run_id: int | None = None,
+        workflow_key: str | None = None,
+        workflow_version: int | None = None,
     ) -> RunAgentInvocationResult:
         client_factory = openai_client_factory or self.openai_client_factory
         return await asyncio.to_thread(
@@ -131,6 +141,9 @@ class AgentExecutionService:
             step_index,
             slot,
             client_factory,
+            run_id,
+            workflow_key,
+            workflow_version,
         )
 
     def _invoke_sync(
@@ -142,8 +155,11 @@ class AgentExecutionService:
         step_index: int,
         slot: str,
         openai_client_factory: type[Any],
+        run_id: int | None,
+        workflow_key: str | None,
+        workflow_version: int | None,
     ) -> RunAgentInvocationResult:
-        del trace_id, step_index, slot
+        step_id = f"step_{step_index}"
         with self.session_factory() as session:
             model_connection = self._resolve_runtime_model_connection(session, agent)
             granted_tool_keys = CapabilityService(
@@ -159,6 +175,12 @@ class AgentExecutionService:
                 openai_client_factory=openai_client_factory,
                 capability_references=agent.capabilities,
                 granted_tool_keys=granted_tool_keys,
+                run_id=run_id,
+                workflow_key=workflow_key,
+                workflow_version=workflow_version,
+                step_id=step_id,
+                slot=slot,
+                trace_id=trace_id,
             )
         except RuntimeToolGrantError as exc:
             raise RunExecutionError(
@@ -225,6 +247,12 @@ class AgentExecutionService:
         openai_client_factory: type[Any],
         capability_references: list[dict[str, Any]],
         granted_tool_keys: set[str],
+        run_id: int | None,
+        workflow_key: str | None,
+        workflow_version: int | None,
+        step_id: str | None,
+        slot: str,
+        trace_id: str | None,
     ) -> RunAgentInvocationResult:
         if model_connection.api_key is None:
             raise RunExecutionError(
@@ -236,7 +264,29 @@ class AgentExecutionService:
             )
 
         runtime_tool_registry = get_default_runtime_tool_registry()
+        settings = get_settings()
+        mcp_dispatcher = McpRuntimeResolver(self.session_factory).build_dispatcher(
+            mcp_server_refs=agent.mcp_servers,
+            client=self.mcp_tool_client,
+            timeout_seconds=settings.mcp_runtime_timeout_seconds,
+            enabled=settings.mcp_runtime_enabled,
+        )
         available_tools = runtime_tool_registry.get_openai_tools(granted_tool_keys)
+        available_tools.extend(mcp_dispatcher.get_openai_tools())
+        runtime_tool_context = RuntimeToolContext(
+            session_factory=self.session_factory,
+            capability_references=capability_references,
+            quote_provider=self.quote_provider,
+            run_id=run_id,
+            agent_key=agent.key,
+            agent_version=agent.version,
+            agent_name=agent.name,
+            workflow_key=workflow_key,
+            workflow_version=workflow_version,
+            step_id=step_id,
+            slot=slot,
+            trace_id=trace_id,
+        )
         instructions = self._build_openai_instructions(
             agent,
             output_model,
@@ -284,9 +334,10 @@ class AgentExecutionService:
                     previous_response_id = self._extract_response_id(response)
                     response_input = self._build_function_call_outputs(
                         pending_tool_calls=pending_tool_calls,
-                        capability_references=capability_references,
                         granted_tool_keys=granted_tool_keys,
                         runtime_tool_registry=runtime_tool_registry,
+                        runtime_tool_context=runtime_tool_context,
+                        mcp_dispatcher=mcp_dispatcher,
                     )
         except RuntimeToolError as exc:
             raise self._runtime_tool_error_to_run_execution_error(exc) from exc
@@ -424,21 +475,19 @@ class AgentExecutionService:
         self,
         *,
         pending_tool_calls: list[_PendingToolCall],
-        capability_references: list[dict[str, Any]],
         granted_tool_keys: set[str],
         runtime_tool_registry: RuntimeToolRegistry,
+        runtime_tool_context: RuntimeToolContext,
+        mcp_dispatcher: McpRuntimeDispatcher,
     ) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
-        runtime_tool_context = RuntimeToolContext(
-            session_factory=self.session_factory,
-            capability_references=capability_references,
-        )
         for tool_call in pending_tool_calls:
-            output_payload = runtime_tool_registry.dispatch(
-                name=tool_call.name,
-                arguments_json=tool_call.arguments_json,
+            output_payload = self._dispatch_function_call(
+                tool_call=tool_call,
                 granted_tool_keys=granted_tool_keys,
-                context=runtime_tool_context,
+                runtime_tool_registry=runtime_tool_registry,
+                runtime_tool_context=runtime_tool_context,
+                mcp_dispatcher=mcp_dispatcher,
             )
             items.append(
                 {
@@ -448,6 +497,30 @@ class AgentExecutionService:
                 }
             )
         return items
+
+    @staticmethod
+    def _dispatch_function_call(
+        *,
+        tool_call: _PendingToolCall,
+        granted_tool_keys: set[str],
+        runtime_tool_registry: RuntimeToolRegistry,
+        runtime_tool_context: RuntimeToolContext,
+        mcp_dispatcher: McpRuntimeDispatcher,
+    ) -> dict[str, object]:
+        try:
+            return runtime_tool_registry.dispatch(
+                name=tool_call.name,
+                arguments_json=tool_call.arguments_json,
+                granted_tool_keys=granted_tool_keys,
+                context=runtime_tool_context,
+            )
+        except RuntimeToolError as exc:
+            if exc.code != "agent_tool_call_unsupported":
+                raise
+        return mcp_dispatcher.dispatch(
+            name=tool_call.name,
+            arguments_json=tool_call.arguments_json,
+        )
 
     @staticmethod
     def _runtime_tool_error_to_run_execution_error(exc: RuntimeToolError) -> RunExecutionError:
