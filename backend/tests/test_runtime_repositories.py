@@ -86,6 +86,7 @@ def _build_model_connection(
     status: str,
     api_key: str,
     model_id: str = "gpt-5.4-mini",
+    api_style: str = "responses",
 ) -> ModelConnection:
     return ModelConnection(
         key=key or name.strip().lower().replace(" ", "_"),
@@ -97,6 +98,7 @@ def _build_model_connection(
         project=None,
         model_id=model_id,
         reasoning_effort="medium",
+        api_style=api_style,
         timeout_seconds=60,
         secret_payload={"apiKey": api_key},
         has_api_key=True,

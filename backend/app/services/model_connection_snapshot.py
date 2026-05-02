@@ -12,6 +12,7 @@ MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS = (
     "organization",
     "project",
     "reasoning_effort",
+    "api_style",
     "timeout_seconds",
 )
 
@@ -23,6 +24,7 @@ class ModelConnectionRuntimeSnapshot:
     organization: str | None
     project: str | None
     reasoning_effort: str
+    api_style: str
     timeout_seconds: int
 
 
@@ -35,6 +37,7 @@ def build_model_connection_runtime_snapshot(
         "organization": connection.organization,
         "project": connection.project,
         "reasoning_effort": connection.reasoning_effort,
+        "api_style": connection.api_style,
         "timeout_seconds": connection.timeout_seconds,
     }
 
@@ -45,7 +48,11 @@ def parse_model_connection_runtime_snapshot(
     if not isinstance(raw_snapshot, Mapping):
         raise ValueError("Model connection snapshot must be an object")
     snapshot = _snapshot_mapping(cast(Mapping[object, object], raw_snapshot))
-    missing_keys = [key for key in MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS if key not in snapshot]
+    missing_keys = [
+        key
+        for key in MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS
+        if key != "api_style" and key not in snapshot
+    ]
     if missing_keys:
         raise ValueError(
             "Model connection snapshot is missing required fields: " + ", ".join(missing_keys)
@@ -61,6 +68,12 @@ def parse_model_connection_runtime_snapshot(
     )
     if reasoning_effort not in {"low", "medium", "high"}:
         raise ValueError("Model connection snapshot reasoning_effort is invalid")
+    api_style = _required_snapshot_text(
+        snapshot.get("api_style", "responses"),
+        field_name="api_style",
+    )
+    if api_style not in {"responses", "chat_completions"}:
+        raise ValueError("Model connection snapshot api_style is invalid")
     timeout_seconds = snapshot["timeout_seconds"]
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int):
         raise ValueError("Model connection snapshot timeout_seconds must be an integer")
@@ -73,6 +86,7 @@ def parse_model_connection_runtime_snapshot(
         organization=organization,
         project=project,
         reasoning_effort=reasoning_effort,
+        api_style=api_style,
         timeout_seconds=timeout_seconds,
     )
 
@@ -86,6 +100,7 @@ def snapshot_to_json(
         "organization": snapshot.organization,
         "project": snapshot.project,
         "reasoning_effort": snapshot.reasoning_effort,
+        "api_style": snapshot.api_style,
         "timeout_seconds": snapshot.timeout_seconds,
     }
 

@@ -187,6 +187,7 @@ class AgentModelConnectionSnapshotRead(CamelModel):
     organization: str | None = None
     project: str | None = None
     reasoning_effort: ModelConnectionReasoningEffort
+    api_style: str
     timeout_seconds: int = Field(ge=1)
 
 
