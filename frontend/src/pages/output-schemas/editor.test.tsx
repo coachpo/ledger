@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import { schemaBuilderToJsonSchema } from "@/lib/platform-authoring/schema/codec";
-import type { OutputSchemaRead } from "@/lib/types/output-schema";
+import type { OutputSchemaBuilderNode, OutputSchemaRead } from "@/lib/types/output-schema";
 
 import { OutputSchemasEditorPage } from "./editor";
 
@@ -51,9 +51,28 @@ const unsupportedSchema = {
   },
 } satisfies OutputSchemaRead;
 
+const jsonSchemaDefaultRecord = {
+  ...existingSchema,
+  id: 9,
+  key: "defaulted_schema",
+  name: "Defaulted Schema",
+  jsonSchema: {
+    type: "object",
+    properties: { status: { type: "string", default: "queued" } },
+    required: [],
+    additionalProperties: false,
+  },
+  builder: {
+    kind: "object",
+    allowAdditionalProperties: false,
+    fields: [{ name: "status", required: false, schema: { kind: "string" } }],
+  },
+} satisfies OutputSchemaRead;
+
 const schemaRecords: Record<string, OutputSchemaRead> = {
   "7": existingSchema,
   "8": unsupportedSchema,
+  "9": jsonSchemaDefaultRecord,
 };
 
 vi.mock("react-router", () => ({
@@ -162,6 +181,44 @@ describe("OutputSchemasEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/output-schemas/11/edit");
   });
 
+  it("keeps builder-authored defaults in raw JSON preview and save payloads", async () => {
+    createOutputSchemaMock.mockResolvedValue({ id: 13 });
+
+    render(<OutputSchemasEditorPage />);
+
+    fireEvent.change(screen.getByLabelText("Key"), { target: { value: "defaulted_schema" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Defaulted Schema" } });
+    fireEvent.click(screen.getByTestId("output-schema-add-field"));
+    fireEvent.change(screen.getByDisplayValue("field_1"), { target: { value: "status" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /field schema: status default value/i }), {
+      target: { value: '"pending"' },
+    });
+
+    const expectedBuilder = {
+      kind: "object",
+      allowAdditionalProperties: false,
+      fields: [{ name: "status", required: true, schema: { kind: "string", defaultValue: "pending" } }],
+    } satisfies OutputSchemaBuilderNode;
+    const rawJsonTextbox = within(screen.getByTestId("output-schema-raw-json")).getByRole("textbox", {
+      name: /exact raw schema json/i,
+    });
+
+    expect(rawJsonTextbox).toHaveValue(stringifyJson(schemaBuilderToJsonSchema(expectedBuilder)));
+    expect((rawJsonTextbox as HTMLTextAreaElement).value).toContain('"default": "pending"');
+    expect((rawJsonTextbox as HTMLTextAreaElement).value).not.toContain("defaultValue");
+
+    fireEvent.click(screen.getByTestId("output-schemas-save"));
+
+    await waitFor(() => expect(createOutputSchemaMock).toHaveBeenCalledTimes(1));
+    expect(createOutputSchemaMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        builder: expectedBuilder,
+        jsonSchema: schemaBuilderToJsonSchema(expectedBuilder),
+      }),
+    );
+    expect(navigateMock).toHaveBeenCalledWith("/output-schemas/13/edit");
+  });
+
   it("hydrates edit mode and saves through the update hook", async () => {
     paramsMock.schemaId = "7";
     updateOutputSchemaMock.mockResolvedValue({ id: 12 });
@@ -195,6 +252,48 @@ describe("OutputSchemasEditorPage", () => {
       }),
     });
     expect(navigateMock).toHaveBeenCalledWith("/output-schemas/12/edit");
+  });
+
+  it("imports JSON Schema default keywords into builder defaults and saves edits back as JSON Schema defaults", async () => {
+    paramsMock.schemaId = "9";
+    updateOutputSchemaMock.mockResolvedValue({ id: 9 });
+
+    render(<OutputSchemasEditorPage />);
+
+    const defaultTextbox = screen.getByRole("textbox", { name: /field schema: status default value/i });
+    const rawJsonTextbox = within(screen.getByTestId("output-schema-raw-json")).getByRole("textbox", {
+      name: /exact raw schema json/i,
+    });
+
+    expect(defaultTextbox).toHaveValue('"queued"');
+    expect((rawJsonTextbox as HTMLTextAreaElement).value).toContain('"default": "queued"');
+    expect((rawJsonTextbox as HTMLTextAreaElement).value).not.toContain("defaultValue");
+
+    fireEvent.change(defaultTextbox, { target: { value: '"completed"' } });
+    fireEvent.click(screen.getByTestId("output-schemas-save"));
+
+    await waitFor(() => expect(updateOutputSchemaMock).toHaveBeenCalledTimes(1));
+    expect(updateOutputSchemaMock).toHaveBeenCalledWith({
+      schemaId: "9",
+      payload: expect.objectContaining({
+        builder: expect.objectContaining({
+          fields: [
+            expect.objectContaining({
+              name: "status",
+              required: false,
+              schema: { kind: "string", defaultValue: "completed" },
+            }),
+          ],
+          kind: "object",
+        }),
+        jsonSchema: expect.objectContaining({
+          properties: { status: { type: "string", default: "completed" } },
+          required: [],
+          type: "object",
+        }),
+      }),
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/output-schemas/9/edit");
   });
 
   it("shows an explicit blocker for unsupported persisted records and disables save", () => {

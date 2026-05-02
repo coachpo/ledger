@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -8,9 +8,11 @@ import {
   formatPrimitiveList,
   parsePrimitiveInput,
   parsePrimitiveList,
+  parseSchemaDefaultValueText,
+  validateSchemaDefaultValue,
 } from "@/lib/platform-authoring/schema/codec";
 import { createLiteralValueDraft } from "@/lib/platform-authoring/schema/preview";
-import type { SchemaIRLiteral, SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import type { JsonValue, SchemaIRLiteral, SchemaIRNode } from "@/lib/platform-authoring/schema/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -65,6 +67,34 @@ function createDefaultLiteralDraft(node: SchemaIRNode): LiteralDraft {
     : { kind: "string", value: "value" };
 }
 
+function hasNodeDefaultValue(node: SchemaIRNode): node is SchemaIRNode & { defaultValue: JsonValue } {
+  return Object.prototype.hasOwnProperty.call(node, "defaultValue");
+}
+
+function formatDefaultValueText(node: SchemaIRNode): string {
+  return hasNodeDefaultValue(node) ? JSON.stringify(node.defaultValue, null, 2) : "";
+}
+
+function clearNodeDefaultValue<T extends SchemaIRNode>(node: T): T {
+  const nextNode = { ...node };
+  delete nextNode.defaultValue;
+  return nextNode;
+}
+
+function formatDefaultIssueText(issue: { field: string; issue: string }): string {
+  return issue.field === "defaultValue" ? issue.issue : `${issue.field}: ${issue.issue}`;
+}
+
+function preserveDefaultValueIfValid(nextNode: SchemaIRNode, currentNode: SchemaIRNode): SchemaIRNode {
+  if (!hasNodeDefaultValue(currentNode)) {
+    return nextNode;
+  }
+
+  return validateSchemaDefaultValue(nextNode, currentNode.defaultValue).length === 0
+    ? { ...nextNode, defaultValue: currentNode.defaultValue }
+    : nextNode;
+}
+
 export function SchemaNodeCard({
   depth = 0,
   label,
@@ -73,7 +103,14 @@ export function SchemaNodeCard({
   onRemove,
   renderNode,
 }: SchemaNodeCardProps) {
+  const nodeDefaultText = formatDefaultValueText(node);
   const [literalDraft, setLiteralDraft] = useState<LiteralDraft>(() => createDefaultLiteralDraft(node));
+  const [defaultText, setDefaultText] = useState(nodeDefaultText);
+  const defaultTextResult = useMemo(
+    () => parseSchemaDefaultValueText(node, defaultText),
+    [defaultText, node],
+  );
+  const defaultIssue = defaultTextResult.issues[0];
 
   useEffect(() => {
     if (node.kind === "literal") {
@@ -81,13 +118,38 @@ export function SchemaNodeCard({
     }
   }, [node]);
 
+  useEffect(() => {
+    setDefaultText(nodeDefaultText);
+  }, [node.kind, nodeDefaultText]);
+
+  const handleDefaultTextChange = (value: string) => {
+    setDefaultText(value);
+    const result = parseSchemaDefaultValueText(node, value);
+
+    if (result.issues.length > 0) {
+      return;
+    }
+
+    if (!result.hasDefault) {
+      if (hasNodeDefaultValue(node)) {
+        onChange(clearNodeDefaultValue(node));
+      }
+      return;
+    }
+
+    onChange({ ...node, defaultValue: result.defaultValue });
+  };
+
   const handleKindChange = (nextKind: SchemaIRNode["kind"]) => {
-    const nextNode = createDefaultSchemaNode(nextKind);
-    onChange({
-      ...nextNode,
-      description: node.description ?? null,
-      title: node.title ?? null,
-    });
+    const nextNode = preserveDefaultValueIfValid(
+      {
+        ...createDefaultSchemaNode(nextKind),
+        description: node.description ?? null,
+        title: node.title ?? null,
+      },
+      node,
+    );
+    onChange(nextNode);
   };
 
   return (
@@ -135,6 +197,26 @@ export function SchemaNodeCard({
             <Label>Description</Label>
             <Input value={node.description ?? ""} onChange={(event) => onChange(updateNodeMetadata(node, "description", event.target.value))} />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label>Default value</Label>
+          <Textarea
+            aria-invalid={defaultIssue ? true : undefined}
+            aria-label={`${label} default value`}
+            className="font-mono text-xs"
+            placeholder={'"example"'}
+            rows={4}
+            spellCheck={false}
+            value={defaultText}
+            onChange={(event) => handleDefaultTextChange(event.target.value)}
+          />
+          <p className="text-sm text-muted-foreground">
+            Defaults apply only when optional fields are absent. Enter JSON text; strings must include quotes, and blank means no default.
+          </p>
+          {defaultIssue ? (
+            <p className="text-sm text-destructive">{formatDefaultIssueText(defaultIssue)}</p>
+          ) : null}
         </div>
 
         {node.kind === "object" ? (

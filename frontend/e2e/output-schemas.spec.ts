@@ -30,13 +30,17 @@ test.describe("Output schema routes", () => {
     await page.locator("#output-schema-name").fill(`Draft ${draftKey}`);
     await page.getByTestId("output-schema-add-field").click();
     await page.getByTestId("output-schema-field-name-0").fill("answer");
+    await page.getByRole("textbox", { name: /field schema: answer default value/i }).fill('"confirmed"');
 
     await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"answer"/);
     await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"answer"/);
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"default": "confirmed"/);
 
     await saveAndWaitForEditRoute(page);
     await expect(page).toHaveURL(/\/output-schemas\/\d+\/edit$/);
     await expectBuilderAndDerivedPreviews(page);
+    await expect(page.getByRole("textbox", { name: /field schema: answer default value/i })).toHaveValue('"confirmed"');
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"default": "confirmed"/);
 
     await page.locator("#output-schema-name").fill(`Updated ${draftKey}`);
     await page.getByTestId("output-schema-add-field").click();
@@ -56,8 +60,10 @@ test.describe("Output schema routes", () => {
     await expect(page.locator("#output-schema-name")).toHaveValue(`Updated ${draftKey}`);
     await expectBuilderAndDerivedPreviews(page);
 
+    await expect(page.getByRole("textbox", { name: /field schema: answer default value/i })).toHaveValue('"confirmed"');
     await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"answer"/);
     await expect(page.getByTestId("output-schema-preview").locator("textarea")).toHaveValue(/"rationale"/);
+    await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"default": "confirmed"/);
     await expect(page.getByTestId("output-schema-raw-json").locator("textarea")).toHaveValue(/"rationale"/);
   });
 });
