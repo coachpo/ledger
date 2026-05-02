@@ -406,7 +406,7 @@ def _stub_agent_payload(
         "inputSchema": _stub_workflow_input_schema(),
         "outputSchemaKey": STUB_NOTE_SCHEMA_KEY,
         "capabilities": [{"capabilityKey": STUB_CAPABILITY_KEY}],
-        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
+        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY, "mcpServerVersion": 1}],
         "budgetUsd": "0.05000000",
     }
 
@@ -426,7 +426,7 @@ def _stub_synthesizer_payload(
         "inputSchema": _stub_synthesizer_input_schema(),
         "outputSchemaKey": STUB_DECISION_SCHEMA_KEY,
         "capabilities": [{"capabilityKey": STUB_CAPABILITY_KEY}],
-        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY}],
+        "mcpServers": [{"mcpServerKey": STUB_MCP_SERVER_KEY, "mcpServerVersion": 1}],
         "budgetUsd": "0.10000000",
     }
 
@@ -1015,7 +1015,11 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
     assert created["enabled"] is True
     assert created["transport"] == "http-sse"
     assert created["url"] == "https://example.com/mcp"
-    assert created["headers"] == {"Authorization": "Bearer secret-token"}
+    assert created["headerNames"] == ["Authorization"]
+    assert created["envKeys"] == []
+    assert "headers" not in created
+    assert "env" not in created
+    assert "Bearer secret-token" not in json.dumps(created)
 
     update_response = client.patch(
         f"/api/mcp-servers/{created['id']}",
@@ -1038,7 +1042,11 @@ def test_agent_platform_mcp_crud_routes_and_connection_test(
     assert updated["enabled"] is True
     assert updated["transport"] == "http-sse"
     assert updated["url"] == "https://example.com/mcp/v2"
-    assert updated["headers"] == {"Authorization": "Bearer secret-token"}
+    assert updated["headerNames"] == ["Authorization"]
+    assert updated["envKeys"] == []
+    assert "headers" not in updated
+    assert "env" not in updated
+    assert "Bearer secret-token" not in json.dumps(updated)
 
     original_detail = client.get(f"/api/mcp-servers/{created['id']}")
     assert original_detail.status_code == 200, original_detail.json()
@@ -1141,9 +1149,12 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
     assert created["description"] == ""
     assert created["enabled"] is True
     assert created["transport"] == "stdio"
-    assert created["command"] == "npx"
-    assert created["args"] == ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-    assert created["env"] == {}
+    assert created["command"] == ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]
+    assert created["envKeys"] == []
+    assert created["headerNames"] == []
+    assert "env" not in created
+    assert "headers" not in created
+    assert "args" not in created
 
     activated_server = activate_mcp_server(client, cast(int, created["id"]))
     seeded = _seed_agent_platform_agent_dependencies(client)
@@ -1163,7 +1174,12 @@ def test_agent_platform_mcp_hyphenated_stdio_key_is_accepted_and_reusable(
             },
             output_schema_key=cast(str, seeded["outputSchema"]["key"]),
             capabilities=[{"capabilityKey": seeded["capability"]["key"]}],
-            mcp_servers=[{"mcpServerKey": activated_server["key"]}],
+            mcp_servers=[
+                {
+                    "mcpServerKey": activated_server["key"],
+                    "mcpServerVersion": activated_server["version"],
+                }
+            ],
             budget_usd="0.50000000",
         ),
     )
@@ -1316,7 +1332,7 @@ def test_agent_platform_agent_create_pins_explicit_versions_and_returns_resolved
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             budget_usd="1.25000000",
         ),
     )
@@ -1377,7 +1393,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -1404,7 +1420,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
             "toolGrants": [{"tool": "ledger.market_data.history_lookup"}],
         },
     )
-    mcp_server_v2 = create_mcp_server(
+    created_mcp_server_v2 = create_mcp_server(
         client,
         payload=mcp_stdio_payload(
             key="market_data",
@@ -1413,6 +1429,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
             args=["-m", "ledger_market_data"],
         ),
     )
+    mcp_server_v2 = activate_mcp_server(client, cast(int, created_mcp_server_v2["id"]))
 
     update_response = client.post(
         f"/api/agents/{created['id']}",
@@ -1487,7 +1504,7 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
     updated = client.post(
@@ -1510,7 +1527,7 @@ def test_agent_platform_agent_archive_keeps_pinned_history_resolvable(
                 output_schema_key="decision_schema",
                 include_key=False,
                 capabilities=[{"capabilityKey": "market_research"}],
-                mcp_servers=[{"mcpServerKey": "market_data"}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             )
         ),
     )
@@ -1557,7 +1574,7 @@ def test_agent_platform_agent_invalid_input_schema_returns_field_errors(
                 },
                 output_schema_key="decision_schema",
                 capabilities=[{"capabilityKey": "market_research"}],
-                mcp_servers=[{"mcpServerKey": "market_data"}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             )
         ),
     )
@@ -1591,7 +1608,7 @@ def test_agent_platform_agent_removed_runtime_fields_are_rejected(
                 },
                 output_schema_key="decision_schema",
                 capabilities=[{"capabilityKey": "market_research"}],
-                mcp_servers=[{"mcpServerKey": "market_data"}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             ),
             "temperature": 0.2,
             "maxToolRounds": 2,
@@ -1662,7 +1679,7 @@ def test_agent_platform_workflow_create_pins_explicit_versions_and_returns_resol
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             budget_usd="1.25000000",
         ),
     )
@@ -1747,7 +1764,7 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
             budget_usd="1.25000000",
         ),
     )
@@ -1816,7 +1833,7 @@ def test_agent_platform_workflow_update_version_pins_current_agent_versions_immu
                 include_key=False,
                 output_schema_version=2,
                 capabilities=[{"capabilityKey": "market_research"}],
-                mcp_servers=[{"mcpServerKey": "market_data"}],
+                mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
                 budget_usd="2.50000000",
             )
         ),
@@ -1897,7 +1914,7 @@ def test_agent_platform_workflow_rejects_agent_output_kind(client: TestClient) -
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -1951,7 +1968,7 @@ def test_agent_platform_workflow_wiring_rejects_duplicate_slot_names(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -2014,7 +2031,7 @@ def test_agent_platform_workflow_wiring_rejects_unresolved_slots(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -2088,7 +2105,7 @@ def test_agent_platform_workflow_wiring_rejects_forward_step_references(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -2162,7 +2179,7 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
             },
             output_schema_key="decision_schema",
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
     create_agent(
@@ -2180,7 +2197,7 @@ def test_agent_platform_workflow_wiring_rejects_type_mismatches(
             },
             output_schema_key=cast(str, dependencies["outputSchema"]["key"]),
             capabilities=[{"capabilityKey": "market_research"}],
-            mcp_servers=[{"mcpServerKey": "market_data"}],
+            mcp_servers=[{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
         ),
     )
 
@@ -3899,10 +3916,17 @@ def test_report_upload_crud_and_download(client: TestClient) -> None:
     assert get_response.status_code == 200
     assert get_response.json()["content"] == "# Uploaded Report\n\nBody text."
 
+    update_response = client.patch(
+        f"/api/v1/reports/{report['slug']}",
+        json={"content": "# Uploaded Report\n\nEdited body text."},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["content"] == "# Uploaded Report\n\nEdited body text."
+
     download_response = client.get(f"/api/v1/reports/{report['slug']}/download")
     assert download_response.status_code == 200
     assert f'filename="{report["slug"]}.md"' in download_response.headers["content-disposition"]
-    assert download_response.text == "# Uploaded Report\n\nBody text."
+    assert download_response.text == "# Uploaded Report\n\nEdited body text."
 
     delete_response = client.delete(f"/api/v1/reports/{report['slug']}")
     assert delete_response.status_code == 204
@@ -4044,6 +4068,39 @@ def test_report_create_external_json(client: TestClient) -> None:
     get_response = client.get(f"/api/v1/reports/{report['slug']}")
     assert get_response.status_code == 200
     assert get_response.json()["source"] == "external"
+
+
+def test_report_external_non_memory_update_and_delete_remains_allowed(
+    client: TestClient,
+) -> None:
+    create_response = client.post(
+        "/api/v1/reports",
+        json={
+            "name": "AAPL External Follow Up",
+            "content": "# AAPL\n\nOriginal body.",
+            "metadata": {
+                "analysis": {
+                    "ticker": "AAPL",
+                    "reviewType": "weekly_review",
+                    "versionGroup": "weekly_review/v1",
+                },
+            },
+        },
+    )
+    assert create_response.status_code == 201
+    report = create_response.json()
+
+    update_response = client.patch(
+        f"/api/v1/reports/{report['slug']}",
+        json={"content": "# AAPL\n\nEdited external body."},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["source"] == "external"
+    assert update_response.json()["content"] == "# AAPL\n\nEdited external body."
+
+    delete_response = client.delete(f"/api/v1/reports/{report['slug']}")
+    assert delete_response.status_code == 204
+    assert client.get(f"/api/v1/reports/{report['slug']}").status_code == 404
 
 
 def test_report_create_external_slug_conflict(client: TestClient) -> None:

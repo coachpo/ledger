@@ -5,8 +5,9 @@ import json
 import re
 import threading
 import time
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import openai
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
+from app.api.dependencies import get_quote_provider
 from app.core.config import reset_settings_cache
 from app.core.errors import ApiError
 from app.models.agent import Agent
@@ -32,15 +34,26 @@ from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.schemas.workflow import WorkflowCreate, WorkflowRead
 from app.services.capability_service import (
+    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     POSITION_LOOKUP_ACCESS_DENIED_CODE,
     POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
     REPORT_LOOKUP_ACCESS_DENIED_CODE,
     REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    REPORT_MEMORY_WRITE_TOOL_KEY,
     CapabilityService,
 )
 from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from app.services.position_service import PositionService
+from app.services.quote_provider import (
+    ProviderHistoryPoint,
+    ProviderHistorySeries,
+    ProviderQuote,
+    QuoteProviderError,
+)
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -500,6 +513,89 @@ def _seed_backend_report_lookup_workflow(
     )
 
 
+def _seed_backend_reports_write_workflow(
+    session: Session,
+    *,
+    grant_reports_write: bool,
+    workflow_key: str = "backend_reports_write_runtime",
+    skill_key: str = "backend_reports_write_runtime_skill",
+    agent_key: str = "report_memory_writer",
+) -> WorkflowRead:
+    note_schema = _build_output_schema(
+        key=f"{workflow_key}_note",
+        version=1,
+        status="published",
+    )
+    note_schema.json_schema = _reference_note_schema()
+    skill = _build_skill(
+        key=skill_key,
+        version=1,
+        status="published",
+        tools=(
+            [REPORT_MEMORY_WRITE_TOOL_KEY] if grant_reports_write else ["ledger.reports.lookup"]
+        ),
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="stdio",
+    )
+    mcp_server.config = {
+        "name": f"{workflow_key}_server-1",
+        "description": "MCP server",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-V"],
+        "env": {},
+    }
+    connection = _build_model_connection(name=f"{workflow_key} connection")
+    session.add_all([note_schema, skill, mcp_server, connection])
+    session.flush()
+    agent = _build_agent_platform_agent(
+        key=agent_key,
+        version=1,
+        status="published",
+        output_schema=note_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema=_reference_workflow_input_schema(),
+        budget_usd=Decimal("0.05000000"),
+    )
+    session.add(agent)
+    session.commit()
+    return WorkflowService(session).create_workflow(
+        WorkflowCreate.model_validate(
+            {
+                "key": workflow_key,
+                "name": "Backend Reports Write Runtime",
+                "inputSchema": _reference_workflow_input_schema(),
+                "steps": [
+                    {
+                        "index": 1,
+                        "agents": [
+                            {
+                                "agentKey": agent_key,
+                                "slot": "analysis",
+                                "wiring": {
+                                    "ticker": {"from": "input", "path": "ticker"},
+                                    "horizon_days": {
+                                        "from": "input",
+                                        "path": "horizon_days",
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+            }
+        )
+    )
+
+
 def _seed_backend_position_lookup_workflow(
     session: Session,
     *,
@@ -587,6 +683,145 @@ def _seed_backend_position_lookup_workflow(
             }
         )
     )
+
+
+def _seed_backend_market_data_lookup_workflow(
+    session: Session,
+    *,
+    tool_key: str,
+    workflow_key: str,
+    skill_key: str,
+    agent_key: str,
+) -> WorkflowRead:
+    note_schema = _build_output_schema(
+        key=f"{workflow_key}_note",
+        version=1,
+        status="published",
+    )
+    note_schema.json_schema = _reference_note_schema()
+    skill = _build_skill(
+        key=skill_key,
+        version=1,
+        status="published",
+        tools=[tool_key],
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="stdio",
+    )
+    mcp_server.config = {
+        "name": f"{workflow_key}_server-1",
+        "description": "MCP server",
+        "enabled": True,
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-V"],
+        "env": {},
+    }
+    connection = _build_model_connection(name=f"{workflow_key} connection")
+    session.add_all([note_schema, skill, mcp_server, connection])
+    session.flush()
+    agent = _build_agent_platform_agent(
+        key=agent_key,
+        version=1,
+        status="published",
+        output_schema=note_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema=_reference_workflow_input_schema(),
+        budget_usd=Decimal("0.05000000"),
+    )
+    session.add(agent)
+    session.commit()
+    return WorkflowService(session).create_workflow(
+        WorkflowCreate.model_validate(
+            {
+                "key": workflow_key,
+                "name": "Backend Market Data Lookup Runtime",
+                "inputSchema": _reference_workflow_input_schema(),
+                "steps": [
+                    {
+                        "index": 1,
+                        "agents": [
+                            {
+                                "agentKey": agent_key,
+                                "slot": "analysis",
+                                "wiring": {
+                                    "ticker": {"from": "input", "path": "ticker"},
+                                    "horizon_days": {
+                                        "from": "input",
+                                        "path": "horizon_days",
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "outputSpec": {"kind": "slot", "stepIndex": 1, "slot": "analysis"},
+            }
+        )
+    )
+
+
+class _RuntimeMarketDataQuoteProvider:
+    def __init__(self, *, failing_symbols: set[str] | None = None) -> None:
+        self.failing_symbols: set[str] = failing_symbols or set()
+        self.quote_calls: list[str] = []
+        self.history_calls: list[tuple[str, str, str]] = []
+
+    def fetch_symbol_name(self, symbol: str) -> str | None:
+        return f"{symbol.upper()} Incorporated"
+
+    def fetch_quote(self, symbol: str) -> ProviderQuote:
+        normalized_symbol = symbol.upper()
+        self.quote_calls.append(normalized_symbol)
+        if normalized_symbol in self.failing_symbols:
+            raise QuoteProviderError(f"Quote unavailable for {normalized_symbol}")
+        price = Decimal("120.25000000")
+        return ProviderQuote(
+            symbol=normalized_symbol,
+            name=f"{normalized_symbol} Incorporated",
+            price=price,
+            previous_close=Decimal("119.75000000"),
+            currency="USD",
+            provider="api_fake_provider",
+            as_of=datetime_from_api_fake(),
+        )
+
+    def fetch_history(
+        self,
+        symbol: str,
+        *,
+        range_value: str,
+        interval: str,
+    ) -> ProviderHistorySeries:
+        normalized_symbol = symbol.upper()
+        self.history_calls.append((normalized_symbol, range_value, interval))
+        if normalized_symbol in self.failing_symbols:
+            raise QuoteProviderError(f"History unavailable for {normalized_symbol}")
+        return ProviderHistorySeries(
+            symbol=normalized_symbol,
+            currency="USD",
+            provider="api_fake_provider",
+            points=[
+                ProviderHistoryPoint(
+                    at=datetime_from_api_fake(day=1),
+                    close=Decimal("118.75"),
+                ),
+                ProviderHistoryPoint(
+                    at=datetime_from_api_fake(day=2, hour=0),
+                    close=Decimal("119.75"),
+                ),
+                ProviderHistoryPoint(at=datetime_from_api_fake(), close=Decimal("120.25")),
+            ],
+        )
+
+
+def datetime_from_api_fake(*, day: int = 2, hour: int = 3) -> datetime:
+    return datetime(2026, 1, day, hour, 4, 5, tzinfo=UTC)
 
 
 def _seed_position_lookup_reference_context(session: Session) -> None:
@@ -844,12 +1079,35 @@ def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
             assert properties["symbol"]["type"] == ["string", "null"]
             assert properties["limit"]["type"] == ["integer", "null"]
             assert properties["offset"]["type"] == ["integer", "null"]
+        elif tool.get("name") == "ledger_market_data_quote_lookup":
+            assert properties["symbols"]["type"] == "array"
+            assert properties["symbols"]["maxItems"] == 10
+            assert properties["baseCurrency"]["type"] == ["string", "null"]
+        elif tool.get("name") == "ledger_market_data_history_lookup":
+            assert properties["symbols"]["type"] == "array"
+            assert properties["symbols"]["maxItems"] == 5
+            assert properties["range"]["enum"] == ["1mo", "3mo", "ytd", "1y", "max", None]
+            assert properties["pointLimit"]["maximum"] == 250
+        elif tool.get("name") == "ledger_reports_write":
+            analysis_schema = properties["analysis"]
+            assert analysis_schema["type"] == "object"
+            analysis_properties = analysis_schema["properties"]
+            assert set(analysis_properties) == {
+                "ticker",
+                "portfolioSlug",
+                "horizonDays",
+                "confidence",
+                "decisionSummary",
+                "decision",
+            }
+            assert "runId" not in analysis_properties
+            assert "resolvedStatus" not in analysis_properties
 
 
 class _RuntimeToolCallingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
-    expect_report_lookup_tool = True
+    expected_tool_names: list[str] | None = ["ledger_reports_lookup"]
     tool_arguments_json = '{"ticker":"NVDA","limit":1}'
     final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
     captured_lookup_arguments: list[dict[str, Any]] = []
@@ -869,13 +1127,14 @@ class _RuntimeToolCallingOpenAIClient:
         type(self).create_calls.append(kwargs)
         call_number = len(type(self).create_calls)
         if call_number == 1:
-            tools = kwargs.get("tools")
-            if type(self).expect_report_lookup_tool:
+            expected_tool_names = type(self).expected_tool_names
+            if expected_tool_names is None:
+                assert "tools" not in kwargs
+            else:
+                tools = kwargs.get("tools")
                 assert isinstance(tools, list)
                 _assert_openai_strict_tool_schemas(tools)
-                assert tools[0]["name"] == "ledger_reports_lookup"
-            else:
-                assert "tools" not in kwargs
+                assert [tool["name"] for tool in tools] == expected_tool_names
             return _RuntimeToolCallResponse(
                 response_id="resp_report_lookup_1",
                 output=[
@@ -902,9 +1161,104 @@ class _RuntimeToolCallingOpenAIClient:
     def reset(cls) -> None:
         cls.init_calls = []
         cls.create_calls = []
-        cls.expect_report_lookup_tool = True
+        cls.expected_tool_names = ["ledger_reports_lookup"]
         cls.tool_arguments_json = '{"ticker":"NVDA","limit":1}'
         cls.final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
+
+
+class _RuntimeReportsWriteToolCallingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    expected_tool_names: list[str] | None = ["ledger_reports_write"]
+    tool_call_name: str = "ledger_reports_write"
+    tool_arguments_json = json.dumps(
+        {
+            "analysis": {
+                "ticker": " nvda ",
+                "portfolioSlug": " core_us ",
+                "horizonDays": 30,
+                "confidence": " high ",
+                "decisionSummary": " Durable earnings setup. ",
+                "decision": {
+                    "action": "buy",
+                    "rationale": "Accelerating demand supports upside.",
+                    "riskSummary": "Position sizing should respect valuation risk.",
+                    "executionPlan": "Scale in over two sessions.",
+                },
+            }
+        }
+    )
+    final_output_text = '{"summary":"report memory written","signal":"bullish"}'
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> _RuntimeToolCallResponse:
+        type(self).create_calls.append(kwargs)
+        call_number = len(type(self).create_calls)
+        if call_number == 1:
+            expected_tool_names = type(self).expected_tool_names
+            if expected_tool_names is None:
+                assert "tools" not in kwargs
+            else:
+                tools = kwargs.get("tools")
+                assert isinstance(tools, list)
+                _assert_openai_strict_tool_schemas(tools)
+                assert [tool["name"] for tool in tools] == expected_tool_names
+            return _RuntimeToolCallResponse(
+                response_id="resp_reports_write_1",
+                output=[
+                    {
+                        "type": "function_call",
+                        "name": type(self).tool_call_name,
+                        "arguments": type(self).tool_arguments_json,
+                        "call_id": "call_reports_write_1",
+                    }
+                ],
+                total_tokens=11,
+            )
+        assert kwargs["previous_response_id"] == "resp_reports_write_1"
+        output_items = kwargs["input"]
+        assert output_items[0]["type"] == "function_call_output"
+        assert output_items[0]["call_id"] == "call_reports_write_1"
+        return _RuntimeToolCallResponse(
+            response_id="resp_reports_write_2",
+            output_text=type(self).final_output_text,
+            total_tokens=13,
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.expected_tool_names = ["ledger_reports_write"]
+        cls.tool_call_name = "ledger_reports_write"
+        cls.tool_arguments_json = json.dumps(
+            {
+                "analysis": {
+                    "ticker": " nvda ",
+                    "portfolioSlug": " core_us ",
+                    "horizonDays": 30,
+                    "confidence": " high ",
+                    "decisionSummary": " Durable earnings setup. ",
+                    "decision": {
+                        "action": "buy",
+                        "rationale": "Accelerating demand supports upside.",
+                        "riskSummary": "Position sizing should respect valuation risk.",
+                        "executionPlan": "Scale in over two sessions.",
+                    },
+                }
+            }
+        )
+        cls.final_output_text = '{"summary":"report memory written","signal":"bullish"}'
 
 
 class _RuntimePositionToolCallingOpenAIClient:
@@ -2566,7 +2920,7 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeToolCallingOpenAIClient.reset()
-    _RuntimeToolCallingOpenAIClient.expect_report_lookup_tool = False
+    _RuntimeToolCallingOpenAIClient.expected_tool_names = ["ledger_market_data_quote_lookup"]
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeToolCallingOpenAIClient)
 
     with session_factory() as session:
@@ -2609,7 +2963,11 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
         "message": REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
         "details": [],
     }
-    assert "tools" not in _RuntimeToolCallingOpenAIClient.create_calls[0]
+    first_tool_names = [
+        tool["name"] for tool in _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"]
+    ]
+    assert first_tool_names == ["ledger_market_data_quote_lookup"]
+    assert "ledger_reports_lookup" not in first_tool_names
 
 
 def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
@@ -2731,6 +3089,122 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
         "nvda_backend_lookup"
         in _RuntimeToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
     )
+
+
+def test_agent_platform_reports_write_run_requires_capability_grant(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeReportsWriteToolCallingOpenAIClient.reset()
+    _RuntimeReportsWriteToolCallingOpenAIClient.expected_tool_names = ["ledger_reports_lookup"]
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeReportsWriteToolCallingOpenAIClient,
+    )
+
+    with session_factory() as session:
+        workflow = _seed_backend_reports_write_workflow(
+            session,
+            grant_reports_write=False,
+            workflow_key="backend_reports_write_without_grant",
+            skill_key="backend_reports_write_without_grant_skill",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "failed"
+    assert detail["finalOutput"] is None
+    assert detail["error"] == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+    assert step_entry["agentKey"] == "report_memory_writer"
+    assert step_entry["status"] == "failed"
+    assert step_entry["output"] is None
+    assert step_entry["error"] == {
+        "code": REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+        "message": REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+        "details": [],
+    }
+    first_tool_names = [
+        tool["name"]
+        for tool in _RuntimeReportsWriteToolCallingOpenAIClient.create_calls[0]["tools"]
+    ]
+    assert first_tool_names == ["ledger_reports_lookup"]
+    assert "ledger_reports_write" not in first_tool_names
+
+
+def test_agent_platform_reports_write_run_creates_pending_memory_with_trusted_context(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeReportsWriteToolCallingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeReportsWriteToolCallingOpenAIClient,
+    )
+
+    with session_factory() as session:
+        workflow = _seed_backend_reports_write_workflow(
+            session,
+            grant_reports_write=True,
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    run_id = trigger.json()["id"]
+    detail = _wait_for_agent_platform_run(client, run_id)
+    step_entry = detail["perStepOutputs"]["1"][0]
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "report memory written",
+        "signal": "bullish",
+    }
+    assert step_entry["agentKey"] == "report_memory_writer"
+    assert step_entry["status"] == "succeeded"
+    tool_output = json.loads(
+        _RuntimeReportsWriteToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    assert tool_output["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
+    assert tool_output["action"] == "created"
+
+    with session_factory() as session:
+        report = session.get(Report, int(tool_output["reportId"]))
+        assert report is not None
+        report_slug = report.slug
+        analysis = report.metadata_["analysis"]
+
+    assert tool_output["reportSlug"] == report_slug
+    assert analysis["reviewType"] == "agent_memory"
+    assert analysis["versionGroup"] == "agent_memory/v1"
+    assert analysis["ticker"] == "NVDA"
+    assert analysis["portfolioSlug"] == "core_us"
+    assert analysis["horizonDays"] == 30
+    assert analysis["confidence"] == "high"
+    assert analysis["decisionSummary"] == "Durable earnings setup."
+    assert analysis["runId"] == run_id
+    assert analysis["agentKey"] == "report_memory_writer"
+    assert analysis["agentVersion"] == 1
+    assert analysis["agentName"] == "report_memory_writer-1"
+    assert analysis["workflowKey"] == workflow.key
+    assert analysis["workflowVersion"] == workflow.version
+    assert analysis["stepId"] == "step_1"
+    assert analysis["slot"] == "analysis"
+    assert analysis["traceId"] == detail["traceId"]
+    assert analysis["resolvedStatus"] == "pending"
+    assert analysis["reflections"] == []
+    assert "resolvedAt" not in analysis
+    assert "rawReturn" not in analysis
+    assert "alpha" not in analysis
 
 
 def test_agent_platform_position_lookup_run_requires_capability_grant(
@@ -3077,6 +3551,118 @@ def test_agent_platform_position_lookup_run_returns_empty_payload_for_unknown_sl
     }
 
 
+def test_agent_platform_quote_lookup_run_uses_injected_market_data_provider(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
+        "ledger_market_data_quote_lookup"
+    ]
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_quote_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
+        '{"symbols":[" nvda "],"baseCurrency":null}'
+    )
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"quote lookup used injected provider","signal":"bullish"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+    quote_provider = _RuntimeMarketDataQuoteProvider()
+    app = cast(Any, client.app)
+    app.dependency_overrides[get_quote_provider] = lambda: quote_provider
+
+    with session_factory() as session:
+        workflow = _seed_backend_market_data_lookup_workflow(
+            session,
+            tool_key="ledger.market_data.quote_lookup",
+            workflow_key="backend_quote_lookup_runtime",
+            skill_key="backend_quote_lookup_runtime_skill",
+            agent_key="quote_lookup_reader",
+        )
+
+    try:
+        trigger = client.post(
+            f"/api/workflows/{workflow.id}/runs",
+            json={"ticker": "NVDA", "horizon_days": 30},
+        )
+        assert trigger.status_code == 201, trigger.json()
+        detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    finally:
+        app.dependency_overrides.pop(get_quote_provider, None)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "quote lookup used injected provider",
+        "signal": "bullish",
+    }
+    assert quote_provider.quote_calls == ["NVDA"]
+    tool_output = json.loads(
+        _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    assert tool_output["toolKey"] == "ledger.market_data.quote_lookup"
+    assert tool_output["quotes"][0]["previousClose"] == "119.75000000"
+    assert tool_output["quotes"][0]["asOf"] == "2026-01-02T03:04:05Z"
+    assert tool_output["quotes"][0]["isStale"] is True
+
+
+def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimePositionToolCallingOpenAIClient.reset()
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
+        "ledger_market_data_history_lookup"
+    ]
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_history_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
+        '{"symbols":["NVDA"],"range":"3mo","pointLimit":2}'
+    )
+    _RuntimePositionToolCallingOpenAIClient.final_output_text = (
+        '{"summary":"history lookup used injected provider","signal":"neutral"}'
+    )
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimePositionToolCallingOpenAIClient)
+    quote_provider = _RuntimeMarketDataQuoteProvider()
+    app = cast(Any, client.app)
+    app.dependency_overrides[get_quote_provider] = lambda: quote_provider
+
+    with session_factory() as session:
+        workflow = _seed_backend_market_data_lookup_workflow(
+            session,
+            tool_key="ledger.market_data.history_lookup",
+            workflow_key="backend_history_lookup_runtime",
+            skill_key="backend_history_lookup_runtime_skill",
+            agent_key="history_lookup_reader",
+        )
+
+    try:
+        trigger = client.post(
+            f"/api/workflows/{workflow.id}/runs",
+            json={"ticker": "NVDA", "horizon_days": 30},
+        )
+        assert trigger.status_code == 201, trigger.json()
+        detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    finally:
+        app.dependency_overrides.pop(get_quote_provider, None)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "summary": "history lookup used injected provider",
+        "signal": "neutral",
+    }
+    assert quote_provider.history_calls == [("NVDA", "3mo", "1d")]
+    tool_output = json.loads(
+        _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
+    )
+    assert tool_output["toolKey"] == "ledger.market_data.history_lookup"
+    assert tool_output["endDate"] == "2026-01-02T03:04:05Z"
+    assert tool_output["series"][0]["points"] == [
+        {"at": "2026-01-02T00:04:05Z", "close": "119.75"},
+        {"at": "2026-01-02T03:04:05Z", "close": "120.25"},
+    ]
+
+
 def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceeded(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -3413,3 +3999,583 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
     assert detail["perStepOutputs"]["1"][0]["error"]["code"] == "agent_execution_failed"
     assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == {}
     assert detail["perStepOutputs"]["2"][0]["status"] == "succeeded"
+
+
+def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setenv("MCP_RUNTIME_ENABLED", "false")
+    reset_settings_cache()
+    observed_inputs: dict[str, dict[str, Any]] = {}
+
+    async def fake_invoke(self: RunService, **kwargs: Any) -> dict[str, Any]:
+        del self
+        slot = str(kwargs["slot"])
+        resolved_input = cast(dict[str, Any], kwargs["resolved_input"])
+        observed_inputs[slot] = resolved_input
+        if slot.endswith("_report"):
+            return {
+                "output": {
+                    "summary": f"{slot} for {resolved_input['ticker']}",
+                    "signal": "neutral",
+                }
+            }
+        if slot == "bull_round_1":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            return {"output": {"nextState": prior_state | {"history": ["bull_round_1"]}}}
+        if slot == "bear_round_1":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            history = [*prior_state["history"], "bear_round_1"]
+            return {"output": {"nextState": prior_state | {"history": history}}}
+        if slot == "bull_round_2":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            history = [*prior_state["history"], "bull_round_2"]
+            return {"output": {"nextState": prior_state | {"history": history}}}
+        if slot == "bear_round_2":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            history = [*prior_state["history"], "bear_round_2"]
+            return {"output": {"nextState": prior_state | {"history": history}}}
+        if slot == "research_plan":
+            debate_state = cast(dict[str, Any], resolved_input["debateState"])
+            return {"output": {"recommendation": "hold", "history": debate_state["history"]}}
+        if slot == "trader_proposal":
+            research_plan = cast(dict[str, Any], resolved_input["researchPlan"])
+            return {"output": {"action": "hold", "history": research_plan["history"]}}
+        if slot == "aggressive":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            return {"output": {"nextState": prior_state | {"history": ["aggressive"]}}}
+        if slot == "neutral":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            return {
+                "output": {
+                    "nextState": prior_state | {"history": [*prior_state["history"], "neutral"]}
+                }
+            }
+        if slot == "conservative":
+            prior_state = cast(dict[str, Any], resolved_input["priorState"])
+            return {
+                "output": {
+                    "nextState": prior_state
+                    | {"history": [*prior_state["history"], "conservative"]}
+                }
+            }
+        risk_state = cast(dict[str, Any], resolved_input["riskState"])
+        return {
+            "output": {
+                "action": "hold",
+                "rationale": "Risk debate completed.",
+                "history": risk_state["history"],
+            }
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+
+    state_schema = {"type": "object", "additionalProperties": True}
+    transition_schema = {
+        "type": "object",
+        "properties": {"nextState": state_schema},
+        "required": ["nextState"],
+        "additionalProperties": False,
+    }
+    note_schema = _reference_note_schema()
+    plan_schema = {
+        "type": "object",
+        "properties": {
+            "recommendation": {"type": "string"},
+            "history": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["recommendation", "history"],
+        "additionalProperties": False,
+    }
+    proposal_schema = {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string"},
+            "history": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "history"],
+        "additionalProperties": False,
+    }
+    decision_schema = {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string"},
+            "rationale": {"type": "string"},
+            "history": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action", "rationale", "history"],
+        "additionalProperties": False,
+    }
+    analyst_input_schema = {
+        "type": "object",
+        "properties": {"ticker": {"type": "string"}, "horizon_days": {"type": "integer"}},
+        "required": ["ticker", "horizon_days"],
+        "additionalProperties": False,
+    }
+    prior_state_input_schema = {
+        "type": "object",
+        "properties": {"priorState": state_schema},
+        "required": ["priorState"],
+        "additionalProperties": False,
+    }
+    with session_factory() as session:
+        note_output = _build_output_schema(key="tradingagents_note", version=1, status="published")
+        note_output.json_schema = note_schema
+        transition_output = _build_output_schema(
+            key="tradingagents_transition", version=1, status="published"
+        )
+        transition_output.json_schema = transition_schema
+        plan_output = _build_output_schema(key="tradingagents_plan", version=1, status="published")
+        plan_output.json_schema = plan_schema
+        proposal_output = _build_output_schema(
+            key="tradingagents_proposal", version=1, status="published"
+        )
+        proposal_output.json_schema = proposal_schema
+        decision_output = _build_output_schema(
+            key="tradingagents_decision", version=1, status="published"
+        )
+        decision_output.json_schema = decision_schema
+        capability = _build_skill(
+            key="tradingagents_runtime_tools",
+            version=1,
+            status="published",
+            tools=[
+                MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
+                MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+                REPORT_MEMORY_WRITE_TOOL_KEY,
+            ],
+        )
+        mcp_server = _build_mcp_server(
+            key="tradingagents_runtime_data",
+            version=1,
+            status="published",
+            transport="stdio",
+        )
+        connection = _build_model_connection(name="TradingAgents Runtime Connection")
+        session.add_all(
+            [
+                note_output,
+                transition_output,
+                plan_output,
+                proposal_output,
+                decision_output,
+                capability,
+                mcp_server,
+                connection,
+            ]
+        )
+        session.flush()
+        analyst_agents = [
+            _build_agent_platform_agent(
+                key=agent_key,
+                version=1,
+                status="published",
+                output_schema=note_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=analyst_input_schema,
+            )
+            for agent_key in [
+                "market_analyst",
+                "social_analyst",
+                "news_analyst",
+                "fundamentals_analyst",
+            ]
+        ]
+        agents = [
+            *analyst_agents,
+            _build_agent_platform_agent(
+                key="bull_researcher",
+                version=1,
+                status="published",
+                output_schema=transition_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=prior_state_input_schema,
+            ),
+            _build_agent_platform_agent(
+                key="bear_researcher",
+                version=1,
+                status="published",
+                output_schema=transition_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=prior_state_input_schema,
+            ),
+            _build_agent_platform_agent(
+                key="research_manager",
+                version=1,
+                status="published",
+                output_schema=plan_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema={
+                    "type": "object",
+                    "properties": {"debateState": state_schema},
+                    "required": ["debateState"],
+                    "additionalProperties": False,
+                },
+            ),
+            _build_agent_platform_agent(
+                key="trader",
+                version=1,
+                status="published",
+                output_schema=proposal_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema={
+                    "type": "object",
+                    "properties": {"researchPlan": plan_schema},
+                    "required": ["researchPlan"],
+                    "additionalProperties": False,
+                },
+            ),
+            _build_agent_platform_agent(
+                key="aggressive_risk_analyst",
+                version=1,
+                status="published",
+                output_schema=transition_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "priorState": state_schema,
+                        "researchPlan": plan_schema,
+                        "traderProposal": proposal_schema,
+                    },
+                    "required": ["priorState", "researchPlan", "traderProposal"],
+                    "additionalProperties": False,
+                },
+            ),
+            _build_agent_platform_agent(
+                key="neutral_risk_analyst",
+                version=1,
+                status="published",
+                output_schema=transition_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=prior_state_input_schema,
+            ),
+            _build_agent_platform_agent(
+                key="conservative_risk_analyst",
+                version=1,
+                status="published",
+                output_schema=transition_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=prior_state_input_schema,
+            ),
+            _build_agent_platform_agent(
+                key="portfolio_manager",
+                version=1,
+                status="published",
+                output_schema=decision_output,
+                skill=capability,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema={
+                    "type": "object",
+                    "properties": {"riskState": state_schema},
+                    "required": ["riskState"],
+                    "additionalProperties": False,
+                },
+            ),
+        ]
+        session.add_all(agents)
+        session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreate.model_validate(
+                {
+                    "key": "tradingagents_state_carry",
+                    "name": "TradingAgents State Carry",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string"},
+                            "horizon_days": {"type": "integer"},
+                            "initialInvestmentDebateState": state_schema,
+                            "initialRiskDebateState": state_schema,
+                        },
+                        "required": [
+                            "ticker",
+                            "horizon_days",
+                            "initialInvestmentDebateState",
+                            "initialRiskDebateState",
+                        ],
+                        "additionalProperties": False,
+                    },
+                    "steps": [
+                        {
+                            "index": 1,
+                            "agents": [
+                                {
+                                    "agentKey": "market_analyst",
+                                    "slot": "market_report",
+                                    "wiring": {
+                                        "ticker": {"from": "input", "path": "ticker"},
+                                        "horizon_days": {"from": "input", "path": "horizon_days"},
+                                    },
+                                },
+                                {
+                                    "agentKey": "social_analyst",
+                                    "slot": "social_report",
+                                    "wiring": {
+                                        "ticker": {"from": "input", "path": "ticker"},
+                                        "horizon_days": {"from": "input", "path": "horizon_days"},
+                                    },
+                                },
+                                {
+                                    "agentKey": "news_analyst",
+                                    "slot": "news_report",
+                                    "wiring": {
+                                        "ticker": {"from": "input", "path": "ticker"},
+                                        "horizon_days": {"from": "input", "path": "horizon_days"},
+                                    },
+                                },
+                                {
+                                    "agentKey": "fundamentals_analyst",
+                                    "slot": "fundamentals_report",
+                                    "wiring": {
+                                        "ticker": {"from": "input", "path": "ticker"},
+                                        "horizon_days": {"from": "input", "path": "horizon_days"},
+                                    },
+                                },
+                            ],
+                        },
+                        {
+                            "index": 2,
+                            "agents": [
+                                {
+                                    "agentKey": "bull_researcher",
+                                    "slot": "bull_round_1",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "input",
+                                            "path": "initialInvestmentDebateState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 3,
+                            "agents": [
+                                {
+                                    "agentKey": "bear_researcher",
+                                    "slot": "bear_round_1",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "step",
+                                            "stepIndex": 2,
+                                            "slot": "bull_round_1",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 4,
+                            "agents": [
+                                {
+                                    "agentKey": "bull_researcher",
+                                    "slot": "bull_round_2",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "step",
+                                            "stepIndex": 3,
+                                            "slot": "bear_round_1",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 5,
+                            "agents": [
+                                {
+                                    "agentKey": "bear_researcher",
+                                    "slot": "bear_round_2",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "step",
+                                            "stepIndex": 4,
+                                            "slot": "bull_round_2",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 6,
+                            "agents": [
+                                {
+                                    "agentKey": "research_manager",
+                                    "slot": "research_plan",
+                                    "wiring": {
+                                        "debateState": {
+                                            "from": "step",
+                                            "stepIndex": 5,
+                                            "slot": "bear_round_2",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 7,
+                            "agents": [
+                                {
+                                    "agentKey": "trader",
+                                    "slot": "trader_proposal",
+                                    "wiring": {
+                                        "researchPlan": {
+                                            "from": "step",
+                                            "stepIndex": 6,
+                                            "slot": "research_plan",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 8,
+                            "agents": [
+                                {
+                                    "agentKey": "aggressive_risk_analyst",
+                                    "slot": "aggressive",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "input",
+                                            "path": "initialRiskDebateState",
+                                        },
+                                        "researchPlan": {
+                                            "from": "step",
+                                            "stepIndex": 6,
+                                            "slot": "research_plan",
+                                        },
+                                        "traderProposal": {
+                                            "from": "step",
+                                            "stepIndex": 7,
+                                            "slot": "trader_proposal",
+                                        },
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 9,
+                            "agents": [
+                                {
+                                    "agentKey": "neutral_risk_analyst",
+                                    "slot": "neutral",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "step",
+                                            "stepIndex": 8,
+                                            "slot": "aggressive",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 10,
+                            "agents": [
+                                {
+                                    "agentKey": "conservative_risk_analyst",
+                                    "slot": "conservative",
+                                    "wiring": {
+                                        "priorState": {
+                                            "from": "step",
+                                            "stepIndex": 9,
+                                            "slot": "neutral",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "index": 11,
+                            "agents": [
+                                {
+                                    "agentKey": "portfolio_manager",
+                                    "slot": "decision",
+                                    "wiring": {
+                                        "riskState": {
+                                            "from": "step",
+                                            "stepIndex": 10,
+                                            "slot": "conservative",
+                                            "path": "nextState",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                    "outputSpec": {"kind": "slot", "stepIndex": 11, "slot": "decision"},
+                }
+            )
+        )
+
+    run_input = {
+        "ticker": "NVDA",
+        "horizon_days": 30,
+        "initialInvestmentDebateState": {"history": []},
+        "initialRiskDebateState": {"history": []},
+    }
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json=run_input)
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {
+        "action": "hold",
+        "rationale": "Risk debate completed.",
+        "history": ["aggressive", "neutral", "conservative"],
+    }
+    assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == [
+        "market_report",
+        "social_report",
+        "news_report",
+        "fundamentals_report",
+    ]
+    assert observed_inputs["market_report"] == {"ticker": "NVDA", "horizon_days": 30}
+    assert observed_inputs["bull_round_1"]["priorState"] == {"history": []}
+    assert observed_inputs["bear_round_1"]["priorState"] == {"history": ["bull_round_1"]}
+    assert observed_inputs["bull_round_2"]["priorState"] == {
+        "history": ["bull_round_1", "bear_round_1"]
+    }
+    assert observed_inputs["bear_round_2"]["priorState"] == {
+        "history": ["bull_round_1", "bear_round_1", "bull_round_2"]
+    }
+    assert observed_inputs["research_plan"]["debateState"] == {
+        "history": ["bull_round_1", "bear_round_1", "bull_round_2", "bear_round_2"]
+    }
+    assert observed_inputs["trader_proposal"]["researchPlan"] == {
+        "recommendation": "hold",
+        "history": ["bull_round_1", "bear_round_1", "bull_round_2", "bear_round_2"],
+    }
+    assert observed_inputs["aggressive"]["priorState"] == {"history": []}
+    assert observed_inputs["neutral"]["priorState"] == {"history": ["aggressive"]}
+    assert observed_inputs["conservative"]["priorState"] == {"history": ["aggressive", "neutral"]}
+    assert observed_inputs["decision"]["riskState"] == {
+        "history": ["aggressive", "neutral", "conservative"]
+    }
+    reset_settings_cache()
