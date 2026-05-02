@@ -62,6 +62,8 @@ _CAPABILITY_STORAGE_CONFLICT_MESSAGE = (
 _MODEL_CONNECTION_PLACEHOLDER_BASE_URL = "https://api.openai.com/v1"
 _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
 _MODEL_CONNECTION_PLACEHOLDER_TIMEOUT_SECONDS = 60
+_MODEL_CONNECTION_DEFAULT_API_STYLE = "responses"
+_MODEL_CONNECTION_ALLOWED_API_STYLES = ("responses", "chat_completions")
 _RETIRED_SKILL_TOOL_ID = "ledger.stock_analysis.report_lookup"
 _REPAIRED_SKILL_TOOL_ID = "ledger.reports.lookup"
 
@@ -192,6 +194,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 project VARCHAR(200),
                 model_id VARCHAR(200) NOT NULL,
                 reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
+                api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
                 timeout_seconds INTEGER NOT NULL DEFAULT 60,
                 secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
                 has_api_key BOOLEAN NOT NULL DEFAULT FALSE,
@@ -206,6 +209,9 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 ),
                 CONSTRAINT ck_model_connections_reasoning_effort CHECK (
                     reasoning_effort IN ('low', 'medium', 'high')
+                ),
+                CONSTRAINT ck_model_connections_api_style CHECK (
+                    api_style IN ('responses', 'chat_completions')
                 ),
                 CONSTRAINT ck_model_connections_timeout_seconds_positive CHECK (
                     timeout_seconds > 0
@@ -758,6 +764,61 @@ def _ensure_model_connection_key_support(engine: Engine, table_names: set[str]) 
         )
 
 
+def _ensure_model_connection_api_style_support(engine: Engine, table_names: set[str]) -> None:
+    if "model_connections" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    model_connection_columns = {
+        column["name"]: column for column in inspector.get_columns("model_connections")
+    }
+    model_connection_check_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("model_connections")
+        if constraint.get("name")
+    }
+
+    with engine.begin() as connection:
+        api_style_column = model_connection_columns.get("api_style")
+        if api_style_column is None:
+            _ = connection.exec_driver_sql(
+                """
+                ALTER TABLE model_connections
+                ADD COLUMN api_style VARCHAR(30) NOT NULL DEFAULT 'responses'
+                """
+            )
+        else:
+            _ = connection.exec_driver_sql(
+                "ALTER TABLE model_connections ALTER COLUMN api_style SET DEFAULT 'responses'"
+            )
+
+        _ = connection.execute(
+            text(
+                """
+                UPDATE model_connections
+                SET api_style = :default_api_style, updated_at = NOW()
+                WHERE api_style IS NULL OR api_style NOT IN :allowed_api_styles
+                """
+            ).bindparams(bindparam("allowed_api_styles", expanding=True)),
+            {
+                "allowed_api_styles": _MODEL_CONNECTION_ALLOWED_API_STYLES,
+                "default_api_style": _MODEL_CONNECTION_DEFAULT_API_STYLE,
+            },
+        )
+        if api_style_column is None or api_style_column.get("nullable", True):
+            _ = connection.exec_driver_sql(
+                "ALTER TABLE model_connections ALTER COLUMN api_style SET NOT NULL"
+            )
+        if "ck_model_connections_api_style" not in model_connection_check_constraints:
+            _ = connection.exec_driver_sql(
+                """
+                ALTER TABLE model_connections
+                ADD CONSTRAINT ck_model_connections_api_style
+                CHECK (api_style IN ('responses', 'chat_completions'))
+                """
+            )
+
+
 def _ensure_agent_model_connection_support(engine: Engine, table_names: set[str]) -> None:
     if "agents" not in table_names:
         return
@@ -779,6 +840,15 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
 
     inspector = inspect(engine)
     agent_columns = {column["name"]: column for column in inspector.get_columns("agents")}
+    model_connection_columns = {
+        column["name"]: column for column in inspector.get_columns("model_connections")
+    }
+    api_style_snapshot_expression = (
+        "CASE WHEN model_connection.api_style IN ('responses', 'chat_completions') "
+        + "THEN model_connection.api_style ELSE 'responses' END"
+        if "api_style" in model_connection_columns
+        else "'responses'"
+    )
 
     with engine.begin() as connection:
         if "model_connection_snapshot" not in agent_columns:
@@ -787,9 +857,9 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                 "ADD COLUMN model_connection_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb"
             )
 
-        connection.execute(
+        _ = connection.execute(
             text(
-                """
+                f"""
                 UPDATE agents AS agent
                 SET model_connection_snapshot = jsonb_build_object(
                         'base_url', model_connection.base_url,
@@ -797,6 +867,7 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                         'organization', model_connection.organization,
                         'project', model_connection.project,
                         'reasoning_effort', model_connection.reasoning_effort,
+                        'api_style', {api_style_snapshot_expression},
                         'timeout_seconds', model_connection.timeout_seconds
                     ),
                     updated_at = NOW()
@@ -805,7 +876,7 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                   AND (
                     agent.model_connection_snapshot IS NULL
                     OR jsonb_typeof(agent.model_connection_snapshot) <> 'object'
-                    OR agent.model_connection_snapshot = '{}'::jsonb
+                    OR agent.model_connection_snapshot = '{{}}'::jsonb
                     OR NOT (
                         agent.model_connection_snapshot ?& ARRAY[
                             'base_url',
@@ -813,8 +884,13 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                             'organization',
                             'project',
                             'reasoning_effort',
+                            'api_style',
                             'timeout_seconds'
                         ]
+                    )
+                    OR COALESCE(agent.model_connection_snapshot->>'api_style', '') NOT IN (
+                        'responses',
+                        'chat_completions'
                     )
                   )
                 """
@@ -1092,6 +1168,7 @@ def _backfill_agent_model_connections(
 
         for legacy_model in legacy_models:
             placeholder_parameters = {
+                "api_style": _MODEL_CONNECTION_DEFAULT_API_STYLE,
                 "base_url": _MODEL_CONNECTION_PLACEHOLDER_BASE_URL,
                 "model_id": legacy_model,
                 "name": legacy_model,
@@ -1106,6 +1183,7 @@ def _backfill_agent_model_connections(
                     "AND model_id = :model_id "
                     "AND base_url = :base_url "
                     "AND reasoning_effort = :reasoning_effort "
+                    "AND api_style = :api_style "
                     "AND timeout_seconds = :timeout_seconds "
                     "AND has_api_key = FALSE "
                     "ORDER BY id LIMIT 1"
@@ -1126,11 +1204,12 @@ def _backfill_agent_model_connections(
                         "INSERT INTO model_connections ("
                         "key, status, name, description, base_url, organization, project, "
                         "model_id, "
-                        "reasoning_effort, timeout_seconds, secret_payload, has_api_key, "
-                        "created_at, updated_at"
+                        "reasoning_effort, api_style, timeout_seconds, "
+                        "secret_payload, has_api_key, created_at, updated_at"
                         ") VALUES ("
                         ":key, 'active', :name, '', :base_url, NULL, NULL, :model_id, "
-                        ":reasoning_effort, :timeout_seconds, '{}'::jsonb, FALSE, NOW(), NOW()"
+                        ":reasoning_effort, :api_style, :timeout_seconds, '{}'::jsonb, FALSE, "
+                        "NOW(), NOW()"
                         ") RETURNING id"
                     ),
                     placeholder_parameters,
@@ -1579,6 +1658,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_run_target_identity_support(engine, table_names)
     _ensure_agent_platform_tables(engine, table_names)
     _ensure_model_connection_key_support(engine, table_names)
+    _ensure_model_connection_api_style_support(engine, table_names)
     _ensure_agent_manifest_columns(engine, table_names)
     _ensure_workflow_manifest_columns(engine, table_names)
     _remove_dead_agent_runtime_fields(engine, table_names)

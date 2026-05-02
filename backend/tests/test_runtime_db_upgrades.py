@@ -1248,7 +1248,7 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
 
         with engine.connect() as connection:
             rows = connection.execute(
-                text("SELECT id, key FROM model_connections ORDER BY id ASC")
+                text("SELECT id, key, api_style FROM model_connections ORDER BY id ASC")
             ).all()
 
         model_connection_columns = {
@@ -1261,14 +1261,20 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
         model_connection_indexes = {
             index["name"] for index in inspect(engine).get_indexes("model_connections")
         }
+        model_connection_check_constraints = {
+            constraint["name"]
+            for constraint in inspect(engine).get_check_constraints("model_connections")
+        }
 
         assert rows == [
-            (1, "primary_openai"),
-            (2, "primary_openai_2"),
-            (3, "openai_gpt_4_1"),
-            (4, "model_connection_2026_default"),
+            (1, "primary_openai", "responses"),
+            (2, "primary_openai_2", "responses"),
+            (3, "openai_gpt_4_1", "responses"),
+            (4, "model_connection_2026_default", "responses"),
         ]
         assert model_connection_columns["key"]["nullable"] is False
+        assert model_connection_columns["api_style"]["nullable"] is False
+        assert "ck_model_connections_api_style" in model_connection_check_constraints
         assert "uq_model_connections_key" in unique_constraints
         assert "ix_model_connections_key" in model_connection_indexes
     finally:
@@ -1400,7 +1406,7 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
             placeholder_rows = connection.execute(
                 text(
                     "SELECT name, model_id, base_url, reasoning_effort, "
-                    "timeout_seconds, has_api_key, key "
+                    "api_style, timeout_seconds, has_api_key, key "
                     "FROM model_connections ORDER BY model_id ASC"
                 )
             ).all()
@@ -1436,6 +1442,7 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
                 "openai:gpt-5.4",
                 "https://api.openai.com/v1",
                 "medium",
+                "responses",
                 60,
                 False,
                 "openai_gpt_5_4",
@@ -1445,6 +1452,7 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
                 "openai:gpt-5.4-mini",
                 "https://api.openai.com/v1",
                 "medium",
+                "responses",
                 60,
                 False,
                 "openai_gpt_5_4_mini",
@@ -1476,6 +1484,7 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
             "organization": None,
             "project": None,
             "reasoning_effort": "medium",
+            "api_style": "responses",
             "timeout_seconds": 60,
         }
         assert snapshots_by_key["research_agent_beta"] == snapshots_by_key["research_agent_alpha"]
@@ -1485,6 +1494,7 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
             "organization": None,
             "project": None,
             "reasoning_effort": "medium",
+            "api_style": "responses",
             "timeout_seconds": 60,
         }
         assert {"temperature", "max_tool_rounds", "streaming"}.isdisjoint(repaired_agent_columns)
@@ -1538,10 +1548,13 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
         init_db(database_url)
 
         with engine.connect() as connection:
-            placeholder_count = connection.execute(
-                text("SELECT COUNT(*) FROM model_connections WHERE model_id = :model_id"),
+            placeholder_row = connection.execute(
+                text(
+                    "SELECT COUNT(*) AS row_count, MIN(api_style) AS api_style "
+                    "FROM model_connections WHERE model_id = :model_id"
+                ),
                 {"model_id": "openai:gpt-5.4-mini"},
-            ).scalar_one()
+            ).one()
             linked_agent = connection.execute(
                 text(
                     "SELECT model_connection_id IS NOT NULL, model_connection_snapshot "
@@ -1551,7 +1564,7 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
             ).one()
 
         agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert placeholder_count == 1
+        assert placeholder_row == (1, "responses")
         assert linked_agent[0] is True
         assert linked_agent[1] == {
             "base_url": "https://api.openai.com/v1",
@@ -1559,6 +1572,7 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
             "organization": None,
             "project": None,
             "reasoning_effort": "medium",
+            "api_style": "responses",
             "timeout_seconds": 60,
         }
         assert agent_columns["model_connection_id"]["nullable"] is False
@@ -1579,12 +1593,12 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                 text(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, organization, project, model_id, "
-                    "reasoning_effort, timeout_seconds, secret_payload, has_api_key, "
+                    "reasoning_effort, api_style, timeout_seconds, secret_payload, has_api_key, "
                     "created_at, updated_at"
                     ") VALUES ("
                     ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
                     ":model_id, "
-                    "'medium', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+                    "'medium', 'chat_completions', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
                     ") RETURNING id"
                 ),
                 {
@@ -1599,13 +1613,13 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "key, version, status, name, description, model_connection_id, model, "
                     "system_prompt, input_schema, output_schema_id, "
                     "output_schema_version, capabilities, "
-                    "mcp_servers, budget_usd"
+                    "mcp_servers, budget_usd, model_connection_snapshot"
                     ") VALUES ("
                     ":key, :version, :status, :name, :description, :model_connection_id, :model, "
                     ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
                     ":output_schema_version, CAST(:capabilities AS jsonb), "
                     "CAST(:mcp_servers AS jsonb), "
-                    ":budget_usd"
+                    ":budget_usd, CAST(:model_connection_snapshot AS jsonb)"
                     ")"
                 ),
                 {
@@ -1623,6 +1637,16 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "capabilities": "[]",
                     "mcp_servers": "[]",
                     "budget_usd": 0,
+                    "model_connection_snapshot": json.dumps(
+                        {
+                            "base_url": "https://api.openai.com/v1",
+                            "model_id": "openai:gpt-5.4-mini",
+                            "organization": None,
+                            "project": None,
+                            "reasoning_effort": "medium",
+                            "timeout_seconds": 60,
+                        }
+                    ),
                 },
             )
             connection.exec_driver_sql(
@@ -1639,10 +1663,13 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                 ),
                 {"key": "already_linked_agent"},
             ).one()
-            placeholder_count = connection.execute(
-                text("SELECT COUNT(*) FROM model_connections WHERE model_id = :model_id"),
+            model_connection_row = connection.execute(
+                text(
+                    "SELECT COUNT(*) AS row_count, MIN(api_style) AS api_style "
+                    "FROM model_connections WHERE model_id = :model_id"
+                ),
                 {"model_id": "openai:gpt-5.4-mini"},
-            ).scalar_one()
+            ).one()
 
         agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
         assert linked_agent_id[0] == linked_model_connection_id
@@ -1652,9 +1679,10 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
             "organization": None,
             "project": None,
             "reasoning_effort": "medium",
+            "api_style": "chat_completions",
             "timeout_seconds": 60,
         }
-        assert placeholder_count == 1
+        assert model_connection_row == (1, "chat_completions")
         assert agent_columns["model_connection_id"]["nullable"] is False
         assert agent_columns["model_connection_snapshot"]["nullable"] is False
     finally:
