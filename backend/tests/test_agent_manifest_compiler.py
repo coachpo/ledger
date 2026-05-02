@@ -131,6 +131,109 @@ def test_compile_agent_manifest_accepts_validated_manifest(
     assert payload == _expected_payload(cast(ModelConnection, refs["connection"]).id)
 
 
+def test_compile_agent_manifest_preserves_input_schema_metadata(
+    session_factory: sessionmaker[Session],
+) -> None:
+    source = _valid_manifest_source().replace(
+        """  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+    required:
+      - ticker
+""",
+        """  inputSchema:
+    type: object
+    title: Research request
+    description: Inputs collected before the agent runs.
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+        title: Ticker symbol
+        description: Public market ticker to research.
+      horizon_days:
+        type: integer
+        title: Horizon days
+        description: Optional number of days to assess.
+      price_targets:
+        type: array
+        title: Price targets
+        description: Optional candidate price targets.
+        items:
+          type: number
+          title: Price target
+          description: Candidate target price.
+      signal:
+        title: Signal
+        description: Discriminated signal branch.
+        anyOf:
+          - type: object
+            title: Bullish signal
+            description: Bullish branch payload.
+            properties:
+              kind:
+                const: bullish
+              score:
+                type: integer
+            required:
+              - kind
+              - score
+            additionalProperties: false
+          - type: object
+            title: Bearish signal
+            description: Bearish branch payload.
+            properties:
+              kind:
+                const: bearish
+              reason:
+                type: string
+            required:
+              - kind
+              - reason
+            additionalProperties: false
+        discriminator:
+          propertyName: kind
+    required:
+      - ticker
+      - signal
+""",
+        1,
+    )
+
+    with session_factory() as session:
+        _refs = _seed_manifest_refs(session)
+        payload = compile_agent_manifest(source, session)
+
+    input_schema = cast(dict[str, object], payload["inputSchema"])
+    properties = cast(dict[str, dict[str, object]], input_schema["properties"])
+    price_targets = properties["price_targets"]
+    price_items = cast(dict[str, object], price_targets["items"])
+    signal = properties["signal"]
+    signal_variants = cast(list[dict[str, object]], signal["anyOf"])
+
+    assert input_schema["title"] == "Research request"
+    assert input_schema["description"] == "Inputs collected before the agent runs."
+    assert properties["ticker"]["title"] == "Ticker symbol"
+    assert properties["horizon_days"]["description"] == "Optional number of days to assess."
+    assert "horizon_days" not in cast(list[str], input_schema["required"])
+    assert price_targets["description"] == "Optional candidate price targets."
+    assert price_items["title"] == "Price target"
+    assert signal["title"] == "Signal"
+    assert signal_variants[0]["title"] == "Bullish signal"
+    assert signal_variants[1]["description"] == "Bearish branch payload."
+    assert (
+        AgentCreate.model_validate(payload).model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+        == payload
+    )
+
+
 def test_compile_agent_manifest_rejects_legacy_skills_manifest(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -208,14 +311,38 @@ def test_compile_agent_manifest_reports_unresolved_capability_refs_with_canonica
     assert "Capability 'missing_capability' version 9 was not found" in diagnostic.message
 
 
+@pytest.mark.parametrize(
+    ("schema_fragment", "expected_path", "expected_message"),
+    [
+        (
+            "patternProperties:\n      ^x: {type: string}",
+            "spec.inputSchema.patternProperties",
+            "patternProperties is not supported",
+        ),
+        ("oneOf: []", "spec.inputSchema.oneOf", "Only discriminated anyOf unions are supported"),
+        ("allOf: []", "spec.inputSchema.allOf", "allOf is not supported"),
+        ("if: {type: object}", "spec.inputSchema.if", "if/then/else is not supported"),
+        ("then: {type: object}", "spec.inputSchema.then", "if/then/else is not supported"),
+        ("else: {type: object}", "spec.inputSchema.else", "if/then/else is not supported"),
+        ("not: {type: object}", "spec.inputSchema.not", "not is not supported"),
+        (
+            "additionalProperties:\n      type: string",
+            "spec.inputSchema.additionalProperties",
+            "Schema-valued additionalProperties is not supported",
+        ),
+    ],
+)
 def test_compile_agent_manifest_rejects_unsupported_input_schema_constructs(
     session_factory: sessionmaker[Session],
+    schema_fragment: str,
+    expected_path: str,
+    expected_message: str,
 ) -> None:
     with session_factory() as session:
         _refs = _seed_manifest_refs(session)
         source = _valid_manifest_source().replace(
-            "      ticker:\n        type: string",
-            "      ticker:\n        type: string\n    patternProperties:\n      ^x: {type: string}",
+            "    additionalProperties: false",
+            f"    {schema_fragment}",
             1,
         )
 
@@ -223,8 +350,7 @@ def test_compile_agent_manifest_rejects_unsupported_input_schema_constructs(
             _ = compile_agent_manifest(source, session)
 
     assert any(
-        diagnostic.path == "spec.inputSchema.patternProperties"
-        and "patternProperties is not supported" in diagnostic.message
+        diagnostic.path == expected_path and expected_message in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )
 
