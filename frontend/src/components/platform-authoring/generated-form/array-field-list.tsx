@@ -1,18 +1,13 @@
 import { type ComponentProps, type ReactNode } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
-import type { JsonPrimitive, SchemaIRArray, SchemaIRNode } from "@/lib/platform-authoring/schema/types";
+import type { SchemaIRArray } from "@/lib/platform-authoring/schema/types";
 import { valueEntryPathToString } from "@/lib/platform-authoring/values/codec";
 import {
+  coerceValueEntryForSchema,
   createArrayValueEntry,
-  createBooleanValueEntry,
-  createIntegerValueEntry,
-  createNullValueEntry,
-  createNumberValueEntry,
-  createObjectValueEntry,
-  createStringValueEntry,
   createValueEntryArrayItem,
-  createValueEntryObjectField,
+  createValueEntryForSchema,
 } from "@/lib/platform-authoring/values/factories";
 import type { ValueEntry, ValueEntryArray, ValueEntryPath } from "@/lib/platform-authoring/values/types";
 import { Badge } from "@/components/ui/badge";
@@ -56,89 +51,11 @@ function getFieldPathLabel(pathTokens: ValueEntryPath): string {
   return valueEntryPathToString(pathTokens) || "root";
 }
 
-function createPrimitiveValueEntry(value: JsonPrimitive | null, pathTokens: ValueEntryPath): ValueEntry {
-  if (value === null) {
-    return createNullValueEntry(pathTokens);
-  }
-
-  switch (typeof value) {
-    case "boolean":
-      return createBooleanValueEntry(value, pathTokens);
-    case "number":
-      return Number.isInteger(value)
-        ? createIntegerValueEntry(value, pathTokens)
-        : createNumberValueEntry(value, pathTokens);
-    case "string":
-      return createStringValueEntry(value, pathTokens);
-  }
-}
-
-function createValueEntryForSchema(schema: SchemaIRNode, pathTokens: ValueEntryPath = []): ValueEntry {
-  switch (schema.kind) {
-    case "string":
-      return createStringValueEntry("", pathTokens);
-    case "integer":
-      return createIntegerValueEntry(0, pathTokens);
-    case "number":
-      return createNumberValueEntry(0, pathTokens);
-    case "boolean":
-      return createBooleanValueEntry(false, pathTokens);
-    case "enum":
-      return createPrimitiveValueEntry(schema.values[0] ?? "", pathTokens);
-    case "literal":
-      return createPrimitiveValueEntry(schema.value, pathTokens);
-    case "array":
-      return createArrayValueEntry([], pathTokens);
-    case "ref":
-      return createStringValueEntry("", pathTokens);
-    case "discriminated_union":
-      return createValueEntryForSchema(schema.variants[0] ?? { kind: "object", fields: [] }, pathTokens);
-    case "object":
-    default:
-      return createObjectValueEntry(
-        (schema.fields ?? [])
-          .filter((field) => field.required !== false)
-          .map((field) => {
-            const fieldPath = extendPath(pathTokens, field.name);
-            return createValueEntryObjectField(field.name, createValueEntryForSchema(field.schema, fieldPath), fieldPath);
-          }),
-        pathTokens,
-      );
-  }
-}
-
-function rebaseValueEntryPaths(value: ValueEntry, pathTokens: ValueEntryPath): ValueEntry {
-  switch (value.kind) {
-    case "null":
-    case "boolean":
-    case "integer":
-    case "number":
-    case "string":
-      return createPrimitiveValueEntry(value.value, pathTokens);
-    case "array":
-      return createArrayValueEntry(
-        value.items.map((item, index) => {
-          const itemPath = extendPath(pathTokens, String(index));
-          return createValueEntryArrayItem(index, rebaseValueEntryPaths(item.value, itemPath), itemPath);
-        }),
-        pathTokens,
-      );
-    case "object":
-      return createObjectValueEntry(
-        value.fields.map((field) => {
-          const fieldPath = extendPath(pathTokens, field.key);
-          return createValueEntryObjectField(field.key, rebaseValueEntryPaths(field.value, fieldPath), fieldPath);
-        }),
-        pathTokens,
-      );
-  }
-}
-
-function updateArrayItems(value: ValueEntryArray, items: ValueEntry[]): ValueEntryArray {
+function updateArrayItems(schema: SchemaIRArray, value: ValueEntryArray, items: ValueEntry[]): ValueEntryArray {
   return createArrayValueEntry(
     items.map((item, index) => {
       const itemPath = extendPath(value.pathTokens, String(index));
-      return createValueEntryArrayItem(index, rebaseValueEntryPaths(item, itemPath), itemPath);
+      return createValueEntryArrayItem(index, coerceValueEntryForSchema(schema.items, item, itemPath), itemPath);
     }),
     value.pathTokens,
   );
@@ -179,7 +96,7 @@ export function ArrayFieldList({
             variant="outline"
             onClick={() => {
               const nextItem = createValueEntryForSchema(schema.items, extendPath(value.pathTokens, String(value.items.length)));
-              onChange(updateArrayItems(value, [...value.items.map((item) => item.value), nextItem]));
+              onChange(updateArrayItems(schema, value, [...value.items.map((item) => item.value), nextItem]));
             }}
           >
             <Plus data-icon="inline-start" />
@@ -210,7 +127,7 @@ export function ArrayFieldList({
                   size="sm"
                   type="button"
                   variant="ghost"
-                  onClick={() => onChange(updateArrayItems(value, value.items.filter((_, itemIndex) => itemIndex !== index).map((entry) => entry.value)))}
+                  onClick={() => onChange(updateArrayItems(schema, value, value.items.filter((_, itemIndex) => itemIndex !== index).map((entry) => entry.value)))}
                 >
                   <Trash2 data-icon="inline-start" />
                   Remove Item
@@ -223,6 +140,7 @@ export function ArrayFieldList({
                 onChange: (nextValue) => {
                   onChange(
                     updateArrayItems(
+                      schema,
                       value,
                       value.items.map((entry, itemIndex) => (itemIndex === index ? nextValue : entry.value)),
                     ),

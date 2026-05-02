@@ -1,18 +1,14 @@
 import { type ComponentProps, type ReactNode } from "react";
 import { AlertCircle, Plus, Trash2 } from "lucide-react";
 
-import type { JsonPrimitive, SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
+import type { SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
 import { valueEntryPathToString } from "@/lib/platform-authoring/values/codec";
 import {
-  createArrayValueEntry,
-  createBooleanValueEntry,
-  createIntegerValueEntry,
-  createNullValueEntry,
-  createNumberValueEntry,
+  coerceValueEntryForSchema,
   createObjectValueEntry,
-  createStringValueEntry,
-  createValueEntryArrayItem,
+  createValueEntryForSchema,
   createValueEntryObjectField,
+  rebaseValueEntryPaths,
 } from "@/lib/platform-authoring/values/factories";
 import type {
   ValueEntry,
@@ -54,119 +50,9 @@ function getFieldPathLabel(pathTokens: ValueEntryPath): string {
   return valueEntryPathToString(pathTokens) || "root";
 }
 
-function createPrimitiveValueEntry(value: JsonPrimitive | null, pathTokens: ValueEntryPath): ValueEntry {
-  if (value === null) {
-    return createNullValueEntry(pathTokens);
-  }
-
-  switch (typeof value) {
-    case "boolean":
-      return createBooleanValueEntry(value, pathTokens);
-    case "number":
-      return Number.isInteger(value)
-        ? createIntegerValueEntry(value, pathTokens)
-        : createNumberValueEntry(value, pathTokens);
-    case "string":
-      return createStringValueEntry(value, pathTokens);
-  }
-}
-
-function createValueEntryForSchema(schema: SchemaIRNode, pathTokens: ValueEntryPath = []): ValueEntry {
-  switch (schema.kind) {
-    case "string":
-      return createStringValueEntry("", pathTokens);
-    case "integer":
-      return createIntegerValueEntry(0, pathTokens);
-    case "number":
-      return createNumberValueEntry(0, pathTokens);
-    case "boolean":
-      return createBooleanValueEntry(false, pathTokens);
-    case "enum":
-      return createPrimitiveValueEntry(schema.values[0] ?? "", pathTokens);
-    case "literal":
-      return createPrimitiveValueEntry(schema.value, pathTokens);
-    case "array":
-      return createArrayValueEntry([], pathTokens);
-    case "ref":
-      return createStringValueEntry("", pathTokens);
-    case "discriminated_union":
-      return createValueEntryForSchema(
-        schema.variants[0] ?? { kind: "object", fields: [] },
-        pathTokens,
-      );
-    case "object":
-    default:
-      return createObjectValueEntry(
-        (schema.fields ?? [])
-          .filter((field) => field.required !== false)
-          .map((field) => {
-            const fieldPath = extendPath(pathTokens, field.name);
-            return createValueEntryObjectField(
-              field.name,
-              createValueEntryForSchema(field.schema, fieldPath),
-              fieldPath,
-            );
-          }),
-        pathTokens,
-      );
-  }
-}
-
-function rebaseValueEntryPaths(value: ValueEntry, pathTokens: ValueEntryPath): ValueEntry {
-  switch (value.kind) {
-    case "null":
-    case "boolean":
-    case "integer":
-    case "number":
-    case "string":
-      return createPrimitiveValueEntry(value.value, pathTokens);
-    case "array":
-      return createArrayValueEntry(
-        value.items.map((item, index) => {
-          const itemPath = extendPath(pathTokens, String(index));
-          return createValueEntryArrayItem(index, rebaseValueEntryPaths(item.value, itemPath), itemPath);
-        }),
-        pathTokens,
-      );
-    case "object":
-      return createObjectValueEntry(
-        value.fields.map((field) => {
-          const fieldPath = extendPath(pathTokens, field.key);
-          return createValueEntryObjectField(field.key, rebaseValueEntryPaths(field.value, fieldPath), fieldPath);
-        }),
-        pathTokens,
-      );
-  }
-}
-
 function normalizeObjectValue(schema: SchemaIRObject, value: ValueEntryObject): ValueEntryObject {
-  const definedFields = schema.fields ?? [];
-  const definedFieldNames = new Set(definedFields.map((field) => field.name));
-  const existingFields = new Map(value.fields.map((field) => [field.key, field]));
-
-  const nextFields = definedFields
-    .filter((field) => field.required !== false || existingFields.has(field.name))
-    .map((field) => {
-      const fieldPath = extendPath(value.pathTokens, field.name);
-      const existingField = existingFields.get(field.name);
-
-      return createValueEntryObjectField(
-        field.name,
-        existingField
-          ? rebaseValueEntryPaths(existingField.value, fieldPath)
-          : createValueEntryForSchema(field.schema, fieldPath),
-        fieldPath,
-      );
-    });
-
-  const extraFields = value.fields
-    .filter((field) => !definedFieldNames.has(field.key))
-    .map((field) => {
-      const fieldPath = extendPath(value.pathTokens, field.key);
-      return createValueEntryObjectField(field.key, rebaseValueEntryPaths(field.value, fieldPath), fieldPath);
-    });
-
-  return createObjectValueEntry([...nextFields, ...extraFields], value.pathTokens);
+  const coercedValue = coerceValueEntryForSchema(schema, value, value.pathTokens);
+  return coercedValue.kind === "object" ? coercedValue : createObjectValueEntry([], value.pathTokens);
 }
 
 function updateObjectFields(
@@ -183,7 +69,7 @@ function updateObjectFields(
     return createValueEntryObjectField(
       field.key,
       schemaField
-        ? rebaseValueEntryPaths(field.value, fieldPath)
+        ? coerceValueEntryForSchema(schemaField.schema, field.value, fieldPath)
         : rebaseValueEntryPaths(field.value, fieldPath),
       fieldPath,
     );
