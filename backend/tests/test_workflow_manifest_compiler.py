@@ -283,7 +283,6 @@ def test_compile_workflow_manifest_omits_output_path_when_reference_has_no_path(
     }
 
 
-
 def test_compile_workflow_manifest_source_raises_parser_diagnostics() -> None:
     source = _manifest_source().replace("uses: research_agent@7", "uses: research_agent@latest")
 

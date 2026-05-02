@@ -117,7 +117,6 @@ def test_manifest_source_rejects_oversized_payloads(client: TestClient, path: st
     assert "at most" in str(details[0]["issue"])
 
 
-
 def test_validate_manifest_returns_diagnostics_metadata_compiled_payload_and_input_preview(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -150,7 +149,7 @@ def test_validate_manifest_rejects_unsupported_input_schema_keywords(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_manifest_agent(session_factory)
-    source = f"""apiVersion: ledger.workflow/v1
+    source = """apiVersion: ledger.workflow/v1
 kind: Workflow
 metadata:
   key: manifest_api_workflow
@@ -172,9 +171,9 @@ steps:
       - slot: analysis
         uses: manifest_api_agent@1
         with:
-          ticker: ${{{{ inputs.ticker }}}}
+          ticker: ${{ inputs.ticker }}
 output:
-  from: ${{{{ steps.research.outputs.analysis }}}}
+  from: ${{ steps.research.outputs.analysis }}
 """
 
     assert "patternProperties" in source
@@ -193,7 +192,6 @@ output:
     assert diagnostics[0]["line"] is not None
     assert diagnostics[0]["column"] is not None
     assert "patternProperties" in str(diagnostics[0]["message"])
-
 
 
 def test_validate_manifest_returns_location_aware_service_diagnostics(
