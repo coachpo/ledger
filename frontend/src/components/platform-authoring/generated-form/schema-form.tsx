@@ -188,7 +188,7 @@ function getDiscriminatedUnionOptions(schema: SchemaIRDiscriminatedUnion): Discr
         return {
           discriminatorValue: discriminatorField.schema.value,
           index,
-          label: String(discriminatorField.schema.value),
+          label: getSchemaDisplayLabel(variant, String(discriminatorField.schema.value)),
           schema: variant,
         } satisfies DiscriminatedUnionOption;
       }
@@ -197,7 +197,7 @@ function getDiscriminatedUnionOptions(schema: SchemaIRDiscriminatedUnion): Discr
     return {
       discriminatorValue: null,
       index,
-      label: `Variant ${index + 1}`,
+      label: getSchemaDisplayLabel(variant, `Variant ${index + 1}`),
       schema: variant,
     } satisfies DiscriminatedUnionOption;
   });
@@ -290,6 +290,10 @@ function coerceValueEntryForSchema(schema: SchemaIRNode, value: ValueEntry | nul
 
 function getFieldPathLabel(pathTokens: ValueEntryPath): string {
   return valueEntryPathToString(pathTokens) || "root";
+}
+
+function getSchemaDisplayLabel(schema: SchemaIRNode, fallbackLabel: string): string {
+  return schema.title ?? fallbackLabel;
 }
 
 function getPrimitiveOptionValue(value: JsonPrimitive): string {
@@ -385,6 +389,8 @@ function ValidationIssuesAlert({ issues }: { issues: readonly ValueEntryValidati
 }
 
 function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, value }: SchemaNodeEditorProps) {
+  const displayLabel = getSchemaDisplayLabel(schema, label);
+
   if (schema.kind === "object") {
     const objectValue = value.kind === "object" ? value : createObjectValueEntry([], value.pathTokens);
     const definedFields = schema.fields ?? [];
@@ -394,7 +400,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={label} pathTokens={objectValue.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader label={displayLabel} pathTokens={objectValue.pathTokens} required={required} schema={schema} />
           <CardDescription>
             {schema.description ?? "Capture object fields without dropping the shared value-entry structure."}
           </CardDescription>
@@ -409,14 +415,15 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
             </div>
           ) : null}
           {definedFields.map((field) => {
+            const fieldLabel = getSchemaDisplayLabel(field.schema, field.name);
             const existingField = objectValue.fields.find((item) => item.key === field.name);
             if (!existingField && field.required === false) {
               return (
                 <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 p-3" key={field.name}>
                   <div className="flex flex-col gap-1">
-                    <SchemaEditorHeader label={field.name} pathTokens={extendPath(objectValue.pathTokens, field.name)} required={false} schema={field.schema} />
+                    <SchemaEditorHeader label={fieldLabel} pathTokens={extendPath(objectValue.pathTokens, field.name)} required={false} schema={field.schema} />
                     <p className="text-sm text-muted-foreground">
-                      Optional field. Add it when you need to capture this value.
+                      {field.schema.description ?? "Optional field. Add it when you need to capture this value."}
                     </p>
                   </div>
                   <Button
@@ -461,7 +468,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
                 <SchemaNodeEditor
                   depth={depth + 1}
                   disabled={disabled}
-                  label={field.name}
+                  label={fieldLabel}
                   onChange={(nextValue) => onChange(updateObjectFields(schema, objectValue, objectValue.fields.map((item) => item.key === field.name ? createValueEntryObjectField(item.key, nextValue, item.pathTokens) : item)))}
                   required={field.required !== false}
                   schema={field.schema}
@@ -493,7 +500,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={label} pathTokens={arrayValue.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader label={displayLabel} pathTokens={arrayValue.pathTokens} required={required} schema={schema} />
           <CardDescription>
             {schema.description ?? "Add, remove, and reorder repeated values while keeping indexed path tokens aligned."}
           </CardDescription>
@@ -553,7 +560,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
         <CardHeader>
-          <SchemaEditorHeader label={label} pathTokens={value.pathTokens} required={required} schema={schema} />
+          <SchemaEditorHeader label={displayLabel} pathTokens={value.pathTokens} required={required} schema={schema} />
           <CardDescription>
             {schema.description ?? `Pick a ${schema.discriminator} variant before filling the matching object shape.`}
           </CardDescription>
@@ -571,7 +578,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
                 }
               }}
             >
-              <SelectTrigger aria-label={`${label} variant`}>
+              <SelectTrigger aria-label={`${displayLabel} variant`}>
                 <SelectValue placeholder="Select variant" />
               </SelectTrigger>
               <SelectContent>
@@ -604,7 +611,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     return (
       <Alert>
         <AlertCircle />
-        <AlertTitle>{label}</AlertTitle>
+        <AlertTitle>{displayLabel}</AlertTitle>
         <AlertDescription className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">ref</Badge>
@@ -612,7 +619,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
             <Badge variant="outline">{getFieldPathLabel(value.pathTokens)}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Referenced schemas are preserved in the shared value model, but this first generated-form surface cannot expand registry refs yet.
+            {schema.description ?? "Referenced schemas are preserved in the shared value model, but this first generated-form surface cannot expand registry refs yet."}
           </p>
         </AlertDescription>
       </Alert>
@@ -621,26 +628,26 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-      <SchemaEditorHeader label={label} pathTokens={value.pathTokens} required={required} schema={schema} />
+      <SchemaEditorHeader label={displayLabel} pathTokens={value.pathTokens} required={required} schema={schema} />
       <p className="text-sm text-muted-foreground">{schema.description ?? "Provide a value that matches the selected schema branch."}</p>
       {schema.kind === "string" ? (
-        <Textarea disabled={disabled} rows={3} value={value.kind === "string" ? value.value : ""} onChange={(event) => onChange(createStringValueEntry(event.target.value, value.pathTokens))} />
+        <Textarea aria-label={displayLabel} disabled={disabled} rows={3} value={value.kind === "string" ? value.value : ""} onChange={(event) => onChange(createStringValueEntry(event.target.value, value.pathTokens))} />
       ) : null}
       {schema.kind === "integer" ? (
-        <Input disabled={disabled} inputMode="numeric" type="number" value={value.kind === "integer" ? value.value : 0} onChange={(event) => onChange(createIntegerValueEntry(Number.parseInt(event.target.value || "0", 10), value.pathTokens))} />
+        <Input aria-label={displayLabel} disabled={disabled} inputMode="numeric" type="number" value={value.kind === "integer" ? value.value : 0} onChange={(event) => onChange(createIntegerValueEntry(Number.parseInt(event.target.value || "0", 10), value.pathTokens))} />
       ) : null}
       {schema.kind === "number" ? (
-        <Input disabled={disabled} inputMode="decimal" type="number" value={value.kind === "number" ? value.value : 0} onChange={(event) => onChange(createNumberValueEntry(Number.parseFloat(event.target.value || "0"), value.pathTokens))} />
+        <Input aria-label={displayLabel} disabled={disabled} inputMode="decimal" type="number" value={value.kind === "number" ? value.value : 0} onChange={(event) => onChange(createNumberValueEntry(Number.parseFloat(event.target.value || "0"), value.pathTokens))} />
       ) : null}
       {schema.kind === "boolean" ? (
         <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
           <span className="text-sm text-foreground">Toggle the boolean value.</span>
-          <Switch checked={value.kind === "boolean" ? value.value : false} disabled={disabled} onCheckedChange={(checked) => onChange(createBooleanValueEntry(checked, value.pathTokens))} />
+          <Switch aria-label={displayLabel} checked={value.kind === "boolean" ? value.value : false} disabled={disabled} onCheckedChange={(checked) => onChange(createBooleanValueEntry(checked, value.pathTokens))} />
         </div>
       ) : null}
       {schema.kind === "enum" ? (
         <Select disabled={disabled} value={getPrimitiveOptionValue((getPrimitiveValue(value) as JsonPrimitive | undefined) ?? schema.values[0] ?? "")} onValueChange={(nextValue) => onChange(createPrimitiveValueEntry(parsePrimitiveOptionValue(nextValue), value.pathTokens))}>
-          <SelectTrigger aria-label={`${label} enum value`}>
+          <SelectTrigger aria-label={`${displayLabel} enum value`}>
             <SelectValue placeholder="Select value" />
           </SelectTrigger>
           <SelectContent>
@@ -655,7 +662,7 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
         </Select>
       ) : null}
       {schema.kind === "literal" ? (
-        <Input disabled readOnly value={String(schema.value)} />
+        <Input aria-label={displayLabel} disabled readOnly value={String(schema.value)} />
       ) : null}
     </div>
   );
