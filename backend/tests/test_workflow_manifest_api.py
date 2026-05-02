@@ -117,6 +117,7 @@ def test_manifest_source_rejects_oversized_payloads(client: TestClient, path: st
     assert "at most" in str(details[0]["issue"])
 
 
+
 def test_validate_manifest_returns_diagnostics_metadata_compiled_payload_and_input_preview(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -142,6 +143,57 @@ def test_validate_manifest_returns_diagnostics_metadata_compiled_payload_and_inp
     assert compiled_agents[0]["agentKey"] == "manifest_api_agent"
     assert compiled_agents[0]["agentVersion"] == 1
     assert cast(dict[str, object], body["runInputSchema"])["additionalProperties"] is False
+
+
+def test_validate_manifest_rejects_unsupported_input_schema_keywords(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_manifest_agent(session_factory)
+    source = f"""apiVersion: ledger.workflow/v1
+kind: Workflow
+metadata:
+  key: manifest_api_workflow
+  name: Manifest API Workflow
+  description: Writes from YAML source.
+inputSchema:
+  type: object
+  patternProperties:
+    ^x:
+      type: string
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+steps:
+  - id: research
+    agents:
+      - slot: analysis
+        uses: manifest_api_agent@1
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+output:
+  from: ${{{{ steps.research.outputs.analysis }}}}
+"""
+
+    assert "patternProperties" in source
+
+    response = client.post("/api/workflows/validate-manifest", json={"manifestSource": source})
+
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    assert body["metadata"] is None
+    assert body["compiledPayload"] is None
+    assert body["runInputSchema"] is None
+    diagnostics = cast(list[dict[str, object]], body["diagnostics"])
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["severity"] == "error"
+    assert str(diagnostics[0]["path"]).startswith("inputSchema")
+    assert diagnostics[0]["line"] is not None
+    assert diagnostics[0]["column"] is not None
+    assert "patternProperties" in str(diagnostics[0]["message"])
+
 
 
 def test_validate_manifest_returns_location_aware_service_diagnostics(

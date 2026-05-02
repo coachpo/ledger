@@ -16,8 +16,12 @@ spec:
     properties:
       ticker:
         type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
       asOfDate:
         type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
@@ -39,8 +43,12 @@ spec:
     properties:
       ticker:
         type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
       asOfDate:
         type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
@@ -62,8 +70,12 @@ spec:
     properties:
       ticker:
         type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
       asOfDate:
         type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
@@ -85,8 +97,12 @@ spec:
     properties:
       ticker:
         type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
       asOfDate:
         type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
     required: [ticker, asOfDate]
   outputSchema: tradingagents_analyst_report@1
   capabilities:
@@ -108,6 +124,8 @@ spec:
     properties:
       priorState:
         type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
     required: [priorState]
   outputSchema: tradingagents_investment_debate_transition@1
   capabilities:
@@ -129,6 +147,8 @@ spec:
     properties:
       priorState:
         type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
     required: [priorState]
   outputSchema: tradingagents_investment_debate_transition@1
   capabilities:
@@ -146,6 +166,8 @@ spec:
   systemPrompt: Produce full investment debate state or a final research plan.
   inputSchema:
     type: object
+    title: Research manager input
+    description: Flexible state bundle for the research manager turn.
     additionalProperties: true
   outputSchema: tradingagents_research_plan@1
   capabilities:
@@ -167,8 +189,12 @@ spec:
     properties:
       researchPlan:
         type: object
+        title: Research plan
+        description: Research manager output used for the trader proposal.
       portfolioId:
         type: string
+        title: Portfolio ID
+        description: Portfolio identifier used for position context.
     required: [researchPlan, portfolioId]
   outputSchema: tradingagents_trader_proposal@1
   capabilities:
@@ -190,6 +216,8 @@ spec:
     properties:
       priorState:
         type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
     required: [priorState]
   outputSchema: tradingagents_risk_debate_transition@1
   capabilities:
@@ -207,6 +235,8 @@ spec:
   systemPrompt: Accept risk inputs or priorState and return full risk state.
   inputSchema:
     type: object
+    title: Neutral risk input
+    description: Flexible state bundle for the neutral risk turn.
     additionalProperties: true
   outputSchema: tradingagents_risk_debate_transition@1
   capabilities:
@@ -228,6 +258,8 @@ spec:
     properties:
       priorState:
         type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
     required: [priorState]
   outputSchema: tradingagents_risk_debate_transition@1
   capabilities:
@@ -249,6 +281,8 @@ spec:
     properties:
       riskState:
         type: object
+        title: Risk debate state
+        description: Final risk debate state used for the portfolio decision.
     required: [riskState]
   outputSchema: tradingagents_portfolio_decision@1
   capabilities:
@@ -271,14 +305,24 @@ inputSchema:
   properties:
     ticker:
       type: string
+      title: Ticker
+      description: Ticker symbol to research, such as AAPL.
     asOfDate:
       type: string
+      title: As of date
+      description: Date used for the analysis snapshot.
     portfolioId:
       type: string
+      title: Portfolio ID
+      description: Portfolio identifier used for position context.
     initialInvestmentDebateState:
       type: object
+      title: Initial investment debate state
+      description: Seed state for the first investment debate turn.
     initialRiskDebateState:
       type: object
+      title: Initial risk debate state
+      description: Seed state for the first risk debate turn.
   required: [ticker, asOfDate, portfolioId, initialInvestmentDebateState, initialRiskDebateState]
 steps:
   - id: analyst_fanout

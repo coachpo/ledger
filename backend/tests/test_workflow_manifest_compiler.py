@@ -170,6 +170,107 @@ def test_compile_workflow_manifest_accepts_validated_manifest() -> None:
     assert compile_workflow_manifest(result.manifest) == _current_workflow_payload()
 
 
+def test_compile_workflow_manifest_preserves_input_schema_metadata() -> None:
+    source = _manifest_source().replace(
+        """inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+    horizon_days:
+      type: integer
+  required:
+    - ticker
+  additionalProperties: false
+""",
+        """inputSchema:
+  type: object
+  title: Workflow request
+  description: Inputs collected before workflow execution.
+  properties:
+    ticker:
+      type: string
+      title: Ticker symbol
+      description: Public market ticker to research.
+    horizon_days:
+      type: integer
+      title: Horizon days
+      description: Optional number of days to assess.
+    price_targets:
+      type: array
+      title: Price targets
+      description: Optional candidate price targets.
+      items:
+        type: number
+        title: Price target
+        description: Candidate target price.
+    signal:
+      title: Signal
+      description: Discriminated signal branch.
+      anyOf:
+        - type: object
+          title: Bullish signal
+          description: Bullish branch payload.
+          properties:
+            kind:
+              const: bullish
+            score:
+              type: integer
+          required:
+            - kind
+            - score
+          additionalProperties: false
+        - type: object
+          title: Bearish signal
+          description: Bearish branch payload.
+          properties:
+            kind:
+              const: bearish
+            reason:
+              type: string
+          required:
+            - kind
+            - reason
+          additionalProperties: false
+      discriminator:
+        propertyName: kind
+  required:
+    - ticker
+    - signal
+  additionalProperties: false
+""",
+        1,
+    )
+
+    payload = compile_workflow_manifest(source)
+
+    input_schema = cast(dict[str, object], payload["inputSchema"])
+    properties = cast(dict[str, dict[str, object]], input_schema["properties"])
+    price_targets = properties["price_targets"]
+    price_items = cast(dict[str, object], price_targets["items"])
+    signal = properties["signal"]
+    signal_variants = cast(list[dict[str, object]], signal["anyOf"])
+
+    assert input_schema["title"] == "Workflow request"
+    assert input_schema["description"] == "Inputs collected before workflow execution."
+    assert properties["ticker"]["title"] == "Ticker symbol"
+    assert properties["horizon_days"]["description"] == "Optional number of days to assess."
+    assert "horizon_days" not in cast(list[str], input_schema["required"])
+    assert price_targets["description"] == "Optional candidate price targets."
+    assert price_items["title"] == "Price target"
+    assert signal["title"] == "Signal"
+    assert signal_variants[0]["title"] == "Bullish signal"
+    assert signal_variants[1]["description"] == "Bearish branch payload."
+    assert (
+        WorkflowCreate.model_validate(payload).model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+        == payload
+    )
+
+
 def test_compile_workflow_manifest_omits_output_path_when_reference_has_no_path() -> None:
     payload = compile_workflow_manifest(
         _manifest_source(output_reference="${{ steps.synthesize.outputs.decision }}")
@@ -180,6 +281,7 @@ def test_compile_workflow_manifest_omits_output_path_when_reference_has_no_path(
         "stepIndex": 2,
         "slot": "decision",
     }
+
 
 
 def test_compile_workflow_manifest_source_raises_parser_diagnostics() -> None:
