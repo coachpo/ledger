@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.core.errors import ApiError
 from app.models.agent import Agent
 from app.models.base import Base
 from app.models.capability import Capability
@@ -599,6 +600,71 @@ def test_agent_platform_schema_registry_resolves_transitive_refs_for_runtime_com
             )
 
 
+def test_agent_platform_schema_compiler_preserves_metadata_without_changing_validation(
+    session_factory,
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+
+        schema = service.create_draft(
+            OutputSchemaDraftCreate.model_validate(
+                {
+                    "key": "metadata_runtime_input",
+                    "name": "Metadata Runtime Input",
+                    "jsonSchema": {
+                        "type": "object",
+                        "title": "Run input",
+                        "description": "Values supplied when starting a run.",
+                        "properties": {
+                            "ticker": {
+                                "type": "string",
+                                "title": "Ticker symbol",
+                                "description": "Public market ticker to research.",
+                            },
+                            "horizonDays": {
+                                "type": "integer",
+                                "title": "Horizon days",
+                                "description": "Optional number of days to assess.",
+                            },
+                            "priceTargets": {
+                                "type": "array",
+                                "title": "Price targets",
+                                "description": "Optional candidate price targets.",
+                                "items": {
+                                    "type": "number",
+                                    "title": "Price target",
+                                    "description": "Candidate target price.",
+                                },
+                            },
+                        },
+                        "required": ["ticker"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        )
+
+        json_schema = schema.json_schema
+        properties = json_schema["properties"]
+        assert json_schema["title"] == "Run input"
+        assert json_schema["description"] == "Values supplied when starting a run."
+        assert properties["ticker"]["title"] == "Ticker symbol"
+        assert properties["horizonDays"]["description"] == "Optional number of days to assess."
+        assert "horizonDays" not in json_schema["required"]
+        assert properties["priceTargets"]["description"] == "Optional candidate price targets."
+        assert properties["priceTargets"]["items"]["title"] == "Price target"
+
+        model_type = service.compile_schema_model(schema.id)
+        validated = model_type.model_validate({"ticker": "NVDA", "priceTargets": [125.5]})
+        assert validated.model_dump(exclude_none=True) == {
+            "ticker": "NVDA",
+            "priceTargets": [125.5],
+        }
+
+        with pytest.raises(ValidationError):
+            model_type.model_validate({"horizonDays": 30})
+
+
 def test_agent_platform_schema_compiler_supports_discriminated_union_models(
     session_factory,
 ) -> None:
@@ -613,6 +679,8 @@ def test_agent_platform_schema_compiler_supports_discriminated_union_models(
                     "name": "Bullish Signal",
                     "jsonSchema": {
                         "type": "object",
+                        "title": "Bullish signal",
+                        "description": "Bullish branch payload.",
                         "properties": {
                             "kind": {"const": "bullish"},
                             "score": {"type": "integer"},
@@ -632,6 +700,8 @@ def test_agent_platform_schema_compiler_supports_discriminated_union_models(
                     "name": "Bearish Signal",
                     "jsonSchema": {
                         "type": "object",
+                        "title": "Bearish signal",
+                        "description": "Bearish branch payload.",
                         "properties": {
                             "kind": {"const": "bearish"},
                             "reason": {"type": "string"},
@@ -649,6 +719,8 @@ def test_agent_platform_schema_compiler_supports_discriminated_union_models(
                     "key": "signal_union",
                     "name": "Signal Union",
                     "jsonSchema": {
+                        "title": "Signal union",
+                        "description": "Discriminated signal branch.",
                         "anyOf": [
                             {"$ref": "registry://bullish_signal"},
                             {"$ref": "registry://bearish_signal"},
@@ -659,12 +731,103 @@ def test_agent_platform_schema_compiler_supports_discriminated_union_models(
             )
         )
 
+        union_json_schema = union_schema.json_schema
+        assert union_json_schema["title"] == "Signal union"
+        assert union_json_schema["description"] == "Discriminated signal branch."
+        assert union_json_schema["anyOf"] == [
+            {"$ref": "registry://bullish_signal@1"},
+            {"$ref": "registry://bearish_signal@1"},
+        ]
+        assert bullish_signal.json_schema["title"] == "Bullish signal"
+        assert bullish_signal.json_schema["description"] == "Bullish branch payload."
+        assert bearish_signal.json_schema["title"] == "Bearish signal"
+        assert bearish_signal.json_schema["description"] == "Bearish branch payload."
+
         model_type = service.compile_schema_model(union_schema.id)
         validated = model_type.model_validate({"kind": "bullish", "score": 9})
         assert validated.model_dump() == {"kind": "bullish", "score": 9}
 
         with pytest.raises(ValidationError):
             model_type.model_validate({"kind": "bearish", "score": 5})
+
+
+@pytest.mark.parametrize(
+    ("schema_key", "schema_fragment", "expected_field", "expected_issue"),
+    [
+        (
+            "pattern_properties",
+            {"patternProperties": {"^x": {"type": "string"}}},
+            "jsonSchema.patternProperties",
+            "patternProperties is not supported",
+        ),
+        (
+            "one_of",
+            {"oneOf": []},
+            "jsonSchema.oneOf",
+            "Only discriminated anyOf unions are supported",
+        ),
+        ("all_of", {"allOf": []}, "jsonSchema.allOf", "allOf is not supported"),
+        (
+            "if_keyword",
+            {"if": {"type": "object"}},
+            "jsonSchema.if",
+            "if/then/else is not supported",
+        ),
+        (
+            "then_keyword",
+            {"then": {"type": "object"}},
+            "jsonSchema.then",
+            "if/then/else is not supported",
+        ),
+        (
+            "else_keyword",
+            {"else": {"type": "object"}},
+            "jsonSchema.else",
+            "if/then/else is not supported",
+        ),
+        ("not_keyword", {"not": {"type": "object"}}, "jsonSchema.not", "not is not supported"),
+        (
+            "schema_additional_properties",
+            {"additionalProperties": {"type": "string"}},
+            "jsonSchema.additionalProperties",
+            "Schema-valued additionalProperties is not supported",
+        ),
+    ],
+)
+def test_agent_platform_schema_compiler_keeps_unsupported_keywords_rejected(
+    session_factory,
+    schema_key: str,
+    schema_fragment: dict[str, object],
+    expected_field: str,
+    expected_issue: str,
+) -> None:
+    with session_factory() as session:
+        service = OutputSchemaService(session)
+        json_schema = {
+            "type": "object",
+            "title": "Unsupported keyword guard",
+            "description": "Metadata must not loosen schema keyword rules.",
+            "properties": {"ticker": {"type": "string", "title": "Ticker"}},
+            "required": ["ticker"],
+            **schema_fragment,
+        }
+
+        with pytest.raises(ApiError) as excinfo:
+            service.create_draft(
+                OutputSchemaDraftCreate.model_validate(
+                    {
+                        "key": f"unsupported_{schema_key}",
+                        "name": "Unsupported Keyword Guard",
+                        "jsonSchema": json_schema,
+                    }
+                )
+            )
+
+    assert excinfo.value.code == "validation_error"
+    assert any(
+        detail["field"] == expected_field and expected_issue in detail["issue"]
+        for detail in excinfo.value.details
+    )
 
 
 def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_factory) -> None:

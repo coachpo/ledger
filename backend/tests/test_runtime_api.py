@@ -2131,6 +2131,89 @@ def test_agent_platform_agent_run_rejects_invalid_input_without_persisting_run(
     assert listed.json() == {"items": []}
 
 
+def test_agent_platform_run_input_metadata_does_not_change_validation_semantics(
+    session_factory: sessionmaker[Session],
+) -> None:
+    plain_schema = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "horizonDays": {"type": "integer"},
+            "priceTargets": {"type": "array", "items": {"type": "number"}},
+        },
+        "required": ["ticker"],
+        "additionalProperties": False,
+    }
+    metadata_schema = {
+        "type": "object",
+        "title": "Run input",
+        "description": "Values supplied when starting a run.",
+        "properties": {
+            "ticker": {
+                "type": "string",
+                "title": "Ticker symbol",
+                "description": "Public market ticker to research.",
+            },
+            "horizonDays": {
+                "type": "integer",
+                "title": "Horizon days",
+                "description": "Optional number of days to assess.",
+            },
+            "priceTargets": {
+                "type": "array",
+                "title": "Price targets",
+                "description": "Optional candidate price targets.",
+                "items": {
+                    "type": "number",
+                    "title": "Price target",
+                    "description": "Candidate target price.",
+                },
+            },
+        },
+        "required": ["ticker"],
+        "additionalProperties": False,
+    }
+    input_payload = {"ticker": "NVDA", "priceTargets": [125.5, 130]}
+
+    with session_factory() as session:
+        service = RunService(session)
+        assert service._validate_run_input(
+            input_schema=plain_schema,
+            input_payload=input_payload,
+            candidate_key="plain_runtime_input",
+            resource_name="workflow",
+        ) == service._validate_run_input(
+            input_schema=metadata_schema,
+            input_payload=input_payload,
+            candidate_key="metadata_runtime_input",
+            resource_name="workflow",
+        )
+
+        errors: list[ApiError] = []
+        for schema in (plain_schema, metadata_schema):
+            with pytest.raises(ApiError) as excinfo:
+                service._validate_run_input(
+                    input_schema=schema,
+                    input_payload={"horizonDays": 30},
+                    candidate_key="invalid_runtime_input",
+                    resource_name="workflow",
+                )
+            errors.append(excinfo.value)
+
+    assert [(error.code, error.message, error.details) for error in errors] == [
+        (
+            "run_invalid_input",
+            "Run input failed workflow input schema validation",
+            [{"field": "ticker", "issue": "Field required"}],
+        ),
+        (
+            "run_invalid_input",
+            "Run input failed workflow input schema validation",
+            [{"field": "ticker", "issue": "Field required"}],
+        ),
+    ]
+
+
 def test_agent_platform_workflow_validation_rejects_optional_slots_for_required_fields(
     session_factory: sessionmaker[Session],
 ) -> None:
