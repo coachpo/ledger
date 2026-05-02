@@ -145,8 +145,9 @@ def get_workflow_service(
 
 def get_run_service(
     session: Annotated[Session, Depends(get_session)],
+    quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
 ) -> RunService:
-    return RunService(session, get_session_factory())
+    return RunService(session, get_session_factory(), quote_provider=quote_provider)
 
 
 def get_template_compiler_service(
