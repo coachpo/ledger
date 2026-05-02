@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import (
     Field,
     StrictBool,
+    StrictInt,
     field_serializer,
     field_validator,
     model_serializer,
@@ -86,6 +87,89 @@ def _validate_reference_path(value: str, *, field_name: str) -> str:
             + "and underscores"
         )
     return value
+
+
+class TradingAgentsAnalystReports(CamelModel):
+    market_report: str
+    social_sentiment_report: str
+    news_report: str
+    fundamentals_report: str
+
+    @field_validator(
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+        mode="before",
+    )
+    @classmethod
+    def validate_reports(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Analyst report")
+
+
+class TradingAgentsInvestmentDebateState(CamelModel):
+    analyst_reports: TradingAgentsAnalystReports
+    bull_case: str
+    bear_case: str
+    debate_history: list[str]
+
+
+class TradingAgentsResearchPlan(CamelModel):
+    recommendation: Literal["buy", "hold", "sell"]
+    thesis: str
+    debate_summary: str
+
+    @field_validator("thesis", "debate_summary", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Research plan field")
+
+
+class TradingAgentsTraderProposal(CamelModel):
+    action: Literal["buy", "hold", "sell"]
+    rationale: str
+    sizing_notes: str
+
+    @field_validator("rationale", "sizing_notes", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Trader proposal field")
+
+
+class TradingAgentsRiskDebateState(CamelModel):
+    research_plan: TradingAgentsResearchPlan
+    trader_proposal: TradingAgentsTraderProposal
+    aggressive_case: str
+    neutral_case: str
+    conservative_case: str
+    debate_history: list[str]
+
+
+class TradingAgentsPortfolioDecision(CamelModel):
+    action: Literal["buy", "hold", "sell"]
+    rationale: str
+    risk_summary: str
+    execution_plan: str
+
+    @field_validator("rationale", "risk_summary", "execution_plan", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Portfolio decision field")
+
+
+class TradingAgentsInvestmentDebateTransition(CamelModel):
+    prior_state: TradingAgentsInvestmentDebateState
+    next_state: TradingAgentsInvestmentDebateState
+
+
+class TradingAgentsRiskDebateTransition(CamelModel):
+    prior_state: TradingAgentsRiskDebateState
+    next_state: TradingAgentsRiskDebateState
+
+
+class TradingAgentsInitialUnrolledRoundConfig(CamelModel):
+    investment_debate_rounds: StrictInt = Field(default=2, ge=1, le=5)
+    risk_debate_rounds: StrictInt = Field(default=2, ge=1, le=5)
 
 
 class WorkflowManifestDiagnosticSeverity(str, Enum):  # noqa: UP042
@@ -281,6 +365,15 @@ _ = WorkflowManifest.model_rebuild()
 
 __all__ = [
     "WORKFLOW_MANIFEST_API_VERSION",
+    "TradingAgentsAnalystReports",
+    "TradingAgentsInitialUnrolledRoundConfig",
+    "TradingAgentsInvestmentDebateState",
+    "TradingAgentsInvestmentDebateTransition",
+    "TradingAgentsPortfolioDecision",
+    "TradingAgentsResearchPlan",
+    "TradingAgentsRiskDebateState",
+    "TradingAgentsRiskDebateTransition",
+    "TradingAgentsTraderProposal",
     "WorkflowManifest",
     "WorkflowManifestAgentUse",
     "WorkflowManifestDiagnostic",

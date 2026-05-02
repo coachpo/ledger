@@ -8,6 +8,9 @@ import pytest
 
 from app.schemas.workflow import WorkflowCreate
 from app.schemas.workflow_manifest import WorkflowManifestDiagnostic
+from app.services.workflow_manifest_examples import (
+    TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
+)
 from app.services.workflow_manifest_parser import parse_workflow_manifest
 
 
@@ -190,3 +193,53 @@ def test_compile_workflow_manifest_source_raises_parser_diagnostics() -> None:
     diagnostic = compiler_error.diagnostics[0]
     assert diagnostic.path == "steps[0].agents[0].uses"
     assert "pin an exact numeric version" in diagnostic.message
+
+
+def test_compile_tradingagents_fixed_unrolled_manifest_preserves_sequential_topology() -> None:
+    payload = compile_workflow_manifest(TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
+
+    assert (
+        WorkflowCreate.model_validate(payload).model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+        == payload
+    )
+    steps = cast(list[dict[str, object]], payload["steps"])
+    assert [step["index"] for step in steps] == list(range(1, 12))
+    analyst_agents = cast(list[dict[str, object]], steps[0]["agents"])
+    assert [agent["slot"] for agent in analyst_agents] == [
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+    ]
+    assert all(
+        cast(dict[str, object], source)["from"] == "input"
+        for agent in analyst_agents
+        for source in cast(dict[str, object], agent["wiring"]).values()
+    )
+
+    bear_round_one = cast(list[dict[str, object]], steps[2]["agents"])[0]
+    assert cast(dict[str, object], bear_round_one["wiring"])["priorState"] == {
+        "from": "step",
+        "stepIndex": 2,
+        "slot": "bull",
+        "path": "nextState",
+    }
+    research_manager = cast(list[dict[str, object]], steps[5]["agents"])[0]
+    assert cast(dict[str, object], research_manager["wiring"])["debateState"] == {
+        "from": "step",
+        "stepIndex": 5,
+        "slot": "bear",
+        "path": "nextState",
+    }
+    neutral_risk = cast(list[dict[str, object]], steps[8]["agents"])[0]
+    assert cast(dict[str, object], neutral_risk["wiring"])["priorState"] == {
+        "from": "step",
+        "stepIndex": 8,
+        "slot": "aggressive",
+        "path": "nextState",
+    }
+    assert payload["outputSpec"] == {"kind": "slot", "stepIndex": 11, "slot": "decision"}

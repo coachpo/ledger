@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
-from app.schemas.workflow_manifest import WorkflowManifestDiagnostic
+from app.schemas.workflow_manifest import (
+    TradingAgentsInitialUnrolledRoundConfig,
+    TradingAgentsInvestmentDebateTransition,
+    TradingAgentsPortfolioDecision,
+    TradingAgentsRiskDebateTransition,
+    WorkflowManifestDiagnostic,
+)
+from app.services.agent_manifest_parser import parse_agent_manifest
+from app.services.workflow_manifest_examples import (
+    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
+    TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
+)
 from app.services.workflow_manifest_parser import parse_workflow_manifest
 
 
@@ -50,6 +62,160 @@ def _single_diagnostic(source: str) -> WorkflowManifestDiagnostic:
     assert diagnostic.line is not None
     assert diagnostic.column is not None
     return diagnostic
+
+
+def _analyst_reports_payload() -> dict[str, str]:
+    return {
+        "marketReport": "Market structure remains constructive.",
+        "socialSentimentReport": "Social sentiment is balanced.",
+        "newsReport": "Recent news flow is mixed.",
+        "fundamentalsReport": "Fundamentals support the base case.",
+    }
+
+
+def _investment_debate_state_payload(
+    *,
+    bull_case: str = "Bull case favors upside.",
+    bear_case: str = "Bear case highlights drawdown risk.",
+) -> dict[str, object]:
+    return {
+        "analystReports": _analyst_reports_payload(),
+        "bullCase": bull_case,
+        "bearCase": bear_case,
+        "debateHistory": ["Bull: margin expansion offsets valuation risk."],
+    }
+
+
+def _research_plan_payload() -> dict[str, str]:
+    return {
+        "recommendation": "hold",
+        "thesis": "Wait for valuation confirmation before increasing exposure.",
+        "debateSummary": "Bull and bear arguments are balanced.",
+    }
+
+
+def _trader_proposal_payload() -> dict[str, str]:
+    return {
+        "action": "hold",
+        "rationale": "Current exposure is aligned with conviction.",
+        "sizingNotes": "Do not add until risk/reward improves.",
+    }
+
+
+def _risk_debate_state_payload() -> dict[str, object]:
+    return {
+        "researchPlan": _research_plan_payload(),
+        "traderProposal": _trader_proposal_payload(),
+        "aggressiveCase": "Increase exposure on breakout confirmation.",
+        "neutralCase": "Maintain the current position size.",
+        "conservativeCase": "Trim if volatility rises.",
+        "debateHistory": ["Neutral: current sizing best matches the evidence."],
+    }
+
+
+def test_tradingagents_contracts_validate_full_state_transitions_and_round_config() -> None:
+    investment_transition = TradingAgentsInvestmentDebateTransition.model_validate(
+        {
+            "priorState": _investment_debate_state_payload(bull_case="", bear_case=""),
+            "nextState": _investment_debate_state_payload(
+                bull_case="Bull case updated after the first unrolled round.",
+                bear_case="",
+            ),
+        }
+    )
+    risk_transition = TradingAgentsRiskDebateTransition.model_validate(
+        {
+            "priorState": _risk_debate_state_payload(),
+            "nextState": _risk_debate_state_payload()
+            | {"neutralCase": "Maintain exposure after risk review."},
+        }
+    )
+    decision = TradingAgentsPortfolioDecision.model_validate(
+        {
+            "action": "hold",
+            "rationale": "Research and risk views agree on patience.",
+            "riskSummary": "Downside risks are contained but not absent.",
+            "executionPlan": "No trade for the initial portfolio decision.",
+        }
+    )
+    round_config = TradingAgentsInitialUnrolledRoundConfig.model_validate(
+        {"investmentDebateRounds": 2, "riskDebateRounds": 3}
+    )
+
+    investment_dump = investment_transition.model_dump(mode="json", by_alias=True)
+    assert investment_dump["nextState"]["bullCase"] == (
+        "Bull case updated after the first unrolled round."
+    )
+    assert investment_dump["priorState"]["analystReports"]["socialSentimentReport"] == (
+        "Social sentiment is balanced."
+    )
+    assert risk_transition.next_state.neutral_case == "Maintain exposure after risk review."
+    assert decision.action == "hold"
+    assert round_config.model_dump(mode="json", by_alias=True) == {
+        "investmentDebateRounds": 2,
+        "riskDebateRounds": 3,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"investmentDebateRounds": 0, "riskDebateRounds": 2},
+        {"investmentDebateRounds": 2, "riskDebateRounds": 6},
+        {"investmentDebateRounds": "2", "riskDebateRounds": 2},
+    ],
+)
+def test_tradingagents_round_config_is_fixed_bounded_data(payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        _ = TradingAgentsInitialUnrolledRoundConfig.model_validate(payload)
+
+
+def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> None:
+    with pytest.raises(ValidationError) as partial_exc:
+        _ = TradingAgentsInvestmentDebateTransition.model_validate(
+            {
+                "priorState": _investment_debate_state_payload(),
+                "nextState": {"bullCase": "Only the updated delta."},
+            }
+        )
+    missing_fields = {
+        str(error["loc"][-1]) for error in partial_exc.value.errors() if error["type"] == "missing"
+    }
+    assert {"analystReports", "bearCase", "debateHistory"} <= missing_fields
+
+    with pytest.raises(ValidationError) as patch_exc:
+        _ = TradingAgentsRiskDebateTransition.model_validate(
+            {
+                "priorState": _risk_debate_state_payload(),
+                "nextState": _risk_debate_state_payload()
+                | {"patch": {"neutralCase": "Only a patch."}},
+            }
+        )
+    extra_paths = {
+        error["loc"] for error in patch_exc.value.errors() if error["type"] == "extra_forbidden"
+    }
+    assert ("nextState", "patch") in extra_paths
+
+
+def test_tradingagents_contracts_do_not_weaken_manifest_validation() -> None:
+    same_step_reference = _valid_manifest_source().replace(
+        "${{ steps.research.outputs.analysis.summary }}",
+        "${{ steps.decision.outputs.final.summary }}",
+        1,
+    )
+    same_step_diagnostic = _single_diagnostic(same_step_reference)
+    assert same_step_diagnostic.path == "steps[1].agents[0].with.analysis"
+    assert "Step references must point to an earlier step" in same_step_diagnostic.message
+
+    compiled_output_field = _valid_manifest_source().replace(
+        "output:\n  from: ${{ steps.decision.outputs.final }}\n",
+        "outputSpec:\n  kind: slot\n  stepIndex: 2\n  slot: final\n"
+        + "output:\n  from: ${{ steps.decision.outputs.final }}\n",
+        1,
+    )
+    compiled_field_diagnostic = _single_diagnostic(compiled_output_field)
+    assert compiled_field_diagnostic.path == "outputSpec"
+    assert "Extra inputs are not permitted" in compiled_field_diagnostic.message
 
 
 def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
@@ -243,3 +409,146 @@ def test_parser_rejects_invalid_step_references_and_optional_final_output() -> N
 
     assert optional_output_diagnostic.path == "output.from"
     assert "Final output cannot reference an optional slot" in optional_output_diagnostic.message
+
+
+def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -> None:
+    assert set(TRADINGAGENTS_AGENT_MANIFEST_SOURCES) == {
+        "market_analyst",
+        "social_analyst",
+        "news_analyst",
+        "fundamentals_analyst",
+        "bull_researcher",
+        "bear_researcher",
+        "research_manager",
+        "trader",
+        "aggressive_risk_analyst",
+        "neutral_risk_analyst",
+        "conservative_risk_analyst",
+        "portfolio_manager",
+    }
+
+    for role, source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.items():
+        result = parse_agent_manifest(source)
+        assert result.diagnostics == [], role
+        assert result.manifest is not None
+        assert result.manifest.metadata.key == role
+        assert result.manifest.spec.output_schema.version == 1
+
+
+def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
+    result = parse_workflow_manifest(TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    steps = result.manifest.steps
+    assert [step.id for step in steps] == [
+        "analyst_fanout",
+        "bull_research_round_1",
+        "bear_research_round_1",
+        "bull_research_round_2",
+        "bear_research_round_2",
+        "research_manager",
+        "trader",
+        "aggressive_risk_round_1",
+        "neutral_risk_round_1",
+        "conservative_risk_round_1",
+        "portfolio_manager",
+    ]
+    analyst_step = steps[0]
+    assert [agent.slot for agent in analyst_step.agents] == [
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+    ]
+    assert all(
+        reference.source == "inputs"
+        for agent in analyst_step.agents
+        for reference in agent.inputs.values()
+    )
+    assert [
+        f"{agent.uses.key}@{agent.uses.version}" for step in steps for agent in step.agents
+    ] == [
+        "market_analyst@1",
+        "social_analyst@1",
+        "news_analyst@1",
+        "fundamentals_analyst@1",
+        "bull_researcher@1",
+        "bear_researcher@1",
+        "bull_researcher@1",
+        "bear_researcher@1",
+        "research_manager@1",
+        "trader@1",
+        "aggressive_risk_analyst@1",
+        "neutral_risk_analyst@1",
+        "conservative_risk_analyst@1",
+        "portfolio_manager@1",
+    ]
+    debate_chain = [
+        steps[1].agents[0].inputs["priorState"],
+        steps[2].agents[0].inputs["priorState"],
+        steps[3].agents[0].inputs["priorState"],
+        steps[4].agents[0].inputs["priorState"],
+        steps[7].agents[0].inputs["priorState"],
+        steps[8].agents[0].inputs["priorState"],
+        steps[9].agents[0].inputs["priorState"],
+    ]
+    assert [reference.source for reference in debate_chain] == [
+        "inputs",
+        "steps",
+        "steps",
+        "steps",
+        "inputs",
+        "steps",
+        "steps",
+    ]
+    assert [reference.output_path for reference in debate_chain[1:4]] == [
+        "nextState",
+        "nextState",
+        "nextState",
+    ]
+    assert [reference.output_path for reference in debate_chain[5:]] == [
+        "nextState",
+        "nextState",
+    ]
+    assert result.manifest.output.from_.step_id == "portfolio_manager"
+    assert result.manifest.output.from_.slot == "decision"
+
+
+def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_debate_refs() -> None:
+    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+        "priorState: ${{ inputs.initialInvestmentDebateState }}",
+        "priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}",
+        1,
+    )
+
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == "steps[1].agents[0].with.priorState"
+    assert "Step references must point to an earlier step" in diagnostic.message
+
+
+def test_tradingagents_fixed_unrolled_manifest_rejects_future_debate_refs() -> None:
+    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+        "priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}",
+        "priorState: ${{ steps.bull_research_round_2.outputs.bull.nextState }}",
+        1,
+    )
+
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == "steps[2].agents[0].with.priorState"
+    assert "Step references must point to an earlier step" in diagnostic.message
+
+
+def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_analyst_refs() -> None:
+    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+        "ticker: ${{ inputs.ticker }}",
+        "ticker: ${{ steps.analyst_fanout.outputs.market_report }}",
+        1,
+    )
+
+    diagnostic = _single_diagnostic(source)
+
+    assert diagnostic.path == "steps[0].agents[0].with.ticker"
+    assert "Step references must point to an earlier step" in diagnostic.message
