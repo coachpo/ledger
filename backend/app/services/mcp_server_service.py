@@ -49,7 +49,7 @@ class McpServerService:
         )
 
     def get_server(self, server_id: int) -> McpServerRead:
-        return McpServerRead.model_validate(self._get_model(server_id))
+        return self._to_read_model(self._get_model(server_id))
 
     def create_draft(self, payload: McpServerCreate) -> McpServerRead:
         if self.repository.get_draft_by_key(payload.key) is not None:
@@ -66,13 +66,13 @@ class McpServerService:
             config=self._validated_config_payload(payload, key=payload.key),
         )
         try:
-            self.repository.add(server)
+            _ = self.repository.add(server)
             self.session.commit()
             self.session.refresh(server)
         except Exception:
             self.session.rollback()
             raise
-        return McpServerRead.model_validate(server)
+        return self._to_read_model(server)
 
     def update_draft(self, server_id: int, payload: McpServerUpdate) -> McpServerRead:
         source = self._get_model(server_id)
@@ -87,18 +87,18 @@ class McpServerService:
         try:
             source.status = McpServerStatus.ARCHIVED.value
             self.session.flush()
-            self.repository.add(updated)
+            _ = self.repository.add(updated)
             self.session.commit()
             self.session.refresh(updated)
         except Exception:
             self.session.rollback()
             raise
-        return McpServerRead.model_validate(updated)
+        return self._to_read_model(updated)
 
     def activate(self, server_id: int) -> McpServerRead:
         server = self._get_model(server_id)
         self._ensure_status(server, McpServerStatus.DRAFT, action="activate")
-        self._build_boundary_model(server)
+        _ = self._build_boundary_model(server)
 
         current_published = self.repository.get_published_by_key(server.key)
         try:
@@ -111,12 +111,12 @@ class McpServerService:
         except Exception:
             self.session.rollback()
             raise
-        return McpServerRead.model_validate(server)
+        return self._to_read_model(server)
 
     def archive(self, server_id: int) -> McpServerRead:
         server = self._get_model(server_id)
         if server.status == McpServerStatus.ARCHIVED.value:
-            return McpServerRead.model_validate(server)
+            return self._to_read_model(server)
 
         try:
             server.status = McpServerStatus.ARCHIVED.value
@@ -125,7 +125,7 @@ class McpServerService:
         except Exception:
             self.session.rollback()
             raise
-        return McpServerRead.model_validate(server)
+        return self._to_read_model(server)
 
     def build_client_boundary(self, server_id: int) -> McpClientBoundary:
         return self._build_boundary_model(self._get_model(server_id))
@@ -171,13 +171,13 @@ class McpServerService:
             status=McpServerStatus.DRAFT.value,
             config=config_payload,
         )
-        self._build_boundary_model(candidate)
+        _ = self._build_boundary_model(candidate)
         return config_payload
 
     @staticmethod
     def _flat_payload_to_wrapped_config(payload: McpServerBase, *, key: str) -> dict[str, object]:
         del key
-        resource = {
+        resource: dict[str, object] = {
             "name": payload.name,
             "description": payload.description,
             "enabled": payload.enabled,
@@ -252,6 +252,31 @@ class McpServerService:
             return build_mcp_client_boundary(server)
         except McpClientConfigError as exc:
             raise validation_error("MCP server validation failed", exc.details) from exc
+
+    def _to_read_model(self, server: McpServer) -> McpServerRead:
+        boundary = self._build_boundary_model(server)
+        snapshots = server.flat_config.get("toolSnapshots", [])
+        if not isinstance(snapshots, list):
+            snapshots = []
+        return McpServerRead.model_validate(
+            {
+                "id": server.id,
+                "key": server.key,
+                "version": server.version,
+                "status": server.status,
+                "name": server.name,
+                "description": server.description,
+                "enabled": server.enabled,
+                "transport": server.transport,
+                "createdAt": server.created_at,
+                "updatedAt": server.updated_at,
+                "command": list(boundary.command) if boundary.command is not None else None,
+                "url": boundary.url,
+                "headerNames": sorted(boundary.headers),
+                "envKeys": sorted(boundary.env),
+                "toolSnapshots": snapshots,
+            }
+        )
 
     @staticmethod
     def _boundary_to_read(boundary: McpClientBoundary) -> McpClientBoundaryRead:

@@ -88,7 +88,7 @@ class AgentCapabilityRefWrite(CamelModel):
 
 class AgentMcpServerRefWrite(CamelModel):
     mcp_server_key: str = Field(min_length=1, max_length=120)
-    mcp_server_version: int | None = Field(default=None, ge=1)
+    mcp_server_version: int = Field(ge=1)
 
     @field_validator("mcp_server_key", mode="before")
     @classmethod

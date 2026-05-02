@@ -515,16 +515,17 @@ class AgentService:
             field = f"mcpServers[{index}].mcpServerKey"
             if server is None:
                 issue = (
-                    f"MCP server {ref.mcp_server_key!r} was not found"
-                    if ref.mcp_server_version is None
-                    else (
-                        f"MCP server {ref.mcp_server_key!r} version {ref.mcp_server_version} "
-                        "was not found"
-                    )
+                    f"MCP server {ref.mcp_server_key!r} version "
+                    f"{ref.mcp_server_version} was not found"
                 )
                 raise validation_error(
                     "Agent validation failed",
                     [{"field": field, "issue": issue}],
+                )
+            if server.status not in {"published", "deprecated"}:
+                raise validation_error(
+                    "Agent validation failed",
+                    [{"field": field, "issue": "MCP server must be published or deprecated"}],
                 )
             _ = self.mcp_server_service.build_client_boundary_version(
                 server.key,
