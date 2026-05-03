@@ -79,4 +79,44 @@ describe("runs api", () => {
       targetVersion: "3",
     });
   });
+
+  it("reads fork drafts with the fork step query parameter", async () => {
+    const { getRunForkDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, forkStepIndex: 2, steps: [] }, 200));
+
+    await expect(getRunForkDraft(42, 2)).resolves.toEqual({
+      forkStepIndex: 2,
+      sourceRunId: 42,
+      steps: [],
+    });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/fork-draft");
+    expect(init?.method).toBe("GET");
+    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ forkStepIndex: "2" });
+  });
+
+  it("creates forks with camelCase payloads", async () => {
+    const { createRunFork } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "running" }, 201));
+
+    await expect(
+      createRunFork(42, {
+        forkStepIndex: 2,
+        input: { ticker: "MSFT" },
+        invocationEdits: [{ output: { summary: "edited" }, slot: "analysis", stepIndex: 1 }],
+      }),
+    ).resolves.toEqual({ id: 99, status: "running" });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/forks");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({
+      forkStepIndex: 2,
+      input: { ticker: "MSFT" },
+      invocationEdits: [{ output: { summary: "edited" }, slot: "analysis", stepIndex: 1 }],
+    }));
+  });
 });
