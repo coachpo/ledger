@@ -191,8 +191,28 @@ describe("WorkflowsEditorPage", () => {
       outputSpec: { kind: "slot", stepIndex: 1, slot: "analysis" },
     };
     const runInputSchema = { type: "object", properties: { ticker: { type: "string" } } };
+    const compiledGraph = {
+      apiVersion: "ledger.workflow/v2",
+      rootNodeId: "root_sequence",
+      nodes: [
+        { id: "root_sequence", nodeId: "root_sequence", kind: "sequence", childNodeIds: ["analyst_fanout", "review_loop", "decision"] },
+        { id: "root_sequence.analyst_fanout", nodeId: "analyst_fanout", kind: "fanout", branchIds: ["market", "news"], mode: "concurrent" },
+        { id: "root_sequence.analyst_fanout.market.market_analysis", nodeId: "market_analysis", kind: "step", stepIndex: 1, slot: "market", agentKey: "market_agent", agentVersion: 1, branchId: "market", refs: { ticker: { source: "inputs", path: "ticker" } } },
+        { id: "root_sequence.review_loop", nodeId: "review_loop", kind: "loop", maxIterations: 2, sequenceNodeId: "review_sequence" },
+        { id: "root_sequence.review_loop.iteration_1.review_sequence.risk_review", nodeId: "risk_review", kind: "step", stepIndex: 2, slot: "risk", agentKey: "risk_agent", agentVersion: 1, loopId: "review_loop", loopIteration: 1 },
+        { id: "root_sequence.review_loop.iteration_2.review_sequence.risk_review", nodeId: "risk_review", kind: "step", stepIndex: 3, slot: "risk", agentKey: "risk_agent", agentVersion: 1, loopId: "review_loop", loopIteration: 2 },
+        { id: "root_sequence.review_loop.iteration_10.review_sequence.risk_review", nodeId: "risk_review", kind: "step", stepIndex: 11, slot: "risk", agentKey: "risk_agent", agentVersion: 1, loopId: "review_loop", loopIteration: 10 },
+      ],
+      output: { source: "nodes", nodeId: "root_sequence", slot: "final", stepIndex: 3, compiledSlot: "final" },
+      validation: { loopMaxIterations: 10, fanoutMaxBranches: 16 },
+      postRunMemory: {
+        enabled: true,
+        sourceRefs: { ticker: { source: "inputs", path: "ticker" } },
+      },
+    };
     validateWorkflowManifestMock.mockResolvedValue({
       compiledPayload,
+      compiledGraph,
       diagnostics: [
         {
           column: 9,
@@ -222,6 +242,14 @@ describe("WorkflowsEditorPage", () => {
     );
     expect(within(screen.getByTestId("workflow-backend-validation-feedback")).getByText("Agent pin resolves with a warning")).toBeVisible();
     expect(within(screen.getByTestId("workflow-backend-validation-feedback")).getByText("steps[0].agents[0].uses")).toBeVisible();
+    expect(screen.getByTestId("workflow-compiled-graph-preview")).toHaveTextContent("analyst_fanout");
+    expect(screen.getByTestId("workflow-compiled-graph-preview")).toHaveTextContent("review_loop");
+    expect(screen.getByTestId("workflow-compiled-graph-preview")).toHaveTextContent("iteration 1");
+    const graphPreviewText = screen.getByTestId("workflow-compiled-graph-preview").textContent ?? "";
+    expect(graphPreviewText.indexOf("iteration 2")).toBeGreaterThan(graphPreviewText.indexOf("iteration 1"));
+    expect(graphPreviewText.indexOf("iteration 10")).toBeGreaterThan(graphPreviewText.indexOf("iteration 2"));
+    expect(screen.getByTestId("workflow-compiled-graph-preview")).toHaveTextContent("postRunMemory");
+    expect(screen.getByLabelText("Exact raw compiled graph JSON")).toHaveValue(JSON.stringify(compiledGraph, null, 2));
     expect(screen.getByLabelText("Exact raw compiled workflow JSON")).toHaveValue(JSON.stringify(compiledPayload, null, 2));
     expect(screen.getByLabelText("Exact raw workflow run input schema JSON")).toHaveValue(JSON.stringify(runInputSchema, null, 2));
   });

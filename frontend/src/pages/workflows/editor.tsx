@@ -69,7 +69,12 @@ import {
   type WorkflowManifestOutlineSection,
 } from "@/lib/platform-authoring/workflows/manifest";
 import type { UnknownRecord } from "@/lib/types/common";
-import type { WorkflowManifestValidationRead } from "@/lib/types/workflow";
+import type {
+  WorkflowCompiledGraph,
+  WorkflowCompiledGraphNode,
+  WorkflowCompiledGraphRef,
+  WorkflowManifestValidationRead,
+} from "@/lib/types/workflow";
 
 type WorkflowSnippet = {
   description: string;
@@ -172,6 +177,93 @@ function getSectionDescription(section: WorkflowManifestOutlineSection) {
   return formatLocation(section.line, section.column);
 }
 
+function formatGraphRef(ref: WorkflowCompiledGraphRef): string {
+  if (ref.source === "inputs") {
+    return `inputs.${ref.path ?? "*"}`;
+  }
+
+  const target = `nodes.${ref.nodeId ?? "?"}.outputs.${ref.slot ?? "?"}`;
+  const path = ref.path ? `.${ref.path}` : "";
+  const compiled = ref.stepIndex ? ` -> step ${ref.stepIndex}/${ref.compiledSlot ?? ref.slot ?? "?"}` : "";
+  return `${target}${path}${compiled}`;
+}
+
+function nodeDepth(node: WorkflowCompiledGraphNode): number {
+  return node.id.split(".").length;
+}
+
+function graphNodeSummary(node: WorkflowCompiledGraphNode): string {
+  if (node.kind === "step") {
+    return `step ${node.stepIndex ?? "?"} · ${node.slot ?? "slot"} · ${node.agentKey ?? "agent"}@${node.agentVersion ?? "?"}`;
+  }
+  if (node.kind === "sequence") {
+    return `sequence order: ${node.childNodeIds?.join(" -> ") || "no child nodes"}`;
+  }
+  if (node.kind === "fanout") {
+    return `fanout branches: ${node.branchIds?.join(", ") || "none"}${node.mode ? ` · ${node.mode}` : ""}`;
+  }
+  return `loop bound: ${node.maxIterations ?? "?"} iteration(s) · sequence ${node.sequenceNodeId ?? "?"}`;
+}
+
+function CompiledGraphPreview({ graph }: { graph: WorkflowCompiledGraph }) {
+  return (
+    <div className="flex flex-col gap-3" data-testid="workflow-compiled-graph-preview">
+      <div className="rounded-md border border-border bg-background p-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{graph.apiVersion}</Badge>
+          <Badge variant="outline">root {graph.rootNodeId}</Badge>
+          {graph.validation?.loopMaxIterations ? <Badge variant="outline">loop max {String(graph.validation.loopMaxIterations)}</Badge> : null}
+          {graph.validation?.fanoutMaxBranches ? <Badge variant="outline">fanout max {String(graph.validation.fanoutMaxBranches)}</Badge> : null}
+        </div>
+        {graph.output ? <p className="mt-2 break-words text-muted-foreground">Output: {formatGraphRef(graph.output)}</p> : null}
+      </div>
+      <div className="flex flex-col gap-2">
+        {graph.nodes.map((node) => (
+          <div
+            className="rounded-md border border-border bg-background p-3 text-sm"
+            key={node.id}
+            style={{ marginLeft: `${Math.max(0, nodeDepth(node) - 1) * 0.75}rem` }}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{node.kind}</Badge>
+              <span className="font-mono text-xs text-muted-foreground">{node.nodeId}</span>
+              {node.branchId ? <Badge variant="outline">branch {node.branchId}</Badge> : null}
+              {node.loopIteration ? <Badge variant="outline">iteration {node.loopIteration}</Badge> : null}
+            </div>
+            <p className="mt-2 font-medium">{graphNodeSummary(node)}</p>
+            {node.refs && Object.keys(node.refs).length > 0 ? (
+              <dl className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                {Object.entries(node.refs).map(([name, ref]) => (
+                  <div className="grid gap-1 sm:grid-cols-[7rem_1fr]" key={name}>
+                    <dt className="font-mono text-foreground">{name}</dt>
+                    <dd className="break-words font-mono">{formatGraphRef(ref)}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {graph.postRunMemory?.enabled ? (
+        <div className="rounded-md border border-border bg-background p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">postRunMemory</Badge>
+            <span className="text-muted-foreground">Memory artifact source refs</span>
+          </div>
+          <dl className="mt-2 grid gap-1 text-xs text-muted-foreground">
+            {Object.entries(graph.postRunMemory.sourceRefs ?? {}).map(([name, ref]) => (
+              <div className="grid gap-1 sm:grid-cols-[7rem_1fr]" key={name}>
+                <dt className="font-mono text-foreground">{name}</dt>
+                <dd className="break-words font-mono">{formatGraphRef(ref)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function WorkflowsEditorPage() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
@@ -254,6 +346,10 @@ export function WorkflowsEditorPage() {
   const compiledPayloadJson = useMemo(
     () => stringifyJson(validationResult?.compiledPayload),
     [validationResult?.compiledPayload],
+  );
+  const compiledGraphJson = useMemo(
+    () => stringifyJson(validationResult?.compiledGraph),
+    [validationResult?.compiledGraph],
   );
   const activeRunInputSchema = validationResult?.runInputSchema ?? workflow?.inputSchema ?? null;
   const activeRunInputSchemaJson = useMemo(
@@ -803,6 +899,32 @@ export function WorkflowsEditorPage() {
                     )}
                   </CardContent>
                 </Card>
+
+                {validationResult ? (
+                  <Card className="gap-3">
+                    <CardHeader className="px-3 pt-3">
+                      <CardTitle className="text-sm">Compiled graph preview</CardTitle>
+                      <CardDescription>Readable v2 graph metadata from backend validation</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3 px-3 pb-3">
+                      {validationResult.compiledGraph ? (
+                        <>
+                          <CompiledGraphPreview graph={validationResult.compiledGraph} />
+                          <ExactJsonPreview
+                            ariaLabel="Exact raw compiled graph JSON"
+                            data-testid="workflow-compiled-graph-raw-preview"
+                            textareaClassName="min-h-40"
+                            value={compiledGraphJson}
+                          />
+                        </>
+                      ) : (
+                        <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                          Backend validation did not return a v2 compiled graph.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : null}
 
                 {validationResult ? (
                   <Card className="gap-3">
