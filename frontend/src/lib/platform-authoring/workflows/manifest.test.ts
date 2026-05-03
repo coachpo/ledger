@@ -87,7 +87,9 @@ describe("workflow manifest helpers", () => {
       ["metadata", true],
       ["inputSchema", true],
       ["steps", true],
+      ["flow", false],
       ["output", true],
+      ["postRunMemory", false],
     ]);
     expect(result.outline.sections[0]?.line).toBe(1);
     expect(result.outline.steps.map((step) => step.id)).toEqual(["research", "decision"]);
@@ -97,6 +99,51 @@ describe("workflow manifest helpers", () => {
       path: "steps[0].agents[1]",
       uses: "context_agent@3",
     });
+  });
+
+  it("accepts v2 flow locally without requiring v1 steps and warns for unbounded loops", () => {
+    const source = `apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: graph_review
+  name: Graph Review
+  description: Browser-previewable v2 workflow.
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+flow:
+  kind: loop
+  id: review_loop
+  sequence:
+    kind: sequence
+    id: review_sequence
+    nodes:
+      - kind: step
+        id: risk_review
+        slot: risk
+        uses: risk_agent@1
+        with:
+          ticker: \${{ inputs.ticker }}
+output:
+  from: \${{ nodes.review_loop.outputs.risk }}
+`;
+
+    const parsed = parseWorkflowManifestLocallyForEditor(source);
+    const outline = extractWorkflowManifestOutline(source);
+
+    expect(parsed.isValidYaml).toBe(true);
+    expect(parsed.diagnostics).toHaveLength(1);
+    expect(parsed.diagnostics[0]).toMatchObject({
+      origin: "local",
+      path: "flow.maxIterations",
+      severity: "warning",
+    });
+    expect(parsed.diagnostics[0]?.message).toContain("maxIterations");
+    expect(outline.outline.sections.find((section) => section.id === "flow")).toMatchObject({ present: true });
+    expect(outline.outline.sections.find((section) => section.id === "steps")).toMatchObject({ present: false });
+    expect(outline.outline.steps[0]).toMatchObject({ id: "risk_review" });
   });
 
   it("returns lightweight local diagnostics for malformed YAML without claiming backend authority", () => {
@@ -141,7 +188,7 @@ metadata:
     expect(parsed.diagnostics[0]?.message).toContain("at most 262144 characters");
 
     expect(outline.diagnostics).toHaveLength(1);
-    expect(outline.outline.sections).toHaveLength(6);
+    expect(outline.outline.sections).toHaveLength(8);
     expect(outline.outline.sections.every((section) => section.present === false)).toBe(true);
     expect(outline.outline.steps).toEqual([]);
     expect(outline.diagnostics[0]).toMatchObject({

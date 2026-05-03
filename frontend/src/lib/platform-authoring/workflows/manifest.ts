@@ -21,7 +21,9 @@ import type {
   WorkflowManifestDiagnosticSeverity,
 } from "@/lib/types/workflow";
 
-const WORKFLOW_MANIFEST_API_VERSION: WorkflowManifestApiVersion = "ledger.workflow/v1";
+const WORKFLOW_MANIFEST_V1_API_VERSION: WorkflowManifestApiVersion = "ledger.workflow/v1";
+const WORKFLOW_MANIFEST_V2_API_VERSION: WorkflowManifestApiVersion = "ledger.workflow/v2";
+const WORKFLOW_MANIFEST_API_VERSIONS = [WORKFLOW_MANIFEST_V1_API_VERSION, WORKFLOW_MANIFEST_V2_API_VERSION] as const;
 const WORKFLOW_MANIFEST_KIND = "Workflow";
 const WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH = 262_144; // Matches backend WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH.
 
@@ -31,8 +33,13 @@ const WORKFLOW_MANIFEST_SECTION_IDS = [
   "metadata",
   "inputSchema",
   "steps",
+  "flow",
   "output",
+  "postRunMemory",
 ] as const;
+
+const WORKFLOW_MANIFEST_V1_REQUIRED_SECTION_IDS = ["apiVersion", "kind", "metadata", "inputSchema", "steps", "output"] as const;
+const WORKFLOW_MANIFEST_V2_REQUIRED_SECTION_IDS = ["apiVersion", "kind", "metadata", "inputSchema", "flow", "output"] as const;
 
 const SECTION_LABELS: Record<WorkflowManifestSectionId, string> = {
   apiVersion: "API version",
@@ -40,7 +47,9 @@ const SECTION_LABELS: Record<WorkflowManifestSectionId, string> = {
   metadata: "Metadata",
   inputSchema: "Input schema",
   steps: "Steps",
+  flow: "Flow",
   output: "Output",
+  postRunMemory: "Post-run memory",
 };
 
 const YAML_STRINGIFY_OPTIONS = {
@@ -221,10 +230,10 @@ function collectLocalManifestDiagnostics(
   }
 
   const apiVersion = scalarStringValue(getMapValue(root, "apiVersion"));
-  if (apiVersion !== WORKFLOW_MANIFEST_API_VERSION) {
+  if (!isSupportedWorkflowManifestApiVersion(apiVersion)) {
     diagnostics.push(
       createLocalDiagnostic(
-        `apiVersion must be ${WORKFLOW_MANIFEST_API_VERSION}`,
+        `apiVersion must be ${WORKFLOW_MANIFEST_API_VERSIONS.join(" or ")}`,
         "apiVersion",
         locationFromNode(getMapValue(root, "apiVersion") ?? getMapKey(root, "apiVersion") ?? root, lineCounter),
       ),
@@ -242,10 +251,69 @@ function collectLocalManifestDiagnostics(
     );
   }
 
-  for (const sectionId of WORKFLOW_MANIFEST_SECTION_IDS) {
+  const requiredSectionIds = apiVersion === WORKFLOW_MANIFEST_V2_API_VERSION
+    ? WORKFLOW_MANIFEST_V2_REQUIRED_SECTION_IDS
+    : WORKFLOW_MANIFEST_V1_REQUIRED_SECTION_IDS;
+  for (const sectionId of requiredSectionIds) {
     if (!getMapPair(root, sectionId)) {
       diagnostics.push(createLocalDiagnostic(`${SECTION_LABELS[sectionId]} is required`, sectionId, locationFromNode(root, lineCounter)));
     }
+  }
+
+  if (apiVersion === WORKFLOW_MANIFEST_V2_API_VERSION) {
+    diagnostics.push(...collectV2LoopDiagnostics(getMapValue(root, "flow"), lineCounter, "flow"));
+  }
+
+  return diagnostics;
+}
+
+function isSupportedWorkflowManifestApiVersion(value: string | null): value is WorkflowManifestApiVersion {
+  return WORKFLOW_MANIFEST_API_VERSIONS.some((apiVersion) => apiVersion === value);
+}
+
+function collectV2LoopDiagnostics(
+  node: unknown,
+  lineCounter: LineCounter,
+  path: string,
+): WorkflowManifestEditorDiagnostic[] {
+  const diagnostics: WorkflowManifestEditorDiagnostic[] = [];
+  if (!node || !isMap(node)) {
+    return diagnostics;
+  }
+
+  const kind = scalarStringValue(getMapValue(node, "kind"));
+  if (kind === "loop" && !getMapPair(node, "maxIterations")) {
+    diagnostics.push(
+      createLocalDiagnostic(
+        "Loop nodes should set maxIterations so browser preview and backend validation agree on iteration bounds",
+        `${path}.maxIterations`,
+        locationFromNode(getMapValue(node, "kind") ?? node, lineCounter),
+        "warning",
+      ),
+    );
+  }
+
+  if (kind === "sequence") {
+    const nodes = getMapValue(node, "nodes");
+    if (isSeq(nodes)) {
+      nodes.items.forEach((child, index) => {
+        diagnostics.push(...collectV2LoopDiagnostics(child, lineCounter, `${path}.nodes[${index}]`));
+      });
+    }
+  }
+
+  if (kind === "fanout") {
+    const branches = getMapValue(node, "branches");
+    if (isSeq(branches)) {
+      branches.items.forEach((branch, index) => {
+        const childNode = isMap(branch) ? getMapValue(branch, "node") : null;
+        diagnostics.push(...collectV2LoopDiagnostics(childNode, lineCounter, `${path}.branches[${index}].node`));
+      });
+    }
+  }
+
+  if (kind === "loop") {
+    diagnostics.push(...collectV2LoopDiagnostics(getMapValue(node, "sequence"), lineCounter, `${path}.sequence`));
   }
 
   return diagnostics;
@@ -297,6 +365,7 @@ function createLocalDiagnostic(
   message: string,
   path: string,
   location: WorkflowManifestSourceLocation,
+  severity: WorkflowManifestDiagnosticSeverity = "error",
 ): WorkflowManifestEditorDiagnostic {
   return {
     column: location.column,
@@ -304,7 +373,7 @@ function createLocalDiagnostic(
     message,
     origin: "local",
     path,
-    severity: "error",
+    severity,
   };
 }
 
@@ -429,12 +498,76 @@ function extractOutlineFromDocument(
   });
 
   const stepsNode = getMapValue(root, "steps");
-  if (!isSeq(stepsNode)) {
+  if (isSeq(stepsNode)) {
+    outline.steps = stepsNode.items.map((stepNode, stepIndex) => extractOutlineStep(stepNode, stepIndex, lineCounter));
     return outline;
   }
 
-  outline.steps = stepsNode.items.map((stepNode, stepIndex) => extractOutlineStep(stepNode, stepIndex, lineCounter));
+  const flowNode = getMapValue(root, "flow");
+  outline.steps = extractV2OutlineSteps(flowNode, lineCounter);
   return outline;
+}
+
+function extractV2OutlineSteps(
+  flowNode: unknown,
+  lineCounter: LineCounter,
+): WorkflowManifestOutlineStep[] {
+  const steps: WorkflowManifestOutlineStep[] = [];
+  const visit = (node: unknown, path: string) => {
+    if (!isMap(node)) {
+      return;
+    }
+    const kind = scalarStringValue(getMapValue(node, "kind"));
+    if (kind === "step") {
+      const location = locationFromNode(node, lineCounter);
+      const stepId = scalarStringValue(getMapValue(node, "id")) ?? "";
+      steps.push({
+        agentSlots: [
+          {
+            column: location.column,
+            index: 0,
+            line: location.line,
+            optional: scalarBooleanValue(getMapValue(node, "optional")),
+            path,
+            slot: scalarStringValue(getMapValue(node, "slot")) ?? "",
+            uses: scalarStringValue(getMapValue(node, "uses")),
+          },
+        ],
+        column: location.column,
+        id: stepId,
+        index: steps.length,
+        line: location.line,
+        path,
+      });
+      return;
+    }
+
+    if (kind === "sequence") {
+      const children = getMapValue(node, "nodes");
+      if (isSeq(children)) {
+        children.items.forEach((child, index) => visit(child, `${path}.nodes[${index}]`));
+      }
+      return;
+    }
+
+    if (kind === "fanout") {
+      const branches = getMapValue(node, "branches");
+      if (isSeq(branches)) {
+        branches.items.forEach((branch, index) => {
+          const childNode = isMap(branch) ? getMapValue(branch, "node") : null;
+          visit(childNode, `${path}.branches[${index}].node`);
+        });
+      }
+      return;
+    }
+
+    if (kind === "loop") {
+      visit(getMapValue(node, "sequence"), `${path}.sequence`);
+    }
+  };
+
+  visit(flowNode, "flow");
+  return steps;
 }
 
 function extractOutlineStep(
@@ -631,7 +764,7 @@ export function createWorkflowManifestScaffold(options: WorkflowManifestScaffold
 
   return stringify(
     normalizeManifestForStringify({
-      apiVersion: WORKFLOW_MANIFEST_API_VERSION,
+      apiVersion: WORKFLOW_MANIFEST_V1_API_VERSION,
       kind: WORKFLOW_MANIFEST_KIND,
       metadata: {
         key: options.key?.trim() || "new_workflow",
