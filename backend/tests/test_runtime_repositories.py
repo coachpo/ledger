@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,6 +14,8 @@ from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
 from app.repositories.capability import CapabilityRepository
@@ -22,6 +25,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.workflow import WorkflowRepository
 from app.services.model_connection_service import ModelConnectionService
+from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -206,7 +210,6 @@ def _build_agent_platform_run(
     started_at: datetime,
     finished_at: datetime | None,
     trace_id: str | None,
-    per_step_outputs: dict[str, list[dict[str, object]]],
     final_output: object | None,
 ) -> Run:
     return Run(
@@ -215,7 +218,6 @@ def _build_agent_platform_run(
         target_key=workflow.key,
         target_version=workflow.version,
         input={"ticker": "NVDA", "horizonDays": 30},
-        per_step_outputs=per_step_outputs,
         final_output=final_output,
         status=status,
         total_tokens=total_tokens,
@@ -647,22 +649,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             started_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC_TZ),
             finished_at=datetime(2026, 4, 19, 9, 1, tzinfo=UTC_TZ),
             trace_id="trace-older",
-            per_step_outputs={
-                "1": [
-                    {
-                        "slot": "analysis",
-                        "agentVersion": 1,
-                        "resolvedInput": {"ticker": "NVDA"},
-                        "output": None,
-                        "error": {"message": "timeout"},
-                        "status": "failed",
-                        "tokens": 120,
-                        "costUsd": "0.05000000",
-                        "durationMs": 61000,
-                        "traceSpanId": "span-older",
-                    }
-                ]
-            },
             final_output=None,
         )
         latest_run = _build_agent_platform_run(
@@ -673,29 +659,50 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             started_at=datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ),
             finished_at=datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ),
             trace_id="trace-latest",
-            per_step_outputs={
-                "1": [
-                    {
-                        "slot": "analysis",
-                        "agentId": published_agent.id,
-                        "agentKey": published_agent.key,
-                        "agentVersion": published_agent.version,
-                        "outputSchemaId": published_agent.output_schema_id,
-                        "outputSchemaVersion": published_agent.output_schema_version,
-                        "resolvedInput": {"ticker": "NVDA"},
-                        "output": {"headline": "Buy"},
-                        "error": None,
-                        "status": "succeeded",
-                        "tokens": 321,
-                        "costUsd": "0.15000000",
-                        "durationMs": 1450,
-                        "traceSpanId": "span-latest",
-                    }
-                ]
-            },
             final_output={"headline": "Buy"},
         )
         session.add_all([earlier_run, latest_run])
+        session.flush()
+        latest_step = RunStep(
+            run_id=latest_run.id,
+            step_index=1,
+            status="succeeded",
+            origin="planned",
+            started_at=latest_run.started_at,
+            finished_at=latest_run.finished_at,
+            persisted_at=latest_run.finished_at,
+        )
+        session.add(latest_step)
+        session.flush()
+        session.add(
+            RunAgentInvocation(
+                run_step_id=latest_step.id,
+                run_id=latest_run.id,
+                step_index=1,
+                slot="analysis",
+                position=0,
+                agent_id=published_agent.id,
+                agent_key=published_agent.key,
+                agent_version=published_agent.version,
+                output_schema_id=published_agent.output_schema_id,
+                output_schema_version=published_agent.output_schema_version,
+                input_mode="passthrough",
+                wiring={},
+                optional=False,
+                status="succeeded",
+                resolved_input={"ticker": "NVDA"},
+                resolved_input_origin="passthrough",
+                output={"headline": "Buy"},
+                output_origin="executed",
+                tokens=321,
+                cost_usd=Decimal("0.15000000"),
+                duration_ms=1450,
+                trace_span_id="span-latest",
+                started_at=latest_run.started_at,
+                finished_at=latest_run.finished_at,
+                persisted_at=latest_run.finished_at,
+            )
+        )
         session.commit()
 
         run_repo = RunRepository(session)
@@ -713,8 +720,21 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         )
 
         assert run_detail is not None
-        assert run_detail.per_step_outputs["1"][0]["traceSpanId"] == "span-latest"
-        assert run_detail.per_step_outputs["1"][0]["resolvedInput"] == {"ticker": "NVDA"}
+        detail_steps = cast(list[RunStep], run_detail.steps)
+        assert len(detail_steps) == 1
+        assert detail_steps[0].step_index == 1
+        detail_invocations = cast(list[RunAgentInvocation], detail_steps[0].invocations)
+        assert len(detail_invocations) == 1
+        assert detail_invocations[0].trace_span_id == "span-latest"
+        assert detail_invocations[0].resolved_input == {"ticker": "NVDA"}
+        serialized_detail = RunService._to_read_model(run_detail).model_dump(
+            mode="json",
+            by_alias=True,
+        )
+        assert "perStepOutputs" not in serialized_detail
+        assert serialized_detail["steps"][0]["index"] == 1
+        assert serialized_detail["steps"][0]["invocations"][0]["traceSpanId"] == "span-latest"
+        assert serialized_detail["steps"][0]["invocations"][0]["costUsd"] == "0.15000000"
         assert run_detail.total_tokens == 321
         assert run_detail.total_cost_usd == Decimal("0.15000000")
         assert run_detail.trace_id == "trace-latest"

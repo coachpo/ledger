@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.run import Run
+from app.models.run_step import RunStep
 from app.repositories.base import BaseRepository
 
 
@@ -51,7 +53,11 @@ class RunRepository(BaseRepository[Run]):
         return self._list(statement)
 
     def get_detail(self, run_id: int) -> Run | None:
-        statement = select(self.model).where(self.model.id == run_id)
+        statement = (
+            select(self.model)
+            .where(self.model.id == run_id)
+            .options(selectinload(self.model.steps).selectinload(RunStep.invocations))
+        )
         return self._get_by_statement(statement)
 
     def list_for_target(
