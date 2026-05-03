@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from typing import cast
 
@@ -94,6 +95,43 @@ output:
 """
 
 
+def _v2_manifest_source(
+    *,
+    key: str = "manifest_api_workflow_v2",
+    name: str = "Manifest API Workflow V2",
+    description: str = "Writes v2 graph metadata from YAML source.",
+    uses: str = "manifest_api_agent@1",
+    output_reference: str = "${{ nodes.research.outputs.analysis.summary }}",
+) -> str:
+    return f"""apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: {key}
+  name: {name}
+  description: {description}
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+flow:
+  kind: step
+  id: research
+  slot: analysis
+  uses: {uses}
+  with:
+    ticker: ${{{{ inputs.ticker }}}}
+output:
+  from: {output_reference}
+"""
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
 def _create_manifest_workflow(client: TestClient, source: str) -> dict[str, object]:
     response = client.post("/api/workflows", json={"manifestSource": source})
     assert response.status_code == 201, response.json()
@@ -139,9 +177,40 @@ def test_validate_manifest_returns_diagnostics_metadata_compiled_payload_and_inp
     compiled_steps = cast(list[dict[str, object]], compiled_payload["steps"])
     compiled_agents = cast(list[dict[str, object]], compiled_steps[0]["agents"])
     assert compiled_payload["key"] == "manifest_api_workflow"
+    assert "compiledGraph" not in compiled_payload
+    assert "compiledGraph" not in body
     assert compiled_agents[0]["agentKey"] == "manifest_api_agent"
     assert compiled_agents[0]["agentVersion"] == 1
     assert cast(dict[str, object], body["runInputSchema"])["additionalProperties"] is False
+
+
+def test_validate_v2_manifest_returns_separate_compiled_graph(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_manifest_agent(session_factory)
+    source = _v2_manifest_source()
+
+    response = client.post("/api/workflows/validate-manifest", json={"manifestSource": source})
+
+    assert response.status_code == 200, response.json()
+    body = cast(dict[str, object], response.json())
+    assert body["diagnostics"] == []
+    assert body["metadata"] == {
+        "apiVersion": "ledger.workflow/v2",
+        "key": "manifest_api_workflow_v2",
+        "name": "Manifest API Workflow V2",
+        "description": "Writes v2 graph metadata from YAML source.",
+    }
+    compiled_payload = cast(dict[str, object], body["compiledPayload"])
+    compiled_graph = cast(dict[str, object], body["compiledGraph"])
+    assert compiled_payload["key"] == "manifest_api_workflow_v2"
+    assert "compiledGraph" not in compiled_payload
+    assert compiled_graph["apiVersion"] == "ledger.workflow/v2"
+    assert compiled_graph["rootNodeId"] == "research"
+    assert cast(dict[str, object], compiled_graph["output"])["path"] == "summary"
+    assert "secret" not in _canonical_json(compiled_graph).lower()
+    assert "system_prompt" not in _canonical_json(compiled_graph).lower()
 
 
 def test_validate_manifest_rejects_unsupported_input_schema_keywords(
@@ -238,6 +307,33 @@ def test_create_workflow_from_manifest_persists_source_and_compiled_execution_fi
     assert output_spec["agentKey"] == "manifest_api_agent"
     assert output_spec["outputSchemaVersion"] == 1
     assert created["aggregateBudgetUsd"] == "0.05000000"
+
+
+def test_create_v2_workflow_from_manifest_returns_persisted_compiled_graph(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_manifest_agent(session_factory)
+    source = _v2_manifest_source()
+
+    created = _create_manifest_workflow(client, source)
+
+    output_spec = cast(dict[str, object], created["outputSpec"])
+    compiled_graph = cast(dict[str, object], created["compiledGraph"])
+    assert created["manifestApiVersion"] == "ledger.workflow/v2"
+    assert created["manifestSource"] == source
+    assert "compiledGraph" not in output_spec
+    assert compiled_graph["rootNodeId"] == "research"
+    assert cast(dict[str, object], compiled_graph["output"])["path"] == "summary"
+
+    response = client.get(f"/api/workflows/{created['id']}")
+
+    assert response.status_code == 200, response.json()
+    detail = cast(dict[str, object], response.json())
+    assert detail["manifestApiVersion"] == "ledger.workflow/v2"
+    assert detail["manifestSource"] == source
+    assert _canonical_json(detail["compiledGraph"]) == _canonical_json(compiled_graph)
+    assert "compiledGraph" not in cast(dict[str, object], detail["outputSpec"])
 
 
 def test_update_workflow_from_manifest_persists_new_source_and_creates_new_version(

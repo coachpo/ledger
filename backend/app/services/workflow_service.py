@@ -61,6 +61,8 @@ from app.services.workflow_manifest_parser import (
     parse_workflow_manifest,
 )
 
+_COMPILED_GRAPH_STORAGE_KEY = "compiledGraph"
+
 
 @dataclass
 class _ResolvedSlot:
@@ -78,6 +80,7 @@ class _PreparedManifestWrite:
     state: dict[str, object]
     metadata: WorkflowManifestValidationMetadata
     compiled_payload: dict[str, object]
+    compiled_graph: dict[str, object] | None
 
 
 class _WorkflowManifestDiagnosticsError(ValueError):
@@ -120,6 +123,7 @@ class WorkflowService:
             diagnostics=[],
             metadata=prepared.metadata,
             compiled_payload=prepared.compiled_payload,
+            compiled_graph=prepared.compiled_graph,
             run_input_schema=cast(dict[str, object], prepared.state["input_schema"]),
         )
 
@@ -253,6 +257,7 @@ class WorkflowService:
         output_spec: Any,
         manifest_api_version: str = WORKFLOW_MANIFEST_API_VERSION,
         manifest_source: str = TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
+        compiled_graph: dict[str, object] | None = None,
     ) -> dict[str, Any]:
         normalized_input_schema = self._normalize_input_schema(input_schema)
         input_node = self._parse_input_schema_node(
@@ -343,7 +348,10 @@ class WorkflowService:
             "manifest_source": manifest_source,
             "input_schema": normalized_input_schema,
             "steps": normalized_steps,
-            "output_spec": normalized_output_spec,
+            "output_spec": self._store_compiled_graph(
+                normalized_output_spec,
+                compiled_graph,
+            ),
             "aggregate_budget_usd": aggregate_budget,
         }
 
@@ -366,7 +374,9 @@ class WorkflowService:
             )
         except WorkflowManifestCompilerError as exc:
             raise _WorkflowManifestDiagnosticsError(exc.diagnostics) from exc
-        payload = WorkflowCreate.model_validate(compiled_payload)
+        compiled_graph = self._compiled_graph_from_payload(compiled_payload)
+        core_compiled_payload = self._compiled_payload_without_graph(compiled_payload)
+        payload = WorkflowCreate.model_validate(core_compiled_payload)
         try:
             state = self._build_state(
                 name=payload.name,
@@ -376,6 +386,7 @@ class WorkflowService:
                 output_spec=payload.output_spec,
                 manifest_api_version=manifest.api_version,
                 manifest_source=manifest_source,
+                compiled_graph=compiled_graph,
             )
         except ApiError as exc:
             raise _WorkflowManifestDiagnosticsError(
@@ -391,8 +402,50 @@ class WorkflowService:
             payload=payload,
             state=state,
             metadata=metadata,
-            compiled_payload=dict(compiled_payload),
+            compiled_payload=core_compiled_payload,
+            compiled_graph=compiled_graph,
         )
+
+    @staticmethod
+    def _compiled_graph_from_payload(
+        compiled_payload: dict[str, object],
+    ) -> dict[str, object] | None:
+        compiled_graph = compiled_payload.get(_COMPILED_GRAPH_STORAGE_KEY)
+        if compiled_graph is None:
+            return None
+        return cast(dict[str, object], compiled_graph)
+
+    @staticmethod
+    def _compiled_payload_without_graph(
+        compiled_payload: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            key: value
+            for key, value in compiled_payload.items()
+            if key != _COMPILED_GRAPH_STORAGE_KEY
+        }
+
+    @staticmethod
+    def _store_compiled_graph(
+        output_spec: dict[str, Any],
+        compiled_graph: dict[str, object] | None,
+    ) -> dict[str, Any]:
+        if compiled_graph is None:
+            return output_spec
+        return output_spec | {_COMPILED_GRAPH_STORAGE_KEY: compiled_graph}
+
+    @staticmethod
+    def _stored_compiled_graph(output_spec: dict[str, Any]) -> dict[str, object] | None:
+        compiled_graph = output_spec.get(_COMPILED_GRAPH_STORAGE_KEY)
+        if compiled_graph is None:
+            return None
+        return cast(dict[str, object], compiled_graph)
+
+    @staticmethod
+    def _output_spec_without_compiled_graph(output_spec: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value for key, value in output_spec.items() if key != _COMPILED_GRAPH_STORAGE_KEY
+        }
 
     def _api_error_to_manifest_diagnostics(
         self,
@@ -895,7 +948,8 @@ class WorkflowService:
                 "manifestSource": workflow.manifest_source,
                 "inputSchema": workflow.input_schema,
                 "steps": workflow.steps,
-                "outputSpec": workflow.output_spec,
+                "outputSpec": self._output_spec_without_compiled_graph(workflow.output_spec),
+                "compiledGraph": self._stored_compiled_graph(workflow.output_spec),
                 "aggregateBudgetUsd": workflow.aggregate_budget_usd,
                 "createdAt": workflow.created_at,
                 "updatedAt": workflow.updated_at,

@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import (
     Field,
@@ -92,6 +92,13 @@ def _external_field_name(field_name: str) -> str:
         "manifest_source": "manifestSource",
         "output_spec": "outputSpec",
     }.get(field_name, field_name)
+
+
+def _omit_none_compiled_graph(serialized: dict[str, object]) -> dict[str, object]:
+    for key in ("compiledGraph", "compiled_graph"):
+        if serialized.get(key) is None:
+            _ = serialized.pop(key, None)
+    return serialized
 
 
 class WorkflowStatus(str, Enum):  # noqa: UP042
@@ -397,7 +404,15 @@ class WorkflowManifestValidationRead(CamelModel):
     diagnostics: list[WorkflowManifestDiagnostic]
     metadata: WorkflowManifestValidationMetadata | None = None
     compiled_payload: dict[str, Any] | None = None
+    compiled_graph: dict[str, object] | None = None
     run_input_schema: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_without_empty_graph(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        return _omit_none_compiled_graph(cast(dict[str, object], handler(self)))
 
 
 class WorkflowRead(CamelModel):
@@ -412,6 +427,7 @@ class WorkflowRead(CamelModel):
     input_schema: dict[str, Any]
     steps: list[WorkflowStepRead]
     output_spec: WorkflowOutputSpecRead
+    compiled_graph: dict[str, object] | None = None
     aggregate_budget_usd: Decimal
     created_at: datetime
     updated_at: datetime
@@ -420,6 +436,13 @@ class WorkflowRead(CamelModel):
     @classmethod
     def validate_timestamps(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
+
+    @model_serializer(mode="wrap")
+    def serialize_without_empty_graph(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        return _omit_none_compiled_graph(cast(dict[str, object], handler(self)))
 
 
 class WorkflowListRead(CamelModel):

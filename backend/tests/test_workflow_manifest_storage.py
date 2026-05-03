@@ -1,11 +1,16 @@
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import cast
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents import get_default_tool_catalog
+from app.agents.mcp import DefaultMcpConnectionTester
 from app.db.upgrades import upgrade_legacy_schema
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
@@ -14,8 +19,20 @@ from app.models.workflow import (
     WORKFLOW_MANIFEST_API_VERSION,
     Workflow,
 )
-from app.schemas.workflow import WorkflowCreate, WorkflowUpdate
+from app.schemas.workflow import WorkflowCreate, WorkflowCreateRequest, WorkflowUpdate
+from app.schemas.workflow_manifest import WORKFLOW_MANIFEST_V2_API_VERSION
+from app.services.agent_service import AgentService
+from app.services.workflow_manifest_compiler import compile_workflow_manifest
+from app.services.workflow_manifest_decompiler import decompile_workflow_model
+from app.services.workflow_manifest_examples import (
+    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
+    TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+)
 from app.services.workflow_service import WorkflowService
+from tests.test_agent_manifest_compiler import _seed_tradingagents_manifest_refs
 
 
 def _workflow_input_schema() -> dict[str, object]:
@@ -70,6 +87,21 @@ def _seed_agent(session: Session) -> None:
     session.commit()
 
 
+def _agent_service(session: Session) -> AgentService:
+    return AgentService(
+        session,
+        get_default_tool_catalog(),
+        DefaultMcpConnectionTester(),
+    )
+
+
+def _seed_tradingagents_agents(session: Session) -> None:
+    _seed_tradingagents_manifest_refs(session)
+    agent_service = _agent_service(session)
+    for source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.values():
+        _ = agent_service.create_agent_from_manifest(source)
+
+
 def _workflow_create_payload() -> dict[str, object]:
     return {
         "key": "manifest_contract_workflow",
@@ -98,6 +130,36 @@ def _workflow_update_payload() -> dict[str, object]:
     payload["name"] = "Manifest Contract Workflow v2"
     payload["description"] = "Updated legacy payload path keeps manifest placeholders readable."
     return payload
+
+
+def _v2_manifest_source() -> str:
+    return """apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: manifest_contract_workflow_v2
+  name: Manifest Contract Workflow V2
+  description: V2 graph metadata persists alongside execution fields.
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+flow:
+  kind: step
+  id: research
+  slot: analysis
+  uses: manifest_contract_agent@1
+  with:
+    ticker: ${{ inputs.ticker }}
+output:
+  from: ${{ nodes.research.outputs.analysis.summary }}
+"""
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def test_workflow_service_persists_manifest_placeholder_and_read_schema_aliases(
@@ -134,6 +196,124 @@ def test_workflow_service_persists_manifest_placeholder_and_read_schema_aliases(
         assert previous.id == created.id
         assert previous.manifest_api_version == WORKFLOW_MANIFEST_API_VERSION
         assert previous.manifest_source == TEMPORARY_WORKFLOW_MANIFEST_SOURCE
+
+
+def test_workflow_service_persists_v2_source_version_and_compiled_graph(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _seed_agent(session)
+        service = WorkflowService(session)
+        source = _v2_manifest_source()
+        expected_graph = cast(dict[str, object], compile_workflow_manifest(source)["compiledGraph"])
+
+        created = service.create_workflow(
+            WorkflowCreateRequest.model_validate({"manifestSource": source})
+        )
+        created_row = session.get(Workflow, created.id)
+        detail = service.get_workflow(created.id)
+
+        assert created_row is not None
+        assert created.manifest_api_version == WORKFLOW_MANIFEST_V2_API_VERSION
+        assert created.manifest_source == source
+        assert created.compiled_graph is not None
+        assert detail.compiled_graph is not None
+        assert created_row.manifest_api_version == WORKFLOW_MANIFEST_V2_API_VERSION
+        assert created_row.manifest_source == source
+        assert "compiledGraph" not in created.output_spec.model_dump(mode="json", by_alias=True)
+        assert "compiledGraph" in created_row.output_spec
+        stored_graph = cast(dict[str, object], created_row.output_spec["compiledGraph"])
+        assert _canonical_json(created.compiled_graph) == _canonical_json(expected_graph)
+        assert _canonical_json(detail.compiled_graph) == _canonical_json(expected_graph)
+        assert _canonical_json(stored_graph) == _canonical_json(expected_graph)
+        assert "secret" not in _canonical_json(stored_graph).lower()
+
+
+def test_workflow_service_persists_tradingagents_v2_review_examples_with_compiled_graph(
+    session_factory: sessionmaker[Session],
+) -> None:
+    examples = [
+        (
+            TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_v2_strict_sequential_review",
+            17,
+        ),
+        (
+            TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_v2_practical_fanout_review",
+            14,
+        ),
+    ]
+    with session_factory() as session:
+        _seed_tradingagents_agents(session)
+        service = WorkflowService(session)
+
+        for source, expected_key, expected_step_count in examples:
+            created = service.create_workflow(
+                WorkflowCreateRequest.model_validate({"manifestSource": source})
+            )
+            created_row = session.get(Workflow, created.id)
+            assert created_row is not None
+
+            assert created.key == expected_key
+            assert created.manifest_api_version == WORKFLOW_MANIFEST_V2_API_VERSION
+            assert created.manifest_source == source
+            assert len(created.steps) == expected_step_count
+            assert created.compiled_graph is not None
+            assert created.compiled_graph["apiVersion"] == WORKFLOW_MANIFEST_V2_API_VERSION
+            assert "postRunMemory" in created.compiled_graph
+            assert "compiledGraph" not in created.output_spec.model_dump(mode="json", by_alias=True)
+            assert "compiledGraph" in created_row.output_spec
+            stored_graph = cast(dict[str, object], created_row.output_spec["compiledGraph"])
+            serialized_graph = _canonical_json(stored_graph)
+            assert "sk-" not in serialized_graph
+            assert "apiKey" not in serialized_graph
+            assert "secret" not in serialized_graph.lower()
+
+
+def test_workflow_service_persists_and_decompiles_tradingagents_v1_review_examples(
+    session_factory: sessionmaker[Session],
+) -> None:
+    examples = [
+        (
+            TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_strict_sequential_review",
+            14,
+        ),
+        (
+            TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_practical_fanout_review",
+            11,
+        ),
+    ]
+    with session_factory() as session:
+        _seed_tradingagents_agents(session)
+        service = WorkflowService(session)
+
+        for source, expected_key, expected_step_count in examples:
+            created = service.create_workflow(
+                WorkflowCreateRequest.model_validate({"manifestSource": source})
+            )
+            created_row = session.get(Workflow, created.id)
+            assert created_row is not None
+
+            decompiled = decompile_workflow_model(created_row, verify_lossless=False)
+            compiled_source = compile_workflow_manifest(source)
+            compiled_decompiled = compile_workflow_manifest(decompiled.source)
+            compiled_decompiled_steps = cast(
+                list[dict[str, object]],
+                compiled_decompiled["steps"],
+            )
+
+            assert created.key == expected_key
+            assert created.manifest_api_version == WORKFLOW_MANIFEST_API_VERSION
+            assert created.manifest_source == source
+            assert created_row.manifest_source == source
+            assert len(created.steps) == expected_step_count
+            assert len(compiled_decompiled_steps) == expected_step_count
+            assert compiled_decompiled["key"] == expected_key
+            assert compiled_decompiled["outputSpec"] == compiled_source["outputSpec"]
+            assert decompiled.source.startswith("apiVersion: ledger.workflow/v1\n")
 
 
 def test_upgrade_legacy_schema_adds_workflow_manifest_columns_idempotently(
