@@ -399,6 +399,7 @@ $$,
                 source_run_step_id INTEGER REFERENCES run_steps(id) ON DELETE SET NULL,
                 source_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 source_step_index INTEGER,
+                graph_metadata JSONB,
                 error TEXT,
                 started_at TIMESTAMPTZ,
                 finished_at TIMESTAMPTZ,
@@ -445,6 +446,7 @@ $$,
                 output_schema_version INTEGER NOT NULL,
                 input_mode VARCHAR(20) NOT NULL DEFAULT 'wired',
                 wiring JSONB NOT NULL DEFAULT '{}'::jsonb,
+                graph_metadata JSONB,
                 optional BOOLEAN NOT NULL DEFAULT FALSE,
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
                 resolved_input JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -1505,6 +1507,23 @@ def _backfill_agent_model_connections(
             )
 
 
+def _ensure_run_graph_metadata_support(engine: Engine, table_names: set[str]) -> None:
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if "run_steps" in table_names:
+            run_step_columns = {column["name"] for column in inspector.get_columns("run_steps")}
+            if "graph_metadata" not in run_step_columns:
+                connection.exec_driver_sql("ALTER TABLE run_steps ADD COLUMN graph_metadata JSONB")
+        if "run_agent_invocations" in table_names:
+            invocation_columns = {
+                column["name"] for column in inspector.get_columns("run_agent_invocations")
+            }
+            if "graph_metadata" not in invocation_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE run_agent_invocations ADD COLUMN graph_metadata JSONB"
+                )
+
+
 def _recover_stale_agent_platform_runs(engine: Engine, table_names: set[str]) -> None:
     if "runs" not in table_names:
         return
@@ -1805,6 +1824,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _flatten_legacy_mcp_server_rows(engine, table_names)
     _repair_retired_capability_tool_grants(engine, table_names)
     _repair_tradingagents_transition_output_schemas(engine, table_names)
+    _ensure_run_graph_metadata_support(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
     if "portfolios" in table_names:

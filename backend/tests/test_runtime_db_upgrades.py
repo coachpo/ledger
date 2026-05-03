@@ -104,6 +104,7 @@ _RUN_STEP_COLUMNS = {
     "source_run_step_id",
     "source_run_id",
     "source_step_index",
+    "graph_metadata",
     "error",
     "started_at",
     "finished_at",
@@ -125,6 +126,7 @@ _RUN_AGENT_INVOCATION_COLUMNS = {
     "output_schema_version",
     "input_mode",
     "wiring",
+    "graph_metadata",
     "optional",
     "status",
     "resolved_input",
@@ -955,6 +957,30 @@ def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_d
 
         with pytest.raises(RuntimeError, match="legacy Skill storage and canonical Capability"):
             init_db(database_url)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_adds_nullable_run_graph_metadata_columns(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE run_agent_invocations DROP COLUMN graph_metadata"
+            )
+            connection.exec_driver_sql("ALTER TABLE run_steps DROP COLUMN graph_metadata")
+
+        init_db(database_url)
+
+        inspector = inspect(engine)
+        run_step_columns = {column["name"]: column for column in inspector.get_columns("run_steps")}
+        invocation_columns = {
+            column["name"]: column for column in inspector.get_columns("run_agent_invocations")
+        }
+        assert run_step_columns["graph_metadata"]["nullable"] is True
+        assert invocation_columns["graph_metadata"]["nullable"] is True
     finally:
         engine.dispose()
 
