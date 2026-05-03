@@ -727,9 +727,13 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert len(detail_invocations) == 1
         assert detail_invocations[0].trace_span_id == "span-latest"
         assert detail_invocations[0].resolved_input == {"ticker": "NVDA"}
-        serialized_detail = RunService._to_read_model(run_detail).model_dump(
-            mode="json",
-            by_alias=True,
+        serialized_detail = (
+            RunService(session)
+            .get_run(latest_run.id)
+            .model_dump(
+                mode="json",
+                by_alias=True,
+            )
         )
         assert "perStepOutputs" not in serialized_detail
         assert serialized_detail["steps"][0]["index"] == 1

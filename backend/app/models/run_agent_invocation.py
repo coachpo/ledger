@@ -94,6 +94,7 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
         default=dict,
         server_default=sql_text("'{}'::jsonb"),
     )
+    graph_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     optional: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

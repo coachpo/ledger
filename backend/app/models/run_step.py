@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.formatting import utcnow
@@ -55,6 +56,7 @@ class RunStep(IdMixin, TimestampMixin, Base):
         nullable=True,
     )
     source_step_index: Mapped[int | None] = mapped_column(nullable=True)
+    graph_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import or_, select
 
@@ -15,13 +16,21 @@ _TERMINAL_STEP_STATUSES = ("succeeded", "failed", "skipped")
 class RunStepRepository(BaseRepository[RunStep]):
     model = RunStep
 
-    def create_planned_steps(self, *, run_id: int, step_indexes: Iterable[int]) -> list[RunStep]:
+    def create_planned_steps(
+        self,
+        *,
+        run_id: int,
+        step_indexes: Iterable[int],
+        graph_metadata_by_index: dict[int, dict[str, Any]] | None = None,
+    ) -> list[RunStep]:
+        metadata_by_index = graph_metadata_by_index or {}
         steps = [
             self.model(
                 run_id=run_id,
                 step_index=step_index,
                 status="pending",
                 origin="planned",
+                graph_metadata=metadata_by_index.get(step_index),
             )
             for step_index in step_indexes
         ]
