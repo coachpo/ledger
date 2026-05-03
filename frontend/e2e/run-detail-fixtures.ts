@@ -1,0 +1,154 @@
+import type {
+  RunAgentInvocationRead,
+  RunCreatedRead,
+  RunForkDraftRead,
+  RunForkInvocationDraftRead,
+  RunForkStepDraftRead,
+  RunRead,
+  RunStepRead,
+} from "../src/lib/types/run";
+
+const DEFAULT_TIME = "2026-04-29T10:00:00Z";
+
+export function buildRunInvocation(
+  overrides: Partial<RunAgentInvocationRead> = {},
+): RunAgentInvocationRead {
+  return {
+    agentId: 1,
+    agentKey: "playwright_agent",
+    agentVersion: 1,
+    costUsd: "0.01000000",
+    createdAt: DEFAULT_TIME,
+    durationMs: 5,
+    errorCode: null,
+    errorDetails: [],
+    errorMessage: null,
+    finishedAt: "2026-04-29T10:00:04Z",
+    id: 1001,
+    inputMode: "wired",
+    optional: false,
+    output: { summary: "Playwright summary" },
+    outputOrigin: "executed",
+    outputSchemaId: 1,
+    outputSchemaVersion: 1,
+    persistedAt: "2026-04-29T10:00:04Z",
+    position: 1,
+    resolvedInput: {},
+    resolvedInputOrigin: "derived",
+    runId: 1,
+    runStepId: 101,
+    slot: "analysis",
+    sourceInvocationId: null,
+    startedAt: "2026-04-29T10:00:01Z",
+    status: "succeeded",
+    stepIndex: 1,
+    tokens: 18,
+    traceSpanId: null,
+    updatedAt: "2026-04-29T10:00:04Z",
+    wiring: {},
+    ...overrides,
+  };
+}
+
+export function buildRunStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
+  return {
+    createdAt: DEFAULT_TIME,
+    error: null,
+    finishedAt: "2026-04-29T10:00:04Z",
+    id: 101,
+    index: 1,
+    invocations: [],
+    origin: "planned",
+    persistedAt: "2026-04-29T10:00:04Z",
+    runId: 1,
+    sourceRunId: null,
+    sourceRunStepId: null,
+    sourceStepIndex: null,
+    startedAt: "2026-04-29T10:00:01Z",
+    status: "succeeded",
+    updatedAt: "2026-04-29T10:00:04Z",
+    ...overrides,
+  };
+}
+
+export function buildRunDetail(overrides: Partial<RunRead> = {}): RunRead {
+  return {
+    createdAt: DEFAULT_TIME,
+    error: null,
+    executedCostUsd: "0.01000000",
+    executedTokens: 18,
+    finalOutput: { summary: "Playwright summary" },
+    finishedAt: "2026-04-29T10:00:04Z",
+    forkedFromStepIndex: null,
+    id: 1,
+    inheritedCostUsd: "0.00000000",
+    inheritedTokens: 0,
+    input: {},
+    lineageRootRunId: null,
+    resumeStepIndex: 1,
+    sourceRunId: null,
+    startedAt: "2026-04-29T10:00:01Z",
+    status: "succeeded",
+    steps: [],
+    targetId: 1,
+    targetKey: "playwright_target",
+    targetKind: "workflow",
+    targetVersion: 1,
+    totalCostUsd: "0.01000000",
+    totalTokens: 18,
+    traceId: null,
+    updatedAt: "2026-04-29T10:00:04Z",
+    ...overrides,
+  };
+}
+
+export function buildRunCreated(overrides: Partial<RunCreatedRead> = {}): RunCreatedRead {
+  return {
+    createdAt: DEFAULT_TIME,
+    id: 1,
+    status: "running",
+    targetId: 1,
+    targetKey: "playwright_target",
+    targetKind: "workflow",
+    targetVersion: 1,
+    traceId: null,
+    ...overrides,
+  };
+}
+
+export function buildForkInvocationDraft(
+  overrides: Partial<RunForkInvocationDraftRead> = {},
+): RunForkInvocationDraftRead {
+  return {
+    agentKey: "playwright_agent",
+    output: { summary: "Playwright summary" },
+    resolvedInput: {},
+    slot: "analysis",
+    sourceInvocationId: 1001,
+    stepIndex: 1,
+    ...overrides,
+  };
+}
+
+export function buildForkStepDraft(overrides: Partial<RunForkStepDraftRead> = {}): RunForkStepDraftRead {
+  return {
+    index: 1,
+    invocations: [],
+    sourceRunStepId: 101,
+    ...overrides,
+  };
+}
+
+export function buildForkDraft(overrides: Partial<RunForkDraftRead> = {}): RunForkDraftRead {
+  return {
+    forkStepIndex: 1,
+    input: {},
+    sourceRunId: 1,
+    steps: [],
+    targetId: 1,
+    targetKey: "playwright_target",
+    targetKind: "workflow",
+    targetVersion: 1,
+    ...overrides,
+  };
+}

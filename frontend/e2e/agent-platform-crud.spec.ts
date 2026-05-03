@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import type { CapabilityRead } from "../src/lib/types/capability";
+import { buildRunCreated, buildRunDetail, buildRunInvocation, buildRunStep } from "./run-detail-fixtures";
 
 const PLATFORM_API = "http://127.0.0.1:8001/api";
 
@@ -116,7 +117,7 @@ async function createAndActivateMcpServer(
       description: "Serves external quote lookups.",
       transport: "stdio",
       command: "python3",
-      args: ["-c", "print('ledger mcp stub')"],
+      args: ["--version"],
       enabled: true,
     },
   });
@@ -243,14 +244,15 @@ test.describe("Agent platform CRUD flows", () => {
 
       await route.fulfill({
         body: JSON.stringify({
-          createdAt: "2026-04-26T12:00:00Z",
-          id: 321,
-          status: "running",
-          targetId: launchedAgentId,
-          targetKey: agentKey,
-          targetKind: "agent",
-          targetVersion: 1,
-          traceId: "trace-321",
+          ...buildRunCreated({
+            createdAt: "2026-04-26T12:00:00Z",
+            id: 321,
+            targetId: launchedAgentId,
+            targetKey: agentKey,
+            targetKind: "agent",
+            targetVersion: 1,
+            traceId: "trace-321",
+          }),
         }),
         contentType: "application/json",
         status: 201,
@@ -261,44 +263,39 @@ test.describe("Agent platform CRUD flows", () => {
       const ticker = readTickerFromPayload(createdRunPayload);
 
       await route.fulfill({
-        body: JSON.stringify({
-          createdAt: "2026-04-26T12:00:00Z",
-          error: null,
-          finalOutput: { summary: `Agent summary for ${ticker}` },
-          finishedAt: "2026-04-26T12:00:03Z",
-          id: 321,
-          input: createdRunPayload ?? {},
-          perStepOutputs: {
-            "1": [
-              {
-                agentId: 1,
-                agentKey,
-                agentVersion: 1,
-                costUsd: "0.01000000",
-                durationMs: 5,
-                error: null,
-                output: { summary: `Agent summary for ${ticker}` },
-                outputSchemaId: outputSchema.id,
-                outputSchemaVersion: outputSchema.version,
-                resolvedInput: createdRunPayload ?? {},
-                slot: "result",
-                status: "succeeded",
-                tokens: 18,
-                traceSpanId: null,
-              },
+        body: JSON.stringify(
+          buildRunDetail({
+            createdAt: "2026-04-26T12:00:00Z",
+            finalOutput: { summary: `Agent summary for ${ticker}` },
+            finishedAt: "2026-04-26T12:00:03Z",
+            id: 321,
+            input: createdRunPayload ?? {},
+            startedAt: "2026-04-26T12:00:01Z",
+            steps: [
+              buildRunStep({
+                id: 32101,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey,
+                    agentVersion: 1,
+                    id: 321001,
+                    output: { summary: `Agent summary for ${ticker}` },
+                    resolvedInput: createdRunPayload ?? {},
+                    runId: 321,
+                    runStepId: 32101,
+                    slot: "result",
+                  }),
+                ],
+                runId: 321,
+              }),
             ],
-          },
-          startedAt: "2026-04-26T12:00:01Z",
-          status: "succeeded",
-          targetId: 1,
-          targetKey: agentKey,
-          targetKind: "agent",
-          targetVersion: 1,
-          totalCostUsd: "0.01000000",
-          totalTokens: 18,
-          traceId: "trace-321",
-          updatedAt: "2026-04-26T12:00:03Z",
-        }),
+            targetId: 1,
+            targetKey: agentKey,
+            targetKind: "agent",
+            targetVersion: 1,
+            traceId: "trace-321",
+          }),
+        ),
         contentType: "application/json",
       });
     });

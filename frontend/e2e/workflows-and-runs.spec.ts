@@ -1,5 +1,15 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
+import {
+  buildForkDraft,
+  buildForkInvocationDraft,
+  buildForkStepDraft,
+  buildRunCreated,
+  buildRunDetail,
+  buildRunInvocation,
+  buildRunStep,
+} from "./run-detail-fixtures";
+
 const PLATFORM_API = "http://127.0.0.1:8001/api";
 
 type OutputSchemaRead = {
@@ -132,8 +142,14 @@ steps:
         uses: ${options.agentKey}@1
         with:
           ticker: \${{ inputs.ticker }}
+  - id: final_review
+    agents:
+      - slot: decision
+        uses: ${options.agentKey}@1
+        with:
+          ticker: \${{ steps.research.outputs.analysis.summary }}
 output:
-  from: \${{ steps.research.outputs.analysis }}
+  from: \${{ steps.final_review.outputs.decision }}
 `;
 }
 
@@ -175,6 +191,7 @@ test.describe("Workflow YAML editor", () => {
       key: workflowKey,
       name: `Workflow YAML ${timestamp}`,
     });
+    let forkPayload: Record<string, unknown> | null = null;
     let runPayload: Record<string, unknown> | null = null;
 
     await page.route("**/api/workflows/*/runs?*", async (route) => {
@@ -182,14 +199,15 @@ test.describe("Workflow YAML editor", () => {
       const workflowId = Number(route.request().url().match(/\/workflows\/(\d+)\/runs/)?.[1] ?? 0);
       await route.fulfill({
         body: JSON.stringify({
-          createdAt: "2026-04-29T10:00:00Z",
-          id: 8801,
-          status: "running",
-          targetId: workflowId,
-          targetKey: workflowKey,
-          targetKind: "workflow",
-          targetVersion: 1,
-          traceId: "trace-workflow-yaml-8801",
+          ...buildRunCreated({
+            createdAt: "2026-04-29T10:00:00Z",
+            id: 8801,
+            targetId: workflowId,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-workflow-yaml-8801",
+          }),
         }),
         contentType: "application/json",
         status: 201,
@@ -198,44 +216,158 @@ test.describe("Workflow YAML editor", () => {
 
     await page.route("**/api/runs/8801", async (route) => {
       await route.fulfill({
-        body: JSON.stringify({
-          createdAt: "2026-04-29T10:00:00Z",
-          error: null,
-          finalOutput: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
-          finishedAt: "2026-04-29T10:00:04Z",
-          id: 8801,
-          input: runPayload ?? {},
-          perStepOutputs: {
-            "1": [
-              {
-                agentId: agent.id,
-                agentKey: agent.key,
-                agentVersion: agent.version,
-                costUsd: "0.01000000",
-                durationMs: 5,
-                error: null,
-                output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
-                outputSchemaId: schema.id,
-                outputSchemaVersion: schema.version,
-                resolvedInput: runPayload ?? {},
-                slot: "analysis",
-                status: "succeeded",
-                tokens: 18,
-                traceSpanId: "span-workflow-yaml-1",
-              },
+        body: JSON.stringify(
+          buildRunDetail({
+            finalOutput: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+            id: 8801,
+            input: runPayload ?? {},
+            steps: [
+              buildRunStep({
+                id: 880101,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: agent.key,
+                    agentVersion: agent.version,
+                    id: 8801001,
+                    output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                    resolvedInput: runPayload ?? {},
+                    runId: 8801,
+                    runStepId: 880101,
+                    traceSpanId: "span-workflow-yaml-1",
+                  }),
+                ],
+                runId: 8801,
+              }),
+              buildRunStep({
+                id: 880102,
+                index: 2,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: agent.key,
+                    agentVersion: agent.version,
+                    id: 8801002,
+                    output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                    resolvedInput: { ticker: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                    runId: 8801,
+                    runStepId: 880102,
+                    slot: "decision",
+                    stepIndex: 2,
+                    traceSpanId: "span-workflow-yaml-2",
+                  }),
+                ],
+                runId: 8801,
+              }),
             ],
-          },
-          startedAt: "2026-04-29T10:00:00Z",
-          status: "succeeded",
-          targetId: 1,
-          targetKey: workflowKey,
-          targetKind: "workflow",
-          targetVersion: 1,
-          totalCostUsd: "0.01000000",
-          totalTokens: 18,
-          traceId: "trace-workflow-yaml-8801",
-          updatedAt: "2026-04-29T10:00:04Z",
-        }),
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-workflow-yaml-8801",
+          }),
+        ),
+        contentType: "application/json",
+      });
+    });
+
+    await page.route("**/api/runs/8801/fork-draft?*", async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get("forkStepIndex")).toBe("1");
+      await route.fulfill({
+        body: JSON.stringify(
+          buildForkDraft({
+            forkStepIndex: 1,
+            input: runPayload ?? {},
+            sourceRunId: 8801,
+            steps: [
+              buildForkStepDraft({
+                invocations: [
+                  buildForkInvocationDraft({
+                    agentKey: agent.key,
+                    output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                    resolvedInput: runPayload ?? {},
+                    sourceInvocationId: 8801001,
+                  }),
+                ],
+                sourceRunStepId: 880101,
+              }),
+            ],
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+          }),
+        ),
+        contentType: "application/json",
+      });
+    });
+
+    await page.route("**/api/runs/8801/forks", async (route) => {
+      forkPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        body: JSON.stringify(
+          buildRunCreated({
+            id: 8802,
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-workflow-yaml-8802",
+          }),
+        ),
+        contentType: "application/json",
+        status: 201,
+      });
+    });
+
+    await page.route("**/api/runs/8802", async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(
+          buildRunDetail({
+            executedCostUsd: "0.00000000",
+            executedTokens: 0,
+            finalOutput: { summary: `Forked workflow summary for ${String(forkPayload?.input ? "NVDA" : "AAPL")}` },
+            forkedFromStepIndex: 1,
+            id: 8802,
+            inheritedCostUsd: "0.01000000",
+            inheritedTokens: 18,
+            input: { ticker: "NVDA" },
+            lineageRootRunId: 8801,
+            resumeStepIndex: 2,
+            sourceRunId: 8801,
+            steps: [
+              buildRunStep({
+                id: 880201,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: agent.key,
+                    agentVersion: agent.version,
+                    id: 8802001,
+                    output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
+                    outputOrigin: "copied",
+                    resolvedInput: runPayload ?? {},
+                    resolvedInputOrigin: "copied",
+                    runId: 8802,
+                    runStepId: 880201,
+                    sourceInvocationId: 8801001,
+                    traceSpanId: "span-workflow-yaml-1",
+                  }),
+                ],
+                origin: "copied",
+                runId: 8802,
+                sourceRunId: 8801,
+                sourceRunStepId: 880101,
+                sourceStepIndex: 1,
+              }),
+            ],
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            totalCostUsd: "0.01000000",
+            totalTokens: 18,
+            traceId: "trace-workflow-yaml-8802",
+          }),
+        ),
         contentType: "application/json",
       });
     });
@@ -325,6 +457,20 @@ test.describe("Workflow YAML editor", () => {
       "Workflow summary for MSFT",
     );
     await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-workflow-yaml-8801");
+    await expect(page.getByTestId("runs-step-1-fork-entry")).toContainText("Fork from this succeeded step");
+    await expect(page.getByTestId("runs-step-2")).toBeVisible();
+    await expect(page.getByTestId("runs-step-2-fork-entry")).toHaveCount(0);
+
+    await page.getByTestId("runs-step-1-fork-entry").getByRole("button", { name: /fork step/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8801\?fork=1&forkStepIndex=1$/);
+    await expect(page.getByRole("dialog", { name: /fork run draft/i })).toBeVisible();
+    await page.getByLabel("Fork draft run input JSON").fill(JSON.stringify({ ticker: "NVDA" }, null, 2));
+    await page.getByRole("button", { name: /^create fork$/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8802$/);
+    expect(forkPayload).toEqual({ forkStepIndex: 1, input: { ticker: "NVDA" } });
+    await expect(page.getByTestId("runs-detail-page")).toContainText("Forked workflow summary for NVDA");
+    await expect(page.getByTestId("runs-lineage-summary")).toContainText("Run #8801");
+
     expect(workflowEditUrl).toMatch(/\/workflows\/\d+\/edit$/);
   });
 });

@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
+import { buildRunCreated, buildRunDetail, buildRunInvocation, buildRunStep } from "./run-detail-fixtures";
+
 const PLATFORM_API = "http://127.0.0.1:8001/api";
 
 type ModelConnectionRead = {
@@ -87,7 +89,7 @@ async function createPublishedCapability(
 async function createPublishedMcpServer(request: APIRequestContext, key: string): Promise<McpServerRead> {
   const createResponse = await request.post(`${PLATFORM_API}/mcp-servers`, {
     data: {
-      args: ["-c", "print('ledger mcp stub')"],
+      args: ["--version"],
       command: "python3",
       description: "Serves deterministic E2E MCP data.",
       enabled: true,
@@ -200,14 +202,15 @@ test.describe("Agent YAML editor", () => {
       const agentId = Number(route.request().url().match(/\/agents\/(\d+)\/runs/)?.[1] ?? 0);
       await route.fulfill({
         body: JSON.stringify({
-          createdAt: "2026-04-29T12:00:00Z",
-          id: 9901,
-          status: "running",
-          targetId: agentId,
-          targetKey: agentKey,
-          targetKind: "agent",
-          targetVersion: 2,
-          traceId: "trace-agent-yaml-9901",
+          ...buildRunCreated({
+            createdAt: "2026-04-29T12:00:00Z",
+            id: 9901,
+            targetId: agentId,
+            targetKey: agentKey,
+            targetKind: "agent",
+            targetVersion: 2,
+            traceId: "trace-agent-yaml-9901",
+          }),
         }),
         contentType: "application/json",
         status: 201,
@@ -217,44 +220,40 @@ test.describe("Agent YAML editor", () => {
     await page.route("**/api/runs/9901", async (route) => {
       const ticker = String(runPayload?.ticker ?? "AAPL");
       await route.fulfill({
-        body: JSON.stringify({
-          createdAt: "2026-04-29T12:00:00Z",
-          error: null,
-          finalOutput: { summary: `Agent summary for ${ticker}` },
-          finishedAt: "2026-04-29T12:00:04Z",
-          id: 9901,
-          input: runPayload ?? {},
-          perStepOutputs: {
-            "1": [
-              {
-                agentId: 1,
-                agentKey,
-                agentVersion: 2,
-                costUsd: "0.01000000",
-                durationMs: 5,
-                error: null,
-                output: { summary: `Agent summary for ${ticker}` },
-                outputSchemaId: outputSchema.id,
-                outputSchemaVersion: outputSchema.version,
-                resolvedInput: runPayload ?? {},
-                slot: "result",
-                status: "succeeded",
-                tokens: 18,
-                traceSpanId: "span-agent-yaml-1",
-              },
+        body: JSON.stringify(
+          buildRunDetail({
+            createdAt: "2026-04-29T12:00:00Z",
+            finalOutput: { summary: `Agent summary for ${ticker}` },
+            finishedAt: "2026-04-29T12:00:04Z",
+            id: 9901,
+            input: runPayload ?? {},
+            startedAt: "2026-04-29T12:00:01Z",
+            steps: [
+              buildRunStep({
+                id: 990101,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey,
+                    agentVersion: 2,
+                    id: 9901001,
+                    output: { summary: `Agent summary for ${ticker}` },
+                    resolvedInput: runPayload ?? {},
+                    runId: 9901,
+                    runStepId: 990101,
+                    slot: "result",
+                    traceSpanId: "span-agent-yaml-1",
+                  }),
+                ],
+                runId: 9901,
+              }),
             ],
-          },
-          startedAt: "2026-04-29T12:00:01Z",
-          status: "succeeded",
-          targetId: 1,
-          targetKey: agentKey,
-          targetKind: "agent",
-          targetVersion: 2,
-          totalCostUsd: "0.01000000",
-          totalTokens: 18,
-          traceId: "trace-agent-yaml-9901",
-          updatedAt: "2026-04-29T12:00:04Z",
-        }),
+            targetId: 1,
+            targetKey: agentKey,
+            targetKind: "agent",
+            targetVersion: 2,
+            traceId: "trace-agent-yaml-9901",
+          }),
+        ),
         contentType: "application/json",
       });
     });
