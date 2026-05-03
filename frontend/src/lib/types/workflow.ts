@@ -1,8 +1,56 @@
 import type { UnknownRecord } from "./common";
 
 export type WorkflowStatus = "draft" | "published" | "deprecated" | "archived";
-export type WorkflowManifestApiVersion = "ledger.workflow/v1";
+export type WorkflowManifestApiVersion = "ledger.workflow/v1" | "ledger.workflow/v2";
 export type WorkflowManifestDiagnosticSeverity = "error" | "warning";
+export type WorkflowCompiledGraphNodeKind = "step" | "sequence" | "fanout" | "loop";
+
+export interface WorkflowCompiledGraphRef {
+  compiledSlot?: string;
+  nodeId?: string;
+  path?: string;
+  slot?: string;
+  source: "inputs" | "nodes";
+  sourceNodeId?: string;
+  sourceSlot?: string;
+  stepIndex?: number;
+}
+
+export interface WorkflowCompiledGraphNode {
+  agentKey?: string;
+  agentVersion?: number;
+  branchId?: string;
+  branchIds?: string[];
+  childNodeIds?: string[];
+  fanoutId?: string;
+  id: string;
+  kind: WorkflowCompiledGraphNodeKind;
+  loopId?: string;
+  loopIteration?: number;
+  maxIterations?: number;
+  mode?: string;
+  nodeId: string;
+  optional?: boolean;
+  refs?: Record<string, WorkflowCompiledGraphRef>;
+  sequenceNodeId?: string;
+  slot?: string;
+  sourceRefs?: unknown;
+  stateRefs?: Record<string, WorkflowCompiledGraphRef>;
+  stepIndex?: number;
+}
+
+export interface WorkflowCompiledGraph {
+  apiVersion: WorkflowManifestApiVersion;
+  nodes: WorkflowCompiledGraphNode[];
+  output?: WorkflowCompiledGraphRef;
+  postRunMemory?: {
+    enabled?: boolean;
+    sourceRefs?: Record<string, WorkflowCompiledGraphRef>;
+    benchmarkSymbol?: WorkflowCompiledGraphRef;
+  };
+  rootNodeId: string;
+  validation?: Record<string, unknown>;
+}
 
 export interface WorkflowWireSource {
   from: "input" | "step";
@@ -109,6 +157,7 @@ export interface WorkflowManifestValidationRead {
   diagnostics: WorkflowManifestDiagnostic[];
   metadata: WorkflowManifestValidationMetadata | null;
   compiledPayload: WorkflowCompiledCreateInput | null;
+  compiledGraph?: WorkflowCompiledGraph | null;
   runInputSchema: UnknownRecord | null;
 }
 
@@ -124,6 +173,7 @@ export interface WorkflowRead {
   inputSchema: UnknownRecord;
   steps: WorkflowStepRead[];
   outputSpec: WorkflowOutputSpecRead;
+  compiledGraph?: WorkflowCompiledGraph | null;
   aggregateBudgetUsd: string;
   createdAt: string;
   updatedAt: string;

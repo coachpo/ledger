@@ -21,6 +21,26 @@ export interface RunAgentErrorRead {
   details: UnknownRecord[];
 }
 
+export interface RunGraphMetadata {
+  branchId?: string;
+  fanoutId?: string;
+  graphPath?: string;
+  loopId?: string;
+  loopIteration?: number;
+  nodeId?: string;
+  nodeKind?: "step" | "sequence" | "fanout" | "loop";
+  sourceRefs?: unknown;
+}
+
+export interface RunMemoryArtifactRead {
+  reportId: number;
+  slug: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  sourceGraphMetadata: RunGraphMetadata | null;
+}
+
 export interface RunAgentInvocationRead {
   id: number;
   runStepId: number;
@@ -35,6 +55,7 @@ export interface RunAgentInvocationRead {
   outputSchemaVersion: number;
   inputMode: RunInvocationInputMode;
   wiring: UnknownRecord;
+  graphMetadata: RunGraphMetadata | null;
   optional: boolean;
   status: RunStepStatus;
   resolvedInput: UnknownRecord;
@@ -65,6 +86,7 @@ export interface RunStepRead {
   sourceRunStepId: number | null;
   sourceRunId: number | null;
   sourceStepIndex: number | null;
+  graphMetadata: RunGraphMetadata | null;
   error: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -117,6 +139,7 @@ export interface RunRead extends RunTargetIdentityRead {
   createdAt: string;
   updatedAt: string;
   steps: RunStepRead[];
+  memoryArtifacts: RunMemoryArtifactRead[];
 }
 
 export interface RunForkInvocationDraftRead {
