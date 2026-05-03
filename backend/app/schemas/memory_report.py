@@ -30,6 +30,7 @@ AGENT_MEMORY_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
     "analysis.horizonDays",
     "analysis.confidence",
     "analysis.decisionSummary",
+    "analysis.benchmarkSymbol",
     "analysis.agentName",
     "analysis.workflowKey",
     "analysis.workflowVersion",
@@ -48,6 +49,7 @@ AGENT_MEMORY_IMMUTABLE_FIELDS: Final[tuple[str, ...]] = (
     "analysis.horizonDays",
     "analysis.confidence",
     "analysis.decisionSummary",
+    "analysis.benchmarkSymbol",
     "analysis.decision",
     "analysis.runId",
     "analysis.agentKey",
@@ -111,6 +113,7 @@ class AgentMemoryModelInput(CamelModel):
     horizon_days: int | None = Field(default=None, ge=1)
     confidence: str | None = None
     decision_summary: str | None = None
+    benchmark_symbol: str | None = Field(default=None, max_length=32)
 
     @field_validator("ticker", mode="before")
     @classmethod
@@ -121,6 +124,13 @@ class AgentMemoryModelInput(CamelModel):
     @classmethod
     def normalize_optional_text_fields(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="Agent memory input field")
+
+    @field_validator("benchmark_symbol", mode="before")
+    @classmethod
+    def normalize_benchmark_symbol(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _normalize_ticker(value)
 
 
 class AgentMemoryReportCreateMetadata(CamelModel):
@@ -183,6 +193,7 @@ class AgentMemoryReportAnalysis(CamelModel):
     horizon_days: int | None = Field(default=None, ge=1)
     confidence: str | None = None
     decision_summary: str | None = None
+    benchmark_symbol: str | None = Field(default=None, max_length=32)
     agent_name: str | None = None
     workflow_key: str | None = Field(default=None, max_length=120)
     workflow_version: int | None = Field(default=None, ge=1)
@@ -213,6 +224,7 @@ class AgentMemoryReportAnalysis(CamelModel):
             horizon_days=model_input.horizon_days,
             confidence=model_input.confidence,
             decision_summary=model_input.decision_summary,
+            benchmark_symbol=model_input.benchmark_symbol,
             agent_name=trusted_context.agent_name,
             workflow_key=trusted_context.workflow_key,
             workflow_version=trusted_context.workflow_version,
@@ -221,9 +233,11 @@ class AgentMemoryReportAnalysis(CamelModel):
             trace_id=trusted_context.trace_id,
         )
 
-    @field_validator("ticker", mode="before")
+    @field_validator("ticker", "benchmark_symbol", mode="before")
     @classmethod
-    def validate_ticker(cls, value: object) -> str:
+    def validate_ticker(cls, value: object) -> str | None:
+        if value is None:
+            return None
         return _normalize_ticker(value)
 
     @field_validator(

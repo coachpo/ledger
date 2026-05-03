@@ -55,3 +55,21 @@ class ReportRepository(BaseRepository[Report]):
     def get_by_slug(self, slug: str) -> Report | None:
         statement = select(self.model).where(self.model.slug == slug)
         return self._get_by_statement(statement)
+
+    def list_agent_memory_by_run_id(self, run_id: int) -> list[Report]:
+        statement = (
+            select(self.model)
+            .where(
+                self.model.source == "external",
+                self.model.metadata_.contains(
+                    {
+                        "analysis": {
+                            "reviewType": "agent_memory",
+                            "runId": run_id,
+                        }
+                    }
+                ),
+            )
+            .order_by(self.model.created_at.asc(), self.model.id.asc())
+        )
+        return self._list(statement)

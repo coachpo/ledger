@@ -105,6 +105,7 @@ class RunAgentInvocationRead(CamelModel):
     output_schema_version: int = Field(ge=1)
     input_mode: RunInvocationInputMode
     wiring: dict[str, Any] = Field(default_factory=dict)
+    graph_metadata: dict[str, Any] | None = None
     optional: bool
     status: RunStepStatus
     resolved_input: dict[str, Any] = Field(default_factory=dict)
@@ -142,6 +143,7 @@ class RunStepRead(CamelModel):
     source_run_step_id: int | None = None
     source_run_id: int | None = None
     source_step_index: int | None = Field(default=None, ge=1)
+    graph_metadata: dict[str, Any] | None = None
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -209,6 +211,20 @@ class RunListRead(CamelModel):
     items: list[RunListItemRead]
 
 
+class RunMemoryArtifactRead(CamelModel):
+    report_id: int
+    slug: str
+    name: str
+    status: str
+    created_at: datetime
+    source_graph_metadata: dict[str, Any] | None = None
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
 class RunRead(CamelModel):
     id: int
     target_kind: RunTargetKind
@@ -235,6 +251,7 @@ class RunRead(CamelModel):
     created_at: datetime
     updated_at: datetime
     steps: list[RunStepRead] = Field(default_factory=list)
+    memory_artifacts: list[RunMemoryArtifactRead] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -297,6 +314,7 @@ __all__ = [
     "RunInvocationResolvedInputOrigin",
     "RunListItemRead",
     "RunListRead",
+    "RunMemoryArtifactRead",
     "RunRead",
     "RunForkCreateRequest",
     "RunForkDraftRead",

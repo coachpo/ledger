@@ -265,6 +265,7 @@ class MemoryReportService:
             "action": model_input.decision.action,
             "agentKey": trusted_context.agent_key,
             "agentVersion": trusted_context.agent_version,
+            "benchmarkSymbol": model_input.benchmark_symbol,
             "horizonDays": model_input.horizon_days,
             "portfolioSlug": model_input.portfolio_slug,
             "runId": trusted_context.run_id,
@@ -281,6 +282,7 @@ class MemoryReportService:
             "action": analysis.decision.action,
             "agentKey": analysis.agent_key,
             "agentVersion": analysis.agent_version,
+            "benchmarkSymbol": analysis.benchmark_symbol,
             "horizonDays": analysis.horizon_days,
             "portfolioSlug": analysis.portfolio_slug,
             "runId": analysis.run_id,
@@ -324,6 +326,8 @@ class MemoryReportService:
             lines.append(f"- Horizon days: {analysis.horizon_days}")
         if analysis.confidence is not None:
             lines.append(f"- Confidence: {analysis.confidence}")
+        if analysis.benchmark_symbol is not None:
+            lines.append(f"- Benchmark symbol: {analysis.benchmark_symbol}")
         if analysis.workflow_key is not None:
             workflow = analysis.workflow_key
             if analysis.workflow_version is not None:

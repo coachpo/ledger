@@ -383,6 +383,7 @@ def test_agent_memory_model_input_normalizes_optional_fields() -> None:
             "portfolioSlug": " ",
             "confidence": " conviction ",
             "decisionSummary": " ",
+            "benchmarkSymbol": " spy ",
         }
     )
 
@@ -392,6 +393,7 @@ def test_agent_memory_model_input_normalizes_optional_fields() -> None:
     assert model_input.portfolio_slug is None
     assert model_input.confidence == "conviction"
     assert model_input.decision_summary is None
+    assert model_input.benchmark_symbol == "SPY"
 
 
 def test_agent_memory_contract_field_groups_are_explicit() -> None:
@@ -401,8 +403,10 @@ def test_agent_memory_contract_field_groups_are_explicit() -> None:
     assert "analysis.runId" in AGENT_MEMORY_REQUIRED_FIELDS
     assert "analysis.agentKey" in AGENT_MEMORY_REQUIRED_FIELDS
     assert "analysis.portfolioSlug" in AGENT_MEMORY_OPTIONAL_FIELDS
+    assert "analysis.benchmarkSymbol" in AGENT_MEMORY_OPTIONAL_FIELDS
     assert "analysis.workflowKey" in AGENT_MEMORY_OPTIONAL_FIELDS
     assert "analysis.reviewType" in AGENT_MEMORY_IMMUTABLE_FIELDS
+    assert "analysis.benchmarkSymbol" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.decision" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.runId" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.agentVersion" in AGENT_MEMORY_IMMUTABLE_FIELDS
