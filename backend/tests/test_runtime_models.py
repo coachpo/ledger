@@ -18,6 +18,8 @@ from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
 from app.services.output_schema_service import OutputSchemaService
@@ -201,7 +203,6 @@ def _build_run(
     target_key: str,
     target_version: int,
     status: str,
-    per_step_outputs: dict[str, list[dict[str, object]]],
     final_output: object | None,
     total_tokens: int,
     total_cost_usd: Decimal,
@@ -216,7 +217,6 @@ def _build_run(
         target_key=target_key,
         target_version=target_version,
         input={"ticker": "NVDA", "horizonDays": 30},
-        per_step_outputs=per_step_outputs,
         final_output=final_output,
         status=status,
         total_tokens=total_tokens,
@@ -1297,7 +1297,7 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
         session.commit()
 
 
-def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_and_trace_ids(
+def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_and_trace_ids(
     session_factory,
 ) -> None:
     run_table = Base.metadata.tables["runs"]
@@ -1305,7 +1305,9 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
         index.name for index in run_table.indexes
     }
     assert {"target_kind", "target_id", "target_key", "target_version"} <= set(run_table.c.keys())
-    assert {"workflow_id", "workflow_key", "workflow_version"}.isdisjoint(run_table.c.keys())
+    assert {"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(
+        run_table.c.keys()
+    )
 
     with session_factory() as session:
         published_capability = _build_capability(
@@ -1356,26 +1358,6 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
             target_key=workflow.key,
             target_version=workflow.version,
             status="succeeded",
-            per_step_outputs={
-                "1": [
-                    {
-                        "slot": "analysis",
-                        "agentId": published_agent.id,
-                        "agentKey": published_agent.key,
-                        "agentVersion": published_agent.version,
-                        "outputSchemaId": published_agent.output_schema_id,
-                        "outputSchemaVersion": published_agent.output_schema_version,
-                        "resolvedInput": {"ticker": "NVDA"},
-                        "output": {"headline": "Buy"},
-                        "error": None,
-                        "status": "succeeded",
-                        "tokens": 321,
-                        "costUsd": "0.15000000",
-                        "durationMs": 1450,
-                        "traceSpanId": "span-analysis",
-                    }
-                ]
-            },
             final_output={"headline": "Buy"},
             total_tokens=321,
             total_cost_usd=Decimal("0.15000000"),
@@ -1384,6 +1366,47 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
             finished_at=finished_at,
         )
         session.add(run)
+        session.flush()
+        step = RunStep(
+            run_id=run.id,
+            step_index=1,
+            status="succeeded",
+            origin="planned",
+            started_at=started_at,
+            finished_at=finished_at,
+            persisted_at=finished_at,
+        )
+        session.add(step)
+        session.flush()
+        session.add(
+            RunAgentInvocation(
+                run_step_id=step.id,
+                run_id=run.id,
+                step_index=1,
+                slot="analysis",
+                position=0,
+                agent_id=published_agent.id,
+                agent_key=published_agent.key,
+                agent_version=published_agent.version,
+                output_schema_id=published_agent.output_schema_id,
+                output_schema_version=published_agent.output_schema_version,
+                input_mode="passthrough",
+                wiring={},
+                optional=False,
+                status="succeeded",
+                resolved_input={"ticker": "NVDA"},
+                resolved_input_origin="passthrough",
+                output={"headline": "Buy"},
+                output_origin="executed",
+                tokens=321,
+                cost_usd=Decimal("0.15000000"),
+                duration_ms=1450,
+                trace_span_id="span-analysis",
+                started_at=started_at,
+                finished_at=finished_at,
+                persisted_at=finished_at,
+            )
+        )
         session.add(
             _build_run(
                 target_kind="agent",
@@ -1391,7 +1414,6 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
                 target_key=published_agent.key,
                 target_version=published_agent.version,
                 status="failed",
-                per_step_outputs={"1": []},
                 final_output=None,
                 total_tokens=0,
                 total_cost_usd=Decimal("0"),
@@ -1410,8 +1432,12 @@ def test_agent_platform_run_models_persist_per_step_outputs_totals_timestamps_an
         assert stored_run.target_id == workflow.id
         assert stored_run.target_key == workflow.key
         assert stored_run.target_version == 1
-        assert stored_run.per_step_outputs["1"][0]["traceSpanId"] == "span-analysis"
-        assert stored_run.per_step_outputs["1"][0]["resolvedInput"] == {"ticker": "NVDA"}
+        assert len(stored_run.steps) == 1
+        assert stored_run.steps[0].step_index == 1
+        assert stored_run.steps[0].status == "succeeded"
+        assert len(stored_run.steps[0].invocations) == 1
+        assert stored_run.steps[0].invocations[0].trace_span_id == "span-analysis"
+        assert stored_run.steps[0].invocations[0].resolved_input == {"ticker": "NVDA"}
         assert stored_run.total_tokens == 321
         assert stored_run.total_cost_usd == Decimal("0.15000000")
         assert stored_run.trace_id == "trace-market-review"

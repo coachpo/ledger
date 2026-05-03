@@ -9,6 +9,8 @@ from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
 from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
@@ -17,6 +19,7 @@ from app.models.workflow import Workflow
 __all__ = [
     "Agent",
     "Balance",
+    "Capability",
     "MarketQuote",
     "McpServer",
     "ModelConnection",
@@ -25,7 +28,8 @@ __all__ = [
     "Position",
     "Report",
     "Run",
-    "Capability",
+    "RunAgentInvocation",
+    "RunStep",
     "SymbolNameCache",
     "TextTemplate",
     "TradingOperation",
