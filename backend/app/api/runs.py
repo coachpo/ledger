@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_run_service
 from app.core.errors import validation_error
-from app.schemas.run import RunListRead, RunRead, RunStatus, RunTargetKind
+from app.schemas.run import (
+    RunCreatedRead,
+    RunForkCreateRequest,
+    RunForkDraftRead,
+    RunListRead,
+    RunRead,
+    RunStatus,
+    RunTargetKind,
+)
 from app.services.run_service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -48,6 +56,28 @@ def list_runs(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/{run_id}/fork-draft", response_model=RunForkDraftRead)
+def build_run_fork_draft(
+    run_id: int,
+    service: Annotated[RunService, Depends(get_run_service)],
+    fork_step_index: Annotated[int, Query(alias="forkStepIndex", ge=1)],
+) -> RunForkDraftRead:
+    return service.build_fork_draft(run_id, fork_step_index)
+
+
+@router.post(
+    "/{run_id}/forks",
+    response_model=RunCreatedRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_run_fork(
+    run_id: int,
+    payload: RunForkCreateRequest,
+    service: Annotated[RunService, Depends(get_run_service)],
+) -> RunCreatedRead:
+    return service.create_fork_run(run_id, payload)
 
 
 @router.get("/{run_id}", response_model=RunRead)

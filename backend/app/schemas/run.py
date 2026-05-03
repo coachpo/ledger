@@ -16,6 +16,37 @@ class RunStatus(str, Enum):  # noqa: UP042
     FAILED = "failed"
 
 
+class RunStepStatus(str, Enum):  # noqa: UP042
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class RunStepOrigin(str, Enum):  # noqa: UP042
+    PLANNED = "planned"
+    COPIED = "copied"
+
+
+class RunInvocationInputMode(str, Enum):  # noqa: UP042
+    PASSTHROUGH = "passthrough"
+    WIRED = "wired"
+
+
+class RunInvocationResolvedInputOrigin(str, Enum):  # noqa: UP042
+    DERIVED = "derived"
+    EDITED = "edited"
+    COPIED = "copied"
+    PASSTHROUGH = "passthrough"
+
+
+class RunInvocationOutputOrigin(str, Enum):  # noqa: UP042
+    EXECUTED = "executed"
+    EDITED = "edited"
+    COPIED = "copied"
+
+
 class RunTargetKind(str, Enum):  # noqa: UP042
     AGENT = "agent"
     WORKFLOW = "workflow"
@@ -60,21 +91,71 @@ class RunAgentErrorRead(CamelModel):
     details: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class RunStepAgentRead(CamelModel):
+class RunAgentInvocationRead(CamelModel):
+    id: int
+    run_step_id: int
+    run_id: int
+    step_index: int = Field(ge=1)
     slot: str
+    position: int = Field(ge=0)
     agent_id: int
     agent_key: str
     agent_version: int = Field(ge=1)
     output_schema_id: int
     output_schema_version: int = Field(ge=1)
+    input_mode: RunInvocationInputMode
+    wiring: dict[str, Any] = Field(default_factory=dict)
+    optional: bool
+    status: RunStepStatus
     resolved_input: dict[str, Any] = Field(default_factory=dict)
+    resolved_input_origin: RunInvocationResolvedInputOrigin
     output: Any | None = None
-    error: RunAgentErrorRead | None = None
-    status: RunStatus
+    output_origin: RunInvocationOutputOrigin | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    error_details: list[dict[str, Any]] = Field(default_factory=list)
     tokens: int = Field(ge=0)
     cost_usd: Decimal = Field(ge=Decimal("0"))
     duration_ms: int | None = Field(default=None, ge=0)
     trace_span_id: str | None = None
+    source_invocation_id: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    persisted_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class RunStepRead(CamelModel):
+    id: int
+    run_id: int
+    index: int = Field(ge=1)
+    status: RunStepStatus
+    origin: RunStepOrigin
+    source_run_step_id: int | None = None
+    source_run_id: int | None = None
+    source_step_index: int | None = Field(default=None, ge=1)
+    error: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    persisted_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    invocations: list[RunAgentInvocationRead] = Field(default_factory=list)
+
+    @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
 
 
 class RunCreatedRead(CamelModel):
@@ -135,17 +216,25 @@ class RunRead(CamelModel):
     target_key: str
     target_version: int = Field(ge=1)
     input: dict[str, Any]
-    per_step_outputs: dict[str, list[RunStepAgentRead]]
+    source_run_id: int | None = None
+    lineage_root_run_id: int | None = None
+    forked_from_step_index: int | None = Field(default=None, ge=1)
+    resume_step_index: int = Field(ge=1)
     final_output: Any | None = None
     status: RunStatus
     total_tokens: int = Field(ge=0)
     total_cost_usd: Decimal = Field(ge=Decimal("0"))
+    inherited_tokens: int = Field(ge=0)
+    inherited_cost_usd: Decimal = Field(ge=Decimal("0"))
+    executed_tokens: int = Field(ge=0)
+    executed_cost_usd: Decimal = Field(ge=Decimal("0"))
     trace_id: str | None = None
     error: str | None = None
     started_at: datetime
     finished_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    steps: list[RunStepRead] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -160,13 +249,63 @@ class RunRead(CamelModel):
         return ensure_timezone(value)
 
 
+class RunForkInvocationDraftRead(CamelModel):
+    source_invocation_id: int
+    step_index: int = Field(ge=1)
+    slot: str = Field(min_length=1)
+    agent_key: str
+    resolved_input: dict[str, Any]
+    output: Any
+
+
+class RunForkStepDraftRead(CamelModel):
+    source_run_step_id: int
+    index: int = Field(ge=1)
+    invocations: list[RunForkInvocationDraftRead]
+
+
+class RunForkDraftRead(CamelModel):
+    source_run_id: int
+    fork_step_index: int = Field(ge=1)
+    target_kind: RunTargetKind
+    target_id: int
+    target_key: str
+    target_version: int = Field(ge=1)
+    input: dict[str, Any]
+    steps: list[RunForkStepDraftRead]
+
+
+class RunForkInvocationEdit(CamelModel):
+    step_index: int = Field(ge=1)
+    slot: str = Field(min_length=1)
+    resolved_input: dict[str, Any] | None = None
+    output: Any | None = None
+
+
+class RunForkCreateRequest(CamelModel):
+    fork_step_index: int = Field(ge=1)
+    input: dict[str, Any] | None = None
+    invocation_edits: list[RunForkInvocationEdit] = Field(default_factory=list)
+
+
 __all__ = [
     "RunAgentErrorRead",
+    "RunAgentInvocationRead",
     "RunCreatedRead",
+    "RunInvocationInputMode",
+    "RunInvocationOutputOrigin",
+    "RunInvocationResolvedInputOrigin",
     "RunListItemRead",
     "RunListRead",
     "RunRead",
+    "RunForkCreateRequest",
+    "RunForkDraftRead",
+    "RunForkInvocationDraftRead",
+    "RunForkInvocationEdit",
+    "RunForkStepDraftRead",
     "RunStatus",
-    "RunStepAgentRead",
+    "RunStepOrigin",
+    "RunStepRead",
+    "RunStepStatus",
     "RunTargetKind",
 ]

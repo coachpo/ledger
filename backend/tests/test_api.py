@@ -2368,12 +2368,15 @@ def test_agent_platform_stub_workflow_runs_without_live_services(
     assert detail["status"] == "succeeded"
     _assert_logfire_trace_id(detail["traceId"])
     assert detail["finalOutput"] == _build_stub_decision(expected_step_outputs)
-    assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == list(
-        STUB_ANALYSIS_AGENT_KEYS
-    )
-    assert detail["perStepOutputs"]["2"][0]["agentKey"] == STUB_SYNTHESIZER_KEY
-    assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == expected_step_outputs
-    assert detail["perStepOutputs"]["2"][0]["status"] == "succeeded"
+    assert "perStepOutputs" not in detail
+    step_one_invocations = detail["steps"][0]["invocations"]
+    step_two_invocation = detail["steps"][1]["invocations"][0]
+    assert [entry["slot"] for entry in step_one_invocations] == list(STUB_ANALYSIS_AGENT_KEYS)
+    assert step_two_invocation["agentKey"] == STUB_SYNTHESIZER_KEY
+    assert step_two_invocation["resolvedInput"] == expected_step_outputs
+    assert step_two_invocation["outputOrigin"] == "executed"
+    assert step_two_invocation["errorCode"] is None
+    assert step_two_invocation["status"] == "succeeded"
 
 
 def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:

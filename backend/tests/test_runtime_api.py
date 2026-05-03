@@ -30,6 +30,7 @@ from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
 from app.models.run import Run
+from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
@@ -2090,27 +2091,32 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
     assert detail["targetVersion"] == 1
     assert detail["input"] == {"ticker": "MSFT"}
     assert detail["finalOutput"] == {"summary": "research_agent:MSFT"}
-    assert detail["perStepOutputs"] == {
-        "1": [
-            {
-                "slot": "final_output",
-                "agentId": historical_agent_id,
-                "agentKey": "research_agent",
-                "agentVersion": 1,
-                "outputSchemaId": detail["perStepOutputs"]["1"][0]["outputSchemaId"],
-                "outputSchemaVersion": 1,
-                "resolvedInput": {"ticker": "MSFT"},
-                "output": {"summary": "research_agent:MSFT"},
-                "error": None,
-                "status": "succeeded",
-                "tokens": 7,
-                "costUsd": "0.01000000",
-                "durationMs": 4,
-                "traceSpanId": detail["perStepOutputs"]["1"][0]["traceSpanId"],
-            }
-        ]
-    }
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
+    assert "perStepOutputs" not in detail
+    assert [step["index"] for step in detail["steps"]] == [1]
+    step = detail["steps"][0]
+    invocation = step["invocations"][0]
+    assert step["status"] == "succeeded"
+    assert step["origin"] == "planned"
+    assert invocation["slot"] == "final_output"
+    assert invocation["agentId"] == historical_agent_id
+    assert invocation["agentKey"] == "research_agent"
+    assert invocation["agentVersion"] == 1
+    assert invocation["outputSchemaVersion"] == 1
+    assert invocation["inputMode"] == "passthrough"
+    assert invocation["wiring"] == {}
+    assert invocation["resolvedInput"] == {"ticker": "MSFT"}
+    assert invocation["resolvedInputOrigin"] == "passthrough"
+    assert invocation["output"] == {"summary": "research_agent:MSFT"}
+    assert invocation["outputOrigin"] == "executed"
+    assert invocation["sourceInvocationId"] is None
+    assert invocation["errorCode"] is None
+    assert invocation["errorMessage"] is None
+    assert invocation["errorDetails"] == []
+    assert invocation["status"] == "succeeded"
+    assert invocation["tokens"] == 7
+    assert invocation["costUsd"] == "0.01000000"
+    assert invocation["durationMs"] == 4
+    _assert_logfire_span_id(invocation["traceSpanId"])
 
     listed = client.get(
         "/api/runs",
@@ -2469,9 +2475,9 @@ def test_agent_platform_run_surfaces_saved_connection_provider_failures(
 
     assert detail["status"] == "failed"
     assert detail["error"] == expected_message
-    step_error = detail["perStepOutputs"]["1"][0]["error"]
-    assert step_error["code"] == expected_code
-    assert step_error["message"] == expected_message
+    step_error = detail["steps"][0]["invocations"][0]
+    assert step_error["errorCode"] == expected_code
+    assert step_error["errorMessage"] == expected_message
     assert "sk-db-fail-4444" not in json.dumps(detail)
 
 
@@ -2535,9 +2541,9 @@ def test_agent_platform_run_fails_when_saved_model_connection_has_no_api_key(
 
     assert detail["status"] == "failed"
     assert "missing an API key" in detail["error"]
-    step_error = detail["perStepOutputs"]["1"][0]["error"]
-    assert step_error["code"] == "agent_model_connection_api_key_missing"
-    assert "missing an API key" in step_error["message"]
+    step_error = detail["steps"][0]["invocations"][0]
+    assert step_error["errorCode"] == "agent_model_connection_api_key_missing"
+    assert "missing an API key" in step_error["errorMessage"]
 
 
 def test_agent_platform_run_rejects_invalid_input_without_persisting_run(
@@ -2985,6 +2991,100 @@ def _create_single_agent_runtime_workflow(
     return workflow, agent
 
 
+def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocations(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_run_in_background", lambda self, run_id: None)
+
+    with session_factory() as session:
+        workflow = _seed_reference_workflow(
+            session,
+            workflow_key="planned_creation_workflow",
+            workflow_name="Planned Creation Workflow",
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 5},
+    )
+    assert trigger.status_code == 201, trigger.json()
+
+    detail = client.get(f"/api/runs/{trigger.json()['id']}")
+    assert detail.status_code == 200, detail.json()
+    body = detail.json()
+
+    assert body["status"] == "running"
+    assert body["resumeStepIndex"] == 1
+    assert body["totalTokens"] == 0
+    assert body["totalCostUsd"] == "0.00000000"
+    assert body["inheritedTokens"] == 0
+    assert body["inheritedCostUsd"] == "0.00000000"
+    assert body["executedTokens"] == 0
+    assert body["executedCostUsd"] == "0.00000000"
+    assert [step["index"] for step in body["steps"]] == [1, 2]
+    assert [step["status"] for step in body["steps"]] == ["pending", "pending"]
+    assert [step["origin"] for step in body["steps"]] == ["planned", "planned"]
+
+    step_one_invocations = body["steps"][0]["invocations"]
+    step_two_invocations = body["steps"][1]["invocations"]
+    assert [item["position"] for item in step_one_invocations] == list(range(8))
+    assert [item["slot"] for item in step_one_invocations] == list(REFERENCE_STEP_ONE_AGENT_KEYS)
+    assert len(step_two_invocations) == 1
+    assert step_two_invocations[0]["slot"] == "decision"
+    assert step_one_invocations[0]["status"] == "pending"
+    assert step_one_invocations[0]["inputMode"] == "wired"
+    assert step_one_invocations[0]["resolvedInput"] == {}
+    assert step_one_invocations[0]["resolvedInputOrigin"] == "derived"
+    assert step_one_invocations[0]["wiring"] == {
+        "ticker": {"from": "input", "path": "ticker"},
+        "horizon_days": {"from": "input", "path": "horizon_days"},
+    }
+    assert step_two_invocations[0]["wiring"]["financials_analyst"] == {
+        "from": "step",
+        "stepIndex": 1,
+        "slot": "financials_analyst",
+    }
+
+
+def test_agent_platform_agent_run_creation_persists_synthetic_passthrough_step(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_run_in_background", lambda self, run_id: None)
+
+    with session_factory() as session:
+        _workflow, agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="planned_agent_direct",
+            workflow_key="planned_agent_holder_workflow",
+            connection=_build_model_connection(name="Planned Direct Agent Connection"),
+        )
+
+    trigger = client.post(f"/api/agents/{agent.id}/runs", json={"ticker": "MSFT"})
+    assert trigger.status_code == 201, trigger.json()
+
+    detail = client.get(f"/api/runs/{trigger.json()['id']}")
+    assert detail.status_code == 200, detail.json()
+    body = detail.json()
+
+    assert body["targetKind"] == "agent"
+    assert body["status"] == "running"
+    assert [step["index"] for step in body["steps"]] == [1]
+    invocation = body["steps"][0]["invocations"][0]
+    assert invocation["slot"] == "final_output"
+    assert invocation["position"] == 0
+    assert invocation["agentId"] == agent.id
+    assert invocation["agentKey"] == "planned_agent_direct"
+    assert invocation["inputMode"] == "passthrough"
+    assert invocation["wiring"] == {}
+    assert invocation["resolvedInput"] == {"ticker": "MSFT"}
+    assert invocation["resolvedInputOrigin"] == "passthrough"
+    assert invocation["status"] == "pending"
+
+
 def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -3090,27 +3190,30 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
     assert detail["targetVersion"] == workflow.version
     assert detail["input"] == {"ticker": "AVGO"}
     assert detail["finalOutput"] == {"summary": "http_agent:AVGO"}
-    assert detail["perStepOutputs"] == {
-        "1": [
-            {
-                "slot": "analysis",
-                "agentId": detail["perStepOutputs"]["1"][0]["agentId"],
-                "agentKey": "http_agent",
-                "agentVersion": 1,
-                "outputSchemaId": detail["perStepOutputs"]["1"][0]["outputSchemaId"],
-                "outputSchemaVersion": 1,
-                "resolvedInput": {"ticker": "AVGO"},
-                "output": {"summary": "http_agent:AVGO"},
-                "error": None,
-                "status": "succeeded",
-                "tokens": 13,
-                "costUsd": "0.01500000",
-                "durationMs": 6,
-                "traceSpanId": detail["perStepOutputs"]["1"][0]["traceSpanId"],
-            }
-        ]
-    }
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
+    assert "perStepOutputs" not in detail
+    assert [step["index"] for step in detail["steps"]] == [1]
+    step = detail["steps"][0]
+    invocation = step["invocations"][0]
+    assert step["status"] == "succeeded"
+    assert step["origin"] == "planned"
+    assert invocation["slot"] == "analysis"
+    assert invocation["agentKey"] == "http_agent"
+    assert invocation["agentVersion"] == 1
+    assert invocation["outputSchemaVersion"] == 1
+    assert invocation["inputMode"] == "wired"
+    assert invocation["resolvedInput"] == {"ticker": "AVGO"}
+    assert invocation["resolvedInputOrigin"] == "derived"
+    assert invocation["output"] == {"summary": "http_agent:AVGO"}
+    assert invocation["outputOrigin"] == "executed"
+    assert invocation["sourceInvocationId"] is None
+    assert invocation["errorCode"] is None
+    assert invocation["errorMessage"] is None
+    assert invocation["errorDetails"] == []
+    assert invocation["status"] == "succeeded"
+    assert invocation["tokens"] == 13
+    assert invocation["costUsd"] == "0.01500000"
+    assert invocation["durationMs"] == 6
+    _assert_logfire_span_id(invocation["traceSpanId"])
 
     listed = client.get(
         "/api/runs",
@@ -3314,15 +3417,15 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
     detail = _wait_for_agent_platform_run(client, run_id)
     assert detail["status"] == "succeeded"
     _assert_logfire_trace_id(detail["traceId"])
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][1]["traceSpanId"])
-    _assert_logfire_span_id(detail["perStepOutputs"]["2"][0]["traceSpanId"])
+    _assert_logfire_span_id(detail["steps"][0]["invocations"][0]["traceSpanId"])
+    _assert_logfire_span_id(detail["steps"][0]["invocations"][1]["traceSpanId"])
+    _assert_logfire_span_id(detail["steps"][1]["invocations"][0]["traceSpanId"])
     assert detail["finalOutput"] == {"summary": "alpha:NVDA|beta:NVDA"}
     assert set(step_one_slots) == {"alpha", "beta"}
-    assert [item["slot"] for item in detail["perStepOutputs"]["1"]] == ["alpha", "beta"]
-    assert detail["perStepOutputs"]["1"][0]["resolvedInput"] == {"ticker": "NVDA"}
-    assert detail["perStepOutputs"]["1"][0]["status"] == "succeeded"
-    assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == {
+    assert [item["slot"] for item in detail["steps"][0]["invocations"]] == ["alpha", "beta"]
+    assert detail["steps"][0]["invocations"][0]["resolvedInput"] == {"ticker": "NVDA"}
+    assert detail["steps"][0]["invocations"][0]["status"] == "succeeded"
+    assert detail["steps"][1]["invocations"][0]["resolvedInput"] == {
         "analysisA": {"summary": "alpha:NVDA"},
         "analysisB": {"summary": "beta:NVDA"},
     }
@@ -3443,27 +3546,33 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
     assert detail["input"] == {"ticker": "MSFT"}
     assert detail["totalTokens"] == 21
     assert detail["totalCostUsd"] == "0.02000000"
-    assert detail["perStepOutputs"] == {
-        "1": [
-            {
-                "slot": "analysis",
-                "agentId": detail["perStepOutputs"]["1"][0]["agentId"],
-                "agentKey": "detail_agent",
-                "agentVersion": 1,
-                "outputSchemaId": detail["perStepOutputs"]["1"][0]["outputSchemaId"],
-                "outputSchemaVersion": 1,
-                "resolvedInput": {"ticker": "MSFT"},
-                "output": {"summary": "detail_agent:MSFT"},
-                "error": None,
-                "status": "succeeded",
-                "tokens": 21,
-                "costUsd": "0.02000000",
-                "durationMs": 8,
-                "traceSpanId": detail["perStepOutputs"]["1"][0]["traceSpanId"],
-            }
-        ]
-    }
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
+    assert detail["inheritedTokens"] == 0
+    assert detail["inheritedCostUsd"] == "0.00000000"
+    assert detail["executedTokens"] == 21
+    assert detail["executedCostUsd"] == "0.02000000"
+    assert "perStepOutputs" not in detail
+    assert [step["index"] for step in detail["steps"]] == [1]
+    step = detail["steps"][0]
+    invocation = step["invocations"][0]
+    assert step["status"] == "succeeded"
+    assert step["origin"] == "planned"
+    assert invocation["slot"] == "analysis"
+    assert invocation["agentKey"] == "detail_agent"
+    assert invocation["agentVersion"] == 1
+    assert invocation["outputSchemaVersion"] == 1
+    assert invocation["resolvedInput"] == {"ticker": "MSFT"}
+    assert invocation["resolvedInputOrigin"] == "derived"
+    assert invocation["output"] == {"summary": "detail_agent:MSFT"}
+    assert invocation["outputOrigin"] == "executed"
+    assert invocation["sourceInvocationId"] is None
+    assert invocation["errorCode"] is None
+    assert invocation["errorMessage"] is None
+    assert invocation["errorDetails"] == []
+    assert invocation["status"] == "succeeded"
+    assert invocation["tokens"] == 21
+    assert invocation["costUsd"] == "0.02000000"
+    assert invocation["durationMs"] == 8
+    _assert_logfire_span_id(invocation["traceSpanId"])
 
 
 def test_agent_platform_report_lookup_run_requires_capability_grant(
@@ -3502,7 +3611,7 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
@@ -3510,11 +3619,9 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
     assert step_entry["agentKey"] == "report_lookup_reader"
     assert step_entry["status"] == "failed"
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": REPORT_LOOKUP_ACCESS_DENIED_CODE,
-        "message": REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == REPORT_LOOKUP_ACCESS_DENIED_CODE
+    assert step_entry["errorMessage"] == REPORT_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert step_entry["errorDetails"] == []
     first_tool_names = [
         tool["name"] for tool in _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
@@ -3613,7 +3720,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {
@@ -3669,7 +3776,7 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
@@ -3677,11 +3784,9 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
     assert step_entry["agentKey"] == "report_memory_writer"
     assert step_entry["status"] == "failed"
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-        "message": REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE
+    assert step_entry["errorMessage"] == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+    assert step_entry["errorDetails"] == []
     first_tool_names = [
         tool["name"]
         for tool in _RuntimeReportsWriteToolCallingOpenAIClient.create_calls[0]["tools"]
@@ -3714,7 +3819,7 @@ def test_agent_platform_reports_write_run_creates_pending_memory_with_trusted_co
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run(client, run_id)
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {
@@ -3786,7 +3891,7 @@ def test_agent_platform_position_lookup_run_requires_capability_grant(
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
@@ -3794,11 +3899,9 @@ def test_agent_platform_position_lookup_run_requires_capability_grant(
     assert step_entry["agentKey"] == "position_lookup_reader"
     assert step_entry["status"] == "failed"
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": POSITION_LOOKUP_ACCESS_DENIED_CODE,
-        "message": POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == POSITION_LOOKUP_ACCESS_DENIED_CODE
+    assert step_entry["errorMessage"] == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert step_entry["errorDetails"] == []
     first_tool_names = [
         tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
@@ -3876,7 +3979,7 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {
@@ -4043,7 +4146,7 @@ def test_agent_platform_position_lookup_run_rejects_invalid_tool_arguments(
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
@@ -4051,11 +4154,9 @@ def test_agent_platform_position_lookup_run_rejects_invalid_tool_arguments(
     assert step_entry["agentKey"] == "position_lookup_reader"
     assert step_entry["status"] == "failed"
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": "agent_tool_call_invalid",
-        "message": expected_message,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == "agent_tool_call_invalid"
+    assert step_entry["errorMessage"] == expected_message
+    assert step_entry["errorDetails"] == []
     assert len(_RuntimePositionToolCallingOpenAIClient.create_calls) == 1
 
 
@@ -4257,7 +4358,7 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
     finally:
         app.dependency_overrides.pop(get_quote_provider, None)
 
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
     expected_message = "Agent is not authorized to use ledger.market_data.ohlcv_lookup."
 
     assert detail["status"] == "failed"
@@ -4266,11 +4367,9 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
     assert step_entry["agentKey"] == "ohlcv_lookup_denied_reader"
     assert step_entry["status"] == "failed"
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": "agent_execution_access_denied",
-        "message": expected_message,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == "agent_execution_access_denied"
+    assert step_entry["errorMessage"] == expected_message
+    assert step_entry["errorDetails"] == []
     first_tool_names = [
         tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
@@ -4470,9 +4569,9 @@ def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceed
     assert "exceeded its budget" in str(detail["error"])
     assert detail["finalOutput"] is None
     assert detail["totalCostUsd"] == "0.09000000"
-    assert detail["perStepOutputs"]["1"][0]["status"] == "failed"
-    assert detail["perStepOutputs"]["1"][0]["output"] is None
-    assert detail["perStepOutputs"]["1"][0]["error"]["code"] == "agent_budget_exceeded"
+    assert detail["steps"][0]["invocations"][0]["status"] == "failed"
+    assert detail["steps"][0]["invocations"][0]["output"] is None
+    assert detail["steps"][0]["invocations"][0]["errorCode"] == "agent_budget_exceeded"
 
 
 def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_exceeded(
@@ -4581,9 +4680,9 @@ def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_ex
 
     assert detail["status"] == "failed"
     assert "aggregate budget" in str(detail["error"])
-    assert detail["perStepOutputs"]["1"][0]["status"] == "succeeded"
-    assert detail["perStepOutputs"]["1"][1]["status"] == "failed"
-    assert detail["perStepOutputs"]["1"][1]["error"]["code"] == "run_budget_exceeded"
+    assert detail["steps"][0]["invocations"][0]["status"] == "succeeded"
+    assert detail["steps"][0]["invocations"][1]["status"] == "failed"
+    assert detail["steps"][0]["invocations"][1]["errorCode"] == "run_budget_exceeded"
 
 
 def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running(
@@ -4712,11 +4811,11 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
     assert detail["status"] == "succeeded"
     _assert_logfire_trace_id(detail["traceId"])
     assert detail["finalOutput"] == {"summary": "fallback decision"}
-    assert detail["perStepOutputs"]["1"][0]["status"] == "failed"
-    assert detail["perStepOutputs"]["1"][0]["output"] is None
-    assert detail["perStepOutputs"]["1"][0]["error"]["code"] == "agent_execution_failed"
-    assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == {}
-    assert detail["perStepOutputs"]["2"][0]["status"] == "succeeded"
+    assert detail["steps"][0]["invocations"][0]["status"] == "failed"
+    assert detail["steps"][0]["invocations"][0]["output"] is None
+    assert detail["steps"][0]["invocations"][0]["errorCode"] == "agent_execution_failed"
+    assert detail["steps"][1]["invocations"][0]["resolvedInput"] == {}
+    assert detail["steps"][1]["invocations"][0]["status"] == "succeeded"
 
 
 def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
@@ -5268,13 +5367,15 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         "rationale": "Risk debate completed.",
         "history": ["aggressive", "neutral", "conservative"],
     }
-    assert detail["perStepOutputs"]["2"][0]["output"] == {
+    assert detail["steps"][1]["invocations"][0]["output"] == {
         "nextState": {"history": ["bull_round_1"]}
     }
-    assert "priorState" not in detail["perStepOutputs"]["2"][0]["output"]
-    assert detail["perStepOutputs"]["8"][0]["output"] == {"nextState": {"history": ["aggressive"]}}
-    assert "priorState" not in detail["perStepOutputs"]["8"][0]["output"]
-    assert [entry["slot"] for entry in detail["perStepOutputs"]["1"]] == [
+    assert "priorState" not in detail["steps"][1]["invocations"][0]["output"]
+    assert detail["steps"][7]["invocations"][0]["output"] == {
+        "nextState": {"history": ["aggressive"]}
+    }
+    assert "priorState" not in detail["steps"][7]["invocations"][0]["output"]
+    assert [entry["slot"] for entry in detail["steps"][0]["invocations"]] == [
         "market_report",
         "social_report",
         "news_report",
@@ -5303,3 +5404,389 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         "history": ["aggressive", "neutral", "conservative"]
     }
     reset_settings_cache()
+
+
+def _create_fork_runtime_workflow(
+    session: Session,
+    *,
+    workflow_key: str,
+) -> WorkflowRead:
+    output_schema = _build_output_schema(
+        key=f"{workflow_key}_schema",
+        version=1,
+        status="published",
+    )
+    skill = _build_skill(
+        key=f"{workflow_key}_skill",
+        version=1,
+        status="published",
+        tools=["ledger.market_data.quote_lookup"],
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="http-sse",
+    )
+    connection = _build_model_connection(name=f"{workflow_key} Connection")
+    session.add_all([output_schema, skill, mcp_server, connection])
+    session.flush()
+    analyst = _build_agent_platform_agent(
+        key=f"{workflow_key}_analyst",
+        version=1,
+        status="published",
+        output_schema=output_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+    )
+    decider = _build_agent_platform_agent(
+        key=f"{workflow_key}_decider",
+        version=1,
+        status="published",
+        output_schema=output_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "analysis": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                }
+            },
+            "required": ["analysis"],
+        },
+    )
+    session.add_all([analyst, decider])
+    session.commit()
+    return WorkflowService(session).create_workflow(
+        WorkflowCreate.model_validate(
+            {
+                "key": workflow_key,
+                "name": workflow_key.replace("_", " ").title(),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"ticker": {"type": "string"}},
+                    "required": ["ticker"],
+                },
+                "steps": [
+                    {
+                        "index": 1,
+                        "agents": [
+                            {
+                                "agentKey": f"{workflow_key}_analyst",
+                                "slot": "analysis",
+                                "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                            }
+                        ],
+                    },
+                    {
+                        "index": 2,
+                        "agents": [
+                            {
+                                "agentKey": f"{workflow_key}_decider",
+                                "slot": "decision",
+                                "wiring": {
+                                    "analysis": {
+                                        "from": "step",
+                                        "stepIndex": 1,
+                                        "slot": "analysis",
+                                    }
+                                },
+                            }
+                        ],
+                    },
+                ],
+                "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
+            }
+        )
+    )
+
+
+def test_agent_platform_run_fork_draft_and_create_resume_from_copied_step(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    calls: list[tuple[int, str, dict[str, Any]]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        calls.append((step_index, slot, dict(resolved_input)))
+        if step_index == 1:
+            return {
+                "output": {"summary": f"source:{resolved_input['ticker']}"},
+                "tokens": 10,
+                "costUsd": "0.01000000",
+                "durationMs": 4,
+                "traceSpanId": None,
+            }
+        return {
+            "output": {"summary": f"decision:{resolved_input['analysis']['summary']}"},
+            "tokens": 5,
+            "costUsd": "0.00500000",
+            "durationMs": 3,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow = _create_fork_runtime_workflow(session, workflow_key="fork_resume_workflow")
+
+    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NVDA"})
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    assert source_detail["status"] == "succeeded"
+
+    draft = client.get(
+        f"/api/runs/{source_detail['id']}/fork-draft",
+        params={"forkStepIndex": 1},
+    )
+    assert draft.status_code == 200, draft.json()
+    assert draft.json()["input"] == {"ticker": "NVDA"}
+    assert draft.json()["steps"][0]["invocations"][0]["output"] == {"summary": "source:NVDA"}
+
+    calls.clear()
+    fork = client.post(
+        f"/api/runs/{source_detail['id']}/forks",
+        json={
+            "forkStepIndex": 1,
+            "input": {"ticker": "MSFT"},
+            "invocationEdits": [
+                {
+                    "stepIndex": 1,
+                    "slot": "analysis",
+                    "resolvedInput": {"ticker": "EDITED"},
+                    "output": {"summary": "edited-alpha"},
+                }
+            ],
+        },
+    )
+    assert fork.status_code == 201, fork.json()
+    fork_detail = _wait_for_agent_platform_run(client, fork.json()["id"])
+    assert calls == [(2, "decision", {"analysis": {"summary": "edited-alpha"}})]
+    assert fork_detail["sourceRunId"] == source_detail["id"]
+    assert fork_detail["lineageRootRunId"] == source_detail["id"]
+    assert fork_detail["forkedFromStepIndex"] == 1
+    assert fork_detail["resumeStepIndex"] == 2
+    assert fork_detail["input"] == {"ticker": "MSFT"}
+    assert fork_detail["finalOutput"] == {"summary": "decision:edited-alpha"}
+    assert fork_detail["inheritedTokens"] == 10
+    assert fork_detail["inheritedCostUsd"] == "0.01000000"
+    assert fork_detail["executedTokens"] == 5
+    assert fork_detail["executedCostUsd"] == "0.00500000"
+    assert fork_detail["totalTokens"] == 15
+    assert fork_detail["totalCostUsd"] == "0.01500000"
+    assert [step["origin"] for step in fork_detail["steps"]] == ["copied", "planned"]
+    copied_invocation = fork_detail["steps"][0]["invocations"][0]
+    assert copied_invocation["resolvedInput"] == {"ticker": "EDITED"}
+    assert copied_invocation["resolvedInputOrigin"] == "edited"
+    assert copied_invocation["output"] == {"summary": "edited-alpha"}
+    assert copied_invocation["outputOrigin"] == "edited"
+    assert copied_invocation["sourceInvocationId"] == (
+        source_detail["steps"][0]["invocations"][0]["id"]
+    )
+    assert copied_invocation["tokens"] == 10
+    assert copied_invocation["costUsd"] == "0.01000000"
+    resumed_invocation = fork_detail["steps"][1]["invocations"][0]
+    assert resumed_invocation["outputOrigin"] == "executed"
+    assert resumed_invocation["sourceInvocationId"] is None
+    assert resumed_invocation["tokens"] == 5
+    assert resumed_invocation["costUsd"] == "0.00500000"
+
+    source_after = client.get(f"/api/runs/{source_detail['id']}")
+    assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["input"] == {"ticker": "NVDA"}
+    assert source_after.json()["steps"][0]["invocations"][0]["resolvedInput"] == {"ticker": "NVDA"}
+    assert source_after.json()["steps"][0]["invocations"][0]["output"] == {"summary": "source:NVDA"}
+
+
+def test_agent_platform_run_fork_rejects_non_succeeded_source_step(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        return {
+            "output": {"summary": f"{slot}:{resolved_input.get('ticker', 'ready')}"},
+            "tokens": 3,
+            "costUsd": "0.00100000",
+            "durationMs": 1,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow = _create_fork_runtime_workflow(session, workflow_key="fork_reject_workflow")
+
+    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    with session_factory() as session:
+        run = session.get(Run, source_detail["id"])
+        assert run is not None
+        steps = cast(list[RunStep], run.steps)
+        steps[0].status = "failed"
+        session.commit()
+
+    rejected = client.post(
+        f"/api/runs/{source_detail['id']}/forks",
+        json={"forkStepIndex": 1},
+    )
+    assert rejected.status_code == 400, rejected.json()
+    assert rejected.json()["code"] == "run_fork_step_not_succeeded"
+
+
+def test_agent_platform_run_fork_rejects_agent_source_run_without_creating_run(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        return {
+            "output": {"summary": f"agent:{resolved_input['ticker']}"},
+            "tokens": 8,
+            "costUsd": "0.00800000",
+            "durationMs": 2,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        _workflow, agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="fork_agent_source_agent",
+            workflow_key="fork_agent_source_holder_workflow",
+            connection=_build_model_connection(name="Fork Agent Source Connection"),
+        )
+
+    source_trigger = client.post(f"/api/agents/{agent.id}/runs", json={"ticker": "AAPL"})
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    assert source_detail["targetKind"] == "agent"
+    assert source_detail["finalOutput"] == {"summary": "agent:AAPL"}
+
+    draft = client.get(
+        f"/api/runs/{source_detail['id']}/fork-draft",
+        params={"forkStepIndex": 1},
+    )
+    assert draft.status_code == 400, draft.json()
+    assert draft.json()["code"] == "run_fork_target_kind_unsupported"
+
+    fork = client.post(
+        f"/api/runs/{source_detail['id']}/forks",
+        json={"forkStepIndex": 1, "input": {"ticker": "TSLA"}},
+    )
+    assert fork.status_code == 400, fork.json()
+    assert fork.json()["code"] == "run_fork_target_kind_unsupported"
+
+    listed = client.get(
+        "/api/runs",
+        params={"targetKind": "agent", "targetId": agent.id},
+    )
+    assert listed.status_code == 200, listed.json()
+    assert [item["id"] for item in listed.json()["items"]] == [source_detail["id"]]
+
+    source_after = client.get(f"/api/runs/{source_detail['id']}")
+    assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["input"] == {"ticker": "AAPL"}
+    assert source_after.json()["finalOutput"] == {"summary": "agent:AAPL"}
+
+
+def test_agent_platform_run_fork_rejects_final_workflow_step_without_creating_run(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        calls.append(dict(resolved_input))
+        return {
+            "output": {"summary": f"single:{resolved_input['ticker']}"},
+            "tokens": 8,
+            "costUsd": "0.00800000",
+            "durationMs": 2,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key="fork_final_agent",
+            workflow_key="fork_final_workflow",
+            connection=_build_model_connection(name="Fork Final Connection"),
+        )
+
+    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AAPL"})
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    assert source_detail["targetKind"] == "workflow"
+    assert source_detail["finalOutput"] == {"summary": "single:AAPL"}
+
+    calls.clear()
+    draft = client.get(
+        f"/api/runs/{source_detail['id']}/fork-draft",
+        params={"forkStepIndex": 1},
+    )
+    assert draft.status_code == 400, draft.json()
+    assert draft.json()["code"] == "run_fork_step_not_continuable"
+
+    fork = client.post(
+        f"/api/runs/{source_detail['id']}/forks",
+        json={"forkStepIndex": 1, "input": {"ticker": "TSLA"}},
+    )
+    assert fork.status_code == 400, fork.json()
+    assert fork.json()["code"] == "run_fork_step_not_continuable"
+    assert calls == []
+
+    listed = client.get(
+        "/api/runs",
+        params={"targetKind": "workflow", "targetId": workflow.id},
+    )
+    assert listed.status_code == 200, listed.json()
+    assert [item["id"] for item in listed.json()["items"]] == [source_detail["id"]]
+
+    source_after = client.get(f"/api/runs/{source_detail['id']}")
+    assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["input"] == {"ticker": "AAPL"}
+    assert source_after.json()["finalOutput"] == {"summary": "single:AAPL"}
