@@ -4,7 +4,7 @@ import json
 import re
 import time
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -622,14 +622,14 @@ def test_agent_platform_run_persists_explicit_final_output_step(
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "decision:analysis:AMD"}
-    assert detail["perStepOutputs"]["1"][0]["slot"] == "analysis"
-    assert detail["perStepOutputs"]["1"][0]["output"] == {"summary": "analysis:AMD"}
-    assert detail["perStepOutputs"]["2"][0]["slot"] == "decision"
-    assert detail["perStepOutputs"]["2"][0]["agentKey"] == "legacy_output_decision_agent"
-    assert detail["perStepOutputs"]["2"][0]["resolvedInput"] == {
+    assert detail["steps"][0]["invocations"][0]["slot"] == "analysis"
+    assert detail["steps"][0]["invocations"][0]["output"] == {"summary": "analysis:AMD"}
+    assert detail["steps"][1]["invocations"][0]["slot"] == "decision"
+    assert detail["steps"][1]["invocations"][0]["agentKey"] == "legacy_output_decision_agent"
+    assert detail["steps"][1]["invocations"][0]["resolvedInput"] == {
         "analysis": {"summary": "analysis:AMD"}
     }
-    assert detail["perStepOutputs"]["2"][0]["output"] == {"summary": "decision:analysis:AMD"}
+    assert detail["steps"][1]["invocations"][0]["output"] == {"summary": "decision:analysis:AMD"}
 
 
 def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable(
@@ -725,7 +725,7 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
 
     assert detail["status"] == "succeeded"
     assert detail["traceId"] is None
-    assert detail["perStepOutputs"]["1"][0]["traceSpanId"] is None
+    assert detail["steps"][0]["invocations"][0]["traceSpanId"] is None
     assert detail["finalOutput"] == {"summary": "trace_agent:SHOP"}
 
 
@@ -804,7 +804,27 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
                 "required": ["analysis"],
             },
         )
-        session.add_all([first_agent, second_agent])
+        third_agent = _build_agent_platform_agent(
+            key="step_agent_c",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            skill=skill,
+            mcp_server=mcp_server,
+            model_connection=connection,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "decision": {
+                        "type": "object",
+                        "properties": {"summary": {"type": "string"}},
+                        "required": ["summary"],
+                    }
+                },
+                "required": ["decision"],
+            },
+        )
+        session.add_all([first_agent, second_agent, third_agent])
         session.commit()
         workflow = WorkflowService(session).create_workflow(
             WorkflowCreate.model_validate(
@@ -843,8 +863,24 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
                                 }
                             ],
                         },
+                        {
+                            "index": 3,
+                            "agents": [
+                                {
+                                    "agentKey": "step_agent_c",
+                                    "slot": "post_decision",
+                                    "wiring": {
+                                        "decision": {
+                                            "from": "step",
+                                            "stepIndex": 2,
+                                            "slot": "decision",
+                                        }
+                                    },
+                                }
+                            ],
+                        },
                     ],
-                    "outputSpec": {"kind": "slot", "stepIndex": 2, "slot": "decision"},
+                    "outputSpec": {"kind": "slot", "stepIndex": 3, "slot": "post_decision"},
                 }
             )
         )
@@ -855,13 +891,26 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
 
     assert detail["status"] == "failed"
     assert detail["traceId"] is None
-    assert detail["perStepOutputs"]["1"][0]["status"] == "succeeded"
-    assert detail["perStepOutputs"]["1"][0]["output"] == {"summary": "analysis:INTC"}
-    _assert_logfire_span_id(detail["perStepOutputs"]["1"][0]["traceSpanId"])
-    assert detail["perStepOutputs"]["2"][0]["status"] == "failed"
-    assert detail["perStepOutputs"]["2"][0]["output"] is None
-    _assert_logfire_span_id(detail["perStepOutputs"]["2"][0]["traceSpanId"])
-    assert detail["perStepOutputs"]["2"][0]["error"]["code"] == "agent_execution_failed"
+    assert [step["status"] for step in detail["steps"]] == [
+        "succeeded",
+        "failed",
+        "skipped",
+    ]
+    succeeded_invocation = detail["steps"][0]["invocations"][0]
+    failed_invocation = detail["steps"][1]["invocations"][0]
+    skipped_invocation = detail["steps"][2]["invocations"][0]
+    assert succeeded_invocation["status"] == "succeeded"
+    assert succeeded_invocation["output"] == {"summary": "analysis:INTC"}
+    _assert_logfire_span_id(succeeded_invocation["traceSpanId"])
+    assert failed_invocation["status"] == "failed"
+    assert failed_invocation["output"] is None
+    _assert_logfire_span_id(failed_invocation["traceSpanId"])
+    assert failed_invocation["errorCode"] == "agent_execution_failed"
+    assert skipped_invocation["status"] == "skipped"
+    assert skipped_invocation["output"] is None
+    assert skipped_invocation["errorCode"] == "run_step_skipped"
+    assert skipped_invocation["errorMessage"] == "Run failed before this invocation started"
+    assert skipped_invocation["errorDetails"] == []
 
 
 def test_agent_platform_run_persists_missing_workflow_target_failure_before_step_execution(
@@ -899,7 +948,8 @@ def test_agent_platform_run_persists_missing_workflow_target_failure_before_step
     assert body["status"] == "failed"
     assert body["error"] == expected_error
     assert body["finalOutput"] is None
-    assert body["perStepOutputs"] == {}
+    assert body["steps"][0]["status"] == "pending"
+    assert body["steps"][0]["invocations"][0]["status"] == "pending"
     assert body["traceId"] is None
 
     with session_factory() as session:
@@ -908,7 +958,7 @@ def test_agent_platform_run_persists_missing_workflow_target_failure_before_step
         assert run.status == "failed"
         assert run.error == expected_error
         assert run.final_output is None
-        assert run.per_step_outputs == {}
+        assert all(step.status == "pending" for step in cast(list[Any], run.steps))
         assert run.finished_at is not None
 
 
@@ -935,7 +985,7 @@ def test_agent_platform_run_persists_missing_output_schema_failure(
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run_detail(client, run_id)
     expected_error = f"Agent {agent.key!r} references a missing output schema version"
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["error"] == expected_error
@@ -945,11 +995,9 @@ def test_agent_platform_run_persists_missing_output_schema_failure(
     assert step_entry["resolvedInput"] == {}
     assert step_entry["output"] is None
     assert step_entry["traceSpanId"] is None
-    assert step_entry["error"] == {
-        "code": "run_output_schema_missing",
-        "message": expected_error,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == "run_output_schema_missing"
+    assert step_entry["errorMessage"] == expected_error
+    assert step_entry["errorDetails"] == []
 
     with session_factory() as session:
         run = session.get(Run, run_id)
@@ -957,7 +1005,8 @@ def test_agent_platform_run_persists_missing_output_schema_failure(
         assert run.status == "failed"
         assert run.error == expected_error
         assert run.final_output is None
-        assert run.per_step_outputs["1"][0]["error"]["code"] == "run_output_schema_missing"
+        invocation = cast(list[Any], run.steps)[0].invocations[0]
+        assert invocation.error_code == "run_output_schema_missing"
 
 
 def test_agent_platform_run_persists_missing_model_connection_failure(
@@ -986,7 +1035,7 @@ def test_agent_platform_run_persists_missing_model_connection_failure(
     expected_error = (
         f"Agent {agent.key!r} references missing model connection {missing_connection_id}"
     )
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["error"] == expected_error
@@ -994,11 +1043,9 @@ def test_agent_platform_run_persists_missing_model_connection_failure(
     assert step_entry["status"] == "failed"
     assert step_entry["resolvedInput"] == {"ticker": "IBM"}
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": "run_agent_model_connection_missing",
-        "message": expected_error,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == "run_agent_model_connection_missing"
+    assert step_entry["errorMessage"] == expected_error
+    assert step_entry["errorDetails"] == []
     _assert_logfire_span_id(step_entry["traceSpanId"])
 
     with session_factory() as session:
@@ -1007,7 +1054,8 @@ def test_agent_platform_run_persists_missing_model_connection_failure(
         assert run.status == "failed"
         assert run.error == expected_error
         assert run.final_output is None
-        assert run.per_step_outputs["1"][0]["error"]["code"] == "run_agent_model_connection_missing"
+        invocation = cast(list[Any], run.steps)[0].invocations[0]
+        assert invocation.error_code == "run_agent_model_connection_missing"
 
 
 def test_agent_platform_run_persists_missing_api_key_failure(
@@ -1034,7 +1082,7 @@ def test_agent_platform_run_persists_missing_api_key_failure(
         f"Agent {agent.key!r} cannot run because model connection {connection.name!r} "
         "is missing an API key"
     )
-    step_entry = detail["perStepOutputs"]["1"][0]
+    step_entry = detail["steps"][0]["invocations"][0]
 
     assert detail["status"] == "failed"
     assert detail["error"] == expected_error
@@ -1042,11 +1090,9 @@ def test_agent_platform_run_persists_missing_api_key_failure(
     assert step_entry["status"] == "failed"
     assert step_entry["resolvedInput"] == {"ticker": "NFLX"}
     assert step_entry["output"] is None
-    assert step_entry["error"] == {
-        "code": "agent_model_connection_api_key_missing",
-        "message": expected_error,
-        "details": [],
-    }
+    assert step_entry["errorCode"] == "agent_model_connection_api_key_missing"
+    assert step_entry["errorMessage"] == expected_error
+    assert step_entry["errorDetails"] == []
     _assert_logfire_span_id(step_entry["traceSpanId"])
 
     with session_factory() as session:
@@ -1055,10 +1101,8 @@ def test_agent_platform_run_persists_missing_api_key_failure(
         assert run.status == "failed"
         assert run.error == expected_error
         assert run.final_output is None
-        assert (
-            run.per_step_outputs["1"][0]["error"]["code"]
-            == "agent_model_connection_api_key_missing"
-        )
+        invocation = cast(list[Any], run.steps)[0].invocations[0]
+        assert invocation.error_code == "agent_model_connection_api_key_missing"
 
 
 def test_agent_platform_run_persists_redacted_provider_failure_metadata(
@@ -1137,9 +1181,9 @@ def test_agent_platform_run_persists_redacted_provider_failure_metadata(
     assert detail["status"] == "failed"
     assert "[REDACTED]" in detail["error"]
     assert "sk-artifact-secret-1234" not in detail["error"]
-    step_error = detail["perStepOutputs"]["1"][0]["error"]
-    assert step_error["code"] == "agent_provider_error"
-    assert "[REDACTED]" in step_error["message"]
+    step_error = detail["steps"][0]["invocations"][0]
+    assert step_error["errorCode"] == "agent_provider_error"
+    assert "[REDACTED]" in step_error["errorMessage"]
     assert "sk-artifact-secret-1234" not in json.dumps(detail)
 
     with session_factory() as session:
@@ -1148,4 +1192,10 @@ def test_agent_platform_run_persists_redacted_provider_failure_metadata(
         assert run.status == "failed"
         assert run.error is not None and "[REDACTED]" in run.error
         assert "sk-artifact-secret-1234" not in run.error
-        assert "sk-artifact-secret-1234" not in json.dumps(run.per_step_outputs)
+        assert "sk-artifact-secret-1234" not in json.dumps(
+            [
+                invocation.error_message
+                for step in cast(list[Any], run.steps)
+                for invocation in step.invocations
+            ]
+        )

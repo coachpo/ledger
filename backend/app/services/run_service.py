@@ -4,9 +4,10 @@ import asyncio
 import logging
 import threading
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
@@ -24,11 +25,18 @@ from app.db.engine import get_session_factory
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
+from app.repositories.run_agent_invocation import RunAgentInvocationRepository
+from app.repositories.run_step import RunStepRepository
 from app.schemas.run import (
     RunCreatedRead,
+    RunForkCreateRequest,
+    RunForkDraftRead,
+    RunForkInvocationEdit,
     RunListItemRead,
     RunListRead,
     RunRead,
@@ -79,7 +87,7 @@ class _PreparedAgentInvocation:
     agent: Agent
     output_model: type[BaseModel]
     resolved_input: dict[str, Any]
-    entry: dict[str, Any]
+    invocation: RunAgentInvocation
     optional: bool
     step_index: int
     slot: str
@@ -105,6 +113,8 @@ class RunService:
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
+        self.run_step_repository = RunStepRepository(session)
+        self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
         self.agent_execution_service = AgentExecutionService(
             self.session_factory,
@@ -177,16 +187,26 @@ class RunService:
             target_version=plan.target.version,
             input=validated_input,
             status=_RUN_STATUS_RUNNING,
-            per_step_outputs={},
+            resume_step_index=1,
             final_output=None,
             total_tokens=0,
             total_cost_usd=Decimal("0"),
+            inherited_tokens=0,
+            inherited_cost_usd=Decimal("0"),
+            executed_tokens=0,
+            executed_cost_usd=Decimal("0"),
             trace_id=None,
             error=None,
             finished_at=None,
         )
         try:
-            self.run_repository.add(run)
+            _ = self.run_repository.add(run)
+            self.session.flush()
+            self._create_planned_run_rows(
+                run=run,
+                plan=plan,
+                validated_input=validated_input,
+            )
             self.session.commit()
             self.session.refresh(run)
         except Exception:
@@ -203,6 +223,416 @@ class RunService:
             )
             raise
         return self._to_created_read(run)
+
+    def build_fork_draft(self, source_run_id: int, fork_step_index: int) -> RunForkDraftRead:
+        source_run, _plan, source_steps = self._prepare_fork_source(
+            source_run_id,
+            fork_step_index,
+        )
+        return RunForkDraftRead.model_validate(
+            {
+                "sourceRunId": source_run.id,
+                "forkStepIndex": fork_step_index,
+                "targetKind": source_run.target_kind,
+                "targetId": source_run.target_id,
+                "targetKey": source_run.target_key,
+                "targetVersion": source_run.target_version,
+                "input": deepcopy(source_run.input),
+                "steps": [
+                    {
+                        "sourceRunStepId": step.id,
+                        "index": step.step_index,
+                        "invocations": [
+                            {
+                                "sourceInvocationId": invocation.id,
+                                "stepIndex": invocation.step_index,
+                                "slot": invocation.slot,
+                                "agentKey": invocation.agent_key,
+                                "resolvedInput": deepcopy(invocation.resolved_input),
+                                "output": deepcopy(invocation.output),
+                            }
+                            for invocation in sorted(
+                                cast(list[RunAgentInvocation], step.invocations),
+                                key=lambda item: (item.position, item.id),
+                            )
+                        ],
+                    }
+                    for step in source_steps
+                ],
+            }
+        )
+
+    def create_fork_run(
+        self,
+        source_run_id: int,
+        payload: RunForkCreateRequest,
+    ) -> RunCreatedRead:
+        fork_step_index = payload.fork_step_index
+        source_run, plan, source_steps = self._prepare_fork_source(
+            source_run_id,
+            fork_step_index,
+        )
+        edit_map = self._validate_fork_invocation_edits(
+            plan=plan,
+            source_steps=source_steps,
+            edits=payload.invocation_edits,
+        )
+        validated_input = self._validate_run_input(
+            input_schema=plan.input_schema,
+            input_payload=payload.input if payload.input is not None else source_run.input,
+            candidate_key=f"{plan.target.kind}_input",
+            resource_name=plan.target.kind,
+        )
+        inherited_tokens, inherited_cost = self._copied_invocation_totals(source_steps)
+        run = Run(
+            target_kind=source_run.target_kind,
+            target_id=source_run.target_id,
+            target_key=source_run.target_key,
+            target_version=source_run.target_version,
+            input=validated_input,
+            status=_RUN_STATUS_RUNNING,
+            source_run_id=source_run.id,
+            lineage_root_run_id=source_run.lineage_root_run_id or source_run.id,
+            forked_from_step_index=fork_step_index,
+            resume_step_index=fork_step_index + 1,
+            final_output=None,
+            total_tokens=inherited_tokens,
+            total_cost_usd=inherited_cost,
+            inherited_tokens=inherited_tokens,
+            inherited_cost_usd=inherited_cost,
+            executed_tokens=0,
+            executed_cost_usd=Decimal("0"),
+            trace_id=None,
+            error=None,
+            finished_at=None,
+        )
+        try:
+            _ = self.run_repository.add(run)
+            self.session.flush()
+            self._copy_fork_source_rows(
+                run=run,
+                source_steps=source_steps,
+                edit_map=edit_map,
+            )
+            self._create_planned_run_rows(
+                run=run,
+                plan=plan,
+                validated_input=validated_input,
+                min_step_index=fork_step_index + 1,
+            )
+            self.session.commit()
+            self.session.refresh(run)
+        except Exception:
+            self.session.rollback()
+            raise
+
+        try:
+            self._dispatch_run_in_background(run.id)
+        except Exception as exc:
+            self._mark_run_failed_in_fresh_session(
+                run.id,
+                code="run_dispatch_failed",
+                message=f"Failed to dispatch run {run.id}: {exc}",
+            )
+            raise
+        return self._to_created_read(run)
+
+    def _create_planned_run_rows(
+        self,
+        *,
+        run: Run,
+        plan: ExecutionPlan,
+        validated_input: dict[str, Any],
+        min_step_index: int = 1,
+    ) -> None:
+        plan_steps = [step for step in plan.steps if step.index >= min_step_index]
+        planned_steps = self.run_step_repository.create_planned_steps(
+            run_id=run.id,
+            step_indexes=(step.index for step in plan_steps),
+        )
+        self.session.flush()
+        steps_by_index = {step.step_index: step for step in planned_steps}
+        for plan_step in plan_steps:
+            run_step = steps_by_index[plan_step.index]
+            for position, plan_agent in enumerate(plan_step.agents):
+                resolved_input, resolved_input_origin = self._planned_resolved_input(
+                    plan_agent=plan_agent,
+                    validated_input=validated_input,
+                )
+                _ = self.run_agent_invocation_repository.create_invocation(
+                    run_step_id=run_step.id,
+                    run_id=run.id,
+                    step_index=plan_step.index,
+                    slot=plan_agent.slot,
+                    position=position,
+                    agent_id=plan_agent.agent_id,
+                    agent_key=plan_agent.agent_key,
+                    agent_version=plan_agent.agent_version,
+                    output_schema_id=plan_agent.output_schema_id,
+                    output_schema_version=plan_agent.output_schema_version,
+                    input_mode=plan_agent.input_mode,
+                    wiring={
+                        target_name: self._plan_source_payload(source)
+                        for target_name, source in plan_agent.wiring.items()
+                    },
+                    optional=plan_agent.optional,
+                    resolved_input=resolved_input,
+                    resolved_input_origin=resolved_input_origin,
+                )
+
+    @staticmethod
+    def _planned_resolved_input(
+        *,
+        plan_agent: ExecutionPlanAgent,
+        validated_input: dict[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        if plan_agent.input_mode == "passthrough":
+            return dict(validated_input), "passthrough"
+        return {}, "derived"
+
+    def _prepare_fork_source(
+        self,
+        source_run_id: int,
+        fork_step_index: int,
+    ) -> tuple[Run, ExecutionPlan, list[RunStep]]:
+        source_run = self._get_run_or_raise(source_run_id)
+        if source_run.target_kind != "workflow":
+            raise business_rule_error(
+                "run_fork_target_kind_unsupported",
+                "Workflow-step forks are only supported for workflow runs",
+                details=[
+                    {
+                        "field": "targetKind",
+                        "issue": "Workflow-step forks require a workflow source run",
+                    }
+                ],
+            )
+        if source_run.status != _RUN_STATUS_SUCCEEDED:
+            raise business_rule_error(
+                "run_fork_source_not_succeeded",
+                "Only succeeded runs can be forked",
+            )
+        plan = self.execution_plan_builder.build_plan_for_run(source_run)
+        plan_step_indexes = {step.index for step in plan.steps}
+        final_step_index = max(plan_step_indexes)
+        if fork_step_index > final_step_index:
+            raise business_rule_error(
+                "run_fork_step_not_continuable",
+                f"Fork step {fork_step_index} has no following executable workflow step",
+                details=[
+                    {
+                        "field": "forkStepIndex",
+                        "issue": "Fork step must have a following workflow step",
+                    }
+                ],
+            )
+        if fork_step_index not in plan_step_indexes:
+            raise business_rule_error(
+                "run_fork_step_not_found",
+                f"Fork step {fork_step_index} does not exist on the source run plan",
+            )
+
+        source_steps_by_index = {
+            step.step_index: step for step in cast(list[RunStep], source_run.steps)
+        }
+        source_step = source_steps_by_index.get(fork_step_index)
+        if source_step is None:
+            raise business_rule_error(
+                "run_fork_step_not_found",
+                f"Fork step {fork_step_index} does not exist on the source run",
+            )
+        if source_step.status != _RUN_STATUS_SUCCEEDED:
+            raise business_rule_error(
+                "run_fork_step_not_succeeded",
+                f"Fork step {fork_step_index} must be succeeded before it can be copied",
+            )
+
+        copied_steps: list[RunStep] = []
+        for step_index in sorted(index for index in plan_step_indexes if index <= fork_step_index):
+            step = source_steps_by_index.get(step_index)
+            if step is None or step.status != _RUN_STATUS_SUCCEEDED or step.persisted_at is None:
+                raise business_rule_error(
+                    "run_fork_copied_step_not_persisted",
+                    "All copied source steps must be succeeded and persisted",
+                    details=[{"field": f"steps.{step_index}", "issue": "Step is not persisted"}],
+                )
+            invocations = cast(list[RunAgentInvocation], step.invocations)
+            for invocation in invocations:
+                if (
+                    invocation.status != _RUN_STATUS_SUCCEEDED
+                    or invocation.persisted_at is None
+                    or invocation.output_origin is None
+                ):
+                    raise business_rule_error(
+                        "run_fork_copied_output_not_persisted",
+                        "All copied source invocation outputs must be succeeded and persisted",
+                        details=[
+                            {
+                                "field": f"steps.{step_index}.{invocation.slot}",
+                                "issue": "Invocation output is not persisted",
+                            }
+                        ],
+                    )
+            copied_steps.append(step)
+        if fork_step_index == final_step_index:
+            raise business_rule_error(
+                "run_fork_step_not_continuable",
+                f"Fork step {fork_step_index} is the final executable workflow step",
+                details=[
+                    {
+                        "field": "forkStepIndex",
+                        "issue": "Fork step must have a following workflow step",
+                    }
+                ],
+            )
+        return source_run, plan, copied_steps
+
+    def _validate_fork_invocation_edits(
+        self,
+        *,
+        plan: ExecutionPlan,
+        source_steps: list[RunStep],
+        edits: list[RunForkInvocationEdit],
+    ) -> dict[tuple[int, str], RunForkInvocationEdit]:
+        source_invocations = {
+            (invocation.step_index, invocation.slot): invocation
+            for step in source_steps
+            for invocation in cast(list[RunAgentInvocation], step.invocations)
+        }
+        plan_agents = {
+            (step.index, agent.slot): agent for step in plan.steps for agent in step.agents
+        }
+        edit_map: dict[tuple[int, str], RunForkInvocationEdit] = {}
+        for edit in edits:
+            key = (edit.step_index, edit.slot)
+            if key in edit_map:
+                raise business_rule_error(
+                    "run_fork_duplicate_invocation_edit",
+                    "Fork invocation edits must target each slot at most once",
+                    details=[{"field": "invocationEdits", "issue": "Duplicate invocation edit"}],
+                )
+            source_invocation = source_invocations.get(key)
+            plan_agent = plan_agents.get(key)
+            if source_invocation is None or plan_agent is None:
+                raise business_rule_error(
+                    "run_fork_invocation_edit_not_found",
+                    "Fork invocation edit must target a copied source invocation",
+                    details=[
+                        {
+                            "field": f"steps.{edit.step_index}.{edit.slot}",
+                            "issue": "Invocation is not available for copying",
+                        }
+                    ],
+                )
+            agent = self._resolve_agent_row(plan_agent)
+            if "resolved_input" in edit.model_fields_set:
+                input_model = self._build_input_model(
+                    agent.input_schema,
+                    candidate_key=f"{agent.key}_input",
+                )
+                try:
+                    _ = input_model.model_validate(edit.resolved_input)
+                except ValidationError as exc:
+                    raise business_rule_error(
+                        "run_fork_invalid_resolved_input",
+                        "Edited invocation input failed agent input schema validation",
+                        details=self._validation_details_from_pydantic_error(exc),
+                    ) from exc
+            if "output" in edit.model_fields_set:
+                output_schema = self._resolve_agent_output_schema(agent)
+                output_model = self.schema_compiler.build_runtime_model(output_schema)
+                try:
+                    _ = output_model.model_validate(edit.output)
+                except ValidationError as exc:
+                    raise business_rule_error(
+                        "run_fork_invalid_output",
+                        "Edited invocation output failed agent output schema validation",
+                        details=self._validation_details_from_pydantic_error(exc),
+                    ) from exc
+            edit_map[key] = edit
+        return edit_map
+
+    @staticmethod
+    def _copied_invocation_totals(source_steps: list[RunStep]) -> tuple[int, Decimal]:
+        tokens = 0
+        cost = Decimal("0")
+        for step in source_steps:
+            for invocation in cast(list[RunAgentInvocation], step.invocations):
+                tokens += int(invocation.tokens or 0)
+                cost += Decimal(invocation.cost_usd or 0)
+        return tokens, cost
+
+    def _copy_fork_source_rows(
+        self,
+        *,
+        run: Run,
+        source_steps: list[RunStep],
+        edit_map: dict[tuple[int, str], RunForkInvocationEdit],
+    ) -> None:
+        copied_at = utcnow()
+        copied_steps: dict[int, RunStep] = {}
+        for source_step in source_steps:
+            copied_step = RunStep(
+                run_id=run.id,
+                step_index=source_step.step_index,
+                status=source_step.status,
+                origin="copied",
+                source_run_step_id=source_step.id,
+                source_run_id=source_step.run_id,
+                source_step_index=source_step.step_index,
+                error=source_step.error,
+                started_at=source_step.started_at,
+                finished_at=source_step.finished_at,
+                persisted_at=copied_at,
+            )
+            self.session.add(copied_step)
+            copied_steps[source_step.step_index] = copied_step
+        self.session.flush()
+
+        for source_step in source_steps:
+            copied_step = copied_steps[source_step.step_index]
+            for source_invocation in cast(list[RunAgentInvocation], source_step.invocations):
+                edit = edit_map.get((source_invocation.step_index, source_invocation.slot))
+                resolved_input_edited = (
+                    edit is not None and "resolved_input" in edit.model_fields_set
+                )
+                output_edited = edit is not None and "output" in edit.model_fields_set
+                resolved_input = (
+                    edit.resolved_input
+                    if resolved_input_edited and edit is not None
+                    else source_invocation.resolved_input
+                )
+                output = (
+                    edit.output if output_edited and edit is not None else source_invocation.output
+                )
+                copied_invocation = self.run_agent_invocation_repository.create_invocation(
+                    run_step_id=copied_step.id,
+                    run_id=run.id,
+                    step_index=source_invocation.step_index,
+                    slot=source_invocation.slot,
+                    position=source_invocation.position,
+                    agent_id=source_invocation.agent_id,
+                    agent_key=source_invocation.agent_key,
+                    agent_version=source_invocation.agent_version,
+                    output_schema_id=source_invocation.output_schema_id,
+                    output_schema_version=source_invocation.output_schema_version,
+                    input_mode=source_invocation.input_mode,
+                    wiring=deepcopy(source_invocation.wiring),
+                    optional=source_invocation.optional,
+                    resolved_input=deepcopy(resolved_input) if resolved_input is not None else {},
+                    resolved_input_origin="edited" if resolved_input_edited else "copied",
+                    status=source_invocation.status,
+                    output=deepcopy(output),
+                    output_origin="edited" if output_edited else "copied",
+                    source_invocation_id=source_invocation.id,
+                )
+                copied_invocation.tokens = source_invocation.tokens
+                copied_invocation.cost_usd = source_invocation.cost_usd
+                copied_invocation.duration_ms = source_invocation.duration_ms
+                copied_invocation.trace_span_id = source_invocation.trace_span_id
+                copied_invocation.started_at = source_invocation.started_at
+                copied_invocation.finished_at = source_invocation.finished_at
+                copied_invocation.persisted_at = copied_at
 
     def execute_run(self, run_id: int) -> None:
         try:
@@ -237,18 +667,20 @@ class RunService:
         plan: ExecutionPlan,
         trace_id: str | None,
     ) -> None:
-        slot_outputs: dict[tuple[int, str], Any] = {}
-        total_tokens = 0
-        total_cost = Decimal("0")
+        total_tokens = int(run.inherited_tokens or 0)
+        total_cost = Decimal(run.inherited_cost_usd or 0)
+        executed_tokens = 0
+        executed_cost = Decimal("0")
 
         for step in plan.steps:
-            (
-                step_entries,
-                step_slot_outputs,
-                step_tokens,
-                step_cost,
-                fatal_error,
-            ) = await self._execute_step(
+            if step.index < run.resume_step_index:
+                continue
+            slot_outputs = self._hydrate_slot_outputs(run.id, before_step_index=step.index)
+            run_step = self._get_planned_step_or_raise(run_id=run.id, step_index=step.index)
+            self._assert_planned_invocations_exist(run_id=run.id, step=step)
+            _ = self.run_step_repository.mark_running(run_step)
+            self.session.commit()
+            step_slot_outputs, step_tokens, step_cost, fatal_error = await self._execute_step(
                 run=run,
                 plan=plan,
                 step=step,
@@ -257,30 +689,44 @@ class RunService:
                 current_total_cost=total_cost,
                 trace_id=trace_id,
             )
-            step_index = step.index
-            persisted_outputs = dict(run.per_step_outputs)
-            persisted_outputs[str(step_index)] = step_entries
-            run.per_step_outputs = persisted_outputs
+            if fatal_error is None:
+                _ = self.run_step_repository.persist_success(run_step)
+            else:
+                _ = self.run_step_repository.persist_failure(run_step, error=fatal_error)
+            executed_tokens += step_tokens
+            executed_cost += step_cost
             total_tokens += step_tokens
             total_cost += step_cost
-            run.total_tokens = total_tokens
-            run.total_cost_usd = total_cost
+            self._sync_run_totals(
+                run,
+                total_tokens=total_tokens,
+                total_cost=total_cost,
+                executed_tokens=executed_tokens,
+                executed_cost=executed_cost,
+            )
             self.session.commit()
-            for slot, value in step_slot_outputs.items():
-                slot_outputs[(step_index, slot)] = value
             if fatal_error is not None:
+                self._skip_pending_steps_after_failure(run_id=run.id, after_step_index=step.index)
                 run.status = _RUN_STATUS_FAILED
                 run.error = fatal_error
                 run.finished_at = utcnow()
                 self.session.commit()
                 return
+            for slot, value in step_slot_outputs.items():
+                slot_outputs[(step.index, slot)] = value
 
+        slot_outputs = self._hydrate_slot_outputs(run.id)
         final_output, final_error = self._resolve_final_output(
             plan=plan,
             slot_outputs=slot_outputs,
         )
-        run.total_tokens = total_tokens
-        run.total_cost_usd = total_cost
+        self._sync_run_totals(
+            run,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            executed_tokens=executed_tokens,
+            executed_cost=executed_cost,
+        )
         if final_error is not None:
             run.status = _RUN_STATUS_FAILED
             run.error = final_error
@@ -294,6 +740,124 @@ class RunService:
         run.error = None
         run.finished_at = utcnow()
         self.session.commit()
+
+    def _hydrate_slot_outputs(
+        self,
+        run_id: int,
+        *,
+        before_step_index: int | None = None,
+    ) -> dict[tuple[int, str], Any]:
+        slot_outputs = self.run_agent_invocation_repository.hydrate_successful_outputs(
+            run_id,
+            before_step_index=before_step_index,
+        )
+        for invocation in self.run_agent_invocation_repository.list_by_run(run_id):
+            if before_step_index is not None and invocation.step_index >= before_step_index:
+                continue
+            if invocation.optional and invocation.status in {"failed", "skipped"}:
+                slot_outputs[(invocation.step_index, invocation.slot)] = None
+        return slot_outputs
+
+    def _get_planned_step_or_raise(self, *, run_id: int, step_index: int) -> RunStep:
+        run_step = self.run_step_repository.get_by_run_step_index(run_id, step_index)
+        if run_step is None:
+            raise RunExecutionError(
+                code="run_planned_step_missing",
+                message=f"Run {run_id} is missing planned step {step_index}",
+            )
+        return run_step
+
+    def _get_planned_invocation_or_raise(
+        self,
+        *,
+        run_id: int,
+        step_index: int,
+        slot: str,
+    ) -> RunAgentInvocation:
+        invocation = self.run_agent_invocation_repository.get_by_run_step_slot(
+            run_id,
+            step_index,
+            slot,
+        )
+        if invocation is None:
+            raise RunExecutionError(
+                code="run_planned_invocation_missing",
+                message=f"Run {run_id} is missing planned invocation {step_index}.{slot}",
+            )
+        return invocation
+
+    def _assert_planned_invocations_exist(self, *, run_id: int, step: ExecutionPlanStep) -> None:
+        for plan_agent in step.agents:
+            _ = self._get_planned_invocation_or_raise(
+                run_id=run_id,
+                step_index=step.index,
+                slot=plan_agent.slot,
+            )
+
+    def _persist_failed_invocation(
+        self,
+        invocation: RunAgentInvocation,
+        failure: RunExecutionError,
+        *,
+        tokens: int,
+        cost_usd: Decimal,
+        duration_ms: int | None,
+        trace_span_id: str | None,
+    ) -> None:
+        _ = self.run_agent_invocation_repository.persist_failure(
+            invocation,
+            error_code=failure.code,
+            error_message=failure.message,
+            error_details=list(failure.details),
+            tokens=tokens,
+            cost_usd=cost_usd,
+            duration_ms=duration_ms,
+            trace_span_id=trace_span_id,
+        )
+
+    def _skip_pending_steps_after_failure(self, *, run_id: int, after_step_index: int) -> None:
+        for step in self.run_step_repository.list_by_run(run_id):
+            if step.step_index <= after_step_index or step.status != "pending":
+                continue
+            _ = self.run_step_repository.persist_skipped(
+                step,
+                error="Run failed before this step started",
+            )
+            for invocation in self.run_agent_invocation_repository.list_by_run_step(
+                run_id,
+                step.step_index,
+            ):
+                if invocation.status == "pending":
+                    _ = self.run_agent_invocation_repository.persist_skipped(
+                        invocation,
+                        error_code="run_step_skipped",
+                        error_message="Run failed before this invocation started",
+                    )
+
+    @staticmethod
+    def _runtime_resolved_input_origin(plan_agent: ExecutionPlanAgent) -> str:
+        if plan_agent.input_mode == "passthrough":
+            return "passthrough"
+        return "derived"
+
+    @staticmethod
+    def _sync_run_totals(
+        run: Run,
+        *,
+        total_tokens: int,
+        total_cost: Decimal,
+        executed_tokens: int,
+        executed_cost: Decimal,
+    ) -> None:
+        run.total_tokens = total_tokens
+        run.total_cost_usd = total_cost
+        run.executed_tokens = executed_tokens
+        run.executed_cost_usd = executed_cost
+        if run.source_run_id is None:
+            run.inherited_tokens = 0
+            run.inherited_cost_usd = Decimal("0")
+            run.total_tokens = executed_tokens
+            run.total_cost_usd = executed_cost
 
     def _resolve_final_output(
         self,
@@ -322,15 +886,19 @@ class RunService:
         slot_outputs: dict[tuple[int, str], Any],
         current_total_cost: Decimal,
         trace_id: str | None,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any], int, Decimal, str | None]:
+    ) -> tuple[dict[str, Any], int, Decimal, str | None]:
         step_index = step.index
-        entries: list[dict[str, Any]] = []
         prepared_invocations: list[_PreparedAgentInvocation] = []
         step_slot_outputs: dict[str, Any] = {}
         fatal_error: str | None = None
 
         for plan_agent in step.agents:
-            prepared, entry = self._prepare_agent_invocation(
+            invocation = self._get_planned_invocation_or_raise(
+                run_id=run.id,
+                step_index=step_index,
+                slot=plan_agent.slot,
+            )
+            prepared, failure = self._prepare_agent_invocation(
                 runtime_context=_RuntimeInvocationContext(
                     run_id=run.id,
                     target_kind=plan.target.kind,
@@ -339,17 +907,32 @@ class RunService:
                 ),
                 step_index=step_index,
                 plan_agent=plan_agent,
+                invocation=invocation,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
-            entries.append(entry)
             if prepared is None:
+                assert failure is not None
+                self._persist_failed_invocation(
+                    invocation,
+                    failure,
+                    tokens=0,
+                    cost_usd=Decimal("0"),
+                    duration_ms=None,
+                    trace_span_id=failure.trace_span_id,
+                )
                 step_slot_outputs[plan_agent.slot] = None
                 if not plan_agent.optional and fatal_error is None:
-                    fatal_error = str(entry["error"]["message"])
+                    fatal_error = failure.message
                 continue
+            _ = self.run_agent_invocation_repository.mark_running(
+                invocation,
+                resolved_input=prepared.resolved_input,
+                resolved_input_origin=self._runtime_resolved_input_origin(plan_agent),
+            )
             prepared_invocations.append(prepared)
 
+        self.session.commit()
         results = await asyncio.gather(
             *(
                 self._execute_invocation(prepared, trace_id=trace_id)
@@ -362,11 +945,10 @@ class RunService:
         step_cost = Decimal("0")
         for index, prepared in enumerate(prepared_invocations):
             result = results[index]
-            entry = prepared.entry
             if isinstance(result, Exception):
                 failure = self._coerce_execution_error(result)
-                self._apply_failed_entry(
-                    entry,
+                self._persist_failed_invocation(
+                    prepared.invocation,
                     failure,
                     tokens=0,
                     cost_usd=Decimal("0"),
@@ -388,8 +970,10 @@ class RunService:
                 projected_total_cost=current_total_cost + step_cost,
             )
             if budget_failure is not None:
-                self._apply_failed_entry(
-                    entry,
+                if budget_failure.trace_span_id is None:
+                    budget_failure.trace_span_id = result.trace_span_id
+                self._persist_failed_invocation(
+                    prepared.invocation,
                     budget_failure,
                     tokens=result.tokens,
                     cost_usd=result.cost_usd,
@@ -401,16 +985,18 @@ class RunService:
                     fatal_error = budget_failure.message
                 continue
 
-            entry["output"] = result.output
-            entry["error"] = None
-            entry["status"] = _RUN_STATUS_SUCCEEDED
-            entry["tokens"] = result.tokens
-            entry["costUsd"] = decimal_to_string(result.cost_usd)
-            entry["durationMs"] = result.duration_ms
-            entry["traceSpanId"] = result.trace_span_id
+            _ = self.run_agent_invocation_repository.persist_success(
+                prepared.invocation,
+                output=result.output,
+                output_origin="executed",
+                tokens=result.tokens,
+                cost_usd=result.cost_usd,
+                duration_ms=result.duration_ms,
+                trace_span_id=result.trace_span_id,
+            )
             step_slot_outputs[prepared.slot] = result.output
 
-        return entries, step_slot_outputs, step_tokens, step_cost, fatal_error
+        return step_slot_outputs, step_tokens, step_cost, fatal_error
 
     def _prepare_agent_invocation(
         self,
@@ -418,9 +1004,10 @@ class RunService:
         runtime_context: _RuntimeInvocationContext,
         step_index: int,
         plan_agent: ExecutionPlanAgent,
+        invocation: RunAgentInvocation,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
-    ) -> tuple[_PreparedAgentInvocation | None, dict[str, Any]]:
+    ) -> tuple[_PreparedAgentInvocation | None, RunExecutionError | None]:
         try:
             agent = self._resolve_agent_row(plan_agent)
             output_schema = self._resolve_agent_output_schema(agent)
@@ -441,40 +1028,27 @@ class RunService:
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
-            entry = self._build_step_entry(plan_agent=plan_agent, resolved_input=resolved_input)
             return (
                 _PreparedAgentInvocation(
                     agent=agent,
                     output_model=output_model,
                     resolved_input=resolved_input,
-                    entry=entry,
+                    invocation=invocation,
                     optional=plan_agent.optional,
                     step_index=step_index,
                     slot=plan_agent.slot,
                     runtime_context=runtime_context,
                 ),
-                entry,
+                None,
             )
         except RunExecutionError as exc:
-            entry = self._build_step_entry(
-                plan_agent=plan_agent,
-                resolved_input={},
-                status=_RUN_STATUS_FAILED,
-                error=self._error_payload(exc),
-            )
-            return None, entry
+            return None, exc
         except OutputSchemaCompilerError as exc:
             failure = RunExecutionError(
                 code="agent_schema_build_failed",
                 message=str(exc),
             )
-            entry = self._build_step_entry(
-                plan_agent=plan_agent,
-                resolved_input={},
-                status=_RUN_STATUS_FAILED,
-                error=self._error_payload(failure),
-            )
-            return None, entry
+            return None, failure
 
     def _resolve_agent_input(
         self,
@@ -1063,19 +1637,96 @@ class RunService:
                 "targetKey": run.target_key,
                 "targetVersion": run.target_version,
                 "input": run.input,
-                "perStepOutputs": run.per_step_outputs,
+                "sourceRunId": run.source_run_id,
+                "lineageRootRunId": run.lineage_root_run_id,
+                "forkedFromStepIndex": run.forked_from_step_index,
+                "resumeStepIndex": run.resume_step_index,
                 "finalOutput": run.final_output,
                 "status": run.status,
                 "totalTokens": run.total_tokens,
                 "totalCostUsd": run.total_cost_usd,
+                "inheritedTokens": run.inherited_tokens,
+                "inheritedCostUsd": run.inherited_cost_usd,
+                "executedTokens": run.executed_tokens,
+                "executedCostUsd": run.executed_cost_usd,
                 "traceId": run.trace_id,
                 "error": run.error,
                 "startedAt": run.started_at,
                 "finishedAt": run.finished_at,
                 "createdAt": run.created_at,
                 "updatedAt": run.updated_at,
+                "steps": [
+                    RunService._to_step_read(step)
+                    for step in sorted(
+                        cast(list[RunStep], run.steps),
+                        key=lambda item: (item.step_index, item.id),
+                    )
+                ],
             }
         )
+
+    @staticmethod
+    def _to_step_read(step: RunStep) -> dict[str, Any]:
+        return {
+            "id": step.id,
+            "runId": step.run_id,
+            "index": step.step_index,
+            "status": step.status,
+            "origin": step.origin,
+            "sourceRunStepId": step.source_run_step_id,
+            "sourceRunId": step.source_run_id,
+            "sourceStepIndex": step.source_step_index,
+            "error": step.error,
+            "startedAt": step.started_at,
+            "finishedAt": step.finished_at,
+            "persistedAt": step.persisted_at,
+            "createdAt": step.created_at,
+            "updatedAt": step.updated_at,
+            "invocations": [
+                RunService._to_invocation_read(invocation)
+                for invocation in sorted(
+                    cast(list[RunAgentInvocation], step.invocations),
+                    key=lambda item: (item.position, item.id),
+                )
+            ],
+        }
+
+    @staticmethod
+    def _to_invocation_read(invocation: RunAgentInvocation) -> dict[str, Any]:
+        return {
+            "id": invocation.id,
+            "runStepId": invocation.run_step_id,
+            "runId": invocation.run_id,
+            "stepIndex": invocation.step_index,
+            "slot": invocation.slot,
+            "position": invocation.position,
+            "agentId": invocation.agent_id,
+            "agentKey": invocation.agent_key,
+            "agentVersion": invocation.agent_version,
+            "outputSchemaId": invocation.output_schema_id,
+            "outputSchemaVersion": invocation.output_schema_version,
+            "inputMode": invocation.input_mode,
+            "wiring": invocation.wiring,
+            "optional": invocation.optional,
+            "status": invocation.status,
+            "resolvedInput": invocation.resolved_input,
+            "resolvedInputOrigin": invocation.resolved_input_origin,
+            "output": invocation.output,
+            "outputOrigin": invocation.output_origin,
+            "errorCode": invocation.error_code,
+            "errorMessage": invocation.error_message,
+            "errorDetails": invocation.error_details,
+            "tokens": invocation.tokens,
+            "costUsd": invocation.cost_usd,
+            "durationMs": invocation.duration_ms,
+            "traceSpanId": invocation.trace_span_id,
+            "sourceInvocationId": invocation.source_invocation_id,
+            "startedAt": invocation.started_at,
+            "finishedAt": invocation.finished_at,
+            "persistedAt": invocation.persisted_at,
+            "createdAt": invocation.created_at,
+            "updatedAt": invocation.updated_at,
+        }
 
 
 __all__ = ["RunAgentInvocationResult", "RunExecutionError", "RunService"]
