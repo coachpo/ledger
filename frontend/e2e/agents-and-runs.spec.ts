@@ -30,7 +30,7 @@ type McpServerRead = {
 async function createModelConnection(request: APIRequestContext, key: string): Promise<ModelConnectionRead> {
   const response = await request.post(`${PLATFORM_API}/model-connections`, {
     data: {
-      apiKey: "sk-playwright-agent-yaml",
+      apiKey: "playwright-redacted-key",
       baseUrl: "https://api.openai.com/v1",
       description: "Playwright-only agent YAML model connection.",
       key,

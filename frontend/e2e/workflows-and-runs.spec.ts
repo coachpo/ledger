@@ -59,7 +59,7 @@ async function createModelConnection(
 ): Promise<ModelConnectionRead> {
   const response = await request.post(`${PLATFORM_API}/model-connections`, {
     data: {
-      apiKey: "sk-playwright-workflow-yaml",
+      apiKey: "playwright-redacted-key",
       baseUrl: "https://api.openai.com/v1",
       description: "Playwright-only workflow YAML model connection.",
       key,
@@ -153,6 +153,78 @@ output:
 `;
 }
 
+function workflowV2Manifest(options: { agentKey: string; key: string; loopMaxIterations?: number }): string {
+  const loopBound = options.loopMaxIterations ? `      maxIterations: ${options.loopMaxIterations}\n` : "";
+  return `apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: ${options.key}
+  name: Workflow Graph Preview
+  description: Validates graph preview without replacing YAML source editing.
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+  additionalProperties: false
+flow:
+  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: fanout
+      id: analyst_fanout
+      branches:
+        - id: market
+          node:
+            kind: step
+            id: market_analysis
+            slot: market
+            uses: ${options.agentKey}@1
+            with:
+              ticker: \${{ inputs.ticker }}
+        - id: news
+          node:
+            kind: step
+            id: news_analysis
+            slot: news
+            uses: ${options.agentKey}@1
+            with:
+              ticker: \${{ inputs.ticker }}
+    - kind: loop
+      id: review_loop
+${loopBound}      sequence:
+        kind: sequence
+        id: review_sequence
+        nodes:
+          - kind: step
+            id: risk_review
+            slot: risk
+            uses: ${options.agentKey}@1
+            with:
+              ticker: \${{ inputs.ticker }}
+    - kind: step
+      id: decision
+      slot: final
+      uses: ${options.agentKey}@1
+      with:
+        marketReport: \${{ nodes.analyst_fanout.outputs.market }}
+        newsReport: \${{ nodes.analyst_fanout.outputs.news }}
+        riskReport: \${{ nodes.review_loop.outputs.risk }}
+output:
+  from: \${{ nodes.root_sequence.outputs.final }}
+postRunMemory:
+  enabled: true
+  source:
+    ticker: \${{ inputs.ticker }}
+    action: \${{ nodes.decision.outputs.final.action }}
+    rationale: \${{ nodes.decision.outputs.final.rationale }}
+    riskSummary: \${{ nodes.decision.outputs.final.riskSummary }}
+    executionPlan: \${{ nodes.decision.outputs.final.executionPlan }}
+`;
+}
+
 async function expectYamlOnlyEditor(page: Page) {
   await expect(page.getByTestId("workflow-yaml-editor-shell")).toBeVisible();
   await expect(page.getByTestId("workflow-yaml-editor")).toBeVisible();
@@ -165,6 +237,174 @@ async function expectYamlOnlyEditor(page: Page) {
 }
 
 test.describe("Workflow YAML editor", () => {
+  test("renders a stubbed TradingAgents v2 run detail without exposing secrets", async ({ page }) => {
+    await page.route("**/api/runs/9901", async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(
+          buildRunDetail({
+            finalOutput: {
+              action: "buy",
+              rationale: "Analyst fanout and bounded debates support a staged buy.",
+              riskSummary: "Valuation and volatility remain the main risks.",
+              executionPlan: "Research-only staged accumulation.",
+            },
+            id: 9901,
+            input: { ticker: "NVDA" },
+            memoryArtifacts: [
+              {
+                reportId: 990101,
+                slug: "agent_memory_nvda_portfolio_manager_run_9901_buy",
+                name: "NVDA portfolio manager memory",
+                status: "pending",
+                createdAt: "2026-05-03T10:00:05Z",
+                sourceGraphMetadata: { nodeId: "portfolio_manager", nodeKind: "step", loopId: "risk_debate_loop", loopIteration: 2 },
+              },
+            ],
+            steps: [
+              buildRunStep({
+                graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", sourceRefs: { branches: [] } },
+                id: 990101,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: "market_analyst",
+                    graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market" },
+                    id: 9901001,
+                    output: { summary: "market_report:NVDA" },
+                    runId: 9901,
+                    runStepId: 990101,
+                    slot: "market_report",
+                  }),
+                  buildRunInvocation({
+                    agentKey: "news_analyst",
+                    graphMetadata: { nodeId: "news_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "news" },
+                    id: 9901002,
+                    output: { summary: "news_report:NVDA" },
+                    position: 2,
+                    runId: 9901,
+                    runStepId: 990101,
+                    slot: "news_report",
+                  }),
+                ],
+                runId: 9901,
+              }),
+              buildRunStep({
+                id: 990102,
+                index: 2,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: "bull_researcher",
+                    graphMetadata: { nodeId: "bull_research", nodeKind: "step", loopId: "investment_debate_loop", loopIteration: 1 },
+                    id: 9901003,
+                    output: { nextState: { bullCase: "Constructive." } },
+                    runId: 9901,
+                    runStepId: 990102,
+                    slot: "bull",
+                    stepIndex: 2,
+                  }),
+                ],
+                runId: 9901,
+              }),
+              buildRunStep({
+                id: 990103,
+                index: 3,
+                invocations: [
+                  buildRunInvocation({
+                    agentKey: "portfolio_manager",
+                    graphMetadata: { nodeId: "portfolio_manager", nodeKind: "step", loopId: "risk_debate_loop", loopIteration: 2 },
+                    id: 9901004,
+                    output: { action: "buy", rationale: "Analyst fanout and bounded debates support a staged buy." },
+                    runId: 9901,
+                    runStepId: 990103,
+                    slot: "decision",
+                    stepIndex: 3,
+                  }),
+                ],
+                runId: 9901,
+              }),
+            ],
+            targetId: 55,
+            targetKey: "tradingagents_v2_practical_fanout_review",
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-tradingagents-v2-9901",
+          }),
+        ),
+        contentType: "application/json",
+      });
+    });
+
+    await page.goto("/runs/9901");
+
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-target-identity")).toContainText("tradingagents_v2_practical_fanout_review@1");
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText("Analyst fanout and bounded debates support a staged buy");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Fanout analyst_fanout");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("branch market");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop investment_debate_loop iteration 1");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop risk_debate_loop iteration 2");
+    await expect(page.getByTestId("runs-memory-artifacts")).toContainText("NVDA portfolio manager memory");
+    await expect(page.getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/agent_memory_nvda_portfolio_manager_run_9901_buy");
+    await expect(page.locator("body")).not.toContainText(/sk-[A-Za-z0-9_-]+/);
+    await expect(page.locator("body")).not.toContainText(/api[_ -]?key/i);
+  });
+
+  test("renders v2 graph preview and local loop diagnostics without exposing secrets", async ({ page }) => {
+    const v2Manifest = workflowV2Manifest({ agentKey: "graph_agent", key: `workflow_graph_${Date.now()}`, loopMaxIterations: 2 });
+    const unboundedLoopManifest = workflowV2Manifest({ agentKey: "graph_agent", key: `workflow_graph_${Date.now()}` });
+    const compiledGraph = {
+      apiVersion: "ledger.workflow/v2",
+      rootNodeId: "root_sequence",
+      nodes: [
+        { id: "root_sequence", nodeId: "root_sequence", kind: "sequence", childNodeIds: ["analyst_fanout", "review_loop", "decision"] },
+        { id: "root_sequence.analyst_fanout", nodeId: "analyst_fanout", kind: "fanout", branchIds: ["market", "news"], mode: "concurrent" },
+        { id: "root_sequence.analyst_fanout.market.market_analysis", nodeId: "market_analysis", kind: "step", stepIndex: 1, slot: "market", agentKey: "graph_agent", agentVersion: 1, branchId: "market", refs: { ticker: { source: "inputs", path: "ticker" } } },
+        { id: "root_sequence.review_loop", nodeId: "review_loop", kind: "loop", maxIterations: 2, sequenceNodeId: "review_sequence" },
+        { id: "root_sequence.review_loop.iteration_1.review_sequence.risk_review", nodeId: "risk_review", kind: "step", stepIndex: 2, slot: "risk", agentKey: "graph_agent", agentVersion: 1, loopId: "review_loop", loopIteration: 1 },
+      ],
+      output: { source: "nodes", nodeId: "root_sequence", slot: "final", stepIndex: 3, compiledSlot: "final" },
+      validation: { loopMaxIterations: 10, fanoutMaxBranches: 16 },
+      postRunMemory: { enabled: true, sourceRefs: { ticker: { source: "inputs", path: "ticker" } } },
+    };
+
+    await page.route("**/api/workflows/validate-manifest", async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({
+          compiledGraph,
+          compiledPayload: {
+            key: "workflow_graph_preview",
+            name: "Workflow Graph Preview",
+            inputSchema: { type: "object" },
+            steps: [],
+            outputSpec: { kind: "slot", stepIndex: 3, slot: "final" },
+          },
+          diagnostics: [],
+          metadata: {
+            apiVersion: "ledger.workflow/v2",
+            key: "workflow_graph_preview",
+            name: "Workflow Graph Preview",
+            description: "Validates graph preview without replacing YAML source editing.",
+          },
+          runInputSchema: { type: "object", properties: { ticker: { type: "string" } } },
+        }),
+        contentType: "application/json",
+      });
+    });
+
+    await page.goto("/workflows/new");
+    await expectYamlOnlyEditor(page);
+    await page.getByTestId("workflow-yaml-editor").fill(unboundedLoopManifest);
+    await expect(page.getByTestId("workflow-validation-feedback")).toContainText("maxIterations");
+    await page.getByTestId("workflow-yaml-editor").fill(v2Manifest);
+    await page.getByTestId("workflow-validate-manifest").click();
+    await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("analyst_fanout");
+    await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("review_loop");
+    await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("iteration 1");
+    await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("postRunMemory");
+    await expect(page.getByLabel("Exact raw compiled graph JSON")).toHaveValue(/ledger\.workflow\/v2/);
+    await expect(page.locator("body")).not.toContainText(/sk-[A-Za-z0-9_-]+/);
+    await expect(page.locator("body")).not.toContainText(/api[_ -]?key/i);
+  });
+
   test("covers create, reopen, edit, invalid diagnostics, and run launch", async ({
     page,
     request,
@@ -221,13 +461,29 @@ test.describe("Workflow YAML editor", () => {
             finalOutput: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
             id: 8801,
             input: runPayload ?? {},
+            memoryArtifacts: [
+              {
+                reportId: 9021,
+                slug: "memory_msft_decision",
+                name: "MSFT decision memory",
+                status: "pending",
+                createdAt: "2026-04-29T10:00:05Z",
+                sourceGraphMetadata: { nodeId: "decision", nodeKind: "step", loopId: "review_loop", loopIteration: 2 },
+              },
+            ],
             steps: [
               buildRunStep({
                 id: 880101,
+                graphMetadata: {
+                  nodeKind: "fanout",
+                  fanoutId: "analyst_fanout",
+                  sourceRefs: { branches: [] },
+                },
                 invocations: [
                   buildRunInvocation({
                     agentKey: agent.key,
                     agentVersion: agent.version,
+                    graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market" },
                     id: 8801001,
                     output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
                     resolvedInput: runPayload ?? {},
@@ -245,6 +501,7 @@ test.describe("Workflow YAML editor", () => {
                   buildRunInvocation({
                     agentKey: agent.key,
                     agentVersion: agent.version,
+                    graphMetadata: { nodeId: "risk_review", nodeKind: "step", loopId: "review_loop", loopIteration: 1 },
                     id: 8801002,
                     output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
                     resolvedInput: { ticker: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
@@ -457,6 +714,10 @@ test.describe("Workflow YAML editor", () => {
       "Workflow summary for MSFT",
     );
     await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-workflow-yaml-8801");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Fanout analyst_fanout");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop review_loop iteration 1");
+    await expect(page.getByTestId("runs-memory-artifacts")).toContainText("MSFT decision memory");
+    await expect(page.getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_msft_decision");
     await expect(page.getByTestId("runs-step-1-fork-entry")).toContainText("Fork from this succeeded step");
     await expect(page.getByTestId("runs-step-2")).toBeVisible();
     await expect(page.getByTestId("runs-step-2-fork-entry")).toHaveCount(0);

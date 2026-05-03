@@ -140,7 +140,7 @@ describe("ModelConnectionsEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
-    fireEvent.change(screen.getByLabelText(/^API Key$/i), { target: { value: "sk-live-secret" } });
+    fireEvent.change(screen.getByLabelText(/^API Key$/i), { target: { value: "redacted-live-secret" } });
 
     expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
       stringifyJson({
@@ -155,7 +155,7 @@ describe("ModelConnectionsEditorPage", () => {
       }),
     );
     expect(screen.getByLabelText(/exact config json/i)).not.toHaveValue(
-      expect.stringContaining("sk-live-secret"),
+      expect.stringContaining("redacted-live-secret"),
     );
   });
 
