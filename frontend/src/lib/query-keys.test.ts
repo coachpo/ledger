@@ -68,13 +68,34 @@ describe("query keys", () => {
     ]);
 
     expect(
-      queryKeys.platform.runs.list({ offset: 0, status: "succeeded", workflowKey: " report_lookup_reference " }),
+      queryKeys.platform.runs.list({
+        offset: 0,
+        status: "succeeded",
+        targetKey: " report_lookup_reference ",
+        targetKind: "workflow",
+      }),
     ).toEqual([
       "api",
       "platform",
       "runs",
       "list",
-      { offset: 0, status: "succeeded", workflowKey: "report_lookup_reference" },
+      {
+        offset: 0,
+        status: "succeeded",
+        targetKey: "report_lookup_reference",
+        targetKind: "workflow",
+      },
+    ]);
+    expect(queryKeys.platform.runs.forkDraft("42", 2)).toEqual(
+      queryKeys.platform.runs.forkDraft(42, 2),
+    );
+    expect(queryKeys.platform.runs.forkDraft(42, 2)).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "forkDraft",
+      "42",
+      { forkStepIndex: 2 },
     ]);
   });
 

@@ -112,9 +112,10 @@ function normalizeRunListParams(params: RunListParams = {}) {
     limit: params.limit,
     offset: params.offset ?? 0,
     status: params.status,
-    workflowId: params.workflowId,
-    workflowKey: normalizeOptionalText(params.workflowKey),
-    workflowVersion: params.workflowVersion,
+    targetId: params.targetId,
+    targetKey: normalizeOptionalText(params.targetKey),
+    targetKind: params.targetKind,
+    targetVersion: params.targetVersion,
   });
 }
 
@@ -227,6 +228,8 @@ const platformQueryKeys = {
     all: [...platformApiRoot, "runs"] as const,
     detail: (runId: IdParam) =>
       [...platformApiRoot, "runs", "detail", normalizeId(runId)] as const,
+    forkDraft: (runId: IdParam, forkStepIndex: number) =>
+      [...platformApiRoot, "runs", "forkDraft", normalizeId(runId), { forkStepIndex }] as const,
     list: (params: RunListParams = {}) =>
       [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
   },
