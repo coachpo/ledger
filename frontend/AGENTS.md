@@ -1,29 +1,33 @@
 # FRONTEND GUIDE
 
-> Inherits root rules from `/AGENTS.md`. Local frontend docs live throughout `src/**/AGENTS.md`.
+> Inherits root rules from `/AGENTS.md`. Local frontend docs live in `e2e/`, `scripts/`, and throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
 React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, and the current agent-platform routes including model connections, plus shared forms and UI that keep route logic thin.
 
 ## CHILD DOCS
+- `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
+- `scripts/AGENTS.md` — Playwright backend/frontend startup helpers
+- `src/styles/AGENTS.md` — Tailwind v4 imports, theme tokens, dark variant, and empty font stub
+- `src/test/AGENTS.md` — Vitest jsdom setup and browser API mocks
 - `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, shared types
 - `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
-- `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/workflow/agent authoring helpers
+- `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/agents/AGENTS.md` — agents list, editor, duplicate, archive, and run-launch flows
+- `src/pages/agents/AGENTS.md` — YAML manifest agent list/editor/duplicate/archive/run-launch flows
 - `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, and tool-grant flows
 - `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
-- `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, and builder/json-schema/preview flows
-- `src/pages/workflows/AGENTS.md` — workflows list, editor, review, and run-launch flows
+- `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, schema composer, raw JSON, and preview flows
+- `src/pages/workflows/AGENTS.md` — YAML manifest workflow list/editor/validation/run-launch flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, feature UI, primitives
-- `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
+- `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and legacy workflow-builder widgets
 - `src/components/forms/AGENTS.md` — shared dialog forms for portfolios and report generation
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
@@ -64,11 +68,12 @@ frontend/
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
-- The template editor route is still inside the main shell, but `Layout` gives it a full-height content region instead of the usual scroll container.
+- Template, agent, and workflow editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
+- Agent and workflow editors are YAML-manifest editors with local parser feedback, backend validation, snippet insertion, compiled preview, and schema-driven run-input forms.
 - Agent-platform pages use dedicated hooks and route params to keep CRUD, catalog reads, and run inspection inside the routed page layer.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
 - Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
@@ -82,6 +87,7 @@ frontend/
 - Do not change runtime-input row behavior, `inputs.*` expectations, or generation-dialog wiring without updating the editor, shared dialog, hooks, and backend compile contract together.
 - Do not change report route, slug, upload/download, or query-key shapes without updating hooks, types, and tests together.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
+- Do not document retired `/skills`, `/studio`, `/tryout`, `/orchestration`, or `/backtests` routes as live surfaces.
 - Do not hide agent-platform route ownership inside generic UI folders or stale docs.
 
 ## COMMANDS
@@ -104,4 +110,5 @@ pnpm test:e2e
 - `vite.config.ts` sets up the `@` alias, Vitest jsdom mode, and manual chunking for framework/data/ui/forms/date/vendor bundles.
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001` and frontend `4173`.
 - Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, template-editor, and layout pages.
-- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, and the current agent-platform routes.
+- `src/styles/fonts.css` is empty/unreferenced; theme tokens live in `src/styles/theme.css` and Tailwind import/source control lives in `src/styles/tailwind.css`.
+- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, and the current agent-platform routes; retired route families are guarded in `src/routes.test.tsx`.
