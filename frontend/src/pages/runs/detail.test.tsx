@@ -43,6 +43,7 @@ function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAg
     finishedAt: "2026-04-20T10:00:03Z",
     id: 1001,
     inputMode: "wired",
+    graphMetadata: null,
     optional: false,
     output: { summary: "analysis" },
     outputOrigin: "executed",
@@ -74,6 +75,7 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
     finishedAt: "2026-04-20T10:00:03Z",
     id: 101,
     index: 1,
+    graphMetadata: null,
     invocations: [buildInvocation()],
     origin: "planned",
     persistedAt: "2026-04-20T10:00:03Z",
@@ -102,6 +104,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     inheritedTokens: 0,
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
+    memoryArtifacts: [],
     resumeStepIndex: 1,
     sourceRunId: null,
     startedAt: NOW,
@@ -296,6 +299,123 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText("Provider failed")).toBeVisible();
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
     expect(screen.getByRole("link", { name: /trace link · span-2/i })).toBeVisible();
+  });
+
+  it("groups graph metadata and renders memory artifact report links", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          memoryArtifacts: [
+            {
+              reportId: 701,
+              slug: "memory_aapl_decision",
+              name: "AAPL decision memory",
+              status: "pending",
+              createdAt: NOW,
+              sourceGraphMetadata: { nodeId: "decision", nodeKind: "step", loopId: "review_loop", loopIteration: 2 },
+            },
+          ],
+          steps: [
+            buildStep({
+              graphMetadata: {
+                nodeKind: "fanout",
+                fanoutId: "analyst_fanout",
+                sourceRefs: { branches: [] },
+              },
+              invocations: [
+                buildInvocation({
+                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market" },
+                  slot: "market",
+                }),
+                buildInvocation({
+                  graphMetadata: { nodeId: "news_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "news" },
+                  id: 1002,
+                  position: 2,
+                  slot: "news",
+                }),
+              ],
+            }),
+            buildStep({
+              id: 102,
+              index: 2,
+              invocations: [
+                buildInvocation({
+                  graphMetadata: { nodeId: "risk_review", nodeKind: "step", loopId: "review_loop", loopIteration: 1 },
+                  id: 1003,
+                  runStepId: 102,
+                  slot: "risk",
+                  stepIndex: 2,
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Fanout analyst_fanout");
+    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("branch market");
+    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Loop review_loop iteration 1");
+    expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("node market_analysis");
+    const artifact = screen.getByTestId("runs-memory-artifact-memory_aapl_decision");
+    expect(artifact).toHaveTextContent("AAPL decision memory");
+    expect(within(artifact).getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_aapl_decision");
+    expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute("download");
+  });
+
+  it("keeps repeated fanouts separate across loop iterations", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          steps: [
+            buildStep({
+              graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", loopId: "review_loop", loopIteration: 1 },
+              invocations: [
+                buildInvocation({
+                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market", loopId: "review_loop", loopIteration: 1 },
+                  slot: "market",
+                }),
+              ],
+            }),
+            buildStep({
+              id: 102,
+              index: 2,
+              graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", loopId: "review_loop", loopIteration: 2 },
+              invocations: [
+                buildInvocation({
+                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market", loopId: "review_loop", loopIteration: 2 },
+                  id: 1002,
+                  runStepId: 102,
+                  slot: "market",
+                  stepIndex: 2,
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const firstIterationGroup = screen.getByTestId("runs-graph-group-1");
+    const secondIterationGroup = screen.getByTestId("runs-graph-group-2");
+    expect(firstIterationGroup).toHaveTextContent("Fanout analyst_fanout · loop review_loop iteration 1");
+    expect(firstIterationGroup).toHaveTextContent("Steps 1 · 1 invocation");
+    expect(secondIterationGroup).toHaveTextContent("Fanout analyst_fanout · loop review_loop iteration 2");
+    expect(secondIterationGroup).toHaveTextContent("Steps 2 · 1 invocation");
+    expect(screen.queryByText(/Steps 1, 2 · 2 invocation/)).not.toBeInTheDocument();
+  });
+
+  it("omits graph grouping and memory artifact cards when metadata is absent", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+
+    render(<RunsDetailPage />);
+
+    expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
   });
 
   it("renders standalone agent target identity and span-only trace linkage", () => {

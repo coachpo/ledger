@@ -1,14 +1,17 @@
-import { AlertCircle, GitFork, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, Download, FileText, GitFork, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { useCreateRunFork, useRun, useRunForkDraft } from "@/hooks/use-runs";
+import { downloadReportUrl } from "@/lib/api/reports";
 import { formatDateTime } from "@/lib/format";
 import type {
   RunAgentInvocationRead,
   RunForkCreateRequest,
   RunForkDraftRead,
   RunForkInvocationDraftRead,
+  RunGraphMetadata,
+  RunMemoryArtifactRead,
   RunStatus,
   RunStepRead,
   RunStepStatus,
@@ -293,6 +296,38 @@ function JsonBlock({ label, testId, value }: { label: string; testId?: string; v
   );
 }
 
+function graphMetadataLabel(metadata: RunGraphMetadata | null): string {
+  if (!metadata) {
+    return "Not recorded";
+  }
+
+  return [
+    metadata.nodeKind,
+    metadata.nodeId,
+    metadata.fanoutId ? `fanout ${metadata.fanoutId}` : null,
+    metadata.branchId ? `branch ${metadata.branchId}` : null,
+    metadata.loopId ? `loop ${metadata.loopId}` : null,
+    metadata.loopIteration ? `iteration ${metadata.loopIteration}` : null,
+  ].filter(Boolean).join(" · ");
+}
+
+function GraphMetadataBadges({ metadata }: { metadata: RunGraphMetadata | null }) {
+  if (!metadata) {
+    return null;
+  }
+
+  return (
+    <>
+      {metadata.nodeKind ? <Badge variant="outline">{metadata.nodeKind}</Badge> : null}
+      {metadata.nodeId ? <Badge variant="outline">node {metadata.nodeId}</Badge> : null}
+      {metadata.fanoutId ? <Badge variant="outline">fanout {metadata.fanoutId}</Badge> : null}
+      {metadata.branchId ? <Badge variant="outline">branch {metadata.branchId}</Badge> : null}
+      {metadata.loopId ? <Badge variant="outline">loop {metadata.loopId}</Badge> : null}
+      {metadata.loopIteration ? <Badge variant="outline">iteration {metadata.loopIteration}</Badge> : null}
+    </>
+  );
+}
+
 function SourceRunLink({ children, runId }: { children: ReactNode; runId: number | null }) {
   if (!runId) {
     return <>{children}</>;
@@ -330,6 +365,150 @@ function SourceInvocationLink({ invocation, step }: { invocation: RunAgentInvoca
     <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${step.sourceRunId}#invocation-${invocation.sourceInvocationId}`}>
       Invocation #{invocation.sourceInvocationId}
     </Link>
+  );
+}
+
+type RunGraphGroup = {
+  branchIds: string[];
+  invocations: RunAgentInvocationRead[];
+  key: string;
+  label: string;
+  loopId: string | null;
+  loopIteration: number | null;
+  nodeKind: string;
+  steps: RunStepRead[];
+};
+
+function groupRunGraphSteps(steps: RunStepRead[]): RunGraphGroup[] {
+  const groups = new Map<string, RunGraphGroup>();
+  const ensureGroup = (key: string, label: string, nodeKind: string, loopId: string | null, loopIteration: number | null) => {
+    let group = groups.get(key);
+    if (!group) {
+      group = { branchIds: [], invocations: [], key, label, loopId, loopIteration, nodeKind, steps: [] };
+      groups.set(key, group);
+    }
+    return group;
+  };
+
+  steps.forEach((step) => {
+    const metadata = step.graphMetadata;
+    const firstInvocationMetadata = step.invocations.find((invocation) => invocation.graphMetadata)?.graphMetadata ?? null;
+    const groupingMetadata = metadata ?? firstInvocationMetadata;
+    if (!groupingMetadata) {
+      return;
+    }
+    const loopKey = groupingMetadata.loopId
+      ? `:loop:${groupingMetadata.loopId}:iteration:${groupingMetadata.loopIteration ?? "all"}`
+      : "";
+    const key = groupingMetadata.fanoutId
+      ? `fanout:${groupingMetadata.fanoutId}${loopKey}`
+      : groupingMetadata.loopId
+        ? `loop:${groupingMetadata.loopId}:iteration:${groupingMetadata.loopIteration ?? "all"}`
+        : groupingMetadata.nodeId
+          ? `node:${groupingMetadata.nodeId}`
+          : `step:${step.index}`;
+    const loopContext = groupingMetadata.loopId
+      ? ` · loop ${groupingMetadata.loopId}${groupingMetadata.loopIteration ? ` iteration ${groupingMetadata.loopIteration}` : ""}`
+      : "";
+    const label = groupingMetadata.fanoutId
+      ? `Fanout ${groupingMetadata.fanoutId}${loopContext}`
+      : groupingMetadata.loopId
+        ? `Loop ${groupingMetadata.loopId}${groupingMetadata.loopIteration ? ` iteration ${groupingMetadata.loopIteration}` : ""}`
+        : groupingMetadata.nodeId
+          ? `Node ${groupingMetadata.nodeId}`
+          : `Step ${step.index}`;
+    const group = ensureGroup(
+      key,
+      label,
+      groupingMetadata.nodeKind ?? metadata?.nodeKind ?? "step",
+      groupingMetadata.loopId ?? null,
+      groupingMetadata.loopIteration ?? null,
+    );
+    group.steps.push(step);
+    group.invocations.push(...step.invocations);
+    for (const invocation of step.invocations) {
+      const branchId = invocation.graphMetadata?.branchId;
+      if (branchId && !group.branchIds.includes(branchId)) {
+        group.branchIds.push(branchId);
+      }
+    }
+  });
+
+  return [...groups.values()].sort((left, right) => {
+    const leftIndex = Math.min(...left.steps.map((step) => step.index));
+    const rightIndex = Math.min(...right.steps.map((step) => step.index));
+    return leftIndex - rightIndex || left.key.localeCompare(right.key);
+  });
+}
+
+function RunGraphSummary({ groups }: { groups: RunGraphGroup[] }) {
+  if (groups.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card data-testid="runs-graph-summary">
+      <CardHeader>
+        <CardTitle className="text-base">Graph execution summary</CardTitle>
+        <CardDescription>Sequence, fanout, and loop grouping derived from runtime graph metadata.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group, index) => (
+          <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-graph-group-${index + 1}`} key={group.key}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{group.nodeKind}</Badge>
+              {group.loopId ? <Badge variant="outline">loop {group.loopId}</Badge> : null}
+              {group.loopIteration ? <Badge variant="outline">iteration {group.loopIteration}</Badge> : null}
+              {group.branchIds.map((branchId) => <Badge key={branchId} variant="outline">branch {branchId}</Badge>)}
+            </div>
+            <p className="mt-2 font-medium">{group.label}</p>
+            <p className="mt-1 text-muted-foreground">
+              Steps {group.steps.map((step) => step.index).join(", ")} · {group.invocations.length} invocation(s)
+            </p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemoryArtifacts({ artifacts }: { artifacts: RunMemoryArtifactRead[] }) {
+  if (artifacts.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card data-testid="runs-memory-artifacts">
+      <CardHeader>
+        <CardTitle className="text-base">Memory artifacts</CardTitle>
+        <CardDescription>Agent memory reports created after this run.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {artifacts.map((artifact) => (
+          <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-artifact-${artifact.slug}`} key={artifact.slug}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{artifact.name}</p>
+                <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+              </div>
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{graphMetadataLabel(artifact.sourceGraphMetadata)}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/reports/${artifact.slug}`}>Open report</Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <a href={downloadReportUrl(artifact.slug)} download>
+                  <Download data-icon="inline-start" />
+                  Download
+                </a>
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -683,6 +862,7 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
             <Badge variant="outline">input {invocation.resolvedInputOrigin}</Badge>
             <Badge variant="outline">output {invocation.outputOrigin ?? "pending"}</Badge>
             <Badge variant="outline">{invocation.optional ? "optional" : "required"}</Badge>
+            <GraphMetadataBadges metadata={invocation.graphMetadata} />
           </div>
         </div>
       </CardHeader>
@@ -709,6 +889,7 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
             { label: "Agent id", value: `#${invocation.agentId}` },
             { label: "Output schema", value: `#${invocation.outputSchemaId}@${invocation.outputSchemaVersion}` },
             { label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> },
+            { label: "Graph node", value: graphMetadataLabel(invocation.graphMetadata) },
             { label: "Tokens", value: invocation.tokens },
             { label: "Cost", value: invocation.costUsd },
             { label: "Duration", value: formatDuration(invocation.durationMs) },
@@ -759,6 +940,7 @@ function StepCard({ canFork, onOpenFork, step }: { canFork: boolean; onOpenFork:
                   <Badge variant={statusVariant(step.status)}>{step.status}</Badge>
                   <Badge variant="outline">{step.origin}</Badge>
                   <Badge variant="secondary">{progress}%</Badge>
+                  <GraphMetadataBadges metadata={step.graphMetadata} />
                 </div>
               </div>
               <Progress value={progress} />
@@ -792,6 +974,7 @@ function StepCard({ canFork, onOpenFork, step }: { canFork: boolean; onOpenFork:
               items={[
                 { label: "Step row", value: `#${step.id}` },
                 { label: "Source step", value: <SourceStepLink step={step} /> },
+                { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
                 { label: "Started", value: formatTimestamp(step.startedAt) },
                 { label: "Finished", value: formatTimestamp(step.finishedAt) },
                 { label: "Persisted", value: formatTimestamp(step.persistedAt) },
@@ -841,6 +1024,7 @@ export function RunsDetailPage() {
       ),
     [steps],
   );
+  const graphGroups = useMemo(() => groupRunGraphSteps(steps), [steps]);
   const forkDialogOpen = searchParams.get("fork") === "1";
   const forkStepIndexParam = searchParams.get("forkStepIndex");
   const forkStepIndex = useMemo(() => {
@@ -987,6 +1171,10 @@ export function RunsDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <RunGraphSummary groups={graphGroups} />
+
+      <MemoryArtifacts artifacts={run.memoryArtifacts ?? []} />
 
       <Card data-testid="runs-lineage-summary">
         <CardHeader>
