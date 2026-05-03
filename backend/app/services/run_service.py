@@ -24,14 +24,21 @@ from app.core.telemetry import (
 from app.db.engine import get_session_factory
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
+from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
+from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_step import RunStepRepository
+from app.schemas.memory_report import (
+    AgentMemoryReportCreateMetadata,
+    AgentMemoryReportMetadata,
+    AgentMemoryTrustedCreateContext,
+)
 from app.schemas.run import (
     RunCreatedRead,
     RunForkCreateRequest,
@@ -53,10 +60,12 @@ from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
     ExecutionPlanFinalOutput,
+    ExecutionPlanGraphMetadata,
     ExecutionPlanSource,
     ExecutionPlanStep,
 )
 from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
+from app.services.memory_report_service import MemoryReportService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -113,6 +122,7 @@ class RunService:
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
+        self.report_repository = ReportRepository(session)
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
@@ -349,6 +359,7 @@ class RunService:
         planned_steps = self.run_step_repository.create_planned_steps(
             run_id=run.id,
             step_indexes=(step.index for step in plan_steps),
+            graph_metadata_by_index=self._step_graph_metadata_payloads(plan_steps),
         )
         self.session.flush()
         steps_by_index = {step.step_index: step for step in planned_steps}
@@ -375,10 +386,23 @@ class RunService:
                         target_name: self._plan_source_payload(source)
                         for target_name, source in plan_agent.wiring.items()
                     },
+                    graph_metadata=self._graph_metadata_payload(plan_agent.graph_metadata),
                     optional=plan_agent.optional,
                     resolved_input=resolved_input,
                     resolved_input_origin=resolved_input_origin,
                 )
+
+    @classmethod
+    def _step_graph_metadata_payloads(
+        cls,
+        plan_steps: list[ExecutionPlanStep],
+    ) -> dict[int, dict[str, Any]]:
+        payloads: dict[int, dict[str, Any]] = {}
+        for step in plan_steps:
+            payload = cls._graph_metadata_payload(step.graph_metadata)
+            if payload is not None:
+                payloads[step.index] = payload
+        return payloads
 
     @staticmethod
     def _planned_resolved_input(
@@ -580,6 +604,7 @@ class RunService:
                 source_run_step_id=source_step.id,
                 source_run_id=source_step.run_id,
                 source_step_index=source_step.step_index,
+                graph_metadata=deepcopy(source_step.graph_metadata),
                 error=source_step.error,
                 started_at=source_step.started_at,
                 finished_at=source_step.finished_at,
@@ -618,6 +643,7 @@ class RunService:
                     output_schema_version=source_invocation.output_schema_version,
                     input_mode=source_invocation.input_mode,
                     wiring=deepcopy(source_invocation.wiring),
+                    graph_metadata=deepcopy(source_invocation.graph_metadata),
                     optional=source_invocation.optional,
                     resolved_input=deepcopy(resolved_input) if resolved_input is not None else {},
                     resolved_input_origin="edited" if resolved_input_edited else "copied",
@@ -739,7 +765,234 @@ class RunService:
         run.trace_id = trace_id
         run.error = None
         run.finished_at = utcnow()
+        self._create_post_run_memory_artifact(run.id)
         self.session.commit()
+
+    def _create_post_run_memory_artifact(self, run_id: int) -> None:
+        run = self._get_run_or_raise(run_id)
+        if run.status != _RUN_STATUS_SUCCEEDED or run.target_kind != "workflow":
+            return
+        policy = self._post_run_memory_policy(run)
+        if policy is None:
+            return
+        source_refs = policy.get("sourceRefs")
+        if not isinstance(source_refs, dict):
+            return
+        slot_outputs = self._hydrate_slot_outputs(run.id)
+        payload = self._post_run_memory_payload(
+            source_refs,
+            benchmark_symbol_ref=policy.get("benchmarkSymbol"),
+            initial_input=run.input,
+            slot_outputs=slot_outputs,
+        )
+        context_ref = self._post_run_memory_context_ref(source_refs, policy)
+        context_invocation = self._post_run_memory_context_invocation(context_ref, run_id=run.id)
+        if context_invocation is None:
+            return
+        agent = self.agent_repository.get_by_key_version(
+            context_invocation.agent_key,
+            context_invocation.agent_version,
+        )
+        if agent is None:
+            return
+        _ = MemoryReportService(self.session).create_pending_report(
+            capability_references=agent.capabilities,
+            payload=payload,
+            trusted_context=AgentMemoryTrustedCreateContext(
+                run_id=run.id,
+                agent_key=context_invocation.agent_key,
+                agent_version=context_invocation.agent_version,
+                agent_name=agent.name,
+                workflow_key=run.target_key,
+                workflow_version=run.target_version,
+                step_id=self._post_run_memory_context_node_id(context_ref, context_invocation),
+                slot=self._post_run_memory_context_slot(context_ref, context_invocation),
+                trace_id=run.trace_id,
+            ),
+        )
+
+    def _post_run_memory_policy(self, run: Run) -> dict[str, Any] | None:
+        workflow = self.execution_plan_builder.workflow_repository.get_by_key_version(
+            run.target_key,
+            run.target_version,
+        )
+        if workflow is None:
+            return None
+        compiled_graph = workflow.output_spec.get("compiledGraph")
+        if not isinstance(compiled_graph, dict):
+            return None
+        policy = compiled_graph.get("postRunMemory")
+        if not isinstance(policy, dict) or policy.get("enabled") is not True:
+            return None
+        return cast(dict[str, Any], policy)
+
+    def _post_run_memory_payload(
+        self,
+        source_refs: dict[Any, Any],
+        *,
+        benchmark_symbol_ref: Any | None = None,
+        initial_input: dict[str, Any],
+        slot_outputs: dict[tuple[int, str], Any],
+    ) -> AgentMemoryReportCreateMetadata:
+        analysis: dict[str, Any] = {
+            "ticker": self._resolve_post_run_memory_ref(
+                source_refs["ticker"],
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+            ),
+            "decision": {
+                "action": self._resolve_post_run_memory_ref(
+                    source_refs["action"],
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                ),
+                "rationale": self._resolve_post_run_memory_ref(
+                    source_refs["rationale"],
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                ),
+                "riskSummary": self._resolve_post_run_memory_ref(
+                    source_refs["riskSummary"],
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                ),
+                "executionPlan": self._resolve_post_run_memory_ref(
+                    source_refs["executionPlan"],
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                ),
+            },
+        }
+        if benchmark_symbol_ref is not None:
+            analysis["benchmarkSymbol"] = self._resolve_post_run_memory_ref(
+                benchmark_symbol_ref,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+            )
+        for source_field, analysis_field in (
+            ("portfolioSlug", "portfolioSlug"),
+            ("horizonDays", "horizonDays"),
+            ("confidence", "confidence"),
+            ("decisionSummary", "decisionSummary"),
+        ):
+            reference = source_refs.get(source_field)
+            if reference is not None:
+                analysis[analysis_field] = self._resolve_post_run_memory_ref(
+                    reference,
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                )
+        return AgentMemoryReportCreateMetadata.model_validate({"analysis": analysis})
+
+    def _resolve_post_run_memory_ref(
+        self,
+        reference: Any,
+        *,
+        initial_input: dict[str, Any],
+        slot_outputs: dict[tuple[int, str], Any],
+    ) -> Any:
+        if not isinstance(reference, dict):
+            raise RunExecutionError(
+                code="post_run_memory_ref_invalid",
+                message="postRunMemory compiled source reference is invalid",
+            )
+        source_kind = reference.get("source")
+        if source_kind == "inputs":
+            payload: dict[str, Any] = {"from": "input"}
+            if reference.get("path") is not None:
+                payload["path"] = reference["path"]
+            value, _optional_null = self._resolve_source_value(
+                payload,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+            )
+            return value
+        if source_kind == "nodes":
+            payload = {
+                "from": "step",
+                "stepIndex": reference["stepIndex"],
+                "slot": reference["compiledSlot"],
+            }
+            if reference.get("path") is not None:
+                payload["path"] = reference["path"]
+            value, optional_null = self._resolve_source_value(
+                payload,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+            )
+            if optional_null:
+                raise RunExecutionError(
+                    code="post_run_memory_source_null",
+                    message="postRunMemory source resolved to a null optional slot",
+                )
+            return value
+        raise RunExecutionError(
+            code="post_run_memory_ref_invalid",
+            message="postRunMemory compiled source reference is invalid",
+        )
+
+    @staticmethod
+    def _post_run_memory_context_ref(
+        source_refs: dict[Any, Any],
+        policy: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        for field_name in (
+            "action",
+            "rationale",
+            "riskSummary",
+            "executionPlan",
+            "decisionSummary",
+            "ticker",
+        ):
+            reference = source_refs.get(field_name)
+            if isinstance(reference, dict) and reference.get("source") == "nodes":
+                return cast(dict[str, Any], reference)
+        benchmark_ref = policy.get("benchmarkSymbol")
+        if isinstance(benchmark_ref, dict) and benchmark_ref.get("source") == "nodes":
+            return cast(dict[str, Any], benchmark_ref)
+        return None
+
+    def _post_run_memory_context_invocation(
+        self,
+        context_ref: dict[str, Any] | None,
+        *,
+        run_id: int,
+    ) -> RunAgentInvocation | None:
+        if context_ref is None:
+            return None
+        step_index = context_ref.get("stepIndex")
+        slot = context_ref.get("compiledSlot")
+        if step_index is None or slot is None:
+            return None
+        return self.run_agent_invocation_repository.get_by_run_step_slot(
+            run_id,
+            int(step_index),
+            str(slot),
+        )
+
+    @staticmethod
+    def _post_run_memory_context_node_id(
+        context_ref: dict[str, Any] | None,
+        invocation: RunAgentInvocation,
+    ) -> str | None:
+        if context_ref is not None:
+            node_id = context_ref.get("sourceNodeId") or context_ref.get("nodeId")
+            if node_id is not None:
+                return str(node_id)
+        metadata = invocation.graph_metadata or {}
+        node_id = metadata.get("nodeId")
+        return None if node_id is None else str(node_id)
+
+    @staticmethod
+    def _post_run_memory_context_slot(
+        context_ref: dict[str, Any] | None,
+        invocation: RunAgentInvocation,
+    ) -> str:
+        if context_ref is not None:
+            slot = context_ref.get("sourceSlot") or context_ref.get("compiledSlot")
+            if slot is not None:
+                return str(slot)
+        return invocation.slot
 
     def _hydrate_slot_outputs(
         self,
@@ -1152,6 +1405,31 @@ class RunService:
         if source.slot is not None:
             payload["slot"] = source.slot
         return payload
+
+    @staticmethod
+    def _graph_metadata_payload(
+        graph_metadata: ExecutionPlanGraphMetadata | None,
+    ) -> dict[str, Any] | None:
+        if graph_metadata is None:
+            return None
+        payload: dict[str, Any] = {}
+        if graph_metadata.node_id is not None:
+            payload["nodeId"] = graph_metadata.node_id
+        if graph_metadata.node_kind is not None:
+            payload["nodeKind"] = graph_metadata.node_kind
+        if graph_metadata.graph_path is not None:
+            payload["graphPath"] = graph_metadata.graph_path
+        if graph_metadata.fanout_id is not None:
+            payload["fanoutId"] = graph_metadata.fanout_id
+        if graph_metadata.branch_id is not None:
+            payload["branchId"] = graph_metadata.branch_id
+        if graph_metadata.loop_id is not None:
+            payload["loopId"] = graph_metadata.loop_id
+        if graph_metadata.loop_iteration is not None:
+            payload["loopIteration"] = graph_metadata.loop_iteration
+        if graph_metadata.source_refs is not None:
+            payload["sourceRefs"] = deepcopy(graph_metadata.source_refs)
+        return payload or None
 
     def _resolve_final_output_value(
         self,
@@ -1627,8 +1905,7 @@ class RunService:
             }
         )
 
-    @staticmethod
-    def _to_read_model(run: Run) -> RunRead:
+    def _to_read_model(self, run: Run) -> RunRead:
         return RunRead.model_validate(
             {
                 "id": run.id,
@@ -1662,8 +1939,39 @@ class RunService:
                         key=lambda item: (item.step_index, item.id),
                     )
                 ],
+                "memoryArtifacts": self._memory_artifact_links(run.id),
             }
         )
+
+    def _memory_artifact_links(self, run_id: int) -> list[dict[str, Any]]:
+        return [
+            self._memory_artifact_link(report)
+            for report in self.report_repository.list_agent_memory_by_run_id(run_id)
+        ]
+
+    @staticmethod
+    def _memory_artifact_link(report: Report) -> dict[str, Any]:
+        metadata = AgentMemoryReportMetadata.model_validate(report.metadata_)
+        analysis = metadata.analysis
+        source_graph_metadata = {
+            key: value
+            for key, value in {
+                "nodeId": analysis.step_id,
+                "slot": analysis.slot,
+                "traceId": analysis.trace_id,
+                "workflowKey": analysis.workflow_key,
+                "workflowVersion": analysis.workflow_version,
+            }.items()
+            if value is not None
+        }
+        return {
+            "reportId": report.id,
+            "slug": report.slug,
+            "name": report.name,
+            "status": analysis.resolved_status,
+            "createdAt": report.created_at,
+            "sourceGraphMetadata": source_graph_metadata or None,
+        }
 
     @staticmethod
     def _to_step_read(step: RunStep) -> dict[str, Any]:
@@ -1676,6 +1984,7 @@ class RunService:
             "sourceRunStepId": step.source_run_step_id,
             "sourceRunId": step.source_run_id,
             "sourceStepIndex": step.source_step_index,
+            "graphMetadata": deepcopy(step.graph_metadata),
             "error": step.error,
             "startedAt": step.started_at,
             "finishedAt": step.finished_at,
@@ -1707,6 +2016,7 @@ class RunService:
             "outputSchemaVersion": invocation.output_schema_version,
             "inputMode": invocation.input_mode,
             "wiring": invocation.wiring,
+            "graphMetadata": deepcopy(invocation.graph_metadata),
             "optional": invocation.optional,
             "status": invocation.status,
             "resolvedInput": invocation.resolved_input,

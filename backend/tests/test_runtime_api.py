@@ -34,7 +34,8 @@ from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
-from app.schemas.workflow import WorkflowCreate, WorkflowRead
+from app.schemas.workflow import WorkflowCreate, WorkflowCreateRequest, WorkflowRead
+from app.services.agent_service import AgentService
 from app.services.capability_service import (
     MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
@@ -60,7 +61,12 @@ from app.services.quote_provider import (
 )
 from app.services.report_service import ReportService
 from app.services.run_service import RunService
+from app.services.workflow_manifest_examples import (
+    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
+    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+)
 from app.services.workflow_service import WorkflowService
+from tests.test_agent_manifest_compiler import _seed_tradingagents_manifest_refs
 
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 _TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
@@ -3046,6 +3052,818 @@ def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocat
         "stepIndex": 1,
         "slot": "financials_analyst",
     }
+    assert body["steps"][0]["graphMetadata"] is None
+    assert step_one_invocations[0]["graphMetadata"] is None
+
+
+def _v2_graph_runtime_manifest_source() -> str:
+    return """apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: v2_graph_runtime_workflow
+  name: V2 Graph Runtime Workflow
+  description: Runtime graph metadata coverage.
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+  required:
+    - ticker
+  additionalProperties: false
+flow:
+  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: fanout
+      id: analyst_fanout
+      branches:
+        - id: market
+          node:
+            kind: step
+            id: market_analysis
+            slot: market
+            uses: v2_market_agent@1
+            with:
+              ticker: ${{ inputs.ticker }}
+        - id: news
+          node:
+            kind: step
+            id: news_analysis
+            slot: news
+            uses: v2_news_agent@1
+            with:
+              ticker: ${{ inputs.ticker }}
+    - kind: loop
+      id: review_loop
+      maxIterations: 2
+      sequence:
+        kind: sequence
+        id: review_sequence
+        nodes:
+          - kind: step
+            id: risk_review
+            slot: risk
+            uses: v2_risk_agent@1
+            with:
+              ticker: ${{ inputs.ticker }}
+    - kind: step
+      id: decision
+      slot: final
+      uses: v2_decision_agent@1
+      with:
+        marketReport: ${{ nodes.analyst_fanout.outputs.market }}
+        newsReport: ${{ nodes.analyst_fanout.outputs.news }}
+        riskReport: ${{ nodes.review_loop.outputs.risk }}
+output:
+  from: ${{ nodes.root_sequence.outputs.final }}
+"""
+
+
+def test_agent_platform_v2_workflow_run_detail_exposes_graph_metadata(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    execution_starts: list[tuple[int, str]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        del self, output_model, trace_id
+        execution_starts.append((step_index, slot))
+        await asyncio.sleep(0.01 if step_index == 1 else 0)
+        if agent.key == "v2_decision_agent":
+            summary = "|".join(
+                [
+                    resolved_input["marketReport"]["summary"],
+                    resolved_input["newsReport"]["summary"],
+                    resolved_input["riskReport"]["summary"],
+                ]
+            )
+            output = {"summary": summary}
+        else:
+            output = {"summary": f"{slot}:{resolved_input['ticker']}"}
+        return {"output": output, "tokens": 5, "costUsd": "0.001", "durationMs": 1}
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+
+    with session_factory() as session:
+        output_schema = _build_output_schema(key="v2_graph_schema", version=1, status="published")
+        skill = _build_skill(
+            key="v2_graph_skill",
+            version=1,
+            status="published",
+            tools=["ledger.market_data.quote_lookup"],
+        )
+        mcp_server = _build_mcp_server(
+            key="v2_graph_server",
+            version=1,
+            status="published",
+            transport="http-sse",
+        )
+        connection = _build_model_connection(name="V2 Graph Connection")
+        session.add_all([output_schema, skill, mcp_server, connection])
+        session.flush()
+        note_input_schema = {
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+            "additionalProperties": False,
+        }
+        decision_input_schema = {
+            "type": "object",
+            "properties": {
+                "marketReport": note_input_schema,
+                "newsReport": note_input_schema,
+                "riskReport": note_input_schema,
+            },
+            "required": ["marketReport", "newsReport", "riskReport"],
+            "additionalProperties": False,
+        }
+        for key, input_schema in [
+            ("v2_market_agent", None),
+            ("v2_news_agent", None),
+            ("v2_risk_agent", None),
+            ("v2_decision_agent", decision_input_schema),
+        ]:
+            session.add(
+                _build_agent_platform_agent(
+                    key=key,
+                    version=1,
+                    status="published",
+                    output_schema=output_schema,
+                    skill=skill,
+                    mcp_server=mcp_server,
+                    model_connection=connection,
+                    input_schema=input_schema,
+                )
+            )
+        session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreateRequest.model_validate(
+                {"manifestSource": _v2_graph_runtime_manifest_source()}
+            )
+        )
+
+    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NVDA"})
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "market:NVDA|news:NVDA|risk:NVDA"}
+    assert [step["index"] for step in detail["steps"]] == [1, 2, 3, 4]
+    assert [[item["slot"] for item in step["invocations"]] for step in detail["steps"]] == [
+        ["market", "news"],
+        ["risk"],
+        ["risk"],
+        ["final"],
+    ]
+    assert execution_starts[:2] == [(1, "market"), (1, "news")]
+    assert execution_starts[2:] == [(2, "risk"), (3, "risk"), (4, "final")]
+
+    fanout_step = detail["steps"][0]
+    assert fanout_step["graphMetadata"] == {
+        "nodeKind": "fanout",
+        "fanoutId": "analyst_fanout",
+        "sourceRefs": {
+            "branches": [
+                {"nodeId": "market_analysis", "branchId": "market", "slot": "market"},
+                {"nodeId": "news_analysis", "branchId": "news", "slot": "news"},
+            ]
+        },
+    }
+    market_metadata = fanout_step["invocations"][0]["graphMetadata"]
+    assert market_metadata["nodeId"] == "market_analysis"
+    assert market_metadata["nodeKind"] == "step"
+    assert market_metadata["fanoutId"] == "analyst_fanout"
+    assert market_metadata["branchId"] == "market"
+    assert market_metadata["sourceRefs"] == {"ticker": {"source": "inputs", "path": "ticker"}}
+    assert detail["steps"][1]["invocations"][0]["graphMetadata"]["loopIteration"] == 1
+    assert detail["steps"][2]["invocations"][0]["graphMetadata"]["loopIteration"] == 2
+    assert detail["steps"][3]["invocations"][0]["graphMetadata"]["sourceRefs"] == {
+        "marketReport": {
+            "source": "nodes",
+            "nodeId": "analyst_fanout",
+            "slot": "market",
+            "stepIndex": 1,
+            "compiledSlot": "market",
+            "sourceNodeId": "market_analysis",
+            "sourceSlot": "market",
+        },
+        "newsReport": {
+            "source": "nodes",
+            "nodeId": "analyst_fanout",
+            "slot": "news",
+            "stepIndex": 1,
+            "compiledSlot": "news",
+            "sourceNodeId": "news_analysis",
+            "sourceSlot": "news",
+        },
+        "riskReport": {
+            "source": "nodes",
+            "nodeId": "review_loop",
+            "slot": "risk",
+            "stepIndex": 3,
+            "compiledSlot": "risk",
+            "sourceNodeId": "risk_review",
+            "sourceSlot": "risk",
+        },
+    }
+
+
+def _v2_loop_state_carry_manifest_source() -> str:
+    return """apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: v2_loop_state_carry_runtime
+  name: V2 Loop State Carry Runtime
+inputSchema:
+  type: object
+  properties:
+    initial_state:
+      type: object
+      properties:
+        history:
+          type: array
+          items:
+            type: string
+      required:
+        - history
+      additionalProperties: false
+  required:
+    - initial_state
+  additionalProperties: false
+flow:
+  kind: loop
+  id: state_loop
+  maxIterations: 2
+  state:
+    state: ${{ inputs.initial_state }}
+  sequence:
+    kind: sequence
+    id: state_sequence
+    nodes:
+      - kind: step
+        id: state_update
+        slot: state
+        uses: v2_state_agent@1
+        with:
+          priorState: ${{ inputs.initial_state }}
+output:
+  from: ${{ nodes.state_loop.outputs.state }}
+"""
+
+
+def test_agent_platform_v2_loop_state_carries_between_iterations(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_inputs: list[dict[str, Any]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        del self, agent, output_model, trace_id, slot
+        observed_inputs.append(dict(resolved_input))
+        prior_state = cast(dict[str, Any], resolved_input["priorState"])
+        return {"output": {"history": [*prior_state["history"], f"iteration_{step_index}"]}}
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    state_schema = {
+        "type": "object",
+        "properties": {"history": {"type": "array", "items": {"type": "string"}}},
+        "required": ["history"],
+        "additionalProperties": False,
+    }
+    agent_input_schema = {
+        "type": "object",
+        "properties": {"priorState": state_schema},
+        "required": ["priorState"],
+        "additionalProperties": False,
+    }
+    with session_factory() as session:
+        output_schema = _build_output_schema(
+            key="v2_loop_state_schema",
+            version=1,
+            status="published",
+        )
+        output_schema.json_schema = state_schema
+        skill = _build_skill(
+            key="v2_loop_state_skill",
+            version=1,
+            status="published",
+            tools=["ledger.market_data.quote_lookup"],
+        )
+        mcp_server = _build_mcp_server(
+            key="v2_loop_state_server",
+            version=1,
+            status="published",
+            transport="http-sse",
+        )
+        connection = _build_model_connection(name="V2 Loop State Connection")
+        session.add_all([output_schema, skill, mcp_server, connection])
+        session.flush()
+        session.add(
+            _build_agent_platform_agent(
+                key="v2_state_agent",
+                version=1,
+                status="published",
+                output_schema=output_schema,
+                skill=skill,
+                mcp_server=mcp_server,
+                model_connection=connection,
+                input_schema=agent_input_schema,
+            )
+        )
+        session.commit()
+        workflow = WorkflowService(session).create_workflow(
+            WorkflowCreateRequest.model_validate(
+                {"manifestSource": _v2_loop_state_carry_manifest_source()}
+            )
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"initial_state": {"history": ["seed"]}},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"history": ["seed", "iteration_1", "iteration_2"]}
+    assert observed_inputs == [
+        {"priorState": {"history": ["seed"]}},
+        {"priorState": {"history": ["seed", "iteration_1"]}},
+    ]
+    assert detail["steps"][0]["invocations"][0]["wiring"]["priorState"] == {
+        "from": "input",
+        "path": "initial_state",
+    }
+    assert detail["steps"][1]["invocations"][0]["wiring"]["priorState"] == {
+        "from": "step",
+        "stepIndex": 1,
+        "slot": "state",
+    }
+
+
+def _v2_post_run_memory_manifest_source(
+    *,
+    workflow_key: str,
+    post_run_memory: str = "",
+) -> str:
+    return f"""apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: {workflow_key}
+  name: V2 Post Run Memory Workflow
+  description: Post-run memory coverage.
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+    portfolio_slug:
+      type: string
+    horizon_days:
+      type: integer
+  required:
+    - ticker
+  additionalProperties: false
+flow:
+  kind: step
+  id: decision
+  slot: decision
+  uses: {workflow_key}_agent@1
+  with:
+    ticker: ${{{{ inputs.ticker }}}}
+    portfolio_slug: ${{{{ inputs.portfolio_slug }}}}
+    horizon_days: ${{{{ inputs.horizon_days }}}}
+output:
+  from: ${{{{ nodes.decision.outputs.decision.summary }}}}
+{post_run_memory}"""
+
+
+def _v2_post_run_memory_block(*, enabled: bool = True) -> str:
+    enabled_text = "true" if enabled else "false"
+    return f"""postRunMemory:
+  enabled: {enabled_text}
+  source:
+    ticker: ${{{{ inputs.ticker }}}}
+    action: ${{{{ nodes.decision.outputs.decision.action }}}}
+    rationale: ${{{{ nodes.decision.outputs.decision.rationale }}}}
+    riskSummary: ${{{{ nodes.decision.outputs.decision.riskSummary }}}}
+    executionPlan: ${{{{ nodes.decision.outputs.decision.executionPlan }}}}
+    portfolioSlug: ${{{{ inputs.portfolio_slug }}}}
+    horizonDays: ${{{{ inputs.horizon_days }}}}
+    confidence: ${{{{ nodes.decision.outputs.decision.confidence }}}}
+    decisionSummary: ${{{{ nodes.decision.outputs.decision.summary }}}}
+  benchmarkSymbol: ${{{{ inputs.ticker }}}}
+"""
+
+
+def _create_v2_post_run_memory_workflow(
+    session: Session,
+    *,
+    workflow_key: str,
+    post_run_memory: str = "",
+) -> WorkflowRead:
+    output_schema = _build_output_schema(
+        key=f"{workflow_key}_schema",
+        version=1,
+        status="published",
+    )
+    output_schema.json_schema = {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "action": {"type": "string", "enum": ["buy", "hold", "sell"]},
+            "rationale": {"type": "string"},
+            "riskSummary": {"type": "string"},
+            "executionPlan": {"type": "string"},
+            "confidence": {"type": "string"},
+        },
+        "required": ["summary", "action", "rationale", "riskSummary", "executionPlan"],
+        "additionalProperties": False,
+    }
+    skill = _build_skill(
+        key=f"{workflow_key}_skill",
+        version=1,
+        status="published",
+        tools=[REPORT_MEMORY_WRITE_TOOL_KEY],
+    )
+    mcp_server = _build_mcp_server(
+        key=f"{workflow_key}_server",
+        version=1,
+        status="published",
+        transport="http-sse",
+    )
+    connection = _build_model_connection(name=f"{workflow_key} Connection")
+    session.add_all([output_schema, skill, mcp_server, connection])
+    session.flush()
+    agent = _build_agent_platform_agent(
+        key=f"{workflow_key}_agent",
+        version=1,
+        status="published",
+        output_schema=output_schema,
+        skill=skill,
+        mcp_server=mcp_server,
+        model_connection=connection,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "portfolio_slug": {"type": "string"},
+                "horizon_days": {"type": "integer"},
+            },
+            "required": ["ticker"],
+            "additionalProperties": False,
+        },
+    )
+    session.add(agent)
+    session.commit()
+    return WorkflowService(session).create_workflow(
+        WorkflowCreateRequest.model_validate(
+            {
+                "manifestSource": _v2_post_run_memory_manifest_source(
+                    workflow_key=workflow_key,
+                    post_run_memory=post_run_memory,
+                )
+            }
+        )
+    )
+
+
+async def _post_run_memory_fake_invoke(
+    self: RunService,
+    *,
+    agent: Agent,
+    resolved_input: dict[str, Any],
+    output_model,
+    trace_id: str | None,
+    step_index: int,
+    slot: str,
+) -> dict[str, Any]:
+    del self, agent, output_model, trace_id, step_index, slot
+    ticker = resolved_input["ticker"]
+    return {
+        "output": {
+            "summary": f"Buy {ticker} after risk review.",
+            "action": "buy",
+            "rationale": "Demand and margin trends support upside.",
+            "riskSummary": "Valuation risk requires staged sizing.",
+            "executionPlan": "Scale in over two sessions.",
+            "confidence": "high",
+        },
+        "tokens": 5,
+        "costUsd": "0.001",
+        "durationMs": 1,
+    }
+
+
+def test_agent_platform_v2_post_run_memory_omitted_or_disabled_writes_no_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_invoke_agent", _post_run_memory_fake_invoke)
+
+    with session_factory() as session:
+        omitted = _create_v2_post_run_memory_workflow(
+            session,
+            workflow_key="v2_post_memory_omitted",
+        )
+        disabled = _create_v2_post_run_memory_workflow(
+            session,
+            workflow_key="v2_post_memory_disabled",
+            post_run_memory=_v2_post_run_memory_block(enabled=False),
+        )
+
+    for workflow in (omitted, disabled):
+        trigger = client.post(
+            f"/api/workflows/{workflow.id}/runs",
+            json={"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+        )
+        assert trigger.status_code == 201, trigger.json()
+        detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+        assert detail["status"] == "succeeded"
+        assert detail["memoryArtifacts"] == []
+
+    with session_factory() as session:
+        assert session.query(Report).count() == 0
+
+
+def test_agent_platform_v2_post_run_memory_success_creates_one_linked_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_invoke_agent", _post_run_memory_fake_invoke)
+
+    with session_factory() as session:
+        workflow = _create_v2_post_run_memory_workflow(
+            session,
+            workflow_key="v2_post_memory_success",
+            post_run_memory=_v2_post_run_memory_block(),
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "nvda", "portfolio_slug": "core_us", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    run_id = trigger.json()["id"]
+    detail = _wait_for_agent_platform_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == "Buy nvda after risk review."
+    assert len(detail["memoryArtifacts"]) == 1
+    artifact = detail["memoryArtifacts"][0]
+    assert set(artifact) == {
+        "reportId",
+        "slug",
+        "name",
+        "status",
+        "createdAt",
+        "sourceGraphMetadata",
+    }
+    assert artifact["status"] == "pending"
+    assert artifact["sourceGraphMetadata"] == {
+        "nodeId": "decision",
+        "slot": "decision",
+        "traceId": detail["traceId"],
+        "workflowKey": workflow.key,
+        "workflowVersion": workflow.version,
+    }
+
+    with session_factory() as session:
+        report = session.get(Report, int(artifact["reportId"]))
+        assert report is not None
+        analysis = report.metadata_["analysis"]
+        serialized_metadata = json.dumps(report.metadata_, sort_keys=True)
+        RunService(session, session_factory)._create_post_run_memory_artifact(run_id)
+        reports = list(session.query(Report).all())
+
+    assert len(reports) == 1
+    assert artifact["slug"] == report.slug
+    assert artifact["name"] == report.name
+    assert analysis["reviewType"] == "agent_memory"
+    assert analysis["versionGroup"] == "agent_memory/v1"
+    assert analysis["ticker"] == "NVDA"
+    assert analysis["portfolioSlug"] == "core_us"
+    assert analysis["horizonDays"] == 30
+    assert analysis["confidence"] == "high"
+    assert analysis["decisionSummary"] == "Buy nvda after risk review."
+    assert analysis["benchmarkSymbol"] == "NVDA"
+    assert analysis["decision"] == {
+        "action": "buy",
+        "rationale": "Demand and margin trends support upside.",
+        "riskSummary": "Valuation risk requires staged sizing.",
+        "executionPlan": "Scale in over two sessions.",
+    }
+    assert analysis["runId"] == run_id
+    assert analysis["agentKey"] == f"{workflow.key}_agent"
+    assert analysis["agentVersion"] == 1
+    assert analysis["workflowKey"] == workflow.key
+    assert analysis["workflowVersion"] == workflow.version
+    assert analysis["stepId"] == "decision"
+    assert analysis["slot"] == "decision"
+    assert analysis["traceId"] == detail["traceId"]
+    assert "sk-" not in serialized_metadata
+    assert "apiKey" not in serialized_metadata
+    assert "secret" not in serialized_metadata.lower()
+
+
+def _seed_tradingagents_v2_runtime_workflow(session: Session) -> WorkflowRead:
+    _seed_tradingagents_manifest_refs(session)
+    agent_service = AgentService(session, get_default_tool_catalog(), DefaultMcpConnectionTester())
+    for source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.values():
+        _ = agent_service.create_agent_from_manifest(source)
+    return WorkflowService(session).create_workflow(
+        WorkflowCreateRequest.model_validate(
+            {"manifestSource": TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE}
+        )
+    )
+
+
+async def _tradingagents_v2_fake_invoke(
+    self: RunService,
+    *,
+    agent: Agent,
+    resolved_input: dict[str, Any],
+    output_model,
+    trace_id: str | None,
+    step_index: int,
+    slot: str,
+) -> dict[str, Any]:
+    del self, output_model, trace_id, step_index
+    ticker = str(resolved_input.get("ticker") or "NVDA")
+    if slot.endswith("report"):
+        output = {"summary": f"{slot}:{ticker}"}
+    elif agent.key in {"bull_researcher", "bear_researcher"}:
+        output = {
+            "nextState": {
+                "analystReports": {
+                    "marketReport": "Market report complete.",
+                    "socialSentimentReport": "Social report complete.",
+                    "newsReport": "News report complete.",
+                    "fundamentalsReport": "Fundamentals report complete.",
+                },
+                "bullCase": "Demand growth supports upside.",
+                "bearCase": "Valuation remains the main risk.",
+                "debateHistory": [f"{agent.key}:{slot}"],
+            }
+        }
+    elif agent.key == "research_manager":
+        output = {
+            "recommendation": "buy",
+            "thesis": "Evidence supports a staged long research view.",
+            "debateSummary": "Bull and bear cases were debated twice.",
+        }
+    elif agent.key == "trader":
+        output = {
+            "action": "buy",
+            "rationale": "Research supports staged accumulation.",
+            "sizingNotes": "Keep this research-only and size conservatively.",
+        }
+    elif agent.key.endswith("risk_analyst"):
+        output = {
+            "nextState": {
+                "researchPlan": {
+                    "recommendation": "buy",
+                    "thesis": "Demand growth supports upside.",
+                    "debateSummary": "Risk loop reviewed the proposal.",
+                },
+                "traderProposal": {
+                    "action": "buy",
+                    "rationale": "Staged accumulation balances evidence and risk.",
+                    "sizingNotes": "Use conservative sizing.",
+                },
+                "aggressiveCase": "Add on confirmed strength.",
+                "neutralCase": "Scale gradually.",
+                "conservativeCase": "Hold if volatility widens.",
+                "debateHistory": [f"risk:{slot}"],
+            }
+        }
+    else:
+        output = {
+            "action": "buy",
+            "rationale": "Analyst fanout and bounded debates support a staged buy.",
+            "riskSummary": "Main risks are valuation and volatility.",
+            "executionPlan": "Research-only: scale in over two review windows.",
+        }
+    return {"output": output, "tokens": 5, "costUsd": "0.001", "durationMs": 1}
+
+
+def test_agent_platform_tradingagents_v2_stubbed_run_completes_with_graph_and_memory(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_invoke_agent", _tradingagents_v2_fake_invoke)
+
+    with session_factory() as session:
+        workflow = _seed_tradingagents_v2_runtime_workflow(session)
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={
+            "ticker": "NVDA",
+            "asOfDate": "2026-05-03",
+            "portfolioId": "core-us",
+            "portfolioSlug": "core_us",
+            "horizonDays": 30,
+            "benchmarkSymbol": "SPY",
+            "initialInvestmentDebateState": {},
+            "initialRiskDebateState": {},
+        },
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["targetKey"] == "tradingagents_v2_practical_fanout_review"
+    assert detail["finalOutput"] == {
+        "action": "buy",
+        "rationale": "Analyst fanout and bounded debates support a staged buy.",
+        "riskSummary": "Main risks are valuation and volatility.",
+        "executionPlan": "Research-only: scale in over two review windows.",
+    }
+    assert [step["index"] for step in detail["steps"]] == list(range(1, 15))
+    assert [item["slot"] for item in detail["steps"][0]["invocations"]] == [
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+    ]
+    assert detail["steps"][0]["graphMetadata"]["fanoutId"] == "analyst_fanout"
+    assert detail["steps"][1]["invocations"][0]["graphMetadata"]["loopIteration"] == 1
+    assert detail["steps"][3]["invocations"][0]["graphMetadata"]["loopIteration"] == 2
+    assert detail["steps"][13]["invocations"][0]["graphMetadata"]["nodeId"] == "portfolio_manager"
+    assert len(detail["memoryArtifacts"]) == 1
+    artifact = detail["memoryArtifacts"][0]
+    assert artifact["status"] == "pending"
+    assert artifact["sourceGraphMetadata"]["nodeId"] == "portfolio_manager"
+    serialized_detail = json.dumps(detail, sort_keys=True)
+    assert "sk-" not in serialized_detail
+    assert "apiKey" not in serialized_detail
+    assert "configured-test-value" not in serialized_detail
+
+    with session_factory() as session:
+        report = session.get(Report, int(artifact["reportId"]))
+        assert report is not None
+        analysis = report.metadata_["analysis"]
+    assert artifact["slug"] == report.slug
+    assert analysis["ticker"] == "NVDA"
+    assert analysis["benchmarkSymbol"] == "SPY"
+    assert analysis["workflowKey"] == workflow.key
+    assert analysis["decision"]["action"] == "buy"
+
+
+def test_agent_platform_v2_post_run_memory_failed_run_writes_no_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    async def failing_invoke(**kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        raise RuntimeError("provider failed before memory")
+
+    monkeypatch.setattr(RunService, "_invoke_agent", failing_invoke)
+
+    with session_factory() as session:
+        workflow = _create_v2_post_run_memory_workflow(
+            session,
+            workflow_key="v2_post_memory_failed",
+            post_run_memory=_v2_post_run_memory_block(),
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/runs",
+        json={"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "failed"
+    assert detail["memoryArtifacts"] == []
+    with session_factory() as session:
+        assert session.query(Report).count() == 0
 
 
 def test_agent_platform_agent_run_creation_persists_synthetic_passthrough_step(
