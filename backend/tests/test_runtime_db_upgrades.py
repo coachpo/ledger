@@ -26,6 +26,8 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "mcp_servers",
     "model_connections",
     "output_schemas",
+    "run_agent_invocations",
+    "run_steps",
     "runs",
     "capabilities",
     "workflows",
@@ -48,6 +50,10 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
     "it was still running."
 )
+_AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
+    "Runtime row skipped during startup recovery because the parent run failed before it "
+    "started."
+)
 RETIRED_STOCK_ANALYSIS_AGENT_KEYS = STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS + (
     STOCK_ANALYSIS_SYNTHESIZER_KEY,
 )
@@ -63,6 +69,82 @@ _LIVE_PORTFOLIO_SLUG = "income_core"
 _CUSTOM_STALE_SKILL_KEY = "stock_analysis_ws1_verify"
 _RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
 _REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
+_RUN_HEADER_COLUMNS = {
+    "id",
+    "target_kind",
+    "target_id",
+    "target_key",
+    "target_version",
+    "input",
+    "status",
+    "source_run_id",
+    "lineage_root_run_id",
+    "forked_from_step_index",
+    "resume_step_index",
+    "final_output",
+    "total_tokens",
+    "total_cost_usd",
+    "inherited_tokens",
+    "inherited_cost_usd",
+    "executed_tokens",
+    "executed_cost_usd",
+    "trace_id",
+    "error",
+    "started_at",
+    "finished_at",
+    "created_at",
+    "updated_at",
+}
+_RUN_STEP_COLUMNS = {
+    "id",
+    "run_id",
+    "step_index",
+    "status",
+    "origin",
+    "source_run_step_id",
+    "source_run_id",
+    "source_step_index",
+    "error",
+    "started_at",
+    "finished_at",
+    "persisted_at",
+    "created_at",
+    "updated_at",
+}
+_RUN_AGENT_INVOCATION_COLUMNS = {
+    "id",
+    "run_step_id",
+    "run_id",
+    "step_index",
+    "slot",
+    "position",
+    "agent_id",
+    "agent_key",
+    "agent_version",
+    "output_schema_id",
+    "output_schema_version",
+    "input_mode",
+    "wiring",
+    "optional",
+    "status",
+    "resolved_input",
+    "resolved_input_origin",
+    "output",
+    "output_origin",
+    "error_code",
+    "error_message",
+    "error_details",
+    "tokens",
+    "cost_usd",
+    "duration_ms",
+    "trace_span_id",
+    "source_invocation_id",
+    "started_at",
+    "finished_at",
+    "persisted_at",
+    "created_at",
+    "updated_at",
+}
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -455,6 +537,148 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     return retired_portfolio_id
 
 
+def _foreign_key_signature(
+    foreign_key: dict[str, object],
+) -> tuple[tuple[str, ...], str | None, str | None]:
+    options = foreign_key.get("options")
+    ondelete = options.get("ondelete") if isinstance(options, dict) else None
+    constrained_columns = foreign_key.get("constrained_columns")
+    columns = (
+        tuple(str(column) for column in constrained_columns)
+        if isinstance(constrained_columns, list | tuple)
+        else ()
+    )
+    return columns, str(foreign_key.get("referred_table")), ondelete
+
+
+def _assert_runtime_execution_table_shape(engine) -> None:
+    inspector = inspect(engine)
+    run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
+    run_step_columns = {column["name"]: column for column in inspector.get_columns("run_steps")}
+    invocation_columns = {
+        column["name"]: column for column in inspector.get_columns("run_agent_invocations")
+    }
+    run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
+    run_step_indexes = {index["name"] for index in inspector.get_indexes("run_steps")}
+    invocation_indexes = {index["name"] for index in inspector.get_indexes("run_agent_invocations")}
+    run_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("runs")
+        if constraint.get("name")
+    }
+    run_step_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("run_steps")
+        if constraint.get("name")
+    }
+    invocation_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("run_agent_invocations")
+        if constraint.get("name")
+    }
+    run_step_unique_constraints = {
+        constraint["name"] for constraint in inspector.get_unique_constraints("run_steps")
+    }
+    invocation_unique_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("run_agent_invocations")
+    }
+    run_foreign_keys = {
+        _foreign_key_signature(foreign_key) for foreign_key in inspector.get_foreign_keys("runs")
+    }
+    run_step_foreign_keys = {
+        _foreign_key_signature(foreign_key)
+        for foreign_key in inspector.get_foreign_keys("run_steps")
+    }
+    invocation_foreign_keys = {
+        _foreign_key_signature(foreign_key)
+        for foreign_key in inspector.get_foreign_keys("run_agent_invocations")
+    }
+
+    assert _RUN_HEADER_COLUMNS <= set(run_columns)
+    assert {"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(
+        run_columns
+    )
+    assert run_columns["source_run_id"]["nullable"] is True
+    assert run_columns["lineage_root_run_id"]["nullable"] is True
+    assert run_columns["resume_step_index"]["nullable"] is False
+    assert {
+        "ix_runs_status",
+        "ix_runs_target",
+        "ix_runs_target_key",
+        "ix_runs_source_run",
+        "ix_runs_lineage_root",
+    } <= run_indexes
+    assert {
+        "ck_runs_target_kind",
+        "ck_runs_status",
+        "ck_runs_target_version_positive",
+        "ck_runs_resume_step_index_positive",
+        "ck_runs_forked_from_step_index_positive",
+        "ck_runs_total_tokens_non_negative",
+        "ck_runs_total_cost_non_negative",
+        "ck_runs_inherited_tokens_non_negative",
+        "ck_runs_inherited_cost_non_negative",
+        "ck_runs_executed_tokens_non_negative",
+        "ck_runs_executed_cost_non_negative",
+    } <= run_checks
+    assert (("source_run_id",), "runs", "SET NULL") in run_foreign_keys
+    assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
+
+    assert _RUN_STEP_COLUMNS <= set(run_step_columns)
+    assert run_step_columns["run_id"]["nullable"] is False
+    assert run_step_columns["step_index"]["nullable"] is False
+    assert {
+        "ix_run_steps_run_step_index",
+        "ix_run_steps_run_status",
+        "ix_run_steps_source_run_step",
+    } <= run_step_indexes
+    assert {
+        "ck_run_steps_step_index_positive",
+        "ck_run_steps_status",
+        "ck_run_steps_origin",
+        "ck_run_steps_source_step_index_positive",
+    } <= run_step_checks
+    assert "uq_run_steps_run_step_index" in run_step_unique_constraints
+    assert (("run_id",), "runs", "CASCADE") in run_step_foreign_keys
+    assert (("source_run_step_id",), "run_steps", "SET NULL") in run_step_foreign_keys
+    assert (("source_run_id",), "runs", "SET NULL") in run_step_foreign_keys
+
+    assert _RUN_AGENT_INVOCATION_COLUMNS <= set(invocation_columns)
+    assert invocation_columns["run_step_id"]["nullable"] is False
+    assert invocation_columns["run_id"]["nullable"] is False
+    assert invocation_columns["slot"]["nullable"] is False
+    assert {
+        "ix_run_agent_invocations_run_step_index",
+        "ix_run_agent_invocations_run_status",
+        "ix_run_agent_invocations_agent_version",
+        "ix_run_agent_invocations_source_invocation",
+    } <= invocation_indexes
+    assert {
+        "ck_run_agent_invocations_step_index_positive",
+        "ck_run_agent_invocations_position_non_negative",
+        "ck_run_agent_invocations_agent_id_positive",
+        "ck_run_agent_invocations_agent_version_positive",
+        "ck_run_agent_invocations_output_schema_id_positive",
+        "ck_run_agent_invocations_output_schema_version_positive",
+        "ck_run_agent_invocations_input_mode",
+        "ck_run_agent_invocations_status",
+        "ck_run_agent_invocations_resolved_input_origin",
+        "ck_run_agent_invocations_output_origin",
+        "ck_run_agent_invocations_tokens_non_negative",
+        "ck_run_agent_invocations_cost_non_negative",
+        "ck_run_agent_invocations_duration_non_negative",
+    } <= invocation_checks
+    assert "uq_run_agent_invocations_step_slot" in invocation_unique_constraints
+    assert (("run_step_id",), "run_steps", "CASCADE") in invocation_foreign_keys
+    assert (("run_id",), "runs", "CASCADE") in invocation_foreign_keys
+    assert (
+        ("source_invocation_id",),
+        "run_agent_invocations",
+        "SET NULL",
+    ) in invocation_foreign_keys
+
+
 def _stock_analysis_sanitation_snapshot(
     connection,
     *,
@@ -468,6 +692,9 @@ def _stock_analysis_sanitation_snapshot(
     )
     mcp_server_keys = (
         connection.execute(text("SELECT key FROM mcp_servers ORDER BY key")).scalars().all()
+    )
+    model_connection_keys = (
+        connection.execute(text("SELECT key FROM model_connections ORDER BY key")).scalars().all()
     )
     agent_keys = connection.execute(text("SELECT key FROM agents ORDER BY key")).scalars().all()
     workflow_keys = (
@@ -511,6 +738,7 @@ def _stock_analysis_sanitation_snapshot(
         "output_schema_keys": output_schema_keys,
         "capability_keys": capability_keys,
         "mcp_server_keys": mcp_server_keys,
+        "model_connection_keys": model_connection_keys,
         "agent_keys": agent_keys,
         "workflow_keys": workflow_keys,
         "template_names": template_names,
@@ -541,6 +769,7 @@ def test_init_db_creates_agent_platform_tables_and_drops_legacy_backend_tables(
         assert "tool_definitions" not in capability_columns
         assert "capabilities" in agent_columns
         assert "skills" not in agent_columns
+        _assert_runtime_execution_table_shape(engine)
     finally:
         engine.dispose()
 
@@ -649,16 +878,20 @@ def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempot
                 .mappings()
                 .one()
             )
-            agent_refs = connection.execute(
-                text("SELECT capabilities FROM agents WHERE key = :key"),
-                {"key": "legacy_agent"},
-            ).scalar_one()
+            agent_row = (
+                connection.execute(
+                    text("SELECT capabilities FROM agents WHERE key = :key"),
+                    {"key": "legacy_agent"},
+                )
+                .mappings()
+                .one()
+            )
 
         assert "skills" not in table_names
         assert "tool_definitions" not in capability_columns
         assert "skills" not in agent_columns
         assert capability_row["tool_grants"] == [{"tool": "ledger.reports.lookup"}]
-        assert agent_refs == [
+        assert agent_row["capabilities"] == [
             {
                 "capabilityId": capability_id,
                 "capabilityKey": "legacy_report_lookup",
@@ -726,38 +959,150 @@ def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_d
         engine.dispose()
 
 
-def test_init_db_running_run_recovery_marks_new_platform_runs_failed(database_url: str) -> None:
+def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
+    database_url: str,
+) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
     try:
         with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "INSERT INTO runs ("
-                "target_kind, target_id, target_key, target_version, status, input, "
-                "per_step_outputs"
-                ") VALUES ('workflow', 1, 'stock_analysis', 1, 'running', '{}'::jsonb, '{}'::jsonb)"
+            running_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input"
+                    ") VALUES ('workflow', 1, 'stock_analysis', 1, 'running', '{}'::jsonb) "
+                    "RETURNING id"
+                )
+            ).scalar_one()
+            failed_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input, error"
+                    ") VALUES ('workflow', 2, 'already_failed', 1, 'failed', '{}'::jsonb, "
+                    "'existing failure') RETURNING id"
+                )
+            ).scalar_one()
+            step_rows = connection.execute(
+                text(
+                    "INSERT INTO run_steps (run_id, step_index, status, origin, persisted_at) "
+                    "VALUES "
+                    "(:running_run_id, 1, 'succeeded', 'planned', NOW()), "
+                    "(:running_run_id, 2, 'running', 'planned', NULL), "
+                    "(:running_run_id, 3, 'pending', 'planned', NULL), "
+                    "(:failed_run_id, 1, 'pending', 'planned', NULL) "
+                    "RETURNING id, run_id, step_index"
+                ),
+                {"failed_run_id": failed_run_id, "running_run_id": running_run_id},
+            ).all()
+            step_id_by_identity = {(row.run_id, row.step_index): row.id for row in step_rows}
+            connection.execute(
+                text(
+                    "INSERT INTO run_agent_invocations ("
+                    "run_step_id, run_id, step_index, slot, position, agent_id, agent_key, "
+                    "agent_version, output_schema_id, output_schema_version, status, "
+                    "resolved_input, output, output_origin, persisted_at"
+                    ") VALUES "
+                    "(:succeeded_step_id, :running_run_id, 1, 'review', 0, 1, 'agent_a', "
+                    "1, 1, 1, 'succeeded', '{}'::jsonb, '{\"ok\": true}'::jsonb, "
+                    "'executed', NOW()), "
+                    "(:running_step_id, :running_run_id, 2, 'review', 0, 1, 'agent_a', "
+                    "1, 1, 1, 'running', '{}'::jsonb, NULL, NULL, NULL), "
+                    "(:pending_step_id, :running_run_id, 3, 'review', 0, 1, 'agent_a', "
+                    "1, 1, 1, 'pending', '{}'::jsonb, NULL, NULL, NULL), "
+                    "(:failed_pending_step_id, :failed_run_id, 1, 'review', 0, 1, 'agent_a', "
+                    "1, 1, 1, 'pending', '{}'::jsonb, NULL, NULL, NULL)"
+                ),
+                {
+                    "failed_pending_step_id": step_id_by_identity[(failed_run_id, 1)],
+                    "failed_run_id": failed_run_id,
+                    "pending_step_id": step_id_by_identity[(running_run_id, 3)],
+                    "running_run_id": running_run_id,
+                    "running_step_id": step_id_by_identity[(running_run_id, 2)],
+                    "succeeded_step_id": step_id_by_identity[(running_run_id, 1)],
+                },
             )
 
         init_db(database_url)
 
         with engine.connect() as connection:
-            repaired_run = connection.exec_driver_sql(
-                "SELECT status, error, finished_at IS NOT NULL FROM runs"
+            repaired_run = connection.execute(
+                text(
+                    "SELECT status, error, finished_at IS NOT NULL " "FROM runs WHERE id = :run_id"
+                ),
+                {"run_id": running_run_id},
             ).one()
+            repaired_steps = connection.execute(
+                text(
+                    "SELECT step_index, status, error, persisted_at IS NOT NULL, "
+                    "finished_at IS NOT NULL FROM run_steps ORDER BY run_id, step_index"
+                )
+            ).all()
+            repaired_invocations = connection.execute(
+                text(
+                    "SELECT step_index, status, error_code, error_message, "
+                    "persisted_at IS NOT NULL, finished_at IS NOT NULL "
+                    "FROM run_agent_invocations ORDER BY run_id, step_index"
+                )
+            ).all()
 
         assert repaired_run == ("failed", _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE, True)
+        assert repaired_steps == [
+            (1, "succeeded", None, True, False),
+            (2, "failed", _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE, False, True),
+            (3, "skipped", _AGENT_PLATFORM_PENDING_SKIP_MESSAGE, False, True),
+            (1, "skipped", _AGENT_PLATFORM_PENDING_SKIP_MESSAGE, False, True),
+        ]
+        assert repaired_invocations == [
+            (1, "succeeded", None, None, True, False),
+            (
+                2,
+                "failed",
+                "startup_recovery",
+                _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE,
+                False,
+                True,
+            ),
+            (
+                3,
+                "skipped",
+                "startup_recovery",
+                _AGENT_PLATFORM_PENDING_SKIP_MESSAGE,
+                False,
+                True,
+            ),
+            (
+                1,
+                "skipped",
+                "startup_recovery",
+                _AGENT_PLATFORM_PENDING_SKIP_MESSAGE,
+                False,
+                True,
+            ),
+        ]
     finally:
         engine.dispose()
 
 
-def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: str) -> None:
+def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_tables(
+    database_url: str,
+) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)
 
     try:
         with engine.begin() as connection:
             retired_portfolio_id = _seed_stock_analysis_upgrade_rows(connection)
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD COLUMN per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO runs ("
+                "target_kind, target_id, target_key, target_version, status, input, "
+                "per_step_outputs"
+                ") VALUES ('workflow', 99, 'legacy_runtime', 1, 'succeeded', "
+                "'{}'::jsonb, '{}'::jsonb)"
+            )
 
         init_db(database_url)
 
@@ -768,16 +1113,17 @@ def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: s
             )
 
         assert first_snapshot == {
-            "output_schema_keys": [_LIVE_OUTPUT_SCHEMA_KEY],
-            "capability_keys": [_LIVE_CAPABILITY_KEY],
-            "mcp_server_keys": [_LIVE_MCP_SERVER_KEY],
-            "agent_keys": [_LIVE_AGENT_KEY],
-            "workflow_keys": [_LIVE_WORKFLOW_KEY],
-            "template_names": [_LIVE_TEMPLATE_NAME],
-            "report_slugs": [_LIVE_REPORT_SLUG],
-            "portfolio_slugs": [_LIVE_PORTFOLIO_SLUG],
-            "retired_balance_count": 0,
-            "retired_position_count": 0,
+            "output_schema_keys": [],
+            "capability_keys": [_LIVE_CAPABILITY_KEY, STOCK_ANALYSIS_CAPABILITY_KEY],
+            "mcp_server_keys": [_LIVE_MCP_SERVER_KEY, STOCK_ANALYSIS_MCP_SERVER_KEY],
+            "model_connection_keys": ["upgrade_test_connection"],
+            "agent_keys": [],
+            "workflow_keys": [],
+            "template_names": sorted([_LIVE_TEMPLATE_NAME, *STARTER_TEMPLATE_NAMES]),
+            "report_slugs": sorted([*RETIRED_STOCK_ANALYSIS_REPORT_SLUGS, _LIVE_REPORT_SLUG]),
+            "portfolio_slugs": sorted([STARTER_PORTFOLIO_SLUG, _LIVE_PORTFOLIO_SLUG]),
+            "retired_balance_count": 1,
+            "retired_position_count": 1,
             "live_balance_count": 1,
             "live_position_count": 1,
         }
@@ -791,6 +1137,93 @@ def test_init_db_sanitize_stock_analysis_resources_is_idempotent(database_url: s
             )
 
         assert second_snapshot == first_snapshot
+        _assert_runtime_execution_table_shape(engine)
+
+        with engine.begin() as connection:
+            next_output_schema_id = connection.execute(
+                text(
+                    "INSERT INTO output_schemas ("
+                    "key, version, status, kind, name, description, json_schema, registry_refs"
+                    ") VALUES ("
+                    "'post_cutover_schema', 1, 'draft', 'standalone', 'Post Cutover', '', "
+                    "'{\"type\": \"object\"}'::jsonb, '[]'::jsonb"
+                    ") RETURNING id"
+                )
+            ).scalar_one()
+            next_agent_id = connection.execute(
+                text(
+                    "INSERT INTO agents ("
+                    "key, version, status, name, description, model_connection_id, "
+                    "model_connection_snapshot, model, system_prompt, input_schema, "
+                    "output_schema_id, output_schema_version, capabilities, mcp_servers"
+                    ") VALUES ("
+                    "'post_cutover_agent', 1, 'draft', 'Post Cutover Agent', '', 1, "
+                    "'{}'::jsonb, 'openai:gpt-5.4-mini', 'Prompt', '{}'::jsonb, "
+                    ":output_schema_id, 1, '[]'::jsonb, '[]'::jsonb"
+                    ") RETURNING id"
+                ),
+                {"output_schema_id": next_output_schema_id},
+            ).scalar_one()
+            next_workflow_id = connection.execute(
+                text(
+                    "INSERT INTO workflows ("
+                    "key, version, status, name, description, input_schema, steps, output_spec"
+                    ") VALUES ("
+                    "'post_cutover_workflow', 1, 'draft', 'Post Cutover Workflow', '', "
+                    "'{}'::jsonb, '[]'::jsonb, '{}'::jsonb"
+                    ") RETURNING id"
+                )
+            ).scalar_one()
+            next_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input"
+                    ") VALUES ("
+                    "'workflow', :workflow_id, 'post_cutover_workflow', 1, "
+                    "'succeeded', '{}'::jsonb"
+                    ") RETURNING id"
+                ),
+                {"workflow_id": next_workflow_id},
+            ).scalar_one()
+            next_capability_id = connection.execute(
+                text(
+                    "INSERT INTO capabilities ("
+                    "key, version, status, name, tool_grants, created_at, updated_at"
+                    ") VALUES ("
+                    "'post_cutover_capability', 1, 'draft', 'Post Cutover', '[]'::jsonb, "
+                    "NOW(), NOW()"
+                    ") RETURNING id"
+                )
+            ).scalar_one()
+            next_mcp_server_id = connection.execute(
+                text(
+                    "INSERT INTO mcp_servers ("
+                    "key, version, status, config, created_at, updated_at"
+                    ") VALUES ('post_cutover_mcp', 1, 'draft', '{}'::jsonb, NOW(), NOW()) "
+                    "RETURNING id"
+                )
+            ).scalar_one()
+            next_model_connection_id = connection.execute(
+                text(
+                    "INSERT INTO model_connections ("
+                    "key, status, name, description, base_url, model_id, reasoning_effort, "
+                    "api_style, timeout_seconds, secret_payload, has_api_key, created_at, "
+                    "updated_at"
+                    ") VALUES ("
+                    "'post_cutover_model', 'active', 'Post Cutover Model', '', "
+                    "'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium', "
+                    "'responses', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+                    ") RETURNING id"
+                )
+            ).scalar_one()
+
+        assert (
+            next_output_schema_id,
+            next_agent_id,
+            next_workflow_id,
+            next_run_id,
+        ) == (1, 1, 1, 1)
+        assert (next_capability_id, next_mcp_server_id, next_model_connection_id) == (3, 3, 2)
     finally:
         engine.dispose()
 
@@ -1046,91 +1479,9 @@ def test_init_db_repairs_tradingagents_transition_output_schemas_idempotently(
         engine.dispose()
 
 
-def test_init_db_repairs_legacy_run_identity_columns_to_target_columns(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE runs (
-                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                    workflow_id INTEGER NOT NULL,
-                    workflow_key VARCHAR(120) NOT NULL,
-                    workflow_version INTEGER NOT NULL,
-                    input JSONB NOT NULL,
-                    per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    final_output JSONB,
-                    status VARCHAR(20) NOT NULL DEFAULT 'running',
-                    total_tokens INTEGER NOT NULL DEFAULT 0,
-                    total_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
-                    trace_id VARCHAR(255),
-                    error TEXT,
-                    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    finished_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT ck_runs_status CHECK (
-                        status IN ('running', 'succeeded', 'failed')
-                    ),
-                    CONSTRAINT ck_runs_workflow_version_positive CHECK (workflow_version > 0),
-                    CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0),
-                    CONSTRAINT ck_runs_total_cost_non_negative CHECK (total_cost_usd >= 0)
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_runs_workflow ON runs (workflow_id, workflow_version)"
-            )
-            connection.exec_driver_sql(
-                "CREATE INDEX ix_runs_workflow_key ON runs (workflow_key, workflow_version)"
-            )
-            connection.exec_driver_sql(
-                "INSERT INTO runs ("
-                "workflow_id, workflow_key, workflow_version, input, per_step_outputs, "
-                "final_output, status, total_tokens, total_cost_usd, trace_id"
-                ") VALUES ("
-                "7, 'market_review', 3, '{}'::jsonb, '{}'::jsonb, '{\"headline\":\"Buy\"}'::jsonb, "
-                "'succeeded', 321, 0.15, 'trace-legacy-run'"
-                ")"
-            )
-
-        init_db(database_url)
-        init_db(database_url)
-
-        run_columns = {column["name"]: column for column in inspect(engine).get_columns("runs")}
-        run_indexes = {index["name"] for index in inspect(engine).get_indexes("runs")}
-        run_constraints = {
-            constraint["name"]
-            for constraint in inspect(engine).get_check_constraints("runs")
-            if constraint.get("name")
-        }
-
-        with engine.connect() as connection:
-            migrated_run = connection.execute(
-                text(
-                    "SELECT target_kind, target_id, target_key, target_version, final_output "
-                    "FROM runs WHERE trace_id = :trace_id"
-                ),
-                {"trace_id": "trace-legacy-run"},
-            ).one()
-
-        assert {"target_kind", "target_id", "target_key", "target_version"} <= set(run_columns)
-        assert {"workflow_id", "workflow_key", "workflow_version"}.isdisjoint(run_columns)
-        assert run_columns["target_kind"]["nullable"] is False
-        assert run_columns["target_id"]["nullable"] is False
-        assert run_columns["target_key"]["nullable"] is False
-        assert run_columns["target_version"]["nullable"] is False
-        assert {"ix_runs_status", "ix_runs_target", "ix_runs_target_key"} <= run_indexes
-        assert {"ix_runs_workflow", "ix_runs_workflow_key"}.isdisjoint(run_indexes)
-        assert {"ck_runs_target_kind", "ck_runs_target_version_positive"} <= run_constraints
-        assert "ck_runs_workflow_version_positive" not in run_constraints
-        assert migrated_run == ("workflow", 7, "market_review", 3, {"headline": "Buy"})
-    finally:
-        engine.dispose()
-
-
-def test_init_db_rejects_conflicting_legacy_and_target_run_identity(database_url: str) -> None:
+def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
+    database_url: str,
+) -> None:
     engine = create_engine(database_url, future=True)
 
     try:
@@ -1168,17 +1519,66 @@ def test_init_db_rejects_conflicting_legacy_and_target_run_identity(database_url
                 """
             )
             connection.exec_driver_sql(
-                "INSERT INTO runs ("
-                "workflow_id, workflow_key, workflow_version, target_kind, target_id, target_key, "
-                "target_version, input, per_step_outputs, status"
-                ") VALUES ("
-                "7, 'market_review', 3, 'agent', 9, 'different_target', "
-                "4, '{}'::jsonb, '{}'::jsonb, 'succeeded'"
+                "CREATE INDEX ix_runs_workflow ON runs (workflow_id, workflow_version)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX ix_runs_workflow_key ON runs (workflow_key, workflow_version)"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE run_steps ("
+                "id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
+                "run_id INTEGER NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending'"
                 ")"
             )
+            connection.exec_driver_sql(
+                "CREATE TABLE run_agent_invocations ("
+                "id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
+                "run_step_id INTEGER NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending'"
+                ")"
+            )
+            legacy_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "workflow_id, workflow_key, workflow_version, target_kind, target_id, "
+                    "target_key, target_version, input, per_step_outputs, final_output, status, "
+                    "total_tokens, total_cost_usd, trace_id"
+                    ") VALUES ("
+                    "7, 'market_review', 3, 'agent', 9, 'different_target', 4, "
+                    "'{}'::jsonb, '{}'::jsonb, '{\"headline\":\"Buy\"}'::jsonb, "
+                    "'succeeded', 321, 0.15, 'trace-legacy-run'"
+                    ") RETURNING id"
+                )
+            ).scalar_one()
+            legacy_step_id = connection.execute(
+                text(
+                    "INSERT INTO run_steps (run_id, status) "
+                    "VALUES (:run_id, 'running') RETURNING id"
+                ),
+                {"run_id": legacy_run_id},
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO run_agent_invocations (run_step_id, status) "
+                    "VALUES (:run_step_id, 'running')"
+                ),
+                {"run_step_id": legacy_step_id},
+            )
 
-        with pytest.raises(RuntimeError, match="Cannot auto-upgrade runs table"):
-            init_db(database_url)
+        init_db(database_url)
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            runtime_counts = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM runs), "
+                    "(SELECT COUNT(*) FROM run_steps), "
+                    "(SELECT COUNT(*) FROM run_agent_invocations)"
+                )
+            ).one()
+
+        assert runtime_counts == (0, 0, 0)
+        _assert_runtime_execution_table_shape(engine)
     finally:
         engine.dispose()
 
@@ -1301,7 +1701,7 @@ def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_f
     assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(table_names)
 
 
-def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connections(
+def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schema_exists(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1345,159 +1745,62 @@ def test_init_db_backfills_legacy_agent_models_into_placeholder_model_connection
                     "key, version, status, name, description, model, system_prompt, input_schema, "
                     "output_schema_id, output_schema_version, skills, mcp_servers, budget_usd"
                     ") VALUES ("
-                    ":key, :version, :status, :name, :description, :model, :system_prompt, "
-                    "CAST(:input_schema AS jsonb), :output_schema_id, :output_schema_version, "
-                    "CAST(:skills AS jsonb), CAST(:mcp_servers AS jsonb), :budget_usd"
+                    ":key, 1, 'published', :name, '', :model, 'Analyze the ticker.', "
+                    "'{\"type\":\"object\"}'::jsonb, 1, 1, '[]'::jsonb, '[]'::jsonb, 0"
                     ")"
                 ),
                 [
-                    {
-                        "key": "research_agent_alpha",
-                        "version": 1,
-                        "status": "published",
-                        "name": "Research Agent Alpha",
-                        "description": "Legacy agent row",
-                        "model": "openai:gpt-5.4-mini",
-                        "system_prompt": "Analyze the ticker.",
-                        "input_schema": '{"type":"object"}',
-                        "output_schema_id": 1,
-                        "output_schema_version": 1,
-                        "skills": "[]",
-                        "mcp_servers": "[]",
-                        "budget_usd": 0,
-                    },
-                    {
-                        "key": "research_agent_beta",
-                        "version": 1,
-                        "status": "published",
-                        "name": "Research Agent Beta",
-                        "description": "Legacy agent row",
-                        "model": "openai:gpt-5.4-mini",
-                        "system_prompt": "Analyze the ticker.",
-                        "input_schema": '{"type":"object"}',
-                        "output_schema_id": 1,
-                        "output_schema_version": 1,
-                        "skills": "[]",
-                        "mcp_servers": "[]",
-                        "budget_usd": 0,
-                    },
-                    {
-                        "key": "research_agent_gamma",
-                        "version": 1,
-                        "status": "draft",
-                        "name": "Research Agent Gamma",
-                        "description": "Legacy agent row",
-                        "model": "openai:gpt-5.4",
-                        "system_prompt": "Analyze the ticker.",
-                        "input_schema": '{"type":"object"}',
-                        "output_schema_id": 1,
-                        "output_schema_version": 1,
-                        "skills": "[]",
-                        "mcp_servers": "[]",
-                        "budget_usd": 0,
-                    },
+                    {"key": "research_agent_alpha", "model": "openai:gpt-5.4-mini", "name": "A"},
+                    {"key": "research_agent_beta", "model": "openai:gpt-5.4-mini", "name": "B"},
+                    {"key": "research_agent_gamma", "model": "openai:gpt-5.4", "name": "C"},
                 ],
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE runs (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    target_kind VARCHAR(20) NOT NULL,
+                    target_id INTEGER NOT NULL,
+                    target_key VARCHAR(120) NOT NULL,
+                    target_version INTEGER NOT NULL,
+                    input JSONB NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'running',
+                    per_step_outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO runs (
+                    target_kind, target_id, target_key, target_version, input, status,
+                    per_step_outputs
+                ) VALUES (
+                    'agent', 1, 'research_agent_alpha', 1, '{}'::jsonb, 'succeeded', '{}'::jsonb
+                )
+                """
             )
 
         init_db(database_url)
         init_db(database_url)
 
         with engine.connect() as connection:
-            placeholder_rows = connection.execute(
-                text(
-                    "SELECT name, model_id, base_url, reasoning_effort, "
-                    "api_style, timeout_seconds, has_api_key, key "
-                    "FROM model_connections ORDER BY model_id ASC"
-                )
-            ).all()
-            linked_agents = connection.execute(
-                text(
-                    "SELECT a.key, a.model, a.model_connection_id, mc.model_id "
-                    "FROM agents AS a "
-                    "JOIN model_connections AS mc ON mc.id = a.model_connection_id "
-                    "ORDER BY a.key ASC"
-                )
-            ).all()
-            unresolved_agents = connection.execute(
-                text("SELECT COUNT(*) FROM agents WHERE model_connection_id IS NULL")
-            ).scalar_one()
-            agent_snapshots = connection.execute(
-                text("SELECT key, model_connection_snapshot " "FROM agents ORDER BY key ASC")
-            ).all()
-            shared_placeholder_ids = connection.execute(
-                text(
-                    "SELECT COUNT(DISTINCT model_connection_id) "
-                    "FROM agents WHERE model = 'openai:gpt-5.4-mini'"
-                )
+            agent_count = connection.execute(text("SELECT COUNT(*) FROM agents")).scalar_one()
+            model_connection_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections")
             ).scalar_one()
 
         repaired_agent_columns = {
             column["name"]: column for column in inspect(engine).get_columns("agents")
         }
-        linked_agent_by_key = {row[0]: row for row in linked_agents}
-
-        assert placeholder_rows == [
-            (
-                "openai:gpt-5.4",
-                "openai:gpt-5.4",
-                "https://api.openai.com/v1",
-                "medium",
-                "responses",
-                60,
-                False,
-                "openai_gpt_5_4",
-            ),
-            (
-                "openai:gpt-5.4-mini",
-                "openai:gpt-5.4-mini",
-                "https://api.openai.com/v1",
-                "medium",
-                "responses",
-                60,
-                False,
-                "openai_gpt_5_4_mini",
-            ),
-        ]
-        assert unresolved_agents == 0
-        assert linked_agent_by_key["research_agent_alpha"][1:] == (
-            "openai:gpt-5.4-mini",
-            linked_agent_by_key["research_agent_alpha"][2],
-            "openai:gpt-5.4-mini",
-        )
-        assert linked_agent_by_key["research_agent_beta"][1:] == (
-            "openai:gpt-5.4-mini",
-            linked_agent_by_key["research_agent_alpha"][2],
-            "openai:gpt-5.4-mini",
-        )
-        assert linked_agent_by_key["research_agent_gamma"][1:] == (
-            "openai:gpt-5.4",
-            linked_agent_by_key["research_agent_gamma"][2],
-            "openai:gpt-5.4",
-        )
-        assert shared_placeholder_ids == 1
+        assert agent_count == 0
+        assert model_connection_count == 0
         assert repaired_agent_columns["model_connection_id"]["nullable"] is False
         assert repaired_agent_columns["model_connection_snapshot"]["nullable"] is False
-        snapshots_by_key = {key: snapshot for key, snapshot in agent_snapshots}
-        assert snapshots_by_key["research_agent_alpha"] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:gpt-5.4-mini",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "medium",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-        assert snapshots_by_key["research_agent_beta"] == snapshots_by_key["research_agent_alpha"]
-        assert snapshots_by_key["research_agent_gamma"] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:gpt-5.4",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "medium",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-        assert {"temperature", "max_tool_rounds", "streaming"}.isdisjoint(repaired_agent_columns)
+        assert {"skills", "temperature", "max_tool_rounds", "streaming"}.isdisjoint(
+            repaired_agent_columns
+        )
     finally:
         engine.dispose()
 
