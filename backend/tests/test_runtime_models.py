@@ -328,6 +328,10 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
     session_factory,
 ) -> None:
     assert AGENT_PLATFORM_EXECUTION_TABLE_NAMES <= set(Base.metadata.tables)
+    run_step_table = Base.metadata.tables["run_steps"]
+    invocation_table = Base.metadata.tables["run_agent_invocations"]
+    assert "graph_metadata" in run_step_table.c
+    assert "graph_metadata" in invocation_table.c
     agent_table = Base.metadata.tables["agents"]
     assert {
         "uq_agents_published_key",
@@ -1375,6 +1379,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
             started_at=started_at,
             finished_at=finished_at,
             persisted_at=finished_at,
+            graph_metadata={"nodeId": "analysis", "nodeKind": "step"},
         )
         session.add(step)
         session.flush()
@@ -1392,6 +1397,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
                 output_schema_version=published_agent.output_schema_version,
                 input_mode="passthrough",
                 wiring={},
+                graph_metadata={"nodeId": "analysis", "nodeKind": "step"},
                 optional=False,
                 status="succeeded",
                 resolved_input={"ticker": "NVDA"},
@@ -1435,7 +1441,12 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert len(stored_run.steps) == 1
         assert stored_run.steps[0].step_index == 1
         assert stored_run.steps[0].status == "succeeded"
+        assert stored_run.steps[0].graph_metadata == {"nodeId": "analysis", "nodeKind": "step"}
         assert len(stored_run.steps[0].invocations) == 1
+        assert stored_run.steps[0].invocations[0].graph_metadata == {
+            "nodeId": "analysis",
+            "nodeKind": "step",
+        }
         assert stored_run.steps[0].invocations[0].trace_span_id == "span-analysis"
         assert stored_run.steps[0].invocations[0].resolved_input == {"ticker": "NVDA"}
         assert stored_run.total_tokens == 321

@@ -26,6 +26,18 @@ class ExecutionPlanSource:
 
 
 @dataclass(frozen=True)
+class ExecutionPlanGraphMetadata:
+    node_id: str | None = None
+    node_kind: str | None = None
+    graph_path: str | None = None
+    fanout_id: str | None = None
+    branch_id: str | None = None
+    loop_id: str | None = None
+    loop_iteration: int | None = None
+    source_refs: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class ExecutionPlanAgent:
     slot: str
     agent_id: int
@@ -36,12 +48,14 @@ class ExecutionPlanAgent:
     wiring: dict[str, ExecutionPlanSource]
     optional: bool = False
     input_mode: ExecutionPlanInputMode = "wired"
+    graph_metadata: ExecutionPlanGraphMetadata | None = None
 
 
 @dataclass(frozen=True)
 class ExecutionPlanStep:
     index: int
     agents: tuple[ExecutionPlanAgent, ...]
+    graph_metadata: ExecutionPlanGraphMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,7 @@ __all__ = [
     "ExecutionPlan",
     "ExecutionPlanAgent",
     "ExecutionPlanFinalOutput",
+    "ExecutionPlanGraphMetadata",
     "ExecutionPlanInputMode",
     "ExecutionPlanSource",
     "ExecutionPlanSourceKind",
