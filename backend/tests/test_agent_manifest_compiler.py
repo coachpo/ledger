@@ -14,7 +14,10 @@ from app.models.output_schema import OutputSchema
 from app.schemas.agent import AgentCreate
 from app.services.agent_manifest_compiler import AgentManifestCompilerError, compile_agent_manifest
 from app.services.agent_manifest_parser import parse_agent_manifest
-from app.services.workflow_manifest_examples import TRADINGAGENTS_AGENT_MANIFEST_SOURCES
+from app.services.workflow_manifest_examples import (
+    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
+    TRADINGAGENTS_MODEL_CONNECTION_SETUP,
+)
 from tests.test_agent_manifest_parser import _valid_manifest_source
 
 
@@ -28,9 +31,9 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
         model_id="gpt-5.4-mini",
         reasoning_effort="medium",
         timeout_seconds=60,
-        secret_payload={"apiKey": "sk-test-secret-1234"},
+        secret_payload={"apiKey": "configured-test-value"},
         has_api_key=True,
-        api_key_last4="1234",
+        api_key_last4="test",
     )
     output_schema = OutputSchema(
         key="research_summary",
@@ -81,19 +84,35 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
 
 def _seed_tradingagents_manifest_refs(session: Session) -> None:
     connection = ModelConnection(
-        key="primary_openai",
+        key=TRADINGAGENTS_MODEL_CONNECTION_SETUP["key"],
         status="active",
-        name="Primary OpenAI",
-        description="Primary model connection.",
-        base_url="https://api.openai.com/v1",
-        model_id="gpt-5.4-mini",
-        reasoning_effort="medium",
+        name="TradingAgents Local GPT 5.4 Mini",
+        description="TradingAgents local OpenAI-family model connection.",
+        base_url=TRADINGAGENTS_MODEL_CONNECTION_SETUP["baseUrl"],
+        model_id=TRADINGAGENTS_MODEL_CONNECTION_SETUP["modelId"],
+        reasoning_effort=TRADINGAGENTS_MODEL_CONNECTION_SETUP["reasoningEffort"],
+        api_style=TRADINGAGENTS_MODEL_CONNECTION_SETUP["apiStyle"],
         timeout_seconds=60,
-        secret_payload={"apiKey": "sk-test-secret-1234"},
+        secret_payload={"apiKey": "configured-test-value"},
         has_api_key=True,
-        api_key_last4="1234",
+        api_key_last4="test",
     )
-    schema_keys = {
+    state_schema: dict[str, object] = {"type": "object", "additionalProperties": True}
+    transition_schema = {
+        "type": "object",
+        "properties": {"nextState": state_schema},
+        "required": ["nextState"],
+        "additionalProperties": False,
+    }
+    schema_payloads = {
+        "tradingagents_analyst_report": state_schema,
+        "tradingagents_investment_debate_transition": transition_schema,
+        "tradingagents_research_plan": state_schema,
+        "tradingagents_trader_proposal": state_schema,
+        "tradingagents_risk_debate_transition": transition_schema,
+        "tradingagents_portfolio_decision": state_schema,
+    }
+    schema_names = {
         "tradingagents_analyst_report": "TradingAgents Analyst Report",
         "tradingagents_investment_debate_transition": "TradingAgents Investment Debate Transition",
         "tradingagents_research_plan": "TradingAgents Research Plan",
@@ -107,12 +126,12 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
             version=1,
             status="published",
             kind="standalone",
-            name=name,
-            description=f"{name} schema.",
-            json_schema={"type": "object", "additionalProperties": True},
+            name=schema_names[key],
+            description=f"{schema_names[key]} schema.",
+            json_schema=json_schema,
             registry_refs=[],
         )
-        for key, name in schema_keys.items()
+        for key, json_schema in schema_payloads.items()
     ]
     capability_grants = {
         "tradingagents_market_data": [
@@ -128,6 +147,7 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
         ],
         "ledger_reports": [{"tool": "ledger.reports.lookup"}],
         "ledger_positions": [{"tool": "ledger.positions.lookup"}],
+        "tradingagents_memory": [{"tool": "ledger.reports.write"}],
     }
     capabilities = [
         Capability(
@@ -211,7 +231,7 @@ def test_compile_agent_manifest_accepts_validated_manifest(
         ("aggressive_risk_analyst", "ledger_reports@1"),
         ("neutral_risk_analyst", "ledger_reports@1"),
         ("conservative_risk_analyst", "ledger_reports@1"),
-        ("portfolio_manager", "ledger_reports@1"),
+        ("portfolio_manager", "ledger_reports@1,tradingagents_memory@1"),
     ],
 )
 def test_compile_tradingagents_example_agent_manifest_resolves_expected_capability(
@@ -219,15 +239,16 @@ def test_compile_tradingagents_example_agent_manifest_resolves_expected_capabili
     role: str,
     expected_capability_ref: str,
 ) -> None:
-    expected_key, raw_expected_version = expected_capability_ref.split("@", 1)
+    expected_capabilities = [
+        {"capabilityKey": key, "capabilityVersion": int(raw_version)}
+        for key, raw_version in (item.split("@", 1) for item in expected_capability_ref.split(","))
+    ]
 
     with session_factory() as session:
         _seed_tradingagents_manifest_refs(session)
         payload = compile_agent_manifest(TRADINGAGENTS_AGENT_MANIFEST_SOURCES[role], session)
 
-    assert payload["capabilities"] == [
-        {"capabilityKey": expected_key, "capabilityVersion": int(raw_expected_version)}
-    ]
+    assert payload["capabilities"] == expected_capabilities
 
 
 def test_compile_agent_manifest_preserves_input_schema_metadata(
