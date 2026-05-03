@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -8,14 +11,45 @@ from app.schemas.workflow_manifest import (
     TradingAgentsInvestmentDebateTransition,
     TradingAgentsPortfolioDecision,
     TradingAgentsRiskDebateTransition,
+    WorkflowManifest,
     WorkflowManifestDiagnostic,
 )
 from app.services.agent_manifest_parser import parse_agent_manifest
 from app.services.workflow_manifest_examples import (
     TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
     TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_MODEL_CONNECTION_SETUP,
+    TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
 )
 from app.services.workflow_manifest_parser import parse_workflow_manifest
+
+_EXACT_VERSION_REF_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}@[1-9][0-9]*$")
+_RAW_SECRET_TEXT_RE = re.compile(
+    r"(?i)"
+    + r"(api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._~-]+|"
+    + r"sk-[A-Za-z0-9_-]{10,}|secret\s*[:=]|token\s*[:=])"
+)
+_TRADINGAGENTS_ANALYST_AGENT_REFS = [
+    "market_analyst@1",
+    "social_analyst@1",
+    "news_analyst@1",
+    "fundamentals_analyst@1",
+]
+_TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS = [
+    "bull_research_round_1",
+    "bear_research_round_1",
+    "bull_research_round_2",
+    "bear_research_round_2",
+    "research_manager",
+    "trader",
+    "aggressive_risk_round_1",
+    "neutral_risk_round_1",
+    "conservative_risk_round_1",
+    "portfolio_manager",
+]
 
 
 def _valid_manifest_source(*, uses: str = "research_agent@1") -> str:
@@ -241,6 +275,7 @@ def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
 
     assert result.diagnostics == []
     assert result.manifest is not None
+    assert isinstance(result.manifest, WorkflowManifest)
     assert result.manifest.api_version == "ledger.workflow/v1"
     assert result.manifest.kind == "Workflow"
     assert result.manifest.metadata.key == "market_review"
@@ -255,6 +290,283 @@ def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
     assert dumped["steps"][1]["agents"][0]["with"]["analysis"] == (
         "${{ steps.research.outputs.analysis.summary }}"
     )
+
+
+def _valid_v2_manifest_source(*, flow: str, output_reference: str) -> str:
+    return f"""apiVersion: ledger.workflow/v2
+kind: Workflow
+metadata:
+  key: market_review_v2
+  name: Market Review V2
+inputSchema:
+  type: object
+  properties:
+    ticker:
+      type: string
+flow:
+{flow}
+output:
+  from: {output_reference}
+"""
+
+
+@pytest.mark.parametrize(
+    ("flow", "output_reference", "expected_root_kind"),
+    [
+        (
+            """  kind: step
+  id: research
+  slot: analysis
+  uses: research_agent@1
+  with:
+    ticker: ${{ inputs.ticker }}""",
+            "${{ nodes.research.outputs.analysis }}",
+            "step",
+        ),
+        (
+            """  kind: fanout
+  id: analyst_fanout
+  branches:
+    - id: market
+      node:
+        kind: step
+        id: market_analysis
+        slot: analysis
+        uses: market_agent@1
+        with:
+          ticker: ${{ inputs.ticker }}""",
+            "${{ nodes.analyst_fanout.outputs.market }}",
+            "fanout",
+        ),
+        (
+            """  kind: fanout
+  id: analyst_fanout
+  branches:
+    - id: market
+      node:
+        kind: step
+        id: market_analysis
+        slot: analysis
+        uses: market_agent@1
+        with:
+          ticker: ${{ inputs.ticker }}""",
+            "${{ nodes.analyst_fanout.outputs.analysis }}",
+            "fanout",
+        ),
+        (
+            """  kind: loop
+  id: review_loop
+  maxIterations: 2
+  sequence:
+    kind: sequence
+    id: review_sequence
+    nodes:
+      - kind: step
+        id: risk_review
+        slot: risk
+        uses: risk_agent@1
+        with:
+          ticker: ${{ inputs.ticker }}""",
+            "${{ nodes.review_loop.outputs.risk }}",
+            "loop",
+        ),
+        (
+            """  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: step
+      id: research
+      slot: analysis
+      uses: research_agent@1
+      with:
+        ticker: ${{ inputs.ticker }}""",
+            "${{ nodes.root_sequence.outputs.analysis }}",
+            "sequence",
+        ),
+    ],
+)
+def test_parse_valid_v2_manifest_allows_each_root_node_kind(
+    flow: str,
+    output_reference: str,
+    expected_root_kind: str,
+) -> None:
+    result = parse_workflow_manifest(
+        _valid_v2_manifest_source(flow=flow, output_reference=output_reference)
+    )
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    dumped = result.manifest.model_dump(mode="json", by_alias=True)
+    assert dumped["apiVersion"] == "ledger.workflow/v2"
+    assert dumped["flow"]["kind"] == expected_root_kind
+
+
+@pytest.mark.parametrize(
+    ("output_reference", "expected_message"),
+    [
+        ("${{ nodes.missing.outputs.analysis }}", "Node 'missing' was not found"),
+        ("${{ nodes.research.outputs.missing }}", "Slot 'missing' was not found"),
+    ],
+)
+def test_v2_root_step_output_rejects_unknown_refs_and_slots(
+    output_reference: str,
+    expected_message: str,
+) -> None:
+    diagnostic = _single_diagnostic(
+        _valid_v2_manifest_source(
+            flow="""  kind: step
+  id: research
+  slot: analysis
+  uses: research_agent@1
+  with:
+    ticker: ${{ inputs.ticker }}""",
+            output_reference=output_reference,
+        )
+    )
+
+    assert diagnostic.path == "output.from"
+    assert expected_message in diagnostic.message
+
+
+def test_v2_root_step_inputs_reject_same_node_refs() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_v2_manifest_source(
+            flow="""  kind: step
+  id: research
+  slot: analysis
+  uses: research_agent@1
+  with:
+    prior: ${{ nodes.research.outputs.analysis }}""",
+            output_reference="${{ nodes.research.outputs.analysis }}",
+        )
+    )
+
+    assert diagnostic.path == "flow.with.prior"
+    assert "Node references must point to an earlier node" in diagnostic.message
+
+
+def test_v2_sequence_inputs_reject_future_refs() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_v2_manifest_source(
+            flow="""  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: step
+      id: research
+      slot: analysis
+      uses: research_agent@1
+      with:
+        prior: ${{ nodes.decision.outputs.final }}
+    - kind: step
+      id: decision
+      slot: final
+      uses: decision_agent@1""",
+            output_reference="${{ nodes.decision.outputs.final }}",
+        )
+    )
+
+    assert diagnostic.path == "flow.nodes[0].with.prior"
+    assert "Node references must point to an earlier node" in diagnostic.message
+
+
+def test_v2_fanout_branch_inputs_reject_sibling_branch_refs() -> None:
+    diagnostic = _single_diagnostic(
+        _valid_v2_manifest_source(
+            flow="""  kind: fanout
+  id: analyst_fanout
+  branches:
+    - id: market
+      node:
+        kind: step
+        id: market_analysis
+        slot: market_report
+        uses: market_agent@1
+        with:
+          ticker: ${{ inputs.ticker }}
+    - id: news
+      node:
+        kind: step
+        id: news_analysis
+        slot: news_report
+        uses: news_agent@1
+        with:
+          marketReport: ${{ nodes.market_analysis.outputs.market_report }}""",
+            output_reference="${{ nodes.analyst_fanout.outputs.news_report }}",
+        )
+    )
+
+    assert diagnostic.path == "flow.branches[1].node.with.marketReport"
+    assert "Node references must point to an earlier node" in diagnostic.message
+
+
+@pytest.mark.parametrize(
+    ("flow", "expected_path", "expected_message"),
+    [
+        (
+            """  kind: fanout
+  id: analyst_fanout
+  branches:
+    - id: market
+      node:
+        kind: step
+        id: market_analysis
+        slot: analysis
+        uses: market_agent@1
+    - id: market
+      node:
+        kind: step
+        id: news_analysis
+        slot: news
+        uses: news_agent@1""",
+            "flow.branches[1].id",
+            "Duplicate fanout branch id",
+        ),
+        (
+            """  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: step
+      id: research
+      slot: analysis
+      uses: research_agent@1
+    - kind: step
+      id: research
+      slot: final
+      uses: decision_agent@1""",
+            "flow.nodes[1].id",
+            "Duplicate node id",
+        ),
+        (
+            """  kind: sequence
+  id: root_sequence
+  nodes:
+    - kind: step
+      id: research
+      slot: analysis
+      uses: research_agent@1
+    - kind: step
+      id: decision
+      slot: analysis
+      uses: decision_agent@1""",
+            "flow.nodes[1].slot",
+            "Duplicate output slot name within the same sequence",
+        ),
+    ],
+)
+def test_v2_semantics_preserve_duplicate_diagnostics(
+    flow: str,
+    expected_path: str,
+    expected_message: str,
+) -> None:
+    diagnostic = _single_diagnostic(
+        _valid_v2_manifest_source(
+            flow=flow,
+            output_reference="${{ nodes.root_sequence.outputs.analysis }}",
+        )
+    )
+
+    assert diagnostic.path == expected_path
+    assert expected_message in diagnostic.message
 
 
 def test_parser_rejects_malformed_yaml_with_location() -> None:
@@ -457,7 +769,7 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
         "aggressive_risk_analyst": ["ledger_reports@1"],
         "neutral_risk_analyst": ["ledger_reports@1"],
         "conservative_risk_analyst": ["ledger_reports@1"],
-        "portfolio_manager": ["ledger_reports@1"],
+        "portfolio_manager": ["ledger_reports@1", "tradingagents_memory@1"],
     }
     expected_prompt_fragments = {
         "market_analyst": [
@@ -479,11 +791,25 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
     }
 
     for role, source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.items():
+        assert "skills:" not in source
+        assert _RAW_SECRET_TEXT_RE.search(source) is None
+
         result = parse_agent_manifest(source)
         assert result.diagnostics == [], role
         assert result.manifest is not None
         assert result.manifest.metadata.key == role
         assert result.manifest.spec.output_schema.version == 1
+
+        dumped = result.manifest.model_dump(mode="json", by_alias=True)
+        spec = cast(dict[str, object], dumped["spec"])
+        capability_refs = cast(list[object], spec["capabilities"])
+        assert spec["modelConnection"] == TRADINGAGENTS_MODEL_CONNECTION_SETUP["key"]
+        assert "skills" not in spec
+        assert _EXACT_VERSION_REF_RE.fullmatch(str(spec["outputSchema"])) is not None
+        assert all(
+            _EXACT_VERSION_REF_RE.fullmatch(str(capability_ref)) is not None
+            for capability_ref in capability_refs
+        )
         assert [
             f"{capability.key}@{capability.version}"
             for capability in result.manifest.spec.capabilities
@@ -497,6 +823,7 @@ def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
 
     assert result.diagnostics == []
     assert result.manifest is not None
+    assert isinstance(result.manifest, WorkflowManifest)
     steps = result.manifest.steps
     assert [step.id for step in steps] == [
         "analyst_fanout",
@@ -570,6 +897,162 @@ def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
     ]
     assert result.manifest.output.from_.step_id == "portfolio_manager"
     assert result.manifest.output.from_.slot == "decision"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_key"),
+    [
+        (
+            TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_strict_sequential_review",
+        ),
+        (
+            TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_practical_fanout_review",
+        ),
+    ],
+)
+def test_tradingagents_v1_review_examples_parse_with_workflow_api_version(
+    source: str,
+    expected_key: str,
+) -> None:
+    result = parse_workflow_manifest(source)
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    assert result.manifest.api_version == "ledger.workflow/v1"
+    assert result.manifest.metadata.key == expected_key
+
+
+def test_tradingagents_strict_sequential_manifest_orders_single_analyst_steps_before_debate() -> (
+    None
+):
+    result = parse_workflow_manifest(
+        TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE
+    )
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    assert isinstance(result.manifest, WorkflowManifest)
+    steps = result.manifest.steps
+    analyst_steps = steps[:4]
+    first_debate_step = steps[4]
+
+    assert [step.id for step in analyst_steps] == [
+        "market_analysis",
+        "social_analysis",
+        "news_analysis",
+        "fundamentals_analysis",
+    ]
+    analyst_refs = [
+        f"{step.agents[0].uses.key}@{step.agents[0].uses.version}" for step in analyst_steps
+    ]
+    assert [len(step.agents) for step in analyst_steps] == [1, 1, 1, 1]
+    assert analyst_refs == _TRADINGAGENTS_ANALYST_AGENT_REFS
+    assert [step.id for step in steps[4:]] == _TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS
+    assert first_debate_step.id == "bull_research_round_1"
+    assert first_debate_step.agents[0].inputs["marketReport"].step_id == "market_analysis"
+    assert first_debate_step.agents[0].inputs["socialSentimentReport"].step_id == "social_analysis"
+    assert first_debate_step.agents[0].inputs["newsReport"].step_id == "news_analysis"
+    assert first_debate_step.agents[0].inputs["fundamentalsReport"].step_id == (
+        "fundamentals_analysis"
+    )
+
+
+def test_tradingagents_practical_fanout_manifest_keeps_single_analyst_fanout_before_debate() -> (
+    None
+):
+    result = parse_workflow_manifest(TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE)
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    assert isinstance(result.manifest, WorkflowManifest)
+    steps = result.manifest.steps
+    analyst_step = steps[0]
+
+    analyst_refs = [f"{agent.uses.key}@{agent.uses.version}" for agent in analyst_step.agents]
+    assert analyst_step.id == "analyst_fanout"
+    assert analyst_refs == _TRADINGAGENTS_ANALYST_AGENT_REFS
+    assert [agent.slot for agent in analyst_step.agents] == [
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+    ]
+    assert all(
+        reference.source == "inputs"
+        for agent in analyst_step.agents
+        for reference in agent.inputs.values()
+    )
+    assert [step.id for step in steps[1:]] == _TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS
+    assert steps[1].agents[0].inputs["marketReport"].step_id == "analyst_fanout"
+    assert steps[1].agents[0].inputs["socialSentimentReport"].step_id == "analyst_fanout"
+    assert steps[1].agents[0].inputs["newsReport"].step_id == "analyst_fanout"
+    assert steps[1].agents[0].inputs["fundamentalsReport"].step_id == "analyst_fanout"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_key", "expected_analyst_node_kind"),
+    [
+        (
+            TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_v2_strict_sequential_review",
+            "step",
+        ),
+        (
+            TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "tradingagents_v2_practical_fanout_review",
+            "fanout",
+        ),
+    ],
+)
+def test_tradingagents_v2_review_examples_parse_with_bounded_loops_and_memory(
+    source: str,
+    expected_key: str,
+    expected_analyst_node_kind: str,
+) -> None:
+    assert _RAW_SECRET_TEXT_RE.search(source) is None
+
+    result = parse_workflow_manifest(source)
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    dumped = result.manifest.model_dump(mode="json", by_alias=True)
+    flow = cast(dict[str, object], dumped["flow"])
+    nodes = cast(list[dict[str, object]], flow["nodes"])
+    loop_nodes = [node for node in nodes if node["kind"] == "loop"]
+
+    assert dumped["apiVersion"] == "ledger.workflow/v2"
+    assert dumped["metadata"]["key"] == expected_key
+    assert nodes[0]["kind"] == expected_analyst_node_kind
+    if expected_analyst_node_kind == "step":
+        assert [node["id"] for node in nodes[:4]] == [
+            "market_analysis",
+            "social_analysis",
+            "news_analysis",
+            "fundamentals_analysis",
+        ]
+    else:
+        assert cast(list[object], nodes[0]["branches"])
+        assert len(cast(list[object], nodes[0]["branches"])) == 4
+    assert [node["id"] for node in loop_nodes] == ["investment_debate_loop", "risk_debate_loop"]
+    assert [node["maxIterations"] for node in loop_nodes] == [2, 2]
+    assert dumped["postRunMemory"]["enabled"] is True
+    assert dumped["postRunMemory"]["source"]["action"] == (
+        "${{ nodes.portfolio_manager.outputs.decision.action }}"
+    )
+    assert dumped["postRunMemory"]["benchmarkSymbol"] == "${{ inputs.benchmarkSymbol }}"
+
+
+def test_tradingagents_model_connection_setup_metadata_is_secret_free() -> None:
+    assert TRADINGAGENTS_MODEL_CONNECTION_SETUP == {
+        "key": "tradingagents_local_gpt54_mini",
+        "baseUrl": "http://192.168.1.222:8087/v1",
+        "modelId": "gpt-5.4-mini",
+        "reasoningEffort": "medium",
+        "apiStyle": "responses",
+    }
+    assert _RAW_SECRET_TEXT_RE.search(str(TRADINGAGENTS_MODEL_CONNECTION_SETUP)) is None
 
 
 def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_debate_refs() -> None:

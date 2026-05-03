@@ -14,11 +14,20 @@ from ruamel.yaml.error import MarkedYAMLError, YAMLError
 from ruamel.yaml.events import AliasEvent, ScalarEvent
 
 from app.schemas.workflow_manifest import (
+    WORKFLOW_MANIFEST_V1_API_VERSION,
+    WORKFLOW_MANIFEST_V2_API_VERSION,
     WorkflowManifest,
     WorkflowManifestDiagnostic,
     WorkflowManifestDiagnosticSeverity,
     WorkflowManifestParseResult,
     WorkflowManifestReference,
+    WorkflowManifestV2,
+    WorkflowManifestV2FanoutNode,
+    WorkflowManifestV2LoopNode,
+    WorkflowManifestV2Node,
+    WorkflowManifestV2Reference,
+    WorkflowManifestV2SequenceNode,
+    WorkflowManifestV2StepNode,
 )
 
 _PathToken = str | int
@@ -75,6 +84,39 @@ class WorkflowManifestParser:
         if json_diagnostics:
             return WorkflowManifestParseResult(diagnostics=json_diagnostics)
 
+        api_version = data.get("apiVersion")
+        if api_version == WORKFLOW_MANIFEST_V1_API_VERSION:
+            return self._parse_v1_manifest(data)
+        if api_version == WORKFLOW_MANIFEST_V2_API_VERSION:
+            if "steps" in data and "flow" not in data:
+                return WorkflowManifestParseResult(
+                    diagnostics=[
+                        self._diagnostic(
+                            f"Input should be '{WORKFLOW_MANIFEST_V1_API_VERSION}'",
+                            path="apiVersion",
+                            location=self._location_for(data, ("apiVersion",)),
+                        )
+                    ]
+                )
+            return self._parse_v2_manifest(data)
+        return WorkflowManifestParseResult(
+            diagnostics=[
+                self._diagnostic(
+                    self._api_version_message(api_version),
+                    path="apiVersion",
+                    location=self._location_for(data, ("apiVersion",)),
+                )
+            ]
+        )
+
+    def locate_path(self, source: str, path: str) -> tuple[int | None, int | None]:
+        try:
+            data = self._new_yaml().load(source)
+        except YAMLError:
+            return None, None
+        return self._location_for(data, self._path_to_tokens(path))
+
+    def _parse_v1_manifest(self, data: Mapping[object, object]) -> WorkflowManifestParseResult:
         try:
             manifest = WorkflowManifest.model_validate(data)
         except ValidationError as exc:
@@ -85,12 +127,16 @@ class WorkflowManifestParser:
             return WorkflowManifestParseResult(diagnostics=semantic_diagnostics)
         return WorkflowManifestParseResult(manifest=manifest, diagnostics=[])
 
-    def locate_path(self, source: str, path: str) -> tuple[int | None, int | None]:
+    def _parse_v2_manifest(self, data: Mapping[object, object]) -> WorkflowManifestParseResult:
         try:
-            data = self._new_yaml().load(source)
-        except YAMLError:
-            return None, None
-        return self._location_for(data, self._path_to_tokens(path))
+            manifest = WorkflowManifestV2.model_validate(data)
+        except ValidationError as exc:
+            return WorkflowManifestParseResult(diagnostics=self._validation_diagnostics(exc, data))
+
+        semantic_diagnostics = self._validate_v2_manifest_semantics(manifest, data)
+        if semantic_diagnostics:
+            return WorkflowManifestParseResult(diagnostics=semantic_diagnostics)
+        return WorkflowManifestParseResult(manifest=manifest, diagnostics=[])
 
     def _scan_yaml_events(self, source: str) -> list[WorkflowManifestDiagnostic]:
         diagnostics: list[WorkflowManifestDiagnostic] = []
@@ -334,6 +380,414 @@ class WorkflowManifestParser:
             )
         return None
 
+    def _validate_v2_manifest_semantics(
+        self,
+        manifest: WorkflowManifestV2,
+        data: object,
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        declarations = self._collect_v2_node_declarations(manifest.flow, ("flow",), data)
+        diagnostics.extend(cast(list[WorkflowManifestDiagnostic], declarations["diagnostics"]))
+        all_node_ids = cast(dict[str, tuple[_PathToken, ...]], declarations["node_paths"])
+
+        if diagnostics:
+            return diagnostics
+
+        available_outputs: dict[str, dict[str, bool]] = {}
+        diagnostics.extend(
+            self._validate_v2_node_order(
+                manifest.flow,
+                node_path=("flow",),
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        )
+        output_diagnostic = self._validate_v2_reference(
+            manifest.output.from_,
+            path=("output", "from"),
+            data=data,
+            available_outputs=available_outputs,
+            all_node_ids=all_node_ids,
+            forbid_optional=True,
+        )
+        if output_diagnostic is not None:
+            diagnostics.append(output_diagnostic)
+        diagnostics.extend(
+            self._validate_v2_post_run_memory(
+                manifest,
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        )
+        return diagnostics
+
+    def _collect_v2_node_declarations(
+        self,
+        node: WorkflowManifestV2Node,
+        path: tuple[_PathToken, ...],
+        data: object,
+    ) -> dict[str, object]:
+        node_paths: dict[str, tuple[_PathToken, ...]] = {}
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+
+        def visit(current: WorkflowManifestV2Node, current_path: tuple[_PathToken, ...]) -> None:
+            id_path = (*current_path, "id")
+            if current.id in node_paths:
+                diagnostics.append(
+                    self._diagnostic(
+                        f"Duplicate node id: {current.id}",
+                        path=self._manifest_path(id_path),
+                        location=self._location_for(data, id_path),
+                    )
+                )
+            else:
+                node_paths[current.id] = id_path
+
+            if isinstance(current, WorkflowManifestV2SequenceNode):
+                self._collect_v2_sequence_declarations(
+                    current,
+                    current_path,
+                    visit,
+                    diagnostics,
+                    data,
+                )
+            elif isinstance(current, WorkflowManifestV2FanoutNode):
+                self._collect_v2_fanout_declarations(
+                    current,
+                    current_path,
+                    visit,
+                    diagnostics,
+                    data,
+                )
+            elif isinstance(current, WorkflowManifestV2LoopNode):
+                visit(current.sequence, (*current_path, "sequence"))
+
+        visit(node, path)
+        return {"node_paths": node_paths, "diagnostics": diagnostics}
+
+    def _collect_v2_sequence_declarations(
+        self,
+        sequence: WorkflowManifestV2SequenceNode,
+        path: tuple[_PathToken, ...],
+        visit: Callable[[WorkflowManifestV2Node, tuple[_PathToken, ...]], None],
+        diagnostics: list[WorkflowManifestDiagnostic],
+        data: object,
+    ) -> None:
+        output_slots: set[str] = set()
+        for node_index, child in enumerate(sequence.nodes):
+            child_path = (*path, "nodes", node_index)
+            if isinstance(child, WorkflowManifestV2StepNode):
+                slot_path = (*child_path, "slot")
+                if child.slot in output_slots:
+                    diagnostics.append(
+                        self._diagnostic(
+                            "Duplicate output slot name within the same sequence",
+                            path=self._manifest_path(slot_path),
+                            location=self._location_for(data, slot_path),
+                        )
+                    )
+                output_slots.add(child.slot)
+            visit(child, child_path)
+
+    def _collect_v2_fanout_declarations(
+        self,
+        fanout: WorkflowManifestV2FanoutNode,
+        path: tuple[_PathToken, ...],
+        visit: Callable[[WorkflowManifestV2Node, tuple[_PathToken, ...]], None],
+        diagnostics: list[WorkflowManifestDiagnostic],
+        data: object,
+    ) -> None:
+        branch_ids: set[str] = set()
+        output_slots: set[str] = set()
+        for branch_index, branch in enumerate(fanout.branches):
+            branch_path = (*path, "branches", branch_index)
+            branch_id_path = (*branch_path, "id")
+            if branch.id in branch_ids:
+                diagnostics.append(
+                    self._diagnostic(
+                        f"Duplicate fanout branch id: {branch.id}",
+                        path=self._manifest_path(branch_id_path),
+                        location=self._location_for(data, branch_id_path),
+                    )
+                )
+            branch_ids.add(branch.id)
+            if isinstance(branch.node, WorkflowManifestV2StepNode):
+                slot_path = (*branch_path, "node", "slot")
+                if branch.node.slot in output_slots:
+                    diagnostics.append(
+                        self._diagnostic(
+                            "Duplicate output slot name within the same fanout",
+                            path=self._manifest_path(slot_path),
+                            location=self._location_for(data, slot_path),
+                        )
+                    )
+                output_slots.add(branch.node.slot)
+            visit(branch.node, (*branch_path, "node"))
+
+    def _validate_v2_node_order(
+        self,
+        node: WorkflowManifestV2Node,
+        *,
+        node_path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        if isinstance(node, WorkflowManifestV2StepNode):
+            return self._validate_v2_step_node(
+                node,
+                node_path=node_path,
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        if isinstance(node, WorkflowManifestV2SequenceNode):
+            return self._validate_v2_sequence_node(
+                node,
+                node_path=node_path,
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        if isinstance(node, WorkflowManifestV2FanoutNode):
+            return self._validate_v2_fanout_node(
+                node,
+                node_path=node_path,
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        return self._validate_v2_loop_node(
+            node,
+            node_path=node_path,
+            data=data,
+            available_outputs=available_outputs,
+            all_node_ids=all_node_ids,
+        )
+
+    def _validate_v2_step_node(
+        self,
+        node: WorkflowManifestV2StepNode,
+        *,
+        node_path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        for field_name, reference in node.inputs.items():
+            diagnostic = self._validate_v2_reference(
+                reference,
+                path=(*node_path, "with", field_name),
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+        available_outputs[node.id] = {node.slot: node.optional}
+        return diagnostics
+
+    def _validate_v2_sequence_node(
+        self,
+        node: WorkflowManifestV2SequenceNode,
+        *,
+        node_path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        local_outputs: dict[str, bool] = {}
+        for node_index, child in enumerate(node.nodes):
+            diagnostics.extend(
+                self._validate_v2_node_order(
+                    child,
+                    node_path=(*node_path, "nodes", node_index),
+                    data=data,
+                    available_outputs=available_outputs,
+                    all_node_ids=all_node_ids,
+                )
+            )
+            local_outputs.update(self._v2_node_outputs(child, available_outputs))
+        available_outputs[node.id] = local_outputs
+        return diagnostics
+
+    def _validate_v2_fanout_node(
+        self,
+        node: WorkflowManifestV2FanoutNode,
+        *,
+        node_path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        fanout_outputs: dict[str, bool] = {}
+        pre_fanout_outputs = {node_id: dict(slots) for node_id, slots in available_outputs.items()}
+        branch_available_outputs: dict[str, dict[str, bool]] = {}
+        for branch_index, branch in enumerate(node.branches):
+            branch_outputs = {node_id: dict(slots) for node_id, slots in pre_fanout_outputs.items()}
+            diagnostics.extend(
+                self._validate_v2_node_order(
+                    branch.node,
+                    node_path=(*node_path, "branches", branch_index, "node"),
+                    data=data,
+                    available_outputs=branch_outputs,
+                    all_node_ids=all_node_ids,
+                )
+            )
+            branch_node_outputs = self._v2_node_outputs(branch.node, branch_outputs)
+            if branch_node_outputs:
+                fanout_outputs[branch.id] = any(branch_node_outputs.values())
+                for slot, optional in branch_node_outputs.items():
+                    _ = fanout_outputs.setdefault(slot, optional)
+            for node_id, slots in branch_outputs.items():
+                if node_id not in pre_fanout_outputs:
+                    branch_available_outputs[node_id] = slots
+        available_outputs.update(branch_available_outputs)
+        available_outputs[node.id] = fanout_outputs
+        return diagnostics
+
+    def _validate_v2_loop_node(
+        self,
+        node: WorkflowManifestV2LoopNode,
+        *,
+        node_path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        for field_name, reference in node.state.items():
+            diagnostic = self._validate_v2_reference(
+                reference,
+                path=(*node_path, "state", field_name),
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+        diagnostics.extend(
+            self._validate_v2_node_order(
+                node.sequence,
+                node_path=(*node_path, "sequence"),
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+        )
+        available_outputs[node.id] = self._v2_node_outputs(node.sequence, available_outputs)
+        return diagnostics
+
+    def _validate_v2_post_run_memory(
+        self,
+        manifest: WorkflowManifestV2,
+        *,
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+    ) -> list[WorkflowManifestDiagnostic]:
+        diagnostics: list[WorkflowManifestDiagnostic] = []
+        memory = manifest.post_run_memory
+        if memory.source is not None:
+            source_refs = {
+                "ticker": memory.source.ticker,
+                "action": memory.source.action,
+                "rationale": memory.source.rationale,
+                "risk_summary": memory.source.risk_summary,
+                "execution_plan": memory.source.execution_plan,
+                "portfolio_slug": memory.source.portfolio_slug,
+                "horizon_days": memory.source.horizon_days,
+                "confidence": memory.source.confidence,
+                "decision_summary": memory.source.decision_summary,
+            }
+            for field_name, reference in source_refs.items():
+                if reference is None:
+                    continue
+                diagnostic = self._validate_v2_reference(
+                    reference,
+                    path=("postRunMemory", "source", self._v2_memory_source_alias(field_name)),
+                    data=data,
+                    available_outputs=available_outputs,
+                    all_node_ids=all_node_ids,
+                )
+                if diagnostic is not None:
+                    diagnostics.append(diagnostic)
+        if memory.benchmark_symbol is not None:
+            diagnostic = self._validate_v2_reference(
+                memory.benchmark_symbol,
+                path=("postRunMemory", "benchmarkSymbol"),
+                data=data,
+                available_outputs=available_outputs,
+                all_node_ids=all_node_ids,
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+        return diagnostics
+
+    def _validate_v2_reference(
+        self,
+        reference: WorkflowManifestV2Reference,
+        *,
+        path: tuple[_PathToken, ...],
+        data: object,
+        available_outputs: dict[str, dict[str, bool]],
+        all_node_ids: dict[str, tuple[_PathToken, ...]],
+        forbid_optional: bool = False,
+    ) -> WorkflowManifestDiagnostic | None:
+        if reference.source != "nodes":
+            return None
+        referenced_node_id = str(reference.node_id or "")
+        referenced_slot = str(reference.slot or "")
+        slots = available_outputs.get(referenced_node_id)
+        if slots is None:
+            if referenced_node_id in all_node_ids:
+                return self._diagnostic(
+                    "Node references must point to an earlier node",
+                    path=self._manifest_path(path),
+                    location=self._location_for(data, path),
+                )
+            return self._diagnostic(
+                f"Node {referenced_node_id!r} was not found",
+                path=self._manifest_path(path),
+                location=self._location_for(data, path),
+            )
+        if referenced_slot not in slots:
+            return self._diagnostic(
+                f"Slot {referenced_slot!r} was not found on node {referenced_node_id!r}",
+                path=self._manifest_path(path),
+                location=self._location_for(data, path),
+            )
+        if forbid_optional and slots[referenced_slot]:
+            return self._diagnostic(
+                "Final output cannot reference an optional slot",
+                path=self._manifest_path(path),
+                location=self._location_for(data, path),
+            )
+        return None
+
+    @staticmethod
+    def _v2_node_outputs(
+        node: WorkflowManifestV2Node,
+        available_outputs: dict[str, dict[str, bool]],
+    ) -> dict[str, bool]:
+        return dict(available_outputs.get(node.id, {}))
+
+    @staticmethod
+    def _v2_memory_source_alias(field_name: str) -> str:
+        aliases = {
+            "risk_summary": "riskSummary",
+            "execution_plan": "executionPlan",
+            "portfolio_slug": "portfolioSlug",
+            "horizon_days": "horizonDays",
+            "decision_summary": "decisionSummary",
+        }
+        return aliases.get(field_name, field_name)
+
     @staticmethod
     def _new_yaml() -> YAML:
         yaml = YAML(typ="rt")
@@ -356,6 +810,15 @@ class WorkflowManifestParser:
             f"Malformed YAML: {problem}",
             path="$",
             location=self._mark_location(mark),
+        )
+
+    @staticmethod
+    def _api_version_message(api_version: object) -> str:
+        if api_version is None:
+            return "Field required"
+        return (
+            "Input should be "
+            f"'{WORKFLOW_MANIFEST_V1_API_VERSION}' or '{WORKFLOW_MANIFEST_V2_API_VERSION}'"
         )
 
     @staticmethod
@@ -382,15 +845,24 @@ class WorkflowManifestParser:
     def _error_loc_to_tokens(loc: object) -> tuple[_PathToken, ...]:
         if not isinstance(loc, Iterable) or isinstance(loc, str | bytes):
             return ()
+        aliases = {
+            "from_": "from",
+            "input_schema": "inputSchema",
+            "api_version": "apiVersion",
+            "post_run_memory": "postRunMemory",
+            "max_iterations": "maxIterations",
+            "benchmark_symbol": "benchmarkSymbol",
+            "risk_summary": "riskSummary",
+            "execution_plan": "executionPlan",
+            "portfolio_slug": "portfolioSlug",
+            "horizon_days": "horizonDays",
+            "decision_summary": "decisionSummary",
+        }
         tokens: list[_PathToken] = []
         for item in loc:
-            if isinstance(item, str) and item == "from_":
-                tokens.append("from")
-            elif isinstance(item, str) and item == "input_schema":
-                tokens.append("inputSchema")
-            elif isinstance(item, str) and item == "api_version":
-                tokens.append("apiVersion")
-            elif isinstance(item, str | int):
+            if isinstance(item, str):
+                tokens.append(aliases.get(item, item))
+            elif isinstance(item, int):
                 tokens.append(item)
         return tuple(tokens)
 
