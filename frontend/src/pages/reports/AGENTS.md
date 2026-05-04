@@ -26,7 +26,7 @@
 - `detail.tsx` renders markdown with `react-markdown` + `remark-gfm` in read mode and switches to a plain textarea for direct content edits.
 - Native markdown downloads always use `downloadReportUrl()` from the API layer instead of hand-built links.
 - Report pages own toasts and route navigation; hooks only manage server-state mutation/query behavior.
-- `list.tsx` surfaces three live report sources (`compiled`, `uploaded`, `external`) with source badges; upload slug autofill is only a suggestion and the backend remains authoritative on normalization and uniqueness.
+- `list.tsx` surfaces the canonical report sources (`compiled`, `uploaded`, `external`, `agent`) with source badges; `source` describes report origin. `external` is reserved for true external user/API-created reports, while agent-created reports use `agent`. Agent memory metadata keeps purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`. Upload slug autofill is only a suggestion and the backend remains authoritative on normalization and uniqueness.
 
 ## ANTI-PATTERNS
 - Do not navigate or fetch reports by numeric id; the routed surface is slug-based.
