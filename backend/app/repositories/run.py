@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.formatting import utcnow
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.repositories.base import BaseRepository
@@ -42,6 +43,7 @@ class RunRepository(BaseRepository[Run]):
             statement = statement.where(self.model.status == status)
 
         statement = statement.order_by(
+            self.model.queued_at.desc(),
             self.model.started_at.desc(),
             self.model.created_at.desc(),
             self.model.id.desc(),
@@ -59,6 +61,24 @@ class RunRepository(BaseRepository[Run]):
             .options(selectinload(self.model.steps).selectinload(RunStep.invocations))
         )
         return self._get_by_statement(statement)
+
+    def claim_next_queued(self, run_id: int | None = None) -> Run | None:
+        statement = select(self.model).where(self.model.status == "queued")
+        if run_id is not None:
+            statement = statement.where(self.model.id == run_id)
+        statement = (
+            statement.order_by(self.model.queued_at.asc(), self.model.id.asc())
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        run = self.session.scalar(statement)
+        if run is None:
+            return None
+        run.status = "running"
+        run.started_at = utcnow()
+        run.error = None
+        run.finished_at = None
+        return self.add(run)
 
     def list_for_target(
         self,
@@ -94,6 +114,7 @@ class RunRepository(BaseRepository[Run]):
         if status is not None:
             statement = statement.where(self.model.status == status)
         statement = statement.order_by(
+            self.model.queued_at.desc(),
             self.model.started_at.desc(),
             self.model.created_at.desc(),
             self.model.id.desc(),

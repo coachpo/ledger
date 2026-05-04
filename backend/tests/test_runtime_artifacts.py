@@ -223,10 +223,13 @@ def _create_paused_workflow_run(
     workflow_id: int,
     input_payload: dict[str, Any],
 ) -> int:
-    monkeypatch.setattr(RunService, "_dispatch_run_in_background", lambda self, run_id: None)
-    response = client.post(f"/api/workflows/{workflow_id}/runs", json=input_payload)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    response = client.post(
+        f"/api/workflows/{workflow_id}/launches",
+        json={"version": 1, "parameters": input_payload},
+    )
     assert response.status_code == 201, response.json()
-    assert response.json()["status"] == "running"
+    assert response.json()["status"] == "queued"
     return int(response.json()["id"])
 
 
@@ -253,7 +256,7 @@ def _wait_for_agent_platform_run_detail(
         body = response.json()
         assert isinstance(body, dict)
         last_body = body
-        if body["status"] != "running":
+        if body["status"] not in {"queued", "running"}:
             return body
         time.sleep(0.02)
     assert last_body is not None
@@ -616,7 +619,13 @@ def test_agent_platform_run_persists_explicit_final_output_step(
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AMD"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run_detail(client, trigger.json()["id"])
 
@@ -719,7 +728,13 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "SHOP"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "SHOP"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run_detail(client, trigger.json()["id"])
 
@@ -885,7 +900,13 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "INTC"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "INTC"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run_detail(client, trigger.json()["id"])
 
@@ -980,7 +1001,13 @@ def test_agent_platform_run_persists_missing_output_schema_failure(
         session.delete(output_schema_row)
         session.commit()
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AMD"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run_detail(client, run_id)
@@ -1028,7 +1055,13 @@ def test_agent_platform_run_persists_missing_model_connection_failure(
         session.delete(connection_row)
         session.commit()
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "IBM"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "IBM"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run_detail(client, run_id)
@@ -1074,7 +1107,13 @@ def test_agent_platform_run_persists_missing_api_key_failure(
             connection=connection,
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NFLX"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NFLX"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run_detail(client, run_id)
@@ -1173,7 +1212,13 @@ def test_agent_platform_run_persists_redacted_provider_failure_metadata(
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AMD"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run_detail(client, run_id)

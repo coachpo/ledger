@@ -24,6 +24,7 @@ from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.workflow import WorkflowRepository
+from app.schemas.run import RunStatus
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
 
@@ -207,7 +208,7 @@ def _build_agent_platform_run(
     status: str,
     total_tokens: int,
     total_cost_usd: Decimal,
-    started_at: datetime,
+    started_at: datetime | None,
     finished_at: datetime | None,
     trace_id: str | None,
     final_output: object | None,
@@ -651,6 +652,18 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             trace_id="trace-older",
             final_output=None,
         )
+        earlier_run.queued_at = datetime(2026, 4, 19, 8, 59, tzinfo=UTC_TZ)
+        queued_run = _build_agent_platform_run(
+            workflow=workflow,
+            status=RunStatus.QUEUED.value,
+            total_tokens=0,
+            total_cost_usd=Decimal("0"),
+            started_at=None,
+            finished_at=None,
+            trace_id=None,
+            final_output=None,
+        )
+        queued_run.queued_at = datetime(2026, 4, 19, 11, 0, tzinfo=UTC_TZ)
         latest_run = _build_agent_platform_run(
             workflow=workflow,
             status="succeeded",
@@ -661,7 +674,8 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             trace_id="trace-latest",
             final_output={"headline": "Buy"},
         )
-        session.add_all([earlier_run, latest_run])
+        latest_run.queued_at = datetime(2026, 4, 19, 9, 59, tzinfo=UTC_TZ)
+        session.add_all([earlier_run, latest_run, queued_run])
         session.flush()
         latest_step = RunStep(
             run_id=latest_run.id,
@@ -714,6 +728,11 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             target_key="market_review",
             status="succeeded",
         )
+        queued_runs = run_repo.list_all(
+            target_kind="workflow",
+            target_key="market_review",
+            status="queued",
+        )
         latest_for_workflow = run_repo.get_latest_for_target(
             target_kind="workflow",
             target_key="market_review",
@@ -736,6 +755,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             )
         )
         assert "perStepOutputs" not in serialized_detail
+        assert serialized_detail["queuedAt"] == "2026-04-19T09:59:00Z"
         assert serialized_detail["steps"][0]["index"] == 1
         assert serialized_detail["steps"][0]["invocations"][0]["traceSpanId"] == "span-latest"
         assert serialized_detail["steps"][0]["invocations"][0]["costUsd"] == "0.15000000"
@@ -743,7 +763,8 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert run_detail.total_cost_usd == Decimal("0.15000000")
         assert run_detail.trace_id == "trace-latest"
         assert run_detail.final_output == {"headline": "Buy"}
-        assert [run.id for run in listed_runs] == [latest_run.id, earlier_run.id]
+        assert [run.id for run in listed_runs] == [queued_run.id, latest_run.id, earlier_run.id]
         assert [run.id for run in filtered_runs] == [latest_run.id]
+        assert [run.id for run in queued_runs] == [queued_run.id]
         assert latest_for_workflow is not None
-        assert latest_for_workflow.id == latest_run.id
+        assert latest_for_workflow.id == queued_run.id
