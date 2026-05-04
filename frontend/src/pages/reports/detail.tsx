@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { useReport, useUpdateReport } from "@/hooks/use-reports";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
+import { getReportSourceLabel } from "@/lib/report-grouping";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -63,12 +64,7 @@ export function ReportDetailPage() {
     );
   }
 
-  const sourceLabel =
-    report.source === "uploaded"
-      ? "Uploaded"
-      : report.source === "external"
-        ? "External"
-        : "Compiled";
+  const sourceLabel = getReportSourceLabel(report.source);
   const sourceBadgeVariant = report.source === "uploaded" ? "secondary" : "outline";
 
   return (

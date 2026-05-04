@@ -33,7 +33,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type GroupByOption, GROUP_BY_LABELS, filterReports, groupReports, type SortField, type SortDirection, sortReports } from "@/lib/report-grouping";
+import { type GroupByOption, GROUP_BY_LABELS, filterReports, getReportSourceLabel, groupReports, type SortField, type SortDirection, sortReports } from "@/lib/report-grouping";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 
@@ -263,12 +263,7 @@ export function ReportListPage() {
               <CollapsibleContent className={viewMode === "cards" ? "space-y-2" : ""}>
                 {viewMode === "cards" ? (
                   sortedReports.map((report) => {
-                    const sourceLabel =
-                      report.source === "uploaded"
-                        ? "Uploaded"
-                        : report.source === "external"
-                          ? "External"
-                          : "Compiled";
+                    const sourceLabel = getReportSourceLabel(report.source);
                     const sourceBadgeVariant = report.source === "uploaded" ? "secondary" : "outline";
 
                     return (
@@ -347,12 +342,7 @@ export function ReportListPage() {
                       </TableHeader>
                       <TableBody>
                         {sortedReports.map((report) => {
-                          const sourceLabel =
-                            report.source === "uploaded"
-                              ? "Uploaded"
-                              : report.source === "external"
-                                ? "External"
-                                : "Compiled";
+                          const sourceLabel = getReportSourceLabel(report.source);
                           const sourceBadgeVariant = report.source === "uploaded" ? "secondary" : "outline";
                           
                           return (
