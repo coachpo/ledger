@@ -6,7 +6,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 - `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
-- `docs/` — agent-platform design, UI, migration, and retained cutover-reference notes; secondary to live code
+- `docs/` — live product, platform, API, data-model, test, and runtime-input reference docs
 - `.github/workflows/` — root CI, Docker image, and cleanup workflows
 - `start.sh` — local full-stack startup helper with backend/frontend/db fallback logic
 
@@ -90,6 +90,8 @@ Use this path only if you do not want `./start.sh` managing the stack for you.
 (cd backend && docker compose up -d db)
 ```
 
+Backend compose is DB-only and exposes Postgres on `${LEDGER_DB_PORT:-25432}`.
+
 ### 2. Start the backend
 
 ```bash
@@ -130,9 +132,10 @@ Visit `http://127.0.0.1:25173/`.
 
 ## CI/CD Workflows
 
-- `ci.yml` runs root validation: version sync, backend quality, frontend quality, and frontend E2E
-- `docker-images.yml` builds backend and frontend container images for GitHub Container Registry
-- `cleanup.yml` deletes old workflow runs and untagged container packages
+- `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E
+- Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`
+- `docker-images.yml` builds backend and frontend linux/arm64 images for GitHub Container Registry
+- `cleanup.yml` keeps at least 3 recent workflow runs and deletes untagged backend/frontend container packages
 
 ## Versioning
 
@@ -146,5 +149,7 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 ## More Detail
 
 - `backend/README.md` covers backend-specific development details
-- `AGENTS.md` maps the repo’s live surfaces and nested documentation hierarchy
-- `docs/ledger-agent-platform-prd.md`, `docs/ledger-agent-platform-spec.md`, `docs/ledger-agent-platform-design.md`, `docs/ledger-agent-platform-ui.md`, and `docs/ledger-agent-platform-migration.md` capture the current agent-platform design, UI, and cutover notes
+- `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
+- `docs/prd.md`, `docs/spec.md`, `docs/requirements.md`, `docs/api-design.md`, and `docs/data-model.md` are current live references
+- `docs/ledger-agent-platform-prd.md`, `docs/ledger-agent-platform-spec.md`, `docs/ledger-agent-platform-design.md`, `docs/ledger-agent-platform-ui.md`, and `docs/ledger-agent-platform-migration.md` are current platform references
+- `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata

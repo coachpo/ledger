@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-03
-**Commit:** 1f1e841
+**Generated:** 2026-05-04
+**Commit:** b4ac445
 **Branch:** main
 
 ## OVERVIEW
@@ -52,7 +52,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 ledger/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # retained orchestration cutover-reference notes; secondary to live code
+├── docs/                 # live product, platform, API, data-model, test, and runtime-input docs
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
 └── start.sh              # local orchestrator with backend/frontend/db reuse and fallback ports
 ```
@@ -72,7 +72,7 @@ ledger/
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts` | markdown reports, compile preview, runtime input maps |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_agent_manifest_*.py`, `backend/tests/test_workflow_manifest_*.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_memory_reports.py` | preserved v1 CRUD plus manifest, runtime, MCP, memory, platform, and cutover regression coverage |
-| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, backend quality, frontend quality, frontend E2E, image publish, cleanup |
+| CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, arm64 GHCR images, cleanup |
 
 ## CODE MAP
 | Symbol / Entry | Location | Role |
@@ -131,5 +131,6 @@ ledger/
 - Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
-- `docs/` contains retained orchestration cutover-reference docs (`ledger-orchestration-product-*.md`); keep them secondary to live code and don’t create nested AGENTS docs there.
-- `.github/workflows/` holds CI and release automation only. The root docs already cover that area, so no child AGENTS docs belong there.
+- Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
+- Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
+- `docs/` contains live product, platform, API, data-model, test, and runtime-input docs; live code remains source of truth, and no nested AGENTS docs belong there.
