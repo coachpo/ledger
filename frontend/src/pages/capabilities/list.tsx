@@ -92,6 +92,12 @@ export function CapabilitiesListPage() {
           {capabilities.map((capability) => (
             <PlatformResourceCard
               key={capability.id}
+              density="compact"
+              primaryAction={{
+                kind: "link",
+                label: `Open capability ${capability.name}`,
+                to: `/capabilities/${capability.id}/edit`,
+              }}
               testId={`capabilities-row-${capability.key}`}
               title={capability.name}
               subtitle={capability.key}
