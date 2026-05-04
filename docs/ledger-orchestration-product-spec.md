@@ -28,7 +28,9 @@ Frontend routes from `frontend/src/routes.ts`:
 - `/output-schemas/:schemaId/edit`
 - `/workflows`
 - `/workflows/new`
+- `/workflows/:workflowId`
 - `/workflows/:workflowId/edit`
+- `/workflows/:workflowId/run`
 - `/runs`
 - `/runs/:runId`
 
@@ -39,7 +41,14 @@ Backend API routes:
 - `/api/mcp-servers`
 - `/api/output-schemas`
 - `/api/workflows`
+- `/api/workflows/{workflowId}/launch`
+- `/api/workflows/{workflowId}/versions`
+- `/api/workflows/{workflowId}/launches`
 - `/api/runs`
+- `/api/runs/{runId}/rerun-draft`
+- `/api/runs/{runId}/reruns`
+- `/api/runs/{runId}/step-replay-draft`
+- `/api/runs/{runId}/step-replays`
 
 ## Response and compatibility notes
 
@@ -48,7 +57,9 @@ Backend API routes:
 - Frontend `/capabilities*` routes are canonical. `/skills*` routes are retired and unsupported.
 - Manifests use `spec.capabilities`; `spec.skills` is retired and rejected.
 - Runtime tool keys and OpenAI function names stay unchanged.
+- Workflow launches use the strict `{version, parameters}` request envelope and create queued runs.
 - Runs expose typed input, per-step outputs, final output, status, timing, and trace identifiers through the current run schemas.
+- Reruns and step replays replace the retired fork terminology in live API and UI docs.
 - Retired `/api/v1/orchestration/*` and `/api/v2/*` surfaces are not part of the current contract and should not be treated as live documentation targets.
 
 ## Evidence and grounding
