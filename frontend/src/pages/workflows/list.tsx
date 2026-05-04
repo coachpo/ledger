@@ -3,15 +3,13 @@ import { useNavigate } from "react-router";
 
 import { useWorkflows } from "@/hooks/use-workflows";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
-import { PlatformResourceBadges } from "../platform-resource-shared";
+import {
+  PlatformResourceBadges,
+  PlatformResourceCard,
+  PlatformResourceList,
+} from "../platform-resource-shared";
 
 export function WorkflowsListPage() {
   const navigate = useNavigate();
@@ -28,7 +26,12 @@ export function WorkflowsListPage() {
             and a review-first path into the new runs monitor.
           </p>
         </div>
-        <Button data-testid="workflows-new" size="sm" onClick={() => navigate("/workflows/new")}>
+        <Button
+          className="cursor-pointer"
+          data-testid="workflows-new"
+          size="sm"
+          onClick={() => navigate("/workflows/new")}
+        >
           <Plus data-icon="inline-start" />
           New Workflow
         </Button>
@@ -61,18 +64,12 @@ export function WorkflowsListPage() {
       ) : null}
 
       {!workflowsQuery.isPending && !workflowsQuery.isError && workflows.length > 0 ? (
-        <div className="grid gap-3">
+        <PlatformResourceList>
           {workflows.map((workflow) => (
-            <Card key={workflow.id} data-testid={`workflows-row-${workflow.key}`}>
-              <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col gap-1">
-                    <CardTitle className="text-base">{workflow.name}</CardTitle>
-                    <CardDescription>{workflow.key}</CardDescription>
-                  </div>
-                  <PlatformResourceBadges status={workflow.status} version={workflow.version} />
-                </div>
-                <div className="flex flex-wrap gap-2">
+            <PlatformResourceCard
+              key={workflow.id}
+              actions={
+                <>
                   <Button
                     data-testid={`workflows-open-${workflow.key}`}
                     size="sm"
@@ -91,17 +88,21 @@ export function WorkflowsListPage() {
                     <PlayCircle data-icon="inline-start" />
                     Run Now
                   </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
-                <p>{workflow.description || "No description provided."}</p>
-                <p>
+                </>
+              }
+              badges={<PlatformResourceBadges status={workflow.status} version={workflow.version} />}
+              description={workflow.description || "No description provided."}
+              metadata={
+                <p className="text-sm text-muted-foreground">
                   {workflow.steps.length} step(s) · Aggregate budget {workflow.aggregateBudgetUsd}
                 </p>
-              </CardContent>
-            </Card>
+              }
+              subtitle={workflow.key}
+              testId={`workflows-row-${workflow.key}`}
+              title={workflow.name}
+            />
           ))}
-        </div>
+        </PlatformResourceList>
       ) : null}
     </div>
   );
