@@ -449,6 +449,55 @@ class WorkflowListRead(CamelModel):
     items: list[WorkflowRead]
 
 
+class WorkflowVersionRead(CamelModel):
+    id: int
+    key: str
+    version: int = Field(ge=1)
+    status: WorkflowStatus
+    name: str
+    description: str
+    input_schema: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class WorkflowVersionListRead(CamelModel):
+    items: list[WorkflowVersionRead]
+
+
+class WorkflowLaunchRead(CamelModel):
+    workflow_id: int
+    key: str
+    version: int = Field(ge=1)
+    name: str
+    description: str
+    input_schema: dict[str, object]
+
+
+class WorkflowLaunchCreateRequest(CamelModel):
+    version: int = Field(ge=1)
+    parameters: dict[str, object]
+
+
+class WorkflowLaunchCreateResponse(CamelModel):
+    id: int
+    status: Literal["queued", "running", "succeeded", "failed"]
+    workflow_id: int
+    workflow_key: str
+    workflow_version: int = Field(ge=1)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
 WorkflowRead.model_rebuild()
 WorkflowCreate.model_rebuild()
 WorkflowUpdate.model_rebuild()
@@ -459,7 +508,12 @@ WorkflowUpdateRequest.model_rebuild()
 __all__ = [
     "WorkflowCreate",
     "WorkflowCreateRequest",
+    "WorkflowLaunchCreateRequest",
+    "WorkflowLaunchCreateResponse",
+    "WorkflowLaunchRead",
     "WorkflowListRead",
+    "WorkflowVersionListRead",
+    "WorkflowVersionRead",
     "WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH",
     "WorkflowManifestValidationMetadata",
     "WorkflowManifestValidationRead",

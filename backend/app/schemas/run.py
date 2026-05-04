@@ -11,6 +11,7 @@ from app.schemas.common import CamelModel, ensure_timezone
 
 
 class RunStatus(str, Enum):  # noqa: UP042
+    QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -191,7 +192,8 @@ class RunListItemRead(CamelModel):
     total_tokens: int = Field(ge=0)
     total_cost_usd: Decimal = Field(ge=Decimal("0"))
     trace_id: str | None = None
-    started_at: datetime
+    queued_at: datetime
+    started_at: datetime | None = None
     finished_at: datetime | None = None
 
     @model_validator(mode="before")
@@ -199,7 +201,7 @@ class RunListItemRead(CamelModel):
     def coerce_target_identity(cls, value: Any) -> Any:
         return _coerce_legacy_target_identity(value)
 
-    @field_validator("started_at", "finished_at")
+    @field_validator("queued_at", "started_at", "finished_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
@@ -234,7 +236,7 @@ class RunRead(CamelModel):
     input: dict[str, Any]
     source_run_id: int | None = None
     lineage_root_run_id: int | None = None
-    forked_from_step_index: int | None = Field(default=None, ge=1)
+    replay_step_index: int | None = Field(default=None, ge=1)
     resume_step_index: int = Field(ge=1)
     final_output: Any | None = None
     status: RunStatus
@@ -246,7 +248,8 @@ class RunRead(CamelModel):
     executed_cost_usd: Decimal = Field(ge=Decimal("0"))
     trace_id: str | None = None
     error: str | None = None
-    started_at: datetime
+    queued_at: datetime
+    started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -258,7 +261,7 @@ class RunRead(CamelModel):
     def coerce_target_identity(cls, value: Any) -> Any:
         return _coerce_legacy_target_identity(value)
 
-    @field_validator("started_at", "finished_at", "created_at", "updated_at")
+    @field_validator("queued_at", "started_at", "finished_at", "created_at", "updated_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
@@ -266,43 +269,32 @@ class RunRead(CamelModel):
         return ensure_timezone(value)
 
 
-class RunForkInvocationDraftRead(CamelModel):
-    source_invocation_id: int
-    step_index: int = Field(ge=1)
-    slot: str = Field(min_length=1)
-    agent_key: str
-    resolved_input: dict[str, Any]
-    output: Any
-
-
-class RunForkStepDraftRead(CamelModel):
-    source_run_step_id: int
-    index: int = Field(ge=1)
-    invocations: list[RunForkInvocationDraftRead]
-
-
-class RunForkDraftRead(CamelModel):
+class RunRerunDraftRead(CamelModel):
     source_run_id: int
-    fork_step_index: int = Field(ge=1)
     target_kind: RunTargetKind
     target_id: int
     target_key: str
     target_version: int = Field(ge=1)
-    input: dict[str, Any]
-    steps: list[RunForkStepDraftRead]
+    parameters: dict[str, object]
 
 
-class RunForkInvocationEdit(CamelModel):
-    step_index: int = Field(ge=1)
-    slot: str = Field(min_length=1)
-    resolved_input: dict[str, Any] | None = None
-    output: Any | None = None
+class RunRerunCreateRequest(CamelModel):
+    parameters: dict[str, object]
 
 
-class RunForkCreateRequest(CamelModel):
-    fork_step_index: int = Field(ge=1)
-    input: dict[str, Any] | None = None
-    invocation_edits: list[RunForkInvocationEdit] = Field(default_factory=list)
+class RunStepReplayDraftRead(CamelModel):
+    source_run_id: int
+    replay_step_index: int = Field(ge=1)
+    target_kind: RunTargetKind
+    target_id: int
+    target_key: str
+    target_version: int = Field(ge=1)
+    parameters: dict[str, object]
+
+
+class RunStepReplayCreateRequest(CamelModel):
+    replay_step_index: int = Field(ge=1)
+    parameters: dict[str, object]
 
 
 __all__ = [
@@ -316,11 +308,10 @@ __all__ = [
     "RunListRead",
     "RunMemoryArtifactRead",
     "RunRead",
-    "RunForkCreateRequest",
-    "RunForkDraftRead",
-    "RunForkInvocationDraftRead",
-    "RunForkInvocationEdit",
-    "RunForkStepDraftRead",
+    "RunRerunCreateRequest",
+    "RunRerunDraftRead",
+    "RunStepReplayCreateRequest",
+    "RunStepReplayDraftRead",
     "RunStatus",
     "RunStepOrigin",
     "RunStepRead",
