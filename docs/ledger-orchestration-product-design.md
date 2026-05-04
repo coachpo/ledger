@@ -15,10 +15,11 @@ This file is retained as a cutover reference only. The orchestration, Studio, Tr
 ## Runtime model
 
 The shipped runtime path is the stateless agent platform:
-1. a saved workflow version is triggered through `/api/workflows/{id}/runs`
-2. the backend persists the run row and executes the workflow in-process
-3. run detail is exposed through `/api/runs/{id}` with per-step outputs and trace linkage
-4. preserved portfolio, template, and report routes remain available beside the platform routes
+1. workflow launch metadata is read through `/api/workflows/{workflowId}/launch`, version history through `/api/workflows/{workflowId}/versions`, and new launches through `POST /api/workflows/{workflowId}/launches`
+2. launch creation accepts the strict `{version, parameters}` envelope and queues a run for execution
+3. run detail is exposed through `/api/runs/{id}` with queued/running/terminal status, per-step outputs, and trace linkage
+4. rerun and step replay use `/api/runs/{runId}/rerun-draft`, `/api/runs/{runId}/reruns`, `/api/runs/{runId}/step-replay-draft`, and `/api/runs/{runId}/step-replays`
+5. preserved portfolio, template, and report routes remain available beside the platform routes
 
 ## Design constraints
 
