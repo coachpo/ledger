@@ -68,6 +68,12 @@ export function WorkflowsListPage() {
           {workflows.map((workflow) => (
             <PlatformResourceCard
               key={workflow.id}
+              density="compact"
+              primaryAction={{
+                kind: "link",
+                label: `Open workflow detail for ${workflow.name}`,
+                to: `/workflows/${workflow.id}`,
+              }}
               actions={
                 <>
                   <Button
