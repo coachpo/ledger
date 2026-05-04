@@ -16,9 +16,10 @@ import type {
   PortfolioWriteInput,
 } from "@/lib/types/portfolio";
 
+import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,19 +78,32 @@ export function PortfolioListPage() {
           </Card>
         ) : null}
         {portfolios.map((portfolio) => (
-          <Card key={portfolio.id} className="transition-colors hover:bg-accent/50">
-            <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <CardTitle className="text-sm font-medium tracking-tight">{portfolio.name}</CardTitle>
-                  <Badge variant="secondary">{portfolio.baseCurrency}</Badge>
-                  <Badge variant="outline">{portfolio.positionCount} pos</Badge>
-                  <Badge variant="outline">{portfolio.balanceCount} bal</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground truncate">{portfolio.description || "No description"}</p>
-                <p className="text-[11px] text-muted-foreground">Updated {formatDateTime(portfolio.updatedAt)}</p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+          <ResourceRowCard
+            key={portfolio.id}
+            density="compact"
+            title={portfolio.name}
+            badges={(
+              <>
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-medium">
+                  {portfolio.baseCurrency}
+                </Badge>
+                <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-medium">
+                  {portfolio.positionCount} pos
+                </Badge>
+                <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-medium">
+                  {portfolio.balanceCount} bal
+                </Badge>
+              </>
+            )}
+            description={portfolio.description || "No description"}
+            metadata={<>Updated {formatDateTime(portfolio.updatedAt)}</>}
+            primaryAction={{
+              kind: "link",
+              label: `Open portfolio ${portfolio.name}`,
+              to: `/portfolios/${portfolio.id}`,
+            }}
+            actions={(
+              <>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button aria-label={`Open actions for ${portfolio.name}`} size="icon" variant="ghost" className="size-7">
@@ -115,9 +129,9 @@ export function PortfolioListPage() {
                 <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => navigate(`/portfolios/${portfolio.id}`)}>
                   Open
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </>
+            )}
+          />
         ))}
       </div>
 
