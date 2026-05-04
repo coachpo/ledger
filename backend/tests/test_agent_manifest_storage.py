@@ -24,6 +24,7 @@ from app.models.agent import (
 )
 from app.models.model_connection import ModelConnection
 from app.schemas.agent import AgentCreate, AgentUpdate
+from app.services.agent_manifest_decompiler import decompile_agent_model
 from app.services.agent_service import AgentService
 from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from tests.test_agent_manifest_compiler import _expected_payload, _seed_manifest_refs
@@ -73,6 +74,50 @@ def test_agent_service_persists_manifest_source_and_compiled_projection(
         )
         assert "apiKey" not in json.dumps(created_row.model_connection_snapshot)
         assert created_row.output_schema_version == 3
+
+
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_reasoning_effort"),
+    [(None, None), ("custom-exact", "custom-exact")],
+)
+def test_agent_manifest_save_read_decompile_preserves_reasoning_snapshot(
+    session_factory: sessionmaker[Session],
+    reasoning_effort: str | None,
+    expected_reasoning_effort: str | None,
+) -> None:
+    with session_factory() as session:
+        refs = _seed_manifest_refs(session)
+        connection = cast(ModelConnection, refs["connection"])
+        connection.reasoning_effort = reasoning_effort
+        session.commit()
+
+        service = _agent_service(session)
+        created = service.create_agent_from_manifest(_valid_manifest_source())
+        created_payload = created.model_dump(mode="json", by_alias=True)
+        created_row = session.get(Agent, created.id)
+
+        assert created_row is not None
+        assert created.model_connection_snapshot.reasoning_effort == expected_reasoning_effort
+        assert (
+            created_payload["modelConnectionSnapshot"]["reasoningEffort"]
+            == expected_reasoning_effort
+        )
+        assert (
+            created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
+        )
+
+        decompiled = decompile_agent_model(created_row, session)
+        session.refresh(created_row)
+        reread = service.get_agent(created.id)
+
+        assert decompiled.payload["modelConnectionId"] == connection.id
+        assert decompiled.payload["key"] == "research_agent"
+        assert "reasoningEffort" not in decompiled.source
+        assert "reasoning_effort" not in decompiled.source
+        assert (
+            created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
+        )
+        assert reread.model_connection_snapshot.reasoning_effort == expected_reasoning_effort
 
 
 def test_agent_service_structured_create_write_is_rejected_without_persisting_row(

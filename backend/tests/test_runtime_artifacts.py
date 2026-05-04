@@ -17,7 +17,7 @@ from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
 from app.models.workflow import Workflow
-from app.schemas.workflow import WorkflowCreate
+from app.schemas.workflow import WorkflowCreate, WorkflowRead
 from app.services.execution_plan_builder import ExecutionPlanBuilder
 from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
 from app.services.run_service import RunService
@@ -81,6 +81,7 @@ def _build_model_connection(
     api_key: str | None = "sk-artifact-secret-1234",
     base_url: str = "https://api.openai.com/v1",
     model_id: str = "gpt-5.4-mini",
+    reasoning_effort: str | None = "medium",
 ) -> ModelConnection:
     payload = {} if api_key is None else {"apiKey": api_key}
     return ModelConnection(
@@ -92,7 +93,7 @@ def _build_model_connection(
         organization=None,
         project=None,
         model_id=model_id,
-        reasoning_effort="medium",
+        reasoning_effort=reasoning_effort,
         timeout_seconds=60,
         secret_payload=payload,
         has_api_key=api_key is not None,
@@ -158,7 +159,7 @@ def _create_single_agent_runtime_workflow(
     agent_key: str,
     workflow_key: str,
     connection: ModelConnection,
-) -> tuple[Any, Agent, OutputSchema]:
+) -> tuple[WorkflowRead, Agent, OutputSchema]:
     output_schema = _build_agent_platform_output_schema(
         key=f"{agent_key}_schema",
         version=1,
@@ -214,6 +215,48 @@ def _create_single_agent_runtime_workflow(
         )
     )
     return workflow, agent, output_schema
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort", "expected_reasoning_effort"),
+    [("null", None, None), ("custom", "custom-exact", "custom-exact")],
+)
+def test_workflow_plan_inherits_agent_reasoning_snapshot_without_workflow_setting(
+    session_factory: sessionmaker[Session],
+    suffix: str,
+    reasoning_effort: str | None,
+    expected_reasoning_effort: str | None,
+) -> None:
+    with session_factory() as session:
+        workflow, agent, _output_schema = _create_single_agent_runtime_workflow(
+            session,
+            agent_key=f"workflow_reasoning_{suffix}_agent",
+            workflow_key=f"workflow_reasoning_{suffix}_workflow",
+            connection=_build_model_connection(
+                name=f"Workflow Reasoning {suffix.title()} Connection",
+                reasoning_effort=reasoning_effort,
+            ),
+        )
+        workflow_row = session.get(Workflow, workflow.id)
+        agent_row = session.get(Agent, agent.id)
+        assert workflow_row is not None
+        assert agent_row is not None
+        assert agent_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
+
+        workflow_storage = json.dumps(
+            {"steps": workflow_row.steps, "outputSpec": workflow_row.output_spec},
+            sort_keys=True,
+        )
+        assert "reasoningEffort" not in workflow_storage
+        assert "reasoning_effort" not in workflow_storage
+        assert "modelConnectionSnapshot" not in workflow_storage
+        assert "model_connection_snapshot" not in workflow_storage
+
+        plan = ExecutionPlanBuilder(session).build_target_plan("workflow", workflow.id)
+        planned_agent = plan.steps[0].agents[0]
+        assert planned_agent.agent_id == agent.id
+        assert planned_agent.agent_key == agent.key
+        assert "reasoning_effort" not in planned_agent.__dataclass_fields__
 
 
 def _create_paused_workflow_run(
