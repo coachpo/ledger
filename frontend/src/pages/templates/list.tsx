@@ -8,8 +8,9 @@ import { formatDateTime } from "@/lib/format";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
+import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -109,17 +110,18 @@ export function TemplateListPage() {
         ) : null}
         {viewMode === "cards" ? (
           filteredTemplates.map((template) => (
-            <Card key={template.id} className="transition-colors hover:bg-accent/50">
-              <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0 space-y-0.5">
-                  <CardTitle className="text-sm font-medium tracking-tight">
-                    {template.name}
-                  </CardTitle>
-                  <p className="text-[11px] text-muted-foreground">
-                    Updated {formatDateTime(template.updatedAt)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+            <ResourceRowCard
+              key={template.id}
+              density="compact"
+              title={template.name}
+              metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
+              primaryAction={{
+                kind: "link",
+                label: `Open editor for ${template.name}`,
+                to: `/templates/${template.id}/edit`,
+              }}
+              actions={(
+                <>
                   <Button
                     className="h-7 text-xs"
                     size="sm"
@@ -136,9 +138,9 @@ export function TemplateListPage() {
                   >
                     Open Editor
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </>
+              )}
+            />
           ))
         ) : filteredTemplates.length > 0 ? (
           <div className="rounded-md border">
