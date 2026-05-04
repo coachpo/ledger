@@ -134,42 +134,44 @@ export function ModelConnectionsListPage() {
                   </div>
                 }
                 metadata={
-                  <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                    <div className="min-w-0 shrink grow basis-full sm:basis-[calc(50%-0.625rem)] xl:basis-0">
-                      <dt className="inline font-medium text-foreground">Base URL:</dt>{" "}
-                      <dd className="inline break-all">{connection.baseUrl}</dd>{" "}
-                      <dd className="inline break-words">· {organizationProject}</dd>
+                  <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground">Base URL:</span>{" "}
+                      <span className="break-all">{connection.baseUrl}</span>{" "}
+                      <span className="break-words">· {organizationProject}</span>
                     </div>
-                    <div className="min-w-0 shrink grow basis-full sm:basis-[calc(50%-0.625rem)] xl:basis-0">
-                      <dt className="inline font-medium text-foreground">Reasoning:</dt>{" "}
-                      <dd className="inline">{formatReasoningEffort(connection.reasoningEffort)}</dd>{" "}
-                      <dd className="inline break-words">· {API_STYLE_LABELS[connection.apiStyle]}</dd>{" "}
-                      <dd className="inline">· {connection.timeoutSeconds}s timeout</dd>
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground">Reasoning:</span>{" "}
+                      <span>{formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
+                      <span aria-hidden="true">·</span>{" "}
+                      <span className="break-words">{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
+                      <span aria-hidden="true">·</span>{" "}
+                      <span>{connection.timeoutSeconds}s timeout</span>
                     </div>
-                    <div className="min-w-0 shrink grow basis-full sm:basis-[calc(50%-0.625rem)] xl:basis-0">
-                      <dt className="inline font-medium text-foreground">API Key:</dt>{" "}
-                      <dd className="inline">{connection.hasApiKey ? "Configured" : "Missing"}</dd>{" "}
-                      <dd className="inline break-words">
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground">API Key:</span>{" "}
+                      <span>{connection.hasApiKey ? "Configured" : "Missing"}</span>{" "}
+                      <span className="break-words">
                         ·{" "}
                         {connection.apiKeyLast4
                           ? `Ending in ••••${connection.apiKeyLast4}`
                           : "No API key saved."}
-                      </dd>
+                      </span>
                     </div>
-                    <div className="min-w-0 shrink grow basis-full sm:basis-[calc(50%-0.625rem)] xl:basis-0">
-                      <dt className="inline font-medium text-foreground">Last Test:</dt>{" "}
-                      <dd className="inline">{formatLastTestStatus(connection)}</dd>{" "}
-                      <dd className="inline break-words">
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground">Last Test:</span>{" "}
+                      <span>{formatLastTestStatus(connection)}</span>{" "}
+                      <span className="break-words">
                         ·{" "}
                         {connection.lastTestedAt
                           ? formatDateTime(connection.lastTestedAt)
                           : "No connection test recorded."}
-                      </dd>
+                      </span>
                       {connection.lastTestMessage ? (
-                        <dd className="inline break-words"> · {connection.lastTestMessage}</dd>
+                        <span className="break-words"> · {connection.lastTestMessage}</span>
                       ) : null}
                     </div>
-                  </dl>
+                  </div>
                 }
                 actions={
                   <>
