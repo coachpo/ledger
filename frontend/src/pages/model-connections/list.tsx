@@ -122,7 +122,7 @@ export function ModelConnectionsListPage() {
                 testId={`model-connections-row-${connection.id}`}
                 title={connection.name}
                 subtitle={connection.modelId}
-                description={connection.description || "No description provided."}
+                description={connection.description}
                 badges={
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge
