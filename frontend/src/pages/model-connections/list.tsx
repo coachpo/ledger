@@ -47,6 +47,10 @@ function renderLastTestBadge(connection: ModelConnectionListItemRead) {
   return <Badge variant="outline">Not tested</Badge>;
 }
 
+function formatReasoningEffort(value: ModelConnectionListItemRead["reasoningEffort"]): string {
+  return value ?? "Omitted";
+}
+
 export function ModelConnectionsListPage() {
   const navigate = useNavigate();
   const connectionsQuery = useModelConnections();
@@ -157,8 +161,8 @@ export function ModelConnectionsListPage() {
                             Reasoning
                           </dt>
                           <dd>
-                            <Badge variant="outline" className="capitalize">
-                              {connection.reasoningEffort}
+                            <Badge variant="outline">
+                              {formatReasoningEffort(connection.reasoningEffort)}
                             </Badge>
                           </dd>
                           <dd className="break-words text-muted-foreground">

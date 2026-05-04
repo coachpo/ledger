@@ -101,19 +101,26 @@ describe("useModelConnections", () => {
     useCreateModelConnection();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const payload = {
+    const omittedReasoningPayload = {
       baseUrl: "https://api.openai.com/v1",
       key: "primary_openai",
       modelId: "gpt-4.1",
       name: "Primary OpenAI",
-      reasoningEffort: "medium",
+      reasoningEffort: null,
       timeoutSeconds: 60,
     };
+    const customReasoningPayload = {
+      ...omittedReasoningPayload,
+      key: "experimental_openai",
+      reasoningEffort: "xhigh",
+    };
 
-    await mutationOptions.mutationFn?.(payload);
-    expect(apiState.createModelConnectionMock).toHaveBeenCalledWith(payload);
+    await mutationOptions.mutationFn?.(omittedReasoningPayload);
+    await mutationOptions.mutationFn?.(customReasoningPayload);
+    expect(apiState.createModelConnectionMock).toHaveBeenNthCalledWith(1, omittedReasoningPayload);
+    expect(apiState.createModelConnectionMock).toHaveBeenNthCalledWith(2, customReasoningPayload);
 
-    await mutationOptions.onSuccess?.({ id: 9 }, payload);
+    await mutationOptions.onSuccess?.({ id: 9 }, omittedReasoningPayload);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.all,
     });
@@ -126,12 +133,27 @@ describe("useModelConnections", () => {
     useUpdateModelConnection();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const variables = { modelConnectionId: "4", payload: { name: "Updated OpenAI" } };
+    const omittedReasoningVariables = {
+      modelConnectionId: "4",
+      payload: { name: "Updated OpenAI", reasoningEffort: null },
+    };
+    const customReasoningVariables = {
+      modelConnectionId: "4",
+      payload: { name: "Updated OpenAI", reasoningEffort: "xhigh" },
+    };
 
-    await mutationOptions.mutationFn?.(variables);
-    expect(apiState.updateModelConnectionMock).toHaveBeenCalledWith("4", { name: "Updated OpenAI" });
+    await mutationOptions.mutationFn?.(omittedReasoningVariables);
+    await mutationOptions.mutationFn?.(customReasoningVariables);
+    expect(apiState.updateModelConnectionMock).toHaveBeenNthCalledWith(1, "4", {
+      name: "Updated OpenAI",
+      reasoningEffort: null,
+    });
+    expect(apiState.updateModelConnectionMock).toHaveBeenNthCalledWith(2, "4", {
+      name: "Updated OpenAI",
+      reasoningEffort: "xhigh",
+    });
 
-    await mutationOptions.onSuccess?.({ id: 4 }, variables);
+    await mutationOptions.onSuccess?.({ id: 4 }, customReasoningVariables);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.detail("4"),
     });
