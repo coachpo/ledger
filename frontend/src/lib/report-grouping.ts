@@ -1,4 +1,4 @@
-import type { ReportRead } from "@/lib/types/report";
+import type { ReportRead, ReportSource } from "@/lib/types/report";
 
 export type GroupByOption = "none" | "tags" | "source" | "month" | "ticker" | "portfolio";
 
@@ -13,6 +13,17 @@ export const GROUP_BY_LABELS: Record<GroupByOption, string> = {
 
 export type SortField = "name" | "createdAt" | "source";
 export type SortDirection = "asc" | "desc";
+
+export const REPORT_SOURCE_LABELS: Record<ReportSource, string> = {
+  agent: "Agent",
+  compiled: "Compiled",
+  external: "External",
+  uploaded: "Uploaded",
+};
+
+export function getReportSourceLabel(source: ReportSource): string {
+  return REPORT_SOURCE_LABELS[source];
+}
 
 export function filterReports(reports: ReportRead[], query: string): ReportRead[] {
   const q = query.trim().toLowerCase();
@@ -79,12 +90,7 @@ function getGroupKeys(report: ReportRead, groupBy: GroupByOption): string[] {
       return tags.length > 0 ? tags : ["Untagged"];
     }
     case "source": {
-      const labels: Record<string, string> = {
-        compiled: "Compiled",
-        uploaded: "Uploaded",
-        external: "External",
-      };
-      return [labels[report.source] ?? "Unknown"];
+      return [getReportSourceLabel(report.source)];
     }
     case "month": {
       try {
