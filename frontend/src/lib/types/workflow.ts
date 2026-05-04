@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./common";
+import type { RunStatus } from "./run";
 
 export type WorkflowStatus = "draft" | "published" | "deprecated" | "archived";
 export type WorkflowManifestApiVersion = "ledger.workflow/v1" | "ledger.workflow/v2";
@@ -134,7 +135,40 @@ export type WorkflowCreateInput = Partial<WorkflowCompiledCreateInput> & Partial
 
 export type WorkflowUpdateInput = Partial<WorkflowCompiledUpdateInput> & Partial<WorkflowManifestWriteInput>;
 
-export type WorkflowRunCreateInput = UnknownRecord;
+export interface WorkflowLaunchRead {
+  workflowId: number;
+  key: string;
+  version: number;
+  name: string;
+  description: string;
+  inputSchema: UnknownRecord;
+}
+
+export interface WorkflowVersionRead {
+  id: number;
+  key: string;
+  version: number;
+  status: WorkflowStatus;
+  name: string;
+  description: string;
+  inputSchema: UnknownRecord;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowLaunchCreateInput {
+  version: number;
+  parameters: UnknownRecord;
+}
+
+export interface WorkflowLaunchCreateResponse {
+  id: number;
+  status: RunStatus;
+  workflowId: number;
+  workflowKey: string;
+  workflowVersion: number;
+  createdAt: string;
+}
 
 export interface WorkflowManifestDiagnostic {
   severity: WorkflowManifestDiagnosticSeverity;
