@@ -60,6 +60,19 @@ vi.mock("@/hooks/use-model-connections", () => ({
   useUpdateModelConnection: () => ({ isPending: false, mutateAsync: updateModelConnectionMock }),
 }));
 
+function fillRequiredCreateFields() {
+  fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
+  fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
+  fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
+}
+
+async function chooseReasoningEffort(name: RegExp) {
+  const reasoningSelect = screen.getByLabelText(/^Reasoning Effort$/i);
+  reasoningSelect.focus();
+  fireEvent.keyDown(reasoningSelect, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name }));
+}
+
 describe("ModelConnectionsEditorPage", () => {
   beforeEach(() => {
     paramsMock.modelConnectionId = undefined;
@@ -110,6 +123,174 @@ describe("ModelConnectionsEditorPage", () => {
       timeoutSeconds: 60,
     });
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
+  });
+
+  it("offers omit, preset, and custom reasoning effort options", async () => {
+    render(<ModelConnectionsEditorPage />);
+
+    const reasoningSelect = screen.getByLabelText(/^Reasoning Effort$/i);
+    reasoningSelect.focus();
+    fireEvent.keyDown(reasoningSelect, { key: "ArrowDown" });
+
+    expect(await screen.findByRole("option", { name: /^Omit reasoning parameter$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^none$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^minimal$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^low$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^medium$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^high$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^xhigh$/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /^Custom\.\.\.$/ })).toBeVisible();
+    expect(screen.getByText(/Only sent for Responses API/i)).toBeVisible();
+    expect(
+      screen.getByText(
+        /Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings\./i,
+      ),
+    ).toBeVisible();
+  });
+
+  it("submits null reasoning effort when Omit is selected", async () => {
+    createModelConnectionMock.mockResolvedValue({ id: 11 });
+
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    await chooseReasoningEffort(/^Omit reasoning parameter$/);
+
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        key: "primary_openai",
+        name: "Primary OpenAI",
+        apiStyle: "responses",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-4.1",
+        reasoningEffort: null,
+        timeoutSeconds: 60,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: null }),
+    );
+  });
+
+  it("submits literal none reasoning effort as a string", async () => {
+    createModelConnectionMock.mockResolvedValue({ id: 12 });
+
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    await chooseReasoningEffort(/^none$/);
+
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        key: "primary_openai",
+        name: "Primary OpenAI",
+        apiStyle: "responses",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-4.1",
+        reasoningEffort: "none",
+        timeoutSeconds: 60,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: "none" }),
+    );
+  });
+
+  it("trims and submits a custom reasoning effort", async () => {
+    createModelConnectionMock.mockResolvedValue({ id: 13 });
+
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    await chooseReasoningEffort(/^Custom\.\.\.$/);
+    fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
+      target: { value: "  xhigh  " },
+    });
+
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        key: "primary_openai",
+        name: "Primary OpenAI",
+        apiStyle: "responses",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-4.1",
+        reasoningEffort: "xhigh",
+        timeoutSeconds: 60,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    expect(createModelConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: "xhigh" }),
+    );
+  });
+
+  it("requires non-blank custom reasoning effort", async () => {
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    await chooseReasoningEffort(/^Custom\.\.\.$/);
+    fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "Reasoning effort is required when Custom is selected.",
+      ),
+    );
+    expect(createModelConnectionMock).not.toHaveBeenCalled();
+  });
+
+  it("limits custom reasoning effort length", async () => {
+    render(<ModelConnectionsEditorPage />);
+    fillRequiredCreateFields();
+    await chooseReasoningEffort(/^Custom\.\.\.$/);
+    fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
+      target: { value: "x".repeat(129) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("Reasoning effort must be 128 characters or fewer."),
+    );
+    expect(createModelConnectionMock).not.toHaveBeenCalled();
+  });
+
+  it("loads existing custom reasoning effort values into the custom input", () => {
+    paramsMock.modelConnectionId = "4";
+    const customConnection = { ...existingConnection, reasoningEffort: "experimental-reasoning" };
+    useModelConnectionMock.mockImplementation(() => ({
+      data: customConnection,
+      error: null,
+      isError: false,
+      isPending: false,
+    }));
+
+    render(<ModelConnectionsEditorPage />);
+
+    expect(screen.getByLabelText(/^Reasoning Effort$/i)).toHaveTextContent("Custom...");
+    expect(screen.getByLabelText(/^Custom Reasoning Effort$/i)).toHaveValue("experimental-reasoning");
+    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
+      stringifyJson({
+        name: "Primary OpenAI",
+        description: "Production OpenAI connection.",
+        apiStyle: "chat_completions",
+        baseUrl: "https://api.openai.com/v1",
+        organization: "org_live",
+        project: "proj_live",
+        modelId: "gpt-4.1",
+        reasoningEffort: "experimental-reasoning",
+        timeoutSeconds: 90,
+      }),
+    );
   });
 
   it("submits Chat Completions API style when selected", async () => {

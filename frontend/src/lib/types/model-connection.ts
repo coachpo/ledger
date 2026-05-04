@@ -1,5 +1,5 @@
 export type ModelConnectionStatus = "active" | "archived";
-export type ModelConnectionReasoningEffort = "low" | "medium" | "high";
+export type ModelConnectionReasoningEffort = string;
 export type ModelConnectionApiStyle = "responses" | "chat_completions";
 
 export interface ModelConnectionCreateInput {
@@ -10,7 +10,7 @@ export interface ModelConnectionCreateInput {
   organization?: string | null;
   project?: string | null;
   modelId: string;
-  reasoningEffort?: ModelConnectionReasoningEffort;
+  reasoningEffort?: ModelConnectionReasoningEffort | null;
   timeoutSeconds?: number;
   apiStyle?: ModelConnectionApiStyle;
   apiKey?: string;
@@ -23,7 +23,7 @@ export interface ModelConnectionUpdateInput {
   organization?: string | null;
   project?: string | null;
   modelId?: string;
-  reasoningEffort?: ModelConnectionReasoningEffort;
+  reasoningEffort?: ModelConnectionReasoningEffort | null;
   timeoutSeconds?: number;
   apiStyle?: ModelConnectionApiStyle;
   apiKey?: string;
@@ -39,7 +39,7 @@ export interface ModelConnectionListItemRead {
   organization?: string | null;
   project?: string | null;
   modelId: string;
-  reasoningEffort: ModelConnectionReasoningEffort;
+  reasoningEffort: ModelConnectionReasoningEffort | null;
   timeoutSeconds: number;
   apiStyle: ModelConnectionApiStyle;
   hasApiKey: boolean;

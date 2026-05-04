@@ -53,17 +53,29 @@ const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   responses: "Responses API",
 };
 
+const REASONING_EFFORT_OMIT_VALUE = "__omit__";
+const REASONING_EFFORT_CUSTOM_VALUE = "__custom__";
+const REASONING_EFFORT_PRESETS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+const CUSTOM_REASONING_EFFORT_MAX_LENGTH = 128;
+
+type ReasoningEffortPreset = (typeof REASONING_EFFORT_PRESETS)[number];
+type ReasoningEffortSelection =
+  | typeof REASONING_EFFORT_OMIT_VALUE
+  | typeof REASONING_EFFORT_CUSTOM_VALUE
+  | ReasoningEffortPreset;
+
 type ModelConnectionEditorValues = {
   apiKey: string;
   apiStyle: ModelConnectionApiStyle;
   baseUrl: string;
+  customReasoningEffort: string;
   description: string;
   key: string;
   modelId: string;
   name: string;
   organization: string;
   project: string;
-  reasoningEffort: ModelConnectionReasoningEffort;
+  reasoningEffort: ReasoningEffortSelection;
   timeoutSeconds: string;
 };
 
@@ -71,6 +83,7 @@ const initialValues: ModelConnectionEditorValues = {
   apiKey: "",
   apiStyle: "responses",
   baseUrl: "https://api.openai.com/v1",
+  customReasoningEffort: "",
   description: "",
   key: "",
   modelId: "",
@@ -83,18 +96,35 @@ const initialValues: ModelConnectionEditorValues = {
 
 const MASKED_SECRET_VALUE = "••••••••";
 
+function isReasoningEffortPreset(value: string | null): value is ReasoningEffortPreset {
+  return REASONING_EFFORT_PRESETS.includes(value as ReasoningEffortPreset);
+}
+
+function getReasoningEffortSelection(value: ModelConnectionReasoningEffort | null): ReasoningEffortSelection {
+  if (value === null) {
+    return REASONING_EFFORT_OMIT_VALUE;
+  }
+
+  return isReasoningEffortPreset(value) ? value : REASONING_EFFORT_CUSTOM_VALUE;
+}
+
+function getCustomReasoningEffort(value: ModelConnectionReasoningEffort | null) {
+  return value !== null && !isReasoningEffortPreset(value) ? value : "";
+}
+
 function buildValuesFromConnection(connection: ModelConnectionRead): ModelConnectionEditorValues {
   return {
     apiKey: "",
     apiStyle: connection.apiStyle,
     baseUrl: connection.baseUrl,
+    customReasoningEffort: getCustomReasoningEffort(connection.reasoningEffort),
     description: connection.description ?? "",
     key: connection.key,
     modelId: connection.modelId,
     name: connection.name,
     organization: connection.organization ?? "",
     project: connection.project ?? "",
-    reasoningEffort: connection.reasoningEffort,
+    reasoningEffort: getReasoningEffortSelection(connection.reasoningEffort),
     timeoutSeconds: String(connection.timeoutSeconds),
   };
 }
@@ -112,6 +142,35 @@ function parseTimeoutSeconds(value: string) {
   return timeoutSeconds;
 }
 
+function getReasoningEffortValue(values: ModelConnectionEditorValues): string | null {
+  if (values.reasoningEffort === REASONING_EFFORT_OMIT_VALUE) {
+    return null;
+  }
+
+  if (values.reasoningEffort === REASONING_EFFORT_CUSTOM_VALUE) {
+    return values.customReasoningEffort;
+  }
+
+  return values.reasoningEffort;
+}
+
+function parseReasoningEffort(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    throw new Error("Reasoning effort is required when Custom is selected.");
+  }
+
+  if (trimmedValue.length > CUSTOM_REASONING_EFFORT_MAX_LENGTH) {
+    throw new Error("Reasoning effort must be 128 characters or fewer.");
+  }
+
+  return trimmedValue;
+}
+
 function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectionCreateInput {
   const apiKey = values.apiKey.trim();
 
@@ -124,7 +183,7 @@ function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectio
     organization: values.organization.trim() || undefined,
     project: values.project.trim() || undefined,
     modelId: parseRequiredText("Model ID", values.modelId),
-    reasoningEffort: values.reasoningEffort,
+    reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -141,7 +200,7 @@ function buildUpdatePayload(values: ModelConnectionEditorValues): ModelConnectio
     organization: values.organization.trim(),
     project: values.project.trim(),
     modelId: parseRequiredText("Model ID", values.modelId),
-    reasoningEffort: values.reasoningEffort,
+    reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
     ...(apiKey ? { apiKey } : {}),
   };
@@ -444,21 +503,38 @@ export function ModelConnectionsEditorPage() {
               <Select
                 value={values.reasoningEffort}
                 disabled={isSaving}
-                onValueChange={(value: ModelConnectionReasoningEffort) =>
-                  updateValue("reasoningEffort", value)
-                }
+                onValueChange={(value) => updateValue("reasoningEffort", value as ReasoningEffortSelection)}
               >
                 <SelectTrigger id="model-connection-reasoning-effort" aria-label="Reasoning Effort">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="low">low</SelectItem>
-                    <SelectItem value="medium">medium</SelectItem>
-                    <SelectItem value="high">high</SelectItem>
+                    <SelectItem value={REASONING_EFFORT_OMIT_VALUE}>Omit reasoning parameter</SelectItem>
+                    {REASONING_EFFORT_PRESETS.map((preset) => (
+                      <SelectItem key={preset} value={preset}>{preset}</SelectItem>
+                    ))}
+                    <SelectItem value={REASONING_EFFORT_CUSTOM_VALUE}>Custom...</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              {values.reasoningEffort === REASONING_EFFORT_CUSTOM_VALUE ? (
+                <div className="space-y-2">
+                  <Label htmlFor="model-connection-custom-reasoning-effort">Custom Reasoning Effort</Label>
+                  <Input
+                    id="model-connection-custom-reasoning-effort"
+                    aria-label="Custom Reasoning Effort"
+                    disabled={isSaving}
+                    maxLength={CUSTOM_REASONING_EFFORT_MAX_LENGTH + 1}
+                    value={values.customReasoningEffort}
+                    onChange={(event) => updateValue("customReasoningEffort", event.target.value)}
+                  />
+                </div>
+              ) : null}
+              <p className="text-sm text-muted-foreground">
+                Only sent for Responses API. Choose Omit for providers that reject reasoning. The literal value "none" is sent as a string; Omit sends no reasoning parameter.
+                Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings.
+              </p>
             </div>
           </div>
         </CardContent>
