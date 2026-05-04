@@ -70,6 +70,12 @@ export function OutputSchemasListPage() {
           {schemas.map((schema) => (
             <PlatformResourceCard
               key={schema.id}
+              density="compact"
+              primaryAction={{
+                kind: "link",
+                label: `Open output schema ${schema.name}`,
+                to: `/output-schemas/${schema.id}/edit`,
+              }}
               actions={
                 <Button
                   data-testid={`output-schemas-open-${schema.key}`}
@@ -87,10 +93,10 @@ export function OutputSchemasListPage() {
                   version={schema.version}
                   extra={
                     <>
-                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                      <span className="inline-flex h-4 items-center rounded-md border px-1.5 text-[10px] font-medium text-muted-foreground">
                         {schema.kind}
                       </span>
-                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                      <span className="inline-flex h-4 items-center rounded-md border px-1.5 text-[10px] font-medium text-muted-foreground">
                         {schema.registryRefs.length} ref(s)
                       </span>
                     </>
