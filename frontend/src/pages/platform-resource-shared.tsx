@@ -42,10 +42,13 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
   return (
     <Card data-testid={testId} className="overflow-hidden">
       <CardContent className="p-3 sm:p-4">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="space-y-1">
-              <div className="text-base font-medium text-foreground">{title}</div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <div className="min-w-0 truncate text-base font-medium text-foreground">{title}</div>
+                {badges ? <div className="shrink-0">{badges}</div> : null}
+              </div>
               {subtitle ? (
                 <div className="break-all text-sm text-muted-foreground">{subtitle}</div>
               ) : null}
@@ -53,11 +56,10 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
             {description ? (
               <p className="break-words text-sm text-muted-foreground">{description}</p>
             ) : null}
-            {badges ? <div>{badges}</div> : null}
             {metadata ? <div>{metadata}</div> : null}
           </div>
           {actions ? (
-            <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end [&_button]:cursor-pointer">
+            <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:justify-end [&_button]:cursor-pointer">
               {actions}
             </div>
           ) : null}
