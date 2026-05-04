@@ -90,6 +90,7 @@ _RUN_HEADER_COLUMNS = {
     "executed_cost_usd",
     "trace_id",
     "error",
+    "queued_at",
     "started_at",
     "finished_at",
     "created_at",
@@ -563,11 +564,15 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
     run_step_indexes = {index["name"] for index in inspector.get_indexes("run_steps")}
     invocation_indexes = {index["name"] for index in inspector.get_indexes("run_agent_invocations")}
+    run_check_constraints = inspector.get_check_constraints("runs")
     run_checks = {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("runs")
-        if constraint.get("name")
+        constraint["name"] for constraint in run_check_constraints if constraint.get("name")
     }
+    run_status_sql = next(
+        constraint["sqltext"]
+        for constraint in run_check_constraints
+        if constraint.get("name") == "ck_runs_status"
+    )
     run_step_checks = {
         constraint["name"]
         for constraint in inspector.get_check_constraints("run_steps")
@@ -604,6 +609,9 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert run_columns["source_run_id"]["nullable"] is True
     assert run_columns["lineage_root_run_id"]["nullable"] is True
     assert run_columns["resume_step_index"]["nullable"] is False
+    assert run_columns["queued_at"]["nullable"] is False
+    assert run_columns["started_at"]["nullable"] is True
+    assert all(status in run_status_sql for status in ("queued", "running", "succeeded", "failed"))
     assert {
         "ix_runs_status",
         "ix_runs_target",
@@ -985,6 +993,82 @@ def test_init_db_adds_nullable_run_graph_metadata_columns(database_url: str) -> 
         engine.dispose()
 
 
+def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            succeeded_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input, "
+                    "started_at, finished_at, created_at"
+                    ") VALUES ('workflow', 1, 'preserved_success', 1, 'succeeded', '{}'::jsonb, "
+                    "'2026-04-19T10:00:00Z', '2026-04-19T10:02:00Z', "
+                    "'2026-04-19T09:59:00Z') RETURNING id"
+                )
+            ).scalar_one()
+            running_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input, "
+                    "started_at, created_at"
+                    ") VALUES ('workflow', 2, 'preserved_running', 1, 'running', '{}'::jsonb, "
+                    "'2026-04-19T11:00:00Z', '2026-04-19T10:59:00Z') RETURNING id"
+                )
+            ).scalar_one()
+            connection.exec_driver_sql("ALTER TABLE runs DROP CONSTRAINT ck_runs_status")
+            connection.exec_driver_sql(
+                "ALTER TABLE runs ADD CONSTRAINT ck_runs_status "
+                "CHECK (status IN ('running', 'succeeded', 'failed'))"
+            )
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN status SET DEFAULT 'running'")
+            connection.exec_driver_sql("ALTER TABLE runs DROP COLUMN queued_at")
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN started_at SET DEFAULT NOW()")
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN started_at SET NOT NULL")
+
+        init_db(database_url)
+
+        inspector = inspect(engine)
+        run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
+        run_status_sql = next(
+            constraint["sqltext"]
+            for constraint in inspector.get_check_constraints("runs")
+            if constraint.get("name") == "ck_runs_status"
+        )
+        with engine.begin() as connection:
+            preserved_rows = connection.execute(
+                text(
+                    "SELECT id, status, queued_at IS NOT NULL, started_at IS NOT NULL, "
+                    "finished_at IS NOT NULL FROM runs ORDER BY id"
+                )
+            ).all()
+            queued_insert_status = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, input"
+                    ") VALUES ('workflow', 3, 'new_default', 1, '{}'::jsonb) "
+                    "RETURNING status"
+                )
+            ).scalar_one()
+
+        assert run_columns["queued_at"]["nullable"] is False
+        assert run_columns["started_at"]["nullable"] is True
+        assert all(
+            status in run_status_sql for status in ("queued", "running", "succeeded", "failed")
+        )
+        assert preserved_rows == [
+            (succeeded_run_id, "succeeded", True, True, True),
+            (running_run_id, "failed", True, True, True),
+        ]
+        assert queued_insert_status == "queued"
+    finally:
+        engine.dispose()
+
+
 def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
     database_url: str,
 ) -> None:
@@ -992,6 +1076,7 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
     engine = create_engine(database_url, future=True)
 
     try:
+        queued_run_id: int
         with engine.begin() as connection:
             running_run_id = connection.execute(
                 text(
@@ -1007,6 +1092,15 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
                     "target_kind, target_id, target_key, target_version, status, input, error"
                     ") VALUES ('workflow', 2, 'already_failed', 1, 'failed', '{}'::jsonb, "
                     "'existing failure') RETURNING id"
+                )
+            ).scalar_one()
+            queued_run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, status, input, "
+                    "started_at, finished_at"
+                    ") VALUES ('workflow', 3, 'queued_work', 1, 'queued', '{}'::jsonb, "
+                    "NULL, NULL) RETURNING id"
                 )
             ).scalar_one()
             step_rows = connection.execute(
@@ -1058,21 +1152,35 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
                 ),
                 {"run_id": running_run_id},
             ).one()
+            queued_run = connection.execute(
+                text(
+                    "SELECT status, started_at IS NULL, finished_at IS NULL "
+                    "FROM runs WHERE id = :run_id"
+                ),
+                {"run_id": queued_run_id},
+            ).one()
             repaired_steps = connection.execute(
                 text(
                     "SELECT step_index, status, error, persisted_at IS NOT NULL, "
-                    "finished_at IS NOT NULL FROM run_steps ORDER BY run_id, step_index"
-                )
+                    "finished_at IS NOT NULL FROM run_steps "
+                    "WHERE run_id IN (:running_run_id, :failed_run_id) "
+                    "ORDER BY run_id, step_index"
+                ),
+                {"failed_run_id": failed_run_id, "running_run_id": running_run_id},
             ).all()
             repaired_invocations = connection.execute(
                 text(
                     "SELECT step_index, status, error_code, error_message, "
                     "persisted_at IS NOT NULL, finished_at IS NOT NULL "
-                    "FROM run_agent_invocations ORDER BY run_id, step_index"
-                )
+                    "FROM run_agent_invocations "
+                    "WHERE run_id IN (:running_run_id, :failed_run_id) "
+                    "ORDER BY run_id, step_index"
+                ),
+                {"failed_run_id": failed_run_id, "running_run_id": running_run_id},
             ).all()
 
         assert repaired_run == ("failed", _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE, True)
+        assert queued_run == ("queued", True, True)
         assert repaired_steps == [
             (1, "succeeded", None, True, False),
             (2, "failed", _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE, False, True),

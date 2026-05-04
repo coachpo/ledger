@@ -22,6 +22,7 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
+from app.schemas.run import RunListItemRead, RunRead, RunStatus
 from app.services.output_schema_service import OutputSchemaService
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -207,7 +208,7 @@ def _build_run(
     total_tokens: int,
     total_cost_usd: Decimal,
     trace_id: str | None,
-    started_at: datetime,
+    started_at: datetime | None,
     finished_at: datetime | None,
     error: str | None = None,
 ) -> Run:
@@ -1308,7 +1309,14 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
     assert {"ix_runs_status", "ix_runs_target", "ix_runs_target_key"} <= {
         index.name for index in run_table.indexes
     }
-    assert {"target_kind", "target_id", "target_key", "target_version"} <= set(run_table.c.keys())
+    assert {"target_kind", "target_id", "target_key", "target_version", "queued_at"} <= set(
+        run_table.c.keys()
+    )
+    assert run_table.c.status.default is not None
+    assert run_table.c.status.server_default is not None
+    assert str(run_table.c.status.default) == "ScalarElementColumnDefault('queued')"
+    assert run_table.c.started_at.nullable is True
+    assert run_table.c.queued_at.nullable is False
     assert {"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(
         run_table.c.keys()
     )
@@ -1354,6 +1362,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         session.add(workflow)
         session.flush()
 
+        queued_at = datetime(2026, 4, 19, 9, 59, tzinfo=UTC_TZ)
         started_at = datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ)
         finished_at = datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ)
         run = _build_run(
@@ -1369,6 +1378,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
             started_at=started_at,
             finished_at=finished_at,
         )
+        run.queued_at = queued_at
         session.add(run)
         session.flush()
         step = RunStep(
@@ -1452,6 +1462,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert stored_run.total_tokens == 321
         assert stored_run.total_cost_usd == Decimal("0.15000000")
         assert stored_run.trace_id == "trace-market-review"
+        assert stored_run.queued_at == queued_at
         assert stored_run.started_at == started_at
         assert stored_run.finished_at == finished_at
         assert stored_run.created_at is not None
@@ -1463,3 +1474,95 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert stored_agent_run.target_key == published_agent.key
         assert stored_agent_run.target_version == published_agent.version
         assert stored_agent_run.error == "Missing API key"
+
+
+def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_status(
+    session_factory,
+) -> None:
+    queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
+
+    with session_factory() as session:
+        queued_run = _build_run(
+            target_kind="workflow",
+            target_id=1,
+            target_key="queued_workflow",
+            target_version=1,
+            status=RunStatus.QUEUED.value,
+            final_output=None,
+            total_tokens=0,
+            total_cost_usd=Decimal("0"),
+            trace_id=None,
+            started_at=None,
+            finished_at=None,
+        )
+        queued_run.queued_at = queued_at
+        session.add(queued_run)
+        session.commit()
+        session.refresh(queued_run)
+
+        assert queued_run.status == "queued"
+        assert queued_run.queued_at == queued_at
+        assert queued_run.started_at is None
+        assert queued_run.finished_at is None
+
+        session.add(
+            _build_run(
+                target_kind="workflow",
+                target_id=1,
+                target_key="queued_workflow",
+                target_version=1,
+                status="cancelled",
+                final_output=None,
+                total_tokens=0,
+                total_cost_usd=Decimal("0"),
+                trace_id=None,
+                started_at=None,
+                finished_at=None,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> None:
+    queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
+    common_payload = {
+        "id": 42,
+        "targetKind": "workflow",
+        "targetId": 7,
+        "targetKey": "queued_workflow",
+        "targetVersion": 1,
+        "status": "queued",
+        "totalTokens": 0,
+        "totalCostUsd": "0.00000000",
+        "traceId": None,
+        "queuedAt": queued_at,
+        "startedAt": None,
+        "finishedAt": None,
+    }
+
+    list_item = RunListItemRead.model_validate(common_payload)
+    detail = RunRead.model_validate(
+        {
+            **common_payload,
+            "input": {"ticker": "NVDA"},
+            "resumeStepIndex": 1,
+            "finalOutput": None,
+            "inheritedTokens": 0,
+            "inheritedCostUsd": "0.00000000",
+            "executedTokens": 0,
+            "executedCostUsd": "0.00000000",
+            "error": None,
+            "createdAt": queued_at,
+            "updatedAt": queued_at,
+            "steps": [],
+            "memoryArtifacts": [],
+        }
+    )
+
+    assert list_item.model_dump(mode="json", by_alias=True) == {
+        **common_payload,
+        "queuedAt": "2026-04-20T11:00:00Z",
+        "totalCostUsd": "0.00000000",
+    }
+    assert detail.model_dump(mode="json", by_alias=True)["startedAt"] is None

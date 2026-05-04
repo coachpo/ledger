@@ -21,7 +21,7 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_target_kind",
         ),
         CheckConstraint(
-            "status IN ('running', 'succeeded', 'failed')",
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
             name="ck_runs_status",
         ),
         CheckConstraint("target_version > 0", name="ck_runs_target_version_positive"),
@@ -54,8 +54,8 @@ class Run(IdMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default="running",
-        server_default="running",
+        default="queued",
+        server_default="queued",
     )
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("runs.id", ondelete="SET NULL"),
@@ -88,12 +88,13 @@ class Run(IdMixin, TimestampMixin, Base):
     )
     trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime] = mapped_column(
+    queued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=utcnow,
         server_default=sql_text("now()"),
     )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

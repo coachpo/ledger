@@ -340,7 +340,7 @@ $$,
                 target_key VARCHAR(120) NOT NULL,
                 target_version INTEGER NOT NULL,
                 input JSONB NOT NULL,
-                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                status VARCHAR(20) NOT NULL DEFAULT 'queued',
                 source_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 lineage_root_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 forked_from_step_index INTEGER,
@@ -354,12 +354,15 @@ $$,
                 executed_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 trace_id VARCHAR(255),
                 error TEXT,
-                started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                started_at TIMESTAMPTZ,
                 finished_at TIMESTAMPTZ,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_runs_target_kind CHECK (target_kind IN ('agent', 'workflow')),
-                CONSTRAINT ck_runs_status CHECK (status IN ('running', 'succeeded', 'failed')),
+                CONSTRAINT ck_runs_status CHECK (
+                    status IN ('queued', 'running', 'succeeded', 'failed')
+                ),
                 CONSTRAINT ck_runs_target_version_positive CHECK (target_version > 0),
                 CONSTRAINT ck_runs_resume_step_index_positive CHECK (resume_step_index > 0),
                 CONSTRAINT ck_runs_forked_from_step_index_positive CHECK (
@@ -617,6 +620,7 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "executed_cost_usd",
             "trace_id",
             "error",
+            "queued_at",
             "started_at",
             "finished_at",
             "created_at",
@@ -679,7 +683,11 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     ),
 }
 _RUNTIME_CUTOVER_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
-    table_name: _RUNTIME_REQUIRED_COLUMNS[table_name]
+    table_name: (
+        _RUNTIME_REQUIRED_COLUMNS[table_name] - {"queued_at"}
+        if table_name == "runs"
+        else _RUNTIME_REQUIRED_COLUMNS[table_name]
+    )
     for table_name in ("runs", "run_steps", "run_agent_invocations")
 }
 _RUNTIME_LEGACY_COLUMNS: dict[str, frozenset[str]] = {
@@ -1507,6 +1515,62 @@ def _backfill_agent_model_connections(
             )
 
 
+def _ensure_run_lifecycle_support(engine: Engine, table_names: set[str]) -> None:
+    if "runs" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
+    run_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("runs")
+        if constraint.get("name")
+    }
+
+    with engine.begin() as connection:
+        if "queued_at" not in run_columns:
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN queued_at TIMESTAMPTZ")
+            connection.execute(
+                text(
+                    """
+                    UPDATE runs
+                    SET queued_at = COALESCE(created_at, started_at, NOW())
+                    WHERE queued_at IS NULL
+                    """
+                )
+            )
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN queued_at SET NOT NULL")
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN queued_at SET DEFAULT NOW()")
+        else:
+            connection.execute(
+                text(
+                    """
+                    UPDATE runs
+                    SET queued_at = COALESCE(created_at, started_at, NOW())
+                    WHERE queued_at IS NULL
+                    """
+                )
+            )
+            queued_at_column = run_columns["queued_at"]
+            if queued_at_column.get("nullable", True):
+                connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN queued_at SET NOT NULL")
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN queued_at SET DEFAULT NOW()")
+        if "started_at" in run_columns:
+            started_at_column = run_columns["started_at"]
+            if not started_at_column.get("nullable", True):
+                connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN started_at DROP NOT NULL")
+            connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN started_at DROP DEFAULT")
+        else:
+            connection.exec_driver_sql("ALTER TABLE runs ADD COLUMN started_at TIMESTAMPTZ")
+        connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN status SET DEFAULT 'queued'")
+        if "ck_runs_status" in run_checks:
+            connection.exec_driver_sql("ALTER TABLE runs DROP CONSTRAINT ck_runs_status")
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT ck_runs_status "
+            "CHECK (status IN ('queued', 'running', 'succeeded', 'failed'))"
+        )
+
+
 def _ensure_run_graph_metadata_support(engine: Engine, table_names: set[str]) -> None:
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -1824,6 +1888,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _flatten_legacy_mcp_server_rows(engine, table_names)
     _repair_retired_capability_tool_grants(engine, table_names)
     _repair_tradingagents_transition_output_schemas(engine, table_names)
+    _ensure_run_lifecycle_support(engine, table_names)
     _ensure_run_graph_metadata_support(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
 
