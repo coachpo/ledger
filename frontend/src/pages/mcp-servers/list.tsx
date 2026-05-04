@@ -89,6 +89,12 @@ export function McpServersListPage() {
           {servers.map((server) => (
             <PlatformResourceCard
               key={server.id}
+              density="compact"
+              primaryAction={{
+                kind: "link",
+                label: `Open MCP server ${server.name}`,
+                to: `/mcp-servers/${server.id}/edit`,
+              }}
               testId={`mcp-servers-row-${server.key}`}
               title={server.name}
               subtitle={server.key}
@@ -99,10 +105,10 @@ export function McpServersListPage() {
                   version={server.version}
                   extra={
                     <>
-                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                      <span className="inline-flex h-4 items-center rounded-md border px-1.5 text-[10px] font-medium text-muted-foreground">
                         {server.transport}
                       </span>
-                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                      <span className="inline-flex h-4 items-center rounded-md border px-1.5 text-[10px] font-medium text-muted-foreground">
                         {server.enabled ? "Enabled" : "Disabled"}
                       </span>
                     </>
