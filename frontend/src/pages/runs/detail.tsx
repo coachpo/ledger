@@ -1,15 +1,12 @@
-import { AlertCircle, Download, FileText, GitFork, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, Download, FileText, Loader2, PlayCircle, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import { useCreateRunFork, useRun, useRunForkDraft } from "@/hooks/use-runs";
+import { useCreateRunStepReplay, useRun, useRunStepReplayDraft } from "@/hooks/use-runs";
 import { downloadReportUrl } from "@/lib/api/reports";
 import { formatDateTime } from "@/lib/format";
 import type {
   RunAgentInvocationRead,
-  RunForkCreateRequest,
-  RunForkDraftRead,
-  RunForkInvocationDraftRead,
   RunGraphMetadata,
   RunMemoryArtifactRead,
   RunStatus,
@@ -41,6 +38,7 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
 import { stringifyJson } from "../platform-resource-shared";
+import { RunRerunDialog } from "./rerun-dialog";
 
 type TraceSpanEntry = {
   invocationId: number;
@@ -59,22 +57,12 @@ type JsonValidationResult<T> = {
   value: T | null;
 };
 
-type ForkInvocationEditor = {
-  key: string;
-  stepIndex: number;
-  slot: string;
-  sourceInvocationId: number;
-  agentKey: string;
-  resolvedInputText: string;
-  outputText: string;
-};
-
-type ForkAvailability = {
+type StepReplayAvailability = {
   isAvailable: boolean;
   reason: string | null;
 };
 
-const DEFAULT_FORK_UNAVAILABLE_REASON = "Choose a succeeded workflow step with a following step to create a fork.";
+const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step to replay from.";
 
 function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
@@ -90,6 +78,10 @@ function progressForInvocations(invocations: RunAgentInvocationRead[], fallbackS
 }
 
 function progressForRun(status: RunStatus, steps: RunStepRead[]): number {
+  if (status === "queued") {
+    return 0;
+  }
+
   const invocations = steps.flatMap((step) => step.invocations);
 
   if (invocations.length === 0) {
@@ -101,6 +93,10 @@ function progressForRun(status: RunStatus, steps: RunStepRead[]): number {
   }
 
   return progressForInvocations(invocations);
+}
+
+function formatUnfinishedRunStatus(status: RunStatus): string {
+  return status === "queued" ? " · Awaiting execution" : " · Still running";
 }
 
 function formatTracePath(traceId: string | null, traceSpanEntries: TraceSpanEntry[]): string | null {
@@ -161,52 +157,37 @@ function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvoc
   return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
 }
 
-function finalExecutableStepIndex(steps: RunStepRead[]): number | null {
-  if (steps.length === 0) {
-    return null;
-  }
-
-  return Math.max(...steps.map((step) => step.index));
-}
-
-function getForkAvailability(
+function getStepReplayAvailability(
   targetKind: RunTargetKind,
   steps: RunStepRead[],
-  forkStepIndex: number | undefined,
-): ForkAvailability {
+  replayStepIndex: number | undefined,
+): StepReplayAvailability {
   if (targetKind !== "workflow") {
     return {
       isAvailable: false,
-      reason: "Workflow-step forks are only available for workflow runs.",
+      reason: "Step replay is only available for workflow runs.",
     };
   }
 
-  if (forkStepIndex === undefined) {
+  if (replayStepIndex === undefined) {
     return {
       isAvailable: false,
-      reason: DEFAULT_FORK_UNAVAILABLE_REASON,
+      reason: DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON,
     };
   }
 
-  const selectedStep = steps.find((step) => step.index === forkStepIndex);
+  const selectedStep = steps.find((step) => step.index === replayStepIndex);
   if (!selectedStep) {
     return {
       isAvailable: false,
-      reason: `Step ${forkStepIndex} is not available on this run.`,
+      reason: `Step ${replayStepIndex} is not available on this run.`,
     };
   }
 
   if (selectedStep.status !== "succeeded") {
     return {
       isAvailable: false,
-      reason: `Step ${forkStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be forked.`,
-    };
-  }
-
-  if (finalExecutableStepIndex(steps) === selectedStep.index) {
-    return {
-      isAvailable: false,
-      reason: "Final workflow steps cannot be forked because there is no following step to resume.",
+      reason: `Step ${replayStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be replayed.`,
     };
   }
 
@@ -246,30 +227,6 @@ function parseJsonRecord(text: string, label: string): JsonValidationResult<Reco
 
 function areJsonValuesEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function forkDraftTargetKey(draft: RunForkDraftRead): string {
-  return `${draft.sourceRunId}:${draft.forkStepIndex}`;
-}
-
-function createInvocationEditor(invocation: RunForkInvocationDraftRead): ForkInvocationEditor {
-  return {
-    agentKey: invocation.agentKey,
-    key: `${invocation.stepIndex}:${invocation.slot}:${invocation.sourceInvocationId}`,
-    outputText: formatJsonEditorValue(invocation.output),
-    resolvedInputText: formatJsonEditorValue(invocation.resolvedInput),
-    slot: invocation.slot,
-    sourceInvocationId: invocation.sourceInvocationId,
-    stepIndex: invocation.stepIndex,
-  };
-}
-
-function createInvocationEditors(draft: RunForkDraftRead): ForkInvocationEditor[] {
-  return draft.steps.flatMap((step) =>
-    step.invocations
-      .map(createInvocationEditor)
-      .sort((left, right) => left.stepIndex - right.stepIndex || left.slot.localeCompare(right.slot)),
-  );
 }
 
 function DetailGrid({ items }: { items: DetailItem[] }) {
@@ -547,31 +504,29 @@ function JsonEditorField({
   );
 }
 
-function RunForkDialog({
-  forkAvailability,
-  forkStepIndex,
+function RunStepReplayDialog({
   onClose,
   open,
+  replayAvailability,
+  replayStepIndex,
   runId,
 }: {
-  forkAvailability: ForkAvailability;
-  forkStepIndex: number | undefined;
   onClose: () => void;
   open: boolean;
+  replayAvailability: StepReplayAvailability;
+  replayStepIndex: number | undefined;
   runId: string;
 }) {
   const navigate = useNavigate();
-  const draftQuery = useRunForkDraft(runId, forkStepIndex, { enabled: open && forkAvailability.isAvailable });
-  const createRunFork = useCreateRunFork();
+  const draftQuery = useRunStepReplayDraft(runId, replayStepIndex, { enabled: open && replayAvailability.isAvailable });
+  const createStepReplay = useCreateRunStepReplay();
   const [draftTargetKey, setDraftTargetKey] = useState<string | null>(null);
-  const [inputText, setInputText] = useState("");
-  const [invocationEditors, setInvocationEditors] = useState<ForkInvocationEditor[]>([]);
+  const [parametersText, setParametersText] = useState("");
   const [apiError, setApiError] = useState<string | null>(null);
 
   const resetLocalState = () => {
     setDraftTargetKey(null);
-    setInputText("");
-    setInvocationEditors([]);
+    setParametersText("");
     setApiError(null);
   };
 
@@ -585,128 +540,56 @@ function RunForkDialog({
       return;
     }
 
-    const nextTargetKey = forkDraftTargetKey(draftQuery.data);
+    const nextTargetKey = `${draftQuery.data.sourceRunId}:${draftQuery.data.replayStepIndex}`;
     if (draftTargetKey === nextTargetKey) {
       return;
     }
 
     setDraftTargetKey(nextTargetKey);
-    setInputText(formatJsonEditorValue(draftQuery.data.input));
-    setInvocationEditors(createInvocationEditors(draftQuery.data));
+    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
     setApiError(null);
   }, [draftQuery.data, draftTargetKey, open]);
 
-  const inputValidation = useMemo(
-    () => parseJsonRecord(inputText || "{}", "Run input JSON"),
-    [inputText],
+  const parametersValidation = useMemo(
+    () => parseJsonRecord(parametersText || "{}", "Replay parameters JSON"),
+    [parametersText],
   );
-  const invocationValidations = useMemo(() => {
-    const validations = new Map<string, {
-      output: JsonValidationResult<unknown>;
-      resolvedInput: JsonValidationResult<Record<string, unknown>>;
-    }>();
-
-    invocationEditors.forEach((editor) => {
-      validations.set(editor.key, {
-        output: parseJsonValue(editor.outputText, `Output JSON for step ${editor.stepIndex} ${editor.slot}`),
-        resolvedInput: parseJsonRecord(editor.resolvedInputText, `Resolved input JSON for step ${editor.stepIndex} ${editor.slot}`),
-      });
-    });
-
-    return validations;
-  }, [invocationEditors]);
-  const originalInvocationByKey = useMemo(() => {
-    const originals = new Map<string, RunForkInvocationDraftRead>();
-
-    draftQuery.data?.steps.forEach((step) => {
-      step.invocations.forEach((invocation) => {
-        originals.set(`${invocation.stepIndex}:${invocation.slot}:${invocation.sourceInvocationId}`, invocation);
-      });
-    });
-
-    return originals;
-  }, [draftQuery.data]);
-  const hasValidationError = Boolean(
-    inputValidation.error ||
-      [...invocationValidations.values()].some((validation) => validation.resolvedInput.error || validation.output.error),
-  );
-  const forkPayload = useMemo<RunForkCreateRequest | null>(() => {
-    if (!draftQuery.data || hasValidationError || !inputValidation.value) {
+  const replayPayload = useMemo(() => {
+    if (!draftQuery.data || parametersValidation.error || !parametersValidation.value) {
       return null;
     }
 
-    const payload: RunForkCreateRequest = { forkStepIndex: draftQuery.data.forkStepIndex };
-    if (!areJsonValuesEqual(inputValidation.value, draftQuery.data.input)) {
-      payload.input = inputValidation.value;
-    }
-
-    const invocationEdits = invocationEditors.flatMap((editor) => {
-      const original = originalInvocationByKey.get(editor.key);
-      const validation = invocationValidations.get(editor.key);
-
-      if (!original || !validation?.resolvedInput.value || validation.resolvedInput.error || validation.output.error) {
-        return [];
-      }
-
-      const edit: NonNullable<RunForkCreateRequest["invocationEdits"]>[number] = {
-        slot: editor.slot,
-        stepIndex: editor.stepIndex,
-      };
-      let hasEdit = false;
-
-      if (!areJsonValuesEqual(validation.resolvedInput.value, original.resolvedInput)) {
-        edit.resolvedInput = validation.resolvedInput.value;
-        hasEdit = true;
-      }
-
-      if (!areJsonValuesEqual(validation.output.value, original.output)) {
-        edit.output = validation.output.value;
-        hasEdit = true;
-      }
-
-      return hasEdit ? [edit] : [];
-    });
-
-    if (invocationEdits.length > 0) {
-      payload.invocationEdits = invocationEdits;
-    }
-
-    return payload;
-  }, [draftQuery.data, hasValidationError, inputValidation.value, invocationEditors, invocationValidations, originalInvocationByKey]);
-  const hasDraftEdits = Boolean(forkPayload?.input || (forkPayload?.invocationEdits?.length ?? 0) > 0);
-  const isSubmitDisabled = !forkPayload || createRunFork.isPending || draftQuery.isPending || hasValidationError;
-
-  const updateInvocationEditor = (key: string, field: "outputText" | "resolvedInputText", value: string) => {
-    setApiError(null);
-    setInvocationEditors((editors) =>
-      editors.map((editor) => (editor.key === key ? { ...editor, [field]: value } : editor)),
-    );
-  };
+    return {
+      parameters: parametersValidation.value,
+      replayStepIndex: draftQuery.data.replayStepIndex,
+    };
+  }, [draftQuery.data, parametersValidation.error, parametersValidation.value]);
+  const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(parametersValidation.value, draftQuery.data.parameters));
+  const isSubmitDisabled = !replayPayload || createStepReplay.isPending || draftQuery.isPending || Boolean(parametersValidation.error);
 
   const resetToDraft = () => {
     if (!draftQuery.data) {
       return;
     }
 
-    setDraftTargetKey(forkDraftTargetKey(draftQuery.data));
-    setInputText(formatJsonEditorValue(draftQuery.data.input));
-    setInvocationEditors(createInvocationEditors(draftQuery.data));
+    setDraftTargetKey(`${draftQuery.data.sourceRunId}:${draftQuery.data.replayStepIndex}`);
+    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
     setApiError(null);
   };
 
   const handleSubmit = async () => {
-    if (!forkPayload) {
+    if (!replayPayload) {
       return;
     }
 
     setApiError(null);
 
     try {
-      const createdRun = await createRunFork.mutateAsync({ runId, payload: forkPayload });
+      const createdRun = await createStepReplay.mutateAsync({ runId, payload: replayPayload });
       resetLocalState();
       navigate(`/runs/${createdRun.id}`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to create forked run.");
+      setApiError(error instanceof Error ? error.message : "Failed to create step replay.");
     }
   };
 
@@ -714,128 +597,88 @@ function RunForkDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && !createRunFork.isPending) {
+        if (!nextOpen && !createStepReplay.isPending) {
           closeDialog();
         }
       }}
     >
-      <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Fork run draft</DialogTitle>
-            {forkStepIndex !== undefined ? <Badge variant="outline">Step {forkStepIndex}</Badge> : null}
+            <DialogTitle>Step replay draft</DialogTitle>
+            {replayStepIndex !== undefined ? <Badge variant="outline">Step {replayStepIndex}</Badge> : null}
             {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Source snapshot"}</Badge> : null}
           </div>
           <DialogDescription>
-            Create a new run from copied step payloads. Edits apply only to the fork draft; the source run remains immutable.
+            Create a new run that replays from the selected step. Edits apply only to the replay parameters; the source run remains immutable.
           </DialogDescription>
         </DialogHeader>
 
-        {!forkAvailability.isAvailable ? (
-          <Alert variant="destructive" data-testid="run-fork-invalid-step">
+        {!replayAvailability.isAvailable ? (
+          <Alert variant="destructive" data-testid="run-step-replay-invalid-step">
             <AlertCircle />
-            <AlertTitle>Fork step unavailable</AlertTitle>
-            <AlertDescription>{forkAvailability.reason ?? DEFAULT_FORK_UNAVAILABLE_REASON}</AlertDescription>
+            <AlertTitle>Step replay unavailable</AlertTitle>
+            <AlertDescription>{replayAvailability.reason ?? DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON}</AlertDescription>
           </Alert>
         ) : null}
 
-        {forkAvailability.isAvailable && draftQuery.isPending ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-fork-loading">
+        {replayAvailability.isAvailable && draftQuery.isPending ? (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-step-replay-loading">
             <Loader2 className="size-4 animate-spin" />
-            Loading fork draft...
+            Loading step replay draft...
           </div>
         ) : null}
 
-        {forkAvailability.isAvailable && draftQuery.isError ? (
-          <Alert variant="destructive" data-testid="run-fork-draft-error">
+        {replayAvailability.isAvailable && draftQuery.isError ? (
+          <Alert variant="destructive" data-testid="run-step-replay-draft-error">
             <AlertCircle />
-            <AlertTitle>Unable to load fork draft</AlertTitle>
-            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The fork draft could not be loaded."}</AlertDescription>
+            <AlertTitle>Unable to load step replay draft</AlertTitle>
+            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The step replay draft could not be loaded."}</AlertDescription>
           </Alert>
         ) : null}
 
         {apiError ? (
-          <Alert variant="destructive" data-testid="run-fork-api-error">
+          <Alert variant="destructive" data-testid="run-step-replay-api-error">
             <AlertCircle />
-            <AlertTitle>Fork creation failed</AlertTitle>
+            <AlertTitle>Step replay creation failed</AlertTitle>
             <AlertDescription>{apiError}</AlertDescription>
           </Alert>
         ) : null}
 
         {draftQuery.data ? (
-          <div className="grid gap-4" data-testid="run-fork-dialog-body">
-            <Card className="gap-3">
-              <CardHeader>
-                <CardTitle className="text-base">Run input draft</CardTitle>
-                <CardDescription>Edit the input JSON that the new forked run will receive.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <JsonEditorField
-                  disabled={createRunFork.isPending}
-                  error={inputValidation.error}
-                  id="run-fork-input-json"
-                  label="Fork draft run input JSON"
-                  onChange={(value) => {
-                    setApiError(null);
-                    setInputText(value);
-                  }}
-                  rows={10}
-                  value={inputText}
-                />
-              </CardContent>
-            </Card>
-
-            <div className="grid gap-3">
-              {invocationEditors.length === 0 ? (
-                <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No copied invocation payloads are available for this fork step.</div>
-              ) : null}
-              {invocationEditors.map((editor) => {
-                const validation = invocationValidations.get(editor.key);
-
-                return (
-                  <Card className="gap-3" data-testid={`run-fork-invocation-${editor.stepIndex}-${editor.slot}`} key={editor.key}>
-                    <CardHeader>
-                      <CardTitle className="text-base">Step {editor.stepIndex} · {editor.slot}</CardTitle>
-                      <CardDescription>
-                        Copied from invocation #{editor.sourceInvocationId} · {editor.agentKey}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 lg:grid-cols-2">
-                      <JsonEditorField
-                        disabled={createRunFork.isPending}
-                        error={validation?.resolvedInput.error ?? null}
-                        id={`run-fork-resolved-input-${editor.key}`}
-                        label="Fork draft resolved input JSON"
-                        onChange={(value) => updateInvocationEditor(editor.key, "resolvedInputText", value)}
-                        value={editor.resolvedInputText}
-                      />
-                      <JsonEditorField
-                        disabled={createRunFork.isPending}
-                        error={validation?.output.error ?? null}
-                        id={`run-fork-output-${editor.key}`}
-                        label="Fork draft output JSON"
-                        onChange={(value) => updateInvocationEditor(editor.key, "outputText", value)}
-                        value={editor.outputText}
-                      />
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
+          <Card className="gap-3" data-testid="run-step-replay-dialog-body">
+            <CardHeader>
+              <CardTitle className="text-base">Replay parameters</CardTitle>
+              <CardDescription>Edit the parameter JSON that the replayed run will receive.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <JsonEditorField
+                disabled={createStepReplay.isPending}
+                error={parametersValidation.error}
+                id="run-step-replay-parameters-json"
+                label="Step replay parameters JSON"
+                onChange={(value) => {
+                  setApiError(null);
+                  setParametersText(value);
+                }}
+                rows={10}
+                value={parametersText}
+              />
+            </CardContent>
+          </Card>
         ) : null}
 
         <DialogFooter>
-          <Button disabled={createRunFork.isPending} onClick={closeDialog} type="button" variant="ghost">
+          <Button disabled={createStepReplay.isPending} onClick={closeDialog} type="button" variant="ghost">
             Cancel
           </Button>
-          <Button disabled={!draftQuery.data || createRunFork.isPending} onClick={resetToDraft} type="button" variant="outline">
+          <Button disabled={!draftQuery.data || createStepReplay.isPending} onClick={resetToDraft} type="button" variant="outline">
             <RotateCcw data-icon="inline-start" />
             Reset draft
           </Button>
-          <Button data-testid="run-fork-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
-            {createRunFork.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <GitFork data-icon="inline-start" />}
-            Create fork
+          <Button data-testid="run-step-replay-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
+            {createStepReplay.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            Create step replay
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -919,7 +762,7 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
   );
 }
 
-function StepCard({ canFork, onOpenFork, step }: { canFork: boolean; onOpenFork: (stepIndex: number) => void; step: RunStepRead }) {
+function StepCard({ canReplay, onOpenReplay, step }: { canReplay: boolean; onOpenReplay: (stepIndex: number) => void; step: RunStepRead }) {
   const invocations = sortedInvocations(step.invocations);
   const progress = progressForInvocations(invocations, step.status);
 
@@ -957,15 +800,14 @@ function StepCard({ canFork, onOpenFork, step }: { canFork: boolean; onOpenFork:
               </Alert>
             ) : null}
 
-            {canFork ? (
-              <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`runs-step-${step.index}-fork-entry`}>
+            {canReplay ? (
+              <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`runs-step-${step.index}-replay-entry`}>
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Fork from this succeeded step</p>
-                  <p className="text-sm text-muted-foreground">Copy steps through step {step.index}, edit fork draft payloads, then resume in a new run.</p>
+                  <p className="text-sm font-medium">Replay from this succeeded step</p>
+                  <p className="text-sm text-muted-foreground">Edit replay parameters, then create a new run from step {step.index}.</p>
                 </div>
-                <Button onClick={() => onOpenFork(step.index)} size="sm" type="button" variant="outline">
-                  <GitFork data-icon="inline-start" />
-                  Fork step
+                <Button onClick={() => onOpenReplay(step.index)} size="sm" type="button" variant="outline">
+                  Replay step
                 </Button>
               </div>
             ) : null}
@@ -1025,31 +867,51 @@ export function RunsDetailPage() {
     [steps],
   );
   const graphGroups = useMemo(() => groupRunGraphSteps(steps), [steps]);
-  const forkDialogOpen = searchParams.get("fork") === "1";
-  const forkStepIndexParam = searchParams.get("forkStepIndex");
-  const forkStepIndex = useMemo(() => {
-    if (forkStepIndexParam === null || forkStepIndexParam.trim() === "") {
+  const stepReplayDialogOpen = searchParams.get("stepReplay") === "1";
+  const replayStepIndexParam = searchParams.get("stepIndex");
+  const rerunDialogOpen = searchParams.get("rerun") === "1";
+  const replayStepIndex = useMemo(() => {
+    if (replayStepIndexParam === null || replayStepIndexParam.trim() === "") {
       return undefined;
     }
 
-    const parsed = Number(forkStepIndexParam);
-    return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-  }, [forkStepIndexParam]);
+    const parsed = Number(replayStepIndexParam);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
+  }, [replayStepIndexParam]);
 
-  const openForkDialog = (stepIndex: number) => {
+  const openRerunDialog = () => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.set("fork", "1");
-      next.set("forkStepIndex", String(stepIndex));
+      next.set("rerun", "1");
+      next.delete("stepReplay");
+      next.delete("stepIndex");
       return next;
     });
   };
 
-  const closeForkDialog = () => {
+  const closeRerunDialog = () => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.delete("fork");
-      next.delete("forkStepIndex");
+      next.delete("rerun");
+      return next;
+    });
+  };
+
+  const openStepReplayDialog = (stepIndex: number) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("stepReplay", "1");
+      next.set("stepIndex", String(stepIndex));
+      next.delete("rerun");
+      return next;
+    });
+  };
+
+  const closeStepReplayDialog = () => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("stepReplay");
+      next.delete("stepIndex");
       return next;
     });
   };
@@ -1079,7 +941,7 @@ export function RunsDetailPage() {
   const tracePath = formatTracePath(run.traceId, traceSpanEntries);
   const traceIdLabel = run.traceId ?? (traceSpanEntries.length > 0 ? "Captured through invocation spans" : "No trace id recorded");
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
-  const forkAvailability = getForkAvailability(run.targetKind, steps, forkStepIndex);
+  const replayAvailability = getStepReplayAvailability(run.targetKind, steps, replayStepIndex);
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="runs-detail-page">
@@ -1098,13 +960,28 @@ export function RunsDetailPage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {describeRunTarget(run.targetKind)} · Started {formatDateTime(run.startedAt)}
-            {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : " · Still running"}
+            {describeRunTarget(run.targetKind)} · {run.startedAt
+              ? `Started ${formatDateTime(run.startedAt)}`
+              : `Queued ${formatDateTime(run.queuedAt)}`}
+            {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : formatUnfinishedRunStatus(run.status)}
           </p>
         </div>
-        <Button asChild size="sm" variant="outline">
-          <Link to="/runs">Back to runs</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {run.targetKind === "workflow" ? (
+            <Button asChild data-testid="runs-detail-workflow-link" size="sm" variant="outline">
+              <Link to={`/workflows/${run.targetId}`}>Back to workflow</Link>
+            </Button>
+          ) : null}
+          {run.targetKind === "workflow" ? (
+            <Button data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button" variant="outline">
+              <PlayCircle data-icon="inline-start" />
+              Rerun
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="outline">
+            <Link to="/runs">Back to runs</Link>
+          </Button>
+        </div>
       </div>
 
       {run.error ? (
@@ -1179,7 +1056,7 @@ export function RunsDetailPage() {
       <Card data-testid="runs-lineage-summary">
         <CardHeader>
           <CardTitle className="text-base">Lineage</CardTitle>
-          <CardDescription>Fork and resume metadata for copied and planned execution origins.</CardDescription>
+          <CardDescription>Replay and resume metadata for copied and planned execution origins.</CardDescription>
         </CardHeader>
         <CardContent>
           <DetailGrid
@@ -1189,7 +1066,7 @@ export function RunsDetailPage() {
                 value: run.sourceRunId ? <SourceRunLink runId={run.sourceRunId}>Run #{run.sourceRunId}</SourceRunLink> : "Original run",
               },
               { label: "Lineage root", value: run.lineageRootRunId ? `Run #${run.lineageRootRunId}` : `Run #${run.id}` },
-              { label: "Forked from step", value: run.forkedFromStepIndex === null ? "Not forked" : `Step ${run.forkedFromStepIndex}` },
+              { label: "Replay step", value: run.replayStepIndex === null ? "Not replayed" : `Step ${run.replayStepIndex}` },
               { label: "Resume step", value: `Step ${run.resumeStepIndex}` },
               { label: "Step origins", value: `${copiedSteps} copied · ${plannedSteps} planned` },
               { label: "Invocation origins", value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed` },
@@ -1244,9 +1121,9 @@ export function RunsDetailPage() {
             <Accordion className="flex w-full flex-col gap-3" defaultValue={steps.map((step) => `step-${step.index}`)} type="multiple">
               {steps.map((step) => (
                 <StepCard
-                  canFork={getForkAvailability(run.targetKind, steps, step.index).isAvailable}
+                  canReplay={getStepReplayAvailability(run.targetKind, steps, step.index).isAvailable}
                   key={step.id}
-                  onOpenFork={openForkDialog}
+                  onOpenReplay={openStepReplayDialog}
                   step={step}
                 />
               ))}
@@ -1255,11 +1132,13 @@ export function RunsDetailPage() {
         </CardContent>
       </Card>
 
-      <RunForkDialog
-        forkAvailability={forkAvailability}
-        forkStepIndex={forkStepIndex}
-        onClose={closeForkDialog}
-        open={forkDialogOpen}
+      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && run.targetKind === "workflow"} runId={runId} />
+
+      <RunStepReplayDialog
+        onClose={closeStepReplayDialog}
+        open={stepReplayDialogOpen}
+        replayAvailability={replayAvailability}
+        replayStepIndex={replayStepIndex}
         runId={runId}
       />
     </div>
