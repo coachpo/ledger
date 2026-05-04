@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 import openai
 from fastapi import status
@@ -95,7 +95,7 @@ class ModelConnectionService:
             organization=payload.organization,
             project=payload.project,
             model_id=payload.model_id,
-            reasoning_effort=payload.reasoning_effort.value,
+            reasoning_effort=payload.reasoning_effort,
             timeout_seconds=payload.timeout_seconds,
         )
         self._set_api_key(connection, payload.api_key)
@@ -137,8 +137,8 @@ class ModelConnectionService:
         if "model_id" in payload.model_fields_set and payload.model_id is not None:
             connection.model_id = payload.model_id
             reset_connection_test_result = True
-        if "reasoning_effort" in payload.model_fields_set and payload.reasoning_effort is not None:
-            connection.reasoning_effort = payload.reasoning_effort.value
+        if "reasoning_effort" in payload.model_fields_set:
+            connection.reasoning_effort = payload.reasoning_effort
             reset_connection_test_result = True
         if "timeout_seconds" in payload.model_fields_set and payload.timeout_seconds is not None:
             connection.timeout_seconds = payload.timeout_seconds
@@ -297,13 +297,15 @@ class ModelConnectionService:
         client_kwargs: dict[str, Any],
         tested_at: datetime,
     ) -> _ModelConnectionTestResult:
+        request_kwargs: dict[str, Any] = {
+            "model": connection.model_id,
+            "instructions": "Reply with the single word OK.",
+            "input": "Connection test.",
+        }
+        if connection.reasoning_effort is not None:
+            request_kwargs["reasoning"] = {"effort": connection.reasoning_effort}
         with OpenAI(**client_kwargs) as client:
-            response = client.responses.create(
-                model=connection.model_id,
-                instructions="Reply with the single word OK.",
-                input="Connection test.",
-                reasoning=cast(Any, {"effort": connection.reasoning_effort}),
-            )
+            response = client.responses.create(**request_kwargs)
         return _ModelConnectionTestResult(
             ok=True,
             message=self._success_message(response),

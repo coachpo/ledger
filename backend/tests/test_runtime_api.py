@@ -50,7 +50,12 @@ from app.services.capability_service import (
     CapabilityService,
 )
 from app.services.mcp_server_service import McpServerService
-from app.services.model_connection_snapshot import build_model_connection_runtime_snapshot
+from app.services.model_connection_snapshot import (
+    ModelConnectionRuntimeSnapshot,
+    build_model_connection_runtime_snapshot,
+    parse_model_connection_runtime_snapshot,
+    snapshot_to_json,
+)
 from app.services.position_service import PositionService
 from app.services.quote_provider import (
     ProviderHistoryPoint,
@@ -276,7 +281,7 @@ def _build_model_connection(
     api_key: str | None = "sk-test-secret-1234",
     base_url: str = "https://api.openai.com/v1",
     model_id: str = "gpt-5.4-mini",
-    reasoning_effort: str = "medium",
+    reasoning_effort: str | None = "medium",
     timeout_seconds: int = 60,
     organization: str | None = None,
     project: str | None = None,
@@ -971,7 +976,7 @@ def _model_connection_payload(
     organization: str | None = None,
     project: str | None = None,
     model_id: str = "gpt-5.4-mini",
-    reasoning_effort: str = "medium",
+    reasoning_effort: object = "medium",
     timeout_seconds: int = 60,
     api_key: str | None = "sk-test-secret-1234",
     api_style: str | None = None,
@@ -994,6 +999,54 @@ def _model_connection_payload(
     if api_style is not None:
         payload["apiStyle"] = api_style
     return payload
+
+
+def _assert_reasoning_effort_validation_error(
+    response: httpx.Response,
+    expected_issue: str,
+) -> None:
+    assert response.status_code == 422, response.json()
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert any("reasoningEffort" in detail["field"] for detail in body["details"])
+    assert any(expected_issue in detail["issue"] for detail in body["details"])
+
+
+def test_model_connection_snapshot_reasoning_effort_null_default_and_custom_contract() -> None:
+    base_snapshot: dict[str, object] = {
+        "base_url": "https://api.openai.com/v1",
+        "model_id": "gpt-5.4-mini",
+        "organization": None,
+        "project": None,
+        "api_style": "responses",
+        "timeout_seconds": 60,
+    }
+
+    legacy_snapshot = parse_model_connection_runtime_snapshot(base_snapshot)
+    assert legacy_snapshot.reasoning_effort == "medium"
+    assert snapshot_to_json(legacy_snapshot)["reasoning_effort"] == "medium"
+
+    def parse_with_reasoning_effort(value: object) -> ModelConnectionRuntimeSnapshot:
+        snapshot = dict(base_snapshot)
+        snapshot["reasoning_effort"] = value
+        return parse_model_connection_runtime_snapshot(snapshot)
+
+    null_snapshot = parse_with_reasoning_effort(None)
+    assert null_snapshot.reasoning_effort is None
+    assert snapshot_to_json(null_snapshot)["reasoning_effort"] is None
+
+    custom_snapshot = parse_with_reasoning_effort(" XHigh ")
+    assert custom_snapshot.reasoning_effort == "XHigh"
+    assert snapshot_to_json(custom_snapshot)["reasoning_effort"] == "XHigh"
+
+    max_length_snapshot = parse_with_reasoning_effort("r" * 128)
+    assert max_length_snapshot.reasoning_effort == "r" * 128
+
+    for invalid_reasoning_effort in ("", "   ", 3, True, {"effort": "medium"}):
+        with pytest.raises(ValueError):
+            _ = parse_with_reasoning_effort(invalid_reasoning_effort)
+    with pytest.raises(ValueError):
+        _ = parse_with_reasoning_effort("r" * 129)
 
 
 class _FakeOpenAIResponse:
@@ -1778,6 +1831,164 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     assert archived_items[0]["key"] == "primary_openai"
 
 
+def test_agent_platform_model_connections_reasoning_effort_nullable_and_custom_contract(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    def stored_reasoning(connection_id: int) -> str | None:
+        with session_factory() as session:
+            row = session.get(ModelConnection, connection_id)
+            assert row is not None
+            return row.reasoning_effort
+
+    omitted_payload = _model_connection_payload(
+        key="default_reasoning",
+        name="Default Reasoning",
+    )
+    omitted_payload.pop("reasoningEffort")
+    default_create = client.post("/api/model-connections", json=omitted_payload)
+    assert default_create.status_code == 201, default_create.json()
+    default_created = default_create.json()
+    assert default_created["reasoningEffort"] == "medium"
+    assert stored_reasoning(default_created["id"]) == "medium"
+
+    null_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="null_reasoning",
+            name="Null Reasoning",
+            reasoning_effort=None,
+        ),
+    )
+    assert null_create.status_code == 201, null_create.json()
+    null_created = null_create.json()
+    null_connection_id = null_created["id"]
+    assert null_created["reasoningEffort"] is None
+    assert stored_reasoning(null_connection_id) is None
+
+    null_preserved = client.patch(
+        f"/api/model-connections/{null_connection_id}",
+        json={"description": "Still null."},
+    )
+    assert null_preserved.status_code == 200, null_preserved.json()
+    assert null_preserved.json()["reasoningEffort"] is None
+    assert stored_reasoning(null_connection_id) is None
+
+    none_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="literal_none_reasoning",
+            name="Literal None Reasoning",
+            reasoning_effort=" none ",
+        ),
+    )
+    assert none_create.status_code == 201, none_create.json()
+    none_created = none_create.json()
+    assert none_created["reasoningEffort"] == "none"
+    assert stored_reasoning(none_created["id"]) == "none"
+
+    custom_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="custom_reasoning",
+            name="Custom Reasoning",
+            reasoning_effort="xhigh",
+        ),
+    )
+    assert custom_create.status_code == 201, custom_create.json()
+    custom_created = custom_create.json()
+    custom_connection_id = custom_created["id"]
+    assert custom_created["reasoningEffort"] == "xhigh"
+    assert stored_reasoning(custom_connection_id) == "xhigh"
+
+    custom_preserved = client.patch(
+        f"/api/model-connections/{custom_connection_id}",
+        json={"description": "Preserve custom."},
+    )
+    assert custom_preserved.status_code == 200, custom_preserved.json()
+    assert custom_preserved.json()["reasoningEffort"] == "xhigh"
+    assert stored_reasoning(custom_connection_id) == "xhigh"
+
+    case_preserved = client.patch(
+        f"/api/model-connections/{custom_connection_id}",
+        json={"reasoningEffort": " XHigh "},
+    )
+    assert case_preserved.status_code == 200, case_preserved.json()
+    assert case_preserved.json()["reasoningEffort"] == "XHigh"
+    assert stored_reasoning(custom_connection_id) == "XHigh"
+
+    max_length_reasoning = "r" * 128
+    max_length_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key="max_reasoning",
+            name="Max Reasoning",
+            reasoning_effort=max_length_reasoning,
+        ),
+    )
+    assert max_length_create.status_code == 201, max_length_create.json()
+    assert max_length_create.json()["reasoningEffort"] == max_length_reasoning
+    assert stored_reasoning(max_length_create.json()["id"]) == max_length_reasoning
+
+    cleared = client.patch(
+        f"/api/model-connections/{custom_connection_id}",
+        json={"reasoningEffort": None},
+    )
+    assert cleared.status_code == 200, cleared.json()
+    assert cleared.json()["reasoningEffort"] is None
+    assert stored_reasoning(custom_connection_id) is None
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort", "expected_issue"),
+    [
+        ("empty", "", "Reasoning effort is required"),
+        ("whitespace", "   ", "Reasoning effort is required"),
+        ("object", {"effort": "medium"}, "Reasoning effort must be a string"),
+        ("array", ["medium"], "Reasoning effort must be a string"),
+        ("number", 3, "Reasoning effort must be a string"),
+        ("boolean", True, "Reasoning effort must be a string"),
+    ],
+)
+def test_agent_platform_model_connections_reject_invalid_reasoning_effort_values(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    suffix: str,
+    reasoning_effort: object,
+    expected_issue: str,
+) -> None:
+    rejected_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key=f"invalid_reasoning_{suffix}",
+            name=f"Invalid Reasoning {suffix.title()}",
+            reasoning_effort=reasoning_effort,
+        ),
+    )
+    _assert_reasoning_effort_validation_error(rejected_create, expected_issue)
+
+    valid_create = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key=f"valid_reasoning_{suffix}",
+            name=f"Valid Reasoning {suffix.title()}",
+        ),
+    )
+    assert valid_create.status_code == 201, valid_create.json()
+    connection_id = valid_create.json()["id"]
+
+    rejected_update = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"reasoningEffort": reasoning_effort},
+    )
+    _assert_reasoning_effort_validation_error(rejected_update, expected_issue)
+
+    with session_factory() as session:
+        row = session.get(ModelConnection, connection_id)
+        assert row is not None
+        assert row.reasoning_effort == "medium"
+
+
 def test_agent_platform_model_connections_create_and_test_selected_api_style(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -1844,6 +2055,51 @@ def test_agent_platform_model_connections_create_and_test_selected_api_style(
         chat_row = session.get(ModelConnection, chat_connection_id)
         assert responses_row is not None and responses_row.api_style == "responses"
         assert chat_row is not None and chat_row.api_style == "chat_completions"
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort", "expected_reasoning"),
+    [
+        ("null", None, None),
+        ("minimal", "minimal", {"effort": "minimal"}),
+        ("none", "none", {"effort": "none"}),
+        ("xhigh", "xhigh", {"effort": "xhigh"}),
+    ],
+)
+def test_model_connections_responses_test_reasoning_omission_and_custom_values(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    reasoning_effort: str | None,
+    expected_reasoning: dict[str, str] | None,
+) -> None:
+    _ApiStyleRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _ApiStyleRecordingOpenAIClient,
+    )
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key=f"responses_connection_test_{suffix}",
+            name=f"Responses Connection Test {suffix.title()}",
+            api_key="sk-api-style-1234",
+            reasoning_effort=reasoning_effort,
+        ),
+    )
+    assert create_response.status_code == 201, create_response.json()
+
+    connection_test = client.post(
+        f"/api/model-connections/{create_response.json()['id']}/connection-test"
+    )
+    assert connection_test.status_code == 200, connection_test.json()
+    assert connection_test.json()["ok"] is True
+    request = _ApiStyleRecordingOpenAIClient.responses_create_calls[-1]
+    if expected_reasoning is None:
+        assert "reasoning" not in request
+    else:
+        assert request["reasoning"] == expected_reasoning
+    assert _ApiStyleRecordingOpenAIClient.chat_create_calls == []
 
 
 def test_agent_platform_model_connections_selected_api_style_failure_does_not_fallback(
@@ -2283,6 +2539,66 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
 
 
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort", "expected_reasoning"),
+    [
+        ("null", None, None),
+        ("minimal", "minimal", {"effort": "minimal"}),
+        ("none", "none", {"effort": "none"}),
+        ("xhigh", "xhigh", {"effort": "xhigh"}),
+    ],
+)
+def test_agent_platform_run_responses_reasoning_effort_omission_and_custom_snapshot_values(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    suffix: str,
+    reasoning_effort: str | None,
+    expected_reasoning: dict[str, str] | None,
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "reasoning runtime output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+
+    with session_factory() as session:
+        workflow, agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key=f"responses_reasoning_{suffix}_agent",
+            workflow_key=f"responses_reasoning_{suffix}_workflow",
+            connection=_build_model_connection(
+                name=f"Responses Reasoning {suffix.title()} Connection",
+                api_key="sk-reasoning-runtime-1234",
+                reasoning_effort=reasoning_effort,
+            ),
+        )
+        assert agent.model_connection_snapshot["reasoning_effort"] == reasoning_effort
+        workflow_row = session.get(Workflow, workflow.id)
+        assert workflow_row is not None
+        workflow_storage = json.dumps(
+            {"steps": workflow_row.steps, "outputSpec": workflow_row.output_spec},
+            sort_keys=True,
+        )
+        assert "reasoningEffort" not in workflow_storage
+        assert "reasoning_effort" not in workflow_storage
+        assert "modelConnectionSnapshot" not in workflow_storage
+        assert "model_connection_snapshot" not in workflow_storage
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "MSFT"}},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "reasoning runtime output"}
+    request = _RuntimeRecordingOpenAIClient.create_calls[-1]
+    if expected_reasoning is None:
+        assert "reasoning" not in request
+    else:
+        assert request["reasoning"] == expected_reasoning
+
+
 def test_agent_platform_run_chat_completions_snapshot_parses_message_content_json(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -2332,6 +2648,54 @@ def test_agent_platform_run_chat_completions_snapshot_parses_message_content_jso
     assert [message["role"] for message in chat_request["messages"]] == ["system", "user"]
     assert chat_request["response_format"]["type"] == "json_schema"
     assert "previous_response_id" not in chat_request
+    assert "input" not in chat_request
+    assert "reasoning" not in chat_request
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort"),
+    [("null", None), ("custom", "xhigh")],
+)
+def test_agent_platform_run_chat_completions_never_sends_reasoning_for_null_or_custom(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+    suffix: str,
+    reasoning_effort: str | None,
+) -> None:
+    _RuntimeChatCompletionsOpenAIClient.reset()
+    _RuntimeChatCompletionsOpenAIClient.output_text = '{"summary": "chat reasoning output"}'
+    monkeypatch.setattr(
+        "app.services.run_service.OpenAI",
+        _RuntimeChatCompletionsOpenAIClient,
+    )
+
+    with session_factory() as session:
+        workflow, _agent = _create_single_agent_runtime_workflow(
+            session,
+            agent_key=f"chat_reasoning_{suffix}_agent",
+            workflow_key=f"chat_reasoning_{suffix}_workflow",
+            connection=_build_model_connection(
+                name=f"Chat Reasoning {suffix.title()} Connection",
+                api_key="sk-chat-reasoning-1111",
+                api_style="chat_completions",
+                reasoning_effort=reasoning_effort,
+            ),
+        )
+
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "MSFT"}},
+    )
+    assert trigger.status_code == 201, trigger.json()
+    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "chat reasoning output"}
+    chat_request = _RuntimeChatCompletionsOpenAIClient.chat_create_calls[-1]
+    assert [message["role"] for message in chat_request["messages"]] == ["system", "user"]
+    assert chat_request["response_format"]["type"] == "json_schema"
+    assert "reasoning" not in chat_request
     assert "input" not in chat_request
 
 

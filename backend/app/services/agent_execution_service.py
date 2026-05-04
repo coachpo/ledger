@@ -5,7 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 
 import openai
 from openai import OpenAI
@@ -63,7 +63,7 @@ class _ResolvedModelConnectionConfig:
     organization: str | None
     project: str | None
     model_id: str
-    reasoning_effort: str
+    reasoning_effort: str | None
     api_style: str
     timeout_seconds: int
     api_key: str | None
@@ -403,9 +403,10 @@ class AgentExecutionService:
                 "model": model_connection.model_id,
                 "instructions": instructions,
                 "input": response_input,
-                "reasoning": cast(Any, {"effort": model_connection.reasoning_effort}),
                 "text": text_format,
             }
+            if model_connection.reasoning_effort is not None:
+                request_kwargs["reasoning"] = {"effort": model_connection.reasoning_effort}
             if previous_response_id is not None:
                 request_kwargs["previous_response_id"] = previous_response_id
             if available_tools:
