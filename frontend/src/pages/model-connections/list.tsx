@@ -119,6 +119,12 @@ export function ModelConnectionsListPage() {
             return (
               <PlatformResourceCard
                 key={connection.id}
+                density="compactPlus"
+                primaryAction={{
+                  kind: "link",
+                  label: `Open model connection ${connection.name}`,
+                  to: `/model-connections/${connection.id}/edit`,
+                }}
                 testId={`model-connections-row-${connection.id}`}
                 title={connection.name}
                 subtitle={connection.modelId}
