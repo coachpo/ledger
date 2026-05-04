@@ -1969,6 +1969,49 @@ def _drop_tables(engine: Engine, table_names: set[str], tables: tuple[str, ...])
             table_names.discard(table_name)
 
 
+def _repair_legacy_agent_memory_report_sources(engine: Engine, table_names: set[str]) -> None:
+    if "reports" not in table_names:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE reports
+                SET source = 'agent',
+                    metadata = jsonb_set(
+                        metadata,
+                        '{createdBy}',
+                        jsonb_strip_nulls(
+                            jsonb_build_object(
+                                'type', 'agent',
+                                'runId', (metadata->'analysis'->>'runId')::int,
+                                'agentKey', metadata->'analysis'->'agentKey',
+                                'agentVersion', (metadata->'analysis'->>'agentVersion')::int,
+                                'agentName', metadata->'analysis'->'agentName',
+                                'workflowKey', metadata->'analysis'->'workflowKey',
+                                'workflowVersion', metadata->'analysis'->'workflowVersion',
+                                'stepId', metadata->'analysis'->'stepId',
+                                'slot', metadata->'analysis'->'slot',
+                                'traceId', metadata->'analysis'->'traceId'
+                            )
+                        ),
+                        true
+                    ),
+                    updated_at = NOW()
+                WHERE source = 'external'
+                  AND jsonb_typeof(metadata) = 'object'
+                  AND jsonb_typeof(metadata->'analysis') = 'object'
+                  AND metadata->'analysis'->>'reviewType' = 'agent_memory'
+                  AND metadata->'analysis'->>'versionGroup' = 'agent_memory/v1'
+                  AND btrim(COALESCE(metadata->'analysis'->>'agentKey', '')) <> ''
+                  AND (metadata->'analysis'->>'agentVersion') ~ '^[0-9]+$'
+                  AND (metadata->'analysis'->>'runId') ~ '^[0-9]+$'
+                """
+            )
+        )
+
+
 def upgrade_legacy_schema(engine: Engine) -> None:
     validate_supported_database_engine(engine)
     inspector = inspect(engine)
@@ -2058,6 +2101,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE reports ADD COLUMN metadata JSONB DEFAULT '{}' NOT NULL"
                 )
+        _repair_legacy_agent_memory_report_sources(engine, table_names)
 
     if "market_quotes" in table_names:
         market_quote_columns = {column["name"] for column in inspector.get_columns("market_quotes")}

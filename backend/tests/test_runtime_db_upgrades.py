@@ -543,6 +543,77 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     return retired_portfolio_id
 
 
+def _agent_memory_report_metadata(**analysis_overrides: object) -> dict[str, object]:
+    analysis: dict[str, object] = {
+        "reviewType": "agent_memory",
+        "versionGroup": "agent_memory/v1",
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "agentVersion": 7,
+        "agentName": "Portfolio Manager",
+        "workflowKey": "memory_workflow",
+        "workflowVersion": 2,
+        "stepId": "write_memory",
+        "slot": "decision",
+        "traceId": "trace-123",
+    }
+    analysis.update(analysis_overrides)
+    return {
+        "analysis": analysis,
+        "createdBy": {"type": "external", "agentKey": "spoofed"},
+        "tags": ["legacy"],
+    }
+
+
+def _insert_report_upgrade_row(
+    connection: Connection,
+    *,
+    slug: str,
+    source: str,
+    metadata: dict[str, object],
+) -> None:
+    _ = connection.execute(
+        text(
+            """
+            INSERT INTO reports (name, slug, source, content, metadata, created_at, updated_at)
+            VALUES (:name, :slug, :source, :content, CAST(:metadata AS jsonb), NOW(), NOW())
+            """
+        ),
+        {
+            "content": f"Report content for {slug}.",
+            "metadata": json.dumps(metadata, sort_keys=True),
+            "name": slug.replace("_", " ").title(),
+            "slug": slug,
+            "source": source,
+        },
+    )
+
+
+def _report_upgrade_rows_by_slug(
+    engine: Engine,
+    slugs: tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT slug, source, metadata
+                    FROM reports
+                    WHERE slug IN :slugs
+                    ORDER BY slug ASC
+                    """
+                ).bindparams(bindparam("slugs", expanding=True)),
+                {"slugs": slugs},
+            )
+            .mappings()
+            .all()
+        )
+    return {
+        str(row["slug"]): {"source": row["source"], "metadata": row["metadata"]} for row in rows
+    }
+
+
 def _foreign_key_signature(
     foreign_key: dict[str, object],
 ) -> tuple[tuple[str, ...], str | None, str | None]:
@@ -2073,6 +2144,116 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
         )
     finally:
         engine.dispose()
+
+
+def test_upgrade_legacy_schema_migrates_agent_memory_reports_to_agent_source(
+    session_factory,
+) -> None:
+    matching_slug = "legacy_agent_memory_external"
+    weekly_slug = "legacy_weekly_external"
+    malformed_slug = "legacy_agent_memory_malformed"
+    uploaded_slug = "legacy_agent_memory_uploaded"
+    compiled_slug = "legacy_agent_memory_compiled"
+    slugs = (matching_slug, weekly_slug, malformed_slug, uploaded_slug, compiled_slug)
+    weekly_metadata: dict[str, object] = {
+        "analysis": {"reviewType": "weekly_review", "versionGroup": "weekly_review/v1"},
+        "tags": ["external"],
+    }
+    malformed_metadata = _agent_memory_report_metadata(agentVersion="v7")
+    uploaded_metadata = _agent_memory_report_metadata(runId=5252, agentKey="uploaded_agent")
+    compiled_metadata = _agent_memory_report_metadata(runId=6262, agentKey="compiled_agent")
+
+    with session_factory() as session:
+        engine = session.get_bind()
+        with engine.begin() as connection:
+            _insert_report_upgrade_row(
+                connection,
+                slug=matching_slug,
+                source="external",
+                metadata=_agent_memory_report_metadata(),
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=weekly_slug,
+                source="external",
+                metadata=weekly_metadata,
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=malformed_slug,
+                source="external",
+                metadata=malformed_metadata,
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=uploaded_slug,
+                source="uploaded",
+                metadata=uploaded_metadata,
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=compiled_slug,
+                source="compiled",
+                metadata=compiled_metadata,
+            )
+
+    upgrade_legacy_schema(engine)
+
+    rows = _report_upgrade_rows_by_slug(engine, slugs)
+    matching_metadata = cast(dict[str, object], rows[matching_slug]["metadata"])
+
+    assert rows[matching_slug]["source"] == "agent"
+    assert matching_metadata["createdBy"] == {
+        "type": "agent",
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "agentVersion": 7,
+        "agentName": "Portfolio Manager",
+        "workflowKey": "memory_workflow",
+        "workflowVersion": 2,
+        "stepId": "write_memory",
+        "slot": "decision",
+        "traceId": "trace-123",
+    }
+    assert matching_metadata["analysis"] == _agent_memory_report_metadata()["analysis"]
+    assert rows[weekly_slug] == {"source": "external", "metadata": weekly_metadata}
+    assert rows[malformed_slug] == {"source": "external", "metadata": malformed_metadata}
+    assert rows[uploaded_slug] == {"source": "uploaded", "metadata": uploaded_metadata}
+    assert rows[compiled_slug] == {"source": "compiled", "metadata": compiled_metadata}
+
+
+def test_upgrade_legacy_schema_agent_memory_source_repair_is_idempotent(session_factory) -> None:
+    slug = "legacy_agent_memory_idempotent"
+
+    with session_factory() as session:
+        engine = session.get_bind()
+        with engine.begin() as connection:
+            _insert_report_upgrade_row(
+                connection,
+                slug=slug,
+                source="external",
+                metadata=_agent_memory_report_metadata(),
+            )
+
+    upgrade_legacy_schema(engine)
+    first_rows = _report_upgrade_rows_by_slug(engine, (slug,))
+    upgrade_legacy_schema(engine)
+    second_rows = _report_upgrade_rows_by_slug(engine, (slug,))
+
+    assert first_rows == second_rows
+    assert first_rows[slug]["source"] == "agent"
+    assert cast(dict[str, object], first_rows[slug]["metadata"])["createdBy"] == {
+        "type": "agent",
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "agentVersion": 7,
+        "agentName": "Portfolio Manager",
+        "workflowKey": "memory_workflow",
+        "workflowVersion": 2,
+        "stepId": "write_memory",
+        "slot": "decision",
+        "traceId": "trace-123",
+    }
 
 
 def test_upgrade_legacy_schema_drops_preexisting_legacy_backend_tables(session_factory) -> None:
