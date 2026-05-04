@@ -14,6 +14,7 @@ type OutputSchemaRead = {
 type ModelConnectionRead = {
   id: number;
   key: string;
+  reasoningEffort: string | null;
 };
 
 type McpServerRead = {
@@ -67,6 +68,7 @@ async function createOutputSchema(
 async function createModelConnection(
   request: APIRequestContext,
   key: string,
+  reasoningEffort: string | null = null,
 ): Promise<ModelConnectionRead> {
   const response = await request.post(`${PLATFORM_API}/model-connections`, {
     data: {
@@ -76,13 +78,15 @@ async function createModelConnection(
       key,
       modelId: `gpt-${key}`,
       name: `Model ${key}`,
-      reasoningEffort: "low",
+      reasoningEffort,
       timeoutSeconds: 10,
     },
   });
 
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as ModelConnectionRead;
+  const created = (await response.json()) as ModelConnectionRead;
+  expect(created.reasoningEffort).toBe(reasoningEffort);
+  return created;
 }
 
 async function createAndActivateCapability(
@@ -193,8 +197,8 @@ spec:
 `;
 }
 
-test.describe("Agent platform CRUD flows", () => {
-  test("covers YAML-only agent authoring, duplicate behavior, and saved run launch", async ({
+test.describe("Agent-platform CRUD flows", () => {
+  test("covers model connection omit reasoning, YAML-only agent authoring, duplicate behavior, and saved run launch", async ({
     page,
     request,
   }) => {
@@ -307,6 +311,11 @@ test.describe("Agent platform CRUD flows", () => {
       await expect(page.getByTestId("platform-capabilities-page")).toHaveCount(0);
       await expect(page.getByTestId("capabilities-editor")).toHaveCount(0);
     }
+
+    await page.goto("/model-connections");
+    const omittedReasoningRow = page.getByTestId(`model-connections-row-${modelConnection.id}`);
+    await expect(omittedReasoningRow).toBeVisible();
+    await expect(omittedReasoningRow).toContainText("Omitted");
 
     await page.goto(`/mcp-servers/${server.id}/edit`);
     await expect(page).toHaveURL(new RegExp(`/mcp-servers/${server.id}/edit$`));

@@ -7,6 +7,7 @@ const PLATFORM_API = "http://127.0.0.1:8001/api";
 type ModelConnectionRead = {
   id: number;
   key: string;
+  reasoningEffort: string | null;
 };
 
 type OutputSchemaRead = {
@@ -27,7 +28,11 @@ type McpServerRead = {
   version: number;
 };
 
-async function createModelConnection(request: APIRequestContext, key: string): Promise<ModelConnectionRead> {
+async function createModelConnection(
+  request: APIRequestContext,
+  key: string,
+  reasoningEffort = "xhigh",
+): Promise<ModelConnectionRead> {
   const response = await request.post(`${PLATFORM_API}/model-connections`, {
     data: {
       apiKey: "playwright-redacted-key",
@@ -36,13 +41,15 @@ async function createModelConnection(request: APIRequestContext, key: string): P
       key,
       modelId: `gpt-${key}`,
       name: `Model ${key}`,
-      reasoningEffort: "low",
+      reasoningEffort,
       timeoutSeconds: 10,
     },
   });
 
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as ModelConnectionRead;
+  const created = (await response.json()) as ModelConnectionRead;
+  expect(created.reasoningEffort).toBe(reasoningEffort);
+  return created;
 }
 
 async function createPublishedOutputSchema(request: APIRequestContext, key: string): Promise<OutputSchemaRead> {
@@ -162,8 +169,8 @@ async function expectYamlOnlyAgentEditor(page: Page) {
   await expect(page.getByTestId("output-schema-add-field")).toHaveCount(0);
 }
 
-test.describe("Agent YAML editor", () => {
-  test("creates, reloads, versions, diagnoses invalid refs, and launches saved runs", async ({
+test.describe("Agent YAML editor with model connection reasoning", () => {
+  test("creates with custom xhigh model connection reasoning, reloads, versions, diagnoses invalid refs, and launches saved runs", async ({
     page,
     request,
   }) => {

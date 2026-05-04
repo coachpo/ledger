@@ -20,6 +20,7 @@ type OutputSchemaRead = {
 type ModelConnectionRead = {
   id: number;
   key: string;
+  reasoningEffort: string | null;
 };
 
 type AgentRead = {
@@ -55,6 +56,7 @@ async function createPublishedOutputSchema(
 async function createModelConnection(
   request: APIRequestContext,
   key: string,
+  reasoningEffort = "xhigh",
 ): Promise<ModelConnectionRead> {
   const response = await request.post(`${PLATFORM_API}/model-connections`, {
     data: {
@@ -64,13 +66,15 @@ async function createModelConnection(
       key,
       modelId: `gpt-${key}`,
       name: `Model ${key}`,
-      reasoningEffort: "low",
+      reasoningEffort,
       timeoutSeconds: 10,
     },
   });
 
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as ModelConnectionRead;
+  const created = (await response.json()) as ModelConnectionRead;
+  expect(created.reasoningEffort).toBe(reasoningEffort);
+  return created;
 }
 
 async function createPublishedAgent(
@@ -404,7 +408,7 @@ test.describe("Workflow YAML editor", () => {
     await expect(page.locator("body")).not.toContainText(/api[_ -]?key/i);
   });
 
-  test("covers create, reopen, edit, invalid diagnostics, and run launch", async ({
+  test("covers custom xhigh model connection reasoning, create, reopen, edit, invalid diagnostics, and run launch", async ({
     page,
     request,
   }) => {
