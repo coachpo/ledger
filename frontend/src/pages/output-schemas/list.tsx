@@ -97,7 +97,7 @@ export function OutputSchemasListPage() {
                   }
                 />
               }
-              description={schema.description || "No description provided."}
+              description={schema.description}
               metadata={
                 <p className="text-sm text-muted-foreground">
                   {Object.keys((schema.jsonSchema.properties as Record<string, unknown> | undefined) ?? {}).length} property definition(s)

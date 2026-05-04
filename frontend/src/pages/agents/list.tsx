@@ -89,7 +89,7 @@ export function AgentsListPage() {
               testId={`agents-row-${agent.key}`}
               title={agent.name}
               subtitle={agent.key}
-              description={agent.description || "No description provided."}
+              description={agent.description}
               badges={
                 <PlatformResourceBadges
                   status={agent.status}

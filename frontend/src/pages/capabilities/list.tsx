@@ -95,7 +95,7 @@ export function CapabilitiesListPage() {
               testId={`capabilities-row-${capability.key}`}
               title={capability.name}
               subtitle={capability.key}
-              description={capability.description || "No description provided."}
+              description={capability.description}
               badges={
                 <PlatformResourceBadges
                   status={capability.status}

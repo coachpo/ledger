@@ -92,7 +92,7 @@ export function McpServersListPage() {
               testId={`mcp-servers-row-${server.key}`}
               title={server.name}
               subtitle={server.key}
-              description={server.description || "No description provided."}
+              description={server.description}
               badges={
                 <PlatformResourceBadges
                   status={server.status}
