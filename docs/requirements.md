@@ -39,9 +39,11 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 
 - Templates must support `inputs`, `portfolios`, and `reports` placeholder roots.
 - Dynamic portfolio and report selectors must accept runtime inputs where supported.
-- Reports must support compiled, uploaded, and external sources.
+- Reports must support canonical `source` origins `compiled`, `uploaded`, `external`, and `agent`.
+- `external` must remain limited to true external user/API-created reports; agent-created reports must use `source="agent"`.
 - Report reads, updates, deletes, and downloads must be slug-addressed.
-- Report metadata must remain extensible JSON while canonical filters stay stable.
+- Report metadata must remain extensible JSON while canonical filters stay stable. For agent memory reports, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance including `runId`, `agentKey`, and `agentVersion`.
+
 ### FR-3 Agent Platform Authoring
 
 - Agents and workflows must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, non-exact version pins, and retired `spec.skills` fields.

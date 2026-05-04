@@ -26,7 +26,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 
 1. Portfolio workspace: portfolio list/detail, balances, positions, CSV import, trades, quote-enriched metrics, and warnings.
 2. Template manager: global templates, placeholder browser, runtime inputs, inline compile preview, and stored-template compile.
-3. Reports workspace: generated, uploaded, and external markdown reports with grouping, filters, edit, delete, and download.
+3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
 4. Agent authoring: YAML manifest list/editor/run-launch flows for versioned agents.
 5. Capabilities: canonical tool-grant CRUD with `toolGrants` and server-declared tools.
 6. MCP servers: saved server config, security validation, connection testing, and runtime snapshots.
@@ -39,7 +39,8 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 - A user can create a portfolio, add balances and positions, and submit valid simulated operations without crossing portfolio boundaries.
 - Template compile and report generation work with `inputs`, `portfolios`, and `reports` placeholders.
 - Report-series workflows can reuse stable tags and runtime inputs to reference the latest prior report in a series.
-- Report list/detail/download flows remain slug-addressed and source-aware.
+- Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
+- Agent memory reports keep `source="agent"` for origin, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` for purpose/type, and server-owned `metadata.createdBy.type="agent"` provenance with `runId`, `agentKey`, and `agentVersion`.
 - Agents and workflows can be authored from YAML manifests and validated before save.
 - Capability, MCP server, model connection, and output schema resources can be created and reused by agents/workflows.
 - Workflow launches create persisted runs with visible per-step details, final output, and safe error states.
