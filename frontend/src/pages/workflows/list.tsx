@@ -100,7 +100,7 @@ export function WorkflowsListPage() {
                 </>
               }
               badges={<PlatformResourceBadges status={workflow.status} version={workflow.version} />}
-              description={workflow.description || "No description provided."}
+              description={workflow.description}
               metadata={
                 <p className="text-sm text-muted-foreground">
                   {workflow.steps.length} step(s) · Aggregate budget {workflow.aggregateBudgetUsd}

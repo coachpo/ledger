@@ -73,7 +73,9 @@ export function WorkflowDetailPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{workflow.name}</h1>
-            <p className="text-sm text-muted-foreground">{workflow.description || "No description provided."}</p>
+            {workflow.description ? (
+              <p className="text-sm text-muted-foreground">{workflow.description}</p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <PlatformResourceBadges status={workflow.status} version={workflow.version} />
