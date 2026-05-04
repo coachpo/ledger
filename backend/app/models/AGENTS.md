@@ -49,5 +49,5 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `app/models/__init__.py` imports the full preserved-product and agent-platform model surface for startup registration.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists workflow version identity, per-step outputs, final output, and run totals used by the run monitor.
-- `report.py` stores unique `name` and `slug`, tracks `source` (`compiled` vs `uploaded`), and keeps optional metadata in JSONB under the `metadata` column.
+- `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Agent-created memory reports use `source="agent"`; their `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
