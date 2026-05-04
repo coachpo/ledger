@@ -28,4 +28,11 @@ describe("router", () => {
     expect(matchRoutes(router.routes, "/skills/new")).toBeNull();
     expect(matchRoutes(router.routes, "/skills/123/edit")).toBeNull();
   });
+
+  it("registers workflow detail, editor, and launch pages without hash redirects", () => {
+    expect(matchRoutes(router.routes, "/workflows/123")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/workflows/123/edit")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/workflows/123/run")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/workflows/123/edit#review")).not.toBeNull();
+  });
 });

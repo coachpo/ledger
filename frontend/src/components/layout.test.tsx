@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -16,18 +16,25 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 describe("Layout", () => {
-  it("shows the primary platform shell navigation and hides legacy shell entries", () => {
-    render(
+  function renderLayout(initialEntry: string) {
+    return render(
       <ThemeProvider>
-        <MemoryRouter initialEntries={["/"]}>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<div>Dashboard content</div>} />
+              <Route path="workflows/:workflowId" element={<div>Workflow detail content</div>} />
+              <Route path="workflows/:workflowId/edit" element={<div>Workflow editor content</div>} />
+              <Route path="workflows/:workflowId/run" element={<div>Workflow launch content</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
       </ThemeProvider>,
     );
+  }
+
+  it("shows the primary platform shell navigation and hides legacy shell entries", () => {
+    renderLayout("/");
 
     expect(screen.getByRole("link", { name: /agents/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /capabilities/i })).toBeInTheDocument();
@@ -40,5 +47,16 @@ describe("Layout", () => {
     expect(screen.queryByRole("link", { name: /studio/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /orchestration/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /backtests/i })).not.toBeInTheDocument();
+  });
+
+  it("labels workflow detail, edit, and launch routes", () => {
+    renderLayout("/workflows/88");
+    expect(within(screen.getByRole("banner")).getByText("Workflow Detail")).toBeInTheDocument();
+
+    renderLayout("/workflows/88/edit#review");
+    expect(within(screen.getAllByRole("banner")[1]).getByText("Edit Workflow")).toBeInTheDocument();
+
+    renderLayout("/workflows/88/run");
+    expect(within(screen.getAllByRole("banner")[2]).getByText("Run Workflow")).toBeInTheDocument();
   });
 });

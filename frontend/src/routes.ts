@@ -20,7 +20,9 @@ import { RunsDetailPage } from "./pages/runs/detail";
 import { RunsListPage } from "./pages/runs/list";
 import { TemplateEditorPage } from "./pages/templates/editor";
 import { TemplateListPage } from "./pages/templates/list";
+import { WorkflowDetailPage } from "./pages/workflows/detail";
 import { WorkflowsEditorPage } from "./pages/workflows/editor";
+import { WorkflowLaunchPage } from "./pages/workflows/launch";
 import { WorkflowsListPage } from "./pages/workflows/list";
 
 export const router = createBrowserRouter([
@@ -56,7 +58,9 @@ export const router = createBrowserRouter([
       { path: "output-schemas/:schemaId/edit", Component: OutputSchemasEditorPage },
       { path: "workflows", Component: WorkflowsListPage },
       { path: "workflows/new", Component: WorkflowsEditorPage },
+      { path: "workflows/:workflowId", Component: WorkflowDetailPage },
       { path: "workflows/:workflowId/edit", Component: WorkflowsEditorPage },
+      { path: "workflows/:workflowId/run", Component: WorkflowLaunchPage },
       { path: "runs", Component: RunsListPage },
       { path: "runs/:runId", Component: RunsDetailPage },
     ],

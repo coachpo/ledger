@@ -182,6 +182,14 @@ function getPageMeta(pathname: string) {
     return { section: "Workflows", sectionHref: "/workflows", title: "Edit Workflow" };
   }
 
+  if (pathname.startsWith("/workflows/") && pathname.endsWith("/run")) {
+    return { section: "Workflows", sectionHref: "/workflows", title: "Run Workflow" };
+  }
+
+  if (pathname.startsWith("/workflows/")) {
+    return { section: "Workflows", sectionHref: "/workflows", title: "Workflow Detail" };
+  }
+
   if (pathname === "/runs") {
     return { section: "Runs", title: "Runs" };
   }
