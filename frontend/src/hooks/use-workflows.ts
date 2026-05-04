@@ -1,9 +1,11 @@
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   archiveWorkflow,
   createWorkflow,
-  createWorkflowRun,
+  createWorkflowLaunch,
   getWorkflow,
+  getWorkflowLaunch,
+  listWorkflowVersions,
   listWorkflows,
   updateWorkflow,
   validateWorkflowManifest,
@@ -12,10 +14,13 @@ import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   WorkflowCreateInput,
+  WorkflowLaunchCreateInput,
+  WorkflowLaunchCreateResponse,
+  WorkflowLaunchRead,
   WorkflowListParams,
   WorkflowManifestValidationInput,
-  WorkflowRunCreateInput,
   WorkflowUpdateInput,
+  WorkflowVersionRead,
 } from "@/lib/types/workflow";
 
 type UpdateWorkflowVariables = {
@@ -23,9 +28,8 @@ type UpdateWorkflowVariables = {
   workflowId: IdParam;
 };
 
-type CreateWorkflowRunVariables = {
-  payload: WorkflowRunCreateInput;
-  version?: number;
+type CreateWorkflowLaunchVariables = {
+  payload: WorkflowLaunchCreateInput;
   workflowId: IdParam;
 };
 
@@ -95,16 +99,42 @@ export function useArchiveWorkflow() {
   });
 }
 
-export function useCreateWorkflowRun() {
+export function useWorkflowLaunch(
+  workflowId: IdParam | undefined,
+  version?: number,
+): UseQueryResult<WorkflowLaunchRead, Error> {
+  const resolvedWorkflowId = workflowId ?? "";
+
+  return useQuery({
+    queryKey: queryKeys.platform.workflows.launch(resolvedWorkflowId, version),
+    queryFn: ({ signal }) => getWorkflowLaunch(resolvedWorkflowId, { signal, version }),
+    enabled: Boolean(workflowId),
+  });
+}
+
+export function useWorkflowVersions(
+  workflowId: IdParam | undefined,
+): UseQueryResult<{ items: WorkflowVersionRead[] }, Error> {
+  const resolvedWorkflowId = workflowId ?? "";
+
+  return useQuery({
+    queryKey: queryKeys.platform.workflows.versions(resolvedWorkflowId),
+    queryFn: ({ signal }) => listWorkflowVersions(resolvedWorkflowId, signal),
+    enabled: Boolean(workflowId),
+  });
+}
+
+export function useCreateWorkflowLaunch() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async ({ payload, version, workflowId }: CreateWorkflowRunVariables) => {
-      return createWorkflowRun(workflowId, payload, { version });
-    },
-    onSuccess: async (run) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(run.id) });
+  return useMutation<WorkflowLaunchCreateResponse, Error, CreateWorkflowLaunchVariables>({
+    mutationFn: ({ payload, workflowId }) => createWorkflowLaunch(workflowId, payload),
+    onSuccess: async (run, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(run.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflows.launch(variables.workflowId, variables.payload.version) }),
+      ]);
     },
   });
 }

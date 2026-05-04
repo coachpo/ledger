@@ -26,8 +26,10 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/api/workflows", () => ({
   archiveWorkflow: vi.fn(),
   createWorkflow: vi.fn(),
-  createWorkflowRun: vi.fn(),
+  createWorkflowLaunch: vi.fn(),
   getWorkflow: vi.fn(),
+  getWorkflowLaunch: vi.fn(),
+  listWorkflowVersions: vi.fn(),
   listWorkflows: vi.fn(),
   updateWorkflow: vi.fn(),
   validateWorkflowManifest: vi.fn(),
@@ -37,10 +39,12 @@ import { validateWorkflowManifest } from "@/lib/api/workflows";
 import { queryKeys } from "@/lib/query-keys";
 import {
   useCreateWorkflow,
-  useCreateWorkflowRun,
+  useCreateWorkflowLaunch,
   useUpdateWorkflow,
   useValidateWorkflowManifest,
   useWorkflow,
+  useWorkflowLaunch,
+  useWorkflowVersions,
 } from "./use-workflows";
 
 type CapturedMutationOptions = {
@@ -151,8 +155,36 @@ describe("useWorkflows", () => {
     });
   });
 
-  it("invalidates platform run caches after triggering a workflow run", async () => {
-    useCreateWorkflowRun();
+  it("uses workflow launch and version query keys", () => {
+    reactQueryState.useQueryMock.mockClear();
+
+    useWorkflowLaunch(undefined, 2);
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        queryKey: queryKeys.platform.workflows.launch("", 2),
+      }),
+    );
+
+    useWorkflowLaunch(15, 2);
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        queryKey: queryKeys.platform.workflows.launch(15, 2),
+      }),
+    );
+
+    useWorkflowVersions(15);
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        queryKey: queryKeys.platform.workflows.versions(15),
+      }),
+    );
+  });
+
+  it("invalidates platform run and workflow launch caches after creating a workflow launch", async () => {
+    useCreateWorkflowLaunch();
 
     expect(reactQueryState.capturedMutationOptions).not.toBeNull();
     if (reactQueryState.capturedMutationOptions === null) {
@@ -160,13 +192,19 @@ describe("useWorkflows", () => {
     }
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
 
-    await mutationOptions.onSuccess?.({ id: 23 }, { ticker: "AVGO" });
+    await mutationOptions.onSuccess?.(
+      { id: 23 },
+      { workflowId: 15, payload: { version: 2, parameters: { ticker: "AVGO" } } },
+    );
 
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.detail(23),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflows.launch(15, 2),
     });
   });
 });

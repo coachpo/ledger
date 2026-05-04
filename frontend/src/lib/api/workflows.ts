@@ -1,14 +1,16 @@
 import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
-import type { RunCreatedRead } from "../types/run";
 import type {
   WorkflowCreateInput,
+  WorkflowLaunchCreateInput,
+  WorkflowLaunchCreateResponse,
+  WorkflowLaunchRead,
   WorkflowListParams,
   WorkflowListRead,
   WorkflowManifestValidationInput,
   WorkflowManifestValidationRead,
   WorkflowRead,
-  WorkflowRunCreateInput,
   WorkflowUpdateInput,
+  WorkflowVersionRead,
 } from "../types/workflow";
 
 function workflowPath(workflowId: IdParam): string {
@@ -79,25 +81,45 @@ export function archiveWorkflow(
   });
 }
 
-export function createWorkflowRun(
+export function getWorkflowLaunch(
   workflowId: IdParam,
-  payload: WorkflowRunCreateInput,
   options: { signal?: AbortSignal; version?: number } = {},
-): Promise<RunCreatedRead> {
-  return requestPlatform<RunCreatedRead>(`${workflowPath(workflowId)}/runs`, {
-    body: payload,
-    method: "POST",
+): Promise<WorkflowLaunchRead> {
+  return requestPlatform<WorkflowLaunchRead>(`${workflowPath(workflowId)}/launch`, {
     query: toQueryRecord({ version: options.version }),
     signal: options.signal,
+  });
+}
+
+export function listWorkflowVersions(
+  workflowId: IdParam,
+  signal?: AbortSignal,
+): Promise<{ items: WorkflowVersionRead[] }> {
+  return requestPlatform<{ items: WorkflowVersionRead[] }>(`${workflowPath(workflowId)}/versions`, {
+    signal,
+  });
+}
+
+export function createWorkflowLaunch(
+  workflowId: IdParam,
+  payload: WorkflowLaunchCreateInput,
+  signal?: AbortSignal,
+): Promise<WorkflowLaunchCreateResponse> {
+  return requestPlatform<WorkflowLaunchCreateResponse>(`${workflowPath(workflowId)}/launches`, {
+    body: payload,
+    method: "POST",
+    signal,
   });
 }
 
 export const workflowsApi = {
   archive: archiveWorkflow,
   create: createWorkflow,
-  createRun: createWorkflowRun,
+  createLaunch: createWorkflowLaunch,
   get: getWorkflow,
+  getLaunch: getWorkflowLaunch,
   list: listWorkflows,
+  listVersions: listWorkflowVersions,
   update: updateWorkflow,
   validateManifest: validateWorkflowManifest,
 } as const;
