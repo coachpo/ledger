@@ -79,7 +79,12 @@ export function RunsListPage() {
             total token/cost summaries, and direct links into per-run detail.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void runsQuery.refetch()}>
+        <Button
+          className="cursor-pointer"
+          size="sm"
+          variant="outline"
+          onClick={() => void runsQuery.refetch()}
+        >
           <RefreshCcw data-icon="inline-start" />
           Refresh
         </Button>
@@ -172,48 +177,65 @@ export function RunsListPage() {
       ) : null}
 
       {!runsQuery.isPending && !runsQuery.isError && runs.length > 0 ? (
-        <div className="grid gap-3">
+        <div className="grid gap-2 sm:gap-3">
           {runs.map((run) => (
-            <Card key={run.id} data-testid={`runs-row-${run.id}`}>
-              <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-base">Run #{run.id}</CardTitle>
-                    <Badge variant="secondary">{run.status}</Badge>
-                    <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
-                    <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
+            <Card key={run.id} data-testid={`runs-row-${run.id}`} className="overflow-hidden">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <CardTitle className="text-base">Run #{run.id}</CardTitle>
+                        <Badge variant="secondary">{run.status}</Badge>
+                        <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
+                        <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
+                      </div>
+                      <CardDescription className="break-words text-sm">
+                        {describeRunTarget(run.targetKind)} · {run.startedAt
+                          ? `Started ${formatDateTime(run.startedAt)}`
+                          : `Queued ${formatDateTime(run.queuedAt)}`}
+                        {run.finishedAt
+                          ? ` · Finished ${formatDateTime(run.finishedAt)}`
+                          : formatUnfinishedRunStatus(run.status)}
+                      </CardDescription>
+                      <p className="text-sm text-muted-foreground">
+                        Target {formatTargetKindLabel(run.targetKind).toLowerCase()} #{run.targetId}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[minmax(12rem,0.75fr)_minmax(0,1fr)]">
+                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Progress</span>
+                          <span>{progressForStatus(run.status)}%</span>
+                        </div>
+                        <Progress className="mt-2" value={progressForStatus(run.status)} />
+                      </div>
+                      <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                          {formatTargetKindLabel(run.targetKind)} id: {run.targetId}
+                        </div>
+                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                          Total tokens: {run.totalTokens}
+                        </div>
+                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                          Total cost: {run.totalCostUsd}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <CardDescription>
-                    {describeRunTarget(run.targetKind)} · {run.startedAt
-                      ? `Started ${formatDateTime(run.startedAt)}`
-                      : `Queued ${formatDateTime(run.queuedAt)}`}
-                    {run.finishedAt
-                      ? ` · Finished ${formatDateTime(run.finishedAt)}`
-                      : formatUnfinishedRunStatus(run.status)}
-                  </CardDescription>
-                  <p className="text-sm text-muted-foreground">
-                    Target {formatTargetKindLabel(run.targetKind).toLowerCase()} #{run.targetId}
-                  </p>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => navigate(`/runs/${run.id}`)}>
-                  Open Run
-                  <ArrowRight data-icon="inline-end" />
-                </Button>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 text-sm text-muted-foreground">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span>Progress</span>
-                    <span>{progressForStatus(run.status)}%</span>
+
+                  <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+                    <Button
+                      className="w-full cursor-pointer sm:w-auto"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(`/runs/${run.id}`)}
+                    >
+                      Open Run
+                      <ArrowRight data-icon="inline-end" />
+                    </Button>
                   </div>
-                  <Progress value={progressForStatus(run.status)} />
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-md border p-3">
-                    {formatTargetKindLabel(run.targetKind)} id: {run.targetId}
-                  </div>
-                  <div className="rounded-md border p-3">Total tokens: {run.totalTokens}</div>
-                  <div className="rounded-md border p-3">Total cost: {run.totalCostUsd}</div>
                 </div>
               </CardContent>
             </Card>
