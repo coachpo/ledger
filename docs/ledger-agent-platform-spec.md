@@ -1,47 +1,52 @@
-# Ledger Agent Platform — Functional Spec
+# Ledger Agent Platform Functional Spec
 
-## 1. Scope
-Current shipped functional summary for Ledger's agent platform. This document describes the live platform surface in this repository, not an earlier target architecture.
+> Status: Live functional spec as of 2026-05-04 (`b4ac445`).
 
-## 2. Shipped surfaces
-- Backend `/api/agents`, `/api/skills`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, and `/api/runs` routes.
-- Frontend `/agents`, `/skills`, `/mcp-servers`, `/output-schemas`, `/workflows`, and `/runs` routes inside the main shell.
-- Preserved `/api/v1` and frontend routes for portfolios, templates, and reports.
-- No backward-compatibility layer for retired orchestration, Studio, Tryout, or runtime-v2 surfaces.
+## Scope
 
-## 3. Resource contracts
+This document describes the shipped platform surface in this repository, not the retired orchestration, Studio, Tryout, runtime-v2, simulation, backtest, or skill-contract architecture.
+
+## Shipped Routes
+
+- Backend: `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/model-connections`, `/api/output-schemas`, `/api/workflows`, and `/api/runs`.
+- Frontend: `/agents*`, `/capabilities*`, `/mcp-servers*`, `/model-connections*`, `/output-schemas*`, `/workflows*`, and `/runs*`.
+- Preserved product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`.
+
+## Resource Contracts
+
 ### Agents
-- Agents are versioned records with immutable historical versions.
-- Each version stores explicit input schema, pinned output-schema version, pinned skill versions, pinned MCP server versions, model settings, and budget settings.
-- The UI supports create, edit-as-new-version, duplicate, archive, and test-panel flows.
 
-### Skills, MCP servers, and output schemas
-- Skills, MCP servers, and output schemas are versioned resources with list/detail/editor flows.
-- Skill tools are server-declared; the browser selects catalog entries rather than authoring executable tool code.
-- MCP server auth is stored encrypted at rest.
-- Output schemas support the repository's locked JSON Schema subset plus builder/JSON/preview editing in the UI.
+- Agents are YAML-authored, versioned records with immutable historical versions.
+- Manifests use `spec.capabilities`; `spec.skills` is rejected.
+- Agents can reference output schemas, model settings, MCP servers, and capability refs.
 
-### Workflows
-- Workflows are versioned records with explicit input schema, ordered steps, slot names, per-field wiring, optional-agent flags, and a final output spec.
-- Saving validates slot references, type compatibility, and pinned resource versions before a new workflow version is created.
-- The shipped v1 model is linear and sequential across steps, with parallel agents inside each step.
+### Capabilities
 
-### Runs
-- `POST /api/workflows/{id}/runs` creates a persisted run row, returns immediately, and continues execution in the background.
-- Run rows persist per-step and per-agent detail for the run monitor: resolved input, output or error payload, status, tokens, cost, duration, and trace-span metadata.
-- Run list and detail routes expose current status, totals, final output, and trace linkage data when available.
+- Capabilities are canonical. They store tool grants as `toolGrants` and validate against the server-declared tool catalog.
+### MCP Servers
 
-## 4. Runtime behavior
-- Runtime execution is service-owned and stateless between runs.
-- Output schemas compile into runtime Pydantic models through the backend schema compiler.
-- Budget enforcement applies both per-agent and across the full workflow.
-- Startup repair marks leftover in-flight platform runs as failed after restart.
+- MCP servers are versioned resources with connection testing.
+- Runtime execution uses enabled, exact-version pins and frozen tool snapshots.
+- HTTP/SSE and stdio configs must stay inside the MCP security boundary.
 
-## 5. Observability and trace linkage
-- Successful runs can persist a run-level `traceId` plus per-agent `traceSpanId` values in run detail.
-- The shipped contract is trace-linkage metadata in the persisted run payload; this document does not require a specific external tracing product.
+### Model Connections
 
-## 6. Acceptance baseline
-- Agents, skills, MCP servers, output schemas, workflows, and runs are all authorable from the current browser UI.
-- Retired orchestration, Studio, Tryout, and runtime-v2 routes are not part of the shipped contract.
-- The stock-analysis reference workflow runs through the current platform surface and returns a typed `TradingDecision` payload.
+- Model connections store provider/base URL/default model/runtime settings and encrypted API keys.
+- Reads and errors must mask or omit raw secrets.
+- OpenAI-family base URLs are normalized and connection tests record last-test status.
+
+### Output Schemas
+
+- Output schemas use the locked supported schema subset.
+- The backend validates and compiles runtime models before execution.
+
+### Workflows And Runs
+
+- Workflows are YAML-authored, versioned records with pinned refs and launch metadata.
+- Launch creation accepts `{version, parameters}` and queues a persisted run.
+- Runs expose status, inputs, per-step outputs, final output, timing, cost, trace ids, reruns, and step replays.
+
+## Acceptance Baseline
+
+- Agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs are authorable from current browser routes.
+- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, simulation, backtest, and runtime-v2 routes are not part of the shipped contract.
