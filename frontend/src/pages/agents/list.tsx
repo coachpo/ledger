@@ -86,6 +86,12 @@ export function AgentsListPage() {
           {agents.map((agent) => (
             <PlatformResourceCard
               key={agent.id}
+              density="compact"
+              primaryAction={{
+                kind: "link",
+                label: `Open agent ${agent.name}`,
+                to: `/agents/${agent.id}/edit`,
+              }}
               testId={`agents-row-${agent.key}`}
               title={agent.name}
               subtitle={agent.key}
@@ -95,7 +101,7 @@ export function AgentsListPage() {
                   status={agent.status}
                   version={agent.version}
                   extra={
-                    <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                    <span className="inline-flex h-4 items-center rounded-md border px-1.5 text-[10px] font-medium text-muted-foreground">
                       {agent.modelConnection.modelId}
                     </span>
                   }
