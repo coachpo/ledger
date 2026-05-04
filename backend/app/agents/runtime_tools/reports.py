@@ -47,7 +47,7 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "portfolioSlug": {"type": ["string", "null"]},
         "source": {
             "type": ["string", "null"],
-            "enum": ["compiled", "uploaded", "external", None],
+            "enum": ["compiled", "uploaded", "external", "agent", None],
         },
         "limit": {
             "type": ["integer", "null"],
@@ -147,10 +147,13 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
     if ticker is not None:
         ticker = normalize_symbol(ticker)
     source = _parse_optional_string_argument(raw_arguments.get("source"))
-    if source is not None and source not in {"compiled", "uploaded", "external"}:
+    if source is not None and source not in {"compiled", "uploaded", "external", "agent"}:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="ledger_reports_lookup source must be one of compiled, uploaded, or external.",
+            message=(
+                "ledger_reports_lookup source must be one of compiled, uploaded, external, "
+                "or agent."
+            ),
         )
     return {
         "ticker": ticker,

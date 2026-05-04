@@ -282,6 +282,7 @@ def _runtime_tool_spec(
 
 def _reports_write_arguments_json(
     analysis_overrides: dict[str, object] | None = None,
+    root_overrides: dict[str, object] | None = None,
 ) -> str:
     analysis: dict[str, object] = {
         "ticker": " nvda ",
@@ -298,7 +299,10 @@ def _reports_write_arguments_json(
     }
     if analysis_overrides is not None:
         analysis.update(analysis_overrides)
-    return json.dumps({"analysis": analysis})
+    payload: dict[str, object] = {"analysis": analysis}
+    if root_overrides is not None:
+        payload.update(root_overrides)
+    return json.dumps(payload)
 
 
 def _reports_write_runtime_context(
@@ -1474,6 +1478,18 @@ def test_market_data_ohlcv_snapshot_rejects_invalid_bounds_and_row_limits(
     assert provider.ohlcv_calls == []
 
 
+def test_report_lookup_source_schema_includes_agent() -> None:
+    parameters = REPORT_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], parameters["properties"])
+    source_property = cast(dict[str, object], properties["source"])
+    assert source_property["enum"] == ["compiled", "uploaded", "external", "agent", None]
+
+
+def test_report_lookup_accepts_agent_source() -> None:
+    parsed = parse_report_lookup_arguments('{"source":"agent"}')
+    assert parsed["source"] == "agent"
+
+
 def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_execution_fields() -> None:
     assert REPORT_LOOKUP_TOOL_SPEC.key == REPORT_LOOKUP_TOOL_KEY
     assert REPORT_LOOKUP_TOOL_SPEC.openai_function_name == REPORT_LOOKUP_OPENAI_FUNCTION_NAME
@@ -1595,6 +1611,7 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
         "compiled",
         "uploaded",
         "external",
+        "agent",
         None,
     ]
     position_parameters = cast(dict[str, object], tools[1]["parameters"])
@@ -1842,6 +1859,28 @@ def test_reports_write_runtime_tool_parser_preserves_boundary_validation_message
     assert exc_info.value.message == expected_message
 
 
+def test_report_memory_write_rejects_created_by_argument() -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = parse_report_memory_write_arguments(
+            _reports_write_arguments_json(
+                root_overrides={
+                    "createdBy": {
+                        "type": "agent",
+                        "runId": 4242,
+                        "agentKey": "portfolio_manager",
+                        "agentVersion": 3,
+                    }
+                }
+            )
+        )
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert (
+        exc_info.value.message
+        == "ledger_reports_write arguments contained unsupported fields: createdBy"
+    )
+
+
 def test_reports_write_runtime_tool_service_denies_missing_write_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1909,7 +1948,20 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
     assert first_payload["reportId"] == report.id
     assert first_payload["reportSlug"] == report.slug
     assert first_payload["reportName"] == report.name
-    assert report.source == "external"
+    created_by = cast(dict[str, object], report.metadata_["createdBy"])
+    assert report.source == "agent"
+    assert created_by == {
+        "type": "agent",
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "agentVersion": 3,
+        "agentName": "Portfolio Manager",
+        "workflowKey": "tradingagents_daily_review",
+        "workflowVersion": 5,
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+        "traceId": "trace-runtime-tools",
+    }
     assert analysis["reviewType"] == "agent_memory"
     assert analysis["versionGroup"] == "agent_memory/v1"
     assert analysis["ticker"] == "NVDA"
@@ -2006,7 +2058,11 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
         ),
         (
             '{"source":"manual"}',
-            "ledger_reports_lookup source must be one of compiled, uploaded, or external.",
+            "ledger_reports_lookup source must be one of compiled, uploaded, external, or agent.",
+        ),
+        (
+            '{"source":"agent"}',
+            None,
         ),
         ('{"ticker":123}', "ledger_reports_lookup string arguments must be strings."),
         ('{"limit":51}', "ledger_reports_lookup limit must be at most 50."),
@@ -2015,8 +2071,12 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
 )
 def test_report_runtime_tool_parser_preserves_validation_messages(
     arguments_json: str,
-    expected_message: str,
+    expected_message: str | None,
 ) -> None:
+    if expected_message is None:
+        assert parse_report_lookup_arguments(arguments_json)["source"] == "agent"
+        return
+
     with pytest.raises(RuntimeToolError) as exc_info:
         _ = parse_report_lookup_arguments(arguments_json)
 
