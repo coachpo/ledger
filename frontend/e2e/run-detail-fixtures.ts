@@ -1,10 +1,9 @@
 import type {
   RunAgentInvocationRead,
   RunCreatedRead,
-  RunForkDraftRead,
-  RunForkInvocationDraftRead,
-  RunForkStepDraftRead,
   RunRead,
+  RunRerunDraftRead,
+  RunStepReplayDraftRead,
   RunStepRead,
 } from "../src/lib/types/run";
 
@@ -81,13 +80,14 @@ export function buildRunDetail(overrides: Partial<RunRead> = {}): RunRead {
     executedTokens: 18,
     finalOutput: { summary: "Playwright summary" },
     finishedAt: "2026-04-29T10:00:04Z",
-    forkedFromStepIndex: null,
+    replayStepIndex: null,
     id: 1,
     inheritedCostUsd: "0.00000000",
     inheritedTokens: 0,
     input: {},
     lineageRootRunId: null,
     memoryArtifacts: [],
+    queuedAt: DEFAULT_TIME,
     resumeStepIndex: 1,
     sourceRunId: null,
     startedAt: "2026-04-29T10:00:01Z",
@@ -119,35 +119,23 @@ export function buildRunCreated(overrides: Partial<RunCreatedRead> = {}): RunCre
   };
 }
 
-export function buildForkInvocationDraft(
-  overrides: Partial<RunForkInvocationDraftRead> = {},
-): RunForkInvocationDraftRead {
+export function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDraftRead {
   return {
-    agentKey: "playwright_agent",
-    output: { summary: "Playwright summary" },
-    resolvedInput: {},
-    slot: "analysis",
-    sourceInvocationId: 1001,
-    stepIndex: 1,
-    ...overrides,
-  };
-}
-
-export function buildForkStepDraft(overrides: Partial<RunForkStepDraftRead> = {}): RunForkStepDraftRead {
-  return {
-    index: 1,
-    invocations: [],
-    sourceRunStepId: 101,
-    ...overrides,
-  };
-}
-
-export function buildForkDraft(overrides: Partial<RunForkDraftRead> = {}): RunForkDraftRead {
-  return {
-    forkStepIndex: 1,
-    input: {},
+    parameters: {},
     sourceRunId: 1,
-    steps: [],
+    targetId: 1,
+    targetKey: "playwright_target",
+    targetKind: "workflow",
+    targetVersion: 1,
+    ...overrides,
+  };
+}
+
+export function buildStepReplayDraft(overrides: Partial<RunStepReplayDraftRead> = {}): RunStepReplayDraftRead {
+  return {
+    parameters: {},
+    replayStepIndex: 1,
+    sourceRunId: 1,
     targetId: 1,
     targetKey: "playwright_target",
     targetKind: "workflow",

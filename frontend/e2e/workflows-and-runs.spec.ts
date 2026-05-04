@@ -1,13 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import {
-  buildForkDraft,
-  buildForkInvocationDraft,
-  buildForkStepDraft,
+  buildRerunDraft,
   buildRunCreated,
   buildRunDetail,
   buildRunInvocation,
   buildRunStep,
+  buildStepReplayDraft,
 } from "./run-detail-fixtures";
 
 const PLATFORM_API = "http://127.0.0.1:8001/api";
@@ -431,12 +430,16 @@ test.describe("Workflow YAML editor", () => {
       key: workflowKey,
       name: `Workflow YAML ${timestamp}`,
     });
-    let forkPayload: Record<string, unknown> | null = null;
+    let rerunPayload: Record<string, unknown> | null = null;
+    let stepReplayPayload: Record<string, unknown> | null = null;
     let runPayload: Record<string, unknown> | null = null;
 
-    await page.route("**/api/workflows/*/runs?*", async (route) => {
-      runPayload = route.request().postDataJSON() as Record<string, unknown>;
-      const workflowId = Number(route.request().url().match(/\/workflows\/(\d+)\/runs/)?.[1] ?? 0);
+    await page.route("**/api/workflows/*/launches", async (route) => {
+      const launchPayload = route.request().postDataJSON() as { parameters?: Record<string, unknown>; version?: number };
+      runPayload = launchPayload.parameters ?? {};
+      expect(launchPayload.parameters).toEqual({ ticker: "MSFT" });
+      expect(typeof launchPayload.version).toBe("number");
+      const workflowId = Number(route.request().url().match(/\/workflows\/(\d+)\/launches/)?.[1] ?? 0);
       await route.fulfill({
         body: JSON.stringify({
           ...buildRunCreated({
@@ -526,28 +529,12 @@ test.describe("Workflow YAML editor", () => {
       });
     });
 
-    await page.route("**/api/runs/8801/fork-draft?*", async (route) => {
-      const url = new URL(route.request().url());
-      expect(url.searchParams.get("forkStepIndex")).toBe("1");
+    await page.route("**/api/runs/8801/rerun-draft", async (route) => {
       await route.fulfill({
         body: JSON.stringify(
-          buildForkDraft({
-            forkStepIndex: 1,
-            input: runPayload ?? {},
+          buildRerunDraft({
+            parameters: runPayload ?? {},
             sourceRunId: 8801,
-            steps: [
-              buildForkStepDraft({
-                invocations: [
-                  buildForkInvocationDraft({
-                    agentKey: agent.key,
-                    output: { summary: `Workflow summary for ${String(runPayload?.ticker ?? "AAPL")}` },
-                    resolvedInput: runPayload ?? {},
-                    sourceInvocationId: 8801001,
-                  }),
-                ],
-                sourceRunStepId: 880101,
-              }),
-            ],
             targetId: 1,
             targetKey: workflowKey,
             targetKind: "workflow",
@@ -558,8 +545,45 @@ test.describe("Workflow YAML editor", () => {
       });
     });
 
-    await page.route("**/api/runs/8801/forks", async (route) => {
-      forkPayload = route.request().postDataJSON() as Record<string, unknown>;
+    await page.route("**/api/runs/8801/reruns", async (route) => {
+      rerunPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        body: JSON.stringify(
+          buildRunCreated({
+            id: 8803,
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-workflow-yaml-8803",
+          }),
+        ),
+        contentType: "application/json",
+        status: 201,
+      });
+    });
+
+    await page.route("**/api/runs/8801/step-replay-draft?*", async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get("stepIndex")).toBe("1");
+      await route.fulfill({
+        body: JSON.stringify(
+          buildStepReplayDraft({
+            parameters: runPayload ?? {},
+            replayStepIndex: 1,
+            sourceRunId: 8801,
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+          }),
+        ),
+        contentType: "application/json",
+      });
+    });
+
+    await page.route("**/api/runs/8801/step-replays", async (route) => {
+      stepReplayPayload = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({
         body: JSON.stringify(
           buildRunCreated({
@@ -576,20 +600,41 @@ test.describe("Workflow YAML editor", () => {
       });
     });
 
+    await page.route("**/api/runs/8803", async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(
+          buildRunDetail({
+            finalOutput: { summary: `Rerun workflow summary for ${String(rerunPayload?.parameters ? "TSLA" : "AAPL")}` },
+            id: 8803,
+            input: { ticker: "TSLA" },
+            lineageRootRunId: 8801,
+            sourceRunId: 8801,
+            steps: [],
+            targetId: 1,
+            targetKey: workflowKey,
+            targetKind: "workflow",
+            targetVersion: 1,
+            traceId: "trace-workflow-yaml-8803",
+          }),
+        ),
+        contentType: "application/json",
+      });
+    });
+
     await page.route("**/api/runs/8802", async (route) => {
       await route.fulfill({
         body: JSON.stringify(
           buildRunDetail({
             executedCostUsd: "0.00000000",
             executedTokens: 0,
-            finalOutput: { summary: `Forked workflow summary for ${String(forkPayload?.input ? "NVDA" : "AAPL")}` },
-            forkedFromStepIndex: 1,
+            finalOutput: { summary: `Step replay workflow summary for ${String(stepReplayPayload?.parameters ? "NVDA" : "AAPL")}` },
             id: 8802,
             inheritedCostUsd: "0.01000000",
             inheritedTokens: 18,
             input: { ticker: "NVDA" },
             lineageRootRunId: 8801,
-            resumeStepIndex: 2,
+            replayStepIndex: 1,
+            resumeStepIndex: 1,
             sourceRunId: 8801,
             steps: [
               buildRunStep({
@@ -631,7 +676,7 @@ test.describe("Workflow YAML editor", () => {
 
     await page.goto("/workflows/new");
     await expectYamlOnlyEditor(page);
-    await expect(page.getByTestId("workflow-run-unavailable")).toBeVisible();
+    await expect(page.getByTestId("workflow-run-panel")).toHaveCount(0);
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
     await page.getByTestId("workflow-yaml-editor").fill(initialManifest);
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Unsaved changes");
@@ -655,7 +700,7 @@ test.describe("Workflow YAML editor", () => {
       page.getByTestId("workflow-save").click(),
     ]);
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
-    const workflowEditUrl = page.url();
+    let workflowEditUrl = page.url();
 
     await page.goto("/workflows");
     await expect(page.getByTestId(`workflows-row-${workflowKey}`)).toContainText(
@@ -693,20 +738,27 @@ test.describe("Workflow YAML editor", () => {
     await page.getByTestId("workflow-yaml-editor").fill(editedManifest);
     await page.getByTestId("workflow-save").click();
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
+    workflowEditUrl = page.url();
+
+    await page.goto(`${workflowEditUrl}#review`);
+    await expect(page).toHaveURL(/\/workflows\/\d+\/edit#review$/);
+    await expect(page.getByTestId("workflow-yaml-editor")).toHaveValue(editedManifest);
+    await expect(page.getByTestId("workflow-run-panel")).toHaveCount(0);
+    await expect(page.getByTestId("workflow-run-now")).toHaveCount(0);
 
     await page.goto("/workflows");
     await page.getByTestId(`workflows-run-${workflowKey}`).click();
-    await expect(page).toHaveURL(/\/workflows\/\d+\/edit#review$/);
-    await expect(page.getByTestId("workflow-yaml-editor")).toHaveValue(editedManifest);
-    await expect(page.getByTestId("workflow-run-panel")).toBeVisible();
-    await expect(page.getByTestId("workflow-run-input-raw-json").locator("textarea")).toHaveValue(
+    await expect(page).toHaveURL(/\/workflows\/\d+\/run$/);
+    await expect(page.getByTestId("workflow-launch-page")).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/fork/i);
+    await expect(page.getByTestId("workflow-launch-parameters-json").locator("textarea")).toHaveValue(
       /"ticker": "AAPL"/,
     );
-    await page.getByTestId("workflow-run-input-form").getByRole("textbox").fill("MSFT");
-    await expect(page.getByTestId("workflow-run-input-raw-json").locator("textarea")).toHaveValue(
+    await page.getByTestId("workflow-launch-input-form").getByRole("textbox").fill("MSFT");
+    await expect(page.getByTestId("workflow-launch-parameters-json").locator("textarea")).toHaveValue(
       /"ticker": "MSFT"/,
     );
-    await page.getByTestId("workflow-run-now").click();
+    await page.getByTestId("workflow-launch-submit").click();
     await expect(page).toHaveURL(/\/runs\/8801$/);
     expect(runPayload).toEqual({ ticker: "MSFT" });
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
@@ -718,19 +770,33 @@ test.describe("Workflow YAML editor", () => {
     await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop review_loop iteration 1");
     await expect(page.getByTestId("runs-memory-artifacts")).toContainText("MSFT decision memory");
     await expect(page.getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_msft_decision");
-    await expect(page.getByTestId("runs-step-1-fork-entry")).toContainText("Fork from this succeeded step");
-    await expect(page.getByTestId("runs-step-2")).toBeVisible();
-    await expect(page.getByTestId("runs-step-2-fork-entry")).toHaveCount(0);
-
-    await page.getByTestId("runs-step-1-fork-entry").getByRole("button", { name: /fork step/i }).click();
-    await expect(page).toHaveURL(/\/runs\/8801\?fork=1&forkStepIndex=1$/);
-    await expect(page.getByRole("dialog", { name: /fork run draft/i })).toBeVisible();
-    await page.getByLabel("Fork draft run input JSON").fill(JSON.stringify({ ticker: "NVDA" }, null, 2));
-    await page.getByRole("button", { name: /^create fork$/i }).click();
-    await expect(page).toHaveURL(/\/runs\/8802$/);
-    expect(forkPayload).toEqual({ forkStepIndex: 1, input: { ticker: "NVDA" } });
-    await expect(page.getByTestId("runs-detail-page")).toContainText("Forked workflow summary for NVDA");
+    await expect(page.getByTestId("runs-detail-workflow-link")).toHaveAttribute("href", "/workflows/1");
+    await expect(page.getByTestId("runs-detail-rerun")).toBeVisible();
+    await page.getByTestId("runs-detail-rerun").click();
+    await expect(page).toHaveURL(/\/runs\/8801\?rerun=1$/);
+    await expect(page.getByRole("dialog", { name: /rerun draft/i })).toBeVisible();
+    await page.getByLabel("Rerun parameters JSON").fill(JSON.stringify({ ticker: "TSLA" }, null, 2));
+    await page.getByRole("button", { name: /^create rerun$/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8803$/);
+    expect(rerunPayload).toEqual({ parameters: { ticker: "TSLA" } });
+    await expect(page.getByTestId("runs-detail-page")).toContainText("Rerun workflow summary for TSLA");
     await expect(page.getByTestId("runs-lineage-summary")).toContainText("Run #8801");
+    await page.goto("/runs/8801");
+    await expect(page.getByTestId("runs-step-1-replay-entry")).toContainText("Replay from this succeeded step");
+    await expect(page.getByTestId("runs-step-2-replay-entry")).toContainText("Replay from this succeeded step");
+    await expect(page.locator("#step-1")).toBeVisible();
+
+    await page.getByTestId("runs-step-1-replay-entry").getByRole("button", { name: /replay step/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8801\?stepReplay=1&stepIndex=1$/);
+    await expect(page.getByRole("dialog", { name: /step replay draft/i })).toBeVisible();
+    await page.getByLabel("Step replay parameters JSON").fill(JSON.stringify({ ticker: "NVDA" }, null, 2));
+    await page.getByRole("button", { name: /^create step replay$/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8802$/);
+    expect(stepReplayPayload).toEqual({ replayStepIndex: 1, parameters: { ticker: "NVDA" } });
+    await expect(page.getByTestId("runs-detail-page")).toContainText("Step replay workflow summary for NVDA");
+    await expect(page.getByTestId("runs-lineage-summary")).toContainText("Run #8801");
+    await expect(page.getByTestId("runs-lineage-summary")).toContainText("Replay step");
+    await expect(page.locator("body")).not.toContainText(/fork/i);
 
     expect(workflowEditUrl).toMatch(/\/workflows\/\d+\/edit$/);
   });
