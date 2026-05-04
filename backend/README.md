@@ -18,8 +18,6 @@ The backend expects PostgreSQL everywhere. The default local connection is `post
 
 ## Model Connections
 
-Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
-
 Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 
 ## Live API Surfaces

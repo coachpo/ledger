@@ -50,8 +50,6 @@ Legacy Skill contracts are unsupported after the hard cutover. `/api/skills` and
 
 If you only want the UI, API, and local database running, skip this step.
 
-Model connections are now managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
-
 Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set if you want those stored secrets encrypted at rest.
 
 ### 4. Start everything with the local helper
@@ -114,7 +112,6 @@ Visit `http://127.0.0.1:25173/`.
 
 - The normal browser-facing execution surfaces are the agent-platform routes for agents, capabilities, MCP servers, model-connections, output-schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
 - Agent manifests use `spec.capabilities`; `spec.skills` is rejected as a retired contract.
-- Model connections are managed in the web UI, not through `RUNTIME_AGENT_*` environment variables. After upgrading, existing users must re-enter their API keys in the UI so the encrypted connection records can be recreated.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
 - `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.
