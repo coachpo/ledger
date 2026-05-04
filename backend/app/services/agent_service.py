@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.agents import ToolCatalog
 from app.agents.mcp import McpClientBoundary, McpConnectionTester
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
+from app.db.session import get_session_factory
 from app.models.agent import AGENT_MANIFEST_COMPILER_VERSION, Agent
 from app.models.capability import Capability
 from app.models.mcp_server import McpServer
@@ -220,7 +221,7 @@ class AgentService:
         *,
         version: int | None = None,
     ) -> RunCreatedRead:
-        return RunService(self.session).create_target_run(
+        return RunService(self.session, get_session_factory()).create_target_run(
             "agent",
             agent_id,
             payload,

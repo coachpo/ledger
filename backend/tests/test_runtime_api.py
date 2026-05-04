@@ -30,11 +30,12 @@ from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
 from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
-from app.schemas.workflow import WorkflowCreate, WorkflowCreateRequest, WorkflowRead
+from app.schemas.workflow import WorkflowCreate, WorkflowCreateRequest, WorkflowRead, WorkflowUpdate
 from app.services.agent_service import AgentService
 from app.services.capability_service import (
     MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
@@ -60,6 +61,7 @@ from app.services.quote_provider import (
     QuoteProviderError,
 )
 from app.services.report_service import ReportService
+from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_manifest_examples import (
     TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
@@ -1538,7 +1540,9 @@ def _build_api_status_error(*, message: str, status_code: int = 400) -> openai.A
     return openai.APIStatusError(
         message,
         response=response,
-        body={"error": {"message": message}},
+        body={
+            "error": {"message": message},
+        },
     )
 
 
@@ -2082,7 +2086,7 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
         "targetId": historical_agent_id,
         "targetKey": "research_agent",
         "targetVersion": 1,
-        "status": "running",
+        "status": "queued",
         "traceId": None,
         "createdAt": created["createdAt"],
     }
@@ -2141,6 +2145,7 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
                 "totalTokens": 7,
                 "totalCostUsd": "0.01000000",
                 "traceId": detail["traceId"],
+                "queuedAt": listed.json()["items"][0]["queuedAt"],
                 "startedAt": listed.json()["items"][0]["startedAt"],
                 "finishedAt": listed.json()["items"][0]["finishedAt"],
             }
@@ -2248,7 +2253,13 @@ def test_agent_platform_run_uses_saved_model_connection_instead_of_env_settings(
             ),
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "TSLA"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "TSLA"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2304,7 +2315,13 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
         connection.api_key_last4 = "2222"
         session.commit()
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "MSFT"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "MSFT"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2348,7 +2365,13 @@ def test_agent_platform_run_chat_completions_snapshot_parses_message_content_jso
         )
         assert _agent.model_connection_snapshot["api_style"] == "chat_completions"
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "MSFT"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "MSFT"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2406,8 +2429,11 @@ def test_agent_platform_run_chat_completions_tool_call_round_appends_tool_messag
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -2475,7 +2501,13 @@ def test_agent_platform_run_surfaces_saved_connection_provider_failures(
             ),
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AAPL"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AAPL"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2516,7 +2548,13 @@ def test_agent_platform_run_chat_completions_provider_failure_does_not_use_respo
             ),
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AAPL"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AAPL"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2541,7 +2579,13 @@ def test_agent_platform_run_fails_when_saved_model_connection_has_no_api_key(
             ),
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NFLX"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NFLX"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -2564,7 +2608,13 @@ def test_agent_platform_run_rejects_invalid_input_without_persisting_run(
             connection=_build_model_connection(name="Invalid Input Connection"),
         )
 
-    response = client.post(f"/api/workflows/{workflow.id}/runs", json={})
+    response = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {},
+        },
+    )
 
     assert response.status_code == 400, response.json()
     assert response.json()["code"] == "run_invalid_input"
@@ -2928,7 +2978,7 @@ def _wait_for_agent_platform_run(
         body = response.json()
         assert isinstance(body, dict)
         last_body = body
-        if body["status"] != "running":
+        if body["status"] not in {"queued", "running"}:
             return body
         time.sleep(0.02)
     assert last_body is not None
@@ -2997,12 +3047,127 @@ def _create_single_agent_runtime_workflow(
     return workflow, agent
 
 
+def test_agent_platform_workflow_launch_read_lists_versions_and_removes_old_run_route(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+
+    with session_factory() as session:
+        created = _seed_reference_workflow(
+            session,
+            workflow_key="launch_api_workflow",
+            workflow_name="Launch API Workflow",
+        )
+        updated = WorkflowService(session).update_workflow(
+            created.id,
+            WorkflowUpdate.model_validate(
+                {
+                    "name": "Launch API Workflow Updated",
+                    "description": "Updated launch schema.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string"},
+                            "horizon_days": {"type": "integer"},
+                            "confidence": {"type": "number"},
+                        },
+                        "required": ["ticker", "horizon_days", "confidence"],
+                        "additionalProperties": False,
+                    },
+                    "steps": _reference_workflow_payload()["steps"],
+                    "outputSpec": _reference_workflow_payload()["outputSpec"],
+                }
+            ),
+        )
+
+    old_route = client.post(
+        f"/api/workflows/{updated.id}/runs",
+        json={"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+    )
+    assert old_route.status_code == 404
+    with session_factory() as session:
+        assert session.query(Run).all() == []
+
+    launch = client.get(f"/api/workflows/{updated.id}/launch", params={"version": 1})
+    assert launch.status_code == 200, launch.json()
+    assert launch.json() == {
+        "workflowId": created.id,
+        "key": created.key,
+        "version": 1,
+        "name": created.name,
+        "description": created.description,
+        "inputSchema": created.input_schema,
+    }
+
+    versions = client.get(f"/api/workflows/{updated.id}/versions")
+    assert versions.status_code == 200, versions.json()
+    assert [item["version"] for item in versions.json()["items"]] == [2, 1]
+    assert versions.json()["items"][0]["inputSchema"] == updated.input_schema
+    assert versions.json()["items"][1]["inputSchema"] == created.input_schema
+
+    invalid_raw = client.post(
+        f"/api/workflows/{updated.id}/launches",
+        json={"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+    )
+    assert invalid_raw.status_code == 422, invalid_raw.json()
+    assert invalid_raw.json()["code"] == "validation_error"
+    with session_factory() as session:
+        assert session.query(Run).all() == []
+
+    invalid_parameters = client.post(
+        f"/api/workflows/{updated.id}/launches",
+        json={
+            "version": 2,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5},
+        },
+    )
+    assert invalid_parameters.status_code == 400, invalid_parameters.json()
+    assert invalid_parameters.json()["code"] == "run_invalid_input"
+    with session_factory() as session:
+        assert session.query(Run).all() == []
+
+    first = client.post(
+        f"/api/workflows/{updated.id}/launches",
+        json={
+            "version": 2,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+        },
+    )
+    second = client.post(
+        f"/api/workflows/{updated.id}/launches",
+        json={
+            "version": 2,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+        },
+    )
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    assert first.json() == {
+        "id": first.json()["id"],
+        "status": "queued",
+        "workflowId": updated.id,
+        "workflowKey": updated.key,
+        "workflowVersion": 2,
+        "createdAt": first.json()["createdAt"],
+    }
+    assert second.json()["id"] != first.json()["id"]
+    with session_factory() as session:
+        stored_runs = session.query(Run).order_by(Run.id).all()
+        assert [run.id for run in stored_runs] == [first.json()["id"], second.json()["id"]]
+        assert [run.input for run in stored_runs] == [
+            {"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+            {"ticker": "NVDA", "horizon_days": 5, "confidence": 0.7},
+        ]
+
+
 def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocations(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_run_in_background", lambda self, run_id: None)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     with session_factory() as session:
         workflow = _seed_reference_workflow(
@@ -3012,8 +3177,11 @@ def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocat
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 5},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
 
@@ -3021,7 +3189,10 @@ def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocat
     assert detail.status_code == 200, detail.json()
     body = detail.json()
 
-    assert body["status"] == "running"
+    assert body["status"] == "queued"
+    assert body["queuedAt"] is not None
+    assert body["startedAt"] is None
+    assert body["finishedAt"] is None
     assert body["resumeStepIndex"] == 1
     assert body["totalTokens"] == 0
     assert body["totalCostUsd"] == "0.00000000"
@@ -3213,7 +3384,13 @@ def test_agent_platform_v2_workflow_run_detail_exposes_graph_metadata(
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NVDA"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -3399,8 +3576,11 @@ def test_agent_platform_v2_loop_state_carries_between_iterations(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"initial_state": {"history": ["seed"]}},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"initial_state": {"history": ["seed"]}},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -3596,8 +3776,11 @@ def test_agent_platform_v2_post_run_memory_omitted_or_disabled_writes_no_artifac
 
     for workflow in (omitted, disabled):
         trigger = client.post(
-            f"/api/workflows/{workflow.id}/runs",
-            json={"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+            f"/api/workflows/{workflow.id}/launches",
+            json={
+                "version": workflow.version,
+                "parameters": {"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+            },
         )
         assert trigger.status_code == 201, trigger.json()
         detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -3623,8 +3806,11 @@ def test_agent_platform_v2_post_run_memory_success_creates_one_linked_artifact(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "nvda", "portfolio_slug": "core_us", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "nvda", "portfolio_slug": "core_us", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
@@ -3781,16 +3967,19 @@ def test_agent_platform_tradingagents_v2_stubbed_run_completes_with_graph_and_me
         workflow = _seed_tradingagents_v2_runtime_workflow(session)
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
+        f"/api/workflows/{workflow.id}/launches",
         json={
-            "ticker": "NVDA",
-            "asOfDate": "2026-05-03",
-            "portfolioId": "core-us",
-            "portfolioSlug": "core_us",
-            "horizonDays": 30,
-            "benchmarkSymbol": "SPY",
-            "initialInvestmentDebateState": {},
-            "initialRiskDebateState": {},
+            "version": workflow.version,
+            "parameters": {
+                "ticker": "NVDA",
+                "asOfDate": "2026-05-03",
+                "portfolioId": "core-us",
+                "portfolioSlug": "core_us",
+                "horizonDays": 30,
+                "benchmarkSymbol": "SPY",
+                "initialInvestmentDebateState": {},
+                "initialRiskDebateState": {},
+            },
         },
     )
     assert trigger.status_code == 201, trigger.json()
@@ -3854,8 +4043,11 @@ def test_agent_platform_v2_post_run_memory_failed_run_writes_no_artifact(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "portfolio_slug": "core_us", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -3871,7 +4063,7 @@ def test_agent_platform_agent_run_creation_persists_synthetic_passthrough_step(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_run_in_background", lambda self, run_id: None)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     with session_factory() as session:
         _workflow, agent = _create_single_agent_runtime_workflow(
@@ -3889,7 +4081,9 @@ def test_agent_platform_agent_run_creation_persists_synthetic_passthrough_step(
     body = detail.json()
 
     assert body["targetKind"] == "agent"
-    assert body["status"] == "running"
+    assert body["status"] == "queued"
+    assert body["queuedAt"] is not None
+    assert body["startedAt"] is None
     assert [step["index"] for step in body["steps"]] == [1]
     invocation = body["steps"][0]["invocations"][0]
     assert invocation["slot"] == "final_output"
@@ -3985,17 +4179,21 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AVGO"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AVGO"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     created = trigger.json()
     assert created == {
         "id": created["id"],
-        "targetKind": "workflow",
-        "targetId": workflow.id,
-        "targetKey": workflow.key,
-        "targetVersion": workflow.version,
-        "status": "running",
-        "traceId": None,
+        "status": "queued",
+        "workflowId": workflow.id,
+        "workflowKey": workflow.key,
+        "workflowVersion": workflow.version,
         "createdAt": created["createdAt"],
     }
 
@@ -4050,6 +4248,7 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
                 "totalTokens": 13,
                 "totalCostUsd": "0.01500000",
                 "traceId": detail["traceId"],
+                "queuedAt": listed.json()["items"][0]["queuedAt"],
                 "startedAt": listed.json()["items"][0]["startedAt"],
                 "finishedAt": listed.json()["items"][0]["finishedAt"],
             }
@@ -4222,15 +4421,21 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
             )
         )
 
-    response = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NVDA"})
+    response = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA"},
+        },
+    )
     assert response.status_code == 201, response.json()
     created = response.json()
-    assert created["status"] == "running"
+    assert created["status"] == "queued"
     run_id = created["id"]
 
     immediate = client.get(f"/api/runs/{run_id}")
     assert immediate.status_code == 200, immediate.json()
-    assert immediate.json()["status"] == "running"
+    assert immediate.json()["status"] in {"queued", "running"}
 
     detail = _wait_for_agent_platform_run(client, run_id)
     assert detail["status"] == "succeeded"
@@ -4247,6 +4452,75 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
         "analysisA": {"summary": "alpha:NVDA"},
         "analysisB": {"summary": "beta:NVDA"},
     }
+
+
+def test_agent_platform_queue_claims_queued_run_before_execution(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+
+    with session_factory() as session:
+        workflow = _seed_reference_workflow(
+            session,
+            workflow_key="claim_transition_workflow",
+            workflow_name="Claim Transition Workflow",
+        )
+
+    first = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5},
+        },
+    )
+    second = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 5},
+        },
+    )
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    first_body = first.json()
+    second_body = second.json()
+    assert first_body["status"] == "queued"
+    assert second_body["status"] == "queued"
+    assert first_body["id"] != second_body["id"]
+
+    queued_list = client.get(
+        "/api/runs",
+        params={"targetKind": "workflow", "targetId": workflow.id, "status": "queued"},
+    )
+    assert queued_list.status_code == 200, queued_list.json()
+    assert [item["id"] for item in queued_list.json()["items"]] == [
+        second_body["id"],
+        first_body["id"],
+    ]
+    assert all(item["startedAt"] is None for item in queued_list.json()["items"])
+
+    with session_factory() as session:
+        claimed_id = RunQueueService(session, session_factory).claim_next_run()
+
+    assert claimed_id == first_body["id"]
+    claimed_detail = client.get(f"/api/runs/{first_body['id']}")
+    pending_detail = client.get(f"/api/runs/{second_body['id']}")
+    assert claimed_detail.status_code == 200, claimed_detail.json()
+    assert pending_detail.status_code == 200, pending_detail.json()
+    assert claimed_detail.json()["status"] == "running"
+    assert claimed_detail.json()["queuedAt"] is not None
+    assert claimed_detail.json()["startedAt"] is not None
+    assert pending_detail.json()["status"] == "queued"
+    assert pending_detail.json()["startedAt"] is None
+
+    queued_after_claim = client.get(
+        "/api/runs",
+        params={"targetKind": "workflow", "targetId": workflow.id, "status": "queued"},
+    )
+    assert queued_after_claim.status_code == 200, queued_after_claim.json()
+    assert [item["id"] for item in queued_after_claim.json()["items"]] == [second_body["id"]]
 
 
 def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completion(
@@ -4330,7 +4604,13 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "MSFT"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "MSFT"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
     detail = _wait_for_agent_platform_run(client, run_id)
@@ -4351,6 +4631,7 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
             "totalTokens": 21,
             "totalCostUsd": "0.02000000",
             "traceId": detail["traceId"],
+            "queuedAt": list_response.json()["items"][0]["queuedAt"],
             "startedAt": list_response.json()["items"][0]["startedAt"],
             "finishedAt": list_response.json()["items"][0]["finishedAt"],
         }
@@ -4424,8 +4705,11 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4533,8 +4817,11 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4589,8 +4876,11 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4631,8 +4921,11 @@ def test_agent_platform_reports_write_run_creates_pending_memory_with_trusted_co
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     run_id = trigger.json()["id"]
@@ -4704,8 +4997,11 @@ def test_agent_platform_position_lookup_run_requires_capability_grant(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4792,8 +5088,11 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4879,8 +5178,11 @@ def test_agent_platform_position_lookup_tool_order_is_deterministic_when_report_
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -4959,8 +5261,11 @@ def test_agent_platform_position_lookup_run_rejects_invalid_tool_arguments(
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5001,8 +5306,11 @@ def test_agent_platform_position_lookup_run_returns_empty_payload_for_unknown_sl
         )
 
     trigger = client.post(
-        f"/api/workflows/{workflow.id}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5054,8 +5362,11 @@ def test_agent_platform_quote_lookup_run_uses_injected_market_data_provider(
 
     try:
         trigger = client.post(
-            f"/api/workflows/{workflow.id}/runs",
-            json={"ticker": "NVDA", "horizon_days": 30},
+            f"/api/workflows/{workflow.id}/launches",
+            json={
+                "version": workflow.version,
+                "parameters": {"ticker": "NVDA", "horizon_days": 30},
+            },
         )
         assert trigger.status_code == 201, trigger.json()
         detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5109,8 +5420,11 @@ def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
 
     try:
         trigger = client.post(
-            f"/api/workflows/{workflow.id}/runs",
-            json={"ticker": "NVDA", "horizon_days": 30},
+            f"/api/workflows/{workflow.id}/launches",
+            json={
+                "version": workflow.version,
+                "parameters": {"ticker": "NVDA", "horizon_days": 30},
+            },
         )
         assert trigger.status_code == 201, trigger.json()
         detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5168,8 +5482,11 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
 
     try:
         trigger = client.post(
-            f"/api/workflows/{workflow.id}/runs",
-            json={"ticker": "NVDA", "horizon_days": 30},
+            f"/api/workflows/{workflow.id}/launches",
+            json={
+                "version": workflow.version,
+                "parameters": {"ticker": "NVDA", "horizon_days": 30},
+            },
         )
         assert trigger.status_code == 201, trigger.json()
         detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5234,8 +5551,11 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
 
     try:
         trigger = client.post(
-            f"/api/workflows/{workflow.id}/runs",
-            json={"ticker": "NVDA", "horizon_days": 30},
+            f"/api/workflows/{workflow.id}/launches",
+            json={
+                "version": workflow.version,
+                "parameters": {"ticker": "NVDA", "horizon_days": 30},
+            },
         )
         assert trigger.status_code == 201, trigger.json()
         detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
@@ -5379,7 +5699,13 @@ def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceed
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "TSLA"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "TSLA"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -5492,7 +5818,13 @@ def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_ex
         workflow_row.aggregate_budget_usd = Decimal("0.15000000")
         session.commit()
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "AMD"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -5622,7 +5954,13 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
             )
         )
 
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NFLX"})
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={
+            "version": workflow.version,
+            "parameters": {"ticker": "NFLX"},
+        },
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -6175,7 +6513,10 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         "initialInvestmentDebateState": {"history": []},
         "initialRiskDebateState": {"history": []},
     }
-    trigger = client.post(f"/api/workflows/{workflow.id}/runs", json=run_input)
+    trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": run_input},
+    )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
@@ -6224,10 +6565,12 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
     reset_settings_cache()
 
 
-def _create_fork_runtime_workflow(
+def _create_replay_runtime_workflow(
     session: Session,
     *,
     workflow_key: str,
+    optional_first_agent: bool = False,
+    require_decider_analysis: bool = True,
 ) -> WorkflowRead:
     output_schema = _build_output_schema(
         key=f"{workflow_key}_schema",
@@ -6258,6 +6601,18 @@ def _create_fork_runtime_workflow(
         mcp_server=mcp_server,
         model_connection=connection,
     )
+    decider_input_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "analysis": {
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            }
+        },
+    }
+    if require_decider_analysis:
+        decider_input_schema["required"] = ["analysis"]
     decider = _build_agent_platform_agent(
         key=f"{workflow_key}_decider",
         version=1,
@@ -6266,17 +6621,7 @@ def _create_fork_runtime_workflow(
         skill=skill,
         mcp_server=mcp_server,
         model_connection=connection,
-        input_schema={
-            "type": "object",
-            "properties": {
-                "analysis": {
-                    "type": "object",
-                    "properties": {"summary": {"type": "string"}},
-                    "required": ["summary"],
-                }
-            },
-            "required": ["analysis"],
-        },
+        input_schema=decider_input_schema,
     )
     session.add_all([analyst, decider])
     session.commit()
@@ -6298,6 +6643,7 @@ def _create_fork_runtime_workflow(
                                 "agentKey": f"{workflow_key}_analyst",
                                 "slot": "analysis",
                                 "wiring": {"ticker": {"from": "input", "path": "ticker"}},
+                                "optional": optional_first_agent,
                             }
                         ],
                     },
@@ -6324,7 +6670,7 @@ def _create_fork_runtime_workflow(
     )
 
 
-def test_agent_platform_run_fork_draft_and_create_resume_from_copied_step(
+def test_agent_platform_run_rerun_draft_and_create_starts_from_first_step(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -6360,77 +6706,278 @@ def test_agent_platform_run_fork_draft_and_create_resume_from_copied_step(
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:
-        workflow = _create_fork_runtime_workflow(session, workflow_key="fork_resume_workflow")
+        workflow = _create_replay_runtime_workflow(session, workflow_key="rerun_workflow")
 
-    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "NVDA"})
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "NVDA"}},
+    )
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    assert source_detail["status"] == "succeeded"
+
+    draft = client.get(f"/api/runs/{source_detail['id']}/rerun-draft")
+    assert draft.status_code == 200, draft.json()
+    assert draft.json() == {
+        "sourceRunId": source_detail["id"],
+        "targetKind": "workflow",
+        "targetId": workflow.id,
+        "targetKey": workflow.key,
+        "targetVersion": workflow.version,
+        "parameters": {"ticker": "NVDA"},
+    }
+
+    calls.clear()
+    rerun = client.post(
+        f"/api/runs/{source_detail['id']}/reruns",
+        json={"parameters": {"ticker": "MSFT"}},
+    )
+    assert rerun.status_code == 201, rerun.json()
+    assert rerun.json()["id"] != source_detail["id"]
+    assert rerun.json()["status"] == "queued"
+    rerun_detail = _wait_for_agent_platform_run(client, rerun.json()["id"])
+
+    assert calls == [
+        (1, "analysis", {"ticker": "MSFT"}),
+        (2, "decision", {"analysis": {"summary": "source:MSFT"}}),
+    ]
+    assert rerun_detail["sourceRunId"] == source_detail["id"]
+    assert rerun_detail["lineageRootRunId"] == source_detail["id"]
+    assert rerun_detail["replayStepIndex"] is None
+    assert rerun_detail["resumeStepIndex"] == 1
+    assert rerun_detail["input"] == {"ticker": "MSFT"}
+    assert rerun_detail["finalOutput"] == {"summary": "decision:source:MSFT"}
+    assert rerun_detail["inheritedTokens"] == 0
+    assert rerun_detail["inheritedCostUsd"] == "0.00000000"
+    assert rerun_detail["executedTokens"] == 15
+    assert rerun_detail["executedCostUsd"] == "0.01500000"
+    assert [step["origin"] for step in rerun_detail["steps"]] == ["planned", "planned"]
+    assert all(
+        invocation["sourceInvocationId"] is None
+        for step in rerun_detail["steps"]
+        for invocation in step["invocations"]
+    )
+
+    source_after = client.get(f"/api/runs/{source_detail['id']}")
+    assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["status"] == source_detail["status"]
+    assert source_after.json()["input"] == {"ticker": "NVDA"}
+    assert source_after.json()["finalOutput"] == source_detail["finalOutput"]
+    assert source_after.json()["sourceRunId"] == source_detail["sourceRunId"]
+    assert source_after.json()["replayStepIndex"] == source_detail["replayStepIndex"]
+    assert [step["origin"] for step in source_after.json()["steps"]] == [
+        step["origin"] for step in source_detail["steps"]
+    ]
+    assert source_after.json()["steps"][0]["invocations"][0]["output"] == {"summary": "source:NVDA"}
+
+
+def test_agent_platform_run_step_replay_copies_prior_context_and_replays_step(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    calls: list[tuple[int, str, dict[str, Any]]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        calls.append((step_index, slot, dict(resolved_input)))
+        if step_index == 1:
+            return {
+                "output": {"summary": f"source:{resolved_input['ticker']}"},
+                "tokens": 10,
+                "costUsd": "0.01000000",
+                "durationMs": 4,
+                "traceSpanId": None,
+            }
+        return {
+            "output": {"summary": f"decision:{resolved_input['analysis']['summary']}"},
+            "tokens": 5,
+            "costUsd": "0.00500000",
+            "durationMs": 3,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow = _create_replay_runtime_workflow(session, workflow_key="step_replay_workflow")
+
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "NVDA"}},
+    )
     assert source_trigger.status_code == 201, source_trigger.json()
     source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
     assert source_detail["status"] == "succeeded"
 
     draft = client.get(
-        f"/api/runs/{source_detail['id']}/fork-draft",
-        params={"forkStepIndex": 1},
+        f"/api/runs/{source_detail['id']}/step-replay-draft",
+        params={"stepIndex": 2},
     )
     assert draft.status_code == 200, draft.json()
-    assert draft.json()["input"] == {"ticker": "NVDA"}
-    assert draft.json()["steps"][0]["invocations"][0]["output"] == {"summary": "source:NVDA"}
+    assert draft.json()["replayStepIndex"] == 2
+    assert draft.json()["parameters"] == {"ticker": "NVDA"}
 
     calls.clear()
-    fork = client.post(
-        f"/api/runs/{source_detail['id']}/forks",
-        json={
-            "forkStepIndex": 1,
-            "input": {"ticker": "MSFT"},
-            "invocationEdits": [
-                {
-                    "stepIndex": 1,
-                    "slot": "analysis",
-                    "resolvedInput": {"ticker": "EDITED"},
-                    "output": {"summary": "edited-alpha"},
-                }
-            ],
-        },
+    replay = client.post(
+        f"/api/runs/{source_detail['id']}/step-replays",
+        json={"replayStepIndex": 2, "parameters": {"ticker": "MSFT"}},
     )
-    assert fork.status_code == 201, fork.json()
-    fork_detail = _wait_for_agent_platform_run(client, fork.json()["id"])
-    assert calls == [(2, "decision", {"analysis": {"summary": "edited-alpha"}})]
-    assert fork_detail["sourceRunId"] == source_detail["id"]
-    assert fork_detail["lineageRootRunId"] == source_detail["id"]
-    assert fork_detail["forkedFromStepIndex"] == 1
-    assert fork_detail["resumeStepIndex"] == 2
-    assert fork_detail["input"] == {"ticker": "MSFT"}
-    assert fork_detail["finalOutput"] == {"summary": "decision:edited-alpha"}
-    assert fork_detail["inheritedTokens"] == 10
-    assert fork_detail["inheritedCostUsd"] == "0.01000000"
-    assert fork_detail["executedTokens"] == 5
-    assert fork_detail["executedCostUsd"] == "0.00500000"
-    assert fork_detail["totalTokens"] == 15
-    assert fork_detail["totalCostUsd"] == "0.01500000"
-    assert [step["origin"] for step in fork_detail["steps"]] == ["copied", "planned"]
-    copied_invocation = fork_detail["steps"][0]["invocations"][0]
-    assert copied_invocation["resolvedInput"] == {"ticker": "EDITED"}
-    assert copied_invocation["resolvedInputOrigin"] == "edited"
-    assert copied_invocation["output"] == {"summary": "edited-alpha"}
-    assert copied_invocation["outputOrigin"] == "edited"
+    assert replay.status_code == 201, replay.json()
+    assert replay.json()["id"] != source_detail["id"]
+    replay_detail = _wait_for_agent_platform_run(client, replay.json()["id"])
+
+    assert calls == [(2, "decision", {"analysis": {"summary": "source:NVDA"}})]
+    assert replay_detail["sourceRunId"] == source_detail["id"]
+    assert replay_detail["lineageRootRunId"] == source_detail["id"]
+    assert replay_detail["replayStepIndex"] == 2
+    assert replay_detail["resumeStepIndex"] == 2
+    assert replay_detail["input"] == {"ticker": "MSFT"}
+    assert replay_detail["finalOutput"] == {"summary": "decision:source:NVDA"}
+    assert replay_detail["inheritedTokens"] == 10
+    assert replay_detail["inheritedCostUsd"] == "0.01000000"
+    assert replay_detail["executedTokens"] == 5
+    assert replay_detail["executedCostUsd"] == "0.00500000"
+    assert [step["origin"] for step in replay_detail["steps"]] == ["copied", "planned"]
+    copied_invocation = replay_detail["steps"][0]["invocations"][0]
+    assert copied_invocation["resolvedInput"] == {"ticker": "NVDA"}
+    assert copied_invocation["resolvedInputOrigin"] == "copied"
+    assert copied_invocation["output"] == {"summary": "source:NVDA"}
+    assert copied_invocation["outputOrigin"] == "copied"
     assert copied_invocation["sourceInvocationId"] == (
         source_detail["steps"][0]["invocations"][0]["id"]
     )
-    assert copied_invocation["tokens"] == 10
-    assert copied_invocation["costUsd"] == "0.01000000"
-    resumed_invocation = fork_detail["steps"][1]["invocations"][0]
-    assert resumed_invocation["outputOrigin"] == "executed"
-    assert resumed_invocation["sourceInvocationId"] is None
-    assert resumed_invocation["tokens"] == 5
-    assert resumed_invocation["costUsd"] == "0.00500000"
+    replayed_invocation = replay_detail["steps"][1]["invocations"][0]
+    assert replayed_invocation["outputOrigin"] == "executed"
+    assert replayed_invocation["sourceInvocationId"] is None
 
     source_after = client.get(f"/api/runs/{source_detail['id']}")
     assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["status"] == source_detail["status"]
     assert source_after.json()["input"] == {"ticker": "NVDA"}
+    assert source_after.json()["finalOutput"] == source_detail["finalOutput"]
+    assert source_after.json()["sourceRunId"] == source_detail["sourceRunId"]
+    assert source_after.json()["replayStepIndex"] == source_detail["replayStepIndex"]
+    assert [step["origin"] for step in source_after.json()["steps"]] == [
+        step["origin"] for step in source_detail["steps"]
+    ]
     assert source_after.json()["steps"][0]["invocations"][0]["resolvedInput"] == {"ticker": "NVDA"}
     assert source_after.json()["steps"][0]["invocations"][0]["output"] == {"summary": "source:NVDA"}
 
 
-def test_agent_platform_run_fork_rejects_non_succeeded_source_step(
+def test_agent_platform_run_step_replay_copies_prior_optional_failed_context(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    calls: list[tuple[int, str, dict[str, Any]]] = []
+
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        calls.append((step_index, slot, dict(resolved_input)))
+        if step_index == 1:
+            raise RuntimeError(f"analysis failed for {resolved_input['ticker']}")
+        return {
+            "output": {"summary": f"decision:{resolved_input.get('analysis', 'fallback')}"},
+            "tokens": 5,
+            "costUsd": "0.00500000",
+            "durationMs": 3,
+            "traceSpanId": None,
+        }
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow = _create_replay_runtime_workflow(
+            session,
+            workflow_key="step_replay_optional_failed_workflow",
+            optional_first_agent=True,
+            require_decider_analysis=False,
+        )
+
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "NVDA"}},
+    )
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+
+    assert source_detail["status"] == "succeeded"
+    assert source_detail["input"] == {"ticker": "NVDA"}
+    assert source_detail["finalOutput"] == {"summary": "decision:fallback"}
+    source_optional_invocation = source_detail["steps"][0]["invocations"][0]
+    assert source_optional_invocation["optional"] is True
+    assert source_optional_invocation["status"] == "failed"
+    assert source_optional_invocation["resolvedInput"] == {"ticker": "NVDA"}
+    assert source_optional_invocation["output"] is None
+    assert source_optional_invocation["outputOrigin"] is None
+    assert source_optional_invocation["errorCode"] == "agent_execution_failed"
+    assert source_optional_invocation["errorMessage"] == "analysis failed for NVDA"
+    assert source_optional_invocation["persistedAt"] is not None
+    assert source_detail["steps"][1]["invocations"][0]["resolvedInput"] == {}
+
+    draft = client.get(
+        f"/api/runs/{source_detail['id']}/step-replay-draft",
+        params={"stepIndex": 2},
+    )
+    assert draft.status_code == 200, draft.json()
+    assert draft.json()["replayStepIndex"] == 2
+
+    calls.clear()
+    replay = client.post(
+        f"/api/runs/{source_detail['id']}/step-replays",
+        json={"replayStepIndex": 2, "parameters": {"ticker": "MSFT"}},
+    )
+    assert replay.status_code == 201, replay.json()
+    assert replay.json()["id"] != source_detail["id"]
+    replay_detail = _wait_for_agent_platform_run(client, replay.json()["id"])
+
+    assert calls == [(2, "decision", {})]
+    assert replay_detail["status"] == "succeeded"
+    assert replay_detail["sourceRunId"] == source_detail["id"]
+    assert replay_detail["replayStepIndex"] == 2
+    assert replay_detail["resumeStepIndex"] == 2
+    assert replay_detail["input"] == {"ticker": "MSFT"}
+    assert replay_detail["finalOutput"] == {"summary": "decision:fallback"}
+    copied_optional_invocation = replay_detail["steps"][0]["invocations"][0]
+    assert copied_optional_invocation["optional"] is True
+    assert copied_optional_invocation["status"] == "failed"
+    assert copied_optional_invocation["resolvedInput"] == {"ticker": "NVDA"}
+    assert copied_optional_invocation["resolvedInputOrigin"] == "copied"
+    assert copied_optional_invocation["output"] is None
+    assert copied_optional_invocation["outputOrigin"] is None
+    assert copied_optional_invocation["errorCode"] == source_optional_invocation["errorCode"]
+    assert copied_optional_invocation["errorMessage"] == source_optional_invocation["errorMessage"]
+    assert copied_optional_invocation["errorDetails"] == source_optional_invocation["errorDetails"]
+    assert copied_optional_invocation["sourceInvocationId"] == source_optional_invocation["id"]
+    assert copied_optional_invocation["startedAt"] == source_optional_invocation["startedAt"]
+    assert copied_optional_invocation["finishedAt"] == source_optional_invocation["finishedAt"]
+    assert copied_optional_invocation["persistedAt"] is not None
+    assert replay_detail["steps"][1]["invocations"][0]["outputOrigin"] == "executed"
+
+    source_after = client.get(f"/api/runs/{source_detail['id']}")
+    assert source_after.status_code == 200, source_after.json()
+    assert source_after.json()["status"] == source_detail["status"]
+    assert source_after.json()["input"] == source_detail["input"]
+    assert source_after.json()["finalOutput"] == source_detail["finalOutput"]
+    assert source_after.json()["steps"] == source_detail["steps"]
+
+
+def test_agent_platform_run_step_replay_rejects_required_failed_prior_context(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -6445,37 +6992,97 @@ def test_agent_platform_run_fork_rejects_non_succeeded_source_step(
         step_index: int,
         slot: str,
     ) -> dict[str, Any]:
-        return {
-            "output": {"summary": f"{slot}:{resolved_input.get('ticker', 'ready')}"},
-            "tokens": 3,
-            "costUsd": "0.00100000",
-            "durationMs": 1,
-            "traceSpanId": None,
-        }
+        if step_index == 1:
+            output = {"summary": f"source:{resolved_input['ticker']}"}
+        else:
+            output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
+        return {"output": output, "tokens": 3, "costUsd": "0.00100000", "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:
-        workflow = _create_fork_runtime_workflow(session, workflow_key="fork_reject_workflow")
+        workflow = _create_replay_runtime_workflow(
+            session,
+            workflow_key="step_replay_required_failed_context_workflow",
+        )
 
-    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AMD"})
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "AMD"}},
+    )
+    assert source_trigger.status_code == 201, source_trigger.json()
+    source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
+    assert source_detail["status"] == "succeeded"
+
+    with session_factory() as session:
+        run = session.get(Run, source_detail["id"])
+        assert run is not None
+        source_step = cast(list[RunStep], run.steps)[0]
+        invocation = cast(list[RunAgentInvocation], source_step.invocations)[0]
+        invocation.status = "failed"
+        invocation.output = None
+        invocation.output_origin = None
+        invocation.error_code = "agent_execution_failed"
+        invocation.error_message = "required source failed"
+        session.commit()
+
+    rejected = client.post(
+        f"/api/runs/{source_detail['id']}/step-replays",
+        json={"replayStepIndex": 2, "parameters": {"ticker": "AMD"}},
+    )
+    assert rejected.status_code == 400, rejected.json()
+    assert rejected.json()["code"] == "run_step_replay_context_output_not_persisted"
+
+
+def test_agent_platform_run_step_replay_rejects_non_persisted_source_step(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    async def fake_invoke(
+        self: RunService,
+        *,
+        agent: Agent,
+        resolved_input: dict[str, Any],
+        output_model,
+        trace_id: str | None,
+        step_index: int,
+        slot: str,
+    ) -> dict[str, Any]:
+        if step_index == 1:
+            output = {"summary": f"source:{resolved_input['ticker']}"}
+        else:
+            output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
+        return {"output": output, "tokens": 3, "costUsd": "0.00100000", "durationMs": 1}
+
+    monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
+    with session_factory() as session:
+        workflow = _create_replay_runtime_workflow(
+            session, workflow_key="step_replay_reject_workflow"
+        )
+
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "AMD"}},
+    )
     assert source_trigger.status_code == 201, source_trigger.json()
     source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
     with session_factory() as session:
         run = session.get(Run, source_detail["id"])
         assert run is not None
         steps = cast(list[RunStep], run.steps)
-        steps[0].status = "failed"
+        steps[1].status = "failed"
+        steps[1].persisted_at = None
         session.commit()
 
     rejected = client.post(
-        f"/api/runs/{source_detail['id']}/forks",
-        json={"forkStepIndex": 1},
+        f"/api/runs/{source_detail['id']}/step-replays",
+        json={"replayStepIndex": 2, "parameters": {"ticker": "AMD"}},
     )
     assert rejected.status_code == 400, rejected.json()
-    assert rejected.json()["code"] == "run_fork_step_not_succeeded"
+    assert rejected.json()["code"] == "run_step_replay_step_not_persisted"
 
 
-def test_agent_platform_run_fork_rejects_agent_source_run_without_creating_run(
+def test_agent_platform_run_step_replay_rejects_agent_source_run_without_creating_run(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -6502,51 +7109,40 @@ def test_agent_platform_run_fork_rejects_agent_source_run_without_creating_run(
     with session_factory() as session:
         _workflow, agent = _create_single_agent_runtime_workflow(
             session,
-            agent_key="fork_agent_source_agent",
-            workflow_key="fork_agent_source_holder_workflow",
-            connection=_build_model_connection(name="Fork Agent Source Connection"),
+            agent_key="step_replay_agent_source_agent",
+            workflow_key="step_replay_agent_source_holder_workflow",
+            connection=_build_model_connection(name="Step Replay Agent Source Connection"),
         )
 
     source_trigger = client.post(f"/api/agents/{agent.id}/runs", json={"ticker": "AAPL"})
     assert source_trigger.status_code == 201, source_trigger.json()
     source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
     assert source_detail["targetKind"] == "agent"
-    assert source_detail["finalOutput"] == {"summary": "agent:AAPL"}
 
     draft = client.get(
-        f"/api/runs/{source_detail['id']}/fork-draft",
-        params={"forkStepIndex": 1},
+        f"/api/runs/{source_detail['id']}/step-replay-draft",
+        params={"stepIndex": 1},
     )
     assert draft.status_code == 400, draft.json()
-    assert draft.json()["code"] == "run_fork_target_kind_unsupported"
+    assert draft.json()["code"] == "run_step_replay_target_kind_unsupported"
 
-    fork = client.post(
-        f"/api/runs/{source_detail['id']}/forks",
-        json={"forkStepIndex": 1, "input": {"ticker": "TSLA"}},
+    replay = client.post(
+        f"/api/runs/{source_detail['id']}/step-replays",
+        json={"replayStepIndex": 1, "parameters": {"ticker": "TSLA"}},
     )
-    assert fork.status_code == 400, fork.json()
-    assert fork.json()["code"] == "run_fork_target_kind_unsupported"
+    assert replay.status_code == 400, replay.json()
+    assert replay.json()["code"] == "run_step_replay_target_kind_unsupported"
 
-    listed = client.get(
-        "/api/runs",
-        params={"targetKind": "agent", "targetId": agent.id},
-    )
+    listed = client.get("/api/runs", params={"targetKind": "agent", "targetId": agent.id})
     assert listed.status_code == 200, listed.json()
     assert [item["id"] for item in listed.json()["items"]] == [source_detail["id"]]
 
-    source_after = client.get(f"/api/runs/{source_detail['id']}")
-    assert source_after.status_code == 200, source_after.json()
-    assert source_after.json()["input"] == {"ticker": "AAPL"}
-    assert source_after.json()["finalOutput"] == {"summary": "agent:AAPL"}
 
-
-def test_agent_platform_run_fork_rejects_final_workflow_step_without_creating_run(
+def test_agent_platform_legacy_fork_run_endpoints_are_unavailable_without_creating_run(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    calls: list[dict[str, Any]] = []
-
     async def fake_invoke(
         self: RunService,
         *,
@@ -6557,54 +7153,36 @@ def test_agent_platform_run_fork_rejects_final_workflow_step_without_creating_ru
         step_index: int,
         slot: str,
     ) -> dict[str, Any]:
-        calls.append(dict(resolved_input))
-        return {
-            "output": {"summary": f"single:{resolved_input['ticker']}"},
-            "tokens": 8,
-            "costUsd": "0.00800000",
-            "durationMs": 2,
-            "traceSpanId": None,
-        }
+        if step_index == 1:
+            output = {"summary": f"source:{resolved_input['ticker']}"}
+        else:
+            output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
+        return {"output": output, "tokens": 1, "costUsd": "0.00100000", "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:
-        workflow, _agent = _create_single_agent_runtime_workflow(
-            session,
-            agent_key="fork_final_agent",
-            workflow_key="fork_final_workflow",
-            connection=_build_model_connection(name="Fork Final Connection"),
+        workflow = _create_replay_runtime_workflow(
+            session, workflow_key="removed_endpoint_workflow"
         )
 
-    source_trigger = client.post(f"/api/workflows/{workflow.id}/runs", json={"ticker": "AAPL"})
+    source_trigger = client.post(
+        f"/api/workflows/{workflow.id}/launches",
+        json={"version": workflow.version, "parameters": {"ticker": "NVDA"}},
+    )
     assert source_trigger.status_code == 201, source_trigger.json()
     source_detail = _wait_for_agent_platform_run(client, source_trigger.json()["id"])
-    assert source_detail["targetKind"] == "workflow"
-    assert source_detail["finalOutput"] == {"summary": "single:AAPL"}
 
-    calls.clear()
     draft = client.get(
         f"/api/runs/{source_detail['id']}/fork-draft",
         params={"forkStepIndex": 1},
     )
-    assert draft.status_code == 400, draft.json()
-    assert draft.json()["code"] == "run_fork_step_not_continuable"
-
-    fork = client.post(
+    assert draft.status_code == 404
+    create = client.post(
         f"/api/runs/{source_detail['id']}/forks",
-        json={"forkStepIndex": 1, "input": {"ticker": "TSLA"}},
+        json={"forkStepIndex": 1, "input": {"ticker": "MSFT"}},
     )
-    assert fork.status_code == 400, fork.json()
-    assert fork.json()["code"] == "run_fork_step_not_continuable"
-    assert calls == []
+    assert create.status_code == 404
 
-    listed = client.get(
-        "/api/runs",
-        params={"targetKind": "workflow", "targetId": workflow.id},
-    )
+    listed = client.get("/api/runs", params={"targetKind": "workflow", "targetId": workflow.id})
     assert listed.status_code == 200, listed.json()
     assert [item["id"] for item in listed.json()["items"]] == [source_detail["id"]]
-
-    source_after = client.get(f"/api/runs/{source_detail['id']}")
-    assert source_after.status_code == 200, source_after.json()
-    assert source_after.json()["input"] == {"ticker": "AAPL"}
-    assert source_after.json()["finalOutput"] == {"summary": "single:AAPL"}

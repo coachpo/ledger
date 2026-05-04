@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
@@ -28,6 +27,7 @@ from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
+from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
@@ -41,14 +41,22 @@ from app.schemas.memory_report import (
 )
 from app.schemas.run import (
     RunCreatedRead,
-    RunForkCreateRequest,
-    RunForkDraftRead,
-    RunForkInvocationEdit,
     RunListItemRead,
     RunListRead,
     RunRead,
+    RunRerunCreateRequest,
+    RunRerunDraftRead,
     RunStatus,
+    RunStepReplayCreateRequest,
+    RunStepReplayDraftRead,
     RunTargetKind,
+)
+from app.schemas.workflow import (
+    WorkflowLaunchCreateRequest,
+    WorkflowLaunchCreateResponse,
+    WorkflowLaunchRead,
+    WorkflowVersionListRead,
+    WorkflowVersionRead,
 )
 from app.services.agent_execution_service import (
     AgentExecutionService,
@@ -78,6 +86,7 @@ from app.services.quote_provider import QuoteProvider
 
 logger = logging.getLogger(__name__)
 
+_RUN_STATUS_QUEUED = "queued"
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
@@ -89,6 +98,12 @@ class _RuntimeInvocationContext:
     target_kind: str
     target_key: str
     target_version: int
+
+
+@dataclass(frozen=True)
+class _PreparedWorkflowLaunch:
+    workflow: Workflow
+    plan: ExecutionPlan
 
 
 @dataclass
@@ -164,14 +179,56 @@ class RunService:
     def get_run(self, run_id: int) -> RunRead:
         return self._to_read_model(self._get_run_or_raise(run_id))
 
-    def create_run(
+    def get_workflow_launch(
         self,
         workflow_id: int,
-        input_payload: dict[str, Any],
         *,
         version: int | None = None,
-    ) -> RunCreatedRead:
-        return self.create_target_run("workflow", workflow_id, input_payload, version=version)
+    ) -> WorkflowLaunchRead:
+        prepared = self._prepare_workflow_launch(workflow_id, version=version)
+        return self._to_workflow_launch_read(prepared)
+
+    def list_workflow_versions(self, workflow_id: int) -> WorkflowVersionListRead:
+        anchor = self.execution_plan_builder.workflow_repository.get(workflow_id)
+        if anchor is None:
+            raise not_found_error("Workflow")
+        versions = self.execution_plan_builder.workflow_repository.list_versions(anchor.key)
+        return WorkflowVersionListRead(
+            items=[
+                WorkflowVersionRead.model_validate(
+                    {
+                        "id": workflow.id,
+                        "key": workflow.key,
+                        "version": workflow.version,
+                        "status": workflow.status,
+                        "name": workflow.name,
+                        "description": workflow.description,
+                        "inputSchema": workflow.input_schema,
+                        "createdAt": workflow.created_at,
+                        "updatedAt": workflow.updated_at,
+                    }
+                )
+                for workflow in versions
+            ]
+        )
+
+    def create_workflow_launch(
+        self,
+        workflow_id: int,
+        payload: WorkflowLaunchCreateRequest,
+    ) -> WorkflowLaunchCreateResponse:
+        prepared = self._prepare_workflow_launch(workflow_id, version=payload.version)
+        created = self._create_run_from_plan(prepared.plan, payload.parameters)
+        return WorkflowLaunchCreateResponse.model_validate(
+            {
+                "id": created.id,
+                "status": created.status,
+                "workflowId": created.target_id,
+                "workflowKey": created.target_key,
+                "workflowVersion": created.target_version,
+                "createdAt": created.created_at,
+            }
+        )
 
     def create_target_run(
         self,
@@ -184,6 +241,29 @@ class RunService:
         plan = self.execution_plan_builder.build_target_plan(
             target_kind, target_id, version=version
         )
+        return self._create_run_from_plan(plan, input_payload)
+
+    def _prepare_workflow_launch(
+        self,
+        workflow_id: int,
+        *,
+        version: int | None,
+    ) -> _PreparedWorkflowLaunch:
+        plan = self.execution_plan_builder.build_target_plan(
+            "workflow",
+            workflow_id,
+            version=version,
+        )
+        workflow = self.execution_plan_builder.workflow_repository.get(plan.target.id)
+        if workflow is None:
+            raise not_found_error("Workflow")
+        return _PreparedWorkflowLaunch(workflow=workflow, plan=plan)
+
+    def _create_run_from_plan(
+        self,
+        plan: ExecutionPlan,
+        input_payload: dict[str, Any],
+    ) -> RunCreatedRead:
         validated_input = self._validate_run_input(
             input_schema=plan.input_schema,
             input_payload=input_payload,
@@ -196,7 +276,9 @@ class RunService:
             target_key=plan.target.key,
             target_version=plan.target.version,
             input=validated_input,
-            status=_RUN_STATUS_RUNNING,
+            status=_RUN_STATUS_QUEUED,
+            queued_at=utcnow(),
+            started_at=None,
             resume_step_index=1,
             final_output=None,
             total_tokens=0,
@@ -223,88 +305,117 @@ class RunService:
             self.session.rollback()
             raise
 
-        try:
-            self._dispatch_run_in_background(run.id)
-        except Exception as exc:
-            self._mark_run_failed_in_fresh_session(
-                run.id,
-                code="run_dispatch_failed",
-                message=f"Failed to dispatch run {run.id}: {exc}",
-            )
-            raise
+        self._dispatch_queue_worker()
         return self._to_created_read(run)
 
-    def build_fork_draft(self, source_run_id: int, fork_step_index: int) -> RunForkDraftRead:
-        source_run, _plan, source_steps = self._prepare_fork_source(
-            source_run_id,
-            fork_step_index,
-        )
-        return RunForkDraftRead.model_validate(
+    def build_rerun_draft(self, source_run_id: int) -> RunRerunDraftRead:
+        source_run = self._get_run_or_raise(source_run_id)
+        return RunRerunDraftRead.model_validate(
             {
                 "sourceRunId": source_run.id,
-                "forkStepIndex": fork_step_index,
                 "targetKind": source_run.target_kind,
                 "targetId": source_run.target_id,
                 "targetKey": source_run.target_key,
                 "targetVersion": source_run.target_version,
-                "input": deepcopy(source_run.input),
-                "steps": [
-                    {
-                        "sourceRunStepId": step.id,
-                        "index": step.step_index,
-                        "invocations": [
-                            {
-                                "sourceInvocationId": invocation.id,
-                                "stepIndex": invocation.step_index,
-                                "slot": invocation.slot,
-                                "agentKey": invocation.agent_key,
-                                "resolvedInput": deepcopy(invocation.resolved_input),
-                                "output": deepcopy(invocation.output),
-                            }
-                            for invocation in sorted(
-                                cast(list[RunAgentInvocation], step.invocations),
-                                key=lambda item: (item.position, item.id),
-                            )
-                        ],
-                    }
-                    for step in source_steps
-                ],
+                "parameters": deepcopy(source_run.input),
             }
         )
 
-    def create_fork_run(
+    def create_rerun(
         self,
         source_run_id: int,
-        payload: RunForkCreateRequest,
+        payload: RunRerunCreateRequest,
     ) -> RunCreatedRead:
-        fork_step_index = payload.fork_step_index
-        source_run, plan, source_steps = self._prepare_fork_source(
-            source_run_id,
-            fork_step_index,
-        )
-        edit_map = self._validate_fork_invocation_edits(
-            plan=plan,
-            source_steps=source_steps,
-            edits=payload.invocation_edits,
-        )
+        source_run = self._get_run_or_raise(source_run_id)
+        plan = self.execution_plan_builder.build_plan_for_run(source_run)
         validated_input = self._validate_run_input(
             input_schema=plan.input_schema,
-            input_payload=payload.input if payload.input is not None else source_run.input,
+            input_payload=payload.parameters,
             candidate_key=f"{plan.target.kind}_input",
             resource_name=plan.target.kind,
         )
-        inherited_tokens, inherited_cost = self._copied_invocation_totals(source_steps)
+        return self._create_queued_lineage_run(
+            source_run=source_run,
+            plan=plan,
+            validated_input=validated_input,
+            replay_step_index=None,
+            copied_steps=[],
+            resume_step_index=1,
+            min_planned_step_index=1,
+        )
+
+    def build_step_replay_draft(
+        self,
+        source_run_id: int,
+        replay_step_index: int,
+    ) -> RunStepReplayDraftRead:
+        source_run, _plan, _copied_steps = self._prepare_step_replay_source(
+            source_run_id,
+            replay_step_index,
+        )
+        return RunStepReplayDraftRead.model_validate(
+            {
+                "sourceRunId": source_run.id,
+                "replayStepIndex": replay_step_index,
+                "targetKind": source_run.target_kind,
+                "targetId": source_run.target_id,
+                "targetKey": source_run.target_key,
+                "targetVersion": source_run.target_version,
+                "parameters": deepcopy(source_run.input),
+            }
+        )
+
+    def create_step_replay(
+        self,
+        source_run_id: int,
+        payload: RunStepReplayCreateRequest,
+    ) -> RunCreatedRead:
+        replay_step_index = payload.replay_step_index
+        source_run, plan, copied_steps = self._prepare_step_replay_source(
+            source_run_id,
+            replay_step_index,
+        )
+        validated_input = self._validate_run_input(
+            input_schema=plan.input_schema,
+            input_payload=payload.parameters,
+            candidate_key=f"{plan.target.kind}_input",
+            resource_name=plan.target.kind,
+        )
+        return self._create_queued_lineage_run(
+            source_run=source_run,
+            plan=plan,
+            validated_input=validated_input,
+            replay_step_index=replay_step_index,
+            copied_steps=copied_steps,
+            resume_step_index=replay_step_index,
+            min_planned_step_index=replay_step_index,
+        )
+
+    def _create_queued_lineage_run(
+        self,
+        *,
+        source_run: Run,
+        plan: ExecutionPlan,
+        validated_input: dict[str, Any],
+        replay_step_index: int | None,
+        copied_steps: list[RunStep],
+        resume_step_index: int,
+        min_planned_step_index: int,
+    ) -> RunCreatedRead:
+        inherited_tokens, inherited_cost = self._copied_invocation_totals(copied_steps)
         run = Run(
             target_kind=source_run.target_kind,
             target_id=source_run.target_id,
             target_key=source_run.target_key,
             target_version=source_run.target_version,
             input=validated_input,
-            status=_RUN_STATUS_RUNNING,
+            status=_RUN_STATUS_QUEUED,
+            queued_at=utcnow(),
+            started_at=None,
             source_run_id=source_run.id,
             lineage_root_run_id=source_run.lineage_root_run_id or source_run.id,
-            forked_from_step_index=fork_step_index,
-            resume_step_index=fork_step_index + 1,
+            forked_from_step_index=replay_step_index,
+            resume_step_index=resume_step_index,
             final_output=None,
             total_tokens=inherited_tokens,
             total_cost_usd=inherited_cost,
@@ -319,16 +430,12 @@ class RunService:
         try:
             _ = self.run_repository.add(run)
             self.session.flush()
-            self._copy_fork_source_rows(
-                run=run,
-                source_steps=source_steps,
-                edit_map=edit_map,
-            )
+            self._copy_replay_context_rows(run=run, source_steps=copied_steps)
             self._create_planned_run_rows(
                 run=run,
                 plan=plan,
                 validated_input=validated_input,
-                min_step_index=fork_step_index + 1,
+                min_step_index=min_planned_step_index,
             )
             self.session.commit()
             self.session.refresh(run)
@@ -336,15 +443,7 @@ class RunService:
             self.session.rollback()
             raise
 
-        try:
-            self._dispatch_run_in_background(run.id)
-        except Exception as exc:
-            self._mark_run_failed_in_fresh_session(
-                run.id,
-                code="run_dispatch_failed",
-                message=f"Failed to dispatch run {run.id}: {exc}",
-            )
-            raise
+        self._dispatch_queue_worker()
         return self._to_created_read(run)
 
     def _create_planned_run_rows(
@@ -414,82 +513,66 @@ class RunService:
             return dict(validated_input), "passthrough"
         return {}, "derived"
 
-    def _prepare_fork_source(
+    def _prepare_step_replay_source(
         self,
         source_run_id: int,
-        fork_step_index: int,
+        replay_step_index: int,
     ) -> tuple[Run, ExecutionPlan, list[RunStep]]:
         source_run = self._get_run_or_raise(source_run_id)
         if source_run.target_kind != "workflow":
             raise business_rule_error(
-                "run_fork_target_kind_unsupported",
-                "Workflow-step forks are only supported for workflow runs",
+                "run_step_replay_target_kind_unsupported",
+                "Step replay is only supported for workflow runs",
                 details=[
                     {
                         "field": "targetKind",
-                        "issue": "Workflow-step forks require a workflow source run",
+                        "issue": "Step replay requires a workflow source run",
                     }
                 ],
             )
         if source_run.status != _RUN_STATUS_SUCCEEDED:
             raise business_rule_error(
-                "run_fork_source_not_succeeded",
-                "Only succeeded runs can be forked",
+                "run_step_replay_source_not_succeeded",
+                "Only succeeded runs can be replayed",
             )
         plan = self.execution_plan_builder.build_plan_for_run(source_run)
         plan_step_indexes = {step.index for step in plan.steps}
-        final_step_index = max(plan_step_indexes)
-        if fork_step_index > final_step_index:
+        if replay_step_index not in plan_step_indexes:
             raise business_rule_error(
-                "run_fork_step_not_continuable",
-                f"Fork step {fork_step_index} has no following executable workflow step",
-                details=[
-                    {
-                        "field": "forkStepIndex",
-                        "issue": "Fork step must have a following workflow step",
-                    }
-                ],
-            )
-        if fork_step_index not in plan_step_indexes:
-            raise business_rule_error(
-                "run_fork_step_not_found",
-                f"Fork step {fork_step_index} does not exist on the source run plan",
+                "run_step_replay_step_not_found",
+                f"Replay step {replay_step_index} does not exist on the source run plan",
             )
 
         source_steps_by_index = {
             step.step_index: step for step in cast(list[RunStep], source_run.steps)
         }
-        source_step = source_steps_by_index.get(fork_step_index)
-        if source_step is None:
+        replay_step = source_steps_by_index.get(replay_step_index)
+        if replay_step is None:
             raise business_rule_error(
-                "run_fork_step_not_found",
-                f"Fork step {fork_step_index} does not exist on the source run",
+                "run_step_replay_step_not_found",
+                f"Replay step {replay_step_index} does not exist on the source run",
             )
-        if source_step.status != _RUN_STATUS_SUCCEEDED:
+        if replay_step.status != _RUN_STATUS_SUCCEEDED or replay_step.persisted_at is None:
             raise business_rule_error(
-                "run_fork_step_not_succeeded",
-                f"Fork step {fork_step_index} must be succeeded before it can be copied",
+                "run_step_replay_step_not_persisted",
+                f"Replay step {replay_step_index} must be succeeded and persisted",
             )
 
         copied_steps: list[RunStep] = []
-        for step_index in sorted(index for index in plan_step_indexes if index <= fork_step_index):
+        for step_index in sorted(index for index in plan_step_indexes if index < replay_step_index):
             step = source_steps_by_index.get(step_index)
             if step is None or step.status != _RUN_STATUS_SUCCEEDED or step.persisted_at is None:
                 raise business_rule_error(
-                    "run_fork_copied_step_not_persisted",
-                    "All copied source steps must be succeeded and persisted",
+                    "run_step_replay_context_not_persisted",
+                    "All source context steps must be succeeded and persisted",
                     details=[{"field": f"steps.{step_index}", "issue": "Step is not persisted"}],
                 )
             invocations = cast(list[RunAgentInvocation], step.invocations)
             for invocation in invocations:
-                if (
-                    invocation.status != _RUN_STATUS_SUCCEEDED
-                    or invocation.persisted_at is None
-                    or invocation.output_origin is None
-                ):
+                if not self._source_context_invocation_is_persisted(invocation):
                     raise business_rule_error(
-                        "run_fork_copied_output_not_persisted",
-                        "All copied source invocation outputs must be succeeded and persisted",
+                        "run_step_replay_context_output_not_persisted",
+                        "All source context invocation outputs must be succeeded and persisted",
                         details=[
                             {
                                 "field": f"steps.{step_index}.{invocation.slot}",
@@ -498,83 +581,15 @@ class RunService:
                         ],
                     )
             copied_steps.append(step)
-        if fork_step_index == final_step_index:
-            raise business_rule_error(
-                "run_fork_step_not_continuable",
-                f"Fork step {fork_step_index} is the final executable workflow step",
-                details=[
-                    {
-                        "field": "forkStepIndex",
-                        "issue": "Fork step must have a following workflow step",
-                    }
-                ],
-            )
         return source_run, plan, copied_steps
 
-    def _validate_fork_invocation_edits(
-        self,
-        *,
-        plan: ExecutionPlan,
-        source_steps: list[RunStep],
-        edits: list[RunForkInvocationEdit],
-    ) -> dict[tuple[int, str], RunForkInvocationEdit]:
-        source_invocations = {
-            (invocation.step_index, invocation.slot): invocation
-            for step in source_steps
-            for invocation in cast(list[RunAgentInvocation], step.invocations)
-        }
-        plan_agents = {
-            (step.index, agent.slot): agent for step in plan.steps for agent in step.agents
-        }
-        edit_map: dict[tuple[int, str], RunForkInvocationEdit] = {}
-        for edit in edits:
-            key = (edit.step_index, edit.slot)
-            if key in edit_map:
-                raise business_rule_error(
-                    "run_fork_duplicate_invocation_edit",
-                    "Fork invocation edits must target each slot at most once",
-                    details=[{"field": "invocationEdits", "issue": "Duplicate invocation edit"}],
-                )
-            source_invocation = source_invocations.get(key)
-            plan_agent = plan_agents.get(key)
-            if source_invocation is None or plan_agent is None:
-                raise business_rule_error(
-                    "run_fork_invocation_edit_not_found",
-                    "Fork invocation edit must target a copied source invocation",
-                    details=[
-                        {
-                            "field": f"steps.{edit.step_index}.{edit.slot}",
-                            "issue": "Invocation is not available for copying",
-                        }
-                    ],
-                )
-            agent = self._resolve_agent_row(plan_agent)
-            if "resolved_input" in edit.model_fields_set:
-                input_model = self._build_input_model(
-                    agent.input_schema,
-                    candidate_key=f"{agent.key}_input",
-                )
-                try:
-                    _ = input_model.model_validate(edit.resolved_input)
-                except ValidationError as exc:
-                    raise business_rule_error(
-                        "run_fork_invalid_resolved_input",
-                        "Edited invocation input failed agent input schema validation",
-                        details=self._validation_details_from_pydantic_error(exc),
-                    ) from exc
-            if "output" in edit.model_fields_set:
-                output_schema = self._resolve_agent_output_schema(agent)
-                output_model = self.schema_compiler.build_runtime_model(output_schema)
-                try:
-                    _ = output_model.model_validate(edit.output)
-                except ValidationError as exc:
-                    raise business_rule_error(
-                        "run_fork_invalid_output",
-                        "Edited invocation output failed agent output schema validation",
-                        details=self._validation_details_from_pydantic_error(exc),
-                    ) from exc
-            edit_map[key] = edit
-        return edit_map
+    @staticmethod
+    def _source_context_invocation_is_persisted(invocation: RunAgentInvocation) -> bool:
+        if invocation.persisted_at is None:
+            return False
+        if invocation.status == _RUN_STATUS_SUCCEEDED:
+            return invocation.output_origin is not None
+        return invocation.optional and invocation.status in {_RUN_STATUS_FAILED, "skipped"}
 
     @staticmethod
     def _copied_invocation_totals(source_steps: list[RunStep]) -> tuple[int, Decimal]:
@@ -586,12 +601,11 @@ class RunService:
                 cost += Decimal(invocation.cost_usd or 0)
         return tokens, cost
 
-    def _copy_fork_source_rows(
+    def _copy_replay_context_rows(
         self,
         *,
         run: Run,
         source_steps: list[RunStep],
-        edit_map: dict[tuple[int, str], RunForkInvocationEdit],
     ) -> None:
         copied_at = utcnow()
         copied_steps: dict[int, RunStep] = {}
@@ -617,19 +631,6 @@ class RunService:
         for source_step in source_steps:
             copied_step = copied_steps[source_step.step_index]
             for source_invocation in cast(list[RunAgentInvocation], source_step.invocations):
-                edit = edit_map.get((source_invocation.step_index, source_invocation.slot))
-                resolved_input_edited = (
-                    edit is not None and "resolved_input" in edit.model_fields_set
-                )
-                output_edited = edit is not None and "output" in edit.model_fields_set
-                resolved_input = (
-                    edit.resolved_input
-                    if resolved_input_edited and edit is not None
-                    else source_invocation.resolved_input
-                )
-                output = (
-                    edit.output if output_edited and edit is not None else source_invocation.output
-                )
                 copied_invocation = self.run_agent_invocation_repository.create_invocation(
                     run_step_id=copied_step.id,
                     run_id=run.id,
@@ -645,13 +646,18 @@ class RunService:
                     wiring=deepcopy(source_invocation.wiring),
                     graph_metadata=deepcopy(source_invocation.graph_metadata),
                     optional=source_invocation.optional,
-                    resolved_input=deepcopy(resolved_input) if resolved_input is not None else {},
-                    resolved_input_origin="edited" if resolved_input_edited else "copied",
+                    resolved_input=deepcopy(source_invocation.resolved_input),
+                    resolved_input_origin="copied",
                     status=source_invocation.status,
-                    output=deepcopy(output),
-                    output_origin="edited" if output_edited else "copied",
+                    output=deepcopy(source_invocation.output),
+                    output_origin=(
+                        "copied" if source_invocation.output_origin is not None else None
+                    ),
                     source_invocation_id=source_invocation.id,
                 )
+                copied_invocation.error_code = source_invocation.error_code
+                copied_invocation.error_message = source_invocation.error_message
+                copied_invocation.error_details = deepcopy(source_invocation.error_details)
                 copied_invocation.tokens = source_invocation.tokens
                 copied_invocation.cost_usd = source_invocation.cost_usd
                 copied_invocation.duration_ms = source_invocation.duration_ms
@@ -662,7 +668,20 @@ class RunService:
 
     def execute_run(self, run_id: int) -> None:
         try:
-            asyncio.run(self._execute_run_async(run_id))
+            claimed_run = self.run_repository.claim_next_queued(run_id=run_id)
+            if claimed_run is None:
+                self.session.rollback()
+                return
+            claimed_run_id = claimed_run.id
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        self.execute_claimed_run(claimed_run_id)
+
+    def execute_claimed_run(self, run_id: int) -> None:
+        try:
+            asyncio.run(self._execute_claimed_run_async(run_id))
         except Exception as exc:
             logger.exception("Agent platform run %d failed", run_id)
             self.session.rollback()
@@ -673,8 +692,13 @@ class RunService:
                 message=failure.message,
             )
 
-    async def _execute_run_async(self, run_id: int) -> None:
+    async def _execute_claimed_run_async(self, run_id: int) -> None:
         run = self._get_run_or_raise(run_id)
+        if run.status != _RUN_STATUS_RUNNING:
+            return
+        if run.started_at is None:
+            run.started_at = utcnow()
+            self.session.commit()
         plan = self.execution_plan_builder.build_plan_for_run(run)
         try:
             trace_session = self._start_trace_session(run=run, plan=plan)
@@ -1763,27 +1787,22 @@ class RunService:
             current = cached
         return current
 
-    def _dispatch_run_in_background(self, run_id: int) -> None:
-        def _run() -> None:
-            with self.session_factory() as session:
-                RunService(
-                    session,
-                    self.session_factory,
-                    quote_provider=self.quote_provider,
-                ).execute_run(run_id)
+    def _dispatch_queue_worker(self) -> None:
+        import importlib
 
-        thread = threading.Thread(
-            target=_run,
-            daemon=True,
-            name=f"ledger-agent-platform-run-{run_id}",
-        )
-        thread.start()
+        queue_module = importlib.import_module("app.services.run_queue_service")
+        with self.session_factory() as session:
+            queue_module.RunQueueService(
+                session,
+                self.session_factory,
+                quote_provider=self.quote_provider,
+            ).dispatch_pending()
 
     def _mark_run_failed_in_fresh_session(self, run_id: int, *, code: str, message: str) -> None:
         with self.session_factory() as session:
             service = RunService(session, self.session_factory, quote_provider=self.quote_provider)
             run = service.run_repository.get(run_id)
-            if run is None or run.status != _RUN_STATUS_RUNNING:
+            if run is None or run.status not in {_RUN_STATUS_QUEUED, _RUN_STATUS_RUNNING}:
                 return
             run.status = _RUN_STATUS_FAILED
             run.error = message
@@ -1873,6 +1892,19 @@ class RunService:
         }
 
     @staticmethod
+    def _to_workflow_launch_read(prepared: _PreparedWorkflowLaunch) -> WorkflowLaunchRead:
+        return WorkflowLaunchRead.model_validate(
+            {
+                "workflowId": prepared.workflow.id,
+                "key": prepared.workflow.key,
+                "version": prepared.workflow.version,
+                "name": prepared.workflow.name,
+                "description": prepared.workflow.description,
+                "inputSchema": prepared.plan.input_schema,
+            }
+        )
+
+    @staticmethod
     def _to_created_read(run: Run) -> RunCreatedRead:
         return RunCreatedRead.model_validate(
             {
@@ -1900,6 +1932,7 @@ class RunService:
                 "totalTokens": run.total_tokens,
                 "totalCostUsd": run.total_cost_usd,
                 "traceId": run.trace_id,
+                "queuedAt": run.queued_at,
                 "startedAt": run.started_at,
                 "finishedAt": run.finished_at,
             }
@@ -1916,7 +1949,7 @@ class RunService:
                 "input": run.input,
                 "sourceRunId": run.source_run_id,
                 "lineageRootRunId": run.lineage_root_run_id,
-                "forkedFromStepIndex": run.forked_from_step_index,
+                "replayStepIndex": run.forked_from_step_index,
                 "resumeStepIndex": run.resume_step_index,
                 "finalOutput": run.final_output,
                 "status": run.status,
@@ -1928,6 +1961,7 @@ class RunService:
                 "executedCostUsd": run.executed_cost_usd,
                 "traceId": run.trace_id,
                 "error": run.error,
+                "queuedAt": run.queued_at,
                 "startedAt": run.started_at,
                 "finishedAt": run.finished_at,
                 "createdAt": run.created_at,
