@@ -40,7 +40,7 @@ describe("WorkflowsListPage", () => {
     });
   });
 
-  it("renders workflow rows and routes to create, edit, and review-run paths", () => {
+  it("renders workflow rows and routes to create, edit, and launch paths", () => {
     render(<WorkflowsListPage />);
 
     expect(screen.getByTestId("workflows-row-market_review")).toBeVisible();
@@ -52,6 +52,6 @@ describe("WorkflowsListPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/workflows/41/edit");
 
     fireEvent.click(screen.getByTestId("workflows-run-market_review"));
-    expect(navigateMock).toHaveBeenCalledWith("/workflows/41/edit#review");
+    expect(navigateMock).toHaveBeenCalledWith("/workflows/41/run");
   });
 });

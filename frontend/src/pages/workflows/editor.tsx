@@ -8,7 +8,6 @@ import {
   FileText,
   Keyboard,
   Loader2,
-  PlayCircle,
   Save,
   ShieldCheck,
   Wand2,
@@ -17,7 +16,6 @@ import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
-import { SchemaForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,19 +45,12 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useCreateWorkflow,
-  useCreateWorkflowRun,
   useUpdateWorkflow,
   useValidateWorkflowManifest,
   useWorkflow,
 } from "@/hooks/use-workflows";
 import { ApiRequestError } from "@/lib/api-client";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
-import { parseSchemaJsonText } from "@/lib/platform-authoring/schema/codec";
-import { createDefaultSchemaNode } from "@/lib/platform-authoring/schema/factories";
-import { buildRunInputDefaultValue } from "@/lib/platform-authoring/schema/preview";
-import type { SchemaIRNode } from "@/lib/platform-authoring/schema/types";
-import { encodeValueEntry, validateAndDecodeValueEntry } from "@/lib/platform-authoring/values/codec";
-import type { ValueEntry } from "@/lib/platform-authoring/values/types";
 import {
   createWorkflowManifestScaffold,
   extractWorkflowManifestOutline,
@@ -82,12 +73,6 @@ type WorkflowSnippet = {
   label: string;
   shortcut: string;
   text: string;
-};
-
-type RunLaunchFeedback = {
-  message: string;
-  title: string;
-  variant: "default" | "destructive";
 };
 
 const WORKFLOW_SNIPPETS: WorkflowSnippet[] = [
@@ -123,30 +108,6 @@ const WORKFLOW_SNIPPETS: WorkflowSnippet[] = [
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function createDefaultRunInputValue(schema: SchemaIRNode): ValueEntry {
-  const defaultValue = buildRunInputDefaultValue(schema);
-
-  if (isRecord(defaultValue) && typeof defaultValue.ticker === "string") {
-    return encodeValueEntry({ ...defaultValue, ticker: "AAPL" });
-  }
-
-  if (isRecord(defaultValue)) {
-    return encodeValueEntry(defaultValue);
-  }
-
-  return encodeValueEntry({});
-}
-
-function decodeRunInputValue(value: ValueEntry): UnknownRecord {
-  const decoded = validateAndDecodeValueEntry(value);
-
-  if (!decoded.ok || !isRecord(decoded.value)) {
-    return {};
-  }
-
-  return decoded.value;
 }
 
 function getManifestMetadata(value: unknown) {
@@ -278,12 +239,7 @@ export function WorkflowsEditorPage() {
   const { data: workflow, error: workflowError, isError, isPending } = useWorkflow(workflowId);
   const createWorkflow = useCreateWorkflow();
   const updateWorkflow = useUpdateWorkflow();
-  const createWorkflowRun = useCreateWorkflowRun();
   const validateWorkflowManifest = useValidateWorkflowManifest();
-  const [runInput, setRunInput] = useState<ValueEntry>(() =>
-    createDefaultRunInputValue(createDefaultSchemaNode("object")),
-  );
-  const [runLaunchFeedback, setRunLaunchFeedback] = useState<RunLaunchFeedback | null>(null);
 
   useEffect(() => {
     if (workflow?.manifestSource) {
@@ -351,28 +307,12 @@ export function WorkflowsEditorPage() {
     () => stringifyJson(validationResult?.compiledGraph),
     [validationResult?.compiledGraph],
   );
-  const activeRunInputSchema = validationResult?.runInputSchema ?? workflow?.inputSchema ?? null;
-  const activeRunInputSchemaJson = useMemo(
-    () => stringifyJson(activeRunInputSchema ?? { additionalProperties: false, properties: {}, type: "object" }),
-    [activeRunInputSchema],
-  );
-  const activeRunInputSchemaBuilder = useMemo(() => {
-    const parsedSchema = parseSchemaJsonText(activeRunInputSchemaJson);
-    return parsedSchema.builder ?? createDefaultSchemaNode("object");
-  }, [activeRunInputSchemaJson]);
-  const runInputPayload = useMemo(() => decodeRunInputValue(runInput), [runInput]);
-  const rawRunInputJson = useMemo(() => stringifyJson(runInputPayload), [runInputPayload]);
   const runInputSchemaJson = useMemo(
     () => stringifyJson(validationResult?.runInputSchema),
     [validationResult?.runInputSchema],
   );
   const isSaving = createWorkflow.isPending || updateWorkflow.isPending;
   const isValidating = validateWorkflowManifest.isPending;
-  const isLaunchingRun = createWorkflowRun.isPending;
-
-  useEffect(() => {
-    setRunInput(createDefaultRunInputValue(activeRunInputSchemaBuilder));
-  }, [activeRunInputSchemaBuilder]);
 
   const handleClose = () => navigate("/workflows");
 
@@ -480,34 +420,6 @@ export function WorkflowsEditorPage() {
     } catch (error) {
       const message = error instanceof ApiRequestError ? error.message : "Failed to save workflow manifest";
       toast.error(message);
-    }
-  };
-
-  const handleLaunchRun = async () => {
-    if (!workflowId) {
-      setRunLaunchFeedback({
-        message: "Save the workflow before launching a run.",
-        title: "Run launch unavailable",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const run = await createWorkflowRun.mutateAsync({
-        payload: runInputPayload,
-        version: workflow?.version,
-        workflowId,
-      });
-      toast.success("Workflow run started");
-      navigate(`/runs/${run.id}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to start workflow run";
-      setRunLaunchFeedback({
-        message,
-        title: "Run launch failed",
-        variant: "destructive",
-      });
     }
   };
 
@@ -972,52 +884,6 @@ export function WorkflowsEditorPage() {
                   </Card>
                 ) : null}
 
-                <Card className="gap-3" data-testid="workflow-run-panel">
-                  <CardHeader className="px-3 pt-3">
-                    <CardTitle className="text-sm">Launch run</CardTitle>
-                    <CardDescription>Submit a saved workflow run through the compiled input schema.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3 px-3 pb-3">
-                    {!isEditing ? (
-                      <Alert data-testid="workflow-run-unavailable" variant="destructive">
-                        <AlertTitle>Run launch unavailable</AlertTitle>
-                        <AlertDescription>Save the workflow before launching a run.</AlertDescription>
-                      </Alert>
-                    ) : null}
-                    {runLaunchFeedback ? (
-                      <Alert data-testid="workflow-run-feedback" variant={runLaunchFeedback.variant}>
-                        <AlertTitle>{runLaunchFeedback.title}</AlertTitle>
-                        <AlertDescription>{runLaunchFeedback.message}</AlertDescription>
-                      </Alert>
-                    ) : null}
-                    <div data-testid="workflow-run-input-form">
-                      <SchemaForm
-                        description="Fill the workflow run input through the shared schema-driven form instead of editing JSON directly."
-                        disabled={!isEditing || isLaunchingRun}
-                        label="Run input"
-                        schema={activeRunInputSchemaBuilder}
-                        value={runInput}
-                        onChange={setRunInput}
-                      />
-                    </div>
-                    <ExactJsonPreview
-                      ariaLabel="Exact raw workflow run-input JSON"
-                      data-testid="workflow-run-input-raw-json"
-                      textareaClassName="min-h-32"
-                      value={rawRunInputJson}
-                    />
-                    <Button
-                      data-testid="workflow-run-now"
-                      disabled={!isEditing || isLaunchingRun}
-                      onClick={() => void handleLaunchRun()}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {isLaunchingRun ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <PlayCircle data-icon="inline-start" />}
-                      Launch Run
-                    </Button>
-                  </CardContent>
-                </Card>
               </div>
             </ScrollArea>
           </aside>

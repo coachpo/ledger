@@ -9,7 +9,6 @@ import { WorkflowsEditorPage } from "./editor";
 const navigateMock = vi.fn();
 const paramsMock: { workflowId?: string } = {};
 const createWorkflowMock = vi.fn();
-const createWorkflowRunMock = vi.fn();
 const updateWorkflowMock = vi.fn();
 const validateWorkflowManifestMock = vi.fn();
 const toastErrorMock = vi.fn();
@@ -87,7 +86,6 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 
 vi.mock("@/hooks/use-workflows", () => ({
   useCreateWorkflow: () => ({ isPending: false, mutateAsync: createWorkflowMock }),
-  useCreateWorkflowRun: () => ({ isPending: false, mutateAsync: createWorkflowRunMock }),
   useUpdateWorkflow: () => ({ isPending: false, mutateAsync: updateWorkflowMock }),
   useValidateWorkflowManifest: () => ({ isPending: false, mutateAsync: validateWorkflowManifestMock }),
   useWorkflow: (workflowId?: string) => {
@@ -104,7 +102,6 @@ describe("WorkflowsEditorPage", () => {
     paramsMock.workflowId = undefined;
     navigateMock.mockReset();
     createWorkflowMock.mockReset();
-    createWorkflowRunMock.mockReset();
     updateWorkflowMock.mockReset();
     validateWorkflowManifestMock.mockReset();
     toastErrorMock.mockReset();
@@ -277,30 +274,19 @@ describe("WorkflowsEditorPage", () => {
     expect(screen.getByTestId("workflow-dirty-indicator")).toHaveTextContent("Saved baseline");
   });
 
-  it("launches a run with required inputs only and navigates to the run detail", async () => {
+  it("keeps saved workflow editing editor-only, including review hash URLs", () => {
     paramsMock.workflowId = "88";
-    createWorkflowRunMock.mockResolvedValue({ id: 904 });
 
     render(<WorkflowsEditorPage />);
 
-    const rawInput = screen.getByLabelText("Exact raw workflow run-input JSON") as HTMLTextAreaElement;
-    await waitFor(() => expect(rawInput).toHaveValue(JSON.stringify({ symbol: "example" }, null, 2)));
-    expect(screen.getByLabelText("Portfolio Symbol")).toHaveValue("example");
-    expect(screen.getByText("Portfolio symbol supplied at launch time.")).toBeVisible();
-    expect(screen.getByText("Optional cap applied only when the workflow needs a guardrail.")).toBeVisible();
-    expect(screen.getByRole("button", { name: /add field/i })).toBeVisible();
-    expect(rawInput.value).not.toContain("Portfolio Symbol");
-    expect(rawInput.value).not.toContain("limit");
-
-    fireEvent.click(screen.getByTestId("workflow-run-now"));
-
-    await waitFor(() => expect(createWorkflowRunMock).toHaveBeenCalledTimes(1));
-    expect(createWorkflowRunMock).toHaveBeenCalledWith({
-      payload: { symbol: "example" },
-      version: 2,
-      workflowId: "88",
-    });
-    expect(navigateMock).toHaveBeenCalledWith("/runs/904");
+    expect(screen.getByTestId("workflow-yaml-editor")).toHaveValue(savedManifest);
+    expect(screen.queryByTestId("workflow-run-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-run-now")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-run-input-form")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-run-input-raw-json")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /run now/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /launch/i })).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalledWith(expect.stringMatching(/\/workflows\/88\/run/));
   });
 
   it("opens command snippets and inserts YAML text at the cursor", async () => {

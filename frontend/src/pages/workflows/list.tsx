@@ -86,7 +86,7 @@ export function WorkflowsListPage() {
                     data-testid={`workflows-run-${workflow.key}`}
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate(`/workflows/${workflow.id}/edit#review`)}
+                    onClick={() => navigate(`/workflows/${workflow.id}/run`)}
                   >
                     <PlayCircle data-icon="inline-start" />
                     Run Now
