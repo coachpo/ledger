@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
 
+import {
+  ResourceRowCard,
+  type ResourceRowCardPrimaryAction,
+} from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -20,11 +24,15 @@ type PlatformResourceListProps = {
   children: ReactNode;
 };
 
+type PlatformResourceCardDensity = "legacy" | "compact" | "compactPlus";
+
 type PlatformResourceCardProps = {
   actions?: ReactNode;
   badges?: ReactNode;
+  density?: PlatformResourceCardDensity;
   description?: ReactNode;
   metadata?: ReactNode;
+  primaryAction?: ResourceRowCardPrimaryAction;
   subtitle?: ReactNode;
   testId: string;
   title: ReactNode;
@@ -37,7 +45,33 @@ export function PlatformResourceList(props: PlatformResourceListProps) {
 }
 
 export function PlatformResourceCard(props: PlatformResourceCardProps) {
-  const { actions, badges, description, metadata, subtitle, testId, title } = props;
+  const {
+    actions,
+    badges,
+    density = "legacy",
+    description,
+    metadata,
+    primaryAction,
+    subtitle,
+    testId,
+    title,
+  } = props;
+
+  if (density !== "legacy") {
+    return (
+      <ResourceRowCard
+        actions={actions}
+        badges={badges}
+        density={density}
+        description={description}
+        metadata={metadata}
+        primaryAction={primaryAction}
+        subtitle={subtitle}
+        testId={testId}
+        title={title}
+      />
+    );
+  }
 
   return (
     <Card data-testid={testId} className="overflow-hidden">
