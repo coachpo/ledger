@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import bindparam, create_engine, inspect, text
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import init_db
 from app.db.upgrades import upgrade_legacy_schema
@@ -552,6 +555,134 @@ def _foreign_key_signature(
         else ()
     )
     return columns, str(foreign_key.get("referred_table")), ondelete
+
+
+def _model_connection_reasoning_effort_check_sql(engine: Engine) -> str:
+    return next(
+        str(constraint["sqltext"])
+        for constraint in inspect(engine).get_check_constraints("model_connections")
+        if constraint.get("name") == "ck_model_connections_reasoning_effort"
+    )
+
+
+def _assert_flexible_model_connection_reasoning_effort_check(engine: Engine) -> None:
+    check_sql = _model_connection_reasoning_effort_check_sql(engine)
+    normalized_sql = " ".join(check_sql.lower().split())
+    assert "reasoning_effort" in normalized_sql
+    assert "is null" in normalized_sql
+    assert "length" in normalized_sql
+    assert "btrim" in normalized_sql
+    assert "128" in normalized_sql
+
+
+def _insert_model_connection_reasoning_effort_row(
+    connection: Connection,
+    *,
+    key: str,
+    reasoning_effort: object,
+    api_style: str = "responses",
+) -> int:
+    model_connection_id = cast(
+        int,
+        connection.execute(
+            text(
+                """
+                INSERT INTO model_connections (
+                    key, status, name, description, base_url, organization, project, model_id,
+                    reasoning_effort, api_style, timeout_seconds, secret_payload, has_api_key,
+                    created_at, updated_at
+                ) VALUES (
+                    :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
+                    :model_id, :reasoning_effort, :api_style, 60, '{}'::jsonb, FALSE,
+                    NOW(), NOW()
+                ) RETURNING id
+                """
+            ),
+            {
+                "api_style": api_style,
+                "key": key,
+                "model_id": f"openai:{key}",
+                "name": key.replace("_", " ").title(),
+                "reasoning_effort": reasoning_effort,
+            },
+        ).scalar_one(),
+    )
+    return model_connection_id
+
+
+def _insert_agent_model_connection_snapshot_row(
+    connection: Connection,
+    *,
+    key: str,
+    model_connection_id: int,
+    model_id: str,
+    model_connection_snapshot: dict[str, object],
+) -> None:
+    _ = connection.execute(
+        text(
+            """
+            INSERT INTO agents (
+                key, version, status, name, description, model_connection_id, model,
+                system_prompt, input_schema, output_schema_id, output_schema_version,
+                capabilities, mcp_servers, budget_usd, model_connection_snapshot
+            ) VALUES (
+                :key, 1, 'published', :name, '', :model_connection_id, :model_id,
+                :system_prompt, '{"type":"object"}'::jsonb, 1, 1,
+                '[]'::jsonb, '[]'::jsonb, 0, CAST(:model_connection_snapshot AS jsonb)
+            )
+            """
+        ),
+        {
+            "key": key,
+            "model_connection_id": model_connection_id,
+            "model_connection_snapshot": json.dumps(model_connection_snapshot),
+            "model_id": model_id,
+            "name": key.replace("_", " ").title(),
+            "system_prompt": "Analyze the ticker.",
+        },
+    )
+
+
+def _assert_model_connection_reasoning_effort_direct_sql_contract(
+    engine: Engine,
+    *,
+    key_prefix: str,
+) -> None:
+    with engine.begin() as connection:
+        _ = _insert_model_connection_reasoning_effort_row(
+            connection,
+            key=f"{key_prefix}_null",
+            reasoning_effort=None,
+        )
+        _ = _insert_model_connection_reasoning_effort_row(
+            connection,
+            key=f"{key_prefix}_xhigh",
+            reasoning_effort="xhigh",
+        )
+
+    with engine.connect() as connection:
+        accepted_rows = connection.execute(
+            text(
+                """
+                SELECT key, reasoning_effort FROM model_connections
+                WHERE key IN :keys ORDER BY key ASC
+                """
+            ).bindparams(bindparam("keys", expanding=True)),
+            {"keys": (f"{key_prefix}_null", f"{key_prefix}_xhigh")},
+        ).all()
+
+    assert accepted_rows == [
+        (f"{key_prefix}_null", None),
+        (f"{key_prefix}_xhigh", "xhigh"),
+    ]
+    for invalid_index, invalid_reasoning_effort in enumerate(("", "   "), start=1):
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                _ = _insert_model_connection_reasoning_effort_row(
+                    connection,
+                    key=f"{key_prefix}_invalid_{invalid_index}",
+                    reasoning_effort=invalid_reasoning_effort,
+                )
 
 
 def _assert_runtime_execution_table_shape(engine) -> None:
@@ -1729,6 +1860,30 @@ def test_init_db_fresh_schema_makes_agent_model_connection_id_non_null(database_
         engine.dispose()
 
 
+def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        model_connection_columns = {
+            column["name"]: column for column in inspect(engine).get_columns("model_connections")
+        }
+        reasoning_effort_column = model_connection_columns["reasoning_effort"]
+
+        assert reasoning_effort_column["nullable"] is True
+        assert getattr(reasoning_effort_column["type"], "length", None) == 128
+        assert "medium" in str(reasoning_effort_column.get("default"))
+        _assert_flexible_model_connection_reasoning_effort_check(engine)
+        _assert_model_connection_reasoning_effort_direct_sql_contract(
+            engine,
+            key_prefix="fresh_reasoning_effort",
+        )
+    finally:
+        engine.dispose()
+
+
 def test_init_db_backfills_model_connection_keys_deterministically(database_url: str) -> None:
     engine = create_engine(database_url, future=True)
 
@@ -1811,6 +1966,111 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
         assert "ck_model_connections_api_style" in model_connection_check_constraints
         assert "uq_model_connections_key" in unique_constraints
         assert "ix_model_connections_key" in model_connection_indexes
+    finally:
+        engine.dispose()
+
+
+def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE model_connections (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    key VARCHAR(120) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    base_url VARCHAR(500) NOT NULL,
+                    organization VARCHAR(200),
+                    project VARCHAR(200),
+                    model_id VARCHAR(200) NOT NULL,
+                    reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
+                    api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
+                    timeout_seconds INTEGER NOT NULL DEFAULT 60,
+                    secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    has_api_key BOOLEAN NOT NULL DEFAULT FALSE,
+                    api_key_last4 VARCHAR(4),
+                    last_tested_at TIMESTAMPTZ,
+                    last_test_ok BOOLEAN,
+                    last_test_message TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CONSTRAINT ck_model_connections_reasoning_effort CHECK (
+                        reasoning_effort IN ('low', 'medium', 'high')
+                    ),
+                    CONSTRAINT ck_model_connections_api_style CHECK (
+                        api_style IN ('responses', 'chat_completions')
+                    ),
+                    CONSTRAINT uq_model_connections_key UNIQUE (key)
+                )
+                """
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO model_connections ("
+                    "key, status, name, description, base_url, organization, project, "
+                    "model_id, reasoning_effort, api_style, timeout_seconds, secret_payload, "
+                    "has_api_key, created_at, updated_at"
+                    ") VALUES ("
+                    ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
+                    ":model_id, :reasoning_effort, 'responses', 60, '{}'::jsonb, FALSE, "
+                    "NOW(), NOW()"
+                    ")"
+                ),
+                [
+                    {
+                        "key": "legacy_low",
+                        "model_id": "openai:gpt-5.4-mini-low",
+                        "name": "Legacy Low",
+                        "reasoning_effort": "low",
+                    },
+                    {
+                        "key": "legacy_medium",
+                        "model_id": "openai:gpt-5.4-mini-medium",
+                        "name": "Legacy Medium",
+                        "reasoning_effort": "medium",
+                    },
+                    {
+                        "key": "legacy_high",
+                        "model_id": "openai:gpt-5.4-mini-high",
+                        "name": "Legacy High",
+                        "reasoning_effort": "high",
+                    },
+                ],
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        model_connection_columns = {
+            column["name"]: column for column in inspect(engine).get_columns("model_connections")
+        }
+        with engine.connect() as connection:
+            preserved_rows = connection.execute(
+                text(
+                    "SELECT key, reasoning_effort FROM model_connections "
+                    "WHERE key LIKE 'legacy_%' ORDER BY key ASC"
+                )
+            ).all()
+
+        reasoning_effort_column = model_connection_columns["reasoning_effort"]
+        assert reasoning_effort_column["nullable"] is True
+        assert getattr(reasoning_effort_column["type"], "length", None) == 128
+        assert preserved_rows == [
+            ("legacy_high", "high"),
+            ("legacy_low", "low"),
+            ("legacy_medium", "medium"),
+        ]
+        _assert_flexible_model_connection_reasoning_effort_check(engine)
+        _assert_model_connection_reasoning_effort_direct_sql_contract(
+            engine,
+            key_prefix="legacy_reasoning_effort",
+        )
     finally:
         engine.dispose()
 
@@ -2122,6 +2382,109 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
         assert model_connection_row == (1, "chat_completions")
         assert agent_columns["model_connection_id"]["nullable"] is False
         assert agent_columns["model_connection_snapshot"]["nullable"] is False
+    finally:
+        engine.dispose()
+
+
+def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_custom(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            null_connection_id = _insert_model_connection_reasoning_effort_row(
+                connection,
+                key="snapshot_null_connection",
+                reasoning_effort=None,
+            )
+            custom_connection_id = _insert_model_connection_reasoning_effort_row(
+                connection,
+                key="snapshot_custom_connection",
+                reasoning_effort="XHigh",
+            )
+            missing_field_connection_id = _insert_model_connection_reasoning_effort_row(
+                connection,
+                key="snapshot_missing_field_connection",
+                reasoning_effort="custom-exact",
+                api_style="chat_completions",
+            )
+            _insert_agent_model_connection_snapshot_row(
+                connection,
+                key="snapshot_null_agent",
+                model_connection_id=null_connection_id,
+                model_id="openai:snapshot_null_connection",
+                model_connection_snapshot={},
+            )
+            _insert_agent_model_connection_snapshot_row(
+                connection,
+                key="snapshot_custom_agent",
+                model_connection_id=custom_connection_id,
+                model_id="openai:snapshot_custom_connection",
+                model_connection_snapshot={
+                    "base_url": "https://api.openai.com/v1",
+                    "model_id": "openai:snapshot_custom_connection",
+                    "organization": None,
+                    "project": None,
+                    "reasoning_effort": "   ",
+                    "api_style": "responses",
+                    "timeout_seconds": 60,
+                },
+            )
+            _insert_agent_model_connection_snapshot_row(
+                connection,
+                key="snapshot_missing_reasoning_agent",
+                model_connection_id=missing_field_connection_id,
+                model_id="openai:snapshot_missing_field_connection",
+                model_connection_snapshot={
+                    "base_url": "https://api.openai.com/v1",
+                    "model_id": "openai:snapshot_missing_field_connection",
+                    "organization": None,
+                    "project": None,
+                    "api_style": "responses",
+                    "timeout_seconds": 60,
+                },
+            )
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            snapshot_rows = connection.execute(
+                text(
+                    "SELECT key, model_connection_snapshot FROM agents "
+                    "WHERE key LIKE 'snapshot_%_agent' ORDER BY key ASC"
+                )
+            ).all()
+
+        snapshots = {row[0]: row[1] for row in snapshot_rows}
+        assert snapshots["snapshot_null_agent"] == {
+            "base_url": "https://api.openai.com/v1",
+            "model_id": "openai:snapshot_null_connection",
+            "organization": None,
+            "project": None,
+            "reasoning_effort": None,
+            "api_style": "responses",
+            "timeout_seconds": 60,
+        }
+        assert snapshots["snapshot_custom_agent"] == {
+            "base_url": "https://api.openai.com/v1",
+            "model_id": "openai:snapshot_custom_connection",
+            "organization": None,
+            "project": None,
+            "reasoning_effort": "XHigh",
+            "api_style": "responses",
+            "timeout_seconds": 60,
+        }
+        assert snapshots["snapshot_missing_reasoning_agent"] == {
+            "base_url": "https://api.openai.com/v1",
+            "model_id": "openai:snapshot_missing_field_connection",
+            "organization": None,
+            "project": None,
+            "reasoning_effort": "custom-exact",
+            "api_style": "chat_completions",
+            "timeout_seconds": 60,
+        }
     finally:
         engine.dispose()
 

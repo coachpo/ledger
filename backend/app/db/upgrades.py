@@ -61,6 +61,10 @@ _CAPABILITY_STORAGE_CONFLICT_MESSAGE = (
 _MODEL_CONNECTION_PLACEHOLDER_BASE_URL = "https://api.openai.com/v1"
 _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
 _MODEL_CONNECTION_PLACEHOLDER_TIMEOUT_SECONDS = 60
+_MODEL_CONNECTION_REASONING_EFFORT_CHECK = "ck_model_connections_reasoning_effort"
+_MODEL_CONNECTION_REASONING_EFFORT_CHECK_SQL = (
+    "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)"
+)
 _MODEL_CONNECTION_DEFAULT_API_STYLE = "responses"
 _MODEL_CONNECTION_ALLOWED_API_STYLES = ("responses", "chat_completions")
 _RETIRED_SKILL_TOOL_ID = "ledger.stock_analysis.report_lookup"
@@ -192,7 +196,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 organization VARCHAR(200),
                 project VARCHAR(200),
                 model_id VARCHAR(200) NOT NULL,
-                reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
+                reasoning_effort VARCHAR(128) DEFAULT 'medium',
                 api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
                 timeout_seconds INTEGER NOT NULL DEFAULT 60,
                 secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -207,7 +211,8 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                     status IN ('active', 'archived')
                 ),
                 CONSTRAINT ck_model_connections_reasoning_effort CHECK (
-                    reasoning_effort IN ('low', 'medium', 'high')
+                    reasoning_effort IS NULL
+                    OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)
                 ),
                 CONSTRAINT ck_model_connections_api_style CHECK (
                     api_style IN ('responses', 'chat_completions')
@@ -1043,6 +1048,98 @@ def _ensure_model_connection_key_support(engine: Engine, table_names: set[str]) 
         )
 
 
+def _is_flexible_model_connection_reasoning_effort_check(sqltext: object) -> bool:
+    normalized_sql = re.sub(r"\s+", " ", str(sqltext or "").lower())
+    return all(
+        token in normalized_sql
+        for token in ("reasoning_effort", "is null", "length", "btrim", "128")
+    )
+
+
+def _ensure_model_connection_reasoning_effort_support(
+    engine: Engine,
+    table_names: set[str],
+) -> None:
+    if "model_connections" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    model_connection_columns = {
+        column["name"]: column for column in inspector.get_columns("model_connections")
+    }
+    reasoning_effort_column = model_connection_columns.get("reasoning_effort")
+    reasoning_effort_check = next(
+        (
+            constraint
+            for constraint in inspector.get_check_constraints("model_connections")
+            if constraint.get("name") == _MODEL_CONNECTION_REASONING_EFFORT_CHECK
+        ),
+        None,
+    )
+    has_flexible_reasoning_effort_check = (
+        reasoning_effort_check is not None
+        and _is_flexible_model_connection_reasoning_effort_check(
+            reasoning_effort_check.get("sqltext")
+        )
+    )
+
+    with engine.begin() as connection:
+        if reasoning_effort_check is not None and not has_flexible_reasoning_effort_check:
+            _ = connection.exec_driver_sql(
+                "ALTER TABLE model_connections DROP CONSTRAINT "
+                + _MODEL_CONNECTION_REASONING_EFFORT_CHECK
+            )
+            has_flexible_reasoning_effort_check = False
+
+        if reasoning_effort_column is None:
+            _ = connection.exec_driver_sql(
+                " ".join(
+                    (
+                        "ALTER TABLE model_connections ADD COLUMN reasoning_effort",
+                        "VARCHAR(128) DEFAULT 'medium'",
+                    )
+                )
+            )
+        else:
+            _ = connection.exec_driver_sql(
+                " ".join(
+                    (
+                        "ALTER TABLE model_connections ALTER COLUMN reasoning_effort",
+                        "SET DEFAULT 'medium'",
+                    )
+                )
+            )
+            if reasoning_effort_column.get("nullable") is False:
+                _ = connection.exec_driver_sql(
+                    " ".join(
+                        (
+                            "ALTER TABLE model_connections ALTER COLUMN reasoning_effort",
+                            "DROP NOT NULL",
+                        )
+                    )
+                )
+            if getattr(reasoning_effort_column.get("type"), "length", None) != 128:
+                _ = connection.exec_driver_sql(
+                    " ".join(
+                        (
+                            "ALTER TABLE model_connections ALTER COLUMN reasoning_effort",
+                            "TYPE VARCHAR(128) USING reasoning_effort::VARCHAR(128)",
+                        )
+                    )
+                )
+
+        if not has_flexible_reasoning_effort_check:
+            _ = connection.exec_driver_sql(
+                " ".join(
+                    (
+                        "ALTER TABLE model_connections ADD CONSTRAINT",
+                        _MODEL_CONNECTION_REASONING_EFFORT_CHECK,
+                        f"CHECK ({_MODEL_CONNECTION_REASONING_EFFORT_CHECK_SQL})",
+                    )
+                )
+            )
+
+
 def _ensure_model_connection_api_style_support(engine: Engine, table_names: set[str]) -> None:
     if "model_connections" not in table_names:
         return
@@ -1170,6 +1267,18 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                     OR COALESCE(agent.model_connection_snapshot->>'api_style', '') NOT IN (
                         'responses',
                         'chat_completions'
+                    )
+                    OR (
+                        agent.model_connection_snapshot ? 'reasoning_effort'
+                        AND agent.model_connection_snapshot->'reasoning_effort' <> 'null'::jsonb
+                        AND (
+                            jsonb_typeof(
+                                agent.model_connection_snapshot->'reasoning_effort'
+                            ) <> 'string'
+                            OR length(
+                                btrim(agent.model_connection_snapshot->>'reasoning_effort')
+                            ) NOT BETWEEN 1 AND 128
+                        )
                     )
                   )
                 """
@@ -1874,6 +1983,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
         _reset_agent_platform_runtime_tables(engine, table_names)
         _ensure_agent_platform_tables(engine, table_names)
     _ensure_model_connection_key_support(engine, table_names)
+    _ensure_model_connection_reasoning_effort_support(engine, table_names)
     _ensure_model_connection_api_style_support(engine, table_names)
     _ensure_agent_manifest_columns(engine, table_names)
     _ensure_workflow_manifest_columns(engine, table_names)
