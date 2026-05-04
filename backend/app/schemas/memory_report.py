@@ -23,6 +23,10 @@ AGENT_MEMORY_REQUIRED_FIELDS: Final[tuple[str, ...]] = (
     "analysis.runId",
     "analysis.agentKey",
     "analysis.agentVersion",
+    "createdBy.type",
+    "createdBy.runId",
+    "createdBy.agentKey",
+    "createdBy.agentVersion",
 )
 
 AGENT_MEMORY_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
@@ -38,6 +42,12 @@ AGENT_MEMORY_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
     "analysis.slot",
     "analysis.traceId",
     "analysis.benchmarkReturn",
+    "createdBy.agentName",
+    "createdBy.workflowKey",
+    "createdBy.workflowVersion",
+    "createdBy.stepId",
+    "createdBy.slot",
+    "createdBy.traceId",
     "tags",
 )
 
@@ -60,6 +70,16 @@ AGENT_MEMORY_IMMUTABLE_FIELDS: Final[tuple[str, ...]] = (
     "analysis.stepId",
     "analysis.slot",
     "analysis.traceId",
+    "createdBy.type",
+    "createdBy.runId",
+    "createdBy.agentKey",
+    "createdBy.agentVersion",
+    "createdBy.agentName",
+    "createdBy.workflowKey",
+    "createdBy.workflowVersion",
+    "createdBy.stepId",
+    "createdBy.slot",
+    "createdBy.traceId",
 )
 
 AGENT_MEMORY_SERVICE_MUTABLE_FIELDS: Final[tuple[str, ...]] = (
@@ -160,6 +180,53 @@ class AgentMemoryTrustedCreateContext(CamelModel):
     @classmethod
     def normalize_context_text(cls, value: object) -> str | None:
         return _normalize_optional_text(value, field_name="Trusted context field")
+
+
+class AgentMemoryCreatedBy(CamelModel):
+    type: Literal["agent"] = "agent"
+    run_id: int = Field(ge=1)
+    agent_key: str = Field(min_length=1, max_length=120)
+    agent_version: int = Field(ge=1)
+    agent_name: str | None = None
+    workflow_key: str | None = Field(default=None, max_length=120)
+    workflow_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, max_length=120)
+    slot: str | None = Field(default=None, max_length=120)
+    trace_id: str | None = Field(default=None, max_length=255)
+
+    @classmethod
+    def from_context(
+        cls,
+        trusted_context: AgentMemoryTrustedCreateContext,
+    ) -> AgentMemoryCreatedBy:
+        return cls(
+            run_id=trusted_context.run_id,
+            agent_key=trusted_context.agent_key,
+            agent_version=trusted_context.agent_version,
+            agent_name=trusted_context.agent_name,
+            workflow_key=trusted_context.workflow_key,
+            workflow_version=trusted_context.workflow_version,
+            step_id=trusted_context.step_id,
+            slot=trusted_context.slot,
+            trace_id=trusted_context.trace_id,
+        )
+
+    @field_validator("agent_key", mode="before")
+    @classmethod
+    def normalize_agent_key(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="createdBy.agentKey")
+
+    @field_validator(
+        "agent_name",
+        "workflow_key",
+        "step_id",
+        "slot",
+        "trace_id",
+        mode="before",
+    )
+    @classmethod
+    def normalize_created_by_text(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="createdBy field")
 
 
 class AgentMemoryReflectionAppend(CamelModel):
@@ -289,6 +356,7 @@ class AgentMemoryReportAnalysis(CamelModel):
 
 class AgentMemoryReportMetadata(CamelModel):
     analysis: AgentMemoryReportAnalysis
+    created_by: AgentMemoryCreatedBy
     tags: list[str] = Field(default_factory=lambda: [AGENT_MEMORY_REVIEW_TYPE])
 
     @classmethod
@@ -298,11 +366,13 @@ class AgentMemoryReportMetadata(CamelModel):
         model_input: AgentMemoryModelInput,
         trusted_context: AgentMemoryTrustedCreateContext,
     ) -> AgentMemoryReportMetadata:
+        analysis = AgentMemoryReportAnalysis.pending(
+            model_input=model_input,
+            trusted_context=trusted_context,
+        )
         return cls(
-            analysis=AgentMemoryReportAnalysis.pending(
-                model_input=model_input,
-                trusted_context=trusted_context,
-            )
+            analysis=analysis,
+            created_by=AgentMemoryCreatedBy.from_context(trusted_context),
         )
 
     @field_validator("tags", mode="before")
@@ -321,6 +391,28 @@ class AgentMemoryReportMetadata(CamelModel):
             if normalized_tag:
                 normalized_tags.append(normalized_tag)
         return normalized_tags
+
+    @model_validator(mode="after")
+    def validate_created_by_matches_analysis(self) -> Self:
+        comparisons: tuple[tuple[str, object, object], ...] = (
+            ("runId", self.analysis.run_id, self.created_by.run_id),
+            ("agentKey", self.analysis.agent_key, self.created_by.agent_key),
+            ("agentVersion", self.analysis.agent_version, self.created_by.agent_version),
+            ("agentName", self.analysis.agent_name, self.created_by.agent_name),
+            ("workflowKey", self.analysis.workflow_key, self.created_by.workflow_key),
+            (
+                "workflowVersion",
+                self.analysis.workflow_version,
+                self.created_by.workflow_version,
+            ),
+            ("stepId", self.analysis.step_id, self.created_by.step_id),
+            ("slot", self.analysis.slot, self.created_by.slot),
+            ("traceId", self.analysis.trace_id, self.created_by.trace_id),
+        )
+        for field_name, analysis_value, created_by_value in comparisons:
+            if analysis_value != created_by_value:
+                raise ValueError(f"createdBy.{field_name} must match analysis.{field_name}")
+        return self
 
 
 class AgentMemoryResolutionUpdate(CamelModel):
@@ -360,6 +452,7 @@ __all__ = [
     "AGENT_MEMORY_REVIEW_TYPE",
     "AGENT_MEMORY_SERVICE_MUTABLE_FIELDS",
     "AGENT_MEMORY_VERSION_GROUP",
+    "AgentMemoryCreatedBy",
     "AgentMemoryDecisionText",
     "AgentMemoryModelInput",
     "AgentMemoryReflection",

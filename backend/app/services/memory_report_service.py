@@ -33,7 +33,7 @@ from app.schemas.report import ReportRead
 from app.services.capability_service import CapabilityService
 
 _MAX_NAME_LENGTH = 200
-_MEMORY_REPORT_SOURCE = "external"
+_MEMORY_REPORT_SOURCE = "agent"
 _MEMORY_SLUG_FINGERPRINT_LENGTH = 12
 
 
@@ -220,6 +220,7 @@ class MemoryReportService:
 
         return AgentMemoryReportMetadata(
             analysis=AgentMemoryReportAnalysis.model_validate(analysis_payload),
+            created_by=metadata.created_by,
             tags=list(metadata.tags),
         )
 

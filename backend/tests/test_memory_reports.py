@@ -90,6 +90,15 @@ def _trusted_context_payload() -> dict[str, object]:
     }
 
 
+def _expected_created_by_payload(
+    overrides: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload = {"type": "agent", **_trusted_context_payload()}
+    if overrides is not None:
+        payload.update(overrides)
+    return payload
+
+
 def _pending_create_metadata(
     overrides: dict[str, object] | None = None,
 ) -> AgentMemoryReportCreateMetadata:
@@ -347,9 +356,11 @@ def test_agent_memory_pending_metadata_serializes_constants_and_trusted_fields()
         exclude_none=True,
     )
     analysis = cast(dict[str, object], payload["analysis"])
+    created_by = cast(dict[str, object], payload["createdBy"])
     decision = cast(dict[str, object], analysis["decision"])
 
     assert payload["tags"] == [AGENT_MEMORY_REVIEW_TYPE]
+    assert created_by == _expected_created_by_payload()
     assert analysis["reviewType"] == AGENT_MEMORY_REVIEW_TYPE
     assert analysis["versionGroup"] == AGENT_MEMORY_VERSION_GROUP
     assert analysis["ticker"] == "NVDA"
@@ -402,18 +413,41 @@ def test_agent_memory_contract_field_groups_are_explicit() -> None:
     assert "analysis.decision" in AGENT_MEMORY_REQUIRED_FIELDS
     assert "analysis.runId" in AGENT_MEMORY_REQUIRED_FIELDS
     assert "analysis.agentKey" in AGENT_MEMORY_REQUIRED_FIELDS
+    assert "createdBy.type" in AGENT_MEMORY_REQUIRED_FIELDS
+    assert "createdBy.runId" in AGENT_MEMORY_REQUIRED_FIELDS
+    assert "createdBy.agentKey" in AGENT_MEMORY_REQUIRED_FIELDS
+    assert "createdBy.agentVersion" in AGENT_MEMORY_REQUIRED_FIELDS
     assert "analysis.portfolioSlug" in AGENT_MEMORY_OPTIONAL_FIELDS
     assert "analysis.benchmarkSymbol" in AGENT_MEMORY_OPTIONAL_FIELDS
     assert "analysis.workflowKey" in AGENT_MEMORY_OPTIONAL_FIELDS
+    assert "createdBy.agentName" in AGENT_MEMORY_OPTIONAL_FIELDS
+    assert "createdBy.workflowKey" in AGENT_MEMORY_OPTIONAL_FIELDS
     assert "analysis.reviewType" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.benchmarkSymbol" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.decision" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.runId" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.agentVersion" in AGENT_MEMORY_IMMUTABLE_FIELDS
+    assert "createdBy.type" in AGENT_MEMORY_IMMUTABLE_FIELDS
+    assert "createdBy.agentKey" in AGENT_MEMORY_IMMUTABLE_FIELDS
+    assert "createdBy.workflowVersion" in AGENT_MEMORY_IMMUTABLE_FIELDS
     assert "analysis.resolvedStatus" in AGENT_MEMORY_SERVICE_MUTABLE_FIELDS
     assert "analysis.rawReturn" in AGENT_MEMORY_SERVICE_MUTABLE_FIELDS
     assert "analysis.alpha" in AGENT_MEMORY_SERVICE_MUTABLE_FIELDS
     assert "analysis.reflections" in AGENT_MEMORY_SERVICE_MUTABLE_FIELDS
+
+
+def test_agent_memory_metadata_rejects_created_by_analysis_mismatch() -> None:
+    model_input = AgentMemoryModelInput.model_validate(_model_input_payload())
+    trusted_context = AgentMemoryTrustedCreateContext.model_validate(_trusted_context_payload())
+    metadata = AgentMemoryReportMetadata.pending(
+        model_input=model_input,
+        trusted_context=trusted_context,
+    ).model_dump(by_alias=True, mode="json", exclude_none=True)
+    created_by = cast(dict[str, object], metadata["createdBy"])
+    created_by["agentKey"] = "different_agent"
+
+    with pytest.raises(ValidationError):
+        _ = AgentMemoryReportMetadata.model_validate(metadata)
 
 
 @pytest.mark.parametrize(
@@ -585,7 +619,7 @@ def _report_metadata_payload(report: ReportRead) -> tuple[dict[str, object], dic
     return metadata, analysis
 
 
-def test_memory_report_service_creates_pending_report(
+def test_memory_report_service_creates_pending_report_with_agent_source_and_created_by(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -593,10 +627,12 @@ def test_memory_report_service_creates_pending_report(
         reports = list(session.scalars(select(Report)))
 
     metadata, analysis = _report_metadata_payload(report)
+    created_by = cast(dict[str, object], metadata["createdBy"])
     decision = cast(dict[str, object], analysis["decision"])
 
     assert len(reports) == 1
-    assert report.source == "external"
+    assert report.source == "agent"
+    assert created_by == _expected_created_by_payload()
     assert report.name == report.slug
     assert report.slug.startswith(
         "agent_memory_nvda_portfolio_manager_run_42_buy_portfolio_decision_decision_"
@@ -699,7 +735,19 @@ def test_memory_report_service_derives_trusted_metadata_from_context(
             trusted_context=trusted_context,
         )
 
-    _, analysis = _report_metadata_payload(report)
+    metadata, analysis = _report_metadata_payload(report)
+    created_by = cast(dict[str, object], metadata["createdBy"])
+    assert created_by == _expected_created_by_payload(
+        {
+            "runId": 99,
+            "agentKey": "risk_manager",
+            "agentVersion": 7,
+            "agentName": "Risk Manager",
+            "workflowKey": "tradingagents_risk_review",
+            "workflowVersion": 2,
+            "traceId": "trace-derived",
+        }
+    )
     assert analysis["reviewType"] == AGENT_MEMORY_REVIEW_TYPE
     assert analysis["versionGroup"] == AGENT_MEMORY_VERSION_GROUP
     assert analysis["ticker"] == "MSFT"
@@ -761,6 +809,37 @@ def test_memory_report_service_updates_content_and_metadata_for_resolution(
     assert "- Raw return: 0.125" in updated.content
     assert "- Benchmark return: 0.030" in updated.content
     assert "- Alpha: 0.095" in updated.content
+
+
+def test_memory_report_service_update_preserves_created_by(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        report = _create_pending_report(session)
+        persisted = session.get(Report, report.id)
+        assert persisted is not None
+        created_by_before = deepcopy(cast(dict[str, object], persisted.metadata_["createdBy"]))
+
+        service = MemoryReportService(session)
+        resolved = service.resolve_memory_report(report.id, _resolution_update())
+        persisted_after_resolution = session.get(Report, report.id)
+        assert persisted_after_resolution is not None
+        reflected = service.append_reflection(
+            report.id,
+            _reflection_append(
+                "Outcome confirmed the setup.",
+                "2026-01-18T08:00:00Z",
+            ),
+        )
+        persisted_after_reflection = session.get(Report, report.id)
+        assert persisted_after_reflection is not None
+
+    resolved_metadata, _ = _report_metadata_payload(resolved)
+    reflected_metadata, _ = _report_metadata_payload(reflected)
+    assert resolved_metadata["createdBy"] == created_by_before
+    assert reflected_metadata["createdBy"] == created_by_before
+    assert persisted_after_resolution.metadata_["createdBy"] == created_by_before
+    assert persisted_after_reflection.metadata_["createdBy"] == created_by_before
 
 
 def test_return_resolution_resolves_buy_return_from_history(
