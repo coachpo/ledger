@@ -24,7 +24,22 @@ describe("RunsListPage", () => {
         items: [
           {
             finishedAt: null,
+            id: 14,
+            queuedAt: "2026-04-20T09:59:00Z",
+            startedAt: null,
+            status: "queued",
+            targetId: 40,
+            targetKey: "queued_review",
+            targetKind: "workflow",
+            targetVersion: 1,
+            totalCostUsd: "0.00000000",
+            totalTokens: 0,
+            traceId: null,
+          },
+          {
+            finishedAt: null,
             id: 15,
+            queuedAt: "2026-04-20T09:59:30Z",
             startedAt: "2026-04-20T10:00:00Z",
             status: "running",
             targetId: 41,
@@ -38,6 +53,7 @@ describe("RunsListPage", () => {
           {
             finishedAt: "2026-04-20T10:03:00Z",
             id: 16,
+            queuedAt: "2026-04-20T10:00:30Z",
             startedAt: "2026-04-20T10:01:00Z",
             status: "succeeded",
             targetId: 12,
@@ -60,14 +76,23 @@ describe("RunsListPage", () => {
   it("renders run rows, refreshes, and routes to detail", () => {
     render(<RunsListPage />);
 
+    expect(screen.getByTestId("runs-row-14")).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
     expect(screen.getByTestId("runs-row-16")).toBeVisible();
     expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
+    expect(screen.getByText(/queued_review@1/i)).toBeVisible();
     expect(screen.getByText(/market_review@2/i)).toBeVisible();
     expect(screen.getByText(/macro_agent@9/i)).toBeVisible();
+    expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
     expect(screen.getByText(/workflow id: 41/i)).toBeVisible();
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
+
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/awaiting execution/i);
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/0%/i);
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/still running/i);
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/50%/i);
+    expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/100%/i);
 
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
     expect(refetchMock).toHaveBeenCalled();

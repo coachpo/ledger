@@ -38,11 +38,19 @@ function describeRunTarget(targetKind: RunTargetKind): string {
 }
 
 function progressForStatus(status: RunStatus): number {
+  if (status === "queued") {
+    return 0;
+  }
+
   if (status === "running") {
     return 50;
   }
 
   return 100;
+}
+
+function formatUnfinishedRunStatus(status: RunStatus): string {
+  return status === "queued" ? " · Awaiting execution" : " · Still running";
 }
 
 export function RunsListPage() {
@@ -176,10 +184,12 @@ export function RunsListPage() {
                     <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
                   </div>
                   <CardDescription>
-                    {describeRunTarget(run.targetKind)} · Started {formatDateTime(run.startedAt)}
+                    {describeRunTarget(run.targetKind)} · {run.startedAt
+                      ? `Started ${formatDateTime(run.startedAt)}`
+                      : `Queued ${formatDateTime(run.queuedAt)}`}
                     {run.finishedAt
                       ? ` · Finished ${formatDateTime(run.finishedAt)}`
-                      : " · Still running"}
+                      : formatUnfinishedRunStatus(run.status)}
                   </CardDescription>
                   <p className="text-sm text-muted-foreground">
                     Target {formatTargetKindLabel(run.targetKind).toLowerCase()} #{run.targetId}
