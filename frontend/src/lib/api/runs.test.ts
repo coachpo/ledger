@@ -80,43 +80,67 @@ describe("runs api", () => {
     });
   });
 
-  it("reads fork drafts with the fork step query parameter", async () => {
-    const { getRunForkDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
-    fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, forkStepIndex: 2, steps: [] }, 200));
+  it("reads rerun drafts from the rerun draft endpoint", async () => {
+    const { getRunRerunDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, parameters: { ticker: "MSFT" } }, 200));
 
-    await expect(getRunForkDraft(42, 2)).resolves.toEqual({
-      forkStepIndex: 2,
+    await expect(getRunRerunDraft(42)).resolves.toEqual({
+      parameters: { ticker: "MSFT" },
       sourceRunId: 42,
-      steps: [],
     });
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/fork-draft");
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/rerun-draft");
     expect(init?.method).toBe("GET");
-    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ forkStepIndex: "2" });
   });
 
-  it("creates forks with camelCase payloads", async () => {
-    const { createRunFork } = await loadRunsApi("https://ledger.example.com/api/v1/");
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "running" }, 201));
+  it("creates reruns with parameter payloads", async () => {
+    const { createRunRerun } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "queued" }, 201));
 
-    await expect(
-      createRunFork(42, {
-        forkStepIndex: 2,
-        input: { ticker: "MSFT" },
-        invocationEdits: [{ output: { summary: "edited" }, slot: "analysis", stepIndex: 1 }],
-      }),
-    ).resolves.toEqual({ id: 99, status: "running" });
+    await expect(createRunRerun(42, { parameters: { ticker: "MSFT" } })).resolves.toEqual({
+      id: 99,
+      status: "queued",
+    });
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/forks");
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/reruns");
     expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify({
-      forkStepIndex: 2,
-      input: { ticker: "MSFT" },
-      invocationEdits: [{ output: { summary: "edited" }, slot: "analysis", stepIndex: 1 }],
-    }));
+    expect(init?.body).toBe(JSON.stringify({ parameters: { ticker: "MSFT" } }));
+  });
+
+  it("reads step replay drafts with the step index query parameter", async () => {
+    const { getRunStepReplayDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, replayStepIndex: 2, parameters: { ticker: "MSFT" } }, 200));
+
+    await expect(getRunStepReplayDraft(42, 2)).resolves.toEqual({
+      parameters: { ticker: "MSFT" },
+      replayStepIndex: 2,
+      sourceRunId: 42,
+    });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/step-replay-draft");
+    expect(init?.method).toBe("GET");
+    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ stepIndex: "2" });
+  });
+
+  it("creates step replays with replay step and parameters", async () => {
+    const { createRunStepReplay } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 100, status: "queued" }, 201));
+
+    await expect(createRunStepReplay(42, { replayStepIndex: 2, parameters: { ticker: "MSFT" } })).resolves.toEqual({
+      id: 100,
+      status: "queued",
+    });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/step-replays");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({ replayStepIndex: 2, parameters: { ticker: "MSFT" } }));
   });
 });

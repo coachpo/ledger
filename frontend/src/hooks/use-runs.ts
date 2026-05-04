@@ -1,33 +1,42 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   buildRunsListQueryKey,
-  createRunFork,
+  createRunRerun,
+  createRunStepReplay,
   getRun,
-  getRunForkDraft,
+  getRunRerunDraft,
+  getRunStepReplayDraft,
   listRuns,
 } from "@/lib/api/runs";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   RunCreatedRead,
-  RunForkCreateRequest,
-  RunForkDraftRead,
   RunListParams,
   RunListRead,
   RunRead,
+  RunRerunCreateRequest,
+  RunRerunDraftRead,
+  RunStepReplayCreateRequest,
+  RunStepReplayDraftRead,
 } from "@/lib/types/run";
 
 type RunQueryOptions = {
   refetchInterval?: false | number;
 };
 
-type RunForkDraftQueryOptions = RunQueryOptions & {
+type DraftQueryOptions = RunQueryOptions & {
   enabled?: boolean;
 };
 
-export type CreateRunForkVariables = {
+export type CreateRunRerunVariables = {
   runId: IdParam;
-  payload: RunForkCreateRequest;
+  payload: RunRerunCreateRequest;
+};
+
+export type CreateRunStepReplayVariables = {
+  runId: IdParam;
+  payload: RunStepReplayCreateRequest;
 };
 
 export function useRuns(
@@ -55,33 +64,63 @@ export function useRun(
   });
 }
 
-export function useRunForkDraft(
+export function useRunRerunDraft(
   runId: IdParam | undefined,
-  forkStepIndex: number | undefined,
-  options: RunForkDraftQueryOptions = {},
-): UseQueryResult<RunForkDraftRead, Error> {
+  options: DraftQueryOptions = {},
+): UseQueryResult<RunRerunDraftRead, Error> {
   const resolvedRunId = runId ?? "";
-  const resolvedForkStepIndex = forkStepIndex ?? 0;
 
   return useQuery({
-    queryKey: queryKeys.platform.runs.forkDraft(resolvedRunId, resolvedForkStepIndex),
-    queryFn: ({ signal }) => getRunForkDraft(resolvedRunId, resolvedForkStepIndex, signal),
-    enabled: Boolean(runId) && forkStepIndex !== undefined && (options.enabled ?? true),
+    queryKey: queryKeys.platform.runs.rerunDraft(resolvedRunId),
+    queryFn: ({ signal }) => getRunRerunDraft(resolvedRunId, signal),
+    enabled: Boolean(runId) && (options.enabled ?? true),
     refetchInterval: options.refetchInterval,
   });
 }
 
-export function useCreateRunFork() {
+export function useCreateRunRerun() {
   const queryClient = useQueryClient();
 
-  return useMutation<RunCreatedRead, Error, CreateRunForkVariables>({
-    mutationFn: ({ runId, payload }) => createRunFork(runId, payload),
+  return useMutation<RunCreatedRead, Error, CreateRunRerunVariables>({
+    mutationFn: ({ runId, payload }) => createRunRerun(runId, payload),
+    onSuccess: async (createdRun, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(variables.runId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.rerunDraft(variables.runId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(createdRun.id) }),
+      ]);
+    },
+  });
+}
+
+export function useRunStepReplayDraft(
+  runId: IdParam | undefined,
+  stepIndex: number | undefined,
+  options: DraftQueryOptions = {},
+): UseQueryResult<RunStepReplayDraftRead, Error> {
+  const resolvedRunId = runId ?? "";
+  const resolvedStepIndex = stepIndex ?? 0;
+
+  return useQuery({
+    queryKey: queryKeys.platform.runs.stepReplayDraft(resolvedRunId, resolvedStepIndex),
+    queryFn: ({ signal }) => getRunStepReplayDraft(resolvedRunId, resolvedStepIndex, signal),
+    enabled: Boolean(runId) && stepIndex !== undefined && (options.enabled ?? true),
+    refetchInterval: options.refetchInterval,
+  });
+}
+
+export function useCreateRunStepReplay() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RunCreatedRead, Error, CreateRunStepReplayVariables>({
+    mutationFn: ({ runId, payload }) => createRunStepReplay(runId, payload),
     onSuccess: async (createdRun, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(variables.runId) }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.platform.runs.forkDraft(variables.runId, variables.payload.forkStepIndex),
+          queryKey: queryKeys.platform.runs.stepReplayDraft(variables.runId, variables.payload.replayStepIndex),
         }),
         queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(createdRun.id) }),
       ]);

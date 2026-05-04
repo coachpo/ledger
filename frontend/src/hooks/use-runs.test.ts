@@ -8,9 +8,11 @@ const reactQueryState = vi.hoisted(() => ({
 
 const runsApiState = vi.hoisted(() => ({
   buildRunsListQueryKeyMock: vi.fn((params: unknown) => ["api", "platform", "runs", "list", params]),
-  createRunForkMock: vi.fn(),
-  getRunForkDraftMock: vi.fn(),
+  createRunRerunMock: vi.fn(),
+  createRunStepReplayMock: vi.fn(),
   getRunMock: vi.fn(),
+  getRunRerunDraftMock: vi.fn(),
+  getRunStepReplayDraftMock: vi.fn(),
   listRunsMock: vi.fn(),
 }));
 
@@ -22,14 +24,16 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@/lib/api/runs", () => ({
   buildRunsListQueryKey: runsApiState.buildRunsListQueryKeyMock,
-  createRunFork: runsApiState.createRunForkMock,
+  createRunRerun: runsApiState.createRunRerunMock,
+  createRunStepReplay: runsApiState.createRunStepReplayMock,
   getRun: runsApiState.getRunMock,
-  getRunForkDraft: runsApiState.getRunForkDraftMock,
+  getRunRerunDraft: runsApiState.getRunRerunDraftMock,
+  getRunStepReplayDraft: runsApiState.getRunStepReplayDraftMock,
   listRuns: runsApiState.listRunsMock,
 }));
 
 import { queryKeys } from "@/lib/query-keys";
-import { useCreateRunFork, useRun, useRunForkDraft, useRuns } from "./use-runs";
+import { useCreateRunRerun, useCreateRunStepReplay, useRun, useRunRerunDraft, useRuns, useRunStepReplayDraft } from "./use-runs";
 
 describe("useRuns hooks", () => {
   it("uses the API helper's target-aware list query key", () => {
@@ -75,46 +79,67 @@ describe("useRuns hooks", () => {
     );
   });
 
-  it("keys fork draft queries by run id and fork step", () => {
+  it("keys rerun draft queries by run id", () => {
     reactQueryState.useQueryMock.mockClear();
 
-    useRunForkDraft(18, 2, { enabled: true });
+    useRunRerunDraft(18, { enabled: true });
 
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         enabled: true,
-        queryKey: queryKeys.platform.runs.forkDraft(18, 2),
+        queryKey: queryKeys.platform.runs.rerunDraft(18),
       }),
     );
 
-    useRunForkDraft(undefined, 2);
+    useRunRerunDraft(undefined);
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         enabled: false,
-        queryKey: queryKeys.platform.runs.forkDraft("", 2),
-      }),
-    );
-
-    useRunForkDraft(18, undefined, { enabled: true });
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: false,
-        queryKey: queryKeys.platform.runs.forkDraft(18, 0),
+        queryKey: queryKeys.platform.runs.rerunDraft(""),
       }),
     );
   });
 
-  it("invalidates run list, details, and fork draft after fork create", async () => {
+  it("keys step replay draft queries by run id and step", () => {
+    reactQueryState.useQueryMock.mockClear();
+
+    useRunStepReplayDraft(18, 2, { enabled: true });
+
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        queryKey: queryKeys.platform.runs.stepReplayDraft(18, 2),
+      }),
+    );
+
+    useRunStepReplayDraft(undefined, 2);
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        queryKey: queryKeys.platform.runs.stepReplayDraft("", 2),
+      }),
+    );
+
+    useRunStepReplayDraft(18, undefined, { enabled: true });
+    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        queryKey: queryKeys.platform.runs.stepReplayDraft(18, 0),
+      }),
+    );
+  });
+
+  it("invalidates run list, details, and rerun draft after rerun create", async () => {
     reactQueryState.useMutationMock.mockClear();
     reactQueryState.invalidateQueriesMock.mockClear();
 
-    useCreateRunFork();
+    useCreateRunRerun();
 
     const mutationOptions = reactQueryState.useMutationMock.mock.calls.at(-1)?.[0] as {
-      onSuccess: (createdRun: { id: number }, variables: { runId: number; payload: { forkStepIndex: number } }) => Promise<void>;
+      onSuccess: (createdRun: { id: number }, variables: { runId: number; payload: { parameters: Record<string, unknown> } }) => Promise<void>;
     };
 
-    await mutationOptions.onSuccess({ id: 99 }, { runId: 18, payload: { forkStepIndex: 2 } });
+    await mutationOptions.onSuccess({ id: 99 }, { runId: 18, payload: { parameters: { ticker: "MSFT" } } });
 
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.all,
@@ -123,10 +148,36 @@ describe("useRuns hooks", () => {
       queryKey: queryKeys.platform.runs.detail(18),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.runs.forkDraft(18, 2),
+      queryKey: queryKeys.platform.runs.rerunDraft(18),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.detail(99),
+    });
+  });
+
+  it("invalidates run list, details, and step replay draft after step replay create", async () => {
+    reactQueryState.useMutationMock.mockClear();
+    reactQueryState.invalidateQueriesMock.mockClear();
+
+    useCreateRunStepReplay();
+
+    const mutationOptions = reactQueryState.useMutationMock.mock.calls.at(-1)?.[0] as {
+      onSuccess: (createdRun: { id: number }, variables: { runId: number; payload: { replayStepIndex: number } }) => Promise<void>;
+    };
+
+    await mutationOptions.onSuccess({ id: 100 }, { runId: 18, payload: { replayStepIndex: 2 } });
+
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.detail(18),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.stepReplayDraft(18, 2),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.detail(100),
     });
   });
 });

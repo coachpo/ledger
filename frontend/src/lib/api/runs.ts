@@ -2,11 +2,13 @@ import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../
 import { queryKeys } from "../query-keys";
 import type {
   RunCreatedRead,
-  RunForkCreateRequest,
-  RunForkDraftRead,
   RunListParams,
   RunListRead,
   RunRead,
+  RunRerunCreateRequest,
+  RunRerunDraftRead,
+  RunStepReplayCreateRequest,
+  RunStepReplayDraftRead,
 } from "../types/run";
 
 function runPath(runId: IdParam): string {
@@ -45,22 +47,39 @@ export function getRun(runId: IdParam, signal?: AbortSignal): Promise<RunRead> {
   return requestPlatform<RunRead>(runPath(runId), { signal });
 }
 
-export function getRunForkDraft(
+export function getRunRerunDraft(
   runId: IdParam,
-  forkStepIndex: number,
   signal?: AbortSignal,
-): Promise<RunForkDraftRead> {
-  return requestPlatform<RunForkDraftRead>(`${runPath(runId)}/fork-draft`, {
-    query: { forkStepIndex },
+): Promise<RunRerunDraftRead> {
+  return requestPlatform<RunRerunDraftRead>(`${runPath(runId)}/rerun-draft`, { signal });
+}
+
+export function createRunRerun(
+  runId: IdParam,
+  payload: RunRerunCreateRequest,
+): Promise<RunCreatedRead> {
+  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/reruns`, {
+    body: payload,
+    method: "POST",
+  });
+}
+
+export function getRunStepReplayDraft(
+  runId: IdParam,
+  stepIndex: number,
+  signal?: AbortSignal,
+): Promise<RunStepReplayDraftRead> {
+  return requestPlatform<RunStepReplayDraftRead>(`${runPath(runId)}/step-replay-draft`, {
+    query: { stepIndex },
     signal,
   });
 }
 
-export function createRunFork(
+export function createRunStepReplay(
   runId: IdParam,
-  payload: RunForkCreateRequest,
+  payload: RunStepReplayCreateRequest,
 ): Promise<RunCreatedRead> {
-  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/forks`, {
+  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/step-replays`, {
     body: payload,
     method: "POST",
   });
@@ -68,9 +87,11 @@ export function createRunFork(
 
 export const runsApi = {
   buildListQueryKey: buildRunsListQueryKey,
-  createFork: createRunFork,
+  createRerun: createRunRerun,
+  createStepReplay: createRunStepReplay,
   get: getRun,
-  getForkDraft: getRunForkDraft,
+  getRerunDraft: getRunRerunDraft,
+  getStepReplayDraft: getRunStepReplayDraft,
   list: listRuns,
   normalizeListParams: normalizeRunListParams,
 } as const;
