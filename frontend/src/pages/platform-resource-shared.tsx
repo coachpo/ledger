@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 export {
   parseJsonValue,
@@ -14,6 +15,57 @@ export {
   toVersionedRefValue,
   type ResourceRef,
 } from "@/lib/platform-authoring/common/resource-ref";
+
+type PlatformResourceListProps = {
+  children: ReactNode;
+};
+
+type PlatformResourceCardProps = {
+  actions?: ReactNode;
+  badges?: ReactNode;
+  description?: ReactNode;
+  metadata?: ReactNode;
+  subtitle?: ReactNode;
+  testId: string;
+  title: ReactNode;
+};
+
+export function PlatformResourceList(props: PlatformResourceListProps) {
+  const { children } = props;
+
+  return <div className="grid gap-2 sm:gap-3">{children}</div>;
+}
+
+export function PlatformResourceCard(props: PlatformResourceCardProps) {
+  const { actions, badges, description, metadata, subtitle, testId, title } = props;
+
+  return (
+    <Card data-testid={testId} className="overflow-hidden">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="space-y-1">
+              <div className="text-base font-medium text-foreground">{title}</div>
+              {subtitle ? (
+                <div className="break-all text-sm text-muted-foreground">{subtitle}</div>
+              ) : null}
+            </div>
+            {description ? (
+              <p className="break-words text-sm text-muted-foreground">{description}</p>
+            ) : null}
+            {badges ? <div>{badges}</div> : null}
+            {metadata ? <div>{metadata}</div> : null}
+          </div>
+          {actions ? (
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end [&_button]:cursor-pointer">
+              {actions}
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function sortByKey<T extends { key: string }>(items: readonly T[]): T[] {
   return [...items].sort((left, right) => left.key.localeCompare(right.key));
