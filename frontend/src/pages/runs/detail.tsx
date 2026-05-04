@@ -992,7 +992,7 @@ export function RunsDetailPage() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Progress</CardTitle>
@@ -1014,11 +1014,11 @@ export function RunsDetailPage() {
             <CardTitle className="text-base">Target</CardTitle>
             <CardDescription>Runnable identity for this execution.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Target kind: {targetKindLabel}</p>
-            <p>Target key: {run.targetKey}</p>
-            <p>Target version: {run.targetVersion}</p>
-            <p>Target id: {run.targetId}</p>
+          <CardContent className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Target kind: {targetKindLabel}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Target key: {run.targetKey}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Target version: {run.targetVersion}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Target id: {run.targetId}</p>
           </CardContent>
         </Card>
         <Card>
@@ -1026,13 +1026,13 @@ export function RunsDetailPage() {
             <CardTitle className="text-base">Usage</CardTitle>
             <CardDescription>Copied, executed, and total usage.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Total tokens: {run.totalTokens}</p>
-            <p>Total cost: {run.totalCostUsd}</p>
-            <p>Inherited tokens: {run.inheritedTokens}</p>
-            <p>Inherited cost: {run.inheritedCostUsd}</p>
-            <p>Executed tokens: {run.executedTokens}</p>
-            <p>Executed cost: {run.executedCostUsd}</p>
+          <CardContent className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Total tokens: {run.totalTokens}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Total cost: {run.totalCostUsd}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Inherited tokens: {run.inheritedTokens}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Inherited cost: {run.inheritedCostUsd}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Executed tokens: {run.executedTokens}</p>
+            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Executed cost: {run.executedCostUsd}</p>
           </CardContent>
         </Card>
         <Card>
