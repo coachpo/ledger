@@ -20,14 +20,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+
+import { PlatformResourceCard, PlatformResourceList } from "../platform-resource-shared";
 
 const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
@@ -81,6 +75,7 @@ export function ModelConnectionsListPage() {
           </p>
         </div>
         <Button
+          className="cursor-pointer"
           data-testid="model-connections-new"
           size="sm"
           onClick={() => navigate("/model-connections/new")}
@@ -124,83 +119,88 @@ export function ModelConnectionsListPage() {
               Active connections can be chosen by new saves, while archived ones remain visible for historical edits.
             </CardDescription>
           </CardHeader>
-          <CardContent className="px-0 pb-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Base URL</TableHead>
-                  <TableHead>Reasoning</TableHead>
-                  <TableHead>API Key</TableHead>
-                  <TableHead>Last Test</TableHead>
-                  <TableHead className="pr-6 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {connections.map((connection) => (
-                  <TableRow key={connection.id} data-testid={`model-connections-row-${connection.id}`}>
-                    <TableCell className="pl-6 align-top whitespace-normal">
-                      <div className="space-y-1">
-                        <p className="font-medium text-foreground">{connection.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {connection.description || "No description provided."}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge
-                        variant={connection.status === "active" ? "secondary" : "outline"}
-                        className="capitalize"
-                      >
-                        {connection.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="align-top">{connection.modelId}</TableCell>
-                    <TableCell className="align-top whitespace-normal">
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <p className="font-medium text-foreground">{connection.baseUrl}</p>
-                        <p>
-                          {[connection.organization, connection.project].filter(Boolean).join(" • ") ||
-                            "No organization or project override."}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top whitespace-normal">
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <Badge variant="outline" className="capitalize">
-                          {connection.reasoningEffort}
+          <CardContent>
+            <PlatformResourceList>
+              {connections.map((connection) => {
+                const organizationProject =
+                  [connection.organization, connection.project].filter(Boolean).join(" • ") ||
+                  "No organization or project override.";
+
+                return (
+                  <PlatformResourceCard
+                    key={connection.id}
+                    testId={`model-connections-row-${connection.id}`}
+                    title={connection.name}
+                    subtitle={connection.modelId}
+                    description={connection.description || "No description provided."}
+                    badges={
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge
+                          variant={connection.status === "active" ? "secondary" : "outline"}
+                          className="capitalize"
+                        >
+                          {connection.status}
                         </Badge>
-                        <p>{API_STYLE_LABELS[connection.apiStyle]}</p>
-                        <p>{connection.timeoutSeconds}s timeout</p>
                       </div>
-                    </TableCell>
-                    <TableCell className="align-top whitespace-normal">
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <Badge variant={connection.hasApiKey ? "secondary" : "outline"}>
-                          {connection.hasApiKey ? "Configured" : "Missing"}
-                        </Badge>
-                        <p>
-                          {connection.apiKeyLast4
-                            ? `Ending in ••••${connection.apiKeyLast4}`
-                            : "No API key saved."}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top whitespace-normal">
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        {renderLastTestBadge(connection)}
-                        <p>
-                          {connection.lastTestedAt
-                            ? formatDateTime(connection.lastTestedAt)
-                            : "No connection test recorded."}
-                        </p>
-                        {connection.lastTestMessage ? <p>{connection.lastTestMessage}</p> : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="pr-6 align-top">
-                      <div className="flex justify-end gap-2">
+                    }
+                    metadata={
+                      <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="min-w-0 space-y-1 rounded-md border p-3">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Base URL
+                          </dt>
+                          <dd className="break-all font-medium text-foreground">{connection.baseUrl}</dd>
+                          <dd className="break-words text-muted-foreground">{organizationProject}</dd>
+                        </div>
+                        <div className="min-w-0 space-y-1 rounded-md border p-3">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Reasoning
+                          </dt>
+                          <dd>
+                            <Badge variant="outline" className="capitalize">
+                              {connection.reasoningEffort}
+                            </Badge>
+                          </dd>
+                          <dd className="break-words text-muted-foreground">
+                            {API_STYLE_LABELS[connection.apiStyle]}
+                          </dd>
+                          <dd className="text-muted-foreground">{connection.timeoutSeconds}s timeout</dd>
+                        </div>
+                        <div className="min-w-0 space-y-1 rounded-md border p-3">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            API Key
+                          </dt>
+                          <dd>
+                            <Badge variant={connection.hasApiKey ? "secondary" : "outline"}>
+                              {connection.hasApiKey ? "Configured" : "Missing"}
+                            </Badge>
+                          </dd>
+                          <dd className="break-words text-muted-foreground">
+                            {connection.apiKeyLast4
+                              ? `Ending in ••••${connection.apiKeyLast4}`
+                              : "No API key saved."}
+                          </dd>
+                        </div>
+                        <div className="min-w-0 space-y-1 rounded-md border p-3 sm:col-span-2 xl:col-span-3">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Last Test
+                          </dt>
+                          <dd>{renderLastTestBadge(connection)}</dd>
+                          <dd className="break-words text-muted-foreground">
+                            {connection.lastTestedAt
+                              ? formatDateTime(connection.lastTestedAt)
+                              : "No connection test recorded."}
+                          </dd>
+                          {connection.lastTestMessage ? (
+                            <dd className="break-words text-muted-foreground">
+                              {connection.lastTestMessage}
+                            </dd>
+                          ) : null}
+                        </div>
+                      </dl>
+                    }
+                    actions={
+                      <>
                         <Button
                           data-testid={`model-connections-open-${connection.id}`}
                           size="sm"
@@ -222,12 +222,12 @@ export function ModelConnectionsListPage() {
                             Archive
                           </Button>
                         ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      </>
+                    }
+                  />
+                );
+              })}
+            </PlatformResourceList>
           </CardContent>
         </Card>
       ) : null}
