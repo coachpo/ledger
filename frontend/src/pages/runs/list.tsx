@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import {
   Select,
   SelectContent,
@@ -179,72 +180,65 @@ export function RunsListPage() {
       {!runsQuery.isPending && !runsQuery.isError && runs.length > 0 ? (
         <div className="grid gap-2 sm:gap-3">
           {runs.map((run) => (
-            <Card key={run.id} data-testid={`runs-row-${run.id}`} className="overflow-hidden">
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <CardTitle className="text-base">Run #{run.id}</CardTitle>
-                        <Badge variant="secondary">{run.status}</Badge>
-                        <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
-                        <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
-                      </div>
-                      <CardDescription className="break-words text-sm">
-                        {describeRunTarget(run.targetKind)} · {run.startedAt
-                          ? `Started ${formatDateTime(run.startedAt)}`
-                          : `Queued ${formatDateTime(run.queuedAt)}`}
-                        {run.finishedAt
-                          ? ` · Finished ${formatDateTime(run.finishedAt)}`
-                          : formatUnfinishedRunStatus(run.status)}
-                      </CardDescription>
-                    </div>
-
-                    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        {run.targetKind === "workflow" ? (
-                          <Link
-                            className="min-w-0 break-words text-primary underline-offset-4 hover:underline"
-                            to={`/workflows/${run.targetId}`}
-                          >
-                            {`Workflow: ${run.targetId}`}
-                          </Link>
-                        ) : (
-                          <span className="min-w-0 break-words">
-                            {`Agent id: ${run.targetId}`}
-                          </span>
-                        )}
-                        <span className="min-w-0 break-words">
-                          {`Total tokens: ${run.totalTokens}`}
-                        </span>
-                        <span className="min-w-0 break-words">
-                          {`Total cost: ${run.totalCostUsd}`}
-                        </span>
-                      </div>
-                      <div className="flex w-full flex-col gap-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Progress</span>
-                          <span>{progressForStatus(run.status)}%</span>
-                        </div>
-                        <Progress value={progressForStatus(run.status)} />
-                      </div>
-                    </div>
+            <ResourceRowCard
+              key={run.id}
+              density="compactPlus"
+              testId={`runs-row-${run.id}`}
+              title={`Run #${run.id}`}
+              badges={
+                <>
+                  <Badge variant="secondary">{run.status}</Badge>
+                  <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
+                  <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
+                </>
+              }
+              description={
+                <>
+                  {describeRunTarget(run.targetKind)} · {run.startedAt
+                    ? `Started ${formatDateTime(run.startedAt)}`
+                    : `Queued ${formatDateTime(run.queuedAt)}`}
+                  {run.finishedAt
+                    ? ` · Finished ${formatDateTime(run.finishedAt)}`
+                    : formatUnfinishedRunStatus(run.status)}
+                </>
+              }
+              metadata={
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {run.targetKind === "workflow" ? (
+                      <Link
+                        className="min-w-0 break-words text-primary underline-offset-4 hover:underline"
+                        to={`/workflows/${run.targetId}`}
+                      >
+                        {`Workflow: ${run.targetId}`}
+                      </Link>
+                    ) : (
+                      <span className="min-w-0 break-words">{`Agent id: ${run.targetId}`}</span>
+                    )}
+                    <span className="min-w-0 break-words">{`Total tokens: ${run.totalTokens}`}</span>
+                    <span className="min-w-0 break-words">{`Total cost: ${run.totalCostUsd}`}</span>
                   </div>
-
-                  <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
-                    <Button
-                      className="w-full cursor-pointer sm:w-auto"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => navigate(`/runs/${run.id}`)}
-                    >
-                      Open Run
-                      <ArrowRight data-icon="inline-end" />
-                    </Button>
+                  <div className="flex w-full flex-col gap-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Progress</span>
+                      <span>{progressForStatus(run.status)}%</span>
+                    </div>
+                    <Progress value={progressForStatus(run.status)} />
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              }
+              actions={
+                <Button
+                  className="w-full cursor-pointer sm:w-auto"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/runs/${run.id}`)}
+                >
+                  Open Run
+                  <ArrowRight data-icon="inline-end" />
+                </Button>
+              }
+            />
           ))}
         </div>
       ) : null}
