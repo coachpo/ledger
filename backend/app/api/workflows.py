@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_run_service, get_workflow_service
-from app.schemas.run import RunCreatedRead
 from app.schemas.workflow import (
     WorkflowCreateRequest,
+    WorkflowLaunchCreateRequest,
+    WorkflowLaunchCreateResponse,
+    WorkflowLaunchRead,
     WorkflowListRead,
     WorkflowManifestValidationRead,
     WorkflowManifestValidationRequest,
     WorkflowRead,
     WorkflowStatus,
     WorkflowUpdateRequest,
+    WorkflowVersionListRead,
 )
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -63,18 +66,34 @@ def update_workflow(
     return service.update_workflow(workflow_id, payload)
 
 
-@router.post(
-    "/{workflow_id}/runs",
-    response_model=RunCreatedRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_workflow_run(
+@router.get("/{workflow_id}/launch", response_model=WorkflowLaunchRead)
+def get_workflow_launch(
     workflow_id: int,
-    payload: dict[str, Any],
     service: Annotated[RunService, Depends(get_run_service)],
     version: Annotated[int | None, Query()] = None,
-) -> RunCreatedRead:
-    return service.create_run(workflow_id, payload, version=version)
+) -> WorkflowLaunchRead:
+    return service.get_workflow_launch(workflow_id, version=version)
+
+
+@router.get("/{workflow_id}/versions", response_model=WorkflowVersionListRead)
+def list_workflow_versions(
+    workflow_id: int,
+    service: Annotated[RunService, Depends(get_run_service)],
+) -> WorkflowVersionListRead:
+    return service.list_workflow_versions(workflow_id)
+
+
+@router.post(
+    "/{workflow_id}/launches",
+    response_model=WorkflowLaunchCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workflow_launch(
+    workflow_id: int,
+    payload: WorkflowLaunchCreateRequest,
+    service: Annotated[RunService, Depends(get_run_service)],
+) -> WorkflowLaunchCreateResponse:
+    return service.create_workflow_launch(workflow_id, payload)
 
 
 @router.delete("/{workflow_id}", response_model=WorkflowRead)

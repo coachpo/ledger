@@ -318,7 +318,7 @@ def _wait_for_agent_platform_run(
         body = response.json()
         assert isinstance(body, dict)
         last_body = body
-        if body["status"] != "running":
+        if body["status"] not in {"queued", "running"}:
             return body
         time.sleep(0.02)
     assert last_body is not None
@@ -583,7 +583,9 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
         "/api/output-schemas/{schema_id}/activate",
         "/api/workflows",
         "/api/workflows/{workflow_id}",
-        "/api/workflows/{workflow_id}/runs",
+        "/api/workflows/{workflow_id}/launch",
+        "/api/workflows/{workflow_id}/versions",
+        "/api/workflows/{workflow_id}/launches",
         "/api/runs",
         "/api/runs/{run_id}",
     } <= route_paths
@@ -594,7 +596,9 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
 def test_agent_platform_removed_agent_test_panel_route_returns_404(client: TestClient) -> None:
     response = client.post(
         "/api/agents/1/test-panel",
-        json={"sampleInput": {"ticker": "MSFT"}},
+        json={
+            "sampleInput": {"ticker": "MSFT"},
+        },
     )
 
     assert response.status_code == 404
@@ -2355,8 +2359,11 @@ def test_agent_platform_stub_workflow_runs_without_live_services(
     assert created_workflow["aggregateBudgetUsd"] == "0.20000000"
 
     trigger = client.post(
-        f"/api/workflows/{created_workflow['id']}/runs",
-        json={"ticker": "NVDA", "horizon_days": 30},
+        f"/api/workflows/{created_workflow['id']}/launches",
+        json={
+            "version": created_workflow["version"],
+            "parameters": {"ticker": "NVDA", "horizon_days": 30},
+        },
     )
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, cast(int, trigger.json()["id"]))
