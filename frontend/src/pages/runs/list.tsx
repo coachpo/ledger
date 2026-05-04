@@ -1,6 +1,6 @@
 import { ArrowRight, RefreshCcw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
@@ -202,9 +202,18 @@ export function RunsListPage() {
 
                     <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <span className="min-w-0 break-words">
-                          {`${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`}
-                        </span>
+                        {run.targetKind === "workflow" ? (
+                          <Link
+                            className="min-w-0 break-words text-primary underline-offset-4 hover:underline"
+                            to={`/workflows/${run.targetId}`}
+                          >
+                            {`Workflow: ${run.targetId}`}
+                          </Link>
+                        ) : (
+                          <span className="min-w-0 break-words">
+                            {`Agent id: ${run.targetId}`}
+                          </span>
+                        )}
                         <span className="min-w-0 break-words">
                           {`Total tokens: ${run.totalTokens}`}
                         </span>

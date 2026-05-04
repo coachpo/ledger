@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +9,11 @@ const refetchMock = vi.fn();
 const useRunsMock = vi.fn();
 
 vi.mock("react-router", () => ({
+  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   useNavigate: () => navigateMock,
 }));
 
@@ -84,8 +90,14 @@ describe("RunsListPage", () => {
     expect(screen.getByText(/queued_review@1/i)).toBeVisible();
     expect(screen.getByText(/market_review@2/i)).toBeVisible();
     expect(screen.getByText(/macro_agent@9/i)).toBeVisible();
-    expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
-    expect(screen.getByText(/workflow id: 41/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Workflow: 40" })).toHaveAttribute(
+      "href",
+      "/workflows/40",
+    );
+    expect(screen.getByRole("link", { name: "Workflow: 41" })).toHaveAttribute(
+      "href",
+      "/workflows/41",
+    );
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
 
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/awaiting execution/i);
