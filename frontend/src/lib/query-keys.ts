@@ -221,15 +221,26 @@ const platformQueryKeys = {
         workflowId,
         version,
       ),
+    launch: (workflowId: IdParam, version?: number | string) => {
+      const normalizedVersion = normalizeOptionalVersion(version);
+      if (normalizedVersion === undefined) {
+        return [...platformApiRoot, "workflows", "launch", normalizeId(workflowId)] as const;
+      }
+      return [...platformApiRoot, "workflows", "launch", normalizeId(workflowId), { version: normalizedVersion }] as const;
+    },
     list: (params: WorkflowListParams = {}) =>
       [...platformApiRoot, "workflows", "list", normalizeWorkflowListParams(params)] as const,
+    versions: (workflowId: IdParam) =>
+      [...platformApiRoot, "workflows", "versions", normalizeId(workflowId)] as const,
   },
   runs: {
     all: [...platformApiRoot, "runs"] as const,
     detail: (runId: IdParam) =>
       [...platformApiRoot, "runs", "detail", normalizeId(runId)] as const,
-    forkDraft: (runId: IdParam, forkStepIndex: number) =>
-      [...platformApiRoot, "runs", "forkDraft", normalizeId(runId), { forkStepIndex }] as const,
+    rerunDraft: (runId: IdParam) =>
+      [...platformApiRoot, "runs", "rerunDraft", normalizeId(runId)] as const,
+    stepReplayDraft: (runId: IdParam, stepIndex: number) =>
+      [...platformApiRoot, "runs", "stepReplayDraft", normalizeId(runId), { stepIndex }] as const,
     list: (params: RunListParams = {}) =>
       [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
   },

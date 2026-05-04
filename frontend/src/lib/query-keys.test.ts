@@ -86,16 +86,46 @@ describe("query keys", () => {
         targetKind: "workflow",
       },
     ]);
-    expect(queryKeys.platform.runs.forkDraft("42", 2)).toEqual(
-      queryKeys.platform.runs.forkDraft(42, 2),
+    expect(queryKeys.platform.workflows.launch("9", 2)).toEqual(
+      queryKeys.platform.workflows.launch(9, 2),
     );
-    expect(queryKeys.platform.runs.forkDraft(42, 2)).toEqual([
+    expect(queryKeys.platform.workflows.launch(9, 2)).toEqual([
+      "api",
+      "platform",
+      "workflows",
+      "launch",
+      "9",
+      { version: 2 },
+    ]);
+    expect(queryKeys.platform.workflows.versions("9")).toEqual(queryKeys.platform.workflows.versions(9));
+    expect(queryKeys.platform.workflows.versions(9)).toEqual([
+      "api",
+      "platform",
+      "workflows",
+      "versions",
+      "9",
+    ]);
+
+    expect(queryKeys.platform.runs.rerunDraft("42")).toEqual(
+      queryKeys.platform.runs.rerunDraft(42),
+    );
+    expect(queryKeys.platform.runs.rerunDraft(42)).toEqual([
       "api",
       "platform",
       "runs",
-      "forkDraft",
+      "rerunDraft",
       "42",
-      { forkStepIndex: 2 },
+    ]);
+    expect(queryKeys.platform.runs.stepReplayDraft("42", 2)).toEqual(
+      queryKeys.platform.runs.stepReplayDraft(42, 2),
+    );
+    expect(queryKeys.platform.runs.stepReplayDraft(42, 2)).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "stepReplayDraft",
+      "42",
+      { stepIndex: 2 },
     ]);
   });
 

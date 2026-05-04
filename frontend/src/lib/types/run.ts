@@ -1,6 +1,6 @@
 import type { UnknownRecord } from "./common";
 
-export type RunStatus = "running" | "succeeded" | "failed";
+export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 export type RunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 export type RunStepOrigin = "planned" | "copied";
 export type RunInvocationInputMode = "passthrough" | "wired";
@@ -109,7 +109,8 @@ export interface RunListItemRead extends RunTargetIdentityRead {
   totalTokens: number;
   totalCostUsd: string;
   traceId: string | null;
-  startedAt: string;
+  queuedAt: string;
+  startedAt: string | null;
   finishedAt: string | null;
 }
 
@@ -122,7 +123,7 @@ export interface RunRead extends RunTargetIdentityRead {
   input: UnknownRecord;
   sourceRunId: number | null;
   lineageRootRunId: number | null;
-  forkedFromStepIndex: number | null;
+  replayStepIndex: number | null;
   resumeStepIndex: number;
   finalOutput: unknown | null;
   status: RunStatus;
@@ -134,7 +135,8 @@ export interface RunRead extends RunTargetIdentityRead {
   executedCostUsd: string;
   traceId: string | null;
   error: string | null;
-  startedAt: string;
+  queuedAt: string;
+  startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -142,39 +144,24 @@ export interface RunRead extends RunTargetIdentityRead {
   memoryArtifacts: RunMemoryArtifactRead[];
 }
 
-export interface RunForkInvocationDraftRead {
-  sourceInvocationId: number;
-  stepIndex: number;
-  slot: string;
-  agentKey: string;
-  resolvedInput: UnknownRecord;
-  output: unknown;
-}
-
-export interface RunForkStepDraftRead {
-  sourceRunStepId: number;
-  index: number;
-  invocations: RunForkInvocationDraftRead[];
-}
-
-export interface RunForkDraftRead extends RunTargetIdentityRead {
+export interface RunRerunDraftRead extends RunTargetIdentityRead {
   sourceRunId: number;
-  forkStepIndex: number;
-  input: UnknownRecord;
-  steps: RunForkStepDraftRead[];
+  parameters: UnknownRecord;
 }
 
-export interface RunForkInvocationEdit {
-  stepIndex: number;
-  slot: string;
-  resolvedInput?: UnknownRecord | null;
-  output?: unknown | null;
+export interface RunRerunCreateRequest {
+  parameters: UnknownRecord;
 }
 
-export interface RunForkCreateRequest {
-  forkStepIndex: number;
-  input?: UnknownRecord | null;
-  invocationEdits?: RunForkInvocationEdit[];
+export interface RunStepReplayDraftRead extends RunTargetIdentityRead {
+  sourceRunId: number;
+  replayStepIndex: number;
+  parameters: UnknownRecord;
+}
+
+export interface RunStepReplayCreateRequest {
+  replayStepIndex: number;
+  parameters: UnknownRecord;
 }
 
 export interface RunListParams {
