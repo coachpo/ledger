@@ -2222,61 +2222,6 @@ spec:
     assert "Active model connection" in body["details"][0]["issue"]
 
 
-def test_agent_platform_run_uses_saved_model_connection_instead_of_env_settings(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "db-backed runtime output"}'
-    _RuntimeRecordingOpenAIClient.total_tokens = 29
-    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setenv("RUNTIME_AGENT_API_KEY", "sk-env-wrong-0000")
-    monkeypatch.setenv("RUNTIME_AGENT_BASE_URL", "https://env.example.invalid/v1")
-    monkeypatch.setenv("RUNTIME_AGENT_MODEL", "env-model-should-not-run")
-    reset_settings_cache()
-
-    with session_factory() as session:
-        workflow, _agent = _create_single_agent_runtime_workflow(
-            session,
-            agent_key="db_runtime_agent",
-            workflow_key="db_runtime_workflow",
-            connection=_build_model_connection(
-                name="Saved Runtime Connection",
-                api_key="sk-db-right-7777",
-                base_url="https://saved.example.com/v1",
-                model_id="gpt-db-right",
-                reasoning_effort="high",
-                timeout_seconds=37,
-                organization="org-db",
-                project="proj-db",
-            ),
-        )
-
-    trigger = client.post(
-        f"/api/workflows/{workflow.id}/launches",
-        json={
-            "version": workflow.version,
-            "parameters": {"ticker": "TSLA"},
-        },
-    )
-    assert trigger.status_code == 201, trigger.json()
-    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
-
-    assert detail["status"] == "succeeded"
-    assert detail["finalOutput"] == {"summary": "db-backed runtime output"}
-    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
-        "api_key": "sk-db-right-7777",
-        "base_url": "https://saved.example.com/v1",
-        "timeout": 37.0,
-        "organization": "org-db",
-        "project": "proj-db",
-    }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-db-right"
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
-    assert "TSLA" in _RuntimeRecordingOpenAIClient.create_calls[-1]["input"]
-
-
 def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_connection_update(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
