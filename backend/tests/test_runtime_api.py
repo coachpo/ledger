@@ -1323,7 +1323,13 @@ def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
             assert properties["reviewType"]["type"] == ["string", "null"]
             assert properties["portfolioSlug"]["type"] == ["string", "null"]
             assert properties["source"]["type"] == ["string", "null"]
-            assert properties["source"]["enum"] == ["compiled", "uploaded", "external", None]
+            assert properties["source"]["enum"] == [
+                "compiled",
+                "uploaded",
+                "external",
+                "agent",
+                None,
+            ]
             assert properties["limit"]["type"] == ["integer", "null"]
             assert properties["offset"]["type"] == ["integer", "null"]
         elif tool.get("name") == "ledger_positions_lookup":
@@ -4150,6 +4156,7 @@ def test_agent_platform_v2_post_run_memory_success_creates_one_linked_artifact(
         report = session.get(Report, int(artifact["reportId"]))
         assert report is not None
         analysis = report.metadata_["analysis"]
+        created_by = report.metadata_["createdBy"]
         serialized_metadata = json.dumps(report.metadata_, sort_keys=True)
         RunService(session, session_factory)._create_post_run_memory_artifact(run_id)
         reports = list(session.query(Report).all())
@@ -4157,6 +4164,19 @@ def test_agent_platform_v2_post_run_memory_success_creates_one_linked_artifact(
     assert len(reports) == 1
     assert artifact["slug"] == report.slug
     assert artifact["name"] == report.name
+    assert report.source == "agent"
+    assert created_by == {
+        "type": "agent",
+        "runId": run_id,
+        "agentKey": f"{workflow.key}_agent",
+        "agentVersion": 1,
+        "agentName": f"{workflow.key}_agent-1",
+        "workflowKey": workflow.key,
+        "workflowVersion": workflow.version,
+        "stepId": "decision",
+        "slot": "decision",
+        "traceId": detail["traceId"],
+    }
     assert analysis["reviewType"] == "agent_memory"
     assert analysis["versionGroup"] == "agent_memory/v1"
     assert analysis["ticker"] == "NVDA"
@@ -5212,7 +5232,7 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
     assert "ledger_reports_write" not in first_tool_names
 
 
-def test_agent_platform_reports_write_run_creates_pending_memory_with_trusted_context(
+def test_post_run_memory_artifacts_use_agent_source(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -5257,10 +5277,24 @@ def test_agent_platform_reports_write_run_creates_pending_memory_with_trusted_co
     with session_factory() as session:
         report = session.get(Report, int(tool_output["reportId"]))
         assert report is not None
+        assert report.source == "agent"
         report_slug = report.slug
         analysis = report.metadata_["analysis"]
+        created_by = report.metadata_["createdBy"]
 
     assert tool_output["reportSlug"] == report_slug
+    assert created_by == {
+        "type": "agent",
+        "runId": run_id,
+        "agentKey": "report_memory_writer",
+        "agentVersion": 1,
+        "agentName": "report_memory_writer-1",
+        "workflowKey": workflow.key,
+        "workflowVersion": workflow.version,
+        "stepId": "step_1",
+        "slot": "analysis",
+        "traceId": detail["traceId"],
+    }
     assert analysis["reviewType"] == "agent_memory"
     assert analysis["versionGroup"] == "agent_memory/v1"
     assert analysis["ticker"] == "NVDA"

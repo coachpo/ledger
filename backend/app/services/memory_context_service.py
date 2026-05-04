@@ -16,7 +16,7 @@ from app.schemas.memory_report import (
     AgentMemoryReportMetadata,
 )
 
-_MEMORY_REPORT_SOURCE: Final = "external"
+_MEMORY_REPORT_SOURCE: Final = "agent"
 _DATETIME_MAX_UTC: Final = datetime.max.replace(tzinfo=UTC)
 _DEFAULT_MAX_ITEMS: Final = 5
 _DEFAULT_MAX_CHARACTERS: Final = 4_000

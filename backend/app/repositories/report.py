@@ -60,7 +60,7 @@ class ReportRepository(BaseRepository[Report]):
         statement = (
             select(self.model)
             .where(
-                self.model.source == "external",
+                self.model.source == "agent",
                 self.model.metadata_.contains(
                     {
                         "analysis": {
