@@ -4,15 +4,14 @@ import { toast } from "sonner";
 
 import { useArchiveMcpServer, useMcpServers } from "@/hooks/use-mcp-servers";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
-import { PlatformResourceBadges, sortByKey } from "../platform-resource-shared";
+import {
+  PlatformResourceBadges,
+  PlatformResourceCard,
+  PlatformResourceList,
+  sortByKey,
+} from "../platform-resource-shared";
 
 export function McpServersListPage() {
   const navigate = useNavigate();
@@ -25,7 +24,9 @@ export function McpServersListPage() {
       await archiveMutation.mutateAsync(serverId);
       toast.success("MCP server archived");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to archive MCP server");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to archive MCP server",
+      );
     }
   };
 
@@ -38,10 +39,16 @@ export function McpServersListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">MCP Servers</h1>
           <p className="text-sm text-muted-foreground">
-            Manage external MCP server definitions backed by the canonical MCP JSON contract.
+            Manage external MCP server definitions backed by the canonical MCP
+            JSON contract.
           </p>
         </div>
-        <Button data-testid="mcp-servers-new" size="sm" onClick={() => navigate("/mcp-servers/new")}>
+        <Button
+          className="cursor-pointer"
+          data-testid="mcp-servers-new"
+          size="sm"
+          onClick={() => navigate("/mcp-servers/new")}
+        >
           <Plus data-icon="inline-start" />
           New MCP Server
         </Button>
@@ -58,12 +65,16 @@ export function McpServersListPage() {
       {serversQuery.isError ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {serversQuery.error instanceof Error ? serversQuery.error.message : "Failed to load MCP servers."}
+            {serversQuery.error instanceof Error
+              ? serversQuery.error.message
+              : "Failed to load MCP servers."}
           </CardContent>
         </Card>
       ) : null}
 
-      {!serversQuery.isPending && !serversQuery.isError && servers.length === 0 ? (
+      {!serversQuery.isPending &&
+      !serversQuery.isError &&
+      servers.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             No MCP servers exist yet.
@@ -71,32 +82,42 @@ export function McpServersListPage() {
         </Card>
       ) : null}
 
-      {!serversQuery.isPending && !serversQuery.isError && servers.length > 0 ? (
-        <div className="grid gap-3">
+      {!serversQuery.isPending &&
+      !serversQuery.isError &&
+      servers.length > 0 ? (
+        <PlatformResourceList>
           {servers.map((server) => (
-            <Card key={server.id} data-testid={`mcp-servers-row-${server.key}`}>
-              <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-2">
-                  <div className="space-y-1">
-                    <CardTitle className="text-base">{server.name}</CardTitle>
-                    <CardDescription>{server.key}</CardDescription>
-                  </div>
-                  <PlatformResourceBadges
-                    status={server.status}
-                    version={server.version}
-                    extra={
-                      <>
-                        <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                          {server.transport}
-                        </span>
-                        <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                          {server.enabled ? "Enabled" : "Disabled"}
-                        </span>
-                      </>
-                    }
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
+            <PlatformResourceCard
+              key={server.id}
+              testId={`mcp-servers-row-${server.key}`}
+              title={server.name}
+              subtitle={server.key}
+              description={server.description || "No description provided."}
+              badges={
+                <PlatformResourceBadges
+                  status={server.status}
+                  version={server.version}
+                  extra={
+                    <>
+                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                        {server.transport}
+                      </span>
+                      <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                        {server.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </>
+                  }
+                />
+              }
+              metadata={
+                <p className="text-sm text-muted-foreground">
+                  {server.transport === "stdio"
+                    ? "Configured for stdio command + args transport."
+                    : "Configured for HTTP/SSE URL + headers transport."}
+                </p>
+              }
+              actions={
+                <>
                   <Button
                     data-testid={`mcp-servers-open-${server.key}`}
                     size="sm"
@@ -118,19 +139,11 @@ export function McpServersListPage() {
                       Archive
                     </Button>
                   ) : null}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>{server.description || "No description provided."}</p>
-                <p>
-                  {server.transport === "stdio"
-                    ? "Configured for stdio command + args transport."
-                    : "Configured for HTTP/SSE URL + headers transport."}
-                </p>
-              </CardContent>
-            </Card>
+                </>
+              }
+            />
           ))}
-        </div>
+        </PlatformResourceList>
       ) : null}
     </div>
   );
