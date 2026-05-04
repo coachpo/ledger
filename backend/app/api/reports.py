@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 
@@ -10,7 +10,13 @@ from app.api.dependencies import (
     get_text_template_service,
 )
 from app.core.errors import ApiError
-from app.schemas.report import ReportCompileCreate, ReportCreate, ReportRead, ReportUpdate
+from app.schemas.report import (
+    ReportCompileCreate,
+    ReportCreate,
+    ReportRead,
+    ReportSource,
+    ReportUpdate,
+)
 from app.services.report_service import ReportService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
@@ -27,7 +33,7 @@ def list_reports(
     tag: Annotated[str | None, Query()] = None,
     review_type: Annotated[str | None, Query(alias="reviewType")] = None,
     portfolio_slug: Annotated[str | None, Query(alias="portfolioSlug")] = None,
-    source: Annotated[Literal["compiled", "uploaded", "external"] | None, Query()] = None,
+    source: Annotated[ReportSource | None, Query()] = None,
     limit: Annotated[int | None, Query(ge=1)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[ReportRead]:

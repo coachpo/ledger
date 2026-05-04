@@ -7,6 +7,14 @@ from pydantic import ConfigDict, Field, field_serializer, field_validator, model
 
 from app.schemas.common import CamelModel, normalize_runtime_inputs, to_camel
 
+ReportSource = Literal["compiled", "uploaded", "external", "agent"]
+REPORT_SOURCE_VALUES: tuple[ReportSource, ...] = (
+    "compiled",
+    "uploaded",
+    "external",
+    "agent",
+)
+
 
 class ReportAnalysisMetadata(CamelModel):
     model_config = ConfigDict(
@@ -128,7 +136,7 @@ class ReportRead(CamelModel):
     id: int
     name: str
     slug: str
-    source: Literal["compiled", "uploaded", "external"]
+    source: ReportSource
     content: str
     metadata: ReportMetadata = Field(validation_alias="metadata_")
     created_at: datetime

@@ -21,6 +21,9 @@ from app.services.capability_service import CapabilityService
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
 _DEFAULT_EXTERNAL_REPORT_BASENAME = "external_report"
+_CREATED_BY_PROVENANCE_ERROR_MESSAGE = (
+    "Report createdBy provenance is server-owned and cannot be supplied for non-agent " "reports."
+)
 
 
 class ReportService:
@@ -314,7 +317,9 @@ class ReportService:
         content: str,
         metadata: ReportMetadata | Mapping[str, object] | None = None,
     ) -> ReportRead:
+        self._ensure_non_agent_provenance_not_supplied(source=source, metadata=metadata)
         validated_metadata = self._validate_metadata(metadata)
+        self._ensure_non_agent_provenance_not_supplied(source=source, metadata=validated_metadata)
         report = Report(
             name=name,
             slug=slug,
@@ -333,6 +338,31 @@ class ReportService:
         if isinstance(metadata, ReportMetadata):
             return metadata
         return ReportMetadata.model_validate(metadata or {})
+
+    def _ensure_non_agent_provenance_not_supplied(
+        self,
+        *,
+        source: str,
+        metadata: ReportMetadata | Mapping[str, object] | None,
+    ) -> None:
+        if source == "agent" or not self._metadata_has_created_by(metadata):
+            return
+        raise ApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="invalid_report_provenance",
+            message=_CREATED_BY_PROVENANCE_ERROR_MESSAGE,
+        )
+
+    @staticmethod
+    def _metadata_has_created_by(
+        metadata: ReportMetadata | Mapping[str, object] | None,
+    ) -> bool:
+        if metadata is None:
+            return False
+        if isinstance(metadata, Mapping):
+            return "createdBy" in metadata or "created_by" in metadata
+        payload = metadata.model_dump(by_alias=True)
+        return "createdBy" in payload or "created_by" in payload
 
     def _serialize_metadata(self, metadata: ReportMetadata) -> dict[str, object]:
         payload = metadata.model_dump(by_alias=True)

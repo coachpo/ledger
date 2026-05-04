@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.mcp import McpClientBoundary, McpConnectionTestResult
 from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
+from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
 from app.models.capability import Capability
 from app.models.market_quote import MarketQuote
+from app.models.report import Report
 from app.models.symbol_name_cache import SymbolNameCache
 from app.services.quote_provider import (
     ProviderHistoryPoint,
@@ -27,6 +29,7 @@ from app.services.quote_provider import (
     ProviderQuote,
     QuoteProviderError,
 )
+from app.services.report_service import ReportService
 from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -116,6 +119,30 @@ def create_template(
     )
     assert response.status_code == 201, response.json()
     return response.json()
+
+
+def insert_report_row(
+    session_factory: sessionmaker[Session],
+    *,
+    name: str,
+    slug: str,
+    source: str,
+    content: str = "# Report",
+    metadata: dict[str, object] | None = None,
+) -> int:
+    with session_factory() as session:
+        report = Report(
+            name=name,
+            slug=slug,
+            source=source,
+            content=content,
+            metadata_=metadata or {},
+        )
+        session.add(report)
+        session.flush()
+        report_id = report.id
+        session.commit()
+        return report_id
 
 
 def create_output_schema(
@@ -4307,6 +4334,166 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
     )
     assert paginated.status_code == 200
     assert [report["id"] for report in paginated.json()] == [external_aapl["id"]]
+
+
+def test_report_source_filter_accepts_agent(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    external_response = client.post(
+        "/api/v1/reports",
+        json={
+            "name": "True External Filter Companion",
+            "content": "# External",
+        },
+    )
+    assert external_response.status_code == 201
+    external_report = external_response.json()
+    assert external_report["source"] == "external"
+
+    agent_report_id = insert_report_row(
+        session_factory,
+        name="Agent Memory Report",
+        slug="agent_memory_report",
+        source="agent",
+        content="# Agent Memory",
+        metadata={
+            "createdBy": {
+                "type": "agent",
+                "runId": 101,
+                "agentKey": "analyst",
+                "agentVersion": 1,
+            },
+            "analysis": {
+                "reviewType": "agent_memory",
+                "versionGroup": "agent_memory/v1",
+                "runId": 101,
+                "agentKey": "analyst",
+                "agentVersion": 1,
+            },
+        },
+    )
+
+    response = client.get("/api/v1/reports", params={"source": "agent"})
+
+    assert response.status_code == 200
+    reports = response.json()
+    assert [report["id"] for report in reports] == [agent_report_id]
+    assert external_report["id"] not in [report["id"] for report in reports]
+    assert reports[0]["source"] == "agent"
+    assert reports[0]["metadata"]["createdBy"]["agentKey"] == "analyst"
+
+
+def test_report_source_filter_external_excludes_agent_reports(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    external_response = client.post(
+        "/api/v1/reports",
+        json={
+            "name": "True External Report",
+            "content": "# External",
+        },
+    )
+    assert external_response.status_code == 201
+    external_report = external_response.json()
+    agent_report_id = insert_report_row(
+        session_factory,
+        name="Agent Memory External Exclusion",
+        slug="agent_memory_external_exclusion",
+        source="agent",
+        content="# Agent Memory",
+        metadata={
+            "createdBy": {
+                "type": "agent",
+                "runId": 202,
+                "agentKey": "analyst",
+                "agentVersion": 1,
+            },
+            "analysis": {
+                "reviewType": "agent_memory",
+                "versionGroup": "agent_memory/v1",
+                "runId": 202,
+                "agentKey": "analyst",
+                "agentVersion": 1,
+            },
+        },
+    )
+
+    agent_response = client.get("/api/v1/reports", params={"source": "agent"})
+    response = client.get("/api/v1/reports", params={"source": "external"})
+
+    assert agent_response.status_code == 200
+    agent_report_ids = [report["id"] for report in agent_response.json()]
+    assert agent_report_ids == [agent_report_id]
+    assert external_report["id"] not in agent_report_ids
+    assert agent_response.json()[0]["metadata"]["createdBy"]["runId"] == 202
+
+    assert response.status_code == 200
+    report_ids = [report["id"] for report in response.json()]
+    assert report_ids == [external_report["id"]]
+    assert agent_report_id not in report_ids
+    assert response.json()[0]["source"] == "external"
+
+
+def test_public_report_create_rejects_agent_created_by_provenance(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    created_by = {
+        "type": "agent",
+        "runId": 303,
+        "agentKey": "spoofed-agent",
+        "agentVersion": 1,
+    }
+    expected_message = (
+        "Report createdBy provenance is server-owned and cannot be supplied for non-agent "
+        "reports."
+    )
+
+    create_response = client.post(
+        "/api/v1/reports",
+        json={
+            "name": "Spoofed External Report",
+            "content": "# Spoofed",
+            "metadata": {"createdBy": created_by},
+        },
+    )
+
+    assert create_response.status_code == 400
+    assert create_response.json()["code"] == "invalid_report_provenance"
+    assert create_response.json()["message"] == expected_message
+
+    template = create_template(client, name="Spoofed Compile", content="# Compile")
+    compile_response = client.post(
+        f"/api/v1/reports/compile/{template['id']}",
+        json={"metadata": {"createdBy": created_by}},
+    )
+
+    assert compile_response.status_code == 400
+    assert compile_response.json()["code"] == "invalid_report_provenance"
+    assert compile_response.json()["message"] == expected_message
+
+    with session_factory() as session:
+        service = ReportService(session)
+        with pytest.raises(ApiError) as upload_error:
+            service.create_from_upload(
+                content="# Uploaded Spoof",
+                slug="uploaded_spoof",
+                name="Uploaded Spoof",
+                metadata={"createdBy": created_by},
+            )
+        with pytest.raises(ApiError) as external_error:
+            service.create_external_report(
+                content="# Snake Case Spoof",
+                name="Snake Case Spoof",
+                metadata={"created_by": created_by},
+            )
+
+    for error in (upload_error.value, external_error.value):
+        assert error.status_code == 400
+        assert error.code == "invalid_report_provenance"
+        assert error.message == expected_message
 
 
 def test_report_placeholder_all_paths(client: TestClient) -> None:
