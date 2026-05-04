@@ -1,4 +1,4 @@
-import { PlayCircle, Plus, SquarePen } from "lucide-react";
+import { Eye, PlayCircle, Plus, SquarePen } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useWorkflows } from "@/hooks/use-workflows";
@@ -70,6 +70,15 @@ export function WorkflowsListPage() {
               key={workflow.id}
               actions={
                 <>
+                  <Button
+                    data-testid={`workflows-detail-${workflow.key}`}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`/workflows/${workflow.id}`)}
+                  >
+                    <Eye data-icon="inline-start" />
+                    Detail
+                  </Button>
                   <Button
                     data-testid={`workflows-open-${workflow.key}`}
                     size="sm"

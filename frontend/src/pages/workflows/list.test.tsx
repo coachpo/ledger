@@ -40,13 +40,16 @@ describe("WorkflowsListPage", () => {
     });
   });
 
-  it("renders workflow rows and routes to create, edit, and launch paths", () => {
+  it("renders workflow rows and routes to create, detail, edit, and launch paths", () => {
     render(<WorkflowsListPage />);
 
     expect(screen.getByTestId("workflows-row-market_review")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("workflows-new"));
     expect(navigateMock).toHaveBeenCalledWith("/workflows/new");
+
+    fireEvent.click(screen.getByTestId("workflows-detail-market_review"));
+    expect(navigateMock).toHaveBeenCalledWith("/workflows/41");
 
     fireEvent.click(screen.getByTestId("workflows-open-market_review"));
     expect(navigateMock).toHaveBeenCalledWith("/workflows/41/edit");
