@@ -23,7 +23,7 @@ class ModelConnectionRuntimeSnapshot:
     model_id: str
     organization: str | None
     project: str | None
-    reasoning_effort: str
+    reasoning_effort: str | None
     api_style: str
     timeout_seconds: int
 
@@ -51,7 +51,7 @@ def parse_model_connection_runtime_snapshot(
     missing_keys = [
         key
         for key in MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS
-        if key != "api_style" and key not in snapshot
+        if key not in {"api_style", "reasoning_effort"} and key not in snapshot
     ]
     if missing_keys:
         raise ValueError(
@@ -62,12 +62,10 @@ def parse_model_connection_runtime_snapshot(
     model_id = _required_snapshot_text(snapshot["model_id"], field_name="model_id")
     organization = _optional_snapshot_text(snapshot["organization"], field_name="organization")
     project = _optional_snapshot_text(snapshot["project"], field_name="project")
-    reasoning_effort = _required_snapshot_text(
-        snapshot["reasoning_effort"],
-        field_name="reasoning_effort",
-    )
-    if reasoning_effort not in {"low", "medium", "high"}:
-        raise ValueError("Model connection snapshot reasoning_effort is invalid")
+    if "reasoning_effort" in snapshot:
+        reasoning_effort = _snapshot_reasoning_effort(snapshot["reasoning_effort"])
+    else:
+        reasoning_effort = "medium"
     api_style = _required_snapshot_text(
         snapshot.get("api_style", "responses"),
         field_name="api_style",
@@ -115,6 +113,21 @@ def _required_snapshot_text(value: object, *, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Model connection snapshot {field_name} must be a non-empty string")
     return value.strip()
+
+
+def _snapshot_reasoning_effort(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Model connection snapshot reasoning_effort must be a string or null")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Model connection snapshot reasoning_effort must be a non-empty string")
+    if len(normalized) > 128:
+        raise ValueError(
+            "Model connection snapshot reasoning_effort must be at most 128 characters"
+        )
+    return normalized
 
 
 def _optional_snapshot_text(value: object, *, field_name: str) -> str | None:
