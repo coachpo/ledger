@@ -198,29 +198,26 @@ export function RunsListPage() {
                           ? ` · Finished ${formatDateTime(run.finishedAt)}`
                           : formatUnfinishedRunStatus(run.status)}
                       </CardDescription>
-                      <p className="text-sm text-muted-foreground">
-                        Target {formatTargetKindLabel(run.targetKind).toLowerCase()} #{run.targetId}
-                      </p>
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-[minmax(12rem,0.75fr)_minmax(0,1fr)]">
-                      <div className="rounded-md border border-border bg-muted/20 p-3">
-                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="min-w-0 break-words">
+                          {`${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`}
+                        </span>
+                        <span className="min-w-0 break-words">
+                          {`Total tokens: ${run.totalTokens}`}
+                        </span>
+                        <span className="min-w-0 break-words">
+                          {`Total cost: ${run.totalCostUsd}`}
+                        </span>
+                      </div>
+                      <div className="flex w-full flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3">
                           <span>Progress</span>
                           <span>{progressForStatus(run.status)}%</span>
                         </div>
-                        <Progress className="mt-2" value={progressForStatus(run.status)} />
-                      </div>
-                      <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-                          {formatTargetKindLabel(run.targetKind)} id: {run.targetId}
-                        </div>
-                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-                          Total tokens: {run.totalTokens}
-                        </div>
-                        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-                          Total cost: {run.totalCostUsd}
-                        </div>
+                        <Progress value={progressForStatus(run.status)} />
                       </div>
                     </div>
                   </div>
