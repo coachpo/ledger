@@ -37,6 +37,17 @@ def _normalize_optional_secret(value: object) -> str | None:
     return normalized
 
 
+def _normalize_reasoning_effort(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Reasoning effort must be a string")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Reasoning effort is required")
+    return normalized
+
+
 def _normalize_base_url(value: object) -> str:
     normalized = _normalize_required_text(value, field_name="Base URL")
     parsed = urlsplit(normalized)
@@ -81,10 +92,7 @@ class ModelConnectionStatus(str, Enum):  # noqa: UP042
     ARCHIVED = "archived"
 
 
-class ModelConnectionReasoningEffort(str, Enum):  # noqa: UP042
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
+type ModelConnectionReasoningEffort = str
 
 
 class ModelConnectionApiStyle(str, Enum):  # noqa: UP042
@@ -100,7 +108,10 @@ class ModelConnectionCreate(CamelModel):
     organization: str | None = Field(default=None, max_length=200)
     project: str | None = Field(default=None, max_length=200)
     model_id: str = Field(min_length=1, max_length=200)
-    reasoning_effort: ModelConnectionReasoningEffort = ModelConnectionReasoningEffort.MEDIUM
+    reasoning_effort: ModelConnectionReasoningEffort | None = Field(
+        default="medium",
+        max_length=128,
+    )
     api_style: ModelConnectionApiStyle = ModelConnectionApiStyle.RESPONSES
     timeout_seconds: int = Field(default=60, ge=1)
     api_key: str | None = None
@@ -131,6 +142,11 @@ class ModelConnectionCreate(CamelModel):
     def validate_optional_identifiers(cls, value: object) -> str | None:
         return _normalize_optional_text(value)
 
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def validate_reasoning_effort(cls, value: object) -> str | None:
+        return _normalize_reasoning_effort(value)
+
     @field_validator("api_key", mode="before")
     @classmethod
     def validate_api_key(cls, value: object) -> str | None:
@@ -144,7 +160,10 @@ class ModelConnectionUpdate(CamelModel):
     organization: str | None = Field(default=None, max_length=200)
     project: str | None = Field(default=None, max_length=200)
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
-    reasoning_effort: ModelConnectionReasoningEffort | None = None
+    reasoning_effort: ModelConnectionReasoningEffort | None = Field(
+        default=None,
+        max_length=128,
+    )
     api_style: ModelConnectionApiStyle | None = None
     timeout_seconds: int | None = Field(default=None, ge=1)
     api_key: str | None = None
@@ -169,7 +188,12 @@ class ModelConnectionUpdate(CamelModel):
     def validate_optional_base_url(cls, value: object) -> str:
         return _normalize_base_url(value)
 
-    @field_validator("timeout_seconds", "reasoning_effort", "api_style", mode="before")
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def validate_reasoning_effort(cls, value: object) -> str | None:
+        return _normalize_reasoning_effort(value)
+
+    @field_validator("timeout_seconds", "api_style", mode="before")
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -201,7 +225,10 @@ class ModelConnectionListItemRead(CamelModel):
     organization: str | None = None
     project: str | None = None
     model_id: str
-    reasoning_effort: ModelConnectionReasoningEffort
+    reasoning_effort: ModelConnectionReasoningEffort | None = Field(
+        default=None,
+        max_length=128,
+    )
     api_style: ModelConnectionApiStyle
     timeout_seconds: int = Field(ge=1)
     has_api_key: bool

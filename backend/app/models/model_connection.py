@@ -19,7 +19,7 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
             name="ck_model_connections_status",
         ),
         CheckConstraint(
-            "reasoning_effort IN ('low', 'medium', 'high')",
+            "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)",
             name="ck_model_connections_reasoning_effort",
         ),
         CheckConstraint(
@@ -49,9 +49,9 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
     organization: Mapped[str | None] = mapped_column(String(200), nullable=True)
     project: Mapped[str | None] = mapped_column(String(200), nullable=True)
     model_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    reasoning_effort: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
+    reasoning_effort: Mapped[str | None] = mapped_column(
+        String(128).evaluates_none(),
+        nullable=True,
         default="medium",
         server_default="medium",
     )

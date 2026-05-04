@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import CheckConstraint, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -264,18 +264,38 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
         "last_tested_at",
         "last_test_ok",
         "last_test_message",
+        "reasoning_effort",
         "api_style",
     } <= set(model_connection_table.c.keys())
+    reasoning_effort_column = model_connection_table.c.reasoning_effort
+    assert reasoning_effort_column.nullable is True
+    assert getattr(reasoning_effort_column.type, "length", None) == 128
+    assert str(reasoning_effort_column.default) == "ScalarElementColumnDefault('medium')"
+    assert str(reasoning_effort_column.server_default) == (
+        "DefaultClause('medium', for_update=False)"
+    )
     assert model_connection_table.c.api_style.nullable is False
     assert model_connection_table.c.api_style.default is not None
     assert model_connection_table.c.api_style.server_default is not None
+    constraints = {
+        constraint.name: constraint
+        for constraint in model_connection_table.constraints
+        if constraint.name
+    }
     assert {
         "ck_model_connections_status",
         "ck_model_connections_reasoning_effort",
         "ck_model_connections_api_style",
         "ck_model_connections_timeout_seconds_positive",
         "uq_model_connections_key",
-    } <= {constraint.name for constraint in model_connection_table.constraints if constraint.name}
+    } <= constraints.keys()
+    reasoning_effort_constraint = cast(
+        CheckConstraint,
+        constraints["ck_model_connections_reasoning_effort"],
+    )
+    assert str(reasoning_effort_constraint.sqltext) == (
+        "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)"
+    )
     assert "ck_mcp_servers_target" not in {
         constraint.name for constraint in mcp_server_table.constraints if constraint.name
     }
