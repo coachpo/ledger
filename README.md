@@ -20,7 +20,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 Capabilities are the canonical product and API term for agent tool access configuration. `/api/capabilities` write payloads use `toolKeys`; read payloads include both `toolKeys` and read-only resolved `tools` metadata.
 
-Legacy Skill contracts are unsupported after the hard cutover. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must not use `spec.skills`, `toolGrants`, or `toolDefinitions`. Runtime tool keys and OpenAI function names stay unchanged.
+Legacy Skill contracts are unsupported. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must not use `spec.skills`, `toolGrants`, or `toolDefinitions`. Runtime tool keys and OpenAI function names stay unchanged.
 
 ## Prerequisites
 
@@ -115,7 +115,7 @@ Visit `http://127.0.0.1:25173/`.
 - The normal browser-facing execution surfaces are the agent-platform routes for agents, capabilities, MCP servers, model-connections, output-schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
 - Agent manifests use `spec.capabilities`; `spec.skills` is rejected as a retired contract.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
-- Playwright uses dedicated backend and frontend startup helpers on ports `8001` and `4173` for E2E coverage.
+- Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
 - `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.
 - `PUBLIC_BASE_URL` is not required for normal local development; only set it when you need an explicit externally reachable backend origin for downstream absolute links.
 
@@ -151,5 +151,5 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 - `backend/README.md` covers backend-specific development details
 - `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
 - `docs/prd.md`, `docs/spec.md`, `docs/requirements.md`, `docs/api-design.md`, and `docs/data-model.md` are current live references
-- `docs/ledger-agent-platform-prd.md`, `docs/ledger-agent-platform-spec.md`, `docs/ledger-agent-platform-design.md`, `docs/ledger-agent-platform-ui.md`, and `docs/ledger-agent-platform-migration.md` are current platform references
+- `docs/ledger-agent-platform-prd.md`, `docs/ledger-agent-platform-spec.md`, `docs/ledger-agent-platform-design.md`, and `docs/ledger-agent-platform-ui.md` are current platform references
 - `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata

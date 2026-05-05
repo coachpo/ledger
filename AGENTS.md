@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-04
-**Commit:** b4ac445
+**Generated:** 2026-05-05
+**Commit:** a8ad8fb
 **Branch:** main
 
 ## OVERVIEW
@@ -29,7 +29,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/lib/platform-authoring/AGENTS.md` — schema/value/ref/manifest authoring helper contracts
 - `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
 - `frontend/src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, and feature UI
-- `frontend/src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and legacy workflow-builder widgets
+- `frontend/src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
 - `frontend/src/components/forms/AGENTS.md` — cross-route dialog forms for portfolios and report generation
 - `frontend/src/components/templates/AGENTS.md` — template-editor placeholder and runtime-input components
 - `frontend/src/components/ui/AGENTS.md` — shadcn/ui primitives, sidebar context, and shared variant helpers
@@ -37,7 +37,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
 - `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, and agent-platform routes
 - `frontend/src/pages/agents/AGENTS.md` — YAML manifest agent list/editor/run-launch routes
-- `frontend/src/pages/capabilities/AGENTS.md` — capabilities list/editor routes and tool-grant flows
+- `frontend/src/pages/capabilities/AGENTS.md` — capabilities list/editor routes and tool-key flows
 - `frontend/src/pages/mcp-servers/AGENTS.md` — MCP servers list and editor routes
 - `frontend/src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret handling, and connection test routes
 - `frontend/src/pages/output-schemas/AGENTS.md` — output schemas list/editor routes and schema composer flow
