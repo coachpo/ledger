@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -175,7 +174,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         output: Any,
         output_origin: str = "executed",
         tokens: int = 0,
-        cost_usd: Decimal = Decimal("0"),
         duration_ms: int | None = None,
         trace_span_id: str | None = None,
         finished_at: datetime | None = None,
@@ -189,7 +187,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         invocation.error_message = None
         invocation.error_details = []
         invocation.tokens = tokens
-        invocation.cost_usd = cost_usd
         invocation.duration_ms = duration_ms
         invocation.trace_span_id = trace_span_id
         invocation.finished_at = finished
@@ -204,7 +201,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         error_message: str,
         error_details: list[dict[str, Any]] | None = None,
         tokens: int = 0,
-        cost_usd: Decimal = Decimal("0"),
         duration_ms: int | None = None,
         trace_span_id: str | None = None,
         finished_at: datetime | None = None,
@@ -218,7 +214,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         invocation.error_message = error_message
         invocation.error_details = list(error_details or [])
         invocation.tokens = tokens
-        invocation.cost_usd = cost_usd
         invocation.duration_ms = duration_ms
         invocation.trace_span_id = trace_span_id
         invocation.finished_at = finished

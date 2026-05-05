@@ -24,9 +24,8 @@ from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.workflow import WorkflowRepository
-from app.schemas.run import RunStatus
+from app.schemas.run import RunAgentInvocationRead, RunRead, RunStatus
 from app.services.model_connection_service import ModelConnectionService
-from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -207,7 +206,6 @@ def _build_agent_platform_run(
     workflow: Workflow,
     status: str,
     total_tokens: int,
-    total_cost_usd: Decimal,
     started_at: datetime | None,
     finished_at: datetime | None,
     trace_id: str | None,
@@ -222,7 +220,6 @@ def _build_agent_platform_run(
         final_output=final_output,
         status=status,
         total_tokens=total_tokens,
-        total_cost_usd=total_cost_usd,
         trace_id=trace_id,
         started_at=started_at,
         finished_at=finished_at,
@@ -646,7 +643,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             workflow=workflow,
             status="failed",
             total_tokens=120,
-            total_cost_usd=Decimal("0.05000000"),
             started_at=datetime(2026, 4, 19, 9, 0, tzinfo=UTC_TZ),
             finished_at=datetime(2026, 4, 19, 9, 1, tzinfo=UTC_TZ),
             trace_id="trace-older",
@@ -657,7 +653,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             workflow=workflow,
             status=RunStatus.QUEUED.value,
             total_tokens=0,
-            total_cost_usd=Decimal("0"),
             started_at=None,
             finished_at=None,
             trace_id=None,
@@ -668,7 +663,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             workflow=workflow,
             status="succeeded",
             total_tokens=321,
-            total_cost_usd=Decimal("0.15000000"),
             started_at=datetime(2026, 4, 19, 10, 0, tzinfo=UTC_TZ),
             finished_at=datetime(2026, 4, 19, 10, 2, tzinfo=UTC_TZ),
             trace_id="trace-latest",
@@ -709,7 +703,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                 output={"headline": "Buy"},
                 output_origin="executed",
                 tokens=321,
-                cost_usd=Decimal("0.15000000"),
                 duration_ms=1450,
                 trace_span_id="span-latest",
                 started_at=latest_run.started_at,
@@ -746,21 +739,109 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert len(detail_invocations) == 1
         assert detail_invocations[0].trace_span_id == "span-latest"
         assert detail_invocations[0].resolved_input == {"ticker": "NVDA"}
-        serialized_detail = (
-            RunService(session)
-            .get_run(latest_run.id)
-            .model_dump(
+        serialized_detail = cast(
+            dict[str, object],
+            RunRead.model_validate(
+                {
+                    "id": run_detail.id,
+                    "targetKind": run_detail.target_kind,
+                    "targetId": run_detail.target_id,
+                    "targetKey": run_detail.target_key,
+                    "targetVersion": run_detail.target_version,
+                    "input": run_detail.input,
+                    "sourceRunId": run_detail.source_run_id,
+                    "lineageRootRunId": run_detail.lineage_root_run_id,
+                    "replayStepIndex": run_detail.forked_from_step_index,
+                    "resumeStepIndex": run_detail.resume_step_index,
+                    "finalOutput": run_detail.final_output,
+                    "status": run_detail.status,
+                    "totalTokens": run_detail.total_tokens,
+                    "inheritedTokens": run_detail.inherited_tokens,
+                    "executedTokens": run_detail.executed_tokens,
+                    "traceId": run_detail.trace_id,
+                    "error": run_detail.error,
+                    "queuedAt": run_detail.queued_at,
+                    "startedAt": run_detail.started_at,
+                    "finishedAt": run_detail.finished_at,
+                    "createdAt": run_detail.created_at,
+                    "updatedAt": run_detail.updated_at,
+                    "steps": [],
+                    "memoryArtifacts": [],
+                }
+            ).model_dump(mode="json", by_alias=True),
+        )
+        serialized_invocation = cast(
+            dict[str, object],
+            RunAgentInvocationRead.model_validate(detail_invocations[0]).model_dump(
                 mode="json",
                 by_alias=True,
-            )
+            ),
         )
         assert "perStepOutputs" not in serialized_detail
+        assert set(serialized_detail) == {
+            "id",
+            "targetKind",
+            "targetId",
+            "targetKey",
+            "targetVersion",
+            "input",
+            "sourceRunId",
+            "lineageRootRunId",
+            "replayStepIndex",
+            "resumeStepIndex",
+            "finalOutput",
+            "status",
+            "totalTokens",
+            "inheritedTokens",
+            "executedTokens",
+            "traceId",
+            "error",
+            "queuedAt",
+            "startedAt",
+            "finishedAt",
+            "createdAt",
+            "updatedAt",
+            "steps",
+            "memoryArtifacts",
+        }
         assert serialized_detail["queuedAt"] == "2026-04-19T09:59:00Z"
-        assert serialized_detail["steps"][0]["index"] == 1
-        assert serialized_detail["steps"][0]["invocations"][0]["traceSpanId"] == "span-latest"
-        assert serialized_detail["steps"][0]["invocations"][0]["costUsd"] == "0.15000000"
+        assert detail_steps[0].step_index == 1
+        assert set(serialized_invocation) == {
+            "id",
+            "runStepId",
+            "runId",
+            "stepIndex",
+            "slot",
+            "position",
+            "agentId",
+            "agentKey",
+            "agentVersion",
+            "outputSchemaId",
+            "outputSchemaVersion",
+            "inputMode",
+            "wiring",
+            "graphMetadata",
+            "optional",
+            "status",
+            "resolvedInput",
+            "resolvedInputOrigin",
+            "output",
+            "outputOrigin",
+            "errorCode",
+            "errorMessage",
+            "errorDetails",
+            "tokens",
+            "durationMs",
+            "traceSpanId",
+            "sourceInvocationId",
+            "startedAt",
+            "finishedAt",
+            "persistedAt",
+            "createdAt",
+            "updatedAt",
+        }
+        assert serialized_invocation["traceSpanId"] == "span-latest"
         assert run_detail.total_tokens == 321
-        assert run_detail.total_cost_usd == Decimal("0.15000000")
         assert run_detail.trace_id == "trace-latest"
         assert run_detail.final_output == {"headline": "Buy"}
         assert [run.id for run in listed_runs] == [queued_run.id, latest_run.id, earlier_run.id]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -58,7 +57,6 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
             name="ck_run_agent_invocations_output_origin",
         ),
         CheckConstraint("tokens >= 0", name="ck_run_agent_invocations_tokens_non_negative"),
-        CheckConstraint("cost_usd >= 0", name="ck_run_agent_invocations_cost_non_negative"),
         CheckConstraint(
             "duration_ms IS NULL OR duration_ms >= 0",
             name="ck_run_agent_invocations_duration_non_negative",
@@ -130,11 +128,6 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
         server_default=sql_text("'[]'::jsonb"),
     )
     tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    cost_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-    )
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
     trace_span_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_invocation_id: Mapped[int | None] = mapped_column(
