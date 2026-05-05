@@ -127,7 +127,14 @@ const existingAgent = {
       key: "summarize_capability",
       name: "Summarize",
       status: "published",
-      toolGrants: [],
+      toolKeys: ["search_docs"],
+      tools: [
+        {
+          description: "Search indexed reports and documents.",
+          displayName: "Search Docs",
+          key: "search_docs",
+        },
+      ],
       updatedAt: "2026-04-20T10:00:00Z",
       version: 3,
     },
