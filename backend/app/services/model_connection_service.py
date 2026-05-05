@@ -318,14 +318,18 @@ class ModelConnectionService:
         client_kwargs: dict[str, Any],
         tested_at: datetime,
     ) -> _ModelConnectionTestResult:
+        request_kwargs: dict[str, Any] = {
+            "model": connection.model_id,
+            "messages": [
+                {"role": "system", "content": "Reply with the single word OK."},
+                {"role": "user", "content": "Connection test."},
+            ],
+        }
+        if connection.reasoning_effort is not None:
+            request_kwargs["reasoning_effort"] = connection.reasoning_effort
+
         with OpenAI(**client_kwargs) as client:
-            response = client.chat.completions.create(
-                model=connection.model_id,
-                messages=[
-                    {"role": "system", "content": "Reply with the single word OK."},
-                    {"role": "user", "content": "Connection test."},
-                ],
-            )
+            response = client.chat.completions.create(**request_kwargs)
         return _ModelConnectionTestResult(
             ok=True,
             message=self._success_message(response),

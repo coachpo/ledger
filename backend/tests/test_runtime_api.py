@@ -2054,6 +2054,7 @@ def test_agent_platform_model_connections_create_and_test_selected_api_style(
             {"role": "system", "content": "Reply with the single word OK."},
             {"role": "user", "content": "Connection test."},
         ],
+        "reasoning_effort": "medium",
     }
 
     with session_factory() as session:
@@ -2106,6 +2107,54 @@ def test_model_connections_responses_test_reasoning_omission_and_custom_values(
     else:
         assert request["reasoning"] == expected_reasoning
     assert _ApiStyleRecordingOpenAIClient.chat_create_calls == []
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reasoning_effort", "expected_reasoning_effort"),
+    [
+        ("null", None, None),
+        ("minimal", "minimal", "minimal"),
+        ("none", "none", "none"),
+        ("xhigh", "xhigh", "xhigh"),
+    ],
+)
+def test_model_connections_chat_completions_test_reasoning_effort_omission_and_custom_values(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    reasoning_effort: str | None,
+    expected_reasoning_effort: str | None,
+) -> None:
+    _ApiStyleRecordingOpenAIClient.reset()
+    monkeypatch.setattr(
+        "app.services.model_connection_service.OpenAI",
+        _ApiStyleRecordingOpenAIClient,
+    )
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_payload(
+            key=f"chat_connection_test_{suffix}",
+            name=f"Chat Connection Test {suffix.title()}",
+            api_key="sk-api-style-1234",
+            api_style="chat_completions",
+            reasoning_effort=reasoning_effort,
+        ),
+    )
+    assert create_response.status_code == 201, create_response.json()
+
+    connection_test = client.post(
+        f"/api/model-connections/{create_response.json()['id']}/connection-test"
+    )
+    assert connection_test.status_code == 200, connection_test.json()
+    assert connection_test.json()["ok"] is True
+    request = _ApiStyleRecordingOpenAIClient.chat_create_calls[-1]
+    if expected_reasoning_effort is None:
+        assert "reasoning" not in request
+        assert "reasoning_effort" not in request
+    else:
+        assert "reasoning" not in request
+        assert request["reasoning_effort"] == expected_reasoning_effort
+    assert _ApiStyleRecordingOpenAIClient.responses_create_calls == []
 
 
 def test_agent_platform_model_connections_selected_api_style_failure_does_not_fallback(
