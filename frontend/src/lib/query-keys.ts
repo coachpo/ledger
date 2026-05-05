@@ -191,6 +191,7 @@ const platformQueryKeys = {
       [...platformApiRoot, "capabilities", "detail", normalizeId(capabilityId)] as const,
     list: (params: CapabilityListParams = {}) =>
       [...platformApiRoot, "capabilities", "list", normalizeCapabilityListParams(params)] as const,
+    tools: () => [...platformApiRoot, "capabilities", "tools"] as const,
   },
   mcpServers: {
     all: [...platformApiRoot, "mcpServers"] as const,

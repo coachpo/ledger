@@ -5,6 +5,7 @@ import {
   createCapability,
   getCapability,
   listCapabilities,
+  listCapabilityTools,
   updateCapability,
 } from "@/lib/api/capabilities";
 import type { IdParam } from "@/lib/api-client";
@@ -27,6 +28,13 @@ export function useCapabilities(params: CapabilityListParams = {}) {
   return useQuery({
     queryKey: queryKeys.platform.capabilities.list(params),
     queryFn: ({ signal }) => listCapabilities(params, signal),
+  });
+}
+
+export function useCapabilityTools() {
+  return useQuery({
+    queryKey: queryKeys.platform.capabilities.tools(),
+    queryFn: ({ signal }) => listCapabilityTools(signal),
   });
 }
 

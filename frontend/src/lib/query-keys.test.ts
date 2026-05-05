@@ -133,5 +133,12 @@ describe("query keys", () => {
     expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
     expect(queryKeys.platform.agents.all).not.toEqual(queryKeys.portfolios.all);
     expect(queryKeys.platform.runs.all).not.toEqual(queryKeys.templates.all);
+    expect(queryKeys.platform.capabilities.tools()).toEqual([
+      "api",
+      "platform",
+      "capabilities",
+      "tools",
+    ]);
+    expect(queryKeys.platform.capabilities.tools()).not.toEqual(queryKeys.platform.capabilities.list());
   });
 });

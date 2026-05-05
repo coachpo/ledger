@@ -4,6 +4,7 @@ import type {
   CapabilityListParams,
   CapabilityListRead,
   CapabilityRead,
+  CapabilityToolListRead,
   CapabilityUpdateInput,
 } from "../types/capability";
 
@@ -23,6 +24,10 @@ export function listCapabilities(
 
 export function getCapability(capabilityId: IdParam, signal?: AbortSignal): Promise<CapabilityRead> {
   return requestPlatform<CapabilityRead>(capabilityPath(capabilityId), { signal });
+}
+
+export function listCapabilityTools(signal?: AbortSignal): Promise<CapabilityToolListRead> {
+  return requestPlatform<CapabilityToolListRead>("/capabilities/tools", { signal });
 }
 
 export function createCapability(
@@ -68,5 +73,6 @@ export const capabilitiesApi = {
   create: createCapability,
   get: getCapability,
   list: listCapabilities,
+  listTools: listCapabilityTools,
   update: updateCapability,
 } as const;
