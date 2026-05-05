@@ -9,7 +9,7 @@ Ledger ships a stateless, UI-driven agent platform beside the preserved portfoli
 ## Current Product Surfaces
 
 - Agents: YAML manifest list, create/edit-as-version, archive, duplicate, and run-launch flows.
-- Capabilities: canonical tool-grant resources with `toolGrants` backed by the server-declared tool catalog.
+- Capabilities: canonical tool-key resources with `toolKeys` and read-only resolved `tools` metadata backed by the server-declared tool catalog.
 - MCP servers: saved server configs, connection tests, exact pinned versions, frozen tool snapshots, and security boundaries.
 - Model connections: saved OpenAI-family provider endpoints, encrypted secrets, secret-safe reads, and connection tests.
 - Output schemas: schema composer, JSON schema editing, preview, validation, and runtime compilation.

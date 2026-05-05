@@ -22,7 +22,7 @@ This document describes the shipped platform surface in this repository, not the
 
 ### Capabilities
 
-- Capabilities are canonical. They store tool grants as `toolGrants` and validate against the server-declared tool catalog.
+- Capabilities are canonical. They store `toolKeys`, emit read-only resolved `tools` metadata, and validate against the server-declared tool catalog.
 ### MCP Servers
 
 - MCP servers are versioned resources with connection testing.

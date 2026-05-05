@@ -16,7 +16,7 @@ The sidebar exposes Agents, Capabilities, MCP Servers, Model Connections, Output
 ## Platform Pages
 
 - Agents: YAML manifest editor, duplicate/archive actions, run-launch flow.
-- Capabilities: `toolGrants` authoring and activation state.
+- Capabilities: catalog-backed `toolKeys` authoring, read-only resolved `tools` metadata, and activation state.
 - MCP servers: config editor and connection test feedback.
 - Model connections: provider/base URL/model/key editor, secret-safe edit flow, and connection test feedback.
 - Output schemas: builder, JSON schema, and preview tabs.

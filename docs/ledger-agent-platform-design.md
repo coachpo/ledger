@@ -30,7 +30,7 @@ backend/app/
 
 ## Security Boundaries
 
-- Capabilities are the only live tool-grant contract; `spec.skills` is rejected.
+- Capabilities are the only live tool-key contract; `spec.skills` is rejected.
 - MCP URL, stdio, redirect, exact-pin, schema, snapshot-hash, and output-redaction checks are runtime boundaries.
 - Model-connection API keys remain encrypted at rest and secret-safe in reads/errors.
 - Application LLM calls use official SDKs rather than raw HTTP calls.
