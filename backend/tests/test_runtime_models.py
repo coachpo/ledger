@@ -206,7 +206,6 @@ def _build_run(
     status: str,
     final_output: object | None,
     total_tokens: int,
-    total_cost_usd: Decimal,
     trace_id: str | None,
     started_at: datetime | None,
     finished_at: datetime | None,
@@ -221,7 +220,6 @@ def _build_run(
         final_output=final_output,
         status=status,
         total_tokens=total_tokens,
-        total_cost_usd=total_cost_usd,
         trace_id=trace_id,
         error=error,
         started_at=started_at,
@@ -1393,7 +1391,6 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
             status="succeeded",
             final_output={"headline": "Buy"},
             total_tokens=321,
-            total_cost_usd=Decimal("0.15000000"),
             trace_id="trace-market-review",
             started_at=started_at,
             finished_at=finished_at,
@@ -1435,7 +1432,6 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
                 output={"headline": "Buy"},
                 output_origin="executed",
                 tokens=321,
-                cost_usd=Decimal("0.15000000"),
                 duration_ms=1450,
                 trace_span_id="span-analysis",
                 started_at=started_at,
@@ -1452,7 +1448,6 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
                 status="failed",
                 final_output=None,
                 total_tokens=0,
-                total_cost_usd=Decimal("0"),
                 trace_id="trace-agent-run",
                 started_at=started_at,
                 finished_at=finished_at,
@@ -1480,7 +1475,6 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert stored_run.steps[0].invocations[0].trace_span_id == "span-analysis"
         assert stored_run.steps[0].invocations[0].resolved_input == {"ticker": "NVDA"}
         assert stored_run.total_tokens == 321
-        assert stored_run.total_cost_usd == Decimal("0.15000000")
         assert stored_run.trace_id == "trace-market-review"
         assert stored_run.queued_at == queued_at
         assert stored_run.started_at == started_at
@@ -1510,7 +1504,6 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
             status=RunStatus.QUEUED.value,
             final_output=None,
             total_tokens=0,
-            total_cost_usd=Decimal("0"),
             trace_id=None,
             started_at=None,
             finished_at=None,
@@ -1534,7 +1527,6 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
                 status="cancelled",
                 final_output=None,
                 total_tokens=0,
-                total_cost_usd=Decimal("0"),
                 trace_id=None,
                 started_at=None,
                 finished_at=None,
@@ -1554,7 +1546,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "targetVersion": 1,
         "status": "queued",
         "totalTokens": 0,
-        "totalCostUsd": "0.00000000",
         "traceId": None,
         "queuedAt": queued_at,
         "startedAt": None,
@@ -1569,9 +1560,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "resumeStepIndex": 1,
             "finalOutput": None,
             "inheritedTokens": 0,
-            "inheritedCostUsd": "0.00000000",
             "executedTokens": 0,
-            "executedCostUsd": "0.00000000",
             "error": None,
             "createdAt": queued_at,
             "updatedAt": queued_at,
@@ -1580,9 +1569,43 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         }
     )
 
-    assert list_item.model_dump(mode="json", by_alias=True) == {
+    list_payload = cast(
+        dict[str, object],
+        list_item.model_dump(mode="json", by_alias=True),
+    )
+    detail_payload = cast(
+        dict[str, object],
+        detail.model_dump(mode="json", by_alias=True),
+    )
+
+    assert list_payload == {
         **common_payload,
         "queuedAt": "2026-04-20T11:00:00Z",
-        "totalCostUsd": "0.00000000",
     }
-    assert detail.model_dump(mode="json", by_alias=True)["startedAt"] is None
+    assert detail_payload["startedAt"] is None
+    assert set(detail_payload) == {
+        "id",
+        "targetKind",
+        "targetId",
+        "targetKey",
+        "targetVersion",
+        "input",
+        "sourceRunId",
+        "lineageRootRunId",
+        "replayStepIndex",
+        "resumeStepIndex",
+        "finalOutput",
+        "status",
+        "totalTokens",
+        "inheritedTokens",
+        "executedTokens",
+        "traceId",
+        "error",
+        "queuedAt",
+        "startedAt",
+        "finishedAt",
+        "createdAt",
+        "updatedAt",
+        "steps",
+        "memoryArtifacts",
+    }

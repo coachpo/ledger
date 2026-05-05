@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
@@ -31,14 +30,8 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_forked_from_step_index_positive",
         ),
         CheckConstraint("total_tokens >= 0", name="ck_runs_total_tokens_non_negative"),
-        CheckConstraint("total_cost_usd >= 0", name="ck_runs_total_cost_non_negative"),
         CheckConstraint("inherited_tokens >= 0", name="ck_runs_inherited_tokens_non_negative"),
-        CheckConstraint(
-            "inherited_cost_usd >= 0",
-            name="ck_runs_inherited_cost_non_negative",
-        ),
         CheckConstraint("executed_tokens >= 0", name="ck_runs_executed_tokens_non_negative"),
-        CheckConstraint("executed_cost_usd >= 0", name="ck_runs_executed_cost_non_negative"),
         Index("ix_runs_status", "status"),
         Index("ix_runs_target", "target_kind", "target_id", "target_version"),
         Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
@@ -69,23 +62,8 @@ class Run(IdMixin, TimestampMixin, Base):
     resume_step_index: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     final_output: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     total_tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    total_cost_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-    )
     inherited_tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    inherited_cost_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-    )
     executed_tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    executed_cost_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-    )
     trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     queued_at: Mapped[datetime] = mapped_column(

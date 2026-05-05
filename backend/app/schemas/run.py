@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
 from typing import Any
 
@@ -117,7 +116,6 @@ class RunAgentInvocationRead(CamelModel):
     error_message: str | None = None
     error_details: list[dict[str, Any]] = Field(default_factory=list)
     tokens: int = Field(ge=0)
-    cost_usd: Decimal = Field(ge=Decimal("0"))
     duration_ms: int | None = Field(default=None, ge=0)
     trace_span_id: str | None = None
     source_invocation_id: int | None = None
@@ -190,7 +188,6 @@ class RunListItemRead(CamelModel):
     target_version: int = Field(ge=1)
     status: RunStatus
     total_tokens: int = Field(ge=0)
-    total_cost_usd: Decimal = Field(ge=Decimal("0"))
     trace_id: str | None = None
     queued_at: datetime
     started_at: datetime | None = None
@@ -241,11 +238,8 @@ class RunRead(CamelModel):
     final_output: Any | None = None
     status: RunStatus
     total_tokens: int = Field(ge=0)
-    total_cost_usd: Decimal = Field(ge=Decimal("0"))
     inherited_tokens: int = Field(ge=0)
-    inherited_cost_usd: Decimal = Field(ge=Decimal("0"))
     executed_tokens: int = Field(ge=0)
-    executed_cost_usd: Decimal = Field(ge=Decimal("0"))
     trace_id: str | None = None
     error: str | None = None
     queued_at: datetime
