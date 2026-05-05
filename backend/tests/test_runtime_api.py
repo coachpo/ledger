@@ -2265,7 +2265,6 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
         return {
             "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
             "tokens": 7,
-            "costUsd": "0.01000000",
             "durationMs": 4,
             "traceSpanId": None,
         }
@@ -2386,7 +2385,6 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
     assert invocation["errorDetails"] == []
     assert invocation["status"] == "succeeded"
     assert invocation["tokens"] == 7
-    assert invocation["costUsd"] == "0.01000000"
     assert invocation["durationMs"] == 4
     _assert_logfire_span_id(invocation["traceSpanId"])
 
@@ -2405,7 +2403,6 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
                 "targetVersion": 1,
                 "status": "succeeded",
                 "totalTokens": 7,
-                "totalCostUsd": "0.01000000",
                 "traceId": detail["traceId"],
                 "queuedAt": listed.json()["items"][0]["queuedAt"],
                 "startedAt": listed.json()["items"][0]["startedAt"],
@@ -3510,11 +3507,8 @@ def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocat
     assert body["finishedAt"] is None
     assert body["resumeStepIndex"] == 1
     assert body["totalTokens"] == 0
-    assert body["totalCostUsd"] == "0.00000000"
     assert body["inheritedTokens"] == 0
-    assert body["inheritedCostUsd"] == "0.00000000"
     assert body["executedTokens"] == 0
-    assert body["executedCostUsd"] == "0.00000000"
     assert [step["index"] for step in body["steps"]] == [1, 2]
     assert [step["status"] for step in body["steps"]] == ["pending", "pending"]
     assert [step["origin"] for step in body["steps"]] == ["planned", "planned"]
@@ -3637,7 +3631,7 @@ def test_agent_platform_v2_workflow_run_detail_exposes_graph_metadata(
             output = {"summary": summary}
         else:
             output = {"summary": f"{slot}:{resolved_input['ticker']}"}
-        return {"output": output, "tokens": 5, "costUsd": "0.001", "durationMs": 1}
+        return {"output": output, "tokens": 5, "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
 
@@ -4066,7 +4060,6 @@ async def _post_run_memory_fake_invoke(
             "confidence": "high",
         },
         "tokens": 5,
-        "costUsd": "0.001",
         "durationMs": 1,
     }
 
@@ -4282,7 +4275,7 @@ async def _tradingagents_v2_fake_invoke(
             "riskSummary": "Main risks are valuation and volatility.",
             "executionPlan": "Research-only: scale in over two review windows.",
         }
-    return {"output": output, "tokens": 5, "costUsd": "0.001", "durationMs": 1}
+    return {"output": output, "tokens": 5, "durationMs": 1}
 
 
 def test_agent_platform_tradingagents_v2_stubbed_run_completes_with_graph_and_memory(
@@ -4444,7 +4437,6 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
         return {
             "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
             "tokens": 13,
-            "costUsd": "0.01500000",
             "durationMs": 6,
             "traceSpanId": None,
         }
@@ -4556,7 +4548,6 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
     assert invocation["errorDetails"] == []
     assert invocation["status"] == "succeeded"
     assert invocation["tokens"] == 13
-    assert invocation["costUsd"] == "0.01500000"
     assert invocation["durationMs"] == 6
     _assert_logfire_span_id(invocation["traceSpanId"])
 
@@ -4575,7 +4566,6 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
                 "targetVersion": workflow.version,
                 "status": "succeeded",
                 "totalTokens": 13,
-                "totalCostUsd": "0.01500000",
                 "traceId": detail["traceId"],
                 "queuedAt": listed.json()["items"][0]["queuedAt"],
                 "startedAt": listed.json()["items"][0]["startedAt"],
@@ -4614,7 +4604,6 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
             return {
                 "output": {"summary": f"{slot}:{resolved_input['ticker']}"},
                 "tokens": 11,
-                "costUsd": "0.01000000",
                 "durationMs": 25,
                 "traceSpanId": None,
             }
@@ -4626,7 +4615,6 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
                 )
             },
             "tokens": 7,
-            "costUsd": "0.01000000",
             "durationMs": 10,
             "traceSpanId": None,
         }
@@ -4870,7 +4858,6 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
         return {
             "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
             "tokens": 21,
-            "costUsd": "0.02000000",
             "durationMs": 8,
             "traceSpanId": None,
         }
@@ -4958,7 +4945,6 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
             "targetVersion": workflow.version,
             "status": "succeeded",
             "totalTokens": 21,
-            "totalCostUsd": "0.02000000",
             "traceId": detail["traceId"],
             "queuedAt": list_response.json()["items"][0]["queuedAt"],
             "startedAt": list_response.json()["items"][0]["startedAt"],
@@ -4973,11 +4959,8 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
     assert detail["targetVersion"] == workflow.version
     assert detail["input"] == {"ticker": "MSFT"}
     assert detail["totalTokens"] == 21
-    assert detail["totalCostUsd"] == "0.02000000"
     assert detail["inheritedTokens"] == 0
-    assert detail["inheritedCostUsd"] == "0.00000000"
     assert detail["executedTokens"] == 21
-    assert detail["executedCostUsd"] == "0.02000000"
     assert "perStepOutputs" not in detail
     assert [step["index"] for step in detail["steps"]] == [1]
     step = detail["steps"][0]
@@ -4998,7 +4981,6 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
     assert invocation["errorDetails"] == []
     assert invocation["status"] == "succeeded"
     assert invocation["tokens"] == 21
-    assert invocation["costUsd"] == "0.02000000"
     assert invocation["durationMs"] == 8
     _assert_logfire_span_id(invocation["traceSpanId"])
 
@@ -5961,7 +5943,7 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
     ]
 
 
-def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceeded(
+def test_agent_platform_budget_metadata_does_not_enforce_agent_runtime_cost(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -5979,7 +5961,6 @@ def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceed
         return {
             "output": {"summary": "too expensive"},
             "tokens": 12,
-            "costUsd": "0.09000000",
             "durationMs": 12,
             "traceSpanId": None,
         }
@@ -6052,16 +6033,18 @@ def test_agent_platform_budget_enforcement_fails_run_when_agent_budget_is_exceed
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
-    assert detail["status"] == "failed"
-    assert "exceeded its budget" in str(detail["error"])
-    assert detail["finalOutput"] is None
-    assert detail["totalCostUsd"] == "0.09000000"
-    assert detail["steps"][0]["invocations"][0]["status"] == "failed"
-    assert detail["steps"][0]["invocations"][0]["output"] is None
-    assert detail["steps"][0]["invocations"][0]["errorCode"] == "agent_budget_exceeded"
+    assert detail["status"] == "succeeded"
+    assert detail["error"] is None
+    assert detail["finalOutput"] == {"summary": "too expensive"}
+    assert detail["totalTokens"] == 12
+    assert detail["executedTokens"] == 12
+    assert detail["steps"][0]["invocations"][0]["status"] == "succeeded"
+    assert detail["steps"][0]["invocations"][0]["output"] == {"summary": "too expensive"}
+    assert detail["steps"][0]["invocations"][0]["errorCode"] is None
+    assert detail["steps"][0]["invocations"][0]["tokens"] == 12
 
 
-def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_exceeded(
+def test_agent_platform_budget_metadata_does_not_enforce_aggregate_runtime_cost(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -6079,7 +6062,6 @@ def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_ex
         return {
             "output": {"summary": slot},
             "tokens": 5,
-            "costUsd": "0.10000000",
             "durationMs": 5,
             "traceSpanId": None,
         }
@@ -6171,11 +6153,15 @@ def test_agent_platform_budget_enforcement_fails_run_when_aggregate_budget_is_ex
     assert trigger.status_code == 201, trigger.json()
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
-    assert detail["status"] == "failed"
-    assert "aggregate budget" in str(detail["error"])
+    assert detail["status"] == "succeeded"
+    assert detail["error"] is None
+    assert detail["finalOutput"] == {"summary": "alpha"}
+    assert detail["totalTokens"] == 10
+    assert detail["executedTokens"] == 10
     assert detail["steps"][0]["invocations"][0]["status"] == "succeeded"
-    assert detail["steps"][0]["invocations"][1]["status"] == "failed"
-    assert detail["steps"][0]["invocations"][1]["errorCode"] == "run_budget_exceeded"
+    assert detail["steps"][0]["invocations"][1]["status"] == "succeeded"
+    assert detail["steps"][0]["invocations"][1]["errorCode"] is None
+    assert [invocation["tokens"] for invocation in detail["steps"][0]["invocations"]] == [5, 5]
 
 
 def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running(
@@ -6199,7 +6185,6 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
         return {
             "output": {"summary": "fallback decision"},
             "tokens": 4,
-            "costUsd": "0.01000000",
             "durationMs": 6,
             "traceSpanId": None,
         }
@@ -7035,14 +7020,12 @@ def test_agent_platform_run_rerun_draft_and_create_starts_from_first_step(
             return {
                 "output": {"summary": f"source:{resolved_input['ticker']}"},
                 "tokens": 10,
-                "costUsd": "0.01000000",
                 "durationMs": 4,
                 "traceSpanId": None,
             }
         return {
             "output": {"summary": f"decision:{resolved_input['analysis']['summary']}"},
             "tokens": 5,
-            "costUsd": "0.00500000",
             "durationMs": 3,
             "traceSpanId": None,
         }
@@ -7091,9 +7074,7 @@ def test_agent_platform_run_rerun_draft_and_create_starts_from_first_step(
     assert rerun_detail["input"] == {"ticker": "MSFT"}
     assert rerun_detail["finalOutput"] == {"summary": "decision:source:MSFT"}
     assert rerun_detail["inheritedTokens"] == 0
-    assert rerun_detail["inheritedCostUsd"] == "0.00000000"
     assert rerun_detail["executedTokens"] == 15
-    assert rerun_detail["executedCostUsd"] == "0.01500000"
     assert [step["origin"] for step in rerun_detail["steps"]] == ["planned", "planned"]
     assert all(
         invocation["sourceInvocationId"] is None
@@ -7136,14 +7117,12 @@ def test_agent_platform_run_step_replay_copies_prior_context_and_replays_step(
             return {
                 "output": {"summary": f"source:{resolved_input['ticker']}"},
                 "tokens": 10,
-                "costUsd": "0.01000000",
                 "durationMs": 4,
                 "traceSpanId": None,
             }
         return {
             "output": {"summary": f"decision:{resolved_input['analysis']['summary']}"},
             "tokens": 5,
-            "costUsd": "0.00500000",
             "durationMs": 3,
             "traceSpanId": None,
         }
@@ -7185,9 +7164,7 @@ def test_agent_platform_run_step_replay_copies_prior_context_and_replays_step(
     assert replay_detail["input"] == {"ticker": "MSFT"}
     assert replay_detail["finalOutput"] == {"summary": "decision:source:NVDA"}
     assert replay_detail["inheritedTokens"] == 10
-    assert replay_detail["inheritedCostUsd"] == "0.01000000"
     assert replay_detail["executedTokens"] == 5
-    assert replay_detail["executedCostUsd"] == "0.00500000"
     assert [step["origin"] for step in replay_detail["steps"]] == ["copied", "planned"]
     copied_invocation = replay_detail["steps"][0]["invocations"][0]
     assert copied_invocation["resolvedInput"] == {"ticker": "NVDA"}
@@ -7238,7 +7215,6 @@ def test_agent_platform_run_step_replay_copies_prior_optional_failed_context(
         return {
             "output": {"summary": f"decision:{resolved_input.get('analysis', 'fallback')}"},
             "tokens": 5,
-            "costUsd": "0.00500000",
             "durationMs": 3,
             "traceSpanId": None,
         }
@@ -7339,7 +7315,7 @@ def test_agent_platform_run_step_replay_rejects_required_failed_prior_context(
             output = {"summary": f"source:{resolved_input['ticker']}"}
         else:
             output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
-        return {"output": output, "tokens": 3, "costUsd": "0.00100000", "durationMs": 1}
+        return {"output": output, "tokens": 3, "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:
@@ -7395,7 +7371,7 @@ def test_agent_platform_run_step_replay_rejects_non_persisted_source_step(
             output = {"summary": f"source:{resolved_input['ticker']}"}
         else:
             output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
-        return {"output": output, "tokens": 3, "costUsd": "0.00100000", "durationMs": 1}
+        return {"output": output, "tokens": 3, "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:
@@ -7443,7 +7419,6 @@ def test_agent_platform_run_step_replay_rejects_agent_source_run_without_creatin
         return {
             "output": {"summary": f"agent:{resolved_input['ticker']}"},
             "tokens": 8,
-            "costUsd": "0.00800000",
             "durationMs": 2,
             "traceSpanId": None,
         }
@@ -7500,7 +7475,7 @@ def test_agent_platform_legacy_fork_run_endpoints_are_unavailable_without_creati
             output = {"summary": f"source:{resolved_input['ticker']}"}
         else:
             output = {"summary": f"decision:{resolved_input['analysis']['summary']}"}
-        return {"output": output, "tokens": 1, "costUsd": "0.00100000", "durationMs": 1}
+        return {"output": output, "tokens": 1, "durationMs": 1}
 
     monkeypatch.setattr(RunService, "_invoke_agent", fake_invoke)
     with session_factory() as session:

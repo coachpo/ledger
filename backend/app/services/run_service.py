@@ -5,7 +5,6 @@ import logging
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, cast
 
 from openai import OpenAI
@@ -13,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import business_rule_error, not_found_error
-from app.core.formatting import decimal_to_string, utcnow
+from app.core.formatting import utcnow
 from app.core.telemetry import (
     configure_logfire,
     create_logfire_span,
@@ -282,11 +281,8 @@ class RunService:
             resume_step_index=1,
             final_output=None,
             total_tokens=0,
-            total_cost_usd=Decimal("0"),
             inherited_tokens=0,
-            inherited_cost_usd=Decimal("0"),
             executed_tokens=0,
-            executed_cost_usd=Decimal("0"),
             trace_id=None,
             error=None,
             finished_at=None,
@@ -402,7 +398,7 @@ class RunService:
         resume_step_index: int,
         min_planned_step_index: int,
     ) -> RunCreatedRead:
-        inherited_tokens, inherited_cost = self._copied_invocation_totals(copied_steps)
+        inherited_tokens = self._copied_invocation_token_totals(copied_steps)
         run = Run(
             target_kind=source_run.target_kind,
             target_id=source_run.target_id,
@@ -418,11 +414,8 @@ class RunService:
             resume_step_index=resume_step_index,
             final_output=None,
             total_tokens=inherited_tokens,
-            total_cost_usd=inherited_cost,
             inherited_tokens=inherited_tokens,
-            inherited_cost_usd=inherited_cost,
             executed_tokens=0,
-            executed_cost_usd=Decimal("0"),
             trace_id=None,
             error=None,
             finished_at=None,
@@ -592,14 +585,12 @@ class RunService:
         return invocation.optional and invocation.status in {_RUN_STATUS_FAILED, "skipped"}
 
     @staticmethod
-    def _copied_invocation_totals(source_steps: list[RunStep]) -> tuple[int, Decimal]:
+    def _copied_invocation_token_totals(source_steps: list[RunStep]) -> int:
         tokens = 0
-        cost = Decimal("0")
         for step in source_steps:
             for invocation in cast(list[RunAgentInvocation], step.invocations):
                 tokens += int(invocation.tokens or 0)
-                cost += Decimal(invocation.cost_usd or 0)
-        return tokens, cost
+        return tokens
 
     def _copy_replay_context_rows(
         self,
@@ -659,7 +650,6 @@ class RunService:
                 copied_invocation.error_message = source_invocation.error_message
                 copied_invocation.error_details = deepcopy(source_invocation.error_details)
                 copied_invocation.tokens = source_invocation.tokens
-                copied_invocation.cost_usd = source_invocation.cost_usd
                 copied_invocation.duration_ms = source_invocation.duration_ms
                 copied_invocation.trace_span_id = source_invocation.trace_span_id
                 copied_invocation.started_at = source_invocation.started_at
@@ -718,9 +708,7 @@ class RunService:
         trace_id: str | None,
     ) -> None:
         total_tokens = int(run.inherited_tokens or 0)
-        total_cost = Decimal(run.inherited_cost_usd or 0)
         executed_tokens = 0
-        executed_cost = Decimal("0")
 
         for step in plan.steps:
             if step.index < run.resume_step_index:
@@ -730,13 +718,12 @@ class RunService:
             self._assert_planned_invocations_exist(run_id=run.id, step=step)
             _ = self.run_step_repository.mark_running(run_step)
             self.session.commit()
-            step_slot_outputs, step_tokens, step_cost, fatal_error = await self._execute_step(
+            step_slot_outputs, step_tokens, fatal_error = await self._execute_step(
                 run=run,
                 plan=plan,
                 step=step,
                 initial_input=run.input,
                 slot_outputs=slot_outputs,
-                current_total_cost=total_cost,
                 trace_id=trace_id,
             )
             if fatal_error is None:
@@ -744,15 +731,11 @@ class RunService:
             else:
                 _ = self.run_step_repository.persist_failure(run_step, error=fatal_error)
             executed_tokens += step_tokens
-            executed_cost += step_cost
             total_tokens += step_tokens
-            total_cost += step_cost
             self._sync_run_totals(
                 run,
                 total_tokens=total_tokens,
-                total_cost=total_cost,
                 executed_tokens=executed_tokens,
-                executed_cost=executed_cost,
             )
             self.session.commit()
             if fatal_error is not None:
@@ -773,9 +756,7 @@ class RunService:
         self._sync_run_totals(
             run,
             total_tokens=total_tokens,
-            total_cost=total_cost,
             executed_tokens=executed_tokens,
-            executed_cost=executed_cost,
         )
         if final_error is not None:
             run.status = _RUN_STATUS_FAILED
@@ -1077,7 +1058,6 @@ class RunService:
         failure: RunExecutionError,
         *,
         tokens: int,
-        cost_usd: Decimal,
         duration_ms: int | None,
         trace_span_id: str | None,
     ) -> None:
@@ -1087,7 +1067,6 @@ class RunService:
             error_message=failure.message,
             error_details=list(failure.details),
             tokens=tokens,
-            cost_usd=cost_usd,
             duration_ms=duration_ms,
             trace_span_id=trace_span_id,
         )
@@ -1122,19 +1101,13 @@ class RunService:
         run: Run,
         *,
         total_tokens: int,
-        total_cost: Decimal,
         executed_tokens: int,
-        executed_cost: Decimal,
     ) -> None:
         run.total_tokens = total_tokens
-        run.total_cost_usd = total_cost
         run.executed_tokens = executed_tokens
-        run.executed_cost_usd = executed_cost
         if run.source_run_id is None:
             run.inherited_tokens = 0
-            run.inherited_cost_usd = Decimal("0")
             run.total_tokens = executed_tokens
-            run.total_cost_usd = executed_cost
 
     def _resolve_final_output(
         self,
@@ -1161,9 +1134,8 @@ class RunService:
         step: ExecutionPlanStep,
         initial_input: dict[str, Any],
         slot_outputs: dict[tuple[int, str], Any],
-        current_total_cost: Decimal,
         trace_id: str | None,
-    ) -> tuple[dict[str, Any], int, Decimal, str | None]:
+    ) -> tuple[dict[str, Any], int, str | None]:
         step_index = step.index
         prepared_invocations: list[_PreparedAgentInvocation] = []
         step_slot_outputs: dict[str, Any] = {}
@@ -1194,7 +1166,6 @@ class RunService:
                     invocation,
                     failure,
                     tokens=0,
-                    cost_usd=Decimal("0"),
                     duration_ms=None,
                     trace_span_id=failure.trace_span_id,
                 )
@@ -1219,7 +1190,6 @@ class RunService:
         )
 
         step_tokens = 0
-        step_cost = Decimal("0")
         for index, prepared in enumerate(prepared_invocations):
             result = results[index]
             if isinstance(result, Exception):
@@ -1228,7 +1198,6 @@ class RunService:
                     prepared.invocation,
                     failure,
                     tokens=0,
-                    cost_usd=Decimal("0"),
                     duration_ms=None,
                     trace_span_id=failure.trace_span_id,
                 )
@@ -1239,41 +1208,17 @@ class RunService:
 
             assert isinstance(result, RunAgentInvocationResult)
             step_tokens += result.tokens
-            step_cost += result.cost_usd
-            budget_failure = self._check_budget(
-                agent=prepared.agent,
-                aggregate_budget_usd=plan.aggregate_budget_usd,
-                agent_cost=result.cost_usd,
-                projected_total_cost=current_total_cost + step_cost,
-            )
-            if budget_failure is not None:
-                if budget_failure.trace_span_id is None:
-                    budget_failure.trace_span_id = result.trace_span_id
-                self._persist_failed_invocation(
-                    prepared.invocation,
-                    budget_failure,
-                    tokens=result.tokens,
-                    cost_usd=result.cost_usd,
-                    duration_ms=result.duration_ms,
-                    trace_span_id=result.trace_span_id,
-                )
-                step_slot_outputs[prepared.slot] = None
-                if fatal_error is None:
-                    fatal_error = budget_failure.message
-                continue
-
             _ = self.run_agent_invocation_repository.persist_success(
                 prepared.invocation,
                 output=result.output,
                 output_origin="executed",
                 tokens=result.tokens,
-                cost_usd=result.cost_usd,
                 duration_ms=result.duration_ms,
                 trace_span_id=result.trace_span_id,
             )
             step_slot_outputs[prepared.slot] = result.output
 
-        return step_slot_outputs, step_tokens, step_cost, fatal_error
+        return step_slot_outputs, step_tokens, fatal_error
 
     def _prepare_agent_invocation(
         self,
@@ -1605,7 +1550,6 @@ class RunService:
         return RunAgentInvocationResult(
             output=validated_output.model_dump(mode="json"),
             tokens=result.tokens,
-            cost_usd=result.cost_usd,
             duration_ms=result.duration_ms,
             trace_span_id=trace_span_id,
         )
@@ -1648,37 +1592,12 @@ class RunService:
     def _coerce_invocation_result(raw_result: Any) -> RunAgentInvocationResult:
         return normalize_agent_invocation_result(raw_result)
 
-    def _check_budget(
-        self,
-        *,
-        agent: Agent,
-        aggregate_budget_usd: Decimal,
-        agent_cost: Decimal,
-        projected_total_cost: Decimal,
-    ) -> RunExecutionError | None:
-        if agent_cost > agent.budget_usd:
-            budget_text = decimal_to_string(agent.budget_usd)
-            return RunExecutionError(
-                code="agent_budget_exceeded",
-                message=f"Agent {agent.key!r} exceeded its budget of {budget_text} USD",
-            )
-        if projected_total_cost > aggregate_budget_usd:
-            return RunExecutionError(
-                code="run_budget_exceeded",
-                message=(
-                    f"Run exceeded the workflow aggregate budget of "
-                    f"{decimal_to_string(aggregate_budget_usd)} USD"
-                ),
-            )
-        return None
-
     @staticmethod
     def _apply_failed_entry(
         entry: dict[str, Any],
         failure: RunExecutionError,
         *,
         tokens: int,
-        cost_usd: Decimal,
         duration_ms: int | None,
         trace_span_id: str | None,
     ) -> None:
@@ -1690,7 +1609,6 @@ class RunService:
         }
         entry["status"] = _RUN_STATUS_FAILED
         entry["tokens"] = tokens
-        entry["costUsd"] = decimal_to_string(cost_usd)
         entry["durationMs"] = duration_ms
         entry["traceSpanId"] = trace_span_id
 
@@ -1886,7 +1804,6 @@ class RunService:
             "error": error,
             "status": status,
             "tokens": 0,
-            "costUsd": decimal_to_string(Decimal("0")),
             "durationMs": None,
             "traceSpanId": None,
         }
@@ -1930,7 +1847,6 @@ class RunService:
                 "targetVersion": run.target_version,
                 "status": run.status,
                 "totalTokens": run.total_tokens,
-                "totalCostUsd": run.total_cost_usd,
                 "traceId": run.trace_id,
                 "queuedAt": run.queued_at,
                 "startedAt": run.started_at,
@@ -1954,11 +1870,8 @@ class RunService:
                 "finalOutput": run.final_output,
                 "status": run.status,
                 "totalTokens": run.total_tokens,
-                "totalCostUsd": run.total_cost_usd,
                 "inheritedTokens": run.inherited_tokens,
-                "inheritedCostUsd": run.inherited_cost_usd,
                 "executedTokens": run.executed_tokens,
-                "executedCostUsd": run.executed_cost_usd,
                 "traceId": run.trace_id,
                 "error": run.error,
                 "queuedAt": run.queued_at,
@@ -2061,7 +1974,6 @@ class RunService:
             "errorMessage": invocation.error_message,
             "errorDetails": invocation.error_details,
             "tokens": invocation.tokens,
-            "costUsd": invocation.cost_usd,
             "durationMs": invocation.duration_ms,
             "traceSpanId": invocation.trace_span_id,
             "sourceInvocationId": invocation.source_invocation_id,
