@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools import (
     FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
     FUNDAMENTALS_LOOKUP_TOOL_SPEC,
@@ -102,6 +103,7 @@ from app.services.capability_service import (
     REPORT_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
     REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    CapabilityService,
     RuntimeToolGrantError,
 )
 from app.services.market_data_service import MarketDataService
@@ -236,7 +238,7 @@ def _seed_runtime_tool_capability(
                 status="published",
                 name=f"{key} v1",
                 description="Runtime tool test capability.",
-                tool_grants=[{"tool": tool} for tool in tools],
+                tool_keys=list(tools),
             )
         )
         session.commit()
@@ -1730,6 +1732,46 @@ def test_tradingagents_runtime_guidance_discloses_provider_limitations() -> None
     assert guidance.count("data quality or provider limitations") >= 5
     assert "do not claim unavailable coverage" in guidance
     assert "do not present unsupported provider coverage" in guidance
+
+
+def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
+    session_factory: sessionmaker[Session],
+) -> None:
+    capability_key = "runtime_resolve_tool_keys"
+    _seed_runtime_tool_capability(
+        session_factory,
+        key=capability_key,
+        tools=[REPORT_LOOKUP_TOOL_KEY, POSITION_LOOKUP_TOOL_KEY],
+    )
+    capability_references: list[dict[str, object]] = [
+        {"capabilityKey": capability_key, "capabilityVersion": 1}
+    ]
+
+    with session_factory() as session:
+        service = CapabilityService(session, get_default_tool_catalog())
+        assert service.resolve_granted_tool_keys(capability_references) == {
+            REPORT_LOOKUP_TOOL_KEY,
+            POSITION_LOOKUP_TOOL_KEY,
+        }
+        service.require_report_lookup_grant(capability_references=capability_references)
+        service.require_position_lookup_grant(capability_references=capability_references)
+
+        capability = session.scalar(select(Capability).where(Capability.key == capability_key))
+        assert capability is not None
+        capability.tool_keys = ["ledger.stale.lookup"]
+        session.commit()
+
+        with pytest.raises(RuntimeToolGrantError) as exc_info:
+            service.require_report_lookup_grant(capability_references=capability_references)
+
+    assert exc_info.value.code == "capability_tool_keys_invalid"
+    assert "stale or invalid tool keys" in exc_info.value.message
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.0",
+            "issue": "Unknown server-declared tool 'ledger.stale.lookup'",
+        }
+    ]
 
 
 def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsing() -> None:

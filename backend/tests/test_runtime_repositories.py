@@ -37,7 +37,7 @@ def _build_skill(*, key: str, version: int, status: str) -> Capability:
         status=status,
         name=f"{key}-{version}",
         description="Capability description",
-        tool_grants=[{"tool": f"{key}.lookup"}],
+        tool_keys=[f"{key}.lookup"],
     )
 
 

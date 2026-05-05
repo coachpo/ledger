@@ -205,7 +205,7 @@ def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Ca
         status=status,
         name=f"{key}-{version}",
         description="Capability toolset",
-        tool_grants=[{"tool": tool} for tool in tools],
+        tool_keys=list(tools),
     )
 
 

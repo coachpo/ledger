@@ -143,7 +143,7 @@ def _ensure_memory_write_capability(session: Session) -> None:
             status="published",
             name="Memory Report Test Writer",
             description="Grants report-memory writes in tests.",
-            tool_grants=[{"tool": REPORT_MEMORY_WRITE_TOOL_KEY}],
+            tool_keys=[REPORT_MEMORY_WRITE_TOOL_KEY],
         )
     )
     session.commit()
@@ -694,7 +694,7 @@ def test_report_memory_service_create_pending_report_requires_write_grant(
                 status="published",
                 name="Read Only Memory Report Capability",
                 description="Does not grant memory writes.",
-                tool_grants=[{"tool": REPORT_LOOKUP_TOOL_KEY}],
+                tool_keys=[REPORT_LOOKUP_TOOL_KEY],
             )
         )
         session.commit()

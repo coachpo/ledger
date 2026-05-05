@@ -55,7 +55,7 @@ def _build_agent_platform_skill(*, key: str, version: int, status: str) -> Capab
         status=status,
         name=f"{key}-{version}",
         description="Capability toolset",
-        tool_grants=[{"tool": "ledger.market_data.quote_lookup"}],
+        tool_keys=["ledger.market_data.quote_lookup"],
     )
 
 

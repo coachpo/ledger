@@ -61,7 +61,7 @@ def _build_capability(*, key: str, version: int, status: str) -> Capability:
         status=status,
         name=f"{key}-{version}",
         description="Toolset description",
-        tool_grants=[{"tool": f"{key}.lookup"}],
+        tool_keys=[f"{key}.lookup"],
     )
 
 
