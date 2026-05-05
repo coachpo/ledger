@@ -352,11 +352,8 @@ $$,
                 resume_step_index INTEGER NOT NULL DEFAULT 1,
                 final_output JSONB,
                 total_tokens INTEGER NOT NULL DEFAULT 0,
-                total_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 inherited_tokens INTEGER NOT NULL DEFAULT 0,
-                inherited_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 executed_tokens INTEGER NOT NULL DEFAULT 0,
-                executed_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 trace_id VARCHAR(255),
                 error TEXT,
                 queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -374,11 +371,8 @@ $$,
                     forked_from_step_index IS NULL OR forked_from_step_index > 0
                 ),
                 CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0),
-                CONSTRAINT ck_runs_total_cost_non_negative CHECK (total_cost_usd >= 0),
                 CONSTRAINT ck_runs_inherited_tokens_non_negative CHECK (inherited_tokens >= 0),
-                CONSTRAINT ck_runs_inherited_cost_non_negative CHECK (inherited_cost_usd >= 0),
-                CONSTRAINT ck_runs_executed_tokens_non_negative CHECK (executed_tokens >= 0),
-                CONSTRAINT ck_runs_executed_cost_non_negative CHECK (executed_cost_usd >= 0)
+                CONSTRAINT ck_runs_executed_tokens_non_negative CHECK (executed_tokens >= 0)
             )
             """,
             "CREATE INDEX IF NOT EXISTS ix_runs_status ON runs (status)",
@@ -465,7 +459,6 @@ $$,
                 error_message TEXT,
                 error_details JSONB NOT NULL DEFAULT '[]'::jsonb,
                 tokens INTEGER NOT NULL DEFAULT 0,
-                cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 duration_ms INTEGER,
                 trace_span_id VARCHAR(255),
                 source_invocation_id INTEGER REFERENCES run_agent_invocations(id)
@@ -501,7 +494,6 @@ $$,
                     output_origin IS NULL OR output_origin IN ('executed', 'edited', 'copied')
                 ),
                 CONSTRAINT ck_run_agent_invocations_tokens_non_negative CHECK (tokens >= 0),
-                CONSTRAINT ck_run_agent_invocations_cost_non_negative CHECK (cost_usd >= 0),
                 CONSTRAINT ck_run_agent_invocations_duration_non_negative CHECK (
                     duration_ms IS NULL OR duration_ms >= 0
                 )
@@ -618,11 +610,8 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "resume_step_index",
             "final_output",
             "total_tokens",
-            "total_cost_usd",
             "inherited_tokens",
-            "inherited_cost_usd",
             "executed_tokens",
-            "executed_cost_usd",
             "trace_id",
             "error",
             "queued_at",
@@ -675,7 +664,6 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "error_message",
             "error_details",
             "tokens",
-            "cost_usd",
             "duration_ms",
             "trace_span_id",
             "source_invocation_id",
@@ -1517,6 +1505,61 @@ def _remove_dead_agent_runtime_fields(engine: Engine, table_names: set[str]) -> 
             connection.exec_driver_sql("ALTER TABLE agents DROP COLUMN IF EXISTS streaming CASCADE")
 
 
+def _remove_run_cost_columns(engine: Engine, table_names: set[str]) -> None:
+    cost_word = "cost"
+    currency_suffix = "usd"
+    run_scopes = ("total", "inherited", "executed")
+    run_column_names = tuple(f"{scope}_{cost_word}_{currency_suffix}" for scope in run_scopes)
+    run_constraint_names = tuple(
+        f"ck_runs_{scope}_{cost_word}_non_negative" for scope in run_scopes
+    )
+    invocation_column_name = f"{cost_word}_{currency_suffix}"
+    invocation_constraint_name = f"ck_run_agent_invocations_{cost_word}_non_negative"
+
+    inspector = inspect(engine)
+    if "runs" in table_names:
+        run_columns = {column["name"] for column in inspector.get_columns("runs")}
+        run_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints("runs")
+            if constraint.get("name")
+        }
+        with engine.begin() as connection:
+            for constraint_name in run_constraint_names:
+                if constraint_name in run_constraints:
+                    _ = connection.exec_driver_sql(
+                        f"ALTER TABLE runs DROP CONSTRAINT IF EXISTS {constraint_name}"
+                    )
+            for column_name in run_column_names:
+                if column_name in run_columns:
+                    _ = connection.exec_driver_sql(
+                        f"ALTER TABLE runs DROP COLUMN IF EXISTS {column_name} CASCADE"
+                    )
+
+    if "run_agent_invocations" in table_names:
+        invocation_columns = {
+            column["name"] for column in inspector.get_columns("run_agent_invocations")
+        }
+        invocation_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints("run_agent_invocations")
+            if constraint.get("name")
+        }
+        with engine.begin() as connection:
+            if invocation_constraint_name in invocation_constraints:
+                statement = (
+                    "ALTER TABLE run_agent_invocations DROP CONSTRAINT IF EXISTS "
+                    + invocation_constraint_name
+                )
+                _ = connection.exec_driver_sql(statement)
+            if invocation_column_name in invocation_columns:
+                statement = (
+                    "ALTER TABLE run_agent_invocations DROP COLUMN IF EXISTS "
+                    + f"{invocation_column_name} CASCADE"
+                )
+                _ = connection.exec_driver_sql(statement)
+
+
 def _backfill_agent_model_connections(
     engine: Engine,
     table_names: set[str],
@@ -2022,9 +2065,11 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     if hard_cutover_required:
         _reset_agent_platform_runtime_tables(engine, table_names)
     _ensure_agent_platform_tables(engine, table_names)
+    _remove_run_cost_columns(engine, table_names)
     if not hard_cutover_required and _agent_platform_hard_cutover_required(engine, table_names):
         _reset_agent_platform_runtime_tables(engine, table_names)
         _ensure_agent_platform_tables(engine, table_names)
+        _remove_run_cost_columns(engine, table_names)
     _ensure_model_connection_key_support(engine, table_names)
     _ensure_model_connection_reasoning_effort_support(engine, table_names)
     _ensure_model_connection_api_style_support(engine, table_names)

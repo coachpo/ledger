@@ -86,11 +86,8 @@ _RUN_HEADER_COLUMNS = {
     "resume_step_index",
     "final_output",
     "total_tokens",
-    "total_cost_usd",
     "inherited_tokens",
-    "inherited_cost_usd",
     "executed_tokens",
-    "executed_cost_usd",
     "trace_id",
     "error",
     "queued_at",
@@ -141,7 +138,6 @@ _RUN_AGENT_INVOCATION_COLUMNS = {
     "error_message",
     "error_details",
     "tokens",
-    "cost_usd",
     "duration_ms",
     "trace_span_id",
     "source_invocation_id",
@@ -151,6 +147,18 @@ _RUN_AGENT_INVOCATION_COLUMNS = {
     "created_at",
     "updated_at",
 }
+_RUNTIME_COST_WORD = "cost"
+_RUNTIME_COST_CURRENCY = "usd"
+_RUN_COST_COLUMNS = tuple(
+    f"{scope}_{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
+    for scope in ("total", "inherited", "executed")
+)
+_RUN_COST_CHECKS = tuple(
+    f"ck_runs_{scope}_{_RUNTIME_COST_WORD}_non_negative"
+    for scope in ("total", "inherited", "executed")
+)
+_INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
+_INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -805,9 +813,13 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     }
 
     assert _RUN_HEADER_COLUMNS <= set(run_columns)
-    assert {"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(
-        run_columns
-    )
+    assert {
+        "workflow_id",
+        "workflow_key",
+        "workflow_version",
+        "per_step_outputs",
+        *_RUN_COST_COLUMNS,
+    }.isdisjoint(run_columns)
     assert run_columns["source_run_id"]["nullable"] is True
     assert run_columns["lineage_root_run_id"]["nullable"] is True
     assert run_columns["resume_step_index"]["nullable"] is False
@@ -828,12 +840,10 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ck_runs_resume_step_index_positive",
         "ck_runs_forked_from_step_index_positive",
         "ck_runs_total_tokens_non_negative",
-        "ck_runs_total_cost_non_negative",
         "ck_runs_inherited_tokens_non_negative",
-        "ck_runs_inherited_cost_non_negative",
         "ck_runs_executed_tokens_non_negative",
-        "ck_runs_executed_cost_non_negative",
     } <= run_checks
+    assert set(_RUN_COST_CHECKS).isdisjoint(run_checks)
     assert (("source_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
 
@@ -857,6 +867,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("source_run_id",), "runs", "SET NULL") in run_step_foreign_keys
 
     assert _RUN_AGENT_INVOCATION_COLUMNS <= set(invocation_columns)
+    assert _INVOCATION_COST_COLUMN not in invocation_columns
     assert invocation_columns["run_step_id"]["nullable"] is False
     assert invocation_columns["run_id"]["nullable"] is False
     assert invocation_columns["slot"]["nullable"] is False
@@ -878,9 +889,9 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ck_run_agent_invocations_resolved_input_origin",
         "ck_run_agent_invocations_output_origin",
         "ck_run_agent_invocations_tokens_non_negative",
-        "ck_run_agent_invocations_cost_non_negative",
         "ck_run_agent_invocations_duration_non_negative",
     } <= invocation_checks
+    assert _INVOCATION_COST_CHECK not in invocation_checks
     assert "uq_run_agent_invocations_step_slot" in invocation_unique_constraints
     assert (("run_step_id",), "run_steps", "CASCADE") in invocation_foreign_keys
     assert (("run_id",), "runs", "CASCADE") in invocation_foreign_keys
@@ -982,6 +993,130 @@ def test_init_db_creates_agent_platform_tables_and_drops_legacy_backend_tables(
         assert "capabilities" in agent_columns
         assert "skills" not in agent_columns
         _assert_runtime_execution_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            for column_name in _RUN_COST_COLUMNS:
+                _ = connection.exec_driver_sql(
+                    f"ALTER TABLE runs ADD COLUMN {column_name} NUMERIC(20, 8) NOT NULL DEFAULT 0"
+                )
+            for column_name, constraint_name in zip(
+                _RUN_COST_COLUMNS,
+                _RUN_COST_CHECKS,
+                strict=True,
+            ):
+                _ = connection.exec_driver_sql(
+                    f"ALTER TABLE runs ADD CONSTRAINT {constraint_name} CHECK ({column_name} >= 0)"
+                )
+            statement = (
+                "ALTER TABLE run_agent_invocations ADD COLUMN "
+                + f"{_INVOCATION_COST_COLUMN} NUMERIC(20, 8) NOT NULL DEFAULT 0"
+            )
+            _ = connection.exec_driver_sql(statement)
+            statement = (
+                "ALTER TABLE run_agent_invocations ADD CONSTRAINT "
+                + f"{_INVOCATION_COST_CHECK} CHECK ({_INVOCATION_COST_COLUMN} >= 0)"
+            )
+            _ = connection.exec_driver_sql(statement)
+
+            run_cost_columns_sql = ", ".join(_RUN_COST_COLUMNS)
+            run_cost_placeholders_sql = ", ".join(
+                f":run_legacy_amount_{index}" for index, _ in enumerate(_RUN_COST_COLUMNS)
+            )
+            run_id = connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, input, status, "
+                    "total_tokens, inherited_tokens, executed_tokens, "
+                    f"{run_cost_columns_sql}"
+                    ") VALUES ("
+                    "'workflow', 42, 'legacy_cost_workflow', 1, '{}'::jsonb, 'succeeded', "
+                    "17, 5, 12, "
+                    f"{run_cost_placeholders_sql}"
+                    ") RETURNING id"
+                ),
+                {
+                    f"run_legacy_amount_{index}": index + 1
+                    for index, _ in enumerate(_RUN_COST_COLUMNS)
+                },
+            ).scalar_one()
+            step_id = connection.execute(
+                text(
+                    "INSERT INTO run_steps (run_id, step_index, status, origin, persisted_at) "
+                    "VALUES (:run_id, 1, 'succeeded', 'planned', NOW()) RETURNING id"
+                ),
+                {"run_id": run_id},
+            ).scalar_one()
+            invocation_id = connection.execute(
+                text(
+                    "INSERT INTO run_agent_invocations ("
+                    "run_step_id, run_id, step_index, slot, position, agent_id, agent_key, "
+                    "agent_version, output_schema_id, output_schema_version, status, "
+                    "resolved_input, tokens, "
+                    f"{_INVOCATION_COST_COLUMN}"
+                    ") VALUES ("
+                    ":step_id, :run_id, 1, 'review', 0, 7, 'legacy_cost_agent', "
+                    "1, 1, 1, 'succeeded', '{}'::jsonb, 19, :invocation_legacy_amount"
+                    ") RETURNING id"
+                ),
+                {"invocation_legacy_amount": 4, "run_id": run_id, "step_id": step_id},
+            ).scalar_one()
+
+        init_db(database_url)
+        init_db(database_url)
+
+        inspector = inspect(engine)
+        run_columns = {column["name"] for column in inspector.get_columns("runs")}
+        invocation_columns = {
+            column["name"] for column in inspector.get_columns("run_agent_invocations")
+        }
+        run_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints("runs")
+            if constraint.get("name")
+        }
+        invocation_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints("run_agent_invocations")
+            if constraint.get("name")
+        }
+        with engine.connect() as connection:
+            runtime_counts = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM runs), "
+                    "(SELECT COUNT(*) FROM run_steps), "
+                    "(SELECT COUNT(*) FROM run_agent_invocations)"
+                )
+            ).one()
+            preserved_run = connection.execute(
+                text("SELECT target_key, status, total_tokens FROM runs WHERE id = :run_id"),
+                {"run_id": run_id},
+            ).one()
+            preserved_invocation = connection.execute(
+                text(
+                    "SELECT agent_key, status, tokens "
+                    "FROM run_agent_invocations WHERE id = :invocation_id"
+                ),
+                {"invocation_id": invocation_id},
+            ).one()
+
+        assert runtime_counts == (1, 1, 1)
+        assert preserved_run == ("legacy_cost_workflow", "succeeded", 17)
+        assert preserved_invocation == ("legacy_cost_agent", "succeeded", 19)
+        assert set(_RUN_COST_COLUMNS).isdisjoint(run_columns)
+        assert _INVOCATION_COST_COLUMN not in invocation_columns
+        assert set(_RUN_COST_CHECKS).isdisjoint(run_constraints)
+        assert _INVOCATION_COST_CHECK not in invocation_constraints
     finally:
         engine.dispose()
 
@@ -1838,7 +1973,6 @@ def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
                     final_output JSONB,
                     status VARCHAR(20) NOT NULL DEFAULT 'running',
                     total_tokens INTEGER NOT NULL DEFAULT 0,
-                    total_cost_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                     trace_id VARCHAR(255),
                     error TEXT,
                     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1849,8 +1983,7 @@ def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
                         status IN ('running', 'succeeded', 'failed')
                     ),
                     CONSTRAINT ck_runs_workflow_version_positive CHECK (workflow_version > 0),
-                    CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0),
-                    CONSTRAINT ck_runs_total_cost_non_negative CHECK (total_cost_usd >= 0)
+                    CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0)
                 )
                 """
             )
@@ -1877,11 +2010,11 @@ def test_init_db_hard_cutover_recreates_legacy_runs_and_partial_runtime_tables(
                     "INSERT INTO runs ("
                     "workflow_id, workflow_key, workflow_version, target_kind, target_id, "
                     "target_key, target_version, input, per_step_outputs, final_output, status, "
-                    "total_tokens, total_cost_usd, trace_id"
+                    "total_tokens, trace_id"
                     ") VALUES ("
                     "7, 'market_review', 3, 'agent', 9, 'different_target', 4, "
                     "'{}'::jsonb, '{}'::jsonb, '{\"headline\":\"Buy\"}'::jsonb, "
-                    "'succeeded', 321, 0.15, 'trace-legacy-run'"
+                    "'succeeded', 321, 'trace-legacy-run'"
                     ") RETURNING id"
                 )
             ).scalar_one()
