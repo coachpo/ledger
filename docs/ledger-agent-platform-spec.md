@@ -1,6 +1,6 @@
 # Ledger Agent Platform Functional Spec
 
-> Status: Live functional spec as of 2026-05-04 (`b4ac445`).
+> Status: Live functional spec as of 2026-05-05 (`a8ad8fb`).
 
 ## Scope
 
@@ -44,9 +44,9 @@ This document describes the shipped platform surface in this repository, not the
 
 - Workflows are YAML-authored, versioned records with pinned refs and launch metadata.
 - Launch creation accepts `{version, parameters}` and queues a persisted run.
-- Runs expose status, inputs, per-step outputs, final output, timing, cost, trace ids, reruns, and step replays.
+- Runs expose status, inputs, per-step outputs, agent invocations, final output, timing, token usage, trace ids, reruns, and step replays.
 
 ## Acceptance Baseline
 
 - Agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs are authorable from current browser routes.
-- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, simulation, backtest, and runtime-v2 routes are not part of the shipped contract.
+- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, simulation, backtest, and runtime-v2 routes are rejected or absent, not hidden live routes.

@@ -1,6 +1,6 @@
 # Ledger Agent Platform UI Spec
 
-> Status: Live UI reference as of 2026-05-04 (`b4ac445`).
+> Status: Live UI reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Shell And Navigation
 

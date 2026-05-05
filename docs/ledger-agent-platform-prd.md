@@ -1,6 +1,6 @@
 # Ledger Agent Platform PRD
 
-> Status: Live agent-platform product reference as of 2026-05-04 (`b4ac445`).
+> Status: Live agent-platform product reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Summary
 
@@ -14,7 +14,7 @@ Ledger ships a stateless, UI-driven agent platform beside the preserved portfoli
 - Model connections: saved OpenAI-family provider endpoints, encrypted secrets, secret-safe reads, and connection tests.
 - Output schemas: schema composer, JSON schema editing, preview, validation, and runtime compilation.
 - Workflows: YAML workflow manifests, versioning, launch metadata, launches, and run creation.
-- Runs: list/detail, status, per-step output, final output, cost/timing totals, trace ids, reruns, and step replays.
+- Runs: list/detail, status, per-step output, final output, token/timing totals, trace ids, reruns, and step replays.
 
 ## Goals
 
