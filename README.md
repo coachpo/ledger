@@ -18,9 +18,9 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 ## Capability Contract
 
-Capabilities are the canonical product and API term for agent tool-grant configuration. `/api/capabilities` returns Capability-shaped payloads with `toolGrants`.
+Capabilities are the canonical product and API term for agent tool access configuration. `/api/capabilities` write payloads use `toolKeys`; read payloads include both `toolKeys` and read-only resolved `tools` metadata.
 
-Legacy Skill contracts are unsupported after the hard cutover. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must use `toolGrants`. Runtime tool grant keys and OpenAI function names stay unchanged.
+Legacy Skill contracts are unsupported after the hard cutover. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must not use `spec.skills`, `toolGrants`, or `toolDefinitions`. Runtime tool keys and OpenAI function names stay unchanged.
 
 ## Prerequisites
 
