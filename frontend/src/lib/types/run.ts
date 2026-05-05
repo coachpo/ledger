@@ -66,7 +66,6 @@ export interface RunAgentInvocationRead {
   errorMessage: string | null;
   errorDetails: UnknownRecord[];
   tokens: number;
-  costUsd: string;
   durationMs: number | null;
   traceSpanId: string | null;
   sourceInvocationId: number | null;
@@ -107,7 +106,6 @@ export interface RunListItemRead extends RunTargetIdentityRead {
   id: number;
   status: RunStatus;
   totalTokens: number;
-  totalCostUsd: string;
   traceId: string | null;
   queuedAt: string;
   startedAt: string | null;
@@ -128,11 +126,8 @@ export interface RunRead extends RunTargetIdentityRead {
   finalOutput: unknown | null;
   status: RunStatus;
   totalTokens: number;
-  totalCostUsd: string;
   inheritedTokens: number;
-  inheritedCostUsd: string;
   executedTokens: number;
-  executedCostUsd: string;
   traceId: string | null;
   error: string | null;
   queuedAt: string;

@@ -734,7 +734,6 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
             { label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> },
             { label: "Graph node", value: graphMetadataLabel(invocation.graphMetadata) },
             { label: "Tokens", value: invocation.tokens },
-            { label: "Cost", value: invocation.costUsd },
             { label: "Duration", value: formatDuration(invocation.durationMs) },
             {
               label: "Trace span",
@@ -1028,11 +1027,8 @@ export function RunsDetailPage() {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 text-sm text-muted-foreground">
             <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Total tokens: {run.totalTokens}</p>
-            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Total cost: {run.totalCostUsd}</p>
             <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Inherited tokens: {run.inheritedTokens}</p>
-            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Inherited cost: {run.inheritedCostUsd}</p>
             <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Executed tokens: {run.executedTokens}</p>
-            <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Executed cost: {run.executedCostUsd}</p>
           </CardContent>
         </Card>
         <Card>

@@ -39,7 +39,6 @@ function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAg
     agentId: 11,
     agentKey: "research_agent",
     agentVersion: 3,
-    costUsd: "0.02000000",
     createdAt: NOW,
     durationMs: 8,
     errorCode: null,
@@ -99,13 +98,11 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
   return {
     createdAt: NOW,
     error: null,
-    executedCostUsd: "0.05000000",
     executedTokens: 51,
     finalOutput: { summary: "All clear" },
     finishedAt: "2026-04-20T10:00:04Z",
     replayStepIndex: null,
     id: 42,
-    inheritedCostUsd: "0.00000000",
     inheritedTokens: 0,
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
@@ -120,7 +117,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     targetKey: "market_review",
     targetKind: "workflow",
     targetVersion: 2,
-    totalCostUsd: "0.05000000",
     totalTokens: 51,
     traceId: "trace-42",
     updatedAt: "2026-04-20T10:00:04Z",
@@ -233,7 +229,6 @@ describe("RunsDetailPage", () => {
       agentId: 12,
       agentKey: "consumer_agent",
       agentVersion: 2,
-      costUsd: "0.03000000",
       durationMs: 12,
       errorCode: "model_error",
       errorDetails: [{ type: "rate_limit" }],
@@ -251,11 +246,9 @@ describe("RunsDetailPage", () => {
       traceSpanId: "span-2",
     });
     const run = buildRun({
-      executedCostUsd: "0.03000000",
       executedTokens: 30,
       finalOutput: { summary: "All clear", source: "normalized" },
       replayStepIndex: 1,
-      inheritedCostUsd: "0.02000000",
       inheritedTokens: 21,
       lineageRootRunId: 40,
       resumeStepIndex: 2,
@@ -292,6 +285,12 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(
       /trace-42 -> step 1\/analysis\/span-1 -> step 2\/decision\/span-2/i,
     );
+    expect(screen.getByText(/total tokens: 51/i)).toBeVisible();
+    expect(screen.getByText(/inherited tokens: 21/i)).toBeVisible();
+    expect(screen.getByText(/executed tokens: 30/i)).toBeVisible();
+    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
 
     const lineage = screen.getByTestId("runs-lineage-summary");
     expect(within(lineage).getByRole("link", { name: /run #41/i })).toHaveAttribute("href", "/runs/41");
@@ -309,8 +308,12 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-step-1-slot-analysis")).toHaveTextContent(/output copied/i);
     expect(screen.getByRole("link", { name: /invocation #501/i })).toHaveAttribute("href", "/runs/41#invocation-501");
 
-    expect(screen.getByTestId("runs-step-2-slot-decision")).toHaveTextContent(/input derived/i);
-    expect(screen.getByTestId("runs-step-2-slot-decision")).toHaveTextContent(/output pending/i);
+    const failedInvocationCard = screen.getByTestId("runs-step-2-slot-decision");
+    expect(failedInvocationCard).toHaveTextContent(/input derived/i);
+    expect(failedInvocationCard).toHaveTextContent(/output pending/i);
+    expect(failedInvocationCard).toHaveTextContent(/tokens/i);
+    expect(failedInvocationCard).toHaveTextContent(/30/i);
+    expect(within(failedInvocationCard).queryByText(/^Cost$/i)).not.toBeInTheDocument();
     expect(screen.getByText("model_error")).toBeVisible();
     expect(screen.getByText("Provider failed")).toBeVisible();
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
@@ -449,7 +452,6 @@ describe("RunsDetailPage", () => {
                   agentId: 20,
                   agentKey: "macro_agent",
                   agentVersion: 9,
-                  costUsd: "0.01500000",
                   id: 2001,
                   output: { summary: "Macro complete" },
                   outputSchemaId: 31,
@@ -470,7 +472,6 @@ describe("RunsDetailPage", () => {
           targetKey: "macro_agent",
           targetKind: "agent",
           targetVersion: 9,
-          totalCostUsd: "0.01500000",
           totalTokens: 18,
           traceId: null,
         }),
