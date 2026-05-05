@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference as of 2026-05-04 (`b4ac445`).
+> Status: Live requirements reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Purpose
 
@@ -52,7 +52,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Model connections must preserve or replace stored secrets safely and never return raw secrets in read payloads.
 - Output schemas must validate against the supported schema subset before save and before runtime use.
 - Workflow launches must use the strict `{version, parameters}` envelope and create queued runs.
-- Runs must expose input, per-step outputs, final output, status, timing, cost, trace ids, rerun metadata, and step replay metadata.
+- Runs must expose input, per-step outputs, final output, status, timing, token usage, trace ids, rerun metadata, and step replay metadata.
 
 ## Non-Functional Requirements
 

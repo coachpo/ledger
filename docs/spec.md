@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference as of 2026-05-04 (`b4ac445`).
+> Status: Live technical reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Overview
 
@@ -8,7 +8,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 ## Runtime Topology
 
-- Root startup is managed by `start.sh` with PostgreSQL `25432`, backend `28000`, and frontend `25173` defaults plus fallback ports.
+- Root startup is managed by `start.sh` with PostgreSQL `25432`, backend `28000`, and frontend `25173` defaults plus fallback ports `25433/25434`, `28001/28002`, and `25174`.
 - Manual backend startup expects PostgreSQL from `backend/docker-compose.yml`, which defines only the `db` service.
 - Playwright starts dedicated E2E servers on backend `8001` and frontend `4173` through frontend startup scripts.
 - Backend requires Python 3.13+, frontend targets Node 24 and pnpm 10.
@@ -25,7 +25,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, and report services own preserved product behavior.
 - Agent, capability, MCP server, model connection, output schema, workflow, and run services own platform CRUD, validation, and execution.
-- Runtime tool and MCP boundaries live under `backend/app/agents/`; service code grants and dispatches them.
+- Runtime tool and MCP boundaries live under `backend/app/agents/`; service code grants and dispatches native tools plus frozen MCP tool snapshots.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
 ## Frontend Architecture
@@ -40,10 +40,10 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 - Capabilities are canonical. Use `/api/capabilities`, `/capabilities*`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, and `CapabilityService` terminology.
 - Legacy `spec.skills`, `/api/skills`, and `/skills*` are rejected/retired contracts.
-- MCP server configs must stay inside security boundaries and runtime snapshots.
+- MCP server configs must stay inside security boundaries, exact version pins, frozen runtime snapshots, and redacted/truncated output handling.
 - Model connections own provider endpoint/key/default runtime settings and preserve secret-safe behavior.
 - Output schemas compile into runtime models through the backend compiler before execution.
-- Runs persist enough detail for the run monitor without relying on an external tracing system.
+- Runs persist lineage in `runs`, `run_steps`, and `run_agent_invocations` without relying on an external tracing system.
 
 ## Data Flow Highlights
 
@@ -58,7 +58,8 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 ## CI And Verification
 
+- `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Backend CI runs ruff, black, isort, mypy, and pytest after `uv sync --frozen`.
 - Frontend CI runs lint, typecheck, build, unit tests, and Playwright after `pnpm install --frozen-lockfile`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR.
-- Cleanup keeps recent workflow runs and removes untagged backend/frontend package versions.
+- Cleanup keeps at least 3 recent workflow runs and removes untagged backend/frontend package versions.

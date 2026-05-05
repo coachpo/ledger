@@ -1,6 +1,6 @@
 # Run Input Schema Help Text
 
-> Status: Live runtime-input help text as of 2026-05-04 (`b4ac445`).
+> Status: Live runtime-input help text as of 2026-05-05 (`a8ad8fb`).
 
 Agent and workflow run input schemas can include optional `title` and `description` fields on supported JSON Schema nodes. These fields are display metadata for generated forms.
 

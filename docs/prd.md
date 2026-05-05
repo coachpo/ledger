@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference as of 2026-05-04 (`b4ac445`).
+> Status: Live product-scope reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Product Summary
 
@@ -12,7 +12,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 - Let users author reusable text templates and compile them against live portfolio, report, and runtime-input data.
 - Preserve point-in-time markdown reports that can be generated, uploaded, edited, filtered, and downloaded by slug.
 - Let users configure agents, capabilities, MCP servers, model connections, output schemas, and workflows without code changes.
-- Persist workflow runs with inspectable inputs, per-step outputs, final output, status, timing, cost, and trace-linkage metadata.
+- Persist workflow runs with inspectable inputs, per-step outputs, final output, status, timing, token usage, and trace-linkage metadata.
 - Keep local persistence authoritative when quote providers, model providers, or tracing systems are unavailable.
 
 ## Non-Goals
