@@ -53,7 +53,6 @@ const workflowRun = {
   targetKey: "market_review",
   targetKind: "workflow",
   targetVersion: 2,
-  totalCostUsd: "0.00000000",
   totalTokens: 0,
   traceId: null,
 };
@@ -148,6 +147,8 @@ describe("workflow route pages", () => {
     expect(screen.getByTestId("workflow-detail-page")).toHaveTextContent("Market Review");
     expect(screen.getByTestId("workflow-run-history")).toHaveTextContent("Run #904");
     expect(screen.getByTestId("workflow-run-history-row-904")).toHaveTextContent("queued");
+    expect(screen.getByTestId("workflow-run-history-row-904")).toHaveTextContent(/total tokens: 0/i);
+    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
     expect(useRunsMock).toHaveBeenCalledWith(
       { limit: 20, targetId: 88, targetKind: "workflow" },
       { refetchInterval: 2000 },

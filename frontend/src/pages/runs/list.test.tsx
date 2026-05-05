@@ -38,7 +38,6 @@ describe("RunsListPage", () => {
             targetKey: "queued_review",
             targetKind: "workflow",
             targetVersion: 1,
-            totalCostUsd: "0.00000000",
             totalTokens: 0,
             traceId: null,
           },
@@ -52,7 +51,6 @@ describe("RunsListPage", () => {
             targetKey: "market_review",
             targetKind: "workflow",
             targetVersion: 2,
-            totalCostUsd: "0.02000000",
             totalTokens: 21,
             traceId: "trace-15",
           },
@@ -66,7 +64,6 @@ describe("RunsListPage", () => {
             targetKey: "macro_agent",
             targetKind: "agent",
             targetVersion: 9,
-            totalCostUsd: "0.01500000",
             totalTokens: 13,
             traceId: "trace-16",
           },
@@ -99,6 +96,10 @@ describe("RunsListPage", () => {
       "/workflows/41",
     );
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/total tokens: 0/i);
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/total tokens: 21/i);
+    expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/total tokens: 13/i);
+    expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
 
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/awaiting execution/i);
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/0%/i);

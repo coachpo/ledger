@@ -186,7 +186,6 @@ export function WorkflowDetailPage() {
                     <Progress value={progressForStatus(run.status)} />
                     <div className="grid gap-3 md:grid-cols-2">
                       <div className="rounded-md border border-border p-3">Total tokens: {run.totalTokens}</div>
-                      <div className="rounded-md border border-border p-3">Total cost: {run.totalCostUsd}</div>
                     </div>
                   </div>
                 </div>

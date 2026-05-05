@@ -77,7 +77,7 @@ export function RunsListPage() {
           <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
           <p className="text-sm text-muted-foreground">
             Monitor recent agent and workflow executions with live status, target identity,
-            total token/cost summaries, and direct links into per-run detail.
+            total token summaries, and direct links into per-run detail.
           </p>
         </div>
         <Button
@@ -216,7 +216,6 @@ export function RunsListPage() {
                       <span className="min-w-0 break-words">{`Agent id: ${run.targetId}`}</span>
                     )}
                     <span className="min-w-0 break-words">{`Total tokens: ${run.totalTokens}`}</span>
-                    <span className="min-w-0 break-words">{`Total cost: ${run.totalCostUsd}`}</span>
                   </div>
                   <div className="flex w-full flex-col gap-2">
                     <div className="flex items-center justify-between gap-3">
