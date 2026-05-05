@@ -4,7 +4,7 @@ FastAPI backend for Ledger’s portfolio, report, and current agent-platform sur
 
 ## Local Development
 
-For the easiest full-stack path, run `../start.sh` from the repo root.
+For the easiest full-stack path, run `../start.sh` from the repo root. It owns local DB/backend/frontend startup and can fall back to DB ports `25432/25433/25434`, backend ports `28000/28001/28002`, and frontend ports `25173/25174`.
 
 If you want the backend on its own:
 
@@ -61,7 +61,8 @@ docker compose down -v
 ## Notes
 
 - `app/db/upgrades.py` is the supported schema-repair path; `alembic/` is scaffolding only.
-- Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs` and forwards the current environment into that process.
+- Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
+- The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
 - `docs/` has live product, platform, API, data-model, test, and runtime-input references.
-- Root workflows also build linux/arm64 backend and frontend GHCR images and clean up old runs plus untagged packages.
+- Root workflows check `backend/VERSION` against `backend/pyproject.toml`, build linux/arm64 backend and frontend GHCR images, keep at least 3 workflow runs, and delete untagged backend/frontend packages.
 - For repo-wide setup, validation, and frontend wiring, see the root `README.md`.
