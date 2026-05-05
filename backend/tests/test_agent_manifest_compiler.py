@@ -56,7 +56,7 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
         status="published",
         name="SEC Filing Lookup",
         description="Looks up filings.",
-        tool_grants=[{"tool": "ledger.reports.lookup"}],
+        tool_keys=["ledger.reports.lookup"],
     )
     mcp_server = McpServer(
         key="market_data",
@@ -133,21 +133,21 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
         )
         for key, json_schema in schema_payloads.items()
     ]
-    capability_grants = {
+    capability_tool_keys = {
         "tradingagents_market_data": [
-            {"tool": "ledger.market_data.quote_lookup"},
-            {"tool": "ledger.market_data.history_lookup"},
-            {"tool": "ledger.market_data.ohlcv_lookup"},
-            {"tool": "ledger.indicators.lookup"},
+            "ledger.market_data.quote_lookup",
+            "ledger.market_data.history_lookup",
+            "ledger.market_data.ohlcv_lookup",
+            "ledger.indicators.lookup",
         ],
-        "tradingagents_fundamentals": [{"tool": "ledger.fundamentals.lookup"}],
+        "tradingagents_fundamentals": ["ledger.fundamentals.lookup"],
         "tradingagents_news": [
-            {"tool": "ledger.news.lookup"},
-            {"tool": "ledger.insider_data.lookup"},
+            "ledger.news.lookup",
+            "ledger.insider_data.lookup",
         ],
-        "ledger_reports": [{"tool": "ledger.reports.lookup"}],
-        "ledger_positions": [{"tool": "ledger.positions.lookup"}],
-        "tradingagents_memory": [{"tool": "ledger.reports.write"}],
+        "ledger_reports": ["ledger.reports.lookup"],
+        "ledger_positions": ["ledger.positions.lookup"],
+        "tradingagents_memory": ["ledger.reports.write"],
     }
     capabilities = [
         Capability(
@@ -156,9 +156,9 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
             status="published",
             name=key.replace("_", " ").title(),
             description=f"{key} capability for manifest compilation.",
-            tool_grants=tool_grants,
+            tool_keys=tool_keys,
         )
-        for key, tool_grants in capability_grants.items()
+        for key, tool_keys in capability_tool_keys.items()
     ]
     session.add_all([connection, *output_schemas, *capabilities])
     session.commit()
