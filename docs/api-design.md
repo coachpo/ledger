@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Live API reference as of 2026-05-04 (`b4ac445`).
+> Status: Live API reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Conventions
 
@@ -19,12 +19,12 @@
 |---|---|
 | Portfolios | `GET/POST /api/v1/portfolios`, `GET/PATCH/DELETE /api/v1/portfolios/{portfolioId}` |
 | Balances | `GET/POST /api/v1/portfolios/{portfolioId}/balances`, `PATCH/DELETE /api/v1/portfolios/{portfolioId}/balances/{balanceId}` |
-| Positions | `GET/POST /api/v1/portfolios/{portfolioId}/positions`, `GET /positions/lookup`, `PATCH/DELETE /positions/{positionId}` |
+| Positions | `GET/POST /api/v1/portfolios/{portfolioId}/positions`, `GET /api/v1/portfolios/{portfolioId}/positions/lookup`, `PATCH/DELETE /api/v1/portfolios/{portfolioId}/positions/{positionId}` |
 | CSV import | `POST /api/v1/portfolios/{portfolioId}/positions/imports/preview`, `POST /api/v1/portfolios/{portfolioId}/positions/imports/commit` |
 | Trading operations | `GET/POST /api/v1/portfolios/{portfolioId}/trading-operations` |
-| Market data | `GET /api/v1/market-data/quotes`, `GET /api/v1/market-data/history` |
-| Templates | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{templateId}`, `POST /api/v1/templates/compile`, `POST /api/v1/templates/{templateId}/compile`, `GET /api/v1/templates/placeholders` |
-| Reports | `GET/POST /api/v1/reports`, `POST /api/v1/reports/compile`, `POST /api/v1/reports/upload`, `GET/PATCH/DELETE /api/v1/reports/{slug}`, `GET /api/v1/reports/{slug}/download` |
+| Market data | `GET /api/v1/portfolios/{portfolioId}/market-data/quotes`, `GET /api/v1/portfolios/{portfolioId}/market-data/history` |
+| Templates | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{templateId}`, `POST /api/v1/templates/compile`, `GET/POST /api/v1/templates/{templateId}/compile`, `GET /api/v1/templates/placeholders` |
+| Reports | `GET/POST /api/v1/reports`, `POST /api/v1/reports/compile/{templateId}`, `POST /api/v1/reports/upload`, `GET/PATCH/DELETE /api/v1/reports/{slug}`, `GET /api/v1/reports/{slug}/download` |
 
 Template/report series can be built by creating a template, previewing with `POST /api/v1/templates/{templateId}/compile`, then saving with `POST /api/v1/reports/compile/{templateId}`. Use the same series value in runtime inputs and report `metadata.tags` so placeholders like `reports.by_tag(inputs.analysis_tag).latest.content` resolve the latest prior report. Report `source` describes origin with canonical values `compiled`, `uploaded`, `external`, and `agent`; public JSON create remains true `external`, while agent-created memory reports use `agent`. For those memory reports, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, and server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 
