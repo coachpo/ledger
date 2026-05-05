@@ -18,7 +18,7 @@ app/agents/
 | Task | Location | Notes |
 |---|---|---|
 | Server-declared tools | `tool_catalog/server_declared.py` | canonical Ledger tool keys, names, descriptions |
-| Capability grant validation | `tool_catalog/__init__.py` | validates `toolGrants` against known server tools |
+| Capability tool-key validation | `tool_catalog/__init__.py` | validates `toolKeys` against known server tools |
 | Native registry | `runtime_tools/__init__.py`, `runtime_tools/registry.py` | OpenAI tool definitions and grant-checked dispatch |
 | Financial native tools | `runtime_tools/market_data.py`, `runtime_tools/positions.py`, `runtime_tools/reports.py` | quotes/history, positions, report lookup, memory-report writes |
 | MCP runtime | `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |

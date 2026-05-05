@@ -33,7 +33,7 @@
 - Do not omit indexes for frequently queried lookup paths.
 - Do not create relationships just for convenience when ids suffice.
 - Do not rename tables or columns casually; tests and upgrade helpers depend on them.
-- Do not document retired capability storage names as live behavior. The canonical persisted table is `capabilities`, agent capability grants are stored on `agents.capabilities`, and capability grant payloads use `tool_grants`.
+- Do not document retired capability storage names as live behavior. The canonical persisted table is `capabilities`, agent capability refs are stored on `agents.capabilities`, and capability tool-key storage uses `tool_keys`.
 
 ## VALIDATION
 ```bash
