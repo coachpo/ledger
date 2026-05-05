@@ -42,7 +42,7 @@ export function CapabilitiesListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Capabilities</h1>
           <p className="text-sm text-muted-foreground">
-            Manage reusable capability definitions and their tool grants for the
+            Manage reusable capability definitions and their tool keys for the
             primary workspace.
           </p>
         </div>
@@ -110,7 +110,7 @@ export function CapabilitiesListPage() {
               }
               metadata={
                 <p className="text-sm text-muted-foreground">
-                  {capability.toolGrants.length} tool grant(s)
+                  {(capability.tools?.length ?? capability.toolKeys.length)} tool(s)
                 </p>
               }
               actions={

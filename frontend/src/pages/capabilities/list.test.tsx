@@ -49,12 +49,26 @@ describe("CapabilitiesListPage", () => {
       data: {
         items: [
           {
+            createdAt: "2026-04-20T10:00:00Z",
+            description: "Condenses results.",
             id: 3,
             key: "summarize_capability",
             name: "Summarize Capability",
-            description: "Condenses results.",
-            toolGrants: [{ tool: "search_docs" }, { tool: "answer_user" }],
             status: "draft",
+            toolKeys: ["search_docs", "answer_user"],
+            tools: [
+              {
+                key: "search_docs",
+                displayName: "Search Docs",
+                description: "Search indexed documents.",
+              },
+              {
+                key: "answer_user",
+                displayName: "Answer User",
+                description: "Generate a final answer.",
+              },
+            ],
+            updatedAt: "2026-04-20T10:00:00Z",
             version: 2,
           },
         ],
@@ -71,7 +85,7 @@ describe("CapabilitiesListPage", () => {
     render(<CapabilitiesListPage />);
 
     expect(screen.getByTestId("capabilities-row-summarize_capability")).toBeVisible();
-    expect(screen.getByText(/2 tool grant/i)).toBeVisible();
+    expect(screen.getByText(/2 tool\(s\)/i)).toBeVisible();
 
     fireEvent.click(screen.getByTestId("capabilities-archive-summarize_capability"));
     await waitFor(() => expect(archiveCapabilityMock).toHaveBeenCalledWith(3));
