@@ -70,8 +70,6 @@ _LIVE_TEMPLATE_NAME = "Quarterly Review"
 _LIVE_REPORT_SLUG = "market_review_report"
 _LIVE_PORTFOLIO_SLUG = "income_core"
 _CUSTOM_STALE_SKILL_KEY = "stock_analysis_ws1_verify"
-_RETIRED_REPORT_LOOKUP_TOOL = "ledger.stock_analysis.report_lookup"
-_REPAIRED_REPORT_LOOKUP_TOOL = "ledger.reports.lookup"
 _RUN_HEADER_COLUMNS = {
     "id",
     "target_kind",
@@ -234,10 +232,10 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     connection.execute(
         text(
             "INSERT INTO capabilities ("
-            "key, version, status, name, description, tool_grants, created_at, updated_at"
+            "key, version, status, name, description, tool_keys, created_at, updated_at"
             ") VALUES ("
             ":key, 1, 'published', :name, :description, "
-            "CAST(:tool_grants AS jsonb), NOW(), NOW()"
+            "CAST(:tool_keys AS jsonb), NOW(), NOW()"
             ")"
         ),
         [
@@ -245,13 +243,13 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
                 "key": _LIVE_CAPABILITY_KEY,
                 "name": "Market Review Tools",
                 "description": "Live capability that must remain after startup sanitation.",
-                "tool_grants": json.dumps([{"tool": "ledger.reports.lookup"}]),
+                "tool_keys": json.dumps(["ledger.reports.lookup"]),
             },
             {
                 "key": STOCK_ANALYSIS_CAPABILITY_KEY,
                 "name": "Stock Analysis Tools",
                 "description": "Retired stock-analysis capability persisted before upgrade.",
-                "tool_grants": json.dumps([{"tool": "ledger.stock_analysis.report_lookup"}]),
+                "tool_keys": json.dumps(["ledger.reports.lookup"]),
             },
         ],
     )
@@ -974,7 +972,7 @@ def _stock_analysis_sanitation_snapshot(
     }
 
 
-def test_init_db_creates_agent_platform_tables_and_drops_legacy_backend_tables(
+def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -988,7 +986,8 @@ def test_init_db_creates_agent_platform_tables_and_drops_legacy_backend_tables(
             column["name"] for column in inspect(engine).get_columns("capabilities")
         }
         agent_columns = {column["name"] for column in inspect(engine).get_columns("agents")}
-        assert "tool_grants" in capability_columns
+        assert "tool_keys" in capability_columns
+        assert "tool_grants" not in capability_columns
         assert "tool_definitions" not in capability_columns
         assert "capabilities" in agent_columns
         assert "skills" not in agent_columns
@@ -1121,7 +1120,7 @@ def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
         engine.dispose()
 
 
-def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempotently(
+def test_init_db_deletes_legacy_skill_storage_and_clears_agent_capabilities_idempotently(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1143,7 +1142,7 @@ def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempot
                 )
                 """
             )
-            capability_id = connection.execute(
+            legacy_capability_id = connection.execute(
                 text(
                     "INSERT INTO skills ("
                     "key, version, status, name, description, tool_definitions"
@@ -1199,7 +1198,7 @@ def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempot
                     "skills": json.dumps(
                         [
                             {
-                                "skillId": capability_id,
+                                "skillId": legacy_capability_id,
                                 "skillKey": "legacy_report_lookup",
                                 "skillVersion": 1,
                             }
@@ -1217,44 +1216,39 @@ def test_init_db_migrates_legacy_skill_storage_to_canonical_capabilities_idempot
                 column["name"] for column in inspector.get_columns("capabilities")
             }
             agent_columns = {column["name"] for column in inspector.get_columns("agents")}
-            capability_row = (
-                connection.execute(
-                    text("SELECT key, tool_grants FROM capabilities WHERE key = :key"),
-                    {"key": "legacy_report_lookup"},
-                )
-                .mappings()
-                .one()
-            )
-            agent_row = (
-                connection.execute(
-                    text("SELECT capabilities FROM agents WHERE key = :key"),
-                    {"key": "legacy_agent"},
-                )
-                .mappings()
-                .one()
-            )
+            first_snapshot = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM capabilities), "
+                    "(SELECT capabilities FROM agents WHERE key = :key)"
+                ),
+                {"key": "legacy_agent"},
+            ).one()
 
         assert "skills" not in table_names
+        assert "tool_keys" in capability_columns
+        assert "tool_grants" not in capability_columns
         assert "tool_definitions" not in capability_columns
         assert "skills" not in agent_columns
-        assert capability_row["tool_grants"] == [{"tool": "ledger.reports.lookup"}]
-        assert agent_row["capabilities"] == [
-            {
-                "capabilityId": capability_id,
-                "capabilityKey": "legacy_report_lookup",
-                "capabilityVersion": 1,
-            }
-        ]
+        assert first_snapshot == (0, [])
 
         init_db(database_url)
 
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT COUNT(*) FROM capabilities")).scalar_one() == 1
+            second_snapshot = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM capabilities), "
+                    "(SELECT capabilities FROM agents WHERE key = :key)"
+                ),
+                {"key": "legacy_agent"},
+            ).one()
+        assert second_snapshot == first_snapshot
     finally:
         engine.dispose()
 
 
-def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_data(
+def test_init_db_deletes_mixed_legacy_and_canonical_capability_storage(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1286,6 +1280,7 @@ def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_d
                     name VARCHAR(200) NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
                     tool_grants JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    tool_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
@@ -1300,8 +1295,23 @@ def test_init_db_fails_closed_when_legacy_and_canonical_capability_tables_have_d
                 "VALUES ('canonical_capability', 1, 'published', 'Canonical', '[]'::jsonb)"
             )
 
-        with pytest.raises(RuntimeError, match="legacy Skill storage and canonical Capability"):
-            init_db(database_url)
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            inspector = inspect(connection)
+            table_names = set(inspector.get_table_names())
+            capability_columns = {
+                column["name"] for column in inspector.get_columns("capabilities")
+            }
+            capability_count = connection.execute(
+                text("SELECT COUNT(*) FROM capabilities")
+            ).scalar_one()
+
+        assert "skills" not in table_names
+        assert "tool_keys" in capability_columns
+        assert "tool_grants" not in capability_columns
+        assert "tool_definitions" not in capability_columns
+        assert capability_count == 0
     finally:
         engine.dispose()
 
@@ -1659,7 +1669,7 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
             next_capability_id = connection.execute(
                 text(
                     "INSERT INTO capabilities ("
-                    "key, version, status, name, tool_grants, created_at, updated_at"
+                    "key, version, status, name, tool_keys, created_at, updated_at"
                     ") VALUES ("
                     "'post_cutover_capability', 1, 'draft', 'Post Cutover', '[]'::jsonb, "
                     "NOW(), NOW()"
@@ -1699,7 +1709,7 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
         engine.dispose()
 
 
-def test_init_db_repairs_custom_key_stale_capability_tool_grants_idempotently(
+def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agent_refs(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -1709,75 +1719,77 @@ def test_init_db_repairs_custom_key_stale_capability_tool_grants_idempotently(
         with engine.begin() as connection:
             stale_capability_id = connection.execute(
                 text(
-                    "INSERT INTO capabilities ("
-                    "key, version, status, name, description, tool_grants, "
-                    "created_at, updated_at"
-                    ") VALUES ("
-                    ":key, 1, 'draft', :name, :description, CAST(:tool_grants AS jsonb), "
-                    "NOW(), NOW()"
-                    ") RETURNING id"
+                    """
+                    INSERT INTO capabilities (
+                        key, version, status, name, description, tool_keys, created_at, updated_at
+                    ) VALUES (
+                        :key, 1, 'draft', :name, :description, CAST(:tool_keys AS jsonb),
+                        NOW(), NOW()
+                    ) RETURNING id
+                    """
                 ),
                 {
+                    "description": "Custom-key stale tool key deleted during startup.",
                     "key": _CUSTOM_STALE_SKILL_KEY,
                     "name": "Stock Analysis Workspace Verify",
-                    "description": "Custom-key stale tool grant repaired during startup.",
-                    "tool_grants": json.dumps(
-                        [{"tool": _RETIRED_REPORT_LOOKUP_TOOL}],
-                        separators=(",", ":"),
-                    ),
+                    "tool_keys": json.dumps(["ledger.reports.lookup", "ledger.stale.lookup"]),
                 },
             ).scalar_one()
-
-        init_db(database_url)
-
-        with engine.connect() as connection:
-            first_row = (
-                connection.execute(
-                    text(
-                        "SELECT key, version, status, tool_grants, ctid::text AS row_pointer "
-                        "FROM capabilities WHERE id = :capability_id"
-                    ),
-                    {"capability_id": stale_capability_id},
-                )
-                .mappings()
-                .one()
-            )
-            retired_reference_count = connection.execute(
+            connection.execute(
                 text(
-                    "SELECT COUNT(*) FROM capabilities "
-                    "WHERE tool_grants @> CAST(:retired_tool_filter AS jsonb)"
+                    """
+                    INSERT INTO agents (
+                        key, version, status, name, description, model_connection_id,
+                        model_connection_snapshot, model, system_prompt, input_schema,
+                        output_schema_id, output_schema_version, capabilities, mcp_servers
+                    ) VALUES (
+                        :key, 1, 'draft', :name, '', 1, '{}'::jsonb, 'openai:gpt-5.4-mini',
+                        'Prompt', '{}'::jsonb, 1, 1, CAST(:capabilities AS jsonb), '[]'::jsonb
+                    )
+                    """
                 ),
                 {
-                    "retired_tool_filter": json.dumps(
-                        [{"tool": _RETIRED_REPORT_LOOKUP_TOOL}],
-                        separators=(",", ":"),
-                    )
+                    "capabilities": json.dumps(
+                        [
+                            {
+                                "capabilityId": stale_capability_id,
+                                "capabilityKey": _CUSTOM_STALE_SKILL_KEY,
+                                "capabilityVersion": 1,
+                            }
+                        ]
+                    ),
+                    "key": "stale_capability_agent",
+                    "name": "Stale Capability Agent",
                 },
-            ).scalar_one()
-
-        assert first_row["key"] == _CUSTOM_STALE_SKILL_KEY
-        assert first_row["version"] == 1
-        assert first_row["status"] == "draft"
-        assert first_row["tool_grants"] == [{"tool": _REPAIRED_REPORT_LOOKUP_TOOL}]
-        assert retired_reference_count == 0
+            )
 
         init_db(database_url)
 
         with engine.connect() as connection:
-            second_row = (
-                connection.execute(
-                    text(
-                        "SELECT tool_grants, ctid::text AS row_pointer "
-                        "FROM capabilities WHERE id = :capability_id"
-                    ),
-                    {"capability_id": stale_capability_id},
-                )
-                .mappings()
-                .one()
-            )
+            first_snapshot = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM capabilities WHERE id = :capability_id), "
+                    "(SELECT capabilities FROM agents WHERE key = :agent_key)"
+                ),
+                {"agent_key": "stale_capability_agent", "capability_id": stale_capability_id},
+            ).one()
 
-        assert second_row["tool_grants"] == first_row["tool_grants"]
-        assert second_row["row_pointer"] == first_row["row_pointer"]
+        assert first_snapshot == (0, [])
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            second_snapshot = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM capabilities WHERE id = :capability_id), "
+                    "(SELECT capabilities FROM agents WHERE key = :agent_key)"
+                ),
+                {"agent_key": "stale_capability_agent", "capability_id": stale_capability_id},
+            ).one()
+
+        assert second_snapshot == first_snapshot
     finally:
         engine.dispose()
 

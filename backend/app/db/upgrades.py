@@ -6,6 +6,7 @@ import re
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Engine
 
+from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_REGISTRY
 from app.db.validation import validate_supported_database_engine
 from app.models.agent import (
     AGENT_MANIFEST_API_VERSION,
@@ -54,10 +55,6 @@ _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
     "Runtime row skipped during startup recovery because the parent run failed before it "
     "started."
 )
-_CAPABILITY_STORAGE_CONFLICT_MESSAGE = (
-    "Cannot auto-upgrade capability storage because legacy Skill storage and canonical "
-    "Capability storage both contain data."
-)
 _MODEL_CONNECTION_PLACEHOLDER_BASE_URL = "https://api.openai.com/v1"
 _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
 _MODEL_CONNECTION_PLACEHOLDER_TIMEOUT_SECONDS = 60
@@ -67,8 +64,6 @@ _MODEL_CONNECTION_REASONING_EFFORT_CHECK_SQL = (
 )
 _MODEL_CONNECTION_DEFAULT_API_STYLE = "responses"
 _MODEL_CONNECTION_ALLOWED_API_STYLES = ("responses", "chat_completions")
-_RETIRED_SKILL_TOOL_ID = "ledger.stock_analysis.report_lookup"
-_REPAIRED_SKILL_TOOL_ID = "ledger.reports.lookup"
 
 
 def _sql_string_literal(value: str) -> str:
@@ -129,7 +124,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 status VARCHAR(20) NOT NULL DEFAULT 'draft',
                 name VARCHAR(200) NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                tool_grants JSONB NOT NULL DEFAULT '[]'::jsonb,
+                tool_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_capabilities_status CHECK (
@@ -768,184 +763,140 @@ def _refresh_table_names(engine: Engine, table_names: set[str]) -> None:
 
 
 def _cutover_capability_storage(engine: Engine, table_names: set[str]) -> None:
-    _cutover_capability_table(engine, table_names)
+    legacy_storage_detected = _legacy_capability_storage_detected(engine, table_names)
+    _drop_legacy_capability_tables(engine, table_names)
+    _ensure_capability_tool_keys_column(engine, table_names)
+    _ensure_agent_capabilities_column(engine, table_names)
+
+    if legacy_storage_detected:
+        _delete_all_capabilities_and_clear_agent_refs(engine, table_names)
+    else:
+        _delete_capabilities_with_stale_tool_keys(engine, table_names)
     _refresh_table_names(engine, table_names)
-    _cutover_agent_capability_refs(engine, table_names)
-    _refresh_table_names(engine, table_names)
 
 
-def _cutover_capability_table(engine: Engine, table_names: set[str]) -> None:
-    has_legacy_table = "skills" in table_names
-    has_canonical_table = "capabilities" in table_names
-    if not has_legacy_table and not has_canonical_table:
-        return
+def _legacy_capability_storage_detected(engine: Engine, table_names: set[str]) -> bool:
+    if {"skills", "capability_registry_entries"} & table_names:
+        return True
 
+    inspector = inspect(engine)
+    if "capabilities" in table_names:
+        capability_columns = {column["name"] for column in inspector.get_columns("capabilities")}
+        if {"tool_grants", "tool_definitions"} & capability_columns:
+            return True
+    if "agents" in table_names:
+        agent_columns = {column["name"] for column in inspector.get_columns("agents")}
+        if "skills" in agent_columns:
+            return True
+    return False
+
+
+def _drop_legacy_capability_tables(engine: Engine, table_names: set[str]) -> None:
     with engine.begin() as connection:
-        if has_legacy_table and has_canonical_table:
-            legacy_count = connection.exec_driver_sql("SELECT COUNT(*) FROM skills").scalar_one()
-            canonical_count = connection.exec_driver_sql(
-                "SELECT COUNT(*) FROM capabilities"
-            ).scalar_one()
-            if legacy_count and canonical_count:
-                raise RuntimeError(_CAPABILITY_STORAGE_CONFLICT_MESSAGE)
-            if legacy_count:
-                legacy_columns = {
-                    column["name"] for column in inspect(connection).get_columns("skills")
-                }
-                source_column = (
-                    "tool_grants" if "tool_grants" in legacy_columns else "tool_definitions"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO capabilities ("
-                    "id, key, version, status, name, description, tool_grants, "
-                    "created_at, updated_at"
-                    ") SELECT id, key, version, status, name, description, "
-                    f"{source_column}, created_at, updated_at FROM skills ORDER BY id"
-                )
-                connection.exec_driver_sql(
-                    "SELECT setval(pg_get_serial_sequence('capabilities', 'id'), "
-                    "COALESCE((SELECT MAX(id) FROM capabilities), 1), "
-                    "(SELECT COUNT(*) > 0 FROM capabilities))"
-                )
-            connection.exec_driver_sql('DROP TABLE IF EXISTS "skills" CASCADE')
-        elif has_legacy_table:
-            connection.exec_driver_sql('ALTER TABLE "skills" RENAME TO "capabilities"')
-
-    table_names.discard("skills")
-    table_names.add("capabilities")
-    _ensure_capability_tool_grants_column(engine, table_names)
+        for table_name in ("capability_registry_entries", "skills"):
+            _ = connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{table_name}" CASCADE')
+            table_names.discard(table_name)
 
 
-def _ensure_capability_tool_grants_column(engine: Engine, table_names: set[str]) -> None:
+def _ensure_capability_tool_keys_column(engine: Engine, table_names: set[str]) -> None:
     if "capabilities" not in table_names:
         return
 
     capability_columns = {column["name"] for column in inspect(engine).get_columns("capabilities")}
     with engine.begin() as connection:
-        has_legacy_column = "tool_definitions" in capability_columns
-        has_canonical_column = "tool_grants" in capability_columns
-        if has_legacy_column and has_canonical_column:
-            conflicts = connection.exec_driver_sql(
-                "SELECT COUNT(*) FROM capabilities "
-                "WHERE jsonb_typeof(tool_definitions) = 'array' "
-                "AND tool_definitions <> '[]'::jsonb "
-                "AND jsonb_typeof(tool_grants) = 'array' "
-                "AND tool_grants <> '[]'::jsonb "
-                "AND tool_grants <> tool_definitions"
-            ).scalar_one()
-            if conflicts:
-                raise RuntimeError(_CAPABILITY_STORAGE_CONFLICT_MESSAGE)
-            connection.exec_driver_sql(
-                "UPDATE capabilities SET tool_grants = tool_definitions "
-                "WHERE jsonb_typeof(tool_definitions) = 'array' "
-                "AND tool_definitions <> '[]'::jsonb "
-                "AND (jsonb_typeof(tool_grants) <> 'array' OR tool_grants = '[]'::jsonb)"
+        if "tool_keys" not in capability_columns:
+            _ = connection.exec_driver_sql(
+                "ALTER TABLE capabilities ADD COLUMN tool_keys JSONB NOT NULL DEFAULT '[]'::jsonb"
             )
-            connection.exec_driver_sql("ALTER TABLE capabilities DROP COLUMN tool_definitions")
-        elif has_legacy_column:
-            connection.exec_driver_sql(
-                "ALTER TABLE capabilities RENAME COLUMN tool_definitions TO tool_grants"
+        _ = connection.exec_driver_sql(
+            " ".join(
+                (
+                    "UPDATE capabilities SET tool_keys = '[]'::jsonb",
+                    "WHERE tool_keys IS NULL OR jsonb_typeof(tool_keys) <> 'array'",
+                )
             )
-        elif not has_canonical_column:
-            connection.exec_driver_sql(
-                "ALTER TABLE capabilities ADD COLUMN tool_grants JSONB NOT NULL DEFAULT '[]'::jsonb"
-            )
-        connection.exec_driver_sql(
-            "ALTER TABLE capabilities ALTER COLUMN tool_grants SET DEFAULT '[]'::jsonb"
         )
-        connection.exec_driver_sql(
-            "UPDATE capabilities SET tool_grants = '[]'::jsonb WHERE tool_grants IS NULL"
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE capabilities ALTER COLUMN tool_keys SET DEFAULT '[]'::jsonb"
         )
-        connection.exec_driver_sql("ALTER TABLE capabilities ALTER COLUMN tool_grants SET NOT NULL")
-
-
-def _legacy_agent_capabilities_expression(source_column: str) -> str:
-    return f"""
-    (
-        SELECT COALESCE(
-            jsonb_agg(
-                CASE
-                    WHEN jsonb_typeof(refs.ref) = 'object'
-                    THEN (refs.ref - 'skillId' - 'skillKey' - 'skillVersion')
-                        || CASE
-                            WHEN refs.ref ? 'skillId'
-                            THEN jsonb_build_object('capabilityId', refs.ref->'skillId')
-                            ELSE '{{}}'::jsonb
-                        END
-                        || CASE
-                            WHEN refs.ref ? 'skillKey'
-                            THEN jsonb_build_object('capabilityKey', refs.ref->'skillKey')
-                            ELSE '{{}}'::jsonb
-                        END
-                        || CASE
-                            WHEN refs.ref ? 'skillVersion'
-                            THEN jsonb_build_object('capabilityVersion', refs.ref->'skillVersion')
-                            ELSE '{{}}'::jsonb
-                        END
-                    ELSE refs.ref
-                END
-                ORDER BY refs.ordinality
-            ),
-            '[]'::jsonb
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE capabilities ALTER COLUMN tool_keys SET NOT NULL"
         )
-        FROM jsonb_array_elements(
-            CASE
-                WHEN jsonb_typeof(agents.{source_column}) = 'array'
-                THEN agents.{source_column}
-                ELSE '[]'::jsonb
-            END
-        ) WITH ORDINALITY AS refs(ref, ordinality)
-    )
-    """
+        _ = connection.exec_driver_sql("ALTER TABLE capabilities DROP COLUMN IF EXISTS tool_grants")
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE capabilities DROP COLUMN IF EXISTS tool_definitions"
+        )
 
 
-def _cutover_agent_capability_refs(engine: Engine, table_names: set[str]) -> None:
+def _ensure_agent_capabilities_column(engine: Engine, table_names: set[str]) -> None:
     if "agents" not in table_names:
         return
 
     agent_columns = {column["name"] for column in inspect(engine).get_columns("agents")}
     with engine.begin() as connection:
-        has_legacy_column = "skills" in agent_columns
-        has_canonical_column = "capabilities" in agent_columns
-        if has_legacy_column and has_canonical_column:
-            conflicts = connection.exec_driver_sql(
-                "SELECT COUNT(*) FROM agents "
-                "WHERE jsonb_typeof(skills) = 'array' "
-                "AND skills <> '[]'::jsonb "
-                "AND jsonb_typeof(capabilities) = 'array' "
-                "AND capabilities <> '[]'::jsonb"
-            ).scalar_one()
-            if conflicts:
-                raise RuntimeError(_CAPABILITY_STORAGE_CONFLICT_MESSAGE)
-            connection.exec_driver_sql(
-                "UPDATE agents SET capabilities = "
-                f"{_legacy_agent_capabilities_expression('skills')} "
-                "WHERE jsonb_typeof(skills) = 'array' "
-                "AND skills <> '[]'::jsonb "
-                "AND (jsonb_typeof(capabilities) <> 'array' OR capabilities = '[]'::jsonb)"
-            )
-            connection.exec_driver_sql("ALTER TABLE agents DROP COLUMN skills")
-        elif has_legacy_column:
-            connection.exec_driver_sql('ALTER TABLE agents RENAME COLUMN "skills" TO capabilities')
-            has_canonical_column = True
-        elif not has_canonical_column:
-            connection.exec_driver_sql(
+        if "capabilities" not in agent_columns:
+            _ = connection.exec_driver_sql(
                 "ALTER TABLE agents ADD COLUMN capabilities JSONB NOT NULL DEFAULT '[]'::jsonb"
             )
-            has_canonical_column = True
+        _ = connection.exec_driver_sql(
+            "UPDATE agents SET capabilities = '[]'::jsonb WHERE capabilities IS NULL"
+        )
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE agents ALTER COLUMN capabilities SET DEFAULT '[]'::jsonb"
+        )
+        _ = connection.exec_driver_sql("ALTER TABLE agents ALTER COLUMN capabilities SET NOT NULL")
+        _ = connection.exec_driver_sql("ALTER TABLE agents DROP COLUMN IF EXISTS skills")
 
-        if has_canonical_column:
-            connection.exec_driver_sql(
-                "UPDATE agents SET capabilities = "
-                f"{_legacy_agent_capabilities_expression('capabilities')}"
-            )
-            connection.exec_driver_sql(
-                "ALTER TABLE agents ALTER COLUMN capabilities SET DEFAULT '[]'::jsonb"
-            )
-            connection.exec_driver_sql(
-                "UPDATE agents SET capabilities = '[]'::jsonb WHERE capabilities IS NULL"
-            )
-            connection.exec_driver_sql("ALTER TABLE agents ALTER COLUMN capabilities SET NOT NULL")
+
+def _delete_all_capabilities_and_clear_agent_refs(engine: Engine, table_names: set[str]) -> None:
+    with engine.begin() as connection:
+        if "agents" in table_names:
+            _ = connection.exec_driver_sql("UPDATE agents SET capabilities = '[]'::jsonb")
+        if "capabilities" in table_names:
+            _ = connection.exec_driver_sql("DELETE FROM capabilities")
+
+
+def _delete_capabilities_with_stale_tool_keys(engine: Engine, table_names: set[str]) -> None:
+    if "capabilities" not in table_names:
+        return
+
+    known_tool_keys = sorted(SERVER_DECLARED_TOOL_REGISTRY)
+    with engine.begin() as connection:
+        stale_count = int(
+            connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM capabilities AS capability
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements(capability.tool_keys) AS tool_key(value)
+                        WHERE jsonb_typeof(tool_key.value) <> 'string'
+                           OR tool_key.value #>> '{}' <> ALL(:known_tool_keys)
+                    )
+                    """
+                ),
+                {"known_tool_keys": known_tool_keys},
+            ).scalar_one()
+        )
+        if not stale_count:
+            return
+        if "agents" in table_names:
+            _ = connection.exec_driver_sql("UPDATE agents SET capabilities = '[]'::jsonb")
+        _ = connection.execute(
+            text(
+                """
+                DELETE FROM capabilities AS capability
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(capability.tool_keys) AS tool_key(value)
+                    WHERE jsonb_typeof(tool_key.value) <> 'string'
+                       OR tool_key.value #>> '{}' <> ALL(:known_tool_keys)
+                )
+                """
+            ),
+            {"known_tool_keys": known_tool_keys},
+        )
 
 
 def _ensure_agent_platform_tables(engine: Engine, table_names: set[str]) -> None:
@@ -1884,64 +1835,6 @@ def _flatten_legacy_mcp_server_rows(engine: Engine, table_names: set[str]) -> No
             )
 
 
-def _repair_retired_capability_tool_grants(engine: Engine, table_names: set[str]) -> None:
-    if "capabilities" not in table_names:
-        return
-
-    inspector = inspect(engine)
-    capability_columns = {column["name"] for column in inspector.get_columns("capabilities")}
-    if "tool_grants" not in capability_columns:
-        return
-
-    with engine.begin() as connection:
-        _ = connection.execute(
-            text(
-                """
-                UPDATE capabilities
-                SET tool_grants = repaired_tool_grants.tool_grants,
-                    updated_at = NOW()
-                FROM (
-                    SELECT capability.id,
-                           jsonb_agg(
-                               CASE
-                                    WHEN jsonb_typeof(grants.tool_grant) = 'object'
-                                         AND grants.tool_grant->>'tool' = :retired_tool_id
-                                    THEN jsonb_set(
-                                        grants.tool_grant,
-                                        '{tool}',
-                                        to_jsonb(CAST(:replacement_tool_id AS text)),
-                                        false
-                                    )
-                                    ELSE grants.tool_grant
-                               END
-                               ORDER BY grants.ordinality
-                           ) AS tool_grants
-                    FROM capabilities AS capability
-                    JOIN LATERAL jsonb_array_elements(
-                        CASE
-                            WHEN jsonb_typeof(capability.tool_grants) = 'array'
-                            THEN capability.tool_grants
-                            ELSE '[]'::jsonb
-                        END
-                    ) WITH ORDINALITY AS grants(tool_grant, ordinality) ON TRUE
-                    WHERE capability.tool_grants @> CAST(:retired_tool_filter AS jsonb)
-                    GROUP BY capability.id
-                ) AS repaired_tool_grants
-                WHERE capabilities.id = repaired_tool_grants.id
-                  AND capabilities.tool_grants @> CAST(:retired_tool_filter AS jsonb)
-                """
-            ),
-            {
-                "retired_tool_id": _RETIRED_SKILL_TOOL_ID,
-                "replacement_tool_id": _REPAIRED_SKILL_TOOL_ID,
-                "retired_tool_filter": json.dumps(
-                    [{"tool": _RETIRED_SKILL_TOOL_ID}],
-                    separators=(",", ":"),
-                ),
-            },
-        )
-
-
 def _repair_tradingagents_transition_output_schemas(engine: Engine, table_names: set[str]) -> None:
     if "output_schemas" not in table_names:
         return
@@ -2084,7 +1977,6 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_agent_model_connection_snapshot_support(engine, table_names)
     _reset_legacy_mcp_server_table(engine, table_names)
     _flatten_legacy_mcp_server_rows(engine, table_names)
-    _repair_retired_capability_tool_grants(engine, table_names)
     _repair_tradingagents_transition_output_schemas(engine, table_names)
     _ensure_run_lifecycle_support(engine, table_names)
     _ensure_run_graph_metadata_support(engine, table_names)
