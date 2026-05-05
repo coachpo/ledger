@@ -38,7 +38,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 ## Domain Contracts
 
-- Capabilities are canonical. Use `/api/capabilities`, `/capabilities*`, `toolGrants`, `spec.capabilities`, and `CapabilityService` terminology.
+- Capabilities are canonical. Use `/api/capabilities`, `/capabilities*`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, and `CapabilityService` terminology.
 - Legacy `spec.skills`, `/api/skills`, and `/skills*` are rejected/retired contracts.
 - MCP server configs must stay inside security boundaries and runtime snapshots.
 - Model connections own provider endpoint/key/default runtime settings and preserve secret-safe behavior.

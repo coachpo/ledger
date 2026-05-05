@@ -43,7 +43,7 @@ Template/report series can be built by creating a template, previewing with `POS
 
 ## Platform Compatibility Notes
 
-- Capabilities emit `toolGrants`; `/api/skills` and `toolDefinitions` are retired.
+- Capabilities accept `toolKeys` on writes and emit `toolKeys` plus read-only resolved `tools`; `/api/skills`, `toolGrants`, and `toolDefinitions` are retired.
 - Agent and workflow manifests must use `spec.capabilities`; `spec.skills` is rejected.
 - Runtime tool keys and OpenAI function names stay stable even though capability terminology is canonical.
 - Model-connection secrets must be omitted or masked from read responses.

@@ -24,7 +24,7 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the curr
 | Table | Role |
 |---|---|
 | `agents` | YAML-authored agent manifests with immutable versions and capability refs |
-| `capabilities` | canonical tool-grant resources backed by server-declared tool catalog entries |
+| `capabilities` | canonical tool-key resources backed by server-declared tool catalog entries |
 | `mcp_servers` | saved MCP server config, security metadata, connection-test results, and immutable versions |
 | `model_connections` | saved provider/model endpoint config, encrypted API keys, health/test metadata, archive state |
 | `output_schemas` | saved output-schema versions and schema subset metadata |
@@ -37,7 +37,7 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the curr
 - Portfolio-owned records enforce portfolio isolation through foreign keys and service lookups.
 - Trading operations are append-only; full sell-down may delete the current aggregate position row.
 - Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content updates are allowed. `source` describes origin with canonical values `compiled`, `uploaded`, `external`, and `agent`; `external` is for true external user/API-created reports, not agent-created reports. Agent memory reports keep purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`, while server-owned `metadata.createdBy.type="agent"` carries provenance fields such as `runId`, `agentKey`, and `agentVersion`.
-- Capabilities are the canonical tool-grant table; legacy skill contracts are not a live schema target.
+- Capabilities are the canonical tool-key table; legacy skill contracts are not a live schema target.
 - Model-connection secrets must remain encrypted at rest and masked in reads/errors.
 - MCP runtime execution uses exact pinned versions and frozen tool snapshots.
 - Startup repair handles stale platform runs and current platform tables in `backend/app/db/`.
