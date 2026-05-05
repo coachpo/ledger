@@ -459,6 +459,8 @@ class AgentExecutionService:
                 "messages": messages,
                 "response_format": response_format,
             }
+            if model_connection.reasoning_effort is not None:
+                request_kwargs["reasoning_effort"] = model_connection.reasoning_effort
             if chat_tools:
                 request_kwargs["tools"] = chat_tools
             response = client.chat.completions.create(**request_kwargs)

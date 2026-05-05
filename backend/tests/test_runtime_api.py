@@ -2699,6 +2699,7 @@ def test_agent_platform_run_chat_completions_snapshot_parses_message_content_jso
     assert chat_request["model"] == "gpt-chat-runtime"
     assert [message["role"] for message in chat_request["messages"]] == ["system", "user"]
     assert chat_request["response_format"]["type"] == "json_schema"
+    assert chat_request["reasoning_effort"] == "medium"
     assert "previous_response_id" not in chat_request
     assert "input" not in chat_request
     assert "reasoning" not in chat_request
@@ -2708,7 +2709,7 @@ def test_agent_platform_run_chat_completions_snapshot_parses_message_content_jso
     ("suffix", "reasoning_effort"),
     [("null", None), ("custom", "xhigh")],
 )
-def test_agent_platform_run_chat_completions_never_sends_reasoning_for_null_or_custom(
+def test_agent_platform_run_chat_completions_reasoning_effort_omission_and_custom_snapshot_values(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -2747,7 +2748,12 @@ def test_agent_platform_run_chat_completions_never_sends_reasoning_for_null_or_c
     chat_request = _RuntimeChatCompletionsOpenAIClient.chat_create_calls[-1]
     assert [message["role"] for message in chat_request["messages"]] == ["system", "user"]
     assert chat_request["response_format"]["type"] == "json_schema"
-    assert "reasoning" not in chat_request
+    if reasoning_effort is None:
+        assert "reasoning" not in chat_request
+        assert "reasoning_effort" not in chat_request
+    else:
+        assert "reasoning" not in chat_request
+        assert chat_request["reasoning_effort"] == reasoning_effort
     assert "input" not in chat_request
 
 
