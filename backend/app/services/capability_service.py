@@ -20,7 +20,7 @@ from app.schemas.capability import (
     CapabilityListRead,
     CapabilityRead,
     CapabilityStatus,
-    CapabilityToolGrantWrite,
+    CapabilityToolListRead,
 )
 
 REPORT_LOOKUP_TOOL_KEY = "ledger.reports.lookup"
@@ -45,6 +45,10 @@ MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE = (
 
 
 class RuntimeToolGrantError(Exception):
+    code: str
+    message: str
+    details: list[dict[str, str]]
+
     def __init__(
         self,
         *,
@@ -59,6 +63,10 @@ class RuntimeToolGrantError(Exception):
 
 
 class CapabilityService:
+    session: Session
+    repository: CapabilityRepository
+    tool_catalog: ToolCatalog
+
     def __init__(self, session: Session, tool_catalog: ToolCatalog) -> None:
         self.session = session
         self.repository = CapabilityRepository(session)
@@ -74,6 +82,21 @@ class CapabilityService:
         )
         return CapabilityListRead(items=[self._to_read_model(item) for item in items])
 
+    def list_available_tools(self) -> CapabilityToolListRead:
+        tools = sorted(self.tool_catalog.list_registered_tools(), key=lambda item: item.key)
+        return CapabilityToolListRead.model_validate(
+            {
+                "items": [
+                    {
+                        "key": tool.key,
+                        "displayName": tool.display_name,
+                        "description": tool.description,
+                    }
+                    for tool in tools
+                ]
+            }
+        )
+
     def get_capability(self, capability_id: int) -> CapabilityRead:
         return self._to_read_model(self._get_model(capability_id))
 
@@ -85,18 +108,18 @@ class CapabilityService:
                 message="A draft capability already exists for this key",
             )
 
-        tool_grants = self._normalize_tool_grants(payload.tool_grants)
-        self._resolve_tool_grants(tool_grants)
+        resolved_tools = self._resolve_tool_keys(payload.tool_keys)
+        tool_keys = [tool.key for tool in resolved_tools]
         capability = Capability(
             key=payload.key,
             version=self._next_version(payload.key),
             status=CapabilityStatus.DRAFT.value,
             name=payload.name,
             description=payload.description,
-            tool_grants=tool_grants,
+            tool_keys=tool_keys,
         )
         try:
-            self.repository.add(capability)
+            _ = self.repository.add(capability)
             self.session.commit()
             self.session.refresh(capability)
         except Exception:
@@ -112,12 +135,10 @@ class CapabilityService:
         source = self._get_model(capability_id)
         self._ensure_status(source, CapabilityStatus.DRAFT, action="patch")
 
-        tool_grants = (
-            self._normalize_tool_grants(payload.tool_grants)
-            if payload.tool_grants is not None
-            else list(source.tool_grants)
-        )
-        self._resolve_tool_grants(tool_grants)
+        tool_keys = list(source.tool_keys)
+        if payload.tool_keys is not None:
+            resolved_tools = self._resolve_tool_keys(payload.tool_keys)
+            tool_keys = [tool.key for tool in resolved_tools]
         updated = Capability(
             key=source.key,
             version=self._next_version(source.key),
@@ -128,13 +149,13 @@ class CapabilityService:
                 if payload.description is not None or "description" in payload.model_fields_set
                 else source.description
             ),
-            tool_grants=tool_grants,
+            tool_keys=tool_keys,
         )
 
         try:
             source.status = CapabilityStatus.ARCHIVED.value
             self.session.flush()
-            self.repository.add(updated)
+            _ = self.repository.add(updated)
             self.session.commit()
             self.session.refresh(updated)
         except Exception:
@@ -145,7 +166,7 @@ class CapabilityService:
     def activate(self, capability_id: int) -> CapabilityRead:
         capability = self._get_model(capability_id)
         self._ensure_status(capability, CapabilityStatus.DRAFT, action="activate")
-        self._resolve_toolset_model(capability)
+        _ = self._resolve_toolset_model(capability)
 
         current_published = self.repository.get_published_by_key(capability.key)
         try:
@@ -193,10 +214,29 @@ class CapabilityService:
     ) -> set[str]:
         granted_tool_keys: set[str] = set()
         for reference in capability_references:
-            resolved = self.resolve_toolset_version(
-                str(reference["capabilityKey"]),
-                int(str(reference["capabilityVersion"])),
-            )
+            try:
+                resolved = self.resolve_toolset_version(
+                    str(reference["capabilityKey"]),
+                    int(str(reference["capabilityVersion"])),
+                )
+            except ApiError as exc:
+                if exc.code == "validation_error":
+                    details: list[dict[str, str]] = []
+                    for detail in exc.details:
+                        field = detail.get("field")
+                        issue = detail.get("issue")
+                        details.append(
+                            {
+                                "field": field if isinstance(field, str) else "toolKeys",
+                                "issue": issue if isinstance(issue, str) else "Invalid tool key",
+                            }
+                        )
+                    raise RuntimeToolGrantError(
+                        code="capability_tool_keys_invalid",
+                        message="Capability contains stale or invalid tool keys.",
+                        details=details,
+                    ) from exc
+                raise
             granted_tool_keys.update(tool.key for tool in resolved.tools)
         return granted_tool_keys
 
@@ -297,22 +337,12 @@ class CapabilityService:
                 ],
             )
 
-    @staticmethod
-    def _normalize_tool_grants(
-        tool_grants: Sequence[CapabilityToolGrantWrite],
-    ) -> list[dict[str, str]]:
-        return [CapabilityService._normalize_tool_grant(item) for item in tool_grants]
-
-    @staticmethod
-    def _normalize_tool_grant(raw_grant: CapabilityToolGrantWrite) -> dict[str, str]:
-        return {"tool": raw_grant.tool.strip().lower()}
-
-    def _resolve_tool_grants(
+    def _resolve_tool_keys(
         self,
-        tool_grants: Sequence[dict[str, str]],
+        tool_keys: Sequence[object],
     ) -> tuple[ResolvedTool, ...]:
         try:
-            return self.tool_catalog.resolve_tool_grants(tool_grants)
+            return self.tool_catalog.resolve_tool_keys(tool_keys)
         except ToolCatalogValidationError as exc:
             raise validation_error("Capability validation failed", list(exc.details)) from exc
 
@@ -323,7 +353,7 @@ class CapabilityService:
             capability_version=capability.version,
             name=capability.name,
             description=capability.description,
-            tools=self._resolve_tool_grants(capability.tool_grants),
+            tools=self._resolve_tool_keys(capability.tool_keys),
         )
 
     def _to_read_model(self, capability: Capability) -> CapabilityRead:
@@ -336,9 +366,10 @@ class CapabilityService:
                 "status": capability.status,
                 "name": capability.name,
                 "description": capability.description,
-                "toolGrants": [
+                "toolKeys": [tool.key for tool in resolved_toolset.tools],
+                "tools": [
                     {
-                        "tool": tool.key,
+                        "key": tool.key,
                         "displayName": tool.display_name,
                         "description": tool.description,
                     }

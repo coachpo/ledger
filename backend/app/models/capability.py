@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy import CheckConstraint, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -45,7 +43,7 @@ class Capability(IdMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
-    tool_grants: Mapped[list[dict[str, Any]]] = mapped_column(
+    tool_keys: Mapped[list[str]] = mapped_column(
         JSONB,
         nullable=False,
         default=list,

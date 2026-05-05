@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -10,6 +11,10 @@ from app.agents.tool_catalog.server_declared import (
     ServerDeclaredToolSpec,
 )
 from app.models.capability import Capability
+
+_SERVER_DECLARED_TOOL_KEY_PATTERN = re.compile(
+    r"^[a-z][a-z0-9_]{0,119}(?:\.[a-z][a-z0-9_]{0,119})+$"
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,39 @@ class ToolCatalog:
             for tool in sorted(self.tool_registry.values(), key=lambda item: item.key)
         )
 
+    def resolve_tool_keys(self, tool_keys: Sequence[object]) -> tuple[ResolvedTool, ...]:
+        resolved_tools: list[ResolvedTool] = []
+        seen_keys: set[str] = set()
+        details: list[dict[str, str]] = []
+
+        for index, raw_tool_key in enumerate(tool_keys):
+            tool_key = self._normalize_tool_key_value(raw_tool_key, index=index, details=details)
+            if tool_key is None:
+                continue
+            if tool_key in seen_keys:
+                details.append(
+                    {
+                        "field": f"toolKeys.{index}",
+                        "issue": f"Duplicate tool key {tool_key!r} is not allowed",
+                    }
+                )
+                continue
+            tool_spec = self.tool_registry.get(tool_key)
+            if tool_spec is None:
+                details.append(
+                    {
+                        "field": f"toolKeys.{index}",
+                        "issue": f"Unknown server-declared tool {tool_key!r}",
+                    }
+                )
+                continue
+            resolved_tools.append(self._to_resolved_tool(tool_spec))
+            seen_keys.add(tool_key)
+
+        if details:
+            raise ToolCatalogValidationError(details)
+        return tuple(resolved_tools)
+
     def resolve_tool_grants(
         self,
         tool_grants: Sequence[dict[str, Any]],
@@ -80,14 +118,7 @@ class ToolCatalog:
                     }
                 )
                 continue
-            resolved_tools.append(
-                ResolvedTool(
-                    key=tool_spec.key,
-                    display_name=tool_spec.display_name,
-                    description=tool_spec.description,
-                    module=tool_spec.module,
-                )
-            )
+            resolved_tools.append(self._to_resolved_tool(tool_spec))
             seen_keys.add(tool_key)
 
         if details:
@@ -95,7 +126,7 @@ class ToolCatalog:
         return tuple(resolved_tools)
 
     def resolve_capability(self, capability: Capability) -> ResolvedCapabilityToolset:
-        resolved_tools = self.resolve_tool_grants(capability.tool_grants)
+        resolved_tools = self.resolve_tool_keys(capability.tool_keys)
         return ResolvedCapabilityToolset(
             capability_id=capability.id,
             capability_key=capability.key,
@@ -131,6 +162,49 @@ class ToolCatalog:
             )
             return None
         return normalized_tool_key
+
+    @staticmethod
+    def _normalize_tool_key_value(
+        raw_tool_key: object,
+        *,
+        index: int,
+        details: list[dict[str, str]],
+    ) -> str | None:
+        if not isinstance(raw_tool_key, str):
+            details.append(
+                {
+                    "field": f"toolKeys.{index}",
+                    "issue": "Tool key must be a string",
+                }
+            )
+            return None
+        normalized_tool_key = raw_tool_key.strip().lower()
+        if not normalized_tool_key:
+            details.append(
+                {
+                    "field": f"toolKeys.{index}",
+                    "issue": "Tool key is required",
+                }
+            )
+            return None
+        if _SERVER_DECLARED_TOOL_KEY_PATTERN.fullmatch(normalized_tool_key) is None:
+            details.append(
+                {
+                    "field": f"toolKeys.{index}",
+                    "issue": "Tool key must use dot-separated lowercase identifiers",
+                }
+            )
+            return None
+        return normalized_tool_key
+
+    @staticmethod
+    def _to_resolved_tool(tool_spec: ServerDeclaredToolSpec) -> ResolvedTool:
+        return ResolvedTool(
+            key=tool_spec.key,
+            display_name=tool_spec.display_name,
+            description=tool_spec.description,
+            module=tool_spec.module,
+        )
 
 
 @lru_cache

@@ -11,6 +11,7 @@ from app.schemas.capability import (
     CapabilityListRead,
     CapabilityRead,
     CapabilityStatus,
+    CapabilityToolListRead,
 )
 from app.services.capability_service import CapabilityService
 
@@ -31,6 +32,13 @@ def create_capability_draft(
     service: Annotated[CapabilityService, Depends(get_capability_service)],
 ) -> CapabilityRead:
     return service.create_draft(payload)
+
+
+@router.get("/tools", response_model=CapabilityToolListRead)
+def list_capability_tools(
+    service: Annotated[CapabilityService, Depends(get_capability_service)],
+) -> CapabilityToolListRead:
+    return service.list_available_tools()
 
 
 @router.get("/{capability_id}", response_model=CapabilityRead)

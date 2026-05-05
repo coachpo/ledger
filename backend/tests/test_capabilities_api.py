@@ -30,7 +30,7 @@ def _create_capability(client: TestClient, payload: dict[str, object]) -> dict[s
     return cast(dict[str, object], response.json())
 
 
-def test_capability_create_and_read_accepts_tradingagents_tool_grants(
+def test_capability_create_and_read_accepts_tradingagents_tool_keys(
     client: TestClient,
 ) -> None:
     created = _create_capability(
@@ -39,25 +39,27 @@ def test_capability_create_and_read_accepts_tradingagents_tool_grants(
             "key": "tradingagents_market_data",
             "name": "TradingAgents Market Data",
             "description": "TradingAgents native market-data tools.",
-            "toolGrants": [{"tool": tool_key} for tool_key in TRADINGAGENTS_TOOL_KEYS],
+            "toolKeys": list(TRADINGAGENTS_TOOL_KEYS),
         },
     )
 
-    assert "toolGrants" in created
+    assert created["toolKeys"] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert "toolGrants" not in created
     assert "toolDefinitions" not in created
-    created_grants = cast(list[dict[str, object]], created["toolGrants"])
-    assert [item["tool"] for item in created_grants] == list(TRADINGAGENTS_TOOL_KEYS)
+    created_tools = cast(list[dict[str, object]], created["tools"])
+    assert [item["key"] for item in created_tools] == list(TRADINGAGENTS_TOOL_KEYS)
 
     read_response = client.get(f"/api/capabilities/{created['id']}")
     assert read_response.status_code == 200, read_response.json()
     read_body = cast(dict[str, object], read_response.json())
-    assert "toolGrants" in read_body
+    assert read_body["toolKeys"] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert "toolGrants" not in read_body
     assert "toolDefinitions" not in read_body
-    read_grants = cast(list[dict[str, object]], read_body["toolGrants"])
-    assert [item["tool"] for item in read_grants] == list(TRADINGAGENTS_TOOL_KEYS)
+    read_tools = cast(list[dict[str, object]], read_body["tools"])
+    assert [item["key"] for item in read_tools] == list(TRADINGAGENTS_TOOL_KEYS)
 
 
-def test_capability_create_rejects_unknown_tool_grant_without_persisting_draft(
+def test_capability_create_rejects_unknown_tool_key_without_persisting_draft(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -67,7 +69,7 @@ def test_capability_create_rejects_unknown_tool_grant_without_persisting_draft(
             "key": "unknown_trading_tool",
             "name": "Unknown Trading Tool",
             "description": "Unknown tools must still fail catalog validation.",
-            "toolGrants": [{"tool": "ledger.stock_analysis.report_lookup"}],
+            "toolKeys": ["ledger.stock_analysis.report_lookup"],
         },
     )
 
@@ -76,7 +78,7 @@ def test_capability_create_rejects_unknown_tool_grant_without_persisting_draft(
     details = cast(list[dict[str, object]], body["details"])
     assert body["code"] == "validation_error"
     assert any(
-        detail["field"] == "toolGrants.0.tool"
+        detail["field"] == "toolKeys.0"
         and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'"
         in str(detail["issue"])
         for detail in details
@@ -88,7 +90,7 @@ def test_capability_create_rejects_unknown_tool_grant_without_persisting_draft(
         assert persisted_count == 0
 
 
-def test_capability_crud_uses_tool_grants(
+def test_capability_crud_uses_tool_keys(
     client: TestClient,
 ) -> None:
     created = _create_capability(
@@ -97,32 +99,31 @@ def test_capability_crud_uses_tool_grants(
             "key": "market_research",
             "name": "Market Research",
             "description": "Server-owned research tools.",
-            "toolGrants": [
-                {"tool": "ledger.positions.lookup"},
-                {"tool": "ledger.reports.lookup"},
+            "toolKeys": [
+                "ledger.positions.lookup",
+                "ledger.reports.lookup",
             ],
         },
     )
 
     assert created["status"] == "draft"
-    assert "toolGrants" in created
-    assert "toolDefinitions" not in created
-    created_grants = cast(list[dict[str, object]], created["toolGrants"])
-    assert [item["tool"] for item in created_grants] == [
+    assert created["toolKeys"] == [
         "ledger.positions.lookup",
         "ledger.reports.lookup",
     ]
+    assert "toolGrants" not in created
+    assert "toolDefinitions" not in created
 
     update_response = client.patch(
         f"/api/capabilities/{created['id']}",
-        json={"name": "Market Research v2", "toolGrants": [{"tool": "ledger.reports.lookup"}]},
+        json={"name": "Market Research v2", "toolKeys": ["ledger.reports.lookup"]},
     )
     assert update_response.status_code == 200, update_response.json()
     updated = cast(dict[str, object], update_response.json())
-    updated_grants = cast(list[dict[str, object]], updated["toolGrants"])
     assert updated["id"] != created["id"]
     assert updated["version"] == 2
-    assert updated_grants[0]["tool"] == "ledger.reports.lookup"
+    assert updated["toolKeys"] == ["ledger.reports.lookup"]
+    assert "toolGrants" not in updated
     assert "toolDefinitions" not in updated
 
     archived_original = client.get(f"/api/capabilities/{created['id']}")
@@ -186,7 +187,7 @@ def test_capability_patch_rejects_tool_definitions_without_archiving_existing_dr
         {
             "key": "patch_conflict_tools",
             "name": "Patch Conflict Tools",
-            "toolGrants": [{"tool": "ledger.reports.lookup"}],
+            "toolKeys": ["ledger.reports.lookup"],
         },
     )
 
@@ -247,12 +248,15 @@ def test_persisted_capability_refs_resolve_as_agent_capabilities(
     body = cast(dict[str, object], response.json())
     capabilities = cast(list[dict[str, object]], body["capabilities"])
     assert capabilities[0]["key"] == "sec_filing_lookup"
-    assert capabilities[0]["toolGrants"] == [
+    assert capabilities[0]["toolKeys"] == ["ledger.reports.lookup"]
+    tools = cast(list[dict[str, object]], capabilities[0]["tools"])
+    assert tools == [
         {
-            "tool": "ledger.reports.lookup",
+            "key": "ledger.reports.lookup",
             "displayName": "Report Lookup",
             "description": "Read persisted Ledger reports through server-owned report lookups.",
         }
     ]
+    assert "toolGrants" not in capabilities[0]
     assert "toolDefinitions" not in capabilities[0]
     assert "skills" not in body

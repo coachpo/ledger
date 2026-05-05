@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents import ToolCatalog, ToolCatalogValidationError
 from app.agents.mcp import McpClientBoundary, McpConnectionTestResult
 from app.api.dependencies import get_mcp_connection_tester, get_quote_provider
 from app.core.errors import ApiError
@@ -186,6 +187,30 @@ def activate_capability(client: TestClient, capability_id: int | str) -> dict[st
     response = client.post(f"/api/capabilities/{capability_id}/activate")
     assert response.status_code == 200, response.json()
     return response.json()
+
+
+def _assert_capability_read_contract(
+    payload: dict[str, object],
+    *,
+    tool_keys: list[str],
+) -> list[dict[str, object]]:
+    assert set(payload) == {
+        "id",
+        "key",
+        "version",
+        "status",
+        "name",
+        "description",
+        "toolKeys",
+        "tools",
+        "createdAt",
+        "updatedAt",
+    }
+    assert payload["toolKeys"] == tool_keys
+    tools = cast(list[dict[str, object]], payload["tools"])
+    assert [tool["key"] for tool in tools] == tool_keys
+    assert all(set(tool) == {"key", "displayName", "description"} for tool in tools)
+    return tools
 
 
 def create_mcp_server(
@@ -367,6 +392,18 @@ POSITION_LOOKUP_DESCRIPTION = (
 )
 REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
 REPORT_LOOKUP_DESCRIPTION = "Read persisted Ledger reports through server-owned report lookups."
+EXPECTED_CAPABILITY_TOOL_KEYS = [
+    "ledger.fundamentals.lookup",
+    "ledger.indicators.lookup",
+    "ledger.insider_data.lookup",
+    "ledger.market_data.history_lookup",
+    "ledger.market_data.ohlcv_lookup",
+    "ledger.market_data.quote_lookup",
+    "ledger.news.lookup",
+    "ledger.positions.lookup",
+    "ledger.reports.lookup",
+    "ledger.reports.write",
+]
 
 
 def _stub_workflow_input_schema() -> dict[str, object]:
@@ -543,9 +580,9 @@ def _seed_stub_platform_workflow(client: TestClient) -> None:
         payload={
             "key": STUB_CAPABILITY_KEY,
             "name": "Stub Workspace Tools",
-            "toolGrants": [
-                {"tool": "ledger.market_data.quote_lookup"},
-                {"tool": "ledger.reports.lookup"},
+            "toolKeys": [
+                "ledger.market_data.quote_lookup",
+                "ledger.reports.lookup",
             ],
         },
     )
@@ -599,6 +636,7 @@ def test_agent_platform_routes_mount_under_api_without_v3_shims(app: FastAPI) ->
         "/api/agents/{agent_id}",
         "/api/agents/{agent_id}/runs",
         "/api/capabilities",
+        "/api/capabilities/tools",
         "/api/capabilities/{capability_id}",
         "/api/capabilities/{capability_id}/activate",
         "/api/mcp-servers",
@@ -868,83 +906,216 @@ def test_agent_platform_output_schema_invalid_unsupported_keywords_return_field_
     )
 
 
-def test_agent_platform_capability_reports_lookup_crud_routes_resolve_server_declared_tool_metadata(
+def test_agent_platform_capability_tools_catalog_route_lists_key_native_read_models(
     client: TestClient,
 ) -> None:
-    created = create_capability(
-        client,
-        payload={
-            "key": "market_research",
-            "name": "Market Research",
-            "description": "Server-declared research toolset.",
-            "toolGrants": [
-                {"tool": "ledger.market_data.quote_lookup"},
-                {"tool": "ledger.positions.lookup"},
-                {"tool": "ledger.reports.lookup"},
-            ],
-        },
+    response = client.get("/api/capabilities/tools")
+
+    assert response.status_code == 200, response.json()
+    available_tools = response.json()
+    items = cast(list[dict[str, object]], available_tools["items"])
+    assert [item["key"] for item in items] == EXPECTED_CAPABILITY_TOOL_KEYS
+    assert items[0] == {
+        "key": "ledger.fundamentals.lookup",
+        "displayName": "Fundamentals Lookup",
+        "description": (
+            "Read server-owned fundamentals data when provider support is "
+            "available; otherwise return structured warnings."
+        ),
+    }
+    assert next(item for item in items if item["key"] == "ledger.reports.lookup") == {
+        "key": "ledger.reports.lookup",
+        "displayName": REPORT_LOOKUP_DISPLAY_NAME,
+        "description": REPORT_LOOKUP_DESCRIPTION,
+    }
+    assert all(set(item) == {"key", "displayName", "description"} for item in items)
+    assert "toolGrants" not in response.text
+
+    not_found_response = client.get("/api/capabilities/not-a-capability-id")
+    assert not_found_response.status_code == 422, not_found_response.json()
+    assert not_found_response.json()["details"][0]["field"] == "capability_id"
+
+
+def test_agent_platform_capability_resolve_tool_keys_normalizes_and_preserves_order() -> None:
+    resolved = ToolCatalog().resolve_tool_keys(
+        [" Ledger.Reports.Lookup ", "ledger.market_data.quote_lookup"]
     )
 
-    assert created["status"] == "draft"
-    assert created["version"] == 1
-    created_tool_grants = cast(list[dict[str, object]], created["toolGrants"])
-    assert [item["tool"] for item in created_tool_grants] == [
+    assert [tool.key for tool in resolved] == [
+        "ledger.reports.lookup",
         "ledger.market_data.quote_lookup",
-        "ledger.positions.lookup",
-        "ledger.reports.lookup",
     ]
-    assert created_tool_grants[0]["displayName"] == "Market Data Quote Lookup"
-    assert created_tool_grants[1]["displayName"] == POSITION_LOOKUP_DISPLAY_NAME
-    assert created_tool_grants[1]["description"] == POSITION_LOOKUP_DESCRIPTION
-    assert created_tool_grants[2]["displayName"] == REPORT_LOOKUP_DISPLAY_NAME
-    assert created_tool_grants[2]["description"] == REPORT_LOOKUP_DESCRIPTION
+    assert [tool.display_name for tool in resolved] == [
+        REPORT_LOOKUP_DISPLAY_NAME,
+        "Market Data Quote Lookup",
+    ]
 
-    update_response = client.patch(
-        f"/api/capabilities/{created['id']}",
-        json={
-            "name": "Market Research v2",
-            "toolGrants": [
-                {"tool": "ledger.market_data.history_lookup"},
-                {"tool": "ledger.positions.lookup"},
-                {"tool": "ledger.reports.lookup"},
+
+def test_agent_platform_capability_rejects_unknown_tool_key() -> None:
+    with pytest.raises(ToolCatalogValidationError) as exc_info:
+        ToolCatalog().resolve_tool_keys(["ledger.stock_analysis.report_lookup"])
+
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.0",
+            "issue": "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'",
+        }
+    ]
+
+
+def test_agent_platform_capability_rejects_duplicate_tool_key() -> None:
+    with pytest.raises(ToolCatalogValidationError) as exc_info:
+        ToolCatalog().resolve_tool_keys(["ledger.reports.lookup", " Ledger.Reports.Lookup "])
+
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.1",
+            "issue": "Duplicate tool key 'ledger.reports.lookup' is not allowed",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tool_keys", "expected_issue"),
+    [
+        ([None], "Tool key must be a string"),
+        ([123], "Tool key must be a string"),
+        (["   "], "Tool key is required"),
+        (["ledger"], "Tool key must use dot-separated lowercase identifiers"),
+    ],
+)
+def test_agent_platform_capability_rejects_invalid_tool_key_values(
+    tool_keys: list[object],
+    expected_issue: str,
+) -> None:
+    with pytest.raises(ToolCatalogValidationError) as exc_info:
+        ToolCatalog().resolve_tool_keys(tool_keys)
+
+    assert exc_info.value.details == [{"field": "toolKeys.0", "issue": expected_issue}]
+
+
+@pytest.mark.parametrize(
+    ("tool_keys", "expected_details"),
+    [
+        (
+            [None],
+            [{"field": "toolKeys.0", "issue": "Tool key must be a string"}],
+        ),
+        (
+            [123],
+            [{"field": "toolKeys.0", "issue": "Tool key must be a string"}],
+        ),
+        (
+            ["   "],
+            [{"field": "toolKeys.0", "issue": "Tool key is required"}],
+        ),
+        (
+            ["ledger"],
+            [
+                {
+                    "field": "toolKeys.0",
+                    "issue": "Tool key must use dot-separated lowercase identifiers",
+                }
             ],
+        ),
+        (
+            ["ledger.reports.lookup", " Ledger.Reports.Lookup "],
+            [
+                {
+                    "field": "toolKeys.1",
+                    "issue": "Duplicate tool key 'ledger.reports.lookup' is not allowed",
+                }
+            ],
+        ),
+        (
+            ["ledger.stock_analysis.report_lookup"],
+            [
+                {
+                    "field": "toolKeys.0",
+                    "issue": "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'",
+                }
+            ],
+        ),
+    ],
+)
+def test_agent_platform_capability_create_rejects_invalid_tool_keys_without_persisting_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    tool_keys: list[object],
+    expected_details: list[dict[str, str]],
+) -> None:
+    response = client.post(
+        "/api/capabilities",
+        json={
+            "key": "invalid_tool_key_capability",
+            "name": "Invalid Tool Key Capability",
+            "toolKeys": tool_keys,
         },
     )
-    assert update_response.status_code == 200, update_response.json()
-    updated = update_response.json()
-    assert updated["id"] != created["id"]
-    assert updated["version"] == 2
-    assert updated["name"] == "Market Research v2"
-    assert [item["tool"] for item in updated["toolGrants"]] == [
-        "ledger.market_data.history_lookup",
-        "ledger.positions.lookup",
-        "ledger.reports.lookup",
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "validation_error",
+        "message": "Capability validation failed",
+        "details": expected_details,
+    }
+    with session_factory() as session:
+        assert session.query(Capability).filter_by(key="invalid_tool_key_capability").all() == []
+
+
+def test_agent_platform_capability_create_rejects_missing_tool_keys_without_persisting_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    response = client.post(
+        "/api/capabilities",
+        json={
+            "key": "missing_tools_capability",
+            "name": "Missing Tools Capability",
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    assert body["details"] == [
+        {
+            "field": "toolKeys",
+            "issue": body["details"][0]["issue"],
+        }
     ]
+    assert "Field required" in body["details"][0]["issue"]
+    with session_factory() as session:
+        assert session.query(Capability).filter_by(key="missing_tools_capability").all() == []
 
-    original_detail = client.get(f"/api/capabilities/{created['id']}")
-    assert original_detail.status_code == 200, original_detail.json()
-    assert original_detail.json()["status"] == "archived"
-    assert original_detail.json()["version"] == 1
 
-    get_response = client.get(f"/api/capabilities/{updated['id']}")
-    assert get_response.status_code == 200, get_response.json()
-    assert get_response.json() == updated
+def test_agent_platform_capability_create_rejects_empty_tool_keys_without_persisting_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    response = client.post(
+        "/api/capabilities",
+        json={
+            "key": "empty_tools_capability",
+            "name": "Empty Tools Capability",
+            "toolKeys": [],
+        },
+    )
 
-    list_response = client.get("/api/capabilities", params={"status": "draft"})
-    assert list_response.status_code == 200, list_response.json()
-    assert list_response.json()["items"] == [updated]
-
-    activated = activate_capability(client, str(updated["id"]))
-    assert activated["status"] == "published"
-    assert [item["tool"] for item in cast(list[dict[str, object]], activated["toolGrants"])] == [
-        "ledger.market_data.history_lookup",
-        "ledger.positions.lookup",
-        "ledger.reports.lookup",
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    assert body["details"] == [
+        {
+            "field": "toolKeys",
+            "issue": body["details"][0]["issue"],
+        }
     ]
-
-    archive_response = client.delete(f"/api/capabilities/{updated['id']}")
-    assert archive_response.status_code == 200, archive_response.json()
-    assert archive_response.json()["status"] == "archived"
+    assert "at least 1 item" in body["details"][0]["issue"]
+    with session_factory() as session:
+        assert session.query(Capability).filter_by(key="empty_tools_capability").all() == []
 
 
 def test_agent_platform_capability_create_rejects_removed_tool_without_persisting_draft(
@@ -957,23 +1128,125 @@ def test_agent_platform_capability_create_rejects_removed_tool_without_persistin
             "key": "stock_analysis_tools",
             "name": "Stock Analysis Tools",
             "description": "Removed stock-analysis toolset should fail validation.",
-            "toolGrants": [{"tool": "ledger.stock_analysis.report_lookup"}],
+            "toolKeys": ["ledger.stock_analysis.report_lookup"],
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body == {
+        "code": "validation_error",
+        "message": "Capability validation failed",
+        "details": [
+            {
+                "field": "toolKeys.0",
+                "issue": "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'",
+            }
+        ],
+    }
+
+    with session_factory() as session:
+        assert (
+            session.query(Capability).filter(Capability.key == "stock_analysis_tools").all() == []
+        )
+
+
+def test_agent_platform_capability_rejects_legacy_tool_grants_without_persisting_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    response = client.post(
+        "/api/capabilities",
+        json={
+            "key": "legacy_tool_grants",
+            "name": "Legacy Tool Grants",
+            "toolGrants": [{"tool": "ledger.reports.lookup"}],
         },
     )
 
     assert response.status_code == 422
     body = response.json()
     assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
     assert any(
-        detail["field"] == "toolGrants.0.tool"
-        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
+        detail["field"] == "toolGrants" and "Extra inputs are not permitted" in detail["issue"]
         for detail in body["details"]
     )
-
     with session_factory() as session:
-        assert (
-            session.query(Capability).filter(Capability.key == "stock_analysis_tools").all() == []
-        )
+        assert session.query(Capability).filter(Capability.key == "legacy_tool_grants").all() == []
+
+
+def test_agent_platform_capability_reports_lookup_crud_routes_resolve_server_declared_tool_metadata(
+    client: TestClient,
+) -> None:
+    created_tool_keys = [
+        "ledger.market_data.quote_lookup",
+        "ledger.positions.lookup",
+        "ledger.reports.lookup",
+    ]
+    created = create_capability(
+        client,
+        payload={
+            "key": "market_research",
+            "name": "Market Research",
+            "description": "Server-declared research toolset.",
+            "toolKeys": created_tool_keys,
+        },
+    )
+
+    assert created["status"] == "draft"
+    assert created["version"] == 1
+    created_tools = _assert_capability_read_contract(created, tool_keys=created_tool_keys)
+    assert created_tools[0]["displayName"] == "Market Data Quote Lookup"
+    assert created_tools[1]["displayName"] == POSITION_LOOKUP_DISPLAY_NAME
+    assert created_tools[1]["description"] == POSITION_LOOKUP_DESCRIPTION
+    assert created_tools[2]["displayName"] == REPORT_LOOKUP_DISPLAY_NAME
+    assert created_tools[2]["description"] == REPORT_LOOKUP_DESCRIPTION
+
+    updated_tool_keys = [
+        "ledger.market_data.history_lookup",
+        "ledger.positions.lookup",
+        "ledger.reports.lookup",
+    ]
+    update_response = client.patch(
+        f"/api/capabilities/{created['id']}",
+        json={
+            "name": "Market Research v2",
+            "toolKeys": updated_tool_keys,
+        },
+    )
+    assert update_response.status_code == 200, update_response.json()
+    updated = update_response.json()
+    assert updated["id"] != created["id"]
+    assert updated["version"] == 2
+    assert updated["name"] == "Market Research v2"
+    _assert_capability_read_contract(updated, tool_keys=updated_tool_keys)
+
+    original_detail = client.get(f"/api/capabilities/{created['id']}")
+    assert original_detail.status_code == 200, original_detail.json()
+    original_payload = original_detail.json()
+    assert original_payload["status"] == "archived"
+    assert original_payload["version"] == 1
+    _assert_capability_read_contract(original_payload, tool_keys=created_tool_keys)
+
+    get_response = client.get(f"/api/capabilities/{updated['id']}")
+    assert get_response.status_code == 200, get_response.json()
+    assert get_response.json() == updated
+
+    list_response = client.get("/api/capabilities", params={"status": "draft"})
+    assert list_response.status_code == 200, list_response.json()
+    assert list_response.json()["items"] == [updated]
+    assert "toolGrants" not in list_response.text
+
+    activated = activate_capability(client, str(updated["id"]))
+    assert activated["status"] == "published"
+    _assert_capability_read_contract(activated, tool_keys=updated_tool_keys)
+
+    archive_response = client.delete(f"/api/capabilities/{updated['id']}")
+    assert archive_response.status_code == 200, archive_response.json()
+    archived = archive_response.json()
+    assert archived["status"] == "archived"
+    _assert_capability_read_contract(archived, tool_keys=updated_tool_keys)
 
 
 def test_agent_platform_capability_update_rejects_removed_tool_without_archiving_draft(
@@ -986,25 +1259,29 @@ def test_agent_platform_capability_update_rejects_removed_tool_without_archiving
             "key": "market_research",
             "name": "Market Research",
             "description": "Valid draft before invalid patch attempt.",
-            "toolGrants": [{"tool": "ledger.reports.lookup"}],
+            "toolKeys": ["ledger.reports.lookup"],
         },
     )
 
     response = client.patch(
         f"/api/capabilities/{created['id']}",
         json={
-            "toolGrants": [{"tool": "ledger.stock_analysis.report_lookup"}],
+            "toolKeys": ["ledger.stock_analysis.report_lookup"],
         },
     )
 
     assert response.status_code == 422
     body = response.json()
-    assert body["code"] == "validation_error"
-    assert any(
-        detail["field"] == "toolGrants.0.tool"
-        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'" in detail["issue"]
-        for detail in body["details"]
-    )
+    assert body == {
+        "code": "validation_error",
+        "message": "Capability validation failed",
+        "details": [
+            {
+                "field": "toolKeys.0",
+                "issue": "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'",
+            }
+        ],
+    }
 
     with session_factory() as session:
         versions = (
@@ -1016,6 +1293,140 @@ def test_agent_platform_capability_update_rejects_removed_tool_without_archiving
 
     assert len(versions) == 1
     assert versions[0].id == created["id"]
+    assert versions[0].status == "draft"
+    assert versions[0].version == 1
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_details"),
+    [
+        (
+            {"toolKeys": [None]},
+            [{"field": "toolKeys.0", "issue": "Tool key must be a string"}],
+        ),
+        (
+            {"toolKeys": [123]},
+            [{"field": "toolKeys.0", "issue": "Tool key must be a string"}],
+        ),
+        (
+            {"toolKeys": ["   "]},
+            [{"field": "toolKeys.0", "issue": "Tool key is required"}],
+        ),
+        (
+            {"toolKeys": ["ledger"]},
+            [
+                {
+                    "field": "toolKeys.0",
+                    "issue": "Tool key must use dot-separated lowercase identifiers",
+                }
+            ],
+        ),
+        (
+            {"toolKeys": ["ledger.reports.lookup", " Ledger.Reports.Lookup "]},
+            [
+                {
+                    "field": "toolKeys.1",
+                    "issue": "Duplicate tool key 'ledger.reports.lookup' is not allowed",
+                }
+            ],
+        ),
+    ],
+)
+def test_agent_platform_capability_update_rejects_invalid_tool_keys_without_archiving_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    payload: dict[str, object],
+    expected_details: list[dict[str, str]],
+) -> None:
+    created = create_capability(
+        client,
+        payload={
+            "key": "invalid_update_capability",
+            "name": "Invalid Update Capability",
+            "toolKeys": ["ledger.reports.lookup"],
+        },
+    )
+
+    response = client.patch(f"/api/capabilities/{created['id']}", json=payload)
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "validation_error",
+        "message": "Capability validation failed",
+        "details": expected_details,
+    }
+    with session_factory() as session:
+        versions = session.query(Capability).filter_by(key="invalid_update_capability").all()
+    assert len(versions) == 1
+    assert versions[0].status == "draft"
+    assert versions[0].version == 1
+
+
+def test_agent_platform_capability_update_rejects_empty_payload_without_archiving_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    created = create_capability(
+        client,
+        payload={
+            "key": "empty_patch_capability",
+            "name": "Empty Patch Capability",
+            "toolKeys": ["ledger.reports.lookup"],
+        },
+    )
+
+    response = client.patch(f"/api/capabilities/{created['id']}", json={})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    assert body["details"] == [
+        {
+            "field": "body",
+            "issue": body["details"][0]["issue"],
+        }
+    ]
+    assert "At least one field must be provided" in body["details"][0]["issue"]
+    with session_factory() as session:
+        versions = session.query(Capability).filter_by(key="empty_patch_capability").all()
+    assert len(versions) == 1
+    assert versions[0].status == "draft"
+    assert versions[0].version == 1
+
+
+@pytest.mark.parametrize("tool_keys", [None, []])
+def test_agent_platform_capability_update_rejects_null_or_empty_tool_keys_without_archiving_draft(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    tool_keys: object,
+) -> None:
+    created = create_capability(
+        client,
+        payload={
+            "key": "empty_update_capability",
+            "name": "Empty Update Capability",
+            "toolKeys": ["ledger.reports.lookup"],
+        },
+    )
+
+    response = client.patch(f"/api/capabilities/{created['id']}", json={"toolKeys": tool_keys})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    assert body["details"] == [
+        {
+            "field": "toolKeys",
+            "issue": body["details"][0]["issue"],
+        }
+    ]
+    expected_issue_fragment = "must be an array" if tool_keys is None else "at least 1 item"
+    assert expected_issue_fragment in body["details"][0]["issue"]
+    with session_factory() as session:
+        versions = session.query(Capability).filter_by(key="empty_update_capability").all()
+    assert len(versions) == 1
     assert versions[0].status == "draft"
     assert versions[0].version == 1
 
@@ -1032,7 +1443,7 @@ def test_agent_platform_capability_reads_succeed_after_startup_repairs_custom_ke
             status="draft",
             name="Stock Analysis Workspace Verify",
             description="Custom-key stale row repaired during startup.",
-            tool_grants=[{"tool": RETIRED_REPORT_LOOKUP_TOOL}],
+            tool_keys=[RETIRED_REPORT_LOOKUP_TOOL],
         )
         session.add(stale_capability)
         session.commit()
@@ -1043,27 +1454,19 @@ def test_agent_platform_capability_reads_succeed_after_startup_repairs_custom_ke
     with session_factory() as session:
         repaired_capability = session.get(Capability, stale_capability_id)
 
-    assert repaired_capability is not None
-    assert repaired_capability.key == STALE_CAPABILITY_KEY
-    assert repaired_capability.status == "draft"
-    assert repaired_capability.tool_grants == [{"tool": REPAIRED_REPORT_LOOKUP_TOOL}]
+    assert repaired_capability is None
 
     detail_response = client.get(f"/api/capabilities/{stale_capability_id}")
-    assert detail_response.status_code == 200, detail_response.json()
-    detail_payload = detail_response.json()
-    assert detail_payload["id"] == stale_capability_id
-    assert detail_payload["key"] == STALE_CAPABILITY_KEY
-    assert detail_payload["toolGrants"] == [
-        {
-            "tool": REPAIRED_REPORT_LOOKUP_TOOL,
-            "displayName": REPORT_LOOKUP_DISPLAY_NAME,
-            "description": REPORT_LOOKUP_DESCRIPTION,
-        }
-    ]
+    assert detail_response.status_code == 404, detail_response.json()
+    assert detail_response.json() == {
+        "code": "not_found",
+        "message": "Capability not found",
+        "details": [],
+    }
 
     list_response = client.get("/api/capabilities")
     assert list_response.status_code == 200, list_response.json()
-    assert list_response.json()["items"] == [detail_payload]
+    assert list_response.json()["items"] == []
 
 
 def test_agent_platform_mcp_crud_routes_and_connection_test(
@@ -1315,7 +1718,7 @@ def _seed_agent_platform_agent_dependencies(client: TestClient) -> dict[str, dic
         payload={
             "key": "market_research",
             "name": "Market Research",
-            "toolGrants": [{"tool": "ledger.market_data.quote_lookup"}],
+            "toolKeys": ["ledger.market_data.quote_lookup"],
         },
     )
     capability = activate_capability(client, cast(int, created_capability["id"]))
@@ -1494,7 +1897,7 @@ def test_agent_platform_agent_update_version_creates_new_immutable_row(
         payload={
             "key": "market_research",
             "name": "Market Research v2",
-            "toolGrants": [{"tool": "ledger.market_data.history_lookup"}],
+            "toolKeys": ["ledger.market_data.history_lookup"],
         },
     )
     created_mcp_server_v2 = create_mcp_server(

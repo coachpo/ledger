@@ -9,7 +9,6 @@ from pydantic import Field, field_validator, model_validator
 from app.schemas.common import CamelModel, ensure_timezone
 
 _STABLE_CAPABILITY_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
-_SERVER_DECLARED_TOOL_KEY_RE = r"^[a-z][a-z0-9_]{0,119}(?:\.[a-z][a-z0-9_]{0,119})+$"
 
 
 def _normalize_required_text(value: object, *, field_name: str) -> str:
@@ -39,13 +38,6 @@ def _normalize_capability_key(value: object) -> str:
     return normalized
 
 
-def _normalize_tool_key(value: object) -> str:
-    normalized = _normalize_required_text(value, field_name="Tool").lower()
-    if re.fullmatch(_SERVER_DECLARED_TOOL_KEY_RE, normalized) is None:
-        raise ValueError("Tool must use dot-separated lowercase identifiers")
-    return normalized
-
-
 class CapabilityStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -53,25 +45,21 @@ class CapabilityStatus(str, Enum):  # noqa: UP042
     ARCHIVED = "archived"
 
 
-class CapabilityToolGrantWrite(CamelModel):
-    tool: str = Field(min_length=1, max_length=200)
-
-    @field_validator("tool", mode="before")
-    @classmethod
-    def validate_tool(cls, value: object) -> str:
-        return _normalize_tool_key(value)
-
-
-class CapabilityToolGrantRead(CapabilityToolGrantWrite):
+class CapabilityToolRead(CamelModel):
+    key: str
     display_name: str
     description: str
+
+
+class CapabilityToolListRead(CamelModel):
+    items: list[CapabilityToolRead]
 
 
 class CapabilityDraftCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    tool_grants: list[CapabilityToolGrantWrite] = Field(min_length=1, alias="toolGrants")
+    tool_keys: list[object] = Field(min_length=1)
 
     @field_validator("key", mode="before")
     @classmethod
@@ -92,13 +80,13 @@ class CapabilityDraftCreate(CamelModel):
 class CapabilityDraftUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
-    tool_grants: list[CapabilityToolGrantWrite] | None = Field(default=None, alias="toolGrants")
+    tool_keys: list[object] | None = Field(default=None, min_length=1)
 
-    @field_validator("tool_grants", mode="before")
+    @field_validator("tool_keys", mode="before")
     @classmethod
-    def reject_null_tool_grants(cls, value: object) -> object:
+    def reject_null_tool_keys(cls, value: object) -> object:
         if value is None:
-            raise ValueError("toolGrants must be an array")
+            raise ValueError("toolKeys must be an array")
         return value
 
     @field_validator("name", "description", mode="before")
@@ -120,7 +108,8 @@ class CapabilityRead(CamelModel):
     status: CapabilityStatus
     name: str
     description: str
-    tool_grants: list[CapabilityToolGrantRead]
+    tool_keys: list[str]
+    tools: list[CapabilityToolRead]
     created_at: datetime
     updated_at: datetime
 
@@ -140,6 +129,6 @@ __all__ = [
     "CapabilityListRead",
     "CapabilityRead",
     "CapabilityStatus",
-    "CapabilityToolGrantRead",
-    "CapabilityToolGrantWrite",
+    "CapabilityToolListRead",
+    "CapabilityToolRead",
 ]
