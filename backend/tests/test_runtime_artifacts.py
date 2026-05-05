@@ -548,7 +548,6 @@ def test_agent_platform_run_persists_explicit_final_output_step(
             return {
                 "output": {"summary": f"analysis:{resolved_input['ticker']}"},
                 "tokens": 10,
-                "costUsd": "0.01000000",
                 "durationMs": 8,
                 "traceSpanId": None,
             }
@@ -557,7 +556,6 @@ def test_agent_platform_run_persists_explicit_final_output_step(
         return {
             "output": {"summary": f"decision:{resolved_input['analysis']['summary']}"},
             "tokens": 11,
-            "costUsd": "0.01100000",
             "durationMs": 9,
             "traceSpanId": None,
         }
@@ -702,7 +700,6 @@ def test_agent_platform_trace_falls_back_to_null_ids_when_logfire_is_unavailable
         return {
             "output": {"summary": f"{agent.key}:{resolved_input['ticker']}"},
             "tokens": 9,
-            "costUsd": "0.01000000",
             "durationMs": 7,
             "traceSpanId": None,
         }
@@ -806,7 +803,6 @@ def test_agent_platform_step_persistence_retains_completed_steps_when_later_step
             return {
                 "output": {"summary": f"analysis:{resolved_input['ticker']}"},
                 "tokens": 10,
-                "costUsd": "0.01000000",
                 "durationMs": 10,
                 "traceSpanId": None,
             }

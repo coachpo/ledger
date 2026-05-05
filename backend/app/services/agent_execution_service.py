@@ -4,7 +4,6 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 import openai
@@ -21,7 +20,6 @@ from app.agents.runtime_tools import (
     get_default_runtime_tool_registry,
 )
 from app.core.config import get_settings
-from app.core.formatting import parse_decimal_string
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
@@ -50,7 +48,6 @@ class RunExecutionError(Exception):
 class RunAgentInvocationResult:
     output: Any
     tokens: int = 0
-    cost_usd: Decimal = Decimal("0")
     duration_ms: int | None = None
     trace_span_id: str | None = None
 
@@ -79,12 +76,6 @@ class _PendingToolCall:
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
 
 
-def _normalize_cost(value: Any) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    return parse_decimal_string(value)
-
-
 def normalize_agent_invocation_result(raw_result: Any) -> RunAgentInvocationResult:
     if isinstance(raw_result, RunAgentInvocationResult):
         return raw_result
@@ -98,7 +89,6 @@ def normalize_agent_invocation_result(raw_result: Any) -> RunAgentInvocationResu
     return RunAgentInvocationResult(
         output=raw_result.get("output"),
         tokens=int(raw_result.get("tokens", 0) or 0),
-        cost_usd=_normalize_cost(raw_result.get("cost_usd", raw_result.get("costUsd", "0"))),
         duration_ms=None if duration_raw is None else int(duration_raw),
         trace_span_id=None if trace_span_raw is None else str(trace_span_raw),
     )
@@ -424,7 +414,6 @@ class AgentExecutionService:
                 return RunAgentInvocationResult(
                     output=self._parse_response_output(response_text),
                     tokens=total_tokens,
-                    cost_usd=Decimal("0"),
                     duration_ms=duration_ms,
                 )
             previous_response_id = self._extract_response_id(response)
@@ -482,7 +471,6 @@ class AgentExecutionService:
                 return RunAgentInvocationResult(
                     output=self._parse_response_output(response_text),
                     tokens=total_tokens,
-                    cost_usd=Decimal("0"),
                     duration_ms=duration_ms,
                 )
 

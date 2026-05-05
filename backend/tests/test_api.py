@@ -2348,7 +2348,6 @@ def test_agent_platform_stub_workflow_runs_without_live_services(
                     horizon_days=int(resolved_input["horizon_days"]),
                 ),
                 "tokens": 5,
-                "costUsd": "0.01000000",
                 "durationMs": 4,
                 "traceSpanId": f"step-1-{slot}",
             }
@@ -2361,7 +2360,6 @@ def test_agent_platform_stub_workflow_runs_without_live_services(
                 }
             ),
             "tokens": 9,
-            "costUsd": "0.02000000",
             "durationMs": 6,
             "traceSpanId": f"step-2-{agent_key}",
         }
