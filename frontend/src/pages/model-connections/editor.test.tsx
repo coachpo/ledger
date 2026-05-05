@@ -140,7 +140,8 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByRole("option", { name: /^high$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^xhigh$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^Custom\.\.\.$/ })).toBeVisible();
-    expect(screen.getByText(/Only sent for Responses API/i)).toBeVisible();
+    expect(screen.getByText(/Responses API as reasoning\.effort/i)).toBeVisible();
+    expect(screen.getByText(/Chat Completions as reasoning_effort/i)).toBeVisible();
     expect(
       screen.getByText(
         /Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings\./i,

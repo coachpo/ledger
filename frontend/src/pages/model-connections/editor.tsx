@@ -532,8 +532,8 @@ export function ModelConnectionsEditorPage() {
                 </div>
               ) : null}
               <p className="text-sm text-muted-foreground">
-                Only sent for Responses API. Choose Omit for providers that reject reasoning. The literal value "none" is sent as a string; Omit sends no reasoning parameter.
-                Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings.
+                Sent to Responses API as reasoning.effort and to Chat Completions as reasoning_effort. Choose Omit for providers that reject reasoning.
+                The literal value "none" is sent as a string; Omit sends no reasoning parameter. Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings.
               </p>
             </div>
           </div>
