@@ -10,6 +10,7 @@ import {
 } from "./run-detail-fixtures";
 
 const PLATFORM_API = "http://127.0.0.1:8001/api";
+const RUNTIME_COST_LABEL_PATTERN = new RegExp(`(?:Total|Inherited|Executed) ${"cost"}`);
 
 type OutputSchemaRead = {
   id: number;
@@ -339,7 +340,12 @@ test.describe("Workflow YAML editor", () => {
     await page.goto("/runs/9901");
 
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded");
     await expect(page.getByTestId("runs-detail-target-identity")).toContainText("tradingagents_v2_practical_fanout_review@1");
+    await expect(page.getByText("Total tokens: 18")).toBeVisible();
+    await expect(page.getByText("Inherited tokens: 0")).toBeVisible();
+    await expect(page.getByText("Executed tokens: 18")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-page")).not.toContainText(RUNTIME_COST_LABEL_PATTERN);
     await expect(page.getByTestId("runs-detail-final-output")).toContainText("Analyst fanout and bounded debates support a staged buy");
     await expect(page.getByTestId("runs-graph-summary")).toContainText("Fanout analyst_fanout");
     await expect(page.getByTestId("runs-graph-summary")).toContainText("branch market");
@@ -629,11 +635,9 @@ test.describe("Workflow YAML editor", () => {
       await route.fulfill({
         body: JSON.stringify(
           buildRunDetail({
-            executedCostUsd: "0.00000000",
             executedTokens: 0,
             finalOutput: { summary: `Step replay workflow summary for ${String(stepReplayPayload?.parameters ? "NVDA" : "AAPL")}` },
             id: 8802,
-            inheritedCostUsd: "0.01000000",
             inheritedTokens: 18,
             input: { ticker: "NVDA" },
             lineageRootRunId: 8801,
@@ -669,7 +673,6 @@ test.describe("Workflow YAML editor", () => {
             targetKey: workflowKey,
             targetKind: "workflow",
             targetVersion: 1,
-            totalCostUsd: "0.01000000",
             totalTokens: 18,
             traceId: "trace-workflow-yaml-8802",
           }),
@@ -705,6 +708,44 @@ test.describe("Workflow YAML editor", () => {
     ]);
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Saved baseline");
     let workflowEditUrl = page.url();
+    const workflowId = Number(new URL(workflowEditUrl).pathname.match(/^\/workflows\/(\d+)\/edit$/)?.[1] ?? 0);
+    expect(workflowId).toBeGreaterThan(0);
+
+    await page.route(/^http:\/\/127\.0\.0\.1:8001\/api\/runs\?/, async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get("targetKind")).toBe("workflow");
+      expect(url.searchParams.get("targetId")).toBe(String(workflowId));
+      await route.fulfill({
+        body: JSON.stringify({
+          items: [
+            {
+              finishedAt: "2026-04-29T10:00:04Z",
+              id: 8801,
+              queuedAt: "2026-04-29T10:00:00Z",
+              startedAt: "2026-04-29T10:00:01Z",
+              status: "succeeded",
+              targetId: workflowId,
+              targetKey: workflowKey,
+              targetKind: "workflow",
+              targetVersion: 1,
+              totalTokens: 18,
+              traceId: "trace-workflow-yaml-8801",
+            },
+          ],
+        }),
+        contentType: "application/json",
+      });
+    });
+
+    await page.goto(`/workflows/${workflowId}`);
+    const workflowRunHistoryRow = page.getByTestId("workflow-run-history-row-8801");
+    await expect(workflowRunHistoryRow).toContainText("Run #8801");
+    await expect(workflowRunHistoryRow).toContainText("succeeded");
+    await expect(workflowRunHistoryRow).toContainText("Total tokens: 18");
+    await expect(workflowRunHistoryRow).not.toContainText(RUNTIME_COST_LABEL_PATTERN);
+    await workflowRunHistoryRow.getByRole("button", { name: /open run/i }).click();
+    await expect(page).toHaveURL(/\/runs\/8801$/);
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
 
     await page.goto("/workflows");
     await expect(page.getByTestId(`workflows-row-${workflowKey}`)).toContainText(
@@ -766,6 +807,11 @@ test.describe("Workflow YAML editor", () => {
     await expect(page).toHaveURL(/\/runs\/8801$/);
     expect(runPayload).toEqual({ ticker: "MSFT" });
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded");
+    await expect(page.getByText("Total tokens: 18")).toBeVisible();
+    await expect(page.getByText("Inherited tokens: 0")).toBeVisible();
+    await expect(page.getByText("Executed tokens: 18")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-page")).not.toContainText(RUNTIME_COST_LABEL_PATTERN);
     await expect(page.getByTestId("runs-detail-final-output")).toContainText(
       "Workflow summary for MSFT",
     );
@@ -797,6 +843,11 @@ test.describe("Workflow YAML editor", () => {
     await page.getByRole("button", { name: /^create step replay$/i }).click();
     await expect(page).toHaveURL(/\/runs\/8802$/);
     expect(stepReplayPayload).toEqual({ replayStepIndex: 1, parameters: { ticker: "NVDA" } });
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded");
+    await expect(page.getByText("Total tokens: 18")).toBeVisible();
+    await expect(page.getByText("Inherited tokens: 18")).toBeVisible();
+    await expect(page.getByText("Executed tokens: 0")).toBeVisible();
+    await expect(page.getByTestId("runs-detail-page")).not.toContainText(RUNTIME_COST_LABEL_PATTERN);
     await expect(page.getByTestId("runs-detail-page")).toContainText("Step replay workflow summary for NVDA");
     await expect(page.getByTestId("runs-lineage-summary")).toContainText("Run #8801");
     await expect(page.getByTestId("runs-lineage-summary")).toContainText("Replay step");
