@@ -98,7 +98,7 @@ async function createAndActivateCapability(
       key,
       name: `Capability ${key}`,
       description: "Condenses responses.",
-      toolGrants: [{ tool: "ledger.market_data.quote_lookup" }],
+      toolKeys: ["ledger.market_data.quote_lookup"],
     },
   });
 

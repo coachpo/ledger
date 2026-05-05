@@ -82,7 +82,7 @@ async function createPublishedCapability(
       description: "Summarizes deterministic E2E inputs.",
       key,
       name: `Capability ${key}`,
-      toolGrants: [{ tool: "ledger.market_data.quote_lookup" }],
+      toolKeys: ["ledger.market_data.quote_lookup"],
     },
   });
 
