@@ -17,7 +17,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/agents/AGENTS.md` — YAML manifest agent list/editor/duplicate/archive/run-launch flows
-- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, and tool-grant flows
+- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, and tool-key flows
 - `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
 - `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, schema composer, raw JSON, and preview flows
@@ -27,7 +27,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, feature UI, primitives
-- `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and legacy workflow-builder widgets
+- `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
 - `src/components/forms/AGENTS.md` — shared dialog forms for portfolios and report generation
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens

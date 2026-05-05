@@ -8,7 +8,7 @@
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Run inventory | `list.tsx` | filters, polling monitor, progress, token, and cost summary |
+| Run inventory | `list.tsx` | filters, polling monitor, progress, token usage, and timing summary |
 | Run detail | `detail.tsx` | progress cards, trace linkage, final output, and per-agent accordion |
 | Run hooks | `../../hooks/use-runs.ts` | list/detail queries and refetch intervals |
 | Shared formatting | `../../lib/format.ts`, `../platform-resource-shared.tsx` | timestamps and JSON helpers |
