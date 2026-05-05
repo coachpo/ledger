@@ -28,7 +28,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 2. Template manager: global templates, placeholder browser, runtime inputs, inline compile preview, and stored-template compile.
 3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
 4. Agent authoring: YAML manifest list/editor/run-launch flows for versioned agents.
-5. Capabilities: canonical tool-grant CRUD with `toolGrants` and server-declared tools.
+5. Capabilities: canonical tool-key CRUD with `toolKeys` and read-only resolved `tools` metadata from server-declared tools.
 6. MCP servers: saved server config, security validation, connection testing, and runtime snapshots.
 7. Model connections: saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
 8. Output schemas: schema composer, JSON preview, validation, versioning, and runtime compilation.

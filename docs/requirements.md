@@ -14,7 +14,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Template CRUD, placeholder browsing, inline compile, stored-template compile, and runtime inputs.
 - Report generation from templates, external JSON report creation, markdown upload, slug CRUD, filtering, and download.
 - Agent CRUD and YAML manifest validation.
-- Capability CRUD with canonical `toolGrants` and server-declared tool catalog integration.
+- Capability CRUD with canonical `toolKeys`, read-only resolved `tools` metadata, and server-declared tool catalog integration.
 - MCP server CRUD, security validation, connection testing, exact-pinned versions, and runtime tool snapshots.
 - Model connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing.
 - Output schema CRUD, schema composer, locked JSON Schema subset validation, preview, and runtime compilation.
@@ -47,7 +47,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 ### FR-3 Agent Platform Authoring
 
 - Agents and workflows must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, non-exact version pins, and retired `spec.skills` fields.
-- Capabilities must be the canonical tool-grant resource and expose API payloads with `toolGrants`.
+- Capabilities must be the canonical tool-key resource, accept `toolKeys` on writes, and expose read-only resolved `tools` metadata on reads.
 - MCP server saves/tests must enforce URL, stdio, exact-pin, snapshot, and redaction rules.
 - Model connections must preserve or replace stored secrets safely and never return raw secrets in read payloads.
 - Output schemas must validate against the supported schema subset before save and before runtime use.
