@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference as of 2026-05-04 (`b4ac445`).
+> Status: Live data-model reference as of 2026-05-05 (`a8ad8fb`).
 
 ## Overview
 
@@ -29,7 +29,9 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the curr
 | `model_connections` | saved provider/model endpoint config, encrypted API keys, health/test metadata, archive state |
 | `output_schemas` | saved output-schema versions and schema subset metadata |
 | `workflows` | YAML-authored workflow manifests, immutable versions, inputs, steps, and output refs |
-| `runs` | persisted workflow execution input/output, status, totals, per-step detail, trace ids, rerun/replay metadata |
+| `runs` | persisted workflow execution input/output, status, totals, trace ids, rerun/replay metadata |
+| `run_steps` | persisted workflow step status, copied replay context, graph metadata, errors, and timestamps |
+| `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, and copied replay context |
 
 ## Integrity Rules
 
@@ -40,7 +42,7 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the curr
 - Capabilities are the canonical tool-key table; legacy skill contracts are not a live schema target.
 - Model-connection secrets must remain encrypted at rest and masked in reads/errors.
 - MCP runtime execution uses exact pinned versions and frozen tool snapshots.
-- Startup repair handles stale platform runs and current platform tables in `backend/app/db/`.
+- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `run_steps` and `run_agent_invocations`.
 
 ## Retired Data
 

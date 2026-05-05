@@ -1,6 +1,6 @@
 # Ledger Agent Platform Technical Design
 
-> Status: Live technical design as of 2026-05-04 (`b4ac445`).
+> Status: Live technical design as of 2026-05-05 (`a8ad8fb`).
 
 ## Overview
 
@@ -14,8 +14,8 @@ backend/app/
   api/{agents,capabilities,mcp_servers,model_connections,output_schemas,workflows,runs}.py
   services/{agent,capability,mcp_server,model_connection,output_schema,workflow,run}_service.py
   schemas/{agent,capability,mcp_server,model_connection,output_schema,workflow,run}.py
-  models/{agent,capability,mcp_server,model_connection,output_schema,workflow,run}.py
-  repositories/{agent,capability,mcp_server,model_connection,output_schema,workflow,run}_repository.py
+  models/{agent,capability,mcp_server,model_connection,output_schema,workflow,run,run_step,run_agent_invocation}.py
+  repositories/{agent,capability,mcp_server,model_connection,output_schema,workflow,run,run_step,run_agent_invocation}.py
   agents/{tool_catalog,runtime_tools,mcp}/
 ```
 
@@ -26,14 +26,14 @@ backend/app/
 3. The backend validates the pinned workflow, agents, capabilities, MCP servers, model connections, and output schemas.
 4. Run execution uses official SDK-backed model clients through service-owned boundaries.
 5. Native runtime tools and MCP calls are dispatched only after grant checks.
-6. Per-step outputs, final output, totals, status, trace ids, rerun metadata, and replay metadata are written to persisted run rows.
+6. Per-step outputs, agent invocations, final output, totals, status, trace ids, rerun metadata, and replay metadata are written to persisted run, step, and invocation rows.
 
 ## Security Boundaries
 
 - Capabilities are the only live tool-key contract; `spec.skills` is rejected.
-- MCP URL, stdio, redirect, exact-pin, schema, snapshot-hash, and output-redaction checks are runtime boundaries.
+- MCP URL, stdio, redirect, exact-pin, frozen snapshot, schema-hash, and output redaction/truncation checks are runtime boundaries.
 - Model-connection API keys remain encrypted at rest and secret-safe in reads/errors.
-- Application LLM calls use official SDKs rather than raw HTTP calls.
+- Application LLM calls use official SDK clients rather than raw HTTP calls.
 
 ## Frontend Shape
 
@@ -44,4 +44,4 @@ backend/app/
 
 ## Deployment
 
-No additional service is required. Platform routes run inside the existing FastAPI app and use the same PostgreSQL database, CI, and Docker image flow as the rest of Ledger.
+No additional service is required. Platform routes run inside the existing FastAPI app and use the same PostgreSQL database, CI, and GHCR Docker image flow as the rest of Ledger.
