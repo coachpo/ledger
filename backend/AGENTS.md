@@ -55,7 +55,7 @@ backend/
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
 - Agent and workflow writes use YAML manifest parser/compiler/decompiler/backfill services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, and loose version pins stay invalid.
 - Legacy orchestration, Studio, Tryout, and runtime-v2 routes are retired. Keep docs aligned with the current agent-platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
-- Capabilities are canonical in backend API docs. Use `/api/capabilities`, `toolGrants`, `spec.capabilities`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, and `capabilities` storage for live behavior. Keep runtime tool keys and OpenAI function names unchanged.
+- Capabilities are canonical in backend API docs. Use `/api/capabilities`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, and `capabilities` storage for live behavior. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
 ## ANTI-PATTERNS

@@ -30,7 +30,7 @@
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only. Agent-created reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe memory-report purpose/type, and server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
-- Capability routes are canonical: `/api/capabilities` emits `toolGrants`. `/api/skills` and `toolDefinitions` are retired contracts and must not appear in live route docs or payload examples. Do not change runtime tool keys or OpenAI function names.
+- Capability routes are canonical: `/api/capabilities` writes accept `toolKeys` and reads emit `toolKeys` plus read-only resolved `tools` metadata. `/api/skills`, `toolGrants`, and `toolDefinitions` are retired contracts and must not appear in live route docs or payload examples except rejection notes. Do not change runtime tool keys or OpenAI function names.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.

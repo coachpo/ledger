@@ -34,7 +34,7 @@
 - `TemplateCompilerService` resolves the `{{portfolios...}}` and `{{reports...}}` placeholder contract against repositories and powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
 - `ReportService` treats `source` as report origin: `compiled` for template snapshots, `uploaded` for markdown uploads, `external` for true external user/API-created JSON reports, and `agent` for agent-created reports. Agent-memory report purpose stays in `metadata.analysis.reviewType="agent_memory"` with `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Agent-platform services keep versioned config immutable, validate typed contracts before save, preserve secret-safe model-connection semantics, and keep run persistence detailed enough for the run monitor.
-- Capability terminology is canonical in service docs and API-facing examples. Use `capability_service.py`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, `capabilities`, `toolGrants`, `capabilityId`, `capabilityKey`, and `capabilityVersion` for live behavior.
+- Capability terminology is canonical in service docs and API-facing examples. Use `capability_service.py`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, `capabilities`, `toolKeys`, `tools`, `capabilityId`, `capabilityKey`, and `capabilityVersion` for live behavior.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from model connections.
 
 ## ANTI-PATTERNS
