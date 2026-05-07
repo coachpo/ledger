@@ -23,7 +23,7 @@
 - Pages own navigation, toasts, local draft state, and inline feedback; hooks own server-state policy.
 
 ## ANTI-PATTERNS
-- Do not expose stored API key values in the editor; only show configured state or last four characters.
+- Do not expose stored API key values or derived key-presence metadata in the editor or list views; credentials are write-only and backend-owned.
 - Do not call the model-connection API directly from the page when a hook already exists.
 - Do not let archived connections become selectable for new agent bindings.
 - Do not duplicate URL, timeout, or secret validation here when backend schemas enforce the contract.
