@@ -240,53 +240,69 @@ async function expectYamlOnlyEditor(page: Page) {
   await expect(page.getByLabel("Run Input JSON")).toHaveCount(0);
 }
 
+async function validateWorkflowManifestFromEditor(page: Page) {
+  const validationResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "POST" &&
+      url.pathname === "/api/workflows/validate-manifest"
+    );
+  });
+
+  await page.getByTestId("workflow-validate-manifest").click();
+  const validationResponse = await validationResponsePromise;
+  expect(validationResponse.ok()).toBeTruthy();
+}
+
 test.describe("Workflow YAML editor", () => {
-  test("renders a stubbed TradingAgents v2 run detail without exposing secrets", async ({ page }) => {
+  test("renders a stubbed Platform Graph Demo v2 run detail without exposing secrets", async ({ page }) => {
     await page.route("**/api/runs/9901", async (route) => {
       await route.fulfill({
         body: JSON.stringify(
           buildRunDetail({
             finalOutput: {
-              action: "buy",
-              rationale: "Analyst fanout and bounded debates support a staged buy.",
-              riskSummary: "Valuation and volatility remain the main risks.",
-              executionPlan: "Research-only staged accumulation.",
+              action: "approve",
+              rationale: "Platform fanout and bounded review loops approve the graph release.",
+              riskSummary: "Schema drift and connector readiness remain the main risks.",
+              executionPlan: "Release the graph-platform workflow after staged validation.",
             },
             id: 9901,
-            input: { ticker: "NVDA" },
+            input: { scenario: "Platform Graph Demo" },
             memoryArtifacts: [
               {
                 reportId: 990101,
-                slug: "agent_memory_nvda_portfolio_manager_run_9901_buy",
-                name: "NVDA portfolio manager memory",
+                slug: "platform_graph_memory_run_9901_approve",
+                name: "Platform Graph Demo memory",
                 status: "pending",
                 createdAt: "2026-05-03T10:00:05Z",
-                sourceGraphMetadata: { nodeId: "portfolio_manager", nodeKind: "step", loopId: "risk_debate_loop", loopIteration: 2 },
+                sourceGraphMetadata: { nodeId: "platform_approval", nodeKind: "step", loopId: "approval_loop", loopIteration: 2 },
               },
             ],
             steps: [
               buildRunStep({
-                graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", sourceRefs: { branches: [] } },
+                graphMetadata: { nodeKind: "fanout", fanoutId: "platform_fanout", sourceRefs: { branches: [] } },
                 id: 990101,
                 invocations: [
                   buildRunInvocation({
-                    agentKey: "market_analyst",
-                    graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market" },
+                    agentKey: "platform_ingest_agent",
+                    graphMetadata: { nodeId: "input_ingest", nodeKind: "step", fanoutId: "platform_fanout", branchId: "ingest" },
                     id: 9901001,
-                    output: { summary: "market_report:NVDA" },
+                    output: { summary: "ingest_report:Platform Graph Demo" },
                     runId: 9901,
                     runStepId: 990101,
-                    slot: "market_report",
+                    slot: "ingest_report",
+                    traceSpanId: "span-platform-graph-ingest",
                   }),
                   buildRunInvocation({
-                    agentKey: "news_analyst",
-                    graphMetadata: { nodeId: "news_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "news" },
+                    agentKey: "platform_policy_agent",
+                    graphMetadata: { nodeId: "policy_review", nodeKind: "step", fanoutId: "platform_fanout", branchId: "policy" },
                     id: 9901002,
-                    output: { summary: "news_report:NVDA" },
+                    output: { summary: "policy_report:Platform Graph Demo" },
                     position: 2,
                     runId: 9901,
                     runStepId: 990101,
-                    slot: "news_report",
+                    slot: "policy_report",
+                    traceSpanId: "span-platform-graph-policy",
                   }),
                 ],
                 runId: 9901,
@@ -296,14 +312,15 @@ test.describe("Workflow YAML editor", () => {
                 index: 2,
                 invocations: [
                   buildRunInvocation({
-                    agentKey: "bull_researcher",
-                    graphMetadata: { nodeId: "bull_research", nodeKind: "step", loopId: "investment_debate_loop", loopIteration: 1 },
+                    agentKey: "platform_loop_reviewer",
+                    graphMetadata: { nodeId: "loop_review", nodeKind: "step", loopId: "review_loop", loopIteration: 1 },
                     id: 9901003,
-                    output: { nextState: { bullCase: "Constructive." } },
+                    output: { nextState: { reviewNotes: "Ready for approval." } },
                     runId: 9901,
                     runStepId: 990102,
-                    slot: "bull",
+                    slot: "review",
                     stepIndex: 2,
+                    traceSpanId: "span-platform-graph-review",
                   }),
                 ],
                 runId: 9901,
@@ -313,24 +330,25 @@ test.describe("Workflow YAML editor", () => {
                 index: 3,
                 invocations: [
                   buildRunInvocation({
-                    agentKey: "portfolio_manager",
-                    graphMetadata: { nodeId: "portfolio_manager", nodeKind: "step", loopId: "risk_debate_loop", loopIteration: 2 },
+                    agentKey: "platform_approval_agent",
+                    graphMetadata: { nodeId: "platform_approval", nodeKind: "step", loopId: "approval_loop", loopIteration: 2 },
                     id: 9901004,
-                    output: { action: "buy", rationale: "Analyst fanout and bounded debates support a staged buy." },
+                    output: { action: "approve", rationale: "Platform fanout and bounded review loops approve the graph release." },
                     runId: 9901,
                     runStepId: 990103,
                     slot: "decision",
                     stepIndex: 3,
+                    traceSpanId: "span-platform-graph-approval",
                   }),
                 ],
                 runId: 9901,
               }),
             ],
             targetId: 55,
-            targetKey: "tradingagents_v2_practical_fanout_review",
+            targetKey: "graph_platform_v2_fanout_loop_review",
             targetKind: "workflow",
             targetVersion: 1,
-            traceId: "trace-tradingagents-v2-9901",
+            traceId: "trace-platform-graph-v2-9901",
           }),
         ),
         contentType: "application/json",
@@ -341,18 +359,26 @@ test.describe("Workflow YAML editor", () => {
 
     await expect(page.getByTestId("runs-detail-page")).toBeVisible();
     await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded");
-    await expect(page.getByTestId("runs-detail-target-identity")).toContainText("tradingagents_v2_practical_fanout_review@1");
+    await expect(page.getByTestId("runs-detail-target-identity")).toContainText("graph_platform_v2_fanout_loop_review@1");
     await expect(page.getByText("Total tokens: 18")).toBeVisible();
     await expect(page.getByText("Inherited tokens: 0")).toBeVisible();
     await expect(page.getByText("Executed tokens: 18")).toBeVisible();
     await expect(page.getByTestId("runs-detail-page")).not.toContainText(RUNTIME_COST_LABEL_PATTERN);
-    await expect(page.getByTestId("runs-detail-final-output")).toContainText("Analyst fanout and bounded debates support a staged buy");
-    await expect(page.getByTestId("runs-graph-summary")).toContainText("Fanout analyst_fanout");
-    await expect(page.getByTestId("runs-graph-summary")).toContainText("branch market");
-    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop investment_debate_loop iteration 1");
-    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop risk_debate_loop iteration 2");
-    await expect(page.getByTestId("runs-memory-artifacts")).toContainText("NVDA portfolio manager memory");
-    await expect(page.getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/agent_memory_nvda_portfolio_manager_run_9901_buy");
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText("Platform fanout and bounded review loops approve the graph release");
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText("trace-platform-graph-v2-9901");
+    await expect(page.getByTestId("runs-trace-linkage")).toContainText("span-platform-graph-approval");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Fanout platform_fanout");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("branch ingest");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("branch policy");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop review_loop iteration 1");
+    await expect(page.getByTestId("runs-graph-summary")).toContainText("Loop approval_loop iteration 2");
+    await expect(page.getByTestId("runs-step-1")).toContainText("Step 1");
+    await expect(page.getByTestId("runs-step-1-slot-ingest_report")).toContainText("platform_ingest_agent@1");
+    await expect(page.getByTestId("runs-step-1-slot-ingest_report")).toContainText("branch ingest");
+    await expect(page.getByTestId("runs-step-3-slot-decision")).toContainText("platform_approval_agent@1");
+    await expect(page.getByTestId("runs-step-3-slot-decision")).toContainText("Trace link · span-platform-graph-approval");
+    await expect(page.getByTestId("runs-memory-artifacts")).toContainText("Platform Graph Demo memory");
+    await expect(page.getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/platform_graph_memory_run_9901_approve");
     await expect(page.locator("body")).not.toContainText(/sk-[A-Za-z0-9_-]+/);
     await expect(page.locator("body")).not.toContainText(/api[_ -]?key/i);
   });
@@ -404,7 +430,7 @@ test.describe("Workflow YAML editor", () => {
     await page.getByTestId("workflow-yaml-editor").fill(unboundedLoopManifest);
     await expect(page.getByTestId("workflow-validation-feedback")).toContainText("maxIterations");
     await page.getByTestId("workflow-yaml-editor").fill(v2Manifest);
-    await page.getByTestId("workflow-validate-manifest").click();
+    await validateWorkflowManifestFromEditor(page);
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("analyst_fanout");
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("review_loop");
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("iteration 1");
@@ -688,7 +714,7 @@ test.describe("Workflow YAML editor", () => {
     await page.getByTestId("workflow-yaml-editor").fill(initialManifest);
     await expect(page.getByTestId("workflow-dirty-indicator")).toContainText("Unsaved changes");
 
-    await page.getByTestId("workflow-validate-manifest").click();
+    await validateWorkflowManifestFromEditor(page);
     await expect(page.getByTestId("workflow-backend-validation-status")).toContainText(
       "Backend validation passed",
     );
@@ -767,7 +793,7 @@ test.describe("Workflow YAML editor", () => {
 
     const invalidManifest = editedManifest.replace(`${agent.key}@1`, `missing_${agent.key}@1`);
     await page.getByTestId("workflow-yaml-editor").fill(invalidManifest);
-    await page.getByTestId("workflow-validate-manifest").click();
+    await validateWorkflowManifestFromEditor(page);
     await expect(page.getByTestId("workflow-backend-validation-status")).toContainText(
       "Backend validation found errors",
     );
