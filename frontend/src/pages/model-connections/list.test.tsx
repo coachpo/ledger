@@ -49,11 +49,9 @@ describe("ModelConnectionsListPage", () => {
       data: {
         items: [
           {
-            apiKeyLast4: "4242",
             apiStyle: "responses",
             baseUrl: "https://api.openai.com/v1",
             description: "Production traffic",
-            hasApiKey: true,
             id: 9,
             lastTestMessage: "Connection OK",
             lastTestOk: true,
@@ -67,11 +65,9 @@ describe("ModelConnectionsListPage", () => {
             timeoutSeconds: 90,
           },
           {
-            apiKeyLast4: null,
             apiStyle: "chat_completions",
             baseUrl: "https://archive.openai.com/v1",
             description: "Historical archive",
-            hasApiKey: false,
             id: 4,
             lastTestMessage: "Key rejected",
             lastTestOk: false,
@@ -85,11 +81,9 @@ describe("ModelConnectionsListPage", () => {
             timeoutSeconds: 45,
           },
           {
-            apiKeyLast4: "0000",
             apiStyle: "responses",
             baseUrl: "https://literal.openai.com/v1",
             description: "Literal none reasoning value",
-            hasApiKey: true,
             id: 12,
             lastTestMessage: null,
             lastTestOk: null,
@@ -118,14 +112,12 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
-    expect(screen.getByText(/ending in ••••4242/i)).toBeVisible();
     expect(screen.getAllByText("Responses API")).toHaveLength(2);
     expect(screen.getByText("Chat Completions API - legacy / OpenAI-compatible")).toBeVisible();
     expect(screen.getByText(/^Omitted$/)).toBeVisible();
     expect(screen.getByText(/^xhigh$/)).toBeVisible();
     expect(screen.getByText(/^none$/)).toBeVisible();
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
-    expect(screen.getByText(/no api key saved\./i)).toBeVisible();
     expect(screen.getByText(/^passed$/i)).toBeVisible();
     expect(screen.getByText(/^failed$/i)).toBeVisible();
     expect(screen.queryByTestId("model-connections-archive-4")).not.toBeInTheDocument();

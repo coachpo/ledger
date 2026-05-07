@@ -140,7 +140,7 @@ export function ModelConnectionsListPage() {
                   </div>
                 }
                 metadata={
-                  <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">Base URL:</span>{" "}
                       <span className="break-all">{connection.baseUrl}</span>{" "}
@@ -153,16 +153,6 @@ export function ModelConnectionsListPage() {
                       <span className="break-words">{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
                       <span aria-hidden="true">·</span>{" "}
                       <span>{connection.timeoutSeconds}s timeout</span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">API Key:</span>{" "}
-                      <span>{connection.hasApiKey ? "Configured" : "Missing"}</span>{" "}
-                      <span className="break-words">
-                        ·{" "}
-                        {connection.apiKeyLast4
-                          ? `Ending in ••••${connection.apiKeyLast4}`
-                          : "No API key saved."}
-                      </span>
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">Last Test:</span>{" "}
