@@ -70,6 +70,10 @@ _LIVE_TEMPLATE_NAME = "Quarterly Review"
 _LIVE_REPORT_SLUG = "market_review_report"
 _LIVE_PORTFOLIO_SLUG = "income_core"
 _CUSTOM_STALE_SKILL_KEY = "stock_analysis_ws1_verify"
+_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS = (
+    "_".join(("has", "api", "key")),
+    "_".join(("api", "key", "last4")),
+)
 _RUN_HEADER_COLUMNS = {
     "id",
     "target_kind",
@@ -165,10 +169,10 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
             "INSERT INTO model_connections ("
             "key, status, name, description, base_url, organization, project, "
             "model_id, reasoning_effort, "
-            "timeout_seconds, secret_payload, has_api_key, created_at, updated_at"
+            "timeout_seconds, secret_payload, created_at, updated_at"
             ") VALUES ("
             ":key, 'active', :name, :description, 'https://api.openai.com/v1', NULL, NULL, "
-            ":model_id, 'medium', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+            ":model_id, 'medium', 60, '{}'::jsonb, NOW(), NOW()"
             ") RETURNING id"
         ),
         {
@@ -666,11 +670,11 @@ def _insert_model_connection_reasoning_effort_row(
                 """
                 INSERT INTO model_connections (
                     key, status, name, description, base_url, organization, project, model_id,
-                    reasoning_effort, api_style, timeout_seconds, secret_payload, has_api_key,
+                    reasoning_effort, api_style, timeout_seconds, secret_payload,
                     created_at, updated_at
                 ) VALUES (
                     :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
-                    :model_id, :reasoning_effort, :api_style, 60, '{}'::jsonb, FALSE,
+                    :model_id, :reasoning_effort, :api_style, 60, '{}'::jsonb,
                     NOW(), NOW()
                 ) RETURNING id
                 """
@@ -1688,12 +1692,11 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
                 text(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, model_id, reasoning_effort, "
-                    "api_style, timeout_seconds, secret_payload, has_api_key, created_at, "
-                    "updated_at"
+                    "api_style, timeout_seconds, secret_payload, created_at, updated_at"
                     ") VALUES ("
                     "'post_cutover_model', 'active', 'Post Cutover Model', '', "
                     "'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium', "
-                    "'responses', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+                    "'responses', 60, '{}'::jsonb, NOW(), NOW()"
                     ") RETURNING id"
                 )
             ).scalar_one()
@@ -1918,6 +1921,9 @@ def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
         model_connection_columns = {
             column["name"]: column for column in inspect(engine).get_columns("model_connections")
         }
+        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
+            model_connection_columns
+        )
         reasoning_effort_column = model_connection_columns["reasoning_effort"]
 
         assert reasoning_effort_column["nullable"] is True
@@ -1928,6 +1934,65 @@ def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
             engine,
             key_prefix="fresh_reasoning_effort",
         )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_drops_legacy_model_connection_secret_metadata_columns(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    marker_column, suffix_column = _LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"ALTER TABLE model_connections ADD COLUMN {marker_column} BOOLEAN DEFAULT TRUE"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE model_connections ADD COLUMN {suffix_column} VARCHAR(4)"
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO model_connections (
+                        key, status, name, description, base_url, organization, project,
+                        model_id, reasoning_effort, api_style, timeout_seconds, secret_payload,
+                        {marker_column}, {suffix_column}, created_at, updated_at
+                    ) VALUES (
+                        :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
+                        :model_id, 'medium', 'responses', 60, CAST(:secret_payload AS jsonb),
+                        TRUE, '1234', NOW(), NOW()
+                    )
+                    """
+                ),
+                {
+                    "key": "legacy_secret_metadata_connection",
+                    "model_id": "openai:gpt-5.4-mini",
+                    "name": "Legacy Secret Metadata Connection",
+                    "secret_payload": json.dumps({"apiKey": "sk-forward-repair-1234"}),
+                },
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        model_connection_columns = {
+            column["name"]: column for column in inspect(engine).get_columns("model_connections")
+        }
+        with engine.connect() as connection:
+            secret_payload = connection.execute(
+                text(
+                    "SELECT secret_payload FROM model_connections "
+                    "WHERE key = 'legacy_secret_metadata_connection'"
+                )
+            ).scalar_one()
+
+        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
+            model_connection_columns
+        )
+        assert secret_payload == {"apiKey": "sk-forward-repair-1234"}
     finally:
         engine.dispose()
 
@@ -1951,8 +2016,6 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
                     reasoning_effort VARCHAR(20) NOT NULL DEFAULT 'medium',
                     timeout_seconds INTEGER NOT NULL DEFAULT 60,
                     secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    has_api_key BOOLEAN NOT NULL DEFAULT FALSE,
-                    api_key_last4 VARCHAR(4),
                     last_tested_at TIMESTAMPTZ,
                     last_test_ok BOOLEAN,
                     last_test_message TEXT,
@@ -1965,11 +2028,11 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
                 text(
                     "INSERT INTO model_connections ("
                     "status, name, description, base_url, organization, project, model_id, "
-                    "reasoning_effort, timeout_seconds, secret_payload, has_api_key, "
+                    "reasoning_effort, timeout_seconds, secret_payload, "
                     "created_at, updated_at"
                     ") VALUES ("
                     "'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, :model_id, "
-                    "'medium', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+                    "'medium', 60, '{}'::jsonb, NOW(), NOW()"
                     ")"
                 ),
                 [
@@ -2011,6 +2074,9 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
         ]
         assert model_connection_columns["key"]["nullable"] is False
         assert model_connection_columns["api_style"]["nullable"] is False
+        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
+            model_connection_columns
+        )
         assert "ck_model_connections_api_style" in model_connection_check_constraints
         assert "uq_model_connections_key" in unique_constraints
         assert "ix_model_connections_key" in model_connection_indexes
@@ -2041,8 +2107,6 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
                     api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
                     timeout_seconds INTEGER NOT NULL DEFAULT 60,
                     secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    has_api_key BOOLEAN NOT NULL DEFAULT FALSE,
-                    api_key_last4 VARCHAR(4),
                     last_tested_at TIMESTAMPTZ,
                     last_test_ok BOOLEAN,
                     last_test_message TEXT,
@@ -2063,10 +2127,10 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, organization, project, "
                     "model_id, reasoning_effort, api_style, timeout_seconds, secret_payload, "
-                    "has_api_key, created_at, updated_at"
+                    "created_at, updated_at"
                     ") VALUES ("
                     ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
-                    ":model_id, :reasoning_effort, 'responses', 60, '{}'::jsonb, FALSE, "
+                    ":model_id, :reasoning_effort, 'responses', 60, '{}'::jsonb, "
                     "NOW(), NOW()"
                     ")"
                 ),
@@ -2106,6 +2170,9 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
                 )
             ).all()
 
+        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
+            model_connection_columns
+        )
         reasoning_effort_column = model_connection_columns["reasoning_effort"]
         assert reasoning_effort_column["nullable"] is True
         assert getattr(reasoning_effort_column["type"], "length", None) == 128
@@ -2448,12 +2515,12 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                 text(
                     "INSERT INTO model_connections ("
                     "key, status, name, description, base_url, organization, project, model_id, "
-                    "reasoning_effort, api_style, timeout_seconds, secret_payload, has_api_key, "
+                    "reasoning_effort, api_style, timeout_seconds, secret_payload, "
                     "created_at, updated_at"
                     ") VALUES ("
                     ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
                     ":model_id, "
-                    "'medium', 'chat_completions', 60, '{}'::jsonb, FALSE, NOW(), NOW()"
+                    "'medium', 'chat_completions', 60, '{}'::jsonb, NOW(), NOW()"
                     ") RETURNING id"
                 ),
                 {

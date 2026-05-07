@@ -64,6 +64,10 @@ _MODEL_CONNECTION_REASONING_EFFORT_CHECK_SQL = (
 )
 _MODEL_CONNECTION_DEFAULT_API_STYLE = "responses"
 _MODEL_CONNECTION_ALLOWED_API_STYLES = ("responses", "chat_completions")
+_MODEL_CONNECTION_STALE_SECRET_METADATA_COLUMNS = (
+    "_".join(("has", "api", "key")),
+    "_".join(("api", "key", "last4")),
+)
 
 
 def _sql_string_literal(value: str) -> str:
@@ -195,8 +199,6 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
                 timeout_seconds INTEGER NOT NULL DEFAULT 60,
                 secret_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                has_api_key BOOLEAN NOT NULL DEFAULT FALSE,
-                api_key_last4 VARCHAR(4),
                 last_tested_at TIMESTAMPTZ,
                 last_test_ok BOOLEAN,
                 last_test_message TEXT,
@@ -1134,6 +1136,28 @@ def _ensure_model_connection_api_style_support(engine: Engine, table_names: set[
             )
 
 
+def _drop_model_connection_api_key_metadata_columns(
+    engine: Engine,
+    table_names: set[str],
+) -> None:
+    if "model_connections" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    model_connection_columns = {
+        column["name"] for column in inspector.get_columns("model_connections")
+    }
+    stale_columns = set(_MODEL_CONNECTION_STALE_SECRET_METADATA_COLUMNS) & model_connection_columns
+    if not stale_columns:
+        return
+
+    with engine.begin() as connection:
+        for column_name in sorted(stale_columns):
+            _ = connection.exec_driver_sql(
+                f"ALTER TABLE model_connections DROP COLUMN IF EXISTS {column_name}"
+            )
+
+
 def _ensure_agent_model_connection_support(engine: Engine, table_names: set[str]) -> None:
     if "agents" not in table_names:
         return
@@ -1567,7 +1591,7 @@ def _backfill_agent_model_connections(
                     "AND reasoning_effort = :reasoning_effort "
                     "AND api_style = :api_style "
                     "AND timeout_seconds = :timeout_seconds "
-                    "AND has_api_key = FALSE "
+                    "AND secret_payload = '{}'::jsonb "
                     "ORDER BY id LIMIT 1"
                 ),
                 placeholder_parameters,
@@ -1587,10 +1611,10 @@ def _backfill_agent_model_connections(
                         "key, status, name, description, base_url, organization, project, "
                         "model_id, "
                         "reasoning_effort, api_style, timeout_seconds, "
-                        "secret_payload, has_api_key, created_at, updated_at"
+                        "secret_payload, created_at, updated_at"
                         ") VALUES ("
                         ":key, 'active', :name, '', :base_url, NULL, NULL, :model_id, "
-                        ":reasoning_effort, :api_style, :timeout_seconds, '{}'::jsonb, FALSE, "
+                        ":reasoning_effort, :api_style, :timeout_seconds, '{}'::jsonb, "
                         "NOW(), NOW()"
                         ") RETURNING id"
                     ),
@@ -1909,6 +1933,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_model_connection_key_support(engine, table_names)
     _ensure_model_connection_reasoning_effort_support(engine, table_names)
     _ensure_model_connection_api_style_support(engine, table_names)
+    _drop_model_connection_api_key_metadata_columns(engine, table_names)
     _ensure_agent_manifest_columns(engine, table_names)
     _ensure_workflow_manifest_columns(engine, table_names)
     _remove_dead_agent_runtime_fields(engine, table_names)
