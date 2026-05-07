@@ -15,12 +15,10 @@ const toastErrorMock = vi.fn();
 const toastSuccessMock = vi.fn();
 
 const existingConnection = {
-  apiKeyLast4: "4242",
   apiStyle: "chat_completions",
   baseUrl: "https://api.openai.com/v1",
   createdAt: "2026-04-21T12:00:00Z",
   description: "Production OpenAI connection.",
-  hasApiKey: true,
   id: 4,
   key: "primary_openai",
   lastTestMessage: "Healthy",
@@ -350,7 +348,7 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
-    expect(screen.getByText(/leave blank to keep current key ending in ••••4242\./i)).toBeVisible();
+    expect(screen.getByText(/leave blank to keep the current key\. enter a new value only to rotate it\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
       "Chat Completions API - legacy / OpenAI-compatible",
@@ -368,10 +366,6 @@ describe("ModelConnectionsEditorPage", () => {
         timeoutSeconds: 90,
       }),
     );
-    expect(screen.getByLabelText(/exact config json/i)).not.toHaveValue(
-      expect.stringContaining("4242"),
-    );
-
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 

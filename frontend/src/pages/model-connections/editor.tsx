@@ -323,11 +323,9 @@ export function ModelConnectionsEditorPage() {
     );
   }
 
-  const apiKeyHelpText = connectionQuery.data?.apiKeyLast4
-    ? `Leave blank to keep current key ending in ••••${connectionQuery.data.apiKeyLast4}.`
-    : isEditing
-      ? "Leave blank to keep current key."
-      : "Optional for create; you can add or rotate it later.";
+  const apiKeyHelpText = isEditing
+    ? "Leave blank to keep the current key. Enter a new value only to rotate it."
+    : "Optional for create; you can add or rotate it later.";
 
   return (
     <div className="space-y-4 p-4" data-testid="model-connections-editor">
@@ -340,14 +338,7 @@ export function ModelConnectionsEditorPage() {
             Save an OpenAI-family endpoint, credentials, and runtime defaults for reuse across agents.
           </p>
           {connectionQuery.data ? (
-            <PlatformResourceBadges
-              status={connectionQuery.data.status}
-              extra={
-                <Badge variant={connectionQuery.data.hasApiKey ? "secondary" : "outline"}>
-                  {connectionQuery.data.hasApiKey ? "API key configured" : "No API key"}
-                </Badge>
-              }
-            />
+            <PlatformResourceBadges status={connectionQuery.data.status} />
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
