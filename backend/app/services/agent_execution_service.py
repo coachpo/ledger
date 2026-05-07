@@ -24,7 +24,6 @@ from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
-from app.services.model_connection_snapshot import parse_model_connection_runtime_snapshot
 from app.services.quote_provider import QuoteProvider
 
 
@@ -199,24 +198,16 @@ class AgentExecutionService:
                     f"{agent.model_connection_id}"
                 ),
             )
-        try:
-            snapshot = parse_model_connection_runtime_snapshot(agent.model_connection_snapshot)
-        except ValueError as exc:
-            raise RunExecutionError(
-                code="run_agent_model_connection_snapshot_invalid",
-                message=f"Agent {agent.key!r} has an invalid saved model connection snapshot",
-            ) from exc
-
         return _ResolvedModelConnectionConfig(
             id=connection.id,
             name=connection.name,
-            base_url=snapshot.base_url,
-            organization=snapshot.organization,
-            project=snapshot.project,
-            model_id=snapshot.model_id,
-            reasoning_effort=snapshot.reasoning_effort,
-            api_style=snapshot.api_style,
-            timeout_seconds=snapshot.timeout_seconds,
+            base_url=connection.base_url,
+            organization=connection.organization,
+            project=connection.project,
+            model_id=connection.model_id,
+            reasoning_effort=connection.reasoning_effort,
+            api_style=connection.api_style,
+            timeout_seconds=connection.timeout_seconds,
             api_key=self._extract_model_connection_api_key(connection),
         )
 

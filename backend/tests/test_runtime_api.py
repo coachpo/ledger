@@ -2551,13 +2551,13 @@ spec:
     assert "Active model connection" in body["details"][0]["issue"]
 
 
-def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_connection_update(
+def test_agent_platform_run_uses_live_model_connection_after_connection_update(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot runtime output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "live connection runtime output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
 
     with session_factory() as session:
@@ -2598,16 +2598,16 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
     assert detail["status"] == "succeeded"
-    assert detail["finalOutput"] == {"summary": "snapshot runtime output"}
+    assert detail["finalOutput"] == {"summary": "live connection runtime output"}
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
         "api_key": "sk-rotated-secret-2222",
-        "base_url": "https://snapshot-v1.example.com/v1",
-        "timeout": 31.0,
-        "organization": "org-v1",
-        "project": "proj-v1",
+        "base_url": "https://snapshot-v2.example.com/v1",
+        "timeout": 91.0,
+        "organization": "org-v2",
+        "project": "proj-v2",
     }
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-snapshot-v1"
-    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "high"}
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-snapshot-v2"
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "low"}
 
 
 @pytest.mark.parametrize(
