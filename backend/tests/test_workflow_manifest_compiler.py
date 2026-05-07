@@ -9,14 +9,14 @@ import pytest
 
 from app.schemas.workflow import WorkflowCreate
 from app.schemas.workflow_manifest import WorkflowManifestDiagnostic
-from app.services.workflow_manifest_examples import (
-    TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-)
 from app.services.workflow_manifest_parser import parse_workflow_manifest
+from tests.test_workflow_manifest_parser import (
+    GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+)
 
 
 class _CompilerError(Protocol):
@@ -360,8 +360,8 @@ def test_compile_workflow_manifest_source_raises_parser_diagnostics() -> None:
     assert "pin an exact numeric version" in diagnostic.message
 
 
-def test_compile_tradingagents_fixed_unrolled_manifest_preserves_sequential_topology() -> None:
-    payload = compile_workflow_manifest(TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
+def test_compile_platform_graph_fixed_unrolled_manifest_preserves_sequential_topology() -> None:
+    payload = compile_workflow_manifest(GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
 
     assert (
         WorkflowCreate.model_validate(payload).model_dump(
@@ -739,26 +739,26 @@ def test_compile_v2_source_raises_parser_diagnostics() -> None:
     ("source", "expected_key", "expected_step_count", "expected_output_spec"),
     [
         (
-            TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_fixed_unrolled_review",
+            GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_fixed_unrolled_review",
             11,
             {"kind": "slot", "stepIndex": 11, "slot": "decision"},
         ),
         (
-            TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_strict_sequential_review",
+            GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_strict_sequential_review",
             14,
             {"kind": "slot", "stepIndex": 14, "slot": "decision"},
         ),
         (
-            TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_practical_fanout_review",
+            GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_practical_fanout_review",
             11,
             {"kind": "slot", "stepIndex": 11, "slot": "decision"},
         ),
     ],
 )
-def test_compile_tradingagents_v1_example_manifests_have_expected_counts_and_output_spec(
+def test_compile_platform_graph_v1_example_manifests_have_expected_counts_and_output_spec(
     source: str,
     expected_key: str,
     expected_step_count: int,
@@ -773,9 +773,11 @@ def test_compile_tradingagents_v1_example_manifests_have_expected_counts_and_out
     assert payload["outputSpec"] == expected_output_spec
 
 
-def test_compile_tradingagents_strict_sequential_manifest_preserves_ordered_analyst_steps() -> None:
+def test_compile_platform_graph_strict_sequential_manifest_preserves_ordered_analyst_steps() -> (
+    None
+):
     payload = compile_workflow_manifest(
-        TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE
+        GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE
     )
 
     steps = _compiled_steps(payload)
@@ -830,9 +832,9 @@ def test_compile_tradingagents_strict_sequential_manifest_preserves_ordered_anal
     }
 
 
-def test_compile_tradingagents_practical_fanout_manifest_preserves_analyst_fanout() -> None:
+def test_compile_platform_graph_practical_fanout_manifest_preserves_analyst_fanout() -> None:
     payload = compile_workflow_manifest(
-        TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE
+        GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE
     )
 
     steps = _compiled_steps(payload)
@@ -889,20 +891,20 @@ def test_compile_tradingagents_practical_fanout_manifest_preserves_analyst_fanou
     ("source", "expected_key", "expected_step_count", "expected_first_step_slots"),
     [
         (
-            TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_strict_sequential_review",
+            GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_strict_sequential_review",
             17,
             ["market_report"],
         ),
         (
-            TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_practical_fanout_review",
+            GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_practical_fanout_review",
             14,
             ["market_report", "social_sentiment_report", "news_report", "fundamentals_report"],
         ),
     ],
 )
-def test_compile_tradingagents_v2_examples_emit_graph_loops_memory_and_secret_free_payload(
+def test_compile_platform_graph_v2_examples_emit_graph_loops_memory_and_secret_free_payload(
     source: str,
     expected_key: str,
     expected_step_count: int,

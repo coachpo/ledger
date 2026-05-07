@@ -24,15 +24,15 @@ from app.schemas.workflow_manifest import WORKFLOW_MANIFEST_V2_API_VERSION
 from app.services.agent_service import AgentService
 from app.services.workflow_manifest_compiler import compile_workflow_manifest
 from app.services.workflow_manifest_decompiler import decompile_workflow_model
-from app.services.workflow_manifest_examples import (
-    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
-    TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-)
 from app.services.workflow_service import WorkflowService
-from tests.test_agent_manifest_compiler import _seed_tradingagents_manifest_refs
+from tests.test_agent_manifest_compiler import _seed_platform_graph_manifest_refs
+from tests.test_workflow_manifest_parser import (
+    GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES,
+    GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+    GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+)
 
 
 def _workflow_input_schema() -> dict[str, object]:
@@ -95,10 +95,10 @@ def _agent_service(session: Session) -> AgentService:
     )
 
 
-def _seed_tradingagents_agents(session: Session) -> None:
-    _seed_tradingagents_manifest_refs(session)
+def _seed_platform_graph_agents(session: Session) -> None:
+    _seed_platform_graph_manifest_refs(session)
     agent_service = _agent_service(session)
-    for source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.values():
+    for source in GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES.values():
         _ = agent_service.create_agent_from_manifest(source)
 
 
@@ -229,23 +229,23 @@ def test_workflow_service_persists_v2_source_version_and_compiled_graph(
         assert "secret" not in _canonical_json(stored_graph).lower()
 
 
-def test_workflow_service_persists_tradingagents_v2_review_examples_with_compiled_graph(
+def test_workflow_service_persists_platform_graph_v2_review_examples_with_compiled_graph(
     session_factory: sessionmaker[Session],
 ) -> None:
     examples = [
         (
-            TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_strict_sequential_review",
+            GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_strict_sequential_review",
             17,
         ),
         (
-            TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_practical_fanout_review",
+            GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_practical_fanout_review",
             14,
         ),
     ]
     with session_factory() as session:
-        _seed_tradingagents_agents(session)
+        _seed_platform_graph_agents(session)
         service = WorkflowService(session)
 
         for source, expected_key, expected_step_count in examples:
@@ -271,23 +271,23 @@ def test_workflow_service_persists_tradingagents_v2_review_examples_with_compile
             assert "secret" not in serialized_graph.lower()
 
 
-def test_workflow_service_persists_and_decompiles_tradingagents_v1_review_examples(
+def test_workflow_service_persists_and_decompiles_platform_graph_v1_review_examples(
     session_factory: sessionmaker[Session],
 ) -> None:
     examples = [
         (
-            TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_strict_sequential_review",
+            GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_strict_sequential_review",
             14,
         ),
         (
-            TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_practical_fanout_review",
+            GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_practical_fanout_review",
             11,
         ),
     ]
     with session_factory() as session:
-        _seed_tradingagents_agents(session)
+        _seed_platform_graph_agents(session)
         service = WorkflowService(session)
 
         for source, expected_key, expected_step_count in examples:

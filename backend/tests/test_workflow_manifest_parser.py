@@ -1,30 +1,1102 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from typing import Literal, cast
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, StrictInt, ValidationError, field_validator
 
-from app.schemas.workflow_manifest import (
-    TradingAgentsInitialUnrolledRoundConfig,
-    TradingAgentsInvestmentDebateTransition,
-    TradingAgentsPortfolioDecision,
-    TradingAgentsRiskDebateTransition,
-    WorkflowManifest,
-    WorkflowManifestDiagnostic,
-)
+from app.schemas.common import CamelModel
+from app.schemas.workflow_manifest import WorkflowManifest, WorkflowManifestDiagnostic
 from app.services.agent_manifest_parser import parse_agent_manifest
-from app.services.workflow_manifest_examples import (
-    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
-    TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_MODEL_CONNECTION_SETUP,
-    TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-    TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-)
 from app.services.workflow_manifest_parser import parse_workflow_manifest
+
+GENERIC_PLATFORM_MODEL_CONNECTION_SETUP: dict[str, str] = {
+    "key": "platform_graph_local_gpt54_mini",
+    "baseUrl": "http://192.168.1.222:8087/v1",
+    "modelId": "gpt-5.4-mini",
+    "reasoningEffort": "medium",
+    "apiStyle": "responses",
+}
+
+GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES: dict[str, str] = {
+    "market_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: market_analyst
+  name: Market Analyst
+  description: Produces a market technical report for the fixed Platform Graph Demo workflow.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger market data, quote, history, OHLCV, and indicator tools
+    instead of inventing market prices or indicator values. Disclose tool
+    warnings, empty payloads, stale data, and missing provider coverage as data
+    quality or provider limitations. Return the complete structured market
+    analyst report for the supplied ticker and date; do not return partial
+    patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
+      asOfDate:
+        type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
+    required: [ticker, asOfDate]
+  outputSchema: platform_graph_analyst_report@1
+  capabilities:
+    - platform_graph_market_data@1
+  budgetUsd: "0.25"
+""",
+    "social_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: social_analyst
+  name: Social Analyst
+  description: Produces a social sentiment report for the fixed Platform Graph Demo workflow.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger news tools instead of inventing articles, posts, or
+    sentiment readings, then synthesize social sentiment only from returned news
+    and insider-data payloads. Disclose tool warnings, empty payloads, stale or
+    missing provider coverage, and that no direct social feed or social sentiment
+    tool exists. Return the complete structured social sentiment analyst report
+    for the supplied ticker and date; do not return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
+      asOfDate:
+        type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
+    required: [ticker, asOfDate]
+  outputSchema: platform_graph_analyst_report@1
+  capabilities:
+    - platform_graph_news@1
+  budgetUsd: "0.25"
+""",
+    "news_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: news_analyst
+  name: News Analyst
+  description: Produces a news report for the fixed Platform Graph Demo workflow.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger company, global, query news, and insider-data tools
+    instead of inventing articles or events. Disclose warnings, empty payloads,
+    stale data, and missing provider coverage as data quality or provider
+    limitations. Return the complete structured news analyst report for the
+    supplied ticker and date; do not return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
+      asOfDate:
+        type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
+    required: [ticker, asOfDate]
+  outputSchema: platform_graph_analyst_report@1
+  capabilities:
+    - platform_graph_news@1
+  budgetUsd: "0.25"
+""",
+    "fundamentals_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: fundamentals_analyst
+  name: Fundamentals Analyst
+  description: Produces a fundamentals report for the fixed Platform Graph Demo workflow.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger fundamentals and statement-data tools instead of
+    inventing metrics or filings. Treat returned statements and ratios as the
+    only source for fundamentals. Disclose warnings, empty payloads, stale data,
+    and missing provider coverage as data quality or
+    provider limitations. Return the complete structured fundamentals analyst
+    report for the supplied ticker and date; do not return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+        title: Ticker
+        description: Ticker symbol to research, such as AAPL.
+      asOfDate:
+        type: string
+        title: As of date
+        description: Date used for the analysis snapshot.
+    required: [ticker, asOfDate]
+  outputSchema: platform_graph_analyst_report@1
+  capabilities:
+    - platform_graph_fundamentals@1
+  budgetUsd: "0.25"
+""",
+    "bull_researcher": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: bull_researcher
+  name: Bull Researcher
+  description: Advances the bullish side of a bounded investment debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored research context is
+    needed instead of inventing prior reports. Disclose unavailable reports or
+    missing provider data. Return JSON with exactly one top-level key, nextState,
+    containing the complete updated investment debate state, including
+    analystReports, bullCase, bearCase, and debateHistory. Do not include
+    priorState or return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      priorState:
+        type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
+        additionalProperties: true
+      marketReport:
+        type: object
+        title: Market report
+        description: Structured output from the market analyst.
+        additionalProperties: true
+      socialSentimentReport:
+        type: object
+        title: Social sentiment report
+        description: Structured output from the social analyst.
+        additionalProperties: true
+      newsReport:
+        type: object
+        title: News report
+        description: Structured output from the news analyst.
+        additionalProperties: true
+      fundamentalsReport:
+        type: object
+        title: Fundamentals report
+        description: Structured output from the fundamentals analyst.
+        additionalProperties: true
+    required: [priorState]
+  outputSchema: platform_graph_investment_debate_transition@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.30"
+""",
+    "bear_researcher": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: bear_researcher
+  name: Bear Researcher
+  description: Advances the bearish side of a bounded investment debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored research context is
+    needed instead of inventing prior reports. Disclose unavailable reports or
+    missing provider data. Return JSON with exactly one top-level key, nextState,
+    containing the complete updated investment debate state, including
+    analystReports, bullCase, bearCase, and debateHistory. Do not include
+    priorState or return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      priorState:
+        type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
+        additionalProperties: true
+    required: [priorState]
+  outputSchema: platform_graph_investment_debate_transition@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.30"
+""",
+    "research_manager": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: research_manager
+  name: Research Manager
+  description: Seeds and summarizes the fixed investment debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored context is needed, and
+    disclose unavailable reports or missing provider data. Produce a complete
+    research plan with recommendation, thesis, and debateSummary from the full
+    debate state. Do not return debate-state patches, omit required fields, or
+    present live trading instructions.
+  inputSchema:
+    type: object
+    title: Research manager input
+    description: Debate state and ticker context for the research manager turn.
+    additionalProperties: false
+    properties:
+      debateState:
+        type: object
+        title: Debate state
+        description: Complete investment debate state after the bounded rounds.
+        additionalProperties: true
+      ticker:
+        type: string
+        title: Ticker
+        description: Ticker symbol under review.
+    required: [debateState, ticker]
+  outputSchema: platform_graph_research_plan@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.35"
+""",
+    "trader": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: trader
+  name: Trader
+  description: Converts a research plan into a concrete trader proposal.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger positions tools to inspect portfolio exposure instead of
+    assuming holdings. Disclose missing portfolio data or unavailable positions
+    lookup results. Return a complete trader proposal with action, rationale, and
+    sizingNotes from the research plan and portfolio context. Keep the proposal
+    research-only; do not place orders or imply live execution.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      researchPlan:
+        type: object
+        title: Research plan
+        description: Research manager output used for the trader proposal.
+        additionalProperties: true
+      portfolioId:
+        type: string
+        title: Portfolio ID
+        description: Portfolio identifier used for position context.
+    required: [researchPlan, portfolioId]
+  outputSchema: platform_graph_trader_proposal@1
+  capabilities:
+    - ledger_positions@1
+  budgetUsd: "0.30"
+""",
+    "aggressive_risk_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: aggressive_risk_analyst
+  name: Aggressive Risk Analyst
+  description: Advances the aggressive side of a bounded risk debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored context is needed, and
+    disclose unavailable reports or missing provider data. Return JSON with
+    exactly one top-level key, nextState, containing the complete updated risk
+    debate state, including researchPlan, traderProposal, aggressiveCase,
+    neutralCase, conservativeCase, and debateHistory. Do not include priorState
+    or return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      priorState:
+        type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
+        additionalProperties: true
+      researchPlan:
+        type: object
+        title: Research plan
+        description: Research manager output used for the risk debate.
+        additionalProperties: true
+      traderProposal:
+        type: object
+        title: Trader proposal
+        description: Trader output used for the risk debate.
+        additionalProperties: true
+    required: [priorState, researchPlan, traderProposal]
+  outputSchema: platform_graph_risk_debate_transition@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.25"
+""",
+    "neutral_risk_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: neutral_risk_analyst
+  name: Neutral Risk Analyst
+  description: Seeds or advances the neutral side of a bounded risk debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored context is needed, and
+    disclose unavailable reports or missing provider data. Return JSON with
+    exactly one top-level key, nextState, containing the complete updated risk
+    debate state, including researchPlan, traderProposal, aggressiveCase,
+    neutralCase, conservativeCase, and debateHistory. Do not include priorState
+    or return partial patches.
+  inputSchema:
+    type: object
+    title: Neutral risk input
+    description: Prior risk debate state for the neutral risk turn.
+    additionalProperties: false
+    properties:
+      priorState:
+        type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
+        additionalProperties: true
+    required: [priorState]
+  outputSchema: platform_graph_risk_debate_transition@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.25"
+""",
+    "conservative_risk_analyst": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: conservative_risk_analyst
+  name: Conservative Risk Analyst
+  description: Advances the conservative side of a bounded risk debate.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored context is needed, and
+    disclose unavailable reports or missing provider data. Return JSON with
+    exactly one top-level key, nextState, containing the complete updated risk
+    debate state, including researchPlan, traderProposal, aggressiveCase,
+    neutralCase, conservativeCase, and debateHistory. Do not include priorState
+    or return partial patches.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      priorState:
+        type: object
+        title: Prior debate state
+        description: Current debate state passed into this turn.
+        additionalProperties: true
+    required: [priorState]
+  outputSchema: platform_graph_risk_debate_transition@1
+  capabilities:
+    - ledger_reports@1
+  budgetUsd: "0.25"
+""",
+    "portfolio_manager": """apiVersion: ledger.agent/v1
+kind: Agent
+metadata:
+  key: portfolio_manager
+  name: Portfolio Manager
+  description: Produces the final portfolio decision from the risk debate state.
+spec:
+  modelConnection: platform_graph_local_gpt54_mini
+  systemPrompt: >
+    Call granted Ledger report lookup tools when stored context is needed, and
+    disclose unavailable reports or missing provider data. Return the complete
+    portfolio decision with action, rationale, riskSummary, and executionPlan
+    from the final risk debate state. Keep the result research-only; do not
+    place orders or imply live execution.
+  inputSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      riskState:
+        type: object
+        title: Risk debate state
+        description: Final risk debate state used for the portfolio decision.
+        additionalProperties: true
+    required: [riskState]
+  outputSchema: platform_graph_portfolio_decision@1
+  capabilities:
+    - ledger_reports@1
+    - platform_graph_memory@1
+  budgetUsd: "0.35"
+""",
+}
+
+GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE = """apiVersion: ledger.workflow/v1
+kind: Workflow
+metadata:
+  key: platform_graph_fixed_unrolled_review
+  name: Platform Graph Demo Fixed Unrolled Review
+  description: >
+    Fixed Ledger approximation of the Platform Graph Demo analyst, debate, trader,
+    risk, and portfolio-manager topology.
+inputSchema:
+  type: object
+  additionalProperties: false
+  properties:
+    ticker:
+      type: string
+      title: Ticker
+      description: Ticker symbol to research, such as AAPL.
+    asOfDate:
+      type: string
+      title: As of date
+      description: Date used for the analysis snapshot.
+    portfolioId:
+      type: string
+      title: Portfolio ID
+      description: Portfolio identifier used for position context.
+    initialInvestmentDebateState:
+      type: object
+      title: Initial investment debate state
+      description: Seed state for the first investment debate turn.
+    initialRiskDebateState:
+      type: object
+      title: Initial risk debate state
+      description: Seed state for the first risk debate turn.
+  required: [ticker, asOfDate, portfolioId, initialInvestmentDebateState, initialRiskDebateState]
+steps:
+  - id: analyst_fanout
+    agents:
+      - slot: market_report
+        uses: market_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+      - slot: social_sentiment_report
+        uses: social_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+      - slot: news_report
+        uses: news_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+      - slot: fundamentals_report
+        uses: fundamentals_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+  - id: bull_research_round_1
+    agents:
+      - slot: bull
+        uses: bull_researcher@1
+        with:
+          priorState: ${{ inputs.initialInvestmentDebateState }}
+          marketReport: ${{ steps.analyst_fanout.outputs.market_report }}
+          socialSentimentReport: ${{ steps.analyst_fanout.outputs.social_sentiment_report }}
+          newsReport: ${{ steps.analyst_fanout.outputs.news_report }}
+          fundamentalsReport: ${{ steps.analyst_fanout.outputs.fundamentals_report }}
+  - id: bear_research_round_1
+    agents:
+      - slot: bear
+        uses: bear_researcher@1
+        with:
+          priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}
+  - id: bull_research_round_2
+    agents:
+      - slot: bull
+        uses: bull_researcher@1
+        with:
+          priorState: ${{ steps.bear_research_round_1.outputs.bear.nextState }}
+  - id: bear_research_round_2
+    agents:
+      - slot: bear
+        uses: bear_researcher@1
+        with:
+          priorState: ${{ steps.bull_research_round_2.outputs.bull.nextState }}
+  - id: research_manager
+    agents:
+      - slot: research_plan
+        uses: research_manager@1
+        with:
+          debateState: ${{ steps.bear_research_round_2.outputs.bear.nextState }}
+          ticker: ${{ inputs.ticker }}
+  - id: trader
+    agents:
+      - slot: trader_proposal
+        uses: trader@1
+        with:
+          researchPlan: ${{ steps.research_manager.outputs.research_plan }}
+          portfolioId: ${{ inputs.portfolioId }}
+  - id: aggressive_risk_round_1
+    agents:
+      - slot: aggressive
+        uses: aggressive_risk_analyst@1
+        with:
+          priorState: ${{ inputs.initialRiskDebateState }}
+          researchPlan: ${{ steps.research_manager.outputs.research_plan }}
+          traderProposal: ${{ steps.trader.outputs.trader_proposal }}
+  - id: neutral_risk_round_1
+    agents:
+      - slot: neutral
+        uses: neutral_risk_analyst@1
+        with:
+          priorState: ${{ steps.aggressive_risk_round_1.outputs.aggressive.nextState }}
+  - id: conservative_risk_round_1
+    agents:
+      - slot: conservative
+        uses: conservative_risk_analyst@1
+        with:
+          priorState: ${{ steps.neutral_risk_round_1.outputs.neutral.nextState }}
+  - id: portfolio_manager
+    agents:
+      - slot: decision
+        uses: portfolio_manager@1
+        with:
+          riskState: ${{ steps.conservative_risk_round_1.outputs.conservative.nextState }}
+output:
+  from: ${{ steps.portfolio_manager.outputs.decision }}
+"""
+
+GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
+    "apiVersion: ledger.workflow/v1\n"
+    """kind: Workflow
+metadata:
+  key: platform_graph_strict_sequential_review
+  name: Platform Graph Demo Strict Sequential Review
+  description: >
+    Strict v1 Ledger approximation of the Platform Graph Demo topology with each
+    analyst represented as an ordered single-agent step before debate, trader,
+    risk, and portfolio-manager stages.
+inputSchema:
+  type: object
+  additionalProperties: false
+  properties:
+    ticker:
+      type: string
+      title: Ticker
+      description: Ticker symbol to research, such as AAPL.
+    asOfDate:
+      type: string
+      title: As of date
+      description: Date used for the analysis snapshot.
+    portfolioId:
+      type: string
+      title: Portfolio ID
+      description: Portfolio identifier used for position context.
+    initialInvestmentDebateState:
+      type: object
+      title: Initial investment debate state
+      description: Seed state for the first investment debate turn.
+      additionalProperties: true
+    initialRiskDebateState:
+      type: object
+      title: Initial risk debate state
+      description: Seed state for the first risk debate turn.
+      additionalProperties: true
+  required: [ticker, asOfDate, portfolioId, initialInvestmentDebateState, initialRiskDebateState]
+steps:
+  - id: market_analysis
+    agents:
+      - slot: market_report
+        uses: market_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+  - id: social_analysis
+    agents:
+      - slot: social_sentiment_report
+        uses: social_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+  - id: news_analysis
+    agents:
+      - slot: news_report
+        uses: news_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+  - id: fundamentals_analysis
+    agents:
+      - slot: fundamentals_report
+        uses: fundamentals_analyst@1
+        with:
+          ticker: ${{ inputs.ticker }}
+          asOfDate: ${{ inputs.asOfDate }}
+  - id: bull_research_round_1
+    agents:
+      - slot: bull
+        uses: bull_researcher@1
+        with:
+          priorState: ${{ inputs.initialInvestmentDebateState }}
+          marketReport: ${{ steps.market_analysis.outputs.market_report }}
+          socialSentimentReport: ${{ steps.social_analysis.outputs.social_sentiment_report }}
+          newsReport: ${{ steps.news_analysis.outputs.news_report }}
+          fundamentalsReport: ${{ steps.fundamentals_analysis.outputs.fundamentals_report }}
+  - id: bear_research_round_1
+    agents:
+      - slot: bear
+        uses: bear_researcher@1
+        with:
+          priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}
+  - id: bull_research_round_2
+    agents:
+      - slot: bull
+        uses: bull_researcher@1
+        with:
+          priorState: ${{ steps.bear_research_round_1.outputs.bear.nextState }}
+  - id: bear_research_round_2
+    agents:
+      - slot: bear
+        uses: bear_researcher@1
+        with:
+          priorState: ${{ steps.bull_research_round_2.outputs.bull.nextState }}
+  - id: research_manager
+    agents:
+      - slot: research_plan
+        uses: research_manager@1
+        with:
+          debateState: ${{ steps.bear_research_round_2.outputs.bear.nextState }}
+          ticker: ${{ inputs.ticker }}
+  - id: trader
+    agents:
+      - slot: trader_proposal
+        uses: trader@1
+        with:
+          researchPlan: ${{ steps.research_manager.outputs.research_plan }}
+          portfolioId: ${{ inputs.portfolioId }}
+  - id: aggressive_risk_round_1
+    agents:
+      - slot: aggressive
+        uses: aggressive_risk_analyst@1
+        with:
+          priorState: ${{ inputs.initialRiskDebateState }}
+          researchPlan: ${{ steps.research_manager.outputs.research_plan }}
+          traderProposal: ${{ steps.trader.outputs.trader_proposal }}
+  - id: neutral_risk_round_1
+    agents:
+      - slot: neutral
+        uses: neutral_risk_analyst@1
+        with:
+          priorState: ${{ steps.aggressive_risk_round_1.outputs.aggressive.nextState }}
+  - id: conservative_risk_round_1
+    agents:
+      - slot: conservative
+        uses: conservative_risk_analyst@1
+        with:
+          priorState: ${{ steps.neutral_risk_round_1.outputs.neutral.nextState }}
+  - id: portfolio_manager
+    agents:
+      - slot: decision
+        uses: portfolio_manager@1
+        with:
+          riskState: ${{ steps.conservative_risk_round_1.outputs.conservative.nextState }}
+output:
+  from: ${{ steps.portfolio_manager.outputs.decision }}
+"""
+)
+
+GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
+    GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+        """key: platform_graph_fixed_unrolled_review
+  name: Platform Graph Demo Fixed Unrolled Review
+  description: >
+    Fixed Ledger approximation of the Platform Graph Demo analyst, debate, trader,
+    risk, and portfolio-manager topology.""",
+        """key: platform_graph_practical_fanout_review
+  name: Platform Graph Demo Practical Fanout Review
+  description: >
+    Practical v1 Ledger approximation of the Platform Graph Demo topology with
+    analysts running concurrently inside one multi-agent step before ordered
+    debate, trader, risk, and portfolio-manager stages.""",
+        1,
+    )
+    .replace(
+        """      description: Seed state for the first investment debate turn.
+""",
+        """      description: Seed state for the first investment debate turn.
+      additionalProperties: true
+""",
+        1,
+    )
+    .replace(
+        """      description: Seed state for the first risk debate turn.
+""",
+        """      description: Seed state for the first risk debate turn.
+      additionalProperties: true
+""",
+        1,
+    )
+)
+
+GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
+    "apiVersion: ledger.workflow/v2\n"
+    """kind: Workflow
+metadata:
+  key: platform_graph_v2_strict_sequential_review
+  name: Platform Graph Demo V2 Strict Sequential Review
+  description: >
+    Platform Graph Demo v2 template with analysts evaluated as a strict ordered chain,
+    bounded investment and risk debate loops, trader review, portfolio decision,
+    and post-run memory.
+inputSchema:
+  type: object
+  additionalProperties: false
+  properties:
+    ticker:
+      type: string
+      title: Ticker
+      description: Ticker symbol to research, such as AAPL.
+    asOfDate:
+      type: string
+      title: As of date
+      description: Date used for the analysis snapshot.
+    portfolioId:
+      type: string
+      title: Portfolio ID
+      description: Portfolio identifier used for position context.
+    portfolioSlug:
+      type: string
+      title: Portfolio slug
+      description: Optional portfolio slug stored with the memory artifact.
+    horizonDays:
+      type: integer
+      title: Horizon days
+      description: Optional horizon stored with the memory artifact.
+    benchmarkSymbol:
+      type: string
+      title: Benchmark symbol
+      description: Optional benchmark symbol for later memory resolution.
+    initialInvestmentDebateState:
+      type: object
+      title: Initial investment debate state
+      description: Seed state for the bounded investment debate loop.
+      additionalProperties: true
+    initialRiskDebateState:
+      type: object
+      title: Initial risk debate state
+      description: Seed state for the bounded risk debate loop.
+      additionalProperties: true
+  required: [ticker, asOfDate, portfolioId, initialInvestmentDebateState, initialRiskDebateState]
+flow:
+  kind: sequence
+  id: platform_graph_review
+  nodes:
+    - kind: step
+      id: market_analysis
+      slot: market_report
+      uses: market_analyst@1
+      with:
+        ticker: ${{ inputs.ticker }}
+        asOfDate: ${{ inputs.asOfDate }}
+    - kind: step
+      id: social_analysis
+      slot: social_sentiment_report
+      uses: social_analyst@1
+      with:
+        ticker: ${{ inputs.ticker }}
+        asOfDate: ${{ inputs.asOfDate }}
+    - kind: step
+      id: news_analysis
+      slot: news_report
+      uses: news_analyst@1
+      with:
+        ticker: ${{ inputs.ticker }}
+        asOfDate: ${{ inputs.asOfDate }}
+    - kind: step
+      id: fundamentals_analysis
+      slot: fundamentals_report
+      uses: fundamentals_analyst@1
+      with:
+        ticker: ${{ inputs.ticker }}
+        asOfDate: ${{ inputs.asOfDate }}
+    - kind: loop
+      id: investment_debate_loop
+      maxIterations: 2
+      state:
+        initialState: ${{ inputs.initialInvestmentDebateState }}
+      sequence:
+        kind: sequence
+        id: investment_debate_round
+        nodes:
+          - kind: step
+            id: bull_research
+            slot: bull
+            uses: bull_researcher@1
+            with:
+              priorState: ${{ inputs.initialInvestmentDebateState }}
+              marketReport: ${{ nodes.market_analysis.outputs.market_report }}
+              socialSentimentReport: ${{ nodes.social_analysis.outputs.social_sentiment_report }}
+              newsReport: ${{ nodes.news_analysis.outputs.news_report }}
+              fundamentalsReport: ${{ nodes.fundamentals_analysis.outputs.fundamentals_report }}
+          - kind: step
+            id: bear_research
+            slot: bear
+            uses: bear_researcher@1
+            with:
+              priorState: ${{ nodes.bull_research.outputs.bull.nextState }}
+    - kind: step
+      id: research_manager
+      slot: research_plan
+      uses: research_manager@1
+      with:
+        debateState: ${{ nodes.investment_debate_loop.outputs.bear.nextState }}
+        ticker: ${{ inputs.ticker }}
+    - kind: step
+      id: trader
+      slot: trader_proposal
+      uses: trader@1
+      with:
+        researchPlan: ${{ nodes.research_manager.outputs.research_plan }}
+        portfolioId: ${{ inputs.portfolioId }}
+    - kind: loop
+      id: risk_debate_loop
+      maxIterations: 2
+      state:
+        initialState: ${{ inputs.initialRiskDebateState }}
+      sequence:
+        kind: sequence
+        id: risk_debate_round
+        nodes:
+          - kind: step
+            id: aggressive_risk
+            slot: aggressive
+            uses: aggressive_risk_analyst@1
+            with:
+              priorState: ${{ inputs.initialRiskDebateState }}
+              researchPlan: ${{ nodes.research_manager.outputs.research_plan }}
+              traderProposal: ${{ nodes.trader.outputs.trader_proposal }}
+          - kind: step
+            id: neutral_risk
+            slot: neutral
+            uses: neutral_risk_analyst@1
+            with:
+              priorState: ${{ nodes.aggressive_risk.outputs.aggressive.nextState }}
+          - kind: step
+            id: conservative_risk
+            slot: conservative
+            uses: conservative_risk_analyst@1
+            with:
+              priorState: ${{ nodes.neutral_risk.outputs.neutral.nextState }}
+    - kind: step
+      id: portfolio_manager
+      slot: decision
+      uses: portfolio_manager@1
+      with:
+        riskState: ${{ nodes.risk_debate_loop.outputs.conservative.nextState }}
+output:
+  from: ${{ nodes.platform_graph_review.outputs.decision }}
+postRunMemory:
+  enabled: true
+  source:
+    ticker: ${{ inputs.ticker }}
+    action: ${{ nodes.portfolio_manager.outputs.decision.action }}
+    rationale: ${{ nodes.portfolio_manager.outputs.decision.rationale }}
+    riskSummary: ${{ nodes.portfolio_manager.outputs.decision.riskSummary }}
+    executionPlan: ${{ nodes.portfolio_manager.outputs.decision.executionPlan }}
+    portfolioSlug: ${{ inputs.portfolioSlug }}
+    horizonDays: ${{ inputs.horizonDays }}
+    decisionSummary: ${{ nodes.portfolio_manager.outputs.decision.rationale }}
+  benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+"""
+)
+
+GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
+    "apiVersion: ledger.workflow/v2\n"
+    """kind: Workflow
+metadata:
+  key: platform_graph_v2_practical_fanout_review
+  name: Platform Graph Demo V2 Practical Fanout Review
+  description: >
+    Platform Graph Demo v2 template with analyst roles fanning out concurrently before
+    bounded investment and risk debate loops, trader review, portfolio decision,
+    and post-run memory.
+inputSchema:
+  type: object
+  additionalProperties: false
+  properties:
+    ticker:
+      type: string
+      title: Ticker
+      description: Ticker symbol to research, such as AAPL.
+    asOfDate:
+      type: string
+      title: As of date
+      description: Date used for the analysis snapshot.
+    portfolioId:
+      type: string
+      title: Portfolio ID
+      description: Portfolio identifier used for position context.
+    portfolioSlug:
+      type: string
+      title: Portfolio slug
+      description: Optional portfolio slug stored with the memory artifact.
+    horizonDays:
+      type: integer
+      title: Horizon days
+      description: Optional horizon stored with the memory artifact.
+    benchmarkSymbol:
+      type: string
+      title: Benchmark symbol
+      description: Optional benchmark symbol for later memory resolution.
+    initialInvestmentDebateState:
+      type: object
+      title: Initial investment debate state
+      description: Seed state for the bounded investment debate loop.
+      additionalProperties: true
+    initialRiskDebateState:
+      type: object
+      title: Initial risk debate state
+      description: Seed state for the bounded risk debate loop.
+      additionalProperties: true
+  required: [ticker, asOfDate, portfolioId, initialInvestmentDebateState, initialRiskDebateState]
+flow:
+  kind: sequence
+  id: platform_graph_review
+  nodes:
+    - kind: fanout
+      id: analyst_fanout
+      branches:
+        - id: market
+          node:
+            kind: step
+            id: market_analysis
+            slot: market_report
+            uses: market_analyst@1
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+        - id: social
+          node:
+            kind: step
+            id: social_analysis
+            slot: social_sentiment_report
+            uses: social_analyst@1
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+        - id: news
+          node:
+            kind: step
+            id: news_analysis
+            slot: news_report
+            uses: news_analyst@1
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+        - id: fundamentals
+          node:
+            kind: step
+            id: fundamentals_analysis
+            slot: fundamentals_report
+            uses: fundamentals_analyst@1
+            with:
+              ticker: ${{ inputs.ticker }}
+              asOfDate: ${{ inputs.asOfDate }}
+    - kind: loop
+      id: investment_debate_loop
+      maxIterations: 2
+      state:
+        initialState: ${{ inputs.initialInvestmentDebateState }}
+      sequence:
+        kind: sequence
+        id: investment_debate_round
+        nodes:
+          - kind: step
+            id: bull_research
+            slot: bull
+            uses: bull_researcher@1
+            with:
+              priorState: ${{ inputs.initialInvestmentDebateState }}
+              marketReport: ${{ nodes.analyst_fanout.outputs.market_report }}
+              socialSentimentReport: ${{ nodes.analyst_fanout.outputs.social_sentiment_report }}
+              newsReport: ${{ nodes.analyst_fanout.outputs.news_report }}
+              fundamentalsReport: ${{ nodes.analyst_fanout.outputs.fundamentals_report }}
+          - kind: step
+            id: bear_research
+            slot: bear
+            uses: bear_researcher@1
+            with:
+              priorState: ${{ nodes.bull_research.outputs.bull.nextState }}
+    - kind: step
+      id: research_manager
+      slot: research_plan
+      uses: research_manager@1
+      with:
+        debateState: ${{ nodes.investment_debate_loop.outputs.bear.nextState }}
+        ticker: ${{ inputs.ticker }}
+    - kind: step
+      id: trader
+      slot: trader_proposal
+      uses: trader@1
+      with:
+        researchPlan: ${{ nodes.research_manager.outputs.research_plan }}
+        portfolioId: ${{ inputs.portfolioId }}
+    - kind: loop
+      id: risk_debate_loop
+      maxIterations: 2
+      state:
+        initialState: ${{ inputs.initialRiskDebateState }}
+      sequence:
+        kind: sequence
+        id: risk_debate_round
+        nodes:
+          - kind: step
+            id: aggressive_risk
+            slot: aggressive
+            uses: aggressive_risk_analyst@1
+            with:
+              priorState: ${{ inputs.initialRiskDebateState }}
+              researchPlan: ${{ nodes.research_manager.outputs.research_plan }}
+              traderProposal: ${{ nodes.trader.outputs.trader_proposal }}
+          - kind: step
+            id: neutral_risk
+            slot: neutral
+            uses: neutral_risk_analyst@1
+            with:
+              priorState: ${{ nodes.aggressive_risk.outputs.aggressive.nextState }}
+          - kind: step
+            id: conservative_risk
+            slot: conservative
+            uses: conservative_risk_analyst@1
+            with:
+              priorState: ${{ nodes.neutral_risk.outputs.neutral.nextState }}
+    - kind: step
+      id: portfolio_manager
+      slot: decision
+      uses: portfolio_manager@1
+      with:
+        riskState: ${{ nodes.risk_debate_loop.outputs.conservative.nextState }}
+output:
+  from: ${{ nodes.platform_graph_review.outputs.decision }}
+postRunMemory:
+  enabled: true
+  source:
+    ticker: ${{ inputs.ticker }}
+    action: ${{ nodes.portfolio_manager.outputs.decision.action }}
+    rationale: ${{ nodes.portfolio_manager.outputs.decision.rationale }}
+    riskSummary: ${{ nodes.portfolio_manager.outputs.decision.riskSummary }}
+    executionPlan: ${{ nodes.portfolio_manager.outputs.decision.executionPlan }}
+    portfolioSlug: ${{ inputs.portfolioSlug }}
+    horizonDays: ${{ inputs.horizonDays }}
+    decisionSummary: ${{ nodes.portfolio_manager.outputs.decision.rationale }}
+  benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+"""
+)
+
+__all__ = [
+    "GENERIC_PLATFORM_MODEL_CONNECTION_SETUP",
+    "GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES",
+    "GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE",
+    "GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE",
+    "GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE",
+    "GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE",
+    "GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE",
+]
 
 _EXACT_VERSION_REF_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}@[1-9][0-9]*$")
 _RAW_SECRET_TEXT_RE = re.compile(
@@ -32,13 +1104,13 @@ _RAW_SECRET_TEXT_RE = re.compile(
     + r"(api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._~-]+|"
     + r"sk-[A-Za-z0-9_-]{10,}|secret\s*[:=]|token\s*[:=])"
 )
-_TRADINGAGENTS_ANALYST_AGENT_REFS = [
+_GENERIC_PLATFORM_ANALYST_AGENT_REFS = [
     "market_analyst@1",
     "social_analyst@1",
     "news_analyst@1",
     "fundamentals_analyst@1",
 ]
-_TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS = [
+_GENERIC_PLATFORM_DEBATE_AND_DECISION_STEP_IDS = [
     "bull_research_round_1",
     "bear_research_round_1",
     "bull_research_round_2",
@@ -50,6 +1122,96 @@ _TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS = [
     "conservative_risk_round_1",
     "portfolio_manager",
 ]
+
+
+def _required_text(value: object, *, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} is required")
+    return normalized
+
+
+class _DemoAnalystReports(CamelModel):
+    market_report: str
+    social_sentiment_report: str
+    news_report: str
+    fundamentals_report: str
+
+    @field_validator(
+        "market_report",
+        "social_sentiment_report",
+        "news_report",
+        "fundamentals_report",
+        mode="before",
+    )
+    @classmethod
+    def validate_reports(cls, value: object) -> str:
+        return _required_text(value, field_name="Analyst report")
+
+
+class _DemoInvestmentDebateState(CamelModel):
+    analyst_reports: _DemoAnalystReports
+    bull_case: str
+    bear_case: str
+    debate_history: list[str]
+
+
+class _DemoResearchPlan(CamelModel):
+    recommendation: Literal["buy", "hold", "sell"]
+    thesis: str
+    debate_summary: str
+
+    @field_validator("thesis", "debate_summary", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _required_text(value, field_name="Research plan field")
+
+
+class _DemoTraderProposal(CamelModel):
+    action: Literal["buy", "hold", "sell"]
+    rationale: str
+    sizing_notes: str
+
+    @field_validator("rationale", "sizing_notes", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _required_text(value, field_name="Trader proposal field")
+
+
+class _DemoRiskDebateState(CamelModel):
+    research_plan: _DemoResearchPlan
+    trader_proposal: _DemoTraderProposal
+    aggressive_case: str
+    neutral_case: str
+    conservative_case: str
+    debate_history: list[str]
+
+
+class _DemoPortfolioDecision(CamelModel):
+    action: Literal["buy", "hold", "sell"]
+    rationale: str
+    risk_summary: str
+    execution_plan: str
+
+    @field_validator("rationale", "risk_summary", "execution_plan", mode="before")
+    @classmethod
+    def validate_text_fields(cls, value: object) -> str:
+        return _required_text(value, field_name="Portfolio decision field")
+
+
+class _DemoInvestmentDebateTransition(CamelModel):
+    next_state: _DemoInvestmentDebateState
+
+
+class _DemoRiskDebateTransition(CamelModel):
+    next_state: _DemoRiskDebateState
+
+
+class _DemoInitialRoundConfig(CamelModel):
+    investment_debate_rounds: StrictInt = Field(default=2, ge=1, le=5)
+    risk_debate_rounds: StrictInt = Field(default=2, ge=1, le=5)
 
 
 def _valid_manifest_source(*, uses: str = "research_agent@1") -> str:
@@ -147,8 +1309,8 @@ def _risk_debate_state_payload() -> dict[str, object]:
     }
 
 
-def test_tradingagents_contracts_validate_full_state_transitions_and_round_config() -> None:
-    investment_transition = TradingAgentsInvestmentDebateTransition.model_validate(
+def test_platform_graph_contracts_validate_full_state_transitions_and_round_config() -> None:
+    investment_transition = _DemoInvestmentDebateTransition.model_validate(
         {
             "nextState": _investment_debate_state_payload(
                 bull_case="Bull case updated after the first unrolled round.",
@@ -156,13 +1318,13 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
             ),
         }
     )
-    risk_transition = TradingAgentsRiskDebateTransition.model_validate(
+    risk_transition = _DemoRiskDebateTransition.model_validate(
         {
             "nextState": _risk_debate_state_payload()
             | {"neutralCase": "Maintain exposure after risk review."},
         }
     )
-    decision = TradingAgentsPortfolioDecision.model_validate(
+    decision = _DemoPortfolioDecision.model_validate(
         {
             "action": "hold",
             "rationale": "Research and risk views agree on patience.",
@@ -170,7 +1332,7 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
             "executionPlan": "No trade for the initial portfolio decision.",
         }
     )
-    round_config = TradingAgentsInitialUnrolledRoundConfig.model_validate(
+    round_config = _DemoInitialRoundConfig.model_validate(
         {"investmentDebateRounds": 2, "riskDebateRounds": 3}
     )
 
@@ -187,7 +1349,7 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
     }
 
     with pytest.raises(ValidationError) as investment_prior_exc:
-        _ = TradingAgentsInvestmentDebateTransition.model_validate(
+        _ = _DemoInvestmentDebateTransition.model_validate(
             {
                 "priorState": _investment_debate_state_payload(),
                 "nextState": _investment_debate_state_payload(),
@@ -199,7 +1361,7 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
     )
 
     with pytest.raises(ValidationError) as risk_prior_exc:
-        _ = TradingAgentsRiskDebateTransition.model_validate(
+        _ = _DemoRiskDebateTransition.model_validate(
             {
                 "priorState": _risk_debate_state_payload(),
                 "nextState": _risk_debate_state_payload(),
@@ -219,14 +1381,14 @@ def test_tradingagents_contracts_validate_full_state_transitions_and_round_confi
         {"investmentDebateRounds": "2", "riskDebateRounds": 2},
     ],
 )
-def test_tradingagents_round_config_is_fixed_bounded_data(payload: dict[str, object]) -> None:
+def test_platform_graph_round_config_is_fixed_bounded_data(payload: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        _ = TradingAgentsInitialUnrolledRoundConfig.model_validate(payload)
+        _ = _DemoInitialRoundConfig.model_validate(payload)
 
 
-def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> None:
+def test_platform_graph_debate_transitions_reject_partial_or_patch_outputs() -> None:
     with pytest.raises(ValidationError) as partial_exc:
-        _ = TradingAgentsInvestmentDebateTransition.model_validate(
+        _ = _DemoInvestmentDebateTransition.model_validate(
             {
                 "nextState": {"bullCase": "Only the updated delta."},
             }
@@ -237,7 +1399,7 @@ def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> N
     assert {"analystReports", "bearCase", "debateHistory"} <= missing_fields
 
     with pytest.raises(ValidationError) as patch_exc:
-        _ = TradingAgentsRiskDebateTransition.model_validate(
+        _ = _DemoRiskDebateTransition.model_validate(
             {
                 "nextState": _risk_debate_state_payload()
                 | {"patch": {"neutralCase": "Only a patch."}},
@@ -249,7 +1411,7 @@ def test_tradingagents_debate_transitions_reject_partial_or_patch_outputs() -> N
     assert ("nextState", "patch") in extra_paths
 
 
-def test_tradingagents_contracts_do_not_weaken_manifest_validation() -> None:
+def test_platform_graph_contracts_do_not_weaken_manifest_validation() -> None:
     same_step_reference = _valid_manifest_source().replace(
         "${{ steps.research.outputs.analysis.summary }}",
         "${{ steps.decision.outputs.final.summary }}",
@@ -741,8 +1903,8 @@ def test_parser_rejects_invalid_step_references_and_optional_final_output() -> N
     assert "Final output cannot reference an optional slot" in optional_output_diagnostic.message
 
 
-def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -> None:
-    assert set(TRADINGAGENTS_AGENT_MANIFEST_SOURCES) == {
+def test_platform_graph_example_agent_manifests_parse_with_exact_numeric_pins() -> None:
+    assert set(GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES) == {
         "market_analyst",
         "social_analyst",
         "news_analyst",
@@ -758,10 +1920,10 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
     }
 
     expected_capability_refs = {
-        "market_analyst": ["tradingagents_market_data@1"],
-        "social_analyst": ["tradingagents_news@1"],
-        "news_analyst": ["tradingagents_news@1"],
-        "fundamentals_analyst": ["tradingagents_fundamentals@1"],
+        "market_analyst": ["platform_graph_market_data@1"],
+        "social_analyst": ["platform_graph_news@1"],
+        "news_analyst": ["platform_graph_news@1"],
+        "fundamentals_analyst": ["platform_graph_fundamentals@1"],
         "bull_researcher": ["ledger_reports@1"],
         "bear_researcher": ["ledger_reports@1"],
         "research_manager": ["ledger_reports@1"],
@@ -769,7 +1931,7 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
         "aggressive_risk_analyst": ["ledger_reports@1"],
         "neutral_risk_analyst": ["ledger_reports@1"],
         "conservative_risk_analyst": ["ledger_reports@1"],
-        "portfolio_manager": ["ledger_reports@1", "tradingagents_memory@1"],
+        "portfolio_manager": ["ledger_reports@1", "platform_graph_memory@1"],
     }
     expected_prompt_fragments = {
         "market_analyst": [
@@ -790,7 +1952,7 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
         ],
     }
 
-    for role, source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.items():
+    for role, source in GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES.items():
         assert "skills:" not in source
         assert _RAW_SECRET_TEXT_RE.search(source) is None
 
@@ -803,7 +1965,7 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
         dumped = result.manifest.model_dump(mode="json", by_alias=True)
         spec = cast(dict[str, object], dumped["spec"])
         capability_refs = cast(list[object], spec["capabilities"])
-        assert spec["modelConnection"] == TRADINGAGENTS_MODEL_CONNECTION_SETUP["key"]
+        assert spec["modelConnection"] == GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["key"]
         assert "skills" not in spec
         assert _EXACT_VERSION_REF_RE.fullmatch(str(spec["outputSchema"])) is not None
         assert all(
@@ -818,8 +1980,8 @@ def test_tradingagents_example_agent_manifests_parse_with_exact_numeric_pins() -
             assert expected_fragment in result.manifest.spec.system_prompt
 
 
-def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
-    result = parse_workflow_manifest(TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
+def test_platform_graph_fixed_unrolled_manifest_has_expected_topology() -> None:
+    result = parse_workflow_manifest(GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE)
 
     assert result.diagnostics == []
     assert result.manifest is not None
@@ -903,16 +2065,16 @@ def test_tradingagents_fixed_unrolled_manifest_has_expected_topology() -> None:
     ("source", "expected_key"),
     [
         (
-            TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_strict_sequential_review",
+            GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_strict_sequential_review",
         ),
         (
-            TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_practical_fanout_review",
+            GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_practical_fanout_review",
         ),
     ],
 )
-def test_tradingagents_v1_review_examples_parse_with_workflow_api_version(
+def test_platform_graph_v1_review_examples_parse_with_workflow_api_version(
     source: str,
     expected_key: str,
 ) -> None:
@@ -924,11 +2086,11 @@ def test_tradingagents_v1_review_examples_parse_with_workflow_api_version(
     assert result.manifest.metadata.key == expected_key
 
 
-def test_tradingagents_strict_sequential_manifest_orders_single_analyst_steps_before_debate() -> (
+def test_platform_graph_strict_sequential_manifest_orders_single_analyst_steps_before_debate() -> (
     None
 ):
     result = parse_workflow_manifest(
-        TRADINGAGENTS_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE
+        GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE
     )
 
     assert result.diagnostics == []
@@ -948,8 +2110,8 @@ def test_tradingagents_strict_sequential_manifest_orders_single_analyst_steps_be
         f"{step.agents[0].uses.key}@{step.agents[0].uses.version}" for step in analyst_steps
     ]
     assert [len(step.agents) for step in analyst_steps] == [1, 1, 1, 1]
-    assert analyst_refs == _TRADINGAGENTS_ANALYST_AGENT_REFS
-    assert [step.id for step in steps[4:]] == _TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS
+    assert analyst_refs == _GENERIC_PLATFORM_ANALYST_AGENT_REFS
+    assert [step.id for step in steps[4:]] == _GENERIC_PLATFORM_DEBATE_AND_DECISION_STEP_IDS
     assert first_debate_step.id == "bull_research_round_1"
     assert first_debate_step.agents[0].inputs["marketReport"].step_id == "market_analysis"
     assert first_debate_step.agents[0].inputs["socialSentimentReport"].step_id == "social_analysis"
@@ -959,10 +2121,12 @@ def test_tradingagents_strict_sequential_manifest_orders_single_analyst_steps_be
     )
 
 
-def test_tradingagents_practical_fanout_manifest_keeps_single_analyst_fanout_before_debate() -> (
+def test_platform_graph_practical_fanout_manifest_keeps_single_analyst_fanout_before_debate() -> (
     None
 ):
-    result = parse_workflow_manifest(TRADINGAGENTS_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE)
+    result = parse_workflow_manifest(
+        GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE
+    )
 
     assert result.diagnostics == []
     assert result.manifest is not None
@@ -972,7 +2136,7 @@ def test_tradingagents_practical_fanout_manifest_keeps_single_analyst_fanout_bef
 
     analyst_refs = [f"{agent.uses.key}@{agent.uses.version}" for agent in analyst_step.agents]
     assert analyst_step.id == "analyst_fanout"
-    assert analyst_refs == _TRADINGAGENTS_ANALYST_AGENT_REFS
+    assert analyst_refs == _GENERIC_PLATFORM_ANALYST_AGENT_REFS
     assert [agent.slot for agent in analyst_step.agents] == [
         "market_report",
         "social_sentiment_report",
@@ -984,7 +2148,7 @@ def test_tradingagents_practical_fanout_manifest_keeps_single_analyst_fanout_bef
         for agent in analyst_step.agents
         for reference in agent.inputs.values()
     )
-    assert [step.id for step in steps[1:]] == _TRADINGAGENTS_DEBATE_AND_DECISION_STEP_IDS
+    assert [step.id for step in steps[1:]] == _GENERIC_PLATFORM_DEBATE_AND_DECISION_STEP_IDS
     assert steps[1].agents[0].inputs["marketReport"].step_id == "analyst_fanout"
     assert steps[1].agents[0].inputs["socialSentimentReport"].step_id == "analyst_fanout"
     assert steps[1].agents[0].inputs["newsReport"].step_id == "analyst_fanout"
@@ -995,18 +2159,18 @@ def test_tradingagents_practical_fanout_manifest_keeps_single_analyst_fanout_bef
     ("source", "expected_key", "expected_analyst_node_kind"),
     [
         (
-            TRADINGAGENTS_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_strict_sequential_review",
+            GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_strict_sequential_review",
             "step",
         ),
         (
-            TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-            "tradingagents_v2_practical_fanout_review",
+            GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+            "platform_graph_v2_practical_fanout_review",
             "fanout",
         ),
     ],
 )
-def test_tradingagents_v2_review_examples_parse_with_bounded_loops_and_memory(
+def test_platform_graph_v2_review_examples_parse_with_bounded_loops_and_memory(
     source: str,
     expected_key: str,
     expected_analyst_node_kind: str,
@@ -1044,19 +2208,19 @@ def test_tradingagents_v2_review_examples_parse_with_bounded_loops_and_memory(
     assert dumped["postRunMemory"]["benchmarkSymbol"] == "${{ inputs.benchmarkSymbol }}"
 
 
-def test_tradingagents_model_connection_setup_metadata_is_secret_free() -> None:
-    assert TRADINGAGENTS_MODEL_CONNECTION_SETUP == {
-        "key": "tradingagents_local_gpt54_mini",
+def test_platform_graph_model_connection_setup_metadata_is_secret_free() -> None:
+    assert GENERIC_PLATFORM_MODEL_CONNECTION_SETUP == {
+        "key": "platform_graph_local_gpt54_mini",
         "baseUrl": "http://192.168.1.222:8087/v1",
         "modelId": "gpt-5.4-mini",
         "reasoningEffort": "medium",
         "apiStyle": "responses",
     }
-    assert _RAW_SECRET_TEXT_RE.search(str(TRADINGAGENTS_MODEL_CONNECTION_SETUP)) is None
+    assert _RAW_SECRET_TEXT_RE.search(str(GENERIC_PLATFORM_MODEL_CONNECTION_SETUP)) is None
 
 
-def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_debate_refs() -> None:
-    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+def test_platform_graph_fixed_unrolled_manifest_rejects_same_step_debate_refs() -> None:
+    source = GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
         "priorState: ${{ inputs.initialInvestmentDebateState }}",
         "priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}",
         1,
@@ -1068,8 +2232,8 @@ def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_debate_refs() -
     assert "Step references must point to an earlier step" in diagnostic.message
 
 
-def test_tradingagents_fixed_unrolled_manifest_rejects_future_debate_refs() -> None:
-    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+def test_platform_graph_fixed_unrolled_manifest_rejects_future_debate_refs() -> None:
+    source = GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
         "priorState: ${{ steps.bull_research_round_1.outputs.bull.nextState }}",
         "priorState: ${{ steps.bull_research_round_2.outputs.bull.nextState }}",
         1,
@@ -1081,8 +2245,8 @@ def test_tradingagents_fixed_unrolled_manifest_rejects_future_debate_refs() -> N
     assert "Step references must point to an earlier step" in diagnostic.message
 
 
-def test_tradingagents_fixed_unrolled_manifest_rejects_same_step_analyst_refs() -> None:
-    source = TRADINGAGENTS_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
+def test_platform_graph_fixed_unrolled_manifest_rejects_same_step_analyst_refs() -> None:
+    source = GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE.replace(
         "ticker: ${{ inputs.ticker }}",
         "ticker: ${{ steps.analyst_fanout.outputs.market_report }}",
         1,

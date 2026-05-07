@@ -68,12 +68,12 @@ from app.services.quote_provider import (
 from app.services.report_service import ReportService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
-from app.services.workflow_manifest_examples import (
-    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
-    TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
-)
 from app.services.workflow_service import WorkflowService
-from tests.test_agent_manifest_compiler import _seed_tradingagents_manifest_refs
+from tests.test_agent_manifest_compiler import _seed_platform_graph_manifest_refs
+from tests.test_workflow_manifest_parser import (
+    GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES,
+    GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE,
+)
 
 _TRACE_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 _TRACE_SPAN_ID_PATTERN = re.compile(r"[0-9a-f]{16}")
@@ -4252,19 +4252,19 @@ def test_agent_platform_v2_post_run_memory_success_creates_one_linked_artifact(
     assert "secret" not in serialized_metadata.lower()
 
 
-def _seed_tradingagents_v2_runtime_workflow(session: Session) -> WorkflowRead:
-    _seed_tradingagents_manifest_refs(session)
+def _seed_platform_graph_v2_runtime_workflow(session: Session) -> WorkflowRead:
+    _seed_platform_graph_manifest_refs(session)
     agent_service = AgentService(session, get_default_tool_catalog(), DefaultMcpConnectionTester())
-    for source in TRADINGAGENTS_AGENT_MANIFEST_SOURCES.values():
+    for source in GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES.values():
         _ = agent_service.create_agent_from_manifest(source)
     return WorkflowService(session).create_workflow(
         WorkflowCreateRequest.model_validate(
-            {"manifestSource": TRADINGAGENTS_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE}
+            {"manifestSource": GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE}
         )
     )
 
 
-async def _tradingagents_v2_fake_invoke(
+async def _platform_graph_v2_fake_invoke(
     self: RunService,
     *,
     agent: Agent,
@@ -4333,15 +4333,15 @@ async def _tradingagents_v2_fake_invoke(
     return {"output": output, "tokens": 5, "durationMs": 1}
 
 
-def test_agent_platform_tradingagents_v2_stubbed_run_completes_with_graph_and_memory(
+def test_agent_platform_platform_graph_v2_stubbed_run_completes_with_graph_and_memory(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_invoke_agent", _tradingagents_v2_fake_invoke)
+    monkeypatch.setattr(RunService, "_invoke_agent", _platform_graph_v2_fake_invoke)
 
     with session_factory() as session:
-        workflow = _seed_tradingagents_v2_runtime_workflow(session)
+        workflow = _seed_platform_graph_v2_runtime_workflow(session)
 
     trigger = client.post(
         f"/api/workflows/{workflow.id}/launches",
@@ -4363,7 +4363,7 @@ def test_agent_platform_tradingagents_v2_stubbed_run_completes_with_graph_and_me
     detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
 
     assert detail["status"] == "succeeded"
-    assert detail["targetKey"] == "tradingagents_v2_practical_fanout_review"
+    assert detail["targetKey"] == "platform_graph_v2_practical_fanout_review"
     assert detail["finalOutput"] == {
         "action": "buy",
         "rationale": "Analyst fanout and bounded debates support a staged buy.",
@@ -6357,7 +6357,7 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
     assert detail["steps"][1]["invocations"][0]["status"] == "succeeded"
 
 
-def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
+def test_platform_graph_fixed_workflow_runs_end_to_end_with_mcp_disabled(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -6477,24 +6477,24 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         "additionalProperties": False,
     }
     with session_factory() as session:
-        note_output = _build_output_schema(key="tradingagents_note", version=1, status="published")
+        note_output = _build_output_schema(key="platform_graph_note", version=1, status="published")
         note_output.json_schema = note_schema
         transition_output = _build_output_schema(
-            key="tradingagents_transition", version=1, status="published"
+            key="platform_graph_transition", version=1, status="published"
         )
         transition_output.json_schema = transition_schema
-        plan_output = _build_output_schema(key="tradingagents_plan", version=1, status="published")
+        plan_output = _build_output_schema(key="platform_graph_plan", version=1, status="published")
         plan_output.json_schema = plan_schema
         proposal_output = _build_output_schema(
-            key="tradingagents_proposal", version=1, status="published"
+            key="platform_graph_proposal", version=1, status="published"
         )
         proposal_output.json_schema = proposal_schema
         decision_output = _build_output_schema(
-            key="tradingagents_decision", version=1, status="published"
+            key="platform_graph_decision", version=1, status="published"
         )
         decision_output.json_schema = decision_schema
         capability = _build_skill(
-            key="tradingagents_runtime_tools",
+            key="platform_graph_runtime_tools",
             version=1,
             status="published",
             tools=[
@@ -6504,12 +6504,12 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
             ],
         )
         mcp_server = _build_mcp_server(
-            key="tradingagents_runtime_data",
+            key="platform_graph_runtime_data",
             version=1,
             status="published",
             transport="stdio",
         )
-        connection = _build_model_connection(name="TradingAgents Runtime Connection")
+        connection = _build_model_connection(name="Platform Graph Demo Runtime Connection")
         session.add_all(
             [
                 note_output,
@@ -6653,8 +6653,8 @@ def test_tradingagents_fixed_workflow_runs_end_to_end_with_mcp_disabled(
         workflow = WorkflowService(session).create_workflow(
             WorkflowCreate.model_validate(
                 {
-                    "key": "tradingagents_state_carry",
-                    "name": "TradingAgents State Carry",
+                    "key": "platform_graph_state_carry",
+                    "name": "Platform Graph Demo State Carry",
                     "inputSchema": {
                         "type": "object",
                         "properties": {

@@ -14,11 +14,11 @@ from app.models.output_schema import OutputSchema
 from app.schemas.agent import AgentCreate
 from app.services.agent_manifest_compiler import AgentManifestCompilerError, compile_agent_manifest
 from app.services.agent_manifest_parser import parse_agent_manifest
-from app.services.workflow_manifest_examples import (
-    TRADINGAGENTS_AGENT_MANIFEST_SOURCES,
-    TRADINGAGENTS_MODEL_CONNECTION_SETUP,
-)
 from tests.test_agent_manifest_parser import _valid_manifest_source
+from tests.test_workflow_manifest_parser import (
+    GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES,
+    GENERIC_PLATFORM_MODEL_CONNECTION_SETUP,
+)
 
 
 def _seed_manifest_refs(session: Session) -> dict[str, object]:
@@ -82,16 +82,16 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
     }
 
 
-def _seed_tradingagents_manifest_refs(session: Session) -> None:
+def _seed_platform_graph_manifest_refs(session: Session) -> None:
     connection = ModelConnection(
-        key=TRADINGAGENTS_MODEL_CONNECTION_SETUP["key"],
+        key=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["key"],
         status="active",
-        name="TradingAgents Local GPT 5.4 Mini",
-        description="TradingAgents local OpenAI-family model connection.",
-        base_url=TRADINGAGENTS_MODEL_CONNECTION_SETUP["baseUrl"],
-        model_id=TRADINGAGENTS_MODEL_CONNECTION_SETUP["modelId"],
-        reasoning_effort=TRADINGAGENTS_MODEL_CONNECTION_SETUP["reasoningEffort"],
-        api_style=TRADINGAGENTS_MODEL_CONNECTION_SETUP["apiStyle"],
+        name="Platform Graph Demo Local GPT 5.4 Mini",
+        description="Platform Graph Demo local OpenAI-family model connection.",
+        base_url=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["baseUrl"],
+        model_id=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["modelId"],
+        reasoning_effort=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["reasoningEffort"],
+        api_style=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["apiStyle"],
         timeout_seconds=60,
         secret_payload={"apiKey": "configured-test-value"},
         has_api_key=True,
@@ -105,20 +105,22 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
         "additionalProperties": False,
     }
     schema_payloads = {
-        "tradingagents_analyst_report": state_schema,
-        "tradingagents_investment_debate_transition": transition_schema,
-        "tradingagents_research_plan": state_schema,
-        "tradingagents_trader_proposal": state_schema,
-        "tradingagents_risk_debate_transition": transition_schema,
-        "tradingagents_portfolio_decision": state_schema,
+        "platform_graph_analyst_report": state_schema,
+        "platform_graph_investment_debate_transition": transition_schema,
+        "platform_graph_research_plan": state_schema,
+        "platform_graph_trader_proposal": state_schema,
+        "platform_graph_risk_debate_transition": transition_schema,
+        "platform_graph_portfolio_decision": state_schema,
     }
     schema_names = {
-        "tradingagents_analyst_report": "TradingAgents Analyst Report",
-        "tradingagents_investment_debate_transition": "TradingAgents Investment Debate Transition",
-        "tradingagents_research_plan": "TradingAgents Research Plan",
-        "tradingagents_trader_proposal": "TradingAgents Trader Proposal",
-        "tradingagents_risk_debate_transition": "TradingAgents Risk Debate Transition",
-        "tradingagents_portfolio_decision": "TradingAgents Portfolio Decision",
+        "platform_graph_analyst_report": "Platform Graph Demo Analyst Report",
+        "platform_graph_investment_debate_transition": (
+            "Platform Graph Demo Investment Debate Transition"
+        ),
+        "platform_graph_research_plan": "Platform Graph Demo Research Plan",
+        "platform_graph_trader_proposal": "Platform Graph Demo Trader Proposal",
+        "platform_graph_risk_debate_transition": "Platform Graph Demo Risk Debate Transition",
+        "platform_graph_portfolio_decision": "Platform Graph Demo Portfolio Decision",
     }
     output_schemas = [
         OutputSchema(
@@ -134,20 +136,20 @@ def _seed_tradingagents_manifest_refs(session: Session) -> None:
         for key, json_schema in schema_payloads.items()
     ]
     capability_tool_keys = {
-        "tradingagents_market_data": [
+        "platform_graph_market_data": [
             "ledger.market_data.quote_lookup",
             "ledger.market_data.history_lookup",
             "ledger.market_data.ohlcv_lookup",
             "ledger.indicators.lookup",
         ],
-        "tradingagents_fundamentals": ["ledger.fundamentals.lookup"],
-        "tradingagents_news": [
+        "platform_graph_fundamentals": ["ledger.fundamentals.lookup"],
+        "platform_graph_news": [
             "ledger.news.lookup",
             "ledger.insider_data.lookup",
         ],
         "ledger_reports": ["ledger.reports.lookup"],
         "ledger_positions": ["ledger.positions.lookup"],
-        "tradingagents_memory": ["ledger.reports.write"],
+        "platform_graph_memory": ["ledger.reports.write"],
     }
     capabilities = [
         Capability(
@@ -220,10 +222,10 @@ def test_compile_agent_manifest_accepts_validated_manifest(
 @pytest.mark.parametrize(
     ("role", "expected_capability_ref"),
     [
-        ("market_analyst", "tradingagents_market_data@1"),
-        ("social_analyst", "tradingagents_news@1"),
-        ("news_analyst", "tradingagents_news@1"),
-        ("fundamentals_analyst", "tradingagents_fundamentals@1"),
+        ("market_analyst", "platform_graph_market_data@1"),
+        ("social_analyst", "platform_graph_news@1"),
+        ("news_analyst", "platform_graph_news@1"),
+        ("fundamentals_analyst", "platform_graph_fundamentals@1"),
         ("bull_researcher", "ledger_reports@1"),
         ("bear_researcher", "ledger_reports@1"),
         ("research_manager", "ledger_reports@1"),
@@ -231,10 +233,10 @@ def test_compile_agent_manifest_accepts_validated_manifest(
         ("aggressive_risk_analyst", "ledger_reports@1"),
         ("neutral_risk_analyst", "ledger_reports@1"),
         ("conservative_risk_analyst", "ledger_reports@1"),
-        ("portfolio_manager", "ledger_reports@1,tradingagents_memory@1"),
+        ("portfolio_manager", "ledger_reports@1,platform_graph_memory@1"),
     ],
 )
-def test_compile_tradingagents_example_agent_manifest_resolves_expected_capability(
+def test_compile_platform_graph_example_agent_manifest_resolves_expected_capability(
     session_factory: sessionmaker[Session],
     role: str,
     expected_capability_ref: str,
@@ -245,8 +247,8 @@ def test_compile_tradingagents_example_agent_manifest_resolves_expected_capabili
     ]
 
     with session_factory() as session:
-        _seed_tradingagents_manifest_refs(session)
-        payload = compile_agent_manifest(TRADINGAGENTS_AGENT_MANIFEST_SOURCES[role], session)
+        _seed_platform_graph_manifest_refs(session)
+        payload = compile_agent_manifest(GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES[role], session)
 
     assert payload["capabilities"] == expected_capabilities
 
