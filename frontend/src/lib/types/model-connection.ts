@@ -42,8 +42,6 @@ export interface ModelConnectionListItemRead {
   reasoningEffort: ModelConnectionReasoningEffort | null;
   timeoutSeconds: number;
   apiStyle: ModelConnectionApiStyle;
-  hasApiKey: boolean;
-  apiKeyLast4?: string | null;
   lastTestedAt?: string | null;
   lastTestOk?: boolean | null;
   lastTestMessage?: string | null;

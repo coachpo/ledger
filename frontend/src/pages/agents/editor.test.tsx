@@ -39,11 +39,9 @@ const existingInputSchema = {
 };
 
 const activeModelConnection: ModelConnectionListItemRead = {
-  apiKeyLast4: "4242",
   apiStyle: "responses",
   baseUrl: "https://api.openai.com/v1",
   description: "Primary production connection",
-  hasApiKey: true,
   id: 44,
   key: "primary_openai",
   lastTestMessage: "Healthy",
