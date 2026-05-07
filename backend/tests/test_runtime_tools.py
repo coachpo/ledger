@@ -131,14 +131,14 @@ from app.services.report_service import ReportService
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
-_TRADINGAGENTS_RUNTIME_TOOL_KEYS = (
+_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS = (
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
     INDICATORS_LOOKUP_TOOL_KEY,
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     NEWS_LOOKUP_TOOL_KEY,
     INSIDER_DATA_LOOKUP_TOOL_KEY,
 )
-_TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
+_GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY: "ledger_market_data_ohlcv_lookup",
     INDICATORS_LOOKUP_TOOL_KEY: "ledger_indicators_lookup",
     FUNDAMENTALS_LOOKUP_TOOL_KEY: "ledger_fundamentals_lookup",
@@ -319,7 +319,7 @@ def _reports_write_runtime_context(
         agent_key="portfolio_manager",
         agent_version=3,
         agent_name="Portfolio Manager",
-        workflow_key="tradingagents_daily_review",
+        workflow_key="platform_graph_daily_review",
         workflow_version=5,
         step_id="portfolio_decision",
         slot="decision",
@@ -760,7 +760,7 @@ def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contr
         REPORT_MEMORY_WRITE_TOOL_KEY,
     )
     assert all(tool_key.startswith("ledger.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
-    assert set(_TRADINGAGENTS_RUNTIME_TOOL_KEYS) <= set(NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
+    assert set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS) <= set(NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
 
     with pytest.raises(ValidationError, match="Native runtime tool keys must start with ledger"):
         _ = RuntimeNativeToolResult.model_validate({"toolKey": "external.market_data.quote_lookup"})
@@ -777,8 +777,10 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     assert runtime_spec_keys == server_declared_keys
 
 
-def test_tradingagents_runtime_tool_specs_have_expected_openai_function_names() -> None:
-    target_function_names = tuple(_TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY.values())
+def test_generic_platform_runtime_tool_specs_have_expected_openai_function_names() -> None:
+    target_function_names = tuple(
+        _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY.values()
+    )
     assert len(target_function_names) == len(set(target_function_names))
 
     runtime_function_names = [spec.openai_function_name for spec in RUNTIME_TOOL_SPECS]
@@ -789,11 +791,11 @@ def test_tradingagents_runtime_tool_specs_have_expected_openai_function_names() 
     }
     actual_target_function_names_by_key = {
         tool_key: runtime_function_names_by_key.get(tool_key)
-        for tool_key in _TRADINGAGENTS_RUNTIME_TOOL_KEYS
+        for tool_key in _GENERIC_PLATFORM_RUNTIME_TOOL_KEYS
     }
     assert (
         actual_target_function_names_by_key
-        == _TRADINGAGENTS_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY
+        == _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY
     )
 
 
@@ -1716,10 +1718,10 @@ def test_runtime_tool_registry_aggregates_guidance_in_sort_order() -> None:
     assert registry.get_guidance(set()) == ""
 
 
-def test_tradingagents_runtime_guidance_discloses_provider_limitations() -> None:
+def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> None:
     registry = get_default_runtime_tool_registry()
 
-    guidance = registry.get_guidance(set(_TRADINGAGENTS_RUNTIME_TOOL_KEYS))
+    guidance = registry.get_guidance(set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS))
 
     assert "call ledger_market_data_ohlcv_lookup" in guidance
     assert "call ledger_indicators_lookup" in guidance
@@ -1998,7 +2000,7 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
         "agentKey": "portfolio_manager",
         "agentVersion": 3,
         "agentName": "Portfolio Manager",
-        "workflowKey": "tradingagents_daily_review",
+        "workflowKey": "platform_graph_daily_review",
         "workflowVersion": 5,
         "stepId": "portfolio_decision",
         "slot": "decision",
@@ -2015,7 +2017,7 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
     assert analysis["agentKey"] == "portfolio_manager"
     assert analysis["agentVersion"] == 3
     assert analysis["agentName"] == "Portfolio Manager"
-    assert analysis["workflowKey"] == "tradingagents_daily_review"
+    assert analysis["workflowKey"] == "platform_graph_daily_review"
     assert analysis["workflowVersion"] == 5
     assert analysis["stepId"] == "portfolio_decision"
     assert analysis["slot"] == "decision"
@@ -2347,7 +2349,7 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
         ),
     ],
 )
-def test_tradingagents_market_data_runtime_tool_parsers_normalize_happy_paths(
+def test_generic_platform_market_data_runtime_tool_parsers_normalize_happy_paths(
     parser: Callable[[str], dict[str, object]],
     arguments_json: str,
     expected_arguments: dict[str, object],
@@ -2413,7 +2415,7 @@ def test_tradingagents_market_data_runtime_tool_parsers_normalize_happy_paths(
         ),
     ],
 )
-def test_tradingagents_market_data_runtime_tool_parsers_reject_boundary_payloads(
+def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_payloads(
     parser: Callable[[str], dict[str, object]],
     function_name: str,
     valid_arguments: dict[str, object],
@@ -2583,7 +2585,7 @@ def test_tradingagents_market_data_runtime_tool_parsers_reject_boundary_payloads
         ),
     ],
 )
-def test_tradingagents_market_data_runtime_tool_parsers_reject_limits_and_bounds(
+def test_generic_platform_market_data_runtime_tool_parsers_reject_limits_and_bounds(
     parser: Callable[[str], dict[str, object]],
     arguments: dict[str, object],
     expected_message: str,

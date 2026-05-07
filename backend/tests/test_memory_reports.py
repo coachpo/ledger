@@ -82,7 +82,7 @@ def _trusted_context_payload() -> dict[str, object]:
         "agentKey": "portfolio_manager",
         "agentVersion": 3,
         "agentName": "Portfolio Manager",
-        "workflowKey": "tradingagents_daily_review",
+        "workflowKey": "platform_graph_daily_review",
         "workflowVersion": 5,
         "stepId": "portfolio_decision",
         "slot": "decision",
@@ -374,7 +374,7 @@ def test_agent_memory_pending_metadata_serializes_constants_and_trusted_fields()
     assert analysis["agentKey"] == "portfolio_manager"
     assert analysis["agentVersion"] == 3
     assert analysis["agentName"] == "Portfolio Manager"
-    assert analysis["workflowKey"] == "tradingagents_daily_review"
+    assert analysis["workflowKey"] == "platform_graph_daily_review"
     assert analysis["workflowVersion"] == 5
     assert analysis["stepId"] == "portfolio_decision"
     assert analysis["slot"] == "decision"
@@ -646,7 +646,7 @@ def test_memory_report_service_creates_pending_report_with_agent_source_and_crea
     assert analysis["runId"] == 42
     assert analysis["agentKey"] == "portfolio_manager"
     assert analysis["agentVersion"] == 3
-    assert analysis["workflowKey"] == "tradingagents_daily_review"
+    assert analysis["workflowKey"] == "platform_graph_daily_review"
     assert analysis["workflowVersion"] == 5
     assert analysis["ticker"] == "NVDA"
     assert analysis["resolvedStatus"] == "pending"
@@ -722,7 +722,7 @@ def test_memory_report_service_derives_trusted_metadata_from_context(
             "agentKey": "risk_manager",
             "agentVersion": 7,
             "agentName": "Risk Manager",
-            "workflowKey": "tradingagents_risk_review",
+            "workflowKey": "platform_graph_risk_review",
             "workflowVersion": 2,
             "traceId": "trace-derived",
         }
@@ -743,7 +743,7 @@ def test_memory_report_service_derives_trusted_metadata_from_context(
             "agentKey": "risk_manager",
             "agentVersion": 7,
             "agentName": "Risk Manager",
-            "workflowKey": "tradingagents_risk_review",
+            "workflowKey": "platform_graph_risk_review",
             "workflowVersion": 2,
             "traceId": "trace-derived",
         }
@@ -755,7 +755,7 @@ def test_memory_report_service_derives_trusted_metadata_from_context(
     assert analysis["agentKey"] == "risk_manager"
     assert analysis["agentVersion"] == 7
     assert analysis["agentName"] == "Risk Manager"
-    assert analysis["workflowKey"] == "tradingagents_risk_review"
+    assert analysis["workflowKey"] == "platform_graph_risk_review"
     assert analysis["workflowVersion"] == 2
     assert analysis["traceId"] == "trace-derived"
     assert "resolvedAt" not in analysis

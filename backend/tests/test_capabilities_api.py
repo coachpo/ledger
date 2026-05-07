@@ -15,7 +15,7 @@ from tests.test_agent_manifest_compiler import (
     _seed_manifest_refs,  # pyright: ignore[reportPrivateUsage]
 )
 
-TRADINGAGENTS_TOOL_KEYS = (
+GENERIC_PLATFORM_TOOL_KEYS = (
     "ledger.market_data.ohlcv_lookup",
     "ledger.indicators.lookup",
     "ledger.fundamentals.lookup",
@@ -30,33 +30,33 @@ def _create_capability(client: TestClient, payload: dict[str, object]) -> dict[s
     return cast(dict[str, object], response.json())
 
 
-def test_capability_create_and_read_accepts_tradingagents_tool_keys(
+def test_capability_create_and_read_accepts_platform_graph_tool_keys(
     client: TestClient,
 ) -> None:
     created = _create_capability(
         client,
         {
-            "key": "tradingagents_market_data",
-            "name": "TradingAgents Market Data",
-            "description": "TradingAgents native market-data tools.",
-            "toolKeys": list(TRADINGAGENTS_TOOL_KEYS),
+            "key": "platform_graph_market_data",
+            "name": "Platform Graph Demo Market Data",
+            "description": "Platform Graph Demo native market-data tools.",
+            "toolKeys": list(GENERIC_PLATFORM_TOOL_KEYS),
         },
     )
 
-    assert created["toolKeys"] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert created["toolKeys"] == list(GENERIC_PLATFORM_TOOL_KEYS)
     assert "toolGrants" not in created
     assert "toolDefinitions" not in created
     created_tools = cast(list[dict[str, object]], created["tools"])
-    assert [item["key"] for item in created_tools] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert [item["key"] for item in created_tools] == list(GENERIC_PLATFORM_TOOL_KEYS)
 
     read_response = client.get(f"/api/capabilities/{created['id']}")
     assert read_response.status_code == 200, read_response.json()
     read_body = cast(dict[str, object], read_response.json())
-    assert read_body["toolKeys"] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert read_body["toolKeys"] == list(GENERIC_PLATFORM_TOOL_KEYS)
     assert "toolGrants" not in read_body
     assert "toolDefinitions" not in read_body
     read_tools = cast(list[dict[str, object]], read_body["tools"])
-    assert [item["key"] for item in read_tools] == list(TRADINGAGENTS_TOOL_KEYS)
+    assert [item["key"] for item in read_tools] == list(GENERIC_PLATFORM_TOOL_KEYS)
 
 
 def test_capability_create_rejects_unknown_tool_key_without_persisting_draft(
