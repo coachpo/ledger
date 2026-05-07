@@ -301,8 +301,6 @@ def _build_model_connection(
         api_style=api_style,
         timeout_seconds=timeout_seconds,
         secret_payload=payload,
-        has_api_key=api_key is not None,
-        api_key_last4=None if api_key is None else api_key[-4:],
     )
 
 
@@ -965,6 +963,29 @@ class _FakeMcpConnectionTester:
         from app.agents.mcp import McpConnectionTestResult
 
         return McpConnectionTestResult(ok=self.ok, message=self.message)
+
+
+_MODEL_CONNECTION_LIST_ITEM_RESPONSE_KEYS = {
+    "id",
+    "key",
+    "status",
+    "name",
+    "description",
+    "baseUrl",
+    "organization",
+    "project",
+    "modelId",
+    "reasoningEffort",
+    "apiStyle",
+    "timeoutSeconds",
+    "lastTestedAt",
+    "lastTestOk",
+    "lastTestMessage",
+}
+_MODEL_CONNECTION_DETAIL_RESPONSE_KEYS = _MODEL_CONNECTION_LIST_ITEM_RESPONSE_KEYS | {
+    "createdAt",
+    "updatedAt",
+}
 
 
 def _model_connection_payload(
@@ -1746,25 +1767,24 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
     assert create_response.status_code == 201, create_response.json()
     created = create_response.json()
     connection_id = created["id"]
+    assert set(created) == _MODEL_CONNECTION_DETAIL_RESPONSE_KEYS
     assert created["key"] == "primary_openai"
     assert created["baseUrl"] == "https://api.openai.com/v1"
-    assert created["hasApiKey"] is True
-    assert created["apiKeyLast4"] == "1234"
     assert "apiKey" not in created and "secretPayload" not in created
     assert "sk-test-secret-1234" not in json.dumps(created)
 
     listed = client.get("/api/model-connections")
     assert listed.status_code == 200, listed.json()
     listed_item = listed.json()["items"][0]
+    assert set(listed_item) == _MODEL_CONNECTION_LIST_ITEM_RESPONSE_KEYS
     assert listed_item["id"] == connection_id
     assert listed_item["key"] == "primary_openai"
     assert listed_item["apiStyle"] == "responses"
-    assert listed_item["hasApiKey"] is True
-    assert listed_item["apiKeyLast4"] == "1234"
     assert "apiKey" not in listed_item and "sk-test-secret-1234" not in json.dumps(listed_item)
 
     detail = client.get(f"/api/model-connections/{connection_id}")
     assert detail.status_code == 200, detail.json()
+    assert set(detail.json()) == _MODEL_CONNECTION_DETAIL_RESPONSE_KEYS
     assert detail.json()["id"] == connection_id
     assert detail.json()["key"] == "primary_openai"
 
@@ -1773,7 +1793,8 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
         json={"description": "Updated description.", "timeoutSeconds": 90},
     )
     assert preserved.status_code == 200, preserved.json()
-    assert preserved.json()["apiKeyLast4"] == "1234"
+    assert "apiKey" not in preserved.json()
+    assert "secretPayload" not in preserved.json()
 
     with session_factory() as session:
         row = session.get(ModelConnection, connection_id)
@@ -1787,7 +1808,8 @@ def test_agent_platform_model_connections_api_crud_redacts_secrets_and_persists_
         json={"apiKey": "sk-test-secret-9999", "reasoningEffort": "low"},
     )
     assert replacement.status_code == 200, replacement.json()
-    assert replacement.json()["apiKeyLast4"] == "9999"
+    assert "apiKey" not in replacement.json()
+    assert "secretPayload" not in replacement.json()
 
     with session_factory() as session:
         row = session.get(ModelConnection, connection_id)
@@ -2264,7 +2286,6 @@ def test_agent_platform_model_connections_patch_rejects_empty_api_key(
         row = session.get(ModelConnection, connection_id)
         assert row is not None
         assert row.secret_payload == {"apiKey": "sk-test-secret-1234"}
-        assert row.api_key_last4 == "1234"
 
 
 def test_agent_platform_model_connections_connection_test_failure_redacts_secret(
@@ -2564,8 +2585,6 @@ def test_agent_platform_run_uses_agent_version_model_connection_snapshot_after_c
         assert _agent.model_connection_snapshot["api_style"] == "responses"
         connection.project = "proj-v2"
         connection.secret_payload = {"apiKey": "sk-rotated-secret-2222"}
-        connection.has_api_key = True
-        connection.api_key_last4 = "2222"
         session.commit()
 
     trigger = client.post(

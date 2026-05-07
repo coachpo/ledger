@@ -363,8 +363,6 @@ class ModelConnectionService:
         else:
             payload["apiKey"] = api_key
         connection.secret_payload = payload
-        connection.has_api_key = bool(api_key)
-        connection.api_key_last4 = api_key[-4:] if api_key else None
 
     @staticmethod
     def _clear_connection_test_result(connection: ModelConnection) -> None:

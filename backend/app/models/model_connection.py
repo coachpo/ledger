@@ -68,13 +68,6 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         default=dict,
         server_default=sql_text("'{}'::jsonb"),
     )
-    has_api_key: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=sql_text("false"),
-    )
-    api_key_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_test_message: Mapped[str | None] = mapped_column(Text, nullable=True)

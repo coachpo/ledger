@@ -96,8 +96,6 @@ def _build_model_connection(
         reasoning_effort=reasoning_effort,
         timeout_seconds=60,
         secret_payload=payload,
-        has_api_key=api_key is not None,
-        api_key_last4=None if api_key is None else api_key[-4:],
     )
 
 

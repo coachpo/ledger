@@ -257,8 +257,6 @@ def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert {
         "secret_payload",
         "key",
-        "has_api_key",
-        "api_key_last4",
         "last_tested_at",
         "last_test_ok",
         "last_test_message",
@@ -314,8 +312,6 @@ def test_agent_platform_model_connections_enforce_unique_keys(session_factory) -
                 reasoning_effort="medium",
                 timeout_seconds=60,
                 secret_payload={},
-                has_api_key=False,
-                api_key_last4=None,
             )
         )
         session.commit()
@@ -333,8 +329,6 @@ def test_agent_platform_model_connections_enforce_unique_keys(session_factory) -
                 reasoning_effort="medium",
                 timeout_seconds=60,
                 secret_payload={},
-                has_api_key=False,
-                api_key_last4=None,
             )
         )
 

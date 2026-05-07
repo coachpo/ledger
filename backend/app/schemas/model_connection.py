@@ -231,8 +231,6 @@ class ModelConnectionListItemRead(CamelModel):
     )
     api_style: ModelConnectionApiStyle
     timeout_seconds: int = Field(ge=1)
-    has_api_key: bool
-    api_key_last4: str | None = None
     last_tested_at: datetime | None = None
     last_test_ok: bool | None = None
     last_test_message: str | None = None

@@ -105,8 +105,6 @@ def _build_model_connection(
         api_style=api_style,
         timeout_seconds=60,
         secret_payload={"apiKey": api_key},
-        has_api_key=True,
-        api_key_last4=api_key[-4:],
     )
 
 

@@ -32,8 +32,6 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
         reasoning_effort="medium",
         timeout_seconds=60,
         secret_payload={"apiKey": "configured-test-value"},
-        has_api_key=True,
-        api_key_last4="test",
     )
     output_schema = OutputSchema(
         key="research_summary",
@@ -94,8 +92,6 @@ def _seed_platform_graph_manifest_refs(session: Session) -> None:
         api_style=GENERIC_PLATFORM_MODEL_CONNECTION_SETUP["apiStyle"],
         timeout_seconds=60,
         secret_payload={"apiKey": "configured-test-value"},
-        has_api_key=True,
-        api_key_last4="test",
     )
     state_schema: dict[str, object] = {"type": "object", "additionalProperties": True}
     transition_schema = {
