@@ -1,13 +1,15 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-05-08
-**Commit:** 12ced2d
+**Commit:** e8fd5af
 **Branch:** main
 
 ## OVERVIEW
+
 Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
 ## CHILD DOCS
+
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
 - `backend/app/core/AGENTS.md` — config, error envelope, normalization helpers
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
@@ -44,16 +46,18 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/pages/reports/AGENTS.md` — report list/detail flows, grouping, markdown render/edit/download behavior
 
 ## STRUCTURE
+
 ```text
 ledger/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
-├── docs/                 # live product, API, data-model, test, runtime-input, and canonical platform docs
+├── docs/                 # prd, spec, API, data-model, test, run-input, platform, and memory design docs
 ├── .github/workflows/    # CI quality gates, Docker image publish, cleanup
 └── start.sh              # local orchestrator with backend/frontend/db reuse and fallback ports
 ```
 
 ## WHERE TO LOOK
+
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
@@ -71,6 +75,7 @@ ledger/
 | CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, arm64 GHCR images, cleanup |
 
 ## CODE MAP
+
 | Symbol / Entry | Location | Role |
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
@@ -80,6 +85,7 @@ ledger/
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template/package editor full-height layout |
 
 ## CONVENTIONS
+
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
 - Backend error envelopes are `{code, message, details[]}`; frontend `ApiRequestError` parsing depends on that exact shape.
 - Money, quantities, and market values cross the API as strings; backend parsing lives in `backend/app/core/formatting.py`, while frontend conversion lives in shared formatting and analytics helpers.
@@ -93,17 +99,19 @@ ledger/
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS
+
 - Do not bypass backend services or call provider adapters directly from routes or frontend code.
 - Do not invent snake_case API fields, ad-hoc query keys, or duplicate placeholder/type contracts.
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, template compile payloads, or runtime-input flow without updating backend tests and frontend callers together.
 - Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
 - Do not hide retired Studio, Tryout, or orchestration surfaces behind stale docs or direct URLs.
-- Do not document frontend `simulations` pages or `backend/app/api/simulations.py` as live shipped surfaces; those paths are no longer part of the current browser-facing product.
+- Do not document simulations pages or modules as live shipped surfaces; they are no longer part of the browser-facing product.
 - Do not add raw `httpx`/`requests` LLM calling paths in application code when an official provider SDK exists.
-- Do not treat `docs/`, `backend/alembic/`, `frontend/dist/`, or cache directories as the source of truth over live code.
+- Do not treat docs, Alembic scaffolds, frontend build output, or cache directories as the source of truth over live code.
 
 ## COMMANDS
+
 ```bash
 (cd backend && uv sync)
 (cd frontend && pnpm install)
@@ -113,6 +121,7 @@ ledger/
 ```
 
 ## VALIDATION
+
 ```bash
 (cd backend && uv run ruff check app tests && uv run black --check app tests && uv run isort --check-only app tests && uv run mypy app && uv run pytest)
 (cd frontend && pnpm lint)
@@ -123,11 +132,12 @@ ledger/
 ```
 
 ## NOTES
+
 - `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior Ledger instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
-- Supported schema repair is code-based in `backend/app/db/`; do not create migration instructions around a reappearing `backend/alembic/` scaffold.
+- Supported schema repair is code-based in `backend/app/db/`; do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/` contains live product, API, data-model, test, runtime-input, and canonical platform docs; `docs/ledger-agent-platform.md` is the merged platform reference, while `docs/ledger-memory-layer-design.md` is proposed-only. Live code remains source of truth, and no nested AGENTS docs belong there.
+- `docs/` surviving set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `ledger-agent-platform.md`, and phase-1 `ledger-memory-layer-design.md`. Live code remains source of truth, and no nested AGENTS docs belong there.

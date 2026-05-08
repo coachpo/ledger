@@ -152,6 +152,7 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 
 - `backend/README.md` covers backend-specific development details
 - `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
-- `docs/prd.md`, `docs/spec.md`, `docs/requirements.md`, `docs/api-design.md`, and `docs/data-model.md` are current live references
-- `docs/ledger-agent-platform.md` is the canonical package-first platform reference; the older platform PRD/spec/design/UI files are compatibility pointers
+- `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/api-design.md`, and `docs/data-model.md` are current product, requirements, API, and data references
 - `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata
+- `docs/ledger-agent-platform.md` is the canonical package-first platform reference
+- `docs/ledger-memory-layer-design.md` records the live phase 1 report-backed memory boundary
