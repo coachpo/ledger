@@ -1,6 +1,6 @@
 # Ledger Agent Platform Reference
 
-> Status: Live package-first platform reference as of 2026-05-08 (`12ced2d`). This file merges the prior platform PRD, functional spec, technical design, and UI notes.
+> Status: Live package-first platform reference for branch `main` at `e8fd5af`. This is the canonical platform reference.
 
 ## Scope
 
@@ -45,7 +45,7 @@ Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launc
 
 Runs persist status, inputs, final output, token/timing totals, trace ids, rerun metadata, step replay metadata, and package provenance. Detail payloads include steps and agent invocations for review without requiring a separate tracing product.
 
-Run memory artifacts are currently report-shaped in the live API (`reportId`, `slug`, `name`, `status`, `createdAt`, `sourceGraphMetadata`). Future memory-domain work must not be documented as shipped until the backend and frontend contracts change.
+Run memory artifacts are memory-domain payloads. They expose `memoryId`, `summary`, `status`, `createdAt`, provenance, graph metadata when available, and optional `auditLinks.report` for report open/download actions while reports remain the backing store.
 
 ## UI Contract
 
