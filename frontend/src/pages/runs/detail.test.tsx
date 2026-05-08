@@ -401,8 +401,14 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("node market_analysis");
     const artifact = screen.getByTestId("runs-memory-artifact-memory_aapl_decision");
     expect(artifact).toHaveTextContent("AAPL decision memory");
+    expect(artifact).toHaveTextContent(/pending/i);
+    expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
     expect(within(artifact).getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_aapl_decision");
     expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute("download");
+    expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/reports/memory_aapl_decision/download"),
+    );
   });
 
   it("keeps repeated fanouts separate across loop iterations", () => {
