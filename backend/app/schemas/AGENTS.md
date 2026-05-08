@@ -17,6 +17,7 @@
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
+| Memory domain schemas | `memory.py`, `memory_report.py` | memory DTO projections plus report-backed agent-memory metadata |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
 ## CONVENTIONS
@@ -45,7 +46,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_models.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests/test_memory_domain_schemas.py tests/test_runtime_models.py tests/test_legacy_backend_cutover.py
 ```
 
 ## NOTES
@@ -54,6 +55,6 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_mod
 - `workflow_package.py` and `workflow_package_manifest.py` carry package authoring, validation, import/export, preflight, launch, and immutable package artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `tool.py` exposes read-only server-declared tool metadata.
-- `run.py` carries global run list/detail, package provenance, rerun, step replay, and per-step execution payloads.
+- `run.py` carries global run list/detail, package provenance, rerun, step replay, report-shaped memory artifacts, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation. `ReportSource` accepts canonical origin values `compiled`, `uploaded`, `external`, and `agent`, while public `ReportCreate` stays true external only. Agent memory metadata keeps purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.

@@ -10,8 +10,8 @@
 |---|---|---|
 | Fixture setup | `conftest.py` | isolated PostgreSQL `DATABASE_URL`, `init_db()`, `TestClient`, dependency override cleanup |
 | API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, platform validation, and neutral stub workflow coverage |
-| Agent-platform run coverage | `test_runtime_api.py` | workflow execution, run detail/list, budgets, reference-runtime coverage, and `ledger.reports.lookup` capability enforcement |
-| Runtime artifact coverage | `test_runtime_artifacts.py` | persisted step outputs, trace linkage, and run-detail artifact assertions |
+| Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py` | package execution, run detail/list, model-binding provenance, reruns, and step replay coverage |
+| Runtime artifact coverage | `test_workflow_package_runtime_artifacts.py`, `test_memory_domain_schemas.py` | persisted step outputs, trace linkage, run-detail artifacts, and memory DTO projections |
 | Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, and version-pinning expectations |
 | DB-upgrade and cutover coverage | `test_runtime_db_upgrades.py`, `test_legacy_backend_cutover.py` | startup repairs, legacy table cleanup, and removed-route/module guarantees |
 | Focused helper coverage | `test_refactor_helpers.py` | targeted helper regressions when small backend refactors need coverage |
@@ -38,5 +38,5 @@ uv run pytest
 ## NOTES
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior plus current agent-platform validation paths.
-- `test_runtime_api.py`, `test_runtime_artifacts.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, saved model-connection, upgrade, and execution contracts.
+- `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_memory_domain_schemas.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, saved model-connection, memory DTO, upgrade, and execution contracts.
 - `test_legacy_backend_cutover.py` proves retired backend routes return `404` and removed modules stay absent.

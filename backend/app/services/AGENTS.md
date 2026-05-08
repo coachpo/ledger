@@ -22,7 +22,7 @@
 | Run execution service | `run_service.py` | persisted global run lifecycle, package provenance, per-step detail, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_runtime_api.py`, `../../tests/test_runtime_artifacts.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, platform execution, and cutover assertions |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_memory_reports.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, platform execution, memory reports, run artifacts, and cutover assertions |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -54,12 +54,12 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_artifacts.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_memory_reports.py tests/test_legacy_backend_cutover.py
 ```
 
 ## NOTES
 - `TradingOperationService` may delete positions on full sell-down and supports DIVIDEND/SPLIT as well as BUY/SELL.
 - `MarketDataService` caches quotes by provider/symbol/as-of and recomputes staleness when falling back to cached rows.
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
-- `RunService` persists run status, totals, and per-step/per-agent detail for the run monitor.
+- `RunService` persists run status, totals, package provenance, rerun/step-replay lineage, memory artifact report links, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.
