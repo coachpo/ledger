@@ -55,6 +55,9 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `workflow_package.py` and `workflow_package_manifest.py` carry package authoring, validation, import/export, preflight, launch, and immutable package artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `tool.py` exposes read-only server-declared tool metadata.
-- `run.py` carries global run list/detail, package provenance, rerun, step replay, report-shaped memory artifacts, and per-step execution payloads.
+- `memory.py` defines phase 1 projection boundaries. Model-visible payloads expose `memoryId`, status, summary, provenance, and warnings without report identity, raw markdown, URLs, downloads, or `auditLinks`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
+- `memoryId` is opaque outside `ReportBackedMemoryStore`. Do not parse `mem_<report_id>` in schemas, services, runtime tools, routes, or frontend callers.
+- Phase 1 does not have vector search, embeddings, or a memory table, so schema contracts must not imply public memory search or storage routes.
+- `run.py` carries global run list/detail, package provenance, rerun, step replay, memory-shaped artifacts, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation. `ReportSource` accepts canonical origin values `compiled`, `uploaded`, `external`, and `agent`, while public `ReportCreate` stays true external only. Agent memory metadata keeps purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.

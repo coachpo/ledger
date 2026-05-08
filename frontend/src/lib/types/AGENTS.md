@@ -25,6 +25,8 @@
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
 - Keep route forms, hook inputs, and shared type names aligned with the current backend contract.
+- Run memory artifacts are memory-shaped in phase 1: `memoryId` is an opaque string, and optional report actions live only under `auditLinks.report`. Frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.
+- No vector search, embeddings, memory table, or public `ledger.memory.*` API shape exists in phase 1 frontend contracts.
 
 ## ANTI-PATTERNS
 - Do not declare ad-hoc wire types inside hooks or page components.

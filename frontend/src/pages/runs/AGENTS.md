@@ -17,6 +17,7 @@
 ## CONVENTIONS
 - `list.tsx` keeps workflow-key and status filters local to the page and refetches on a timer.
 - `detail.tsx` computes progress from step outputs and keeps trace linkage visible even when the top-level trace id is missing.
+- Run detail renders memory artifacts by opaque `memoryId`. Report open/download actions are optional audit actions sourced from `artifact.auditLinks.report.url` and `artifact.auditLinks.report.downloadUrl`, never derived from `memoryId`.
 - Per-agent details stay inside the accordion so the page can expose the full run without flattening the layout.
 - Hooks own the polling query behavior, while the page owns presentation, filters, and trace summaries.
 

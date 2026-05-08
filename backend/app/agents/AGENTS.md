@@ -22,3 +22,9 @@ app/agents/
 | Native registry | `runtime_tools/__init__.py`, `runtime_tools/registry.py` | OpenAI tool definitions and grant-checked dispatch |
 | Financial native tools | `runtime_tools/market_data.py`, `runtime_tools/positions.py`, `runtime_tools/reports.py` | quotes/history, positions, report lookup, memory-report writes |
 | MCP runtime | `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
+
+## CONVENTIONS
+- `ledger.reports.lookup` and `ledger.reports.write` remain the stable server tool keys in phase 1. Their OpenAI function names, `ledger_reports_lookup` and `ledger_reports_write`, are compatibility anchors, not legacy debt to rename now.
+- Phase 1 does not expose `ledger.memory.*` tool keys. Keep report lookup report-shaped, and keep report memory writes memory-shaped while preserving the report tool key and function name.
+- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime write output may expose `memoryId`, status, summary, provenance, and warnings; API/UI projections can add nested `auditLinks.report` after the model call.
+- Runtime tools and prompt builders treat `memoryId` values as opaque. Only `ReportBackedMemoryStore` may parse the phase 1 `mem_<report_id>` format.
