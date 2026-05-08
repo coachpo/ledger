@@ -24,7 +24,7 @@ from app.services.capability_service import (
     REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
     REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
 )
-from app.services.memory_report_service import MemoryReportService
+from app.services.memory_service import MemoryService
 from app.services.report_service import ReportService
 
 REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_reports_lookup"
@@ -228,20 +228,21 @@ def execute_report_memory_write(
 ) -> dict[str, object]:
     trusted_context = _trusted_memory_write_context(context)
     payload = cast(AgentMemoryReportCreateMetadata, arguments["payload"])
+    memory_request = MemoryService.write_request_from_report_create(
+        payload=payload,
+        trusted_context=trusted_context,
+    )
     with context.session_factory() as session:
-        report = MemoryReportService(session).create_pending_report(
+        result = MemoryService(session).write_memory(
             capability_references=context.capability_references,
-            payload=payload,
-            trusted_context=trusted_context,
+            payload=memory_request,
         )
     return cast(
         dict[str, object],
-        RuntimeReportMemoryWriteResult(
-            report_id=report.id,
-            report_slug=report.slug,
-            report_name=report.name,
-            created_at=report.created_at,
-        ).model_dump(mode="json", by_alias=True),
+        RuntimeReportMemoryWriteResult.from_memory_write_result(result).model_dump(
+            mode="json",
+            by_alias=True,
+        ),
     )
 
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
+from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryWriteResult
 from app.services.quote_provider import QuoteProvider
 
 
@@ -389,12 +390,23 @@ class RuntimeInsiderDataLookupResult(CamelModel):
 
 class RuntimeReportMemoryWriteResult(CamelModel):
     tool_key: Literal["ledger.reports.write"] = "ledger.reports.write"
-    report_id: int = Field(ge=1)
-    report_slug: str
-    report_name: str
-    action: Literal["created"] = "created"
+    memory_id: str = Field(min_length=1)
+    status: MemoryLifecycleStatus
+    action: Literal["created", "existing"]
     created_at: datetime
-    warnings: list[RuntimeToolWarning] = Field(default_factory=list)
+    provenance: MemoryProvenance
+    warnings: list[dict[str, object]] = Field(default_factory=list)
+
+    @classmethod
+    def from_memory_write_result(cls, result: MemoryWriteResult) -> Self:
+        return cls(
+            memory_id=result.memory_id,
+            status=result.status,
+            action=result.action,
+            created_at=result.created_at,
+            provenance=result.provenance,
+            warnings=result.warnings,
+        )
 
     @field_validator("created_at")
     @classmethod

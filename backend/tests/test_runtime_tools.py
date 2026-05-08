@@ -90,6 +90,7 @@ from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
+from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.capability_service import (
@@ -157,6 +158,15 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     REPORT_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
 }
+_FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
+    "reportId",
+    "reportSlug",
+    "reportName",
+    "auditLinks",
+    "url",
+    "downloadUrl",
+}
+_FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS = ("/reports/", "download")
 
 
 class _SessionScope:
@@ -327,6 +337,20 @@ def _reports_write_runtime_context(
     )
 
 
+def _reports_write_provenance() -> MemoryProvenance:
+    return MemoryProvenance(
+        run_id=4242,
+        agent_key="portfolio_manager",
+        agent_version=3,
+        agent_name="Portfolio Manager",
+        workflow_key="platform_graph_daily_review",
+        workflow_version=5,
+        step_id="portfolio_decision",
+        slot="decision",
+        trace_id="trace-runtime-tools",
+    )
+
+
 def _assert_strict_openai_tool_schema(tool: dict[str, object]) -> None:
     assert "displayName" not in tool
     assert "display_name" not in tool
@@ -358,6 +382,30 @@ def _assert_no_snake_case_keys(value: object, *, path: str) -> None:
         payload = cast(list[object], value)
         for index, nested_value in enumerate(payload):
             _assert_no_snake_case_keys(nested_value, path=f"{path}[{index}]")
+
+
+def _assert_reports_write_payload_is_model_visible_memory(payload: dict[str, object]) -> None:
+    assert {"toolKey", "memoryId", "status", "action", "createdAt", "warnings"} <= set(payload)
+    assert payload["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
+    _assert_report_write_forbidden_keys_absent(payload, path="$")
+    payload_json = json.dumps(payload, sort_keys=True)
+    for fragment in _FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS:
+        assert fragment not in payload_json
+
+
+def _assert_report_write_forbidden_keys_absent(value: object, *, path: str) -> None:
+    if isinstance(value, dict):
+        payload = cast(dict[object, object], value)
+        for key, nested_value in payload.items():
+            assert isinstance(key, str)
+            assert key not in _FORBIDDEN_REPORT_WRITE_MODEL_KEYS, f"forbidden key at {path}.{key}"
+            _assert_report_write_forbidden_keys_absent(nested_value, path=f"{path}.{key}")
+        return
+
+    if isinstance(value, list):
+        payload = cast(list[object], value)
+        for index, nested_value in enumerate(payload):
+            _assert_report_write_forbidden_keys_absent(nested_value, path=f"{path}[{index}]")
 
 
 def _report_read() -> ReportRead:
@@ -949,22 +997,46 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     assert insider_payload["transactions"][0]["filedAt"] == "2026-01-02T03:04:05Z"
 
     memory_payload = RuntimeReportMemoryWriteResult(
-        report_id=7,
-        report_slug="nvda_agent_memory_2026_01_02",
-        report_name="NVDA Agent Memory 2026-01-02",
+        memory_id="mem_7",
+        status=MemoryLifecycleStatus.PENDING,
+        action="created",
         created_at=_NOW,
+        provenance=_reports_write_provenance(),
+        warnings=[
+            {
+                "code": "memory_reused",
+                "message": "Existing memory was reused.",
+                "details": {"memoryId": "mem_7"},
+            }
+        ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(memory_payload)
-    # Task 5 removes these report identity fields from model-visible ledger_reports_write output.
-    assert {"reportId", "reportSlug", "reportName"} <= set(memory_payload)
+    _assert_reports_write_payload_is_model_visible_memory(memory_payload)
     assert memory_payload == {
         "toolKey": "ledger.reports.write",
-        "reportId": 7,
-        "reportSlug": "nvda_agent_memory_2026_01_02",
-        "reportName": "NVDA Agent Memory 2026-01-02",
+        "memoryId": "mem_7",
+        "status": "pending",
         "action": "created",
         "createdAt": "2026-01-02T03:04:05Z",
-        "warnings": [],
+        "provenance": {
+            "runId": 4242,
+            "agentKey": "portfolio_manager",
+            "agentVersion": 3,
+            "agentName": "Portfolio Manager",
+            "workflowKey": "platform_graph_daily_review",
+            "workflowVersion": 5,
+            "stepId": "portfolio_decision",
+            "slot": "decision",
+            "traceId": "trace-runtime-tools",
+            "createdByType": "agent",
+        },
+        "warnings": [
+            {
+                "code": "memory_reused",
+                "message": "Existing memory was reused.",
+                "details": {"memoryId": "mem_7"},
+            }
+        ],
     }
 
 
@@ -1989,22 +2061,44 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
     )
 
     _assert_native_runtime_payload_is_json_safe_and_camel(first_payload)
-    assert first_payload == second_payload
+    _assert_native_runtime_payload_is_json_safe_and_camel(second_payload)
+    _assert_reports_write_payload_is_model_visible_memory(first_payload)
+    _assert_reports_write_payload_is_model_visible_memory(second_payload)
     assert first_payload["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
+    assert first_payload["memoryId"] == second_payload["memoryId"]
+    assert first_payload["createdAt"] == second_payload["createdAt"]
+    assert first_payload["status"] == "pending"
+    assert second_payload["status"] == "pending"
     assert first_payload["action"] == "created"
+    assert second_payload["action"] == "existing"
+    assert first_payload["warnings"] == []
+    assert second_payload["warnings"] == []
+    expected_provenance = {
+        "runId": 4242,
+        "agentKey": "portfolio_manager",
+        "agentVersion": 3,
+        "agentName": "Portfolio Manager",
+        "workflowKey": "platform_graph_daily_review",
+        "workflowVersion": 5,
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+        "traceId": "trace-runtime-tools",
+        "createdByType": "agent",
+    }
+    assert first_payload["provenance"] == expected_provenance
+    assert second_payload["provenance"] == expected_provenance
 
     with session_factory() as session:
         reports = list(session.scalars(select(Report)))
 
     assert len(reports) == 1
     report = reports[0]
+    assert first_payload["memoryId"] == f"mem_{report.id}"
+    payload_json = json.dumps([first_payload, second_payload], sort_keys=True)
+    assert report.slug not in payload_json
+    assert report.name not in payload_json
     analysis = cast(dict[str, object], report.metadata_["analysis"])
     decision = cast(dict[str, object], analysis["decision"])
-    # Task 5 removes these report identity fields from model-visible ledger_reports_write output.
-    assert {"reportId", "reportSlug", "reportName"} <= set(first_payload)
-    assert first_payload["reportId"] == report.id
-    assert first_payload["reportSlug"] == report.slug
-    assert first_payload["reportName"] == report.name
     created_by = cast(dict[str, object], report.metadata_["createdBy"])
     assert report.source == "agent"
     assert created_by == {
