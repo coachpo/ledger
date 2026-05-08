@@ -54,7 +54,7 @@ backend/
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
 - Workflow package writes use YAML manifest parser/compiler/decompiler services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid.
-- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and old global authoring routes are retired. Keep docs aligned with Workflow Packages, Model Connections, Tools, and Runs.
+- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Model Connections, Tools, and Runs; legacy/unmounted modules are cutover context only.
 - Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
@@ -87,6 +87,6 @@ uv run pytest
 ## NOTES
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and legacy-schema upgrades.
 - Manifest, MCP, runtime-tool, memory-report, workflow package, tool catalog, model connection, and reset-seed tests cover the current agent-platform contract beyond the original runtime suite.
-- `tests/test_workflow_package_*.py`, `tests/test_runtime_api.py`, `tests/test_runtime_artifacts.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, trace, package provenance, persistence, and version-pinning contracts.
+- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_memory_domain_schemas.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, trace, package provenance, memory DTOs, persistence, and version-pinning contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, retired-table cleanup, and removed-route guarantees after cutover.
 - There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.

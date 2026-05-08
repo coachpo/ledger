@@ -30,7 +30,7 @@
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only. Agent-created reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe memory-report purpose/type, and server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
-- Workflow package routes are canonical for platform authoring. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed-route notes only, not live route docs. Do not change runtime tool keys or OpenAI function names.
+- Workflow package routes are canonical for platform authoring. The only mounted platform routers are Workflow Packages, Model Connections, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private. Legacy global authoring modules such as `agents.py`, `capabilities.py`, `mcp_servers.py`, `output_schemas.py`, and `workflows.py` are unmounted cutover context only. Do not change runtime tool keys or OpenAI function names.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.
@@ -46,7 +46,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_workflow_package_openapi.py tests/test_workflow_package_runtime_api.py tests/test_legacy_backend_cutover.py
 ```
 
 ## NOTES
