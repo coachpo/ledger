@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.memory import MemoryArtifactRead
 
 
 class RunStatus(str, Enum):  # noqa: UP042
@@ -211,18 +212,8 @@ class RunListRead(CamelModel):
     items: list[RunListItemRead]
 
 
-class RunMemoryArtifactRead(CamelModel):
-    report_id: int
-    slug: str
-    name: str
-    status: str
-    created_at: datetime
-    source_graph_metadata: dict[str, Any] | None = None
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
+class RunMemoryArtifactRead(MemoryArtifactRead):
+    pass
 
 
 class RunPackageLocalResourceRefsRead(CamelModel):

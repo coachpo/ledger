@@ -13,6 +13,7 @@ from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
+from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
@@ -25,7 +26,9 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.run import RunAgentInvocationRead, RunRead, RunStatus
+from app.services.capability_service import REPORT_MEMORY_WRITE_TOOL_KEY
 from app.services.model_connection_service import ModelConnectionService
+from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -849,3 +852,190 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert [run.id for run in queued_runs] == [queued_run.id]
         assert latest_for_workflow is not None
         assert latest_for_workflow.id == queued_run.id
+
+
+def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        capability = Capability(
+            key="post_run_memory_writer",
+            version=1,
+            status="published",
+            name="Post Run Memory Writer",
+            description="Grants post-run memory writes.",
+            tool_keys=[REPORT_MEMORY_WRITE_TOOL_KEY],
+        )
+        output_schema = _build_output_schema(
+            key="post_run_memory_schema",
+            version=1,
+            status="published",
+        )
+        session.add_all([capability, output_schema])
+        session.flush()
+
+        agent = _build_agent(
+            key="portfolio_manager",
+            version=1,
+            status="published",
+            output_schema=output_schema,
+            capabilities=[capability],
+            mcp_servers=[],
+            budget_usd=Decimal("1.25000000"),
+        )
+        session.add(agent)
+        session.flush()
+        workflow = _build_workflow(
+            key="post_run_memory_workflow",
+            version=1,
+            status="published",
+            agent=agent,
+            aggregate_budget_usd=Decimal("1.25000000"),
+        )
+        source_refs = {
+            "ticker": {"source": "inputs", "path": "ticker"},
+            "portfolioSlug": {"source": "inputs", "path": "portfolioSlug"},
+            "horizonDays": {"source": "inputs", "path": "horizonDays"},
+            "action": _post_run_memory_node_ref("action"),
+            "rationale": _post_run_memory_node_ref("rationale"),
+            "riskSummary": _post_run_memory_node_ref("riskSummary"),
+            "executionPlan": _post_run_memory_node_ref("executionPlan"),
+            "confidence": _post_run_memory_node_ref("confidence"),
+            "decisionSummary": _post_run_memory_node_ref("decisionSummary"),
+        }
+        workflow.output_spec = {
+            **workflow.output_spec,
+            "compiledGraph": {
+                "postRunMemory": {
+                    "enabled": True,
+                    "sourceRefs": source_refs,
+                    "benchmarkSymbol": {"source": "inputs", "path": "benchmarkSymbol"},
+                }
+            },
+        }
+        session.add(workflow)
+        session.flush()
+        started_at = datetime(2026, 4, 20, 12, 0, tzinfo=UTC_TZ)
+        finished_at = datetime(2026, 4, 20, 12, 2, tzinfo=UTC_TZ)
+        run = _build_agent_platform_run(
+            workflow=workflow,
+            status="succeeded",
+            total_tokens=321,
+            started_at=started_at,
+            finished_at=finished_at,
+            trace_id="trace-post-run-memory",
+            final_output={"decision": "buy"},
+        )
+        run.input = {
+            "ticker": "NVDA",
+            "portfolioSlug": "core_us",
+            "horizonDays": 30,
+            "benchmarkSymbol": "SPY",
+        }
+        run.queued_at = datetime(2026, 4, 20, 11, 59, tzinfo=UTC_TZ)
+        session.add(run)
+        session.flush()
+        step = RunStep(
+            run_id=run.id,
+            step_index=1,
+            status="succeeded",
+            origin="planned",
+            started_at=started_at,
+            finished_at=finished_at,
+            persisted_at=finished_at,
+            graph_metadata={"nodeId": "portfolio_decision", "nodeKind": "step"},
+        )
+        session.add(step)
+        session.flush()
+        session.add(
+            RunAgentInvocation(
+                run_step_id=step.id,
+                run_id=run.id,
+                step_index=1,
+                slot="decision",
+                position=0,
+                agent_id=agent.id,
+                agent_key=agent.key,
+                agent_version=agent.version,
+                output_schema_id=output_schema.id,
+                output_schema_version=output_schema.version,
+                input_mode="passthrough",
+                wiring={},
+                graph_metadata={"nodeId": "portfolio_decision", "nodeKind": "step"},
+                optional=False,
+                status="succeeded",
+                resolved_input={"ticker": "NVDA"},
+                resolved_input_origin="passthrough",
+                output={
+                    "action": "buy",
+                    "rationale": "Durable demand supports ownership.",
+                    "riskSummary": "Volatility remains elevated.",
+                    "executionPlan": "Scale in after market confirmation.",
+                    "confidence": "high",
+                    "decisionSummary": "Post-run memory summary.",
+                },
+                output_origin="executed",
+                tokens=321,
+                duration_ms=1400,
+                trace_span_id="span-post-run-memory",
+                started_at=started_at,
+                finished_at=finished_at,
+                persisted_at=finished_at,
+            )
+        )
+        session.commit()
+
+        service = RunService(session)
+        run_id = run.id
+        service._create_post_run_memory_artifact(run_id)
+        service._create_post_run_memory_artifact(run_id)
+        session.commit()
+        reports = session.query(Report).order_by(Report.id).all()
+        detail = cast(
+            dict[str, object],
+            service.get_run(run_id).model_dump(mode="json", by_alias=True),
+        )
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.source == "agent"
+    analysis = cast(dict[str, object], report.metadata_["analysis"])
+    created_by = cast(dict[str, object], report.metadata_["createdBy"])
+    assert analysis["reviewType"] == "agent_memory"
+    assert analysis["versionGroup"] == "agent_memory/v1"
+    assert analysis["runId"] == run_id
+    assert analysis["decisionSummary"] == "Post-run memory summary."
+    assert created_by["type"] == "agent"
+
+    artifacts = cast(list[dict[str, object]], detail["memoryArtifacts"])
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert {"reportId", "slug", "name"}.isdisjoint(artifact)
+    assert artifact["memoryId"] == f"mem_{report.id}"
+    assert artifact["summary"] == "Post-run memory summary."
+    assert artifact["status"] == "pending"
+    assert artifact["sourceGraphMetadata"] == {
+        "nodeId": "portfolio_decision",
+        "slot": "decision",
+        "traceId": "trace-post-run-memory",
+        "workflowKey": "post_run_memory_workflow",
+        "workflowVersion": 1,
+    }
+    audit_links = cast(dict[str, object], artifact["auditLinks"])
+    report_link = cast(dict[str, object], audit_links["report"])
+    assert report_link["slug"] == report.slug
+    assert report_link["name"] == report.name
+    assert report_link["url"] == f"/reports/{report.slug}"
+    assert report_link["downloadUrl"] == f"/api/v1/reports/{report.slug}/download"
+    assert "reportId" not in report_link
+
+
+def _post_run_memory_node_ref(path: str) -> dict[str, object]:
+    return {
+        "source": "nodes",
+        "stepIndex": 1,
+        "compiledSlot": "decision",
+        "sourceNodeId": "portfolio_decision",
+        "sourceSlot": "decision",
+        "path": path,
+    }

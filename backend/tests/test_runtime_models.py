@@ -22,7 +22,7 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
-from app.schemas.run import RunListItemRead, RunRead, RunStatus
+from app.schemas.run import RunListItemRead, RunMemoryArtifactRead, RunRead, RunStatus
 from app.services.output_schema_service import OutputSchemaService
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -1528,6 +1528,51 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
         )
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+def test_run_memory_artifact_schema_serializes_memory_native_contract() -> None:
+    created_at = datetime(2026, 4, 20, 12, 30, tzinfo=UTC_TZ)
+    artifact = RunMemoryArtifactRead.model_validate(
+        {
+            "memoryId": "mem_1001",
+            "summary": "NVDA buy memory",
+            "status": "pending",
+            "createdAt": created_at,
+            "provenance": {
+                "runId": 42,
+                "agentKey": "portfolio_manager",
+                "agentVersion": 3,
+                "workflowKey": "market_review",
+                "workflowVersion": 1,
+            },
+            "sourceGraphMetadata": {"nodeId": "portfolio_decision", "slot": "decision"},
+            "auditLinks": {
+                "report": {
+                    "slug": "agent_memory_nvda",
+                    "name": "agent_memory_nvda",
+                    "url": "/reports/agent_memory_nvda",
+                    "downloadUrl": "/api/v1/reports/agent_memory_nvda/download",
+                }
+            },
+        }
+    )
+
+    payload = cast(dict[str, object], artifact.model_dump(mode="json", by_alias=True))
+
+    assert set(payload) == {
+        "memoryId",
+        "summary",
+        "status",
+        "createdAt",
+        "provenance",
+        "sourceGraphMetadata",
+        "auditLinks",
+    }
+    assert {"reportId", "slug", "name"}.isdisjoint(payload)
+    assert payload["memoryId"] == "mem_1001"
+    report = cast(dict[str, object], cast(dict[str, object], payload["auditLinks"])["report"])
+    assert report["downloadUrl"] == "/api/v1/reports/agent_memory_nvda/download"
+    assert "reportId" not in report
 
 
 def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> None:

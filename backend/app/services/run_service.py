@@ -22,7 +22,6 @@ from app.core.telemetry import (
 from app.db.engine import get_session_factory
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
-from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
@@ -30,20 +29,20 @@ from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
-from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.schemas.memory import MemoryArtifactRead
 from app.schemas.memory_report import (
     AgentMemoryReportCreateMetadata,
-    AgentMemoryReportMetadata,
     AgentMemoryTrustedCreateContext,
 )
 from app.schemas.run import (
     RunCreatedRead,
     RunListItemRead,
     RunListRead,
+    RunMemoryArtifactRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
@@ -83,7 +82,7 @@ from app.services.execution_plan import (
     PackageRuntimeAgentSpec,
 )
 from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
-from app.services.memory_report_service import MemoryReportService
+from app.services.memory_service import MemoryService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -162,7 +161,6 @@ class RunService:
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
         self.workflow_package_repository = WorkflowPackageRepository(session)
-        self.report_repository = ReportRepository(session)
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
@@ -1132,20 +1130,25 @@ class RunService:
         )
         if agent is None:
             return
-        _ = MemoryReportService(self.session).create_pending_report(
+        trusted_context = AgentMemoryTrustedCreateContext(
+            run_id=run.id,
+            agent_key=context_invocation.agent_key,
+            agent_version=context_invocation.agent_version,
+            agent_name=agent.name,
+            workflow_key=run.target_key,
+            workflow_version=run.target_version,
+            step_id=self._post_run_memory_context_node_id(context_ref, context_invocation),
+            slot=self._post_run_memory_context_slot(context_ref, context_invocation),
+            trace_id=run.trace_id,
+        )
+        memory_service = MemoryService(self.session)
+        _ = memory_service.write_memory(
             capability_references=agent.capabilities,
-            payload=payload,
-            trusted_context=AgentMemoryTrustedCreateContext(
-                run_id=run.id,
-                agent_key=context_invocation.agent_key,
-                agent_version=context_invocation.agent_version,
-                agent_name=agent.name,
-                workflow_key=run.target_key,
-                workflow_version=run.target_version,
-                step_id=self._post_run_memory_context_node_id(context_ref, context_invocation),
-                slot=self._post_run_memory_context_slot(context_ref, context_invocation),
-                trace_id=run.trace_id,
+            payload=memory_service.write_request_from_report_create(
+                payload=payload,
+                trusted_context=trusted_context,
             ),
+            commit=False,
         )
 
     def _post_run_memory_policy(self, run: Run) -> dict[str, Any] | None:
@@ -2514,35 +2517,15 @@ class RunService:
             }
         )
 
-    def _memory_artifact_links(self, run_id: int) -> list[dict[str, Any]]:
+    def _memory_artifact_links(self, run_id: int) -> list[RunMemoryArtifactRead]:
         return [
-            self._memory_artifact_link(report)
-            for report in self.report_repository.list_agent_memory_by_run_id(run_id)
+            self._memory_artifact_link(artifact)
+            for artifact in MemoryService(self.session).list_run_artifacts(run_id)
         ]
 
     @staticmethod
-    def _memory_artifact_link(report: Report) -> dict[str, Any]:
-        metadata = AgentMemoryReportMetadata.model_validate(report.metadata_)
-        analysis = metadata.analysis
-        source_graph_metadata = {
-            key: value
-            for key, value in {
-                "nodeId": analysis.step_id,
-                "slot": analysis.slot,
-                "traceId": analysis.trace_id,
-                "workflowKey": analysis.workflow_key,
-                "workflowVersion": analysis.workflow_version,
-            }.items()
-            if value is not None
-        }
-        return {
-            "reportId": report.id,
-            "slug": report.slug,
-            "name": report.name,
-            "status": analysis.resolved_status,
-            "createdAt": report.created_at,
-            "sourceGraphMetadata": source_graph_metadata or None,
-        }
+    def _memory_artifact_link(artifact: MemoryArtifactRead) -> RunMemoryArtifactRead:
+        return RunMemoryArtifactRead.model_validate(artifact)
 
     @staticmethod
     def _to_step_read(step: RunStep) -> dict[str, Any]:
