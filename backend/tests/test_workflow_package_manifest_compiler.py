@@ -109,6 +109,40 @@ def test_compile_tradingagents_fixture_preserves_report_tool_keys_in_memory_prof
     assert "ledger.memory." not in roundtrip.source
 
 
+def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
+    source = _valid_package_manifest_source().replace(
+        "        - ledger.market_data.quote_lookup\n",
+        "        - ledger.reports.lookup\n        - ledger.reports.lookup\n",
+        1,
+    )
+
+    with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
+        _ = compile_workflow_package_manifest(source)
+
+    assert any(
+        diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[1]"
+        and "Duplicate tool key 'ledger.reports.lookup' is not allowed" in diagnostic.message
+        for diagnostic in excinfo.value.diagnostics
+    )
+
+
+def test_compile_package_manifest_rejects_phase_one_memory_tool_keys() -> None:
+    source = _valid_package_manifest_source().replace(
+        "        - ledger.market_data.quote_lookup\n",
+        "        - ledger.memory.lookup\n",
+        1,
+    )
+
+    with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
+        _ = compile_workflow_package_manifest(source)
+
+    assert any(
+        diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
+        and "Unknown server-declared tool 'ledger.memory.lookup'" in diagnostic.message
+        for diagnostic in excinfo.value.diagnostics
+    )
+
+
 def test_compile_package_manifest_rejects_unresolved_local_refs() -> None:
     source = _valid_package_manifest_source().replace(
         "outputSchema: trading_decision", "outputSchema: missing_schema", 1

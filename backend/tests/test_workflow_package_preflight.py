@@ -69,6 +69,33 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
     ]
 
 
+def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    for profile in profiles:
+        if profile["key"] == "memory_write_tools":
+            profile["toolKeys"] = [
+                "ledger.reports.write",
+                "ledger.reports.write",
+                "ledger.memory.write",
+            ]
+
+    with session_factory() as session:
+        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+
+    assert {
+        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
+        "issue": "Duplicate tool key 'ledger.reports.write' is not allowed",
+    } in errors
+    assert {
+        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[2]",
+        "issue": "Unknown server-declared tool 'ledger.memory.write'",
+    } in errors
+
+
 def test_save_warns_but_preflight_blocks_missing_model_connection(
     client: TestClient,
     session_factory: sessionmaker[Session],

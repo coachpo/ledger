@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.capability import Capability
@@ -247,6 +248,20 @@ def test_compile_platform_graph_example_agent_manifest_resolves_expected_capabil
         payload = compile_agent_manifest(GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES[role], session)
 
     assert payload["capabilities"] == expected_capabilities
+
+
+def test_platform_graph_memory_capability_preserves_report_write_tool_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _seed_platform_graph_manifest_refs(session)
+        capability = session.scalar(
+            select(Capability).where(Capability.key == "platform_graph_memory")
+        )
+
+    assert capability is not None
+    assert capability.tool_keys == ["ledger.reports.write"]
+    assert not any(tool_key.startswith("ledger.memory.") for tool_key in capability.tool_keys)
 
 
 def test_compile_agent_manifest_preserves_input_schema_metadata(

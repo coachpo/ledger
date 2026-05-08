@@ -2,13 +2,45 @@ from __future__ import annotations
 
 from typing import cast
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.agents import ToolCatalogValidationError, get_default_tool_catalog
 
 _CANONICAL_TOOL_KEYS = {
     "ledger.market_data.quote_lookup",
     "ledger.reports.lookup",
     "ledger.reports.write",
 }
+
+
+def test_default_tool_catalog_rejects_duplicate_unknown_and_phase_one_memory_keys() -> None:
+    catalog = get_default_tool_catalog()
+
+    with pytest.raises(ToolCatalogValidationError) as exc_info:
+        _ = catalog.resolve_tool_keys(
+            [
+                "ledger.reports.lookup",
+                "ledger.reports.lookup",
+                "ledger.memory.lookup",
+                "ledger.memory.write",
+            ]
+        )
+
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.1",
+            "issue": "Duplicate tool key 'ledger.reports.lookup' is not allowed",
+        },
+        {
+            "field": "toolKeys.2",
+            "issue": "Unknown server-declared tool 'ledger.memory.lookup'",
+        },
+        {
+            "field": "toolKeys.3",
+            "issue": "Unknown server-declared tool 'ledger.memory.write'",
+        },
+    ]
 
 
 def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
@@ -140,8 +142,13 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     assert result.manifest.spec.workflows[0].flow.id == "market_analysis"
 
     dumped = result.manifest.model_dump(mode="json", by_alias=True)
-    assert dumped["spec"]["agents"][0]["modelConnection"] == "tradingagents_primary_model"
-    assert "modelConnectionId" not in dumped["spec"]["agents"][0]
+    spec = cast(dict[str, object], dumped["spec"])
+    agents = cast(list[dict[str, object]], spec["agents"])
+    capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    assert agents[0]["modelConnection"] == "tradingagents_primary_model"
+    assert "modelConnectionId" not in agents[0]
+    assert capability_profiles[0]["toolKeys"] == ["ledger.market_data.quote_lookup"]
+    assert "tool_keys" not in capability_profiles[0]
 
 
 @pytest.mark.parametrize(

@@ -819,10 +819,15 @@ def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contr
 def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     runtime_spec_keys = {spec.key for spec in RUNTIME_TOOL_SPECS}
     server_declared_keys = {spec.key for spec in SERVER_DECLARED_TOOL_SPECS}
+    runtime_function_names = {spec.openai_function_name for spec in RUNTIME_TOOL_SPECS}
 
     assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert server_declared_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert runtime_spec_keys == server_declared_keys
+    assert not any(tool_key.startswith("ledger.memory.") for tool_key in runtime_spec_keys)
+    assert not any(tool_key.startswith("ledger.memory.") for tool_key in server_declared_keys)
+    assert "ledger_memory_lookup" not in runtime_function_names
+    assert "ledger_memory_write" not in runtime_function_names
 
 
 def test_generic_platform_runtime_tool_specs_have_expected_openai_function_names() -> None:
@@ -2034,6 +2039,41 @@ def test_reports_write_runtime_tool_service_denies_missing_write_grant(
         reports = list(session.scalars(select(Report)))
     assert exc_info.value.code == REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE
     assert exc_info.value.message == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+    assert reports == []
+
+
+def test_reports_write_runtime_tool_fails_closed_for_stale_stored_memory_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    capability_key = "runtime_reports_write_stale_memory_key"
+    _seed_runtime_tool_capability(
+        session_factory,
+        key=capability_key,
+        tools=["ledger.memory.write"],
+    )
+    registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
+
+    with pytest.raises(RuntimeToolGrantError) as exc_info:
+        _ = registry.dispatch(
+            name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+            arguments_json=_reports_write_arguments_json(),
+            granted_tool_keys={REPORT_MEMORY_WRITE_TOOL_KEY},
+            context=_reports_write_runtime_context(
+                session_factory,
+                capability_key=capability_key,
+            ),
+        )
+
+    with session_factory() as session:
+        reports = list(session.scalars(select(Report)))
+    assert exc_info.value.code == "capability_tool_keys_invalid"
+    assert exc_info.value.message == "Capability contains stale or invalid tool keys."
+    assert exc_info.value.details == [
+        {
+            "field": "toolKeys.0",
+            "issue": "Unknown server-declared tool 'ledger.memory.write'",
+        }
+    ]
     assert reports == []
 
 
