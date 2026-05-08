@@ -8,10 +8,9 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
-from app.schemas.memory_report import AgentMemoryReportAnalysis, AgentMemoryResolutionUpdate
-from app.schemas.report import ReportRead
+from app.schemas.memory import MemoryEntryRead, MemoryOutcome
 from app.services.market_data_service import MarketClosePoint, MarketDataService
-from app.services.memory_report_service import MemoryReportService
+from app.services.memory_service import MemoryService
 from app.services.quote_provider import QuoteProviderError
 
 type ReturnResolutionStatus = Literal["pending", "resolved", "expired"]
@@ -20,7 +19,7 @@ type ReturnResolutionStatus = Literal["pending", "resolved", "expired"]
 @dataclass(frozen=True, slots=True)
 class ReturnResolutionResult:
     status: ReturnResolutionStatus
-    report: ReportRead
+    memory: MemoryEntryRead
     reason: str | None = None
 
 
@@ -43,55 +42,54 @@ class ReturnResolutionService:
     def __init__(self, session: Session, market_data_service: MarketDataService) -> None:
         self.session: Session = session
         self.market_data_service: MarketDataService = market_data_service
-        self.memory_report_service: MemoryReportService = MemoryReportService(session)
+        self.memory_service: MemoryService = MemoryService(session)
 
-    def resolve_memory_report(
+    def resolve_memory(
         self,
-        report_id: int,
+        memory_id: str,
         *,
         end_date: datetime,
         benchmark_symbol: str | None = None,
     ) -> ReturnResolutionResult:
-        report, metadata = self.memory_report_service.get_memory_report_with_metadata(report_id)
-        analysis = metadata.analysis
-        start_boundary = self._start_boundary(report.created_at)
+        memory = self.memory_service.get_memory(memory_id)
+        start_boundary = self._start_boundary(memory.created_at)
         requested_end_boundary = self._end_boundary(end_date)
         resolution_end = self._resolution_end_boundary(
-            analysis=analysis,
+            memory=memory,
             start_boundary=start_boundary,
             requested_end_boundary=requested_end_boundary,
         )
         if requested_end_boundary < resolution_end:
             return ReturnResolutionResult(
                 status="pending",
-                report=ReportRead.model_validate(report),
+                memory=memory,
                 reason="exit_condition_pending",
             )
 
-        resolution, reason = self._build_resolution(
-            analysis=analysis,
+        outcome, reason = self._build_resolution(
+            memory=memory,
             start_boundary=start_boundary,
             end_boundary=resolution_end,
             benchmark_symbol=benchmark_symbol,
         )
-        updated_report = self.memory_report_service.resolve_memory_report(report.id, resolution)
+        updated_memory = self.memory_service.resolve_memory(memory_id, outcome)
         return ReturnResolutionResult(
-            status=resolution.resolved_status,
-            report=updated_report,
+            status=outcome.resolved_status,
+            memory=updated_memory,
             reason=reason,
         )
 
     def _build_resolution(
         self,
         *,
-        analysis: AgentMemoryReportAnalysis,
+        memory: MemoryEntryRead,
         start_boundary: datetime,
         end_boundary: datetime,
         benchmark_symbol: str | None,
-    ) -> tuple[AgentMemoryResolutionUpdate, str | None]:
+    ) -> tuple[MemoryOutcome, str | None]:
         raw_return = self._resolve_directional_return(
-            action=analysis.decision.action,
-            symbol=analysis.ticker,
+            action=memory.decision.action,
+            symbol=memory.ticker,
             start_boundary=start_boundary,
             end_boundary=end_boundary,
         )
@@ -111,14 +109,14 @@ class ReturnResolutionService:
             benchmark_return = benchmark_result.value
 
         benchmark_baseline = benchmark_return if benchmark_return is not None else Decimal("0")
-        resolution = AgentMemoryResolutionUpdate(
+        outcome = MemoryOutcome(
             resolved_status="resolved",
             resolved_at=self._resolved_at(end_boundary),
             raw_return=raw_return,
             benchmark_return=benchmark_return,
             alpha=raw_return - benchmark_baseline,
         )
-        return resolution, None
+        return outcome, None
 
     def _resolve_directional_return(
         self,
@@ -200,18 +198,18 @@ class ReturnResolutionService:
     @staticmethod
     def _resolution_end_boundary(
         *,
-        analysis: AgentMemoryReportAnalysis,
+        memory: MemoryEntryRead,
         start_boundary: datetime,
         requested_end_boundary: datetime,
     ) -> datetime:
-        if analysis.horizon_days is None:
+        if memory.horizon_days is None:
             return requested_end_boundary
-        horizon_end = start_boundary + timedelta(days=analysis.horizon_days)
+        horizon_end = start_boundary + timedelta(days=memory.horizon_days)
         return ReturnResolutionService._end_boundary(horizon_end)
 
     @staticmethod
-    def _expired_resolution(end_boundary: datetime) -> AgentMemoryResolutionUpdate:
-        return AgentMemoryResolutionUpdate(
+    def _expired_resolution(end_boundary: datetime) -> MemoryOutcome:
+        return MemoryOutcome(
             resolved_status="expired",
             resolved_at=ReturnResolutionService._resolved_at(end_boundary),
         )

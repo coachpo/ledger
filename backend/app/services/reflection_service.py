@@ -6,62 +6,62 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string
-from app.schemas.memory_report import AgentMemoryReflectionAppend, AgentMemoryReportAnalysis
-from app.schemas.report import ReportRead
-from app.services.memory_report_service import MemoryReportService
+from app.schemas.memory import MemoryEntryRead, MemoryReflection
+from app.services.memory_service import MemoryService
 
 
 class ReflectionService:
     def __init__(self, session: Session) -> None:
-        self.memory_report_service: MemoryReportService = MemoryReportService(session)
+        self.memory_service: MemoryService = MemoryService(session)
 
     def append_reflection(
         self,
-        report_id: int,
+        memory_id: str,
         *,
         reflection: str,
         reflected_at: datetime,
-    ) -> ReportRead:
-        payload = AgentMemoryReflectionAppend(
+    ) -> MemoryEntryRead:
+        payload = MemoryReflection(
             reflection=reflection,
             reflected_at=reflected_at,
         )
-        return self.memory_report_service.append_reflection(report_id, payload)
+        return self.memory_service.append_reflection(memory_id, payload)
 
     def generate_and_append_reflection(
         self,
-        report_id: int,
+        memory_id: str,
         *,
         reflected_at: datetime,
-    ) -> ReportRead:
-        _, metadata = self.memory_report_service.get_memory_report_with_metadata(report_id)
-        reflection = self.generate_reflection_text(metadata.analysis)
+    ) -> MemoryEntryRead:
+        memory = self.memory_service.get_memory(memory_id)
+        reflection = self.generate_reflection_text(memory)
         return self.append_reflection(
-            report_id,
+            memory_id,
             reflection=reflection,
             reflected_at=reflected_at,
         )
 
     @classmethod
-    def generate_reflection_text(cls, analysis: AgentMemoryReportAnalysis) -> str:
-        outcome = cls._outcome_summary(analysis)
-        decision_summary = analysis.decision_summary or analysis.decision.rationale
+    def generate_reflection_text(cls, memory: MemoryEntryRead) -> str:
+        outcome = cls._outcome_summary(memory)
+        decision_summary = memory.decision_summary or memory.decision.rationale
         return (
-            f"{analysis.ticker} {analysis.decision.action} memory resolved with {outcome}. "
+            f"{memory.ticker} {memory.decision.action} memory resolved with {outcome}. "
             f"Lesson: {decision_summary}"
         )
 
     @staticmethod
-    def _outcome_summary(analysis: AgentMemoryReportAnalysis) -> str:
-        if analysis.raw_return is None or analysis.alpha is None:
-            return f"status {analysis.resolved_status}"
+    def _outcome_summary(memory: MemoryEntryRead) -> str:
+        outcome = memory.outcome
+        if outcome is None or outcome.raw_return is None or outcome.alpha is None:
+            return f"status {memory.status.value}"
 
         parts = [
-            f"raw return {ReflectionService._format_decimal(analysis.raw_return)}",
-            f"alpha {ReflectionService._format_decimal(analysis.alpha)}",
+            f"raw return {ReflectionService._format_decimal(outcome.raw_return)}",
+            f"alpha {ReflectionService._format_decimal(outcome.alpha)}",
         ]
-        if analysis.benchmark_return is not None:
-            benchmark_return = ReflectionService._format_decimal(analysis.benchmark_return)
+        if outcome.benchmark_return is not None:
+            benchmark_return = ReflectionService._format_decimal(outcome.benchmark_return)
             parts.append(f"benchmark return {benchmark_return}")
         return ", ".join(parts)
 

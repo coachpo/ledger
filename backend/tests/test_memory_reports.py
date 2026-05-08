@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.models.capability import Capability
 from app.models.report import Report
-from app.schemas.memory import format_report_backed_memory_id
+from app.schemas.memory import MemoryEntryRead
 from app.schemas.memory_report import (
     AGENT_MEMORY_IMMUTABLE_FIELDS,
     AGENT_MEMORY_OPTIONAL_FIELDS,
@@ -44,6 +44,7 @@ from app.services.capability_service import (
 from app.services.market_data_service import MarketDataService
 from app.services.memory_context_service import MemoryContextService, MemoryPromptSnippet
 from app.services.memory_report_service import MemoryReportService
+from app.services.memory_service import MemoryService
 from app.services.quote_provider import (
     ProviderFundamentals,
     ProviderHistorySeries,
@@ -667,6 +668,12 @@ def test_agent_memory_service_update_rejects_empty_payload() -> None:
         _ = AgentMemoryServiceUpdate.model_validate({})
 
 
+def _read_report(session: Session, report_id: int) -> ReportRead:
+    report = session.get(Report, report_id)
+    assert report is not None
+    return ReportRead.model_validate(report)
+
+
 def _report_metadata_payload(report: ReportRead) -> tuple[dict[str, object], dict[str, object]]:
     payload = report.model_dump(mode="json", by_alias=True)
     metadata = cast(dict[str, object], payload["metadata"])
@@ -910,16 +917,20 @@ def test_return_resolution_resolves_buy_return_from_history(
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("110")),
                 ]
             },
-        ).resolve_memory_report(report.id, end_date=datetime(2026, 1, 10, tzinfo=UTC))
+        ).resolve_memory(_memory_id(report), end_date=datetime(2026, 1, 10, tzinfo=UTC))
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "resolved"
     assert outcome.reason is None
     assert analysis["resolvedStatus"] == "resolved"
     assert analysis["rawReturn"] == "0.1"
     assert analysis["alpha"] == "0.1"
     assert "benchmarkReturn" not in analysis
-    assert "- Raw return: 0.1" in outcome.report.content
+    assert outcome.memory.memory_id == _memory_id(report)
+    assert outcome.memory.outcome is not None
+    assert outcome.memory.outcome.raw_return == Decimal("0.1")
+    assert "- Raw return: 0.1" in updated_report.content
 
 
 def test_return_resolution_resolves_sell_return_by_inverting_price_return(
@@ -935,9 +946,10 @@ def test_return_resolution_resolves_sell_return_by_inverting_price_return(
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("110")),
                 ]
             },
-        ).resolve_memory_report(report.id, end_date=datetime(2026, 1, 6, tzinfo=UTC))
+        ).resolve_memory(_memory_id(report), end_date=datetime(2026, 1, 6, tzinfo=UTC))
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "resolved"
     assert analysis["rawReturn"] == "-0.1"
     assert analysis["alpha"] == "-0.1"
@@ -960,13 +972,14 @@ def test_return_resolution_computes_benchmark_return_and_alpha(
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("220")),
                 ],
             },
-        ).resolve_memory_report(
-            report.id,
+        ).resolve_memory(
+            _memory_id(report),
             end_date=datetime(2026, 1, 6, tzinfo=UTC),
             benchmark_symbol=" spy ",
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "resolved"
     assert analysis["rawReturn"] == "0.2"
     assert analysis["benchmarkReturn"] == "0.1"
@@ -986,13 +999,14 @@ def test_return_resolution_resolves_hold_as_neutral_with_benchmark_alpha(
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("220")),
                 ]
             },
-        ).resolve_memory_report(
-            report.id,
+        ).resolve_memory(
+            _memory_id(report),
             end_date=datetime(2026, 1, 6, tzinfo=UTC),
             benchmark_symbol="SPY",
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "resolved"
     assert analysis["rawReturn"] == "0"
     assert analysis["benchmarkReturn"] == "0.1"
@@ -1018,9 +1032,10 @@ def test_return_resolution_uses_non_trading_date_boundaries_without_lookahead(
                     (datetime(2026, 1, 5, tzinfo=UTC), Decimal("150")),
                 ]
             },
-        ).resolve_memory_report(report.id, end_date=datetime(2026, 1, 10, tzinfo=UTC))
+        ).resolve_memory(_memory_id(report), end_date=datetime(2026, 1, 10, tzinfo=UTC))
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "resolved"
     assert analysis["rawReturn"] == "0"
     assert analysis["alpha"] == "0"
@@ -1031,12 +1046,13 @@ def test_return_resolution_expires_when_symbol_history_is_missing(
 ) -> None:
     with session_factory() as session:
         report = _create_resolution_report(session, action="buy", run_id=426)
-        outcome = _return_resolution_service(session, {}).resolve_memory_report(
-            report.id,
+        outcome = _return_resolution_service(session, {}).resolve_memory(
+            _memory_id(report),
             end_date=datetime(2026, 1, 6, tzinfo=UTC),
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "expired"
     assert outcome.reason == "symbol_history_unavailable"
     assert analysis["resolvedStatus"] == "expired"
@@ -1057,13 +1073,14 @@ def test_return_resolution_expires_when_benchmark_history_is_missing(
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("120")),
                 ]
             },
-        ).resolve_memory_report(
-            report.id,
+        ).resolve_memory(
+            _memory_id(report),
             end_date=datetime(2026, 1, 6, tzinfo=UTC),
             benchmark_symbol="SPY",
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(updated_report)
     assert outcome.status == "expired"
     assert outcome.reason == "benchmark_history_unavailable"
     assert analysis["resolvedStatus"] == "expired"
@@ -1078,19 +1095,21 @@ def test_return_resolution_keeps_pending_exit_before_horizon(
     with session_factory() as session:
         report = _create_resolution_report(session, action="buy", run_id=428)
         original_content = report.content
-        outcome = _return_resolution_service(session, {}).resolve_memory_report(
-            report.id,
+        outcome = _return_resolution_service(session, {}).resolve_memory(
+            _memory_id(report),
             end_date=datetime(2026, 1, 3, tzinfo=UTC),
         )
         persisted = session.get(Report, report.id)
         assert persisted is not None
+        unchanged_report = ReportRead.model_validate(persisted)
 
-    _, analysis = _report_metadata_payload(outcome.report)
+    _, analysis = _report_metadata_payload(unchanged_report)
     assert outcome.status == "pending"
     assert outcome.reason == "exit_condition_pending"
     assert analysis["resolvedStatus"] == "pending"
     assert "resolvedAt" not in analysis
-    assert persisted.content == original_content
+    assert outcome.memory.status.value == "pending"
+    assert unchanged_report.content == original_content
 
 
 def test_memory_report_service_appends_reflections_in_order(
@@ -1290,7 +1309,7 @@ def _resolved_context_report(
 
 
 def _memory_id(report: ReportRead) -> str:
-    return format_report_backed_memory_id(report.id)
+    return MemoryService.memory_id_from_report_id(report.id)
 
 
 def _memory_id_order(snippets: list[MemoryPromptSnippet]) -> list[str]:
@@ -1305,21 +1324,62 @@ def test_reflection_service_appends_validated_reflection_to_resolved_memory(
         report = _create_pending_report(session)
         service = MemoryReportService(session)
         _ = service.resolve_memory_report(report.id, _resolution_update())
-        updated = ReflectionService(session).append_reflection(
-            report.id,
+        before_report = _read_report(session, report.id)
+        before_metadata, before_analysis = _report_metadata_payload(before_report)
+        created_by_before = deepcopy(cast(dict[str, object], before_metadata["createdBy"]))
+        decision_before = deepcopy(cast(dict[str, object], before_analysis["decision"]))
+        provenance_before = {
+            key: before_analysis.get(key)
+            for key in (
+                "runId",
+                "agentKey",
+                "agentVersion",
+                "agentName",
+                "workflowKey",
+                "workflowVersion",
+                "stepId",
+                "slot",
+                "traceId",
+            )
+        }
+        updated: MemoryEntryRead = ReflectionService(session).append_reflection(
+            _memory_id(report),
             reflection="Outcome confirmed the liquidity gate.",
             reflected_at=reflected_at,
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(updated)
+    updated_metadata, analysis = _report_metadata_payload(updated_report)
     reflections = cast(list[dict[str, object]], analysis["reflections"])
+    assert updated.memory_id == _memory_id(report)
+    assert [reflection.reflection for reflection in updated.reflections] == [
+        "Outcome confirmed the liquidity gate."
+    ]
     assert reflections == [
         {
             "reflection": "Outcome confirmed the liquidity gate.",
             "reflectedAt": "2026-01-18T08:00:00Z",
         }
     ]
-    assert "Outcome confirmed the liquidity gate." in updated.content
+    updated_decision = cast(dict[str, object], analysis["decision"])
+    assert updated_metadata["createdBy"] == created_by_before
+    assert updated_decision == decision_before
+    assert {
+        key: analysis.get(key)
+        for key in (
+            "runId",
+            "agentKey",
+            "agentVersion",
+            "agentName",
+            "workflowKey",
+            "workflowVersion",
+            "stepId",
+            "slot",
+            "traceId",
+        )
+    } == provenance_before
+    assert updated_decision["rationale"] == _decision_payload()["rationale"]
+    assert "Outcome confirmed the liquidity gate." in updated_report.content
 
 
 def test_reflection_service_rejects_pending_memory_through_lifecycle_validation(
@@ -1327,19 +1387,20 @@ def test_reflection_service_rejects_pending_memory_through_lifecycle_validation(
 ) -> None:
     with session_factory() as session:
         report = _create_pending_report(session)
+        original_report = _read_report(session, report.id)
+        original_metadata, _ = _report_metadata_payload(original_report)
         with pytest.raises(ValidationError):
             _ = ReflectionService(session).append_reflection(
-                report.id,
+                _memory_id(report),
                 reflection="Pending memories should not accept reflections.",
                 reflected_at=datetime(2026, 1, 18, 8, tzinfo=UTC),
             )
-        persisted = session.get(Report, report.id)
-        assert persisted is not None
-        metadata = cast(dict[str, object], persisted.metadata_)
-        analysis = cast(dict[str, object], metadata["analysis"])
+        persisted_report = _read_report(session, report.id)
+        metadata, analysis = _report_metadata_payload(persisted_report)
         assert analysis["resolvedStatus"] == "pending"
         assert analysis["reflections"] == []
-        assert persisted.content == report.content
+        assert metadata == original_metadata
+        assert persisted_report.content == report.content
 
 
 def test_reflection_service_generates_deterministic_internal_reflection(
@@ -1354,17 +1415,24 @@ def test_reflection_service_generates_deterministic_internal_reflection(
             benchmark_return=None,
             alpha="0.18",
         )
+        memory = MemoryService(session).get_memory(_memory_id(report))
+        first_generated = ReflectionService.generate_reflection_text(memory)
+        second_generated = ReflectionService.generate_reflection_text(memory)
         updated = ReflectionService(session).generate_and_append_reflection(
-            report.id,
+            _memory_id(report),
             reflected_at=datetime(2026, 1, 20, 8, tzinfo=UTC),
         )
+        updated_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(updated)
+    _, analysis = _report_metadata_payload(updated_report)
     reflections = cast(list[dict[str, object]], analysis["reflections"])
-    assert reflections[0]["reflection"] == (
+    expected_reflection = (
         "NVDA buy memory resolved with raw return 0.25, alpha 0.18. "
         "Lesson: Wait for durable earnings confirmation."
     )
+    assert first_generated == second_generated == expected_reflection
+    assert updated.reflections[0].reflection == expected_reflection
+    assert reflections[0]["reflection"] == expected_reflection
 
 
 def test_memory_report_lifecycle_resolves_reflects_and_reinjects_deterministically(
@@ -1391,9 +1459,9 @@ def test_memory_report_lifecycle_resolves_reflects_and_reinjects_deterministical
                     (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
                 ]
             },
-        ).resolve_memory_report(report.id, end_date=datetime(2026, 1, 6, tzinfo=UTC))
-        reflected = ReflectionService(session).generate_and_append_reflection(
-            report.id,
+        ).resolve_memory(_memory_id(report), end_date=datetime(2026, 1, 6, tzinfo=UTC))
+        reflected: MemoryEntryRead = ReflectionService(session).generate_and_append_reflection(
+            _memory_id(report),
             reflected_at=datetime(2026, 1, 7, 8, tzinfo=UTC),
         )
         snippets = MemoryContextService(session).get_prompt_snippets(
@@ -1408,11 +1476,14 @@ def test_memory_report_lifecycle_resolves_reflects_and_reinjects_deterministical
             max_items=10,
             max_characters=10_000,
         )
+        reflected_report = _read_report(session, report.id)
 
-    _, analysis = _report_metadata_payload(reflected)
+    _, analysis = _report_metadata_payload(reflected_report)
     reflections = cast(list[dict[str, object]], analysis["reflections"])
     assert pending_snippets == []
     assert outcome.status == "resolved"
+    assert outcome.memory.memory_id == _memory_id(report)
+    assert reflected.memory_id == _memory_id(report)
     assert analysis["resolvedStatus"] == "resolved"
     assert analysis["rawReturn"] == "0.25"
     assert reflections == [
