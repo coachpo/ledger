@@ -50,6 +50,7 @@ class RunInvocationOutputOrigin(str, Enum):  # noqa: UP042
 class RunTargetKind(str, Enum):  # noqa: UP042
     AGENT = "agent"
     WORKFLOW = "workflow"
+    WORKFLOW_PACKAGE = "workflowPackage"
 
 
 def _coerce_legacy_target_identity(value: Any) -> Any:
@@ -224,6 +225,74 @@ class RunMemoryArtifactRead(CamelModel):
         return ensure_timezone(value)
 
 
+class RunPackageLocalResourceRefsRead(CamelModel):
+    agents: list[str] = Field(default_factory=list)
+    output_schemas: list[str] = Field(default_factory=list)
+    capability_profiles: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+
+
+class RunPackageResolvedModelConnectionRead(CamelModel):
+    key: str
+    name: str
+    base_url: str
+    organization: str | None = None
+    project: str | None = None
+    model_id: str
+    reasoning_effort: str | None = None
+    api_style: str
+    timeout_seconds: int = Field(ge=1)
+    has_api_key: bool
+
+
+class RunPackagePreflightSummaryRead(CamelModel):
+    ready: bool
+    blocking_errors: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RunPackageLaunchSnapshotRead(CamelModel):
+    workflow_key: str
+    workflow_name: str
+    workflow_description: str
+    input_schema: dict[str, Any]
+    parameters: dict[str, Any]
+
+
+class RunPackageAvailabilityRead(CamelModel):
+    package_status: str | None = None
+    package_archived_at: datetime | None = None
+    package_deleted_at: datetime | None = None
+    package_version_available: bool
+    can_archive_package: bool
+    can_delete_package: bool
+    unavailable_reason: str | None = None
+
+    @field_validator("package_archived_at", "package_deleted_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
+class RunPackageProvenanceRead(CamelModel):
+    workflow_package_id: int
+    workflow_package_key: str
+    workflow_package_version_id: int | None = None
+    workflow_package_version: int = Field(ge=1)
+    workflow_package_hash: str
+    workflow_key: str
+    launch_snapshot: RunPackageLaunchSnapshotRead | None = None
+    local_resource_refs: RunPackageLocalResourceRefsRead
+    resolved_model_connections: list[RunPackageResolvedModelConnectionRead] = Field(
+        default_factory=list
+    )
+    preflight_summary: RunPackagePreflightSummaryRead | None = None
+    availability: RunPackageAvailabilityRead
+
+
 class RunRead(CamelModel):
     id: int
     target_kind: RunTargetKind
@@ -249,6 +318,7 @@ class RunRead(CamelModel):
     updated_at: datetime
     steps: list[RunStepRead] = Field(default_factory=list)
     memory_artifacts: list[RunMemoryArtifactRead] = Field(default_factory=list)
+    package_provenance: RunPackageProvenanceRead | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -270,6 +340,7 @@ class RunRerunDraftRead(CamelModel):
     target_key: str
     target_version: int = Field(ge=1)
     parameters: dict[str, object]
+    package_provenance: RunPackageProvenanceRead | None = None
 
 
 class RunRerunCreateRequest(CamelModel):
@@ -284,6 +355,7 @@ class RunStepReplayDraftRead(CamelModel):
     target_key: str
     target_version: int = Field(ge=1)
     parameters: dict[str, object]
+    package_provenance: RunPackageProvenanceRead | None = None
 
 
 class RunStepReplayCreateRequest(CamelModel):
@@ -301,6 +373,12 @@ __all__ = [
     "RunListItemRead",
     "RunListRead",
     "RunMemoryArtifactRead",
+    "RunPackageAvailabilityRead",
+    "RunPackageLaunchSnapshotRead",
+    "RunPackageLocalResourceRefsRead",
+    "RunPackagePreflightSummaryRead",
+    "RunPackageProvenanceRead",
+    "RunPackageResolvedModelConnectionRead",
     "RunRead",
     "RunRerunCreateRequest",
     "RunRerunDraftRead",

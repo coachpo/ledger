@@ -16,7 +16,7 @@
 | CSV import schemas | `csv_import.py` | preview and commit payloads |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
-| Agent-platform schemas | `agent.py`, `capability.py`, `mcp_server.py`, `output_schema.py`, `workflow.py`, `run.py` | current `/api/*` request and response models |
+| Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
 ## CONVENTIONS
@@ -28,7 +28,7 @@
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
-- Agent-platform schemas keep immutable versions, typed workflow wiring, and persisted run detail aligned with the live `/api/*` contracts and frontend callers.
+- Agent-platform schemas keep immutable package versions, typed package-local wiring, secret-safe model bindings, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 
 ## ANTI-PATTERNS
 - Do not hand-build camelCase dicts; use `model_validate()` or `.model_dump()`.
@@ -51,8 +51,9 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_runtime_mod
 ## NOTES
 - Market data schemas include `warnings` lists for degraded-state messaging.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
-- `output_schema.py` carries the saved-schema, builder, preview, and validation-detail payloads for the current schema subset.
+- `workflow_package.py` and `workflow_package_manifest.py` carry package authoring, validation, import/export, preflight, launch, and immutable package artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
-- `workflow.py` and `run.py` carry the live workflow authoring, run trigger, run list/detail, and per-step execution payloads.
+- `tool.py` exposes read-only server-declared tool metadata.
+- `run.py` carries global run list/detail, package provenance, rerun, step replay, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation. `ReportSource` accepts canonical origin values `compiled`, `uploaded`, `external`, and `agent`, while public `ReportCreate` stays true external only. Agent memory metadata keeps purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.

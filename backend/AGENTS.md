@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
-FastAPI + SQLAlchemy + Pydantic backend for portfolio tracking. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and the live request path now includes template compilation, report generation/upload/download, plus the current agent-platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
+FastAPI + SQLAlchemy + Pydantic backend for portfolio tracking. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and the live request path now includes template compilation, report generation/upload/download, plus package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
 ## CHILD DOCS
 - `app/core/AGENTS.md` — settings, error envelope, normalization helpers
@@ -35,7 +35,7 @@ backend/
 |---|---|---|
 | API route handlers | `app/api/AGENTS.md` | route handler rules, service delegation, error translation |
 | Service construction | `app/api/dependencies.py` | constructs CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
-| Platform route families | `app/api/agents.py`, `app/api/capabilities.py`, `app/api/mcp_servers.py`, `app/api/model_connections.py`, `app/api/output_schemas.py`, `app/api/workflows.py`, `app/api/runs.py` | agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs |
+| Platform route families | `app/api/workflow_packages.py`, `app/api/model_connections.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Model Connections, Tools, and Runs |
 | Runtime tools / MCP | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py` | server-declared tools, native runtime dispatch, MCP snapshots, memory writes |
 | Preserved v1 route families | `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
 | Shared config / errors / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, decimal/symbol/currency helpers |
@@ -53,9 +53,9 @@ backend/
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
-- Agent and workflow writes use YAML manifest parser/compiler/decompiler/backfill services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, and loose version pins stay invalid.
-- Legacy orchestration, Studio, Tryout, and runtime-v2 routes are retired. Keep docs aligned with the current agent-platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
-- Capabilities are canonical in backend API docs. Use `/api/capabilities`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, and `capabilities` storage for live behavior. Keep runtime tool keys and OpenAI function names unchanged.
+- Workflow package writes use YAML manifest parser/compiler/decompiler services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid.
+- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and old global authoring routes are retired. Keep docs aligned with Workflow Packages, Model Connections, Tools, and Runs.
+- Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
 ## ANTI-PATTERNS
@@ -86,7 +86,7 @@ uv run pytest
 
 ## NOTES
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and legacy-schema upgrades.
-- Manifest, MCP, runtime-tool, memory-report, capability, storage/backfill, and reset-seed tests cover the current agent-platform contract beyond the original runtime suite.
-- `tests/test_runtime_api.py`, `tests/test_runtime_artifacts.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, trace, persistence, and version-pinning contracts.
+- Manifest, MCP, runtime-tool, memory-report, workflow package, tool catalog, model connection, and reset-seed tests cover the current agent-platform contract beyond the original runtime suite.
+- `tests/test_workflow_package_*.py`, `tests/test_runtime_api.py`, `tests/test_runtime_artifacts.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, trace, package provenance, persistence, and version-pinning contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, retired-table cleanup, and removed-route guarantees after cutover.
 - There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.

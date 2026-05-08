@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import openai
 from openai import OpenAI
@@ -24,6 +26,7 @@ from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
+from app.services.execution_plan import PackageRuntimeAgentSpec
 from app.services.quote_provider import QuoteProvider
 
 
@@ -49,6 +52,9 @@ class RunAgentInvocationResult:
     tokens: int = 0
     duration_ms: int | None = None
     trace_span_id: str | None = None
+
+
+RuntimeAgentSpec = Agent | PackageRuntimeAgentSpec
 
 
 @dataclass(frozen=True)
@@ -110,7 +116,7 @@ class AgentExecutionService:
     async def invoke(
         self,
         *,
-        agent: Agent,
+        agent: RuntimeAgentSpec,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
@@ -138,7 +144,7 @@ class AgentExecutionService:
 
     def _invoke_sync(
         self,
-        agent: Agent,
+        agent: RuntimeAgentSpec,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
@@ -152,10 +158,9 @@ class AgentExecutionService:
         step_id = f"step_{step_index}"
         with self.session_factory() as session:
             model_connection = self._resolve_runtime_model_connection(session, agent)
-            granted_tool_keys = CapabilityService(
-                session,
-                get_default_tool_catalog(),
-            ).resolve_granted_tool_keys(agent.capabilities)
+            capability_references = self._runtime_capability_references(session, agent)
+            granted_tool_keys = self._runtime_granted_tool_keys(session, agent)
+            mcp_server_refs = self._runtime_mcp_server_refs(agent)
         try:
             return self._invoke_saved_model_connection_agent(
                 agent=agent,
@@ -163,8 +168,9 @@ class AgentExecutionService:
                 resolved_input=resolved_input,
                 output_model=output_model,
                 openai_client_factory=openai_client_factory,
-                capability_references=agent.capabilities,
+                capability_references=capability_references,
                 granted_tool_keys=granted_tool_keys,
+                mcp_server_refs=mcp_server_refs,
                 run_id=run_id,
                 workflow_key=workflow_key,
                 workflow_version=workflow_version,
@@ -182,14 +188,32 @@ class AgentExecutionService:
     def _resolve_runtime_model_connection(
         self,
         session: Session,
-        agent: Agent,
+        agent: RuntimeAgentSpec,
     ) -> _ResolvedModelConnectionConfig:
+        repository = ModelConnectionRepository(session)
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            if agent.model_binding is None:
+                raise RunExecutionError(
+                    code="run_agent_model_connection_missing",
+                    message=f"Package agent {agent.key!r} is missing its model connection",
+                )
+            connection = repository.resolve_active_by_key(agent.model_binding.key)
+            if connection is None:
+                raise RunExecutionError(
+                    code="run_agent_model_connection_missing",
+                    message=(
+                        f"Package agent {agent.key!r} references missing or archived "
+                        f"model connection {agent.model_binding.key!r}"
+                    ),
+                )
+            return self._to_runtime_model_connection(connection)
+
         if agent.model_connection_id is None:
             raise RunExecutionError(
                 code="run_agent_model_connection_missing",
                 message=f"Agent {agent.key!r} is missing its saved model connection",
             )
-        connection = ModelConnectionRepository(session).get(agent.model_connection_id)
+        connection = repository.get(agent.model_connection_id)
         if connection is None:
             raise RunExecutionError(
                 code="run_agent_model_connection_missing",
@@ -198,6 +222,12 @@ class AgentExecutionService:
                     f"{agent.model_connection_id}"
                 ),
             )
+        return self._to_runtime_model_connection(connection)
+
+    def _to_runtime_model_connection(
+        self,
+        connection: ModelConnection,
+    ) -> _ResolvedModelConnectionConfig:
         return _ResolvedModelConnectionConfig(
             id=connection.id,
             name=connection.name,
@@ -211,6 +241,48 @@ class AgentExecutionService:
             api_key=self._extract_model_connection_api_key(connection),
         )
 
+    def _runtime_granted_tool_keys(
+        self,
+        session: Session,
+        agent: RuntimeAgentSpec,
+    ) -> set[str]:
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return {
+                tool_key for profile in agent.capability_profiles for tool_key in profile.tool_keys
+            }
+        return CapabilityService(
+            session,
+            get_default_tool_catalog(),
+        ).resolve_granted_tool_keys(agent.capabilities)
+
+    @staticmethod
+    def _runtime_capability_references(
+        session: Session,
+        agent: RuntimeAgentSpec,
+    ) -> list[dict[str, object]]:
+        del session
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return [
+                {
+                    "packageCapabilityKey": profile.key,
+                    "toolKeys": list(profile.tool_keys),
+                }
+                for profile in agent.capability_profiles
+            ]
+        return list(agent.capabilities)
+
+    @staticmethod
+    def _runtime_mcp_server_refs(agent: RuntimeAgentSpec) -> Sequence[Mapping[str, object]]:
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return []
+        return agent.mcp_servers
+
+    @staticmethod
+    def _runtime_agent_version(agent: RuntimeAgentSpec) -> int:
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return 1
+        return agent.version
+
     @staticmethod
     def _extract_model_connection_api_key(connection: ModelConnection) -> str | None:
         payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
@@ -223,13 +295,14 @@ class AgentExecutionService:
     def _invoke_saved_model_connection_agent(
         self,
         *,
-        agent: Agent,
+        agent: RuntimeAgentSpec,
         model_connection: _ResolvedModelConnectionConfig,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         openai_client_factory: type[Any],
-        capability_references: list[dict[str, Any]],
+        capability_references: list[dict[str, object]],
         granted_tool_keys: set[str],
+        mcp_server_refs: Sequence[Mapping[str, object]],
         run_id: int | None,
         workflow_key: str | None,
         workflow_version: int | None,
@@ -245,11 +318,17 @@ class AgentExecutionService:
                     f"{model_connection.name!r} is missing an API key"
                 ),
             )
+        if self._is_deterministic_model_connection(model_connection):
+            return RunAgentInvocationResult(
+                output=self._deterministic_output_for_schema(output_model),
+                tokens=1,
+                duration_ms=0,
+            )
 
         runtime_tool_registry = get_default_runtime_tool_registry()
         settings = get_settings()
         mcp_dispatcher = McpRuntimeResolver(self.session_factory).build_dispatcher(
-            mcp_server_refs=agent.mcp_servers,
+            mcp_server_refs=mcp_server_refs,
             client=self.mcp_tool_client,
             timeout_seconds=settings.mcp_runtime_timeout_seconds,
             enabled=settings.mcp_runtime_enabled,
@@ -262,7 +341,7 @@ class AgentExecutionService:
             quote_provider=self.quote_provider,
             run_id=run_id,
             agent_key=agent.key,
-            agent_version=agent.version,
+            agent_version=self._runtime_agent_version(agent),
             agent_name=agent.name,
             workflow_key=workflow_key,
             workflow_version=workflow_version,
@@ -489,6 +568,69 @@ class AgentExecutionService:
         )
 
     @staticmethod
+    def _is_deterministic_model_connection(
+        model_connection: _ResolvedModelConnectionConfig,
+    ) -> bool:
+        parsed = urlsplit(model_connection.base_url)
+        return parsed.hostname == "ledger-deterministic-model.local"
+
+    @classmethod
+    def _deterministic_output_for_schema(cls, output_model: type[BaseModel]) -> Any:
+        schema = output_model.model_json_schema()
+        return cls._deterministic_json_value(schema, name="output", root_schema=schema)
+
+    @classmethod
+    def _deterministic_json_value(
+        cls,
+        schema: Mapping[str, Any],
+        *,
+        name: str,
+        root_schema: Mapping[str, Any],
+    ) -> Any:
+        ref = schema.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            defs = root_schema.get("$defs")
+            target = defs.get(ref.removeprefix("#/$defs/")) if isinstance(defs, Mapping) else None
+            if isinstance(target, Mapping):
+                return cls._deterministic_json_value(target, name=name, root_schema=root_schema)
+        schema_type = schema.get("type")
+        if schema_type == "object":
+            properties = schema.get("properties")
+            if not isinstance(properties, Mapping):
+                return {}
+            required = schema.get("required")
+            required_names = required if isinstance(required, list) else list(properties.keys())
+            return {
+                str(key): cls._deterministic_json_value(
+                    value if isinstance(value, Mapping) else {},
+                    name=str(key),
+                    root_schema=root_schema,
+                )
+                for key, value in properties.items()
+                if key in required_names
+            }
+        if schema_type == "array":
+            items = schema.get("items")
+            item_schema = items if isinstance(items, Mapping) else {}
+            return [
+                cls._deterministic_json_value(
+                    item_schema,
+                    name=name,
+                    root_schema=root_schema,
+                )
+            ]
+        if schema_type in {"integer", "number"}:
+            return 1
+        if schema_type == "boolean":
+            return True
+        if (
+            isinstance(schema.get("properties"), Mapping)
+            or schema.get("additionalProperties") is True
+        ):
+            return {}
+        return f"deterministic {name}"
+
+    @staticmethod
     def _build_responses_text_format(output_model: type[BaseModel]) -> dict[str, Any]:
         return {
             "format": {
@@ -695,7 +837,7 @@ class AgentExecutionService:
 
     @staticmethod
     def _build_openai_instructions(
-        agent: Agent,
+        agent: RuntimeAgentSpec,
         output_model: type[BaseModel],
         *,
         runtime_tool_guidance: str,

@@ -16,7 +16,7 @@ class Run(IdMixin, TimestampMixin, Base):
     __tablename__ = "runs"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('agent', 'workflow')",
+            "target_kind IN ('agent', 'workflow', 'workflowPackage')",
             name="ck_runs_target_kind",
         ),
         CheckConstraint(
@@ -37,12 +37,21 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
         Index("ix_runs_source_run", "source_run_id"),
         Index("ix_runs_lineage_root", "lineage_root_run_id"),
+        Index("ix_runs_workflow_package", "workflow_package_id", "workflow_package_version"),
+        Index("ix_runs_workflow_package_key", "workflow_package_key", "workflow_package_version"),
+        Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
     )
 
     target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[int] = mapped_column(nullable=False)
     target_key: Mapped[str] = mapped_column(String(120), nullable=False)
     target_version: Mapped[int] = mapped_column(nullable=False)
+    workflow_package_id: Mapped[int | None] = mapped_column(nullable=True)
+    workflow_package_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    workflow_package_version_id: Mapped[int | None] = mapped_column(nullable=True)
+    workflow_package_version: Mapped[int | None] = mapped_column(nullable=True)
+    workflow_package_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     input: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20),

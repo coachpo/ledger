@@ -4,14 +4,14 @@ import asyncio
 import logging
 from contextvars import ContextVar
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import business_rule_error, not_found_error
+from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.core.telemetry import (
     configure_logfire,
@@ -27,12 +27,14 @@ from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_step import RunStepRepository
+from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.memory_report import (
     AgentMemoryReportCreateMetadata,
     AgentMemoryReportMetadata,
@@ -57,6 +59,11 @@ from app.schemas.workflow import (
     WorkflowVersionListRead,
     WorkflowVersionRead,
 )
+from app.schemas.workflow_package import (
+    WorkflowPackageLaunchCreateRequest,
+    WorkflowPackageLaunchCreateResponse,
+    WorkflowPackageLaunchRead,
+)
 from app.services.agent_execution_service import (
     AgentExecutionService,
     RunAgentInvocationResult,
@@ -70,9 +77,14 @@ from app.services.execution_plan import (
     ExecutionPlanGraphMetadata,
     ExecutionPlanSource,
     ExecutionPlanStep,
+    ExecutionPlanTarget,
+    PackageLocalOutputSchemaSpec,
+    PackageResolvedModelBinding,
+    PackageRuntimeAgentSpec,
 )
 from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
 from app.services.memory_report_service import MemoryReportService
+from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -81,7 +93,12 @@ from app.services.output_schema_compiler import (
     SchemaObject,
     SchemaRef,
 )
+from app.services.package_execution_plan_builder import (
+    PackageExecutionPlanBuilder,
+    WorkflowPackageExecutionPlanError,
+)
 from app.services.quote_provider import QuoteProvider
+from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +114,7 @@ class _RuntimeInvocationContext:
     target_kind: str
     target_key: str
     target_version: int
+    workflow_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,9 +123,16 @@ class _PreparedWorkflowLaunch:
     plan: ExecutionPlan
 
 
+@dataclass(frozen=True)
+class _PreparedWorkflowPackageLaunch:
+    package: WorkflowPackage
+    package_version: WorkflowPackageVersion
+    plan: ExecutionPlan
+
+
 @dataclass
 class _PreparedAgentInvocation:
-    agent: Agent
+    agent: Agent | PackageRuntimeAgentSpec
     output_model: type[BaseModel]
     resolved_input: dict[str, Any]
     invocation: RunAgentInvocation
@@ -136,6 +161,7 @@ class RunService:
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.run_repository = RunRepository(session)
+        self.workflow_package_repository = WorkflowPackageRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
@@ -157,6 +183,9 @@ class RunService:
         workflow_id: int | None = None,
         workflow_key: str | None = None,
         workflow_version: int | None = None,
+        workflow_package_key: str | None = None,
+        workflow_package_id: int | None = None,
+        model_connection_key: str | None = None,
         status_filter: RunStatus | None = None,
         limit: int | None = None,
         offset: int = 0,
@@ -167,8 +196,12 @@ class RunService:
             target_key=target_key,
             target_version=target_version,
             workflow_id=workflow_id,
-            workflow_key=workflow_key,
+            workflow_key=None,
             workflow_version=workflow_version,
+            workflow_package_id=workflow_package_id,
+            workflow_package_key=workflow_package_key,
+            package_workflow_key=workflow_key,
+            model_connection_key=model_connection_key,
             status=status_filter.value if status_filter is not None else None,
             limit=limit,
             offset=offset,
@@ -229,6 +262,53 @@ class RunService:
             }
         )
 
+    def get_workflow_package_launch(
+        self,
+        package_id: int,
+        *,
+        version: int | None = None,
+        workflow_key: str | None = None,
+    ) -> WorkflowPackageLaunchRead:
+        prepared = self._prepare_workflow_package_launch(
+            package_id,
+            version=version,
+            workflow_key=workflow_key,
+            require_api_key=False,
+        )
+        return self._to_workflow_package_launch_read(prepared)
+
+    def create_workflow_package_launch(
+        self,
+        package_id: int,
+        payload: WorkflowPackageLaunchCreateRequest,
+    ) -> WorkflowPackageLaunchCreateResponse:
+        prepared = self._prepare_workflow_package_launch(
+            package_id,
+            version=payload.version,
+            workflow_key=payload.workflow_key,
+            require_api_key=True,
+        )
+        created = self._create_run_from_plan(
+            prepared.plan,
+            payload.parameters,
+            workflow_package_version=prepared.package_version,
+        )
+        return WorkflowPackageLaunchCreateResponse.model_validate(
+            {
+                "id": created.id,
+                "status": created.status,
+                "workflowPackageId": prepared.package.id,
+                "workflowPackageKey": prepared.package.key,
+                "workflowPackageVersion": prepared.package_version.version,
+                "workflowKey": (
+                    prepared.plan.package_workflow.key
+                    if prepared.plan.package_workflow is not None
+                    else prepared.package.key
+                ),
+                "createdAt": created.created_at,
+            }
+        )
+
     def create_target_run(
         self,
         target_kind: str,
@@ -258,10 +338,187 @@ class RunService:
             raise not_found_error("Workflow")
         return _PreparedWorkflowLaunch(workflow=workflow, plan=plan)
 
+    def _prepare_workflow_package_launch(
+        self,
+        package_id: int,
+        *,
+        version: int | None,
+        workflow_key: str | None,
+        require_api_key: bool,
+    ) -> _PreparedWorkflowPackageLaunch:
+        package, package_version = self._resolve_workflow_package_version(
+            package_id,
+            version=version,
+        )
+        selected_workflow_key = self._resolve_workflow_package_workflow_key(
+            package_version,
+            workflow_key,
+        )
+        preflight = WorkflowPackagePreflightService(self.session).run(
+            package_version,
+            workflow_key=selected_workflow_key,
+            require_api_key=require_api_key,
+        )
+        if require_api_key and preflight.blocking_errors:
+            raise validation_error(
+                "Workflow package launch validation failed",
+                preflight.blocking_errors,
+            )
+        try:
+            package_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+                package_version.compiled_plan,
+                selected_workflow_key,
+                model_bindings=preflight.model_bindings,
+                package_version=package_version.version,
+            )
+        except WorkflowPackageExecutionPlanError as exc:
+            raise validation_error(
+                "Workflow package launch validation failed",
+                list(exc.details),
+            ) from exc
+        plan = replace(
+            package_plan,
+            target=ExecutionPlanTarget(
+                kind="workflow_package",
+                id=package.id,
+                key=package.key,
+                version=package_version.version,
+            ),
+        )
+        return _PreparedWorkflowPackageLaunch(
+            package=package,
+            package_version=package_version,
+            plan=plan,
+        )
+
+    def _resolve_workflow_package_version(
+        self,
+        package_id: int,
+        *,
+        version: int | None,
+    ) -> tuple[WorkflowPackage, WorkflowPackageVersion]:
+        package = self.workflow_package_repository.get(package_id)
+        if package is None:
+            raise not_found_error("Workflow package")
+        package_version = (
+            self.workflow_package_repository.get_latest_version(package.id)
+            if version is None
+            else self.workflow_package_repository.get_version(package.id, version)
+        )
+        if package_version is None:
+            raise not_found_error("Workflow package version")
+        return package, package_version
+
+    def _resolve_workflow_package_version_for_run(
+        self,
+        run: Run,
+    ) -> tuple[WorkflowPackage, WorkflowPackageVersion]:
+        if run.workflow_package_id is None or run.workflow_package_version is None:
+            raise self._package_artifact_unavailable_error(
+                "Workflow package run is missing package version provenance"
+            )
+        package = self.workflow_package_repository.get(run.workflow_package_id)
+        if package is None or package.deleted_at is not None:
+            raise self._package_artifact_unavailable_error(
+                "Workflow package artifact is no longer available"
+            )
+        if package.status == "archived":
+            raise self._package_artifact_unavailable_error("Workflow package artifact is archived")
+        package_version = self.workflow_package_repository.get_version(
+            package.id,
+            run.workflow_package_version,
+        )
+        if package_version is None:
+            raise self._package_artifact_unavailable_error(
+                "Workflow package version artifact is no longer available"
+            )
+        if (
+            run.workflow_package_version_id is not None
+            and package_version.id != run.workflow_package_version_id
+        ):
+            raise self._package_artifact_unavailable_error(
+                "Workflow package version artifact identity changed"
+            )
+        return package, package_version
+
+    @staticmethod
+    def _package_artifact_unavailable_error(message: str) -> ApiError:
+        return business_rule_error(
+            "workflow_package_run_artifact_unavailable",
+            message,
+            details=[{"field": "packageProvenance", "issue": message}],
+        )
+
+    @staticmethod
+    def _resolve_workflow_package_workflow_key(
+        package_version: WorkflowPackageVersion,
+        workflow_key: str | None,
+    ) -> str:
+        workflows = [
+            workflow
+            for workflow in package_version.compiled_plan.get("workflows") or []
+            if isinstance(workflow, dict)
+        ]
+        if not workflows:
+            raise validation_error(
+                "Workflow package launch validation failed",
+                [{"field": "spec.workflows", "issue": "Package has no workflows"}],
+            )
+        selected_key = workflow_key or str(workflows[0].get("key"))
+        if any(str(workflow.get("key")) == selected_key for workflow in workflows):
+            return selected_key
+        raise not_found_error("Workflow package workflow")
+
+    def _resolve_workflow_package_model_bindings(
+        self,
+        package_version: WorkflowPackageVersion,
+        *,
+        require_api_key: bool,
+    ) -> tuple[dict[str, PackageResolvedModelBinding], list[dict[str, Any]]]:
+        model_service = ModelConnectionService(self.session)
+        bindings: dict[str, PackageResolvedModelBinding] = {}
+        errors: list[dict[str, Any]] = []
+        agents = package_version.compiled_plan.get("agents") or []
+        for index, raw_agent in enumerate(agents):
+            if not isinstance(raw_agent, dict):
+                continue
+            key = str(raw_agent.get("modelConnection") or "")
+            path = f"spec.agents[{index}].modelConnection"
+            try:
+                binding = model_service.resolve_package_model_connection_binding(
+                    key,
+                    path=path,
+                    require_api_key=require_api_key,
+                )
+            except ApiError as exc:
+                errors.extend(exc.details)
+                continue
+            bindings[key] = PackageResolvedModelBinding(
+                key=binding.key,
+                name=binding.name,
+                base_url=binding.base_url,
+                organization=binding.organization,
+                project=binding.project,
+                model_id=binding.model_id,
+                reasoning_effort=binding.reasoning_effort,
+                api_style=binding.api_style,
+                timeout_seconds=binding.timeout_seconds,
+                has_api_key=binding.has_api_key,
+            )
+        return bindings, errors
+
+    @staticmethod
+    def _run_target_kind(plan: ExecutionPlan) -> str:
+        if plan.target.kind == "workflow_package":
+            return RunTargetKind.WORKFLOW_PACKAGE.value
+        return plan.target.kind
+
     def _create_run_from_plan(
         self,
         plan: ExecutionPlan,
         input_payload: dict[str, Any],
+        *,
+        workflow_package_version: WorkflowPackageVersion | None = None,
     ) -> RunCreatedRead:
         validated_input = self._validate_run_input(
             input_schema=plan.input_schema,
@@ -269,11 +526,34 @@ class RunService:
             candidate_key=f"{plan.target.kind}_input",
             resource_name=plan.target.kind,
         )
+        package_workflow_key = (
+            plan.package_workflow.key if plan.package_workflow is not None else None
+        )
         run = Run(
-            target_kind=plan.target.kind,
+            target_kind=self._run_target_kind(plan),
             target_id=plan.target.id,
             target_key=plan.target.key,
             target_version=plan.target.version,
+            workflow_package_id=(
+                workflow_package_version.package_id
+                if workflow_package_version is not None
+                else None
+            ),
+            workflow_package_key=(
+                plan.target.key if workflow_package_version is not None else None
+            ),
+            workflow_package_version_id=(
+                workflow_package_version.id if workflow_package_version is not None else None
+            ),
+            workflow_package_version=(
+                workflow_package_version.version if workflow_package_version is not None else None
+            ),
+            workflow_package_hash=(
+                workflow_package_version.manifest_hash
+                if workflow_package_version is not None
+                else None
+            ),
+            workflow_package_workflow_key=package_workflow_key,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -295,6 +575,10 @@ class RunService:
                 plan=plan,
                 validated_input=validated_input,
             )
+            if workflow_package_version is not None:
+                workflow_package_version.launched_at = (
+                    workflow_package_version.launched_at or utcnow()
+                )
             self.session.commit()
             self.session.refresh(run)
         except Exception:
@@ -306,6 +590,8 @@ class RunService:
 
     def build_rerun_draft(self, source_run_id: int) -> RunRerunDraftRead:
         source_run = self._get_run_or_raise(source_run_id)
+        if source_run.target_kind == RunTargetKind.WORKFLOW_PACKAGE.value:
+            _ = self._build_plan_for_run(source_run)
         return RunRerunDraftRead.model_validate(
             {
                 "sourceRunId": source_run.id,
@@ -314,6 +600,7 @@ class RunService:
                 "targetKey": source_run.target_key,
                 "targetVersion": source_run.target_version,
                 "parameters": deepcopy(source_run.input),
+                "packageProvenance": self._package_provenance_payload(source_run),
             }
         )
 
@@ -323,7 +610,7 @@ class RunService:
         payload: RunRerunCreateRequest,
     ) -> RunCreatedRead:
         source_run = self._get_run_or_raise(source_run_id)
-        plan = self.execution_plan_builder.build_plan_for_run(source_run)
+        plan = self._build_plan_for_run(source_run)
         validated_input = self._validate_run_input(
             input_schema=plan.input_schema,
             input_payload=payload.parameters,
@@ -358,6 +645,7 @@ class RunService:
                 "targetKey": source_run.target_key,
                 "targetVersion": source_run.target_version,
                 "parameters": deepcopy(source_run.input),
+                "packageProvenance": self._package_provenance_payload(source_run),
             }
         )
 
@@ -404,6 +692,12 @@ class RunService:
             target_id=source_run.target_id,
             target_key=source_run.target_key,
             target_version=source_run.target_version,
+            workflow_package_id=source_run.workflow_package_id,
+            workflow_package_key=source_run.workflow_package_key,
+            workflow_package_version_id=source_run.workflow_package_version_id,
+            workflow_package_version=source_run.workflow_package_version,
+            workflow_package_hash=source_run.workflow_package_hash,
+            workflow_package_workflow_key=source_run.workflow_package_workflow_key,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -506,13 +800,51 @@ class RunService:
             return dict(validated_input), "passthrough"
         return {}, "derived"
 
+    def _build_plan_for_run(self, run: Run) -> ExecutionPlan:
+        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            return self.execution_plan_builder.build_plan_for_run(run)
+        package, package_version = self._resolve_workflow_package_version_for_run(run)
+        del package
+        workflow_key = run.workflow_package_workflow_key
+        if workflow_key is None:
+            raise ExecutionPlanBuilderError(
+                code="run_workflow_package_workflow_missing",
+                message="Workflow package run is missing workflow key provenance",
+            )
+        model_bindings, _binding_errors = self._resolve_workflow_package_model_bindings(
+            package_version,
+            require_api_key=False,
+        )
+        try:
+            package_plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+                package_version.compiled_plan,
+                workflow_key,
+                model_bindings=model_bindings,
+                package_version=package_version.version,
+            )
+        except WorkflowPackageExecutionPlanError as exc:
+            raise ExecutionPlanBuilderError(
+                code=exc.code,
+                message=exc.message,
+                details=exc.details,
+            ) from exc
+        return replace(
+            package_plan,
+            target=ExecutionPlanTarget(
+                kind="workflow_package",
+                id=run.target_id,
+                key=run.target_key,
+                version=run.target_version,
+            ),
+        )
+
     def _prepare_step_replay_source(
         self,
         source_run_id: int,
         replay_step_index: int,
     ) -> tuple[Run, ExecutionPlan, list[RunStep]]:
         source_run = self._get_run_or_raise(source_run_id)
-        if source_run.target_kind != "workflow":
+        if source_run.target_kind not in {"workflow", RunTargetKind.WORKFLOW_PACKAGE.value}:
             raise business_rule_error(
                 "run_step_replay_target_kind_unsupported",
                 "Step replay is only supported for workflow runs",
@@ -528,7 +860,7 @@ class RunService:
                 "run_step_replay_source_not_succeeded",
                 "Only succeeded runs can be replayed",
             )
-        plan = self.execution_plan_builder.build_plan_for_run(source_run)
+        plan = self._build_plan_for_run(source_run)
         plan_step_indexes = {step.index for step in plan.steps}
         if replay_step_index not in plan_step_indexes:
             raise business_rule_error(
@@ -689,7 +1021,7 @@ class RunService:
         if run.started_at is None:
             run.started_at = utcnow()
             self.session.commit()
-        plan = self.execution_plan_builder.build_plan_for_run(run)
+        plan = self._build_plan_for_run(run)
         try:
             trace_session = self._start_trace_session(run=run, plan=plan)
         except Exception:
@@ -1150,9 +1482,12 @@ class RunService:
             prepared, failure = self._prepare_agent_invocation(
                 runtime_context=_RuntimeInvocationContext(
                     run_id=run.id,
-                    target_kind=plan.target.kind,
+                    target_kind=self._run_target_kind(plan),
                     target_key=plan.target.key,
                     target_version=plan.target.version,
+                    workflow_key=(
+                        plan.package_workflow.key if plan.package_workflow is not None else None
+                    ),
                 ),
                 step_index=step_index,
                 plan_agent=plan_agent,
@@ -1231,15 +1566,16 @@ class RunService:
         slot_outputs: dict[tuple[int, str], Any],
     ) -> tuple[_PreparedAgentInvocation | None, RunExecutionError | None]:
         try:
-            agent = self._resolve_agent_row(plan_agent)
-            output_schema = self._resolve_agent_output_schema(agent)
+            agent = self._resolve_runtime_agent(plan_agent)
+            output_schema = self._resolve_runtime_agent_output_schema(agent)
             output_model = self.schema_compiler.build_runtime_model(output_schema)
+            input_schema = self._runtime_agent_input_schema(agent)
             input_model = self._build_input_model(
-                agent.input_schema,
+                input_schema,
                 candidate_key=f"{agent.key}_input",
             )
             input_node = self.schema_compiler.parse_json_schema_node(
-                agent.input_schema,
+                input_schema,
                 path=f"steps[{step_index - 1}].{agent.key}.inputSchema",
             )
             resolved_input = self._resolve_agent_input(
@@ -1299,11 +1635,12 @@ class RunService:
                 message=f"Unsupported plan input mode {plan_agent.input_mode!r}",
             )
 
-        target_fields = self._object_field_map(input_node)
+        input_object = self._object_schema(input_node)
+        target_fields = {field.name: field for field in input_object.fields}
         wiring = dict(plan_agent.wiring)
         agent_field_prefix = f"steps[{step_index - 1}].agents.{plan_agent.slot}.wiring"
         for target_name in wiring:
-            if target_name not in target_fields:
+            if target_name not in target_fields and not input_object.allow_additional_properties:
                 raise RunExecutionError(
                     code="agent_input_unknown_field",
                     message=f"Input field {target_name!r} is not defined on the agent schema",
@@ -1353,6 +1690,18 @@ class RunService:
                     )
                 continue
             payload[target_name] = value
+
+        if input_object.allow_additional_properties:
+            for target_name, source in wiring.items():
+                if target_name in target_fields:
+                    continue
+                value, optional_null = self._resolve_source_value(
+                    self._plan_source_payload(source),
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                )
+                if not optional_null:
+                    payload[target_name] = value
 
         try:
             validated = input_model.model_validate(payload)
@@ -1557,7 +1906,7 @@ class RunService:
     async def _invoke_agent(
         self,
         *,
-        agent: Agent,
+        agent: Agent | PackageRuntimeAgentSpec,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
@@ -1565,16 +1914,15 @@ class RunService:
         slot: str,
     ) -> RunAgentInvocationResult:
         runtime_context = _CURRENT_RUNTIME_INVOCATION_CONTEXT.get()
-        workflow_key = (
-            runtime_context.target_key
-            if runtime_context is not None and runtime_context.target_kind == "workflow"
-            else None
-        )
-        workflow_version = (
-            runtime_context.target_version
-            if runtime_context is not None and runtime_context.target_kind == "workflow"
-            else None
-        )
+        workflow_key = None
+        workflow_version = None
+        if runtime_context is not None:
+            if runtime_context.target_kind == "workflow":
+                workflow_key = runtime_context.target_key
+                workflow_version = runtime_context.target_version
+            elif runtime_context.target_kind == RunTargetKind.WORKFLOW_PACKAGE.value:
+                workflow_key = runtime_context.workflow_key
+                workflow_version = runtime_context.target_version
         return await self.agent_execution_service.invoke(
             agent=agent,
             resolved_input=resolved_input,
@@ -1612,7 +1960,12 @@ class RunService:
         entry["durationMs"] = duration_ms
         entry["traceSpanId"] = trace_span_id
 
-    def _resolve_agent_row(self, plan_agent: ExecutionPlanAgent) -> Agent:
+    def _resolve_runtime_agent(
+        self,
+        plan_agent: ExecutionPlanAgent,
+    ) -> Agent | PackageRuntimeAgentSpec:
+        if plan_agent.package_runtime_agent is not None:
+            return plan_agent.package_runtime_agent
         agent = self.agent_repository.get_by_key_version(
             plan_agent.agent_key,
             plan_agent.agent_version,
@@ -1627,7 +1980,12 @@ class RunService:
             )
         return agent
 
-    def _resolve_agent_output_schema(self, agent: Agent) -> OutputSchema:
+    def _resolve_runtime_agent_output_schema(
+        self,
+        agent: Agent | PackageRuntimeAgentSpec,
+    ) -> OutputSchema:
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return self._package_output_schema_candidate(agent.output_schema)
         output_schema = self.output_schema_repository.get(agent.output_schema_id)
         if output_schema is None or output_schema.version != agent.output_schema_version:
             raise RunExecutionError(
@@ -1635,6 +1993,27 @@ class RunService:
                 message=f"Agent {agent.key!r} references a missing output schema version",
             )
         return output_schema
+
+    @staticmethod
+    def _runtime_agent_input_schema(agent: Agent | PackageRuntimeAgentSpec) -> dict[str, Any]:
+        if isinstance(agent, PackageRuntimeAgentSpec):
+            return agent.input_schema
+        return agent.input_schema
+
+    @staticmethod
+    def _package_output_schema_candidate(
+        output_schema: PackageLocalOutputSchemaSpec,
+    ) -> OutputSchema:
+        return OutputSchema(
+            key=output_schema.key,
+            version=1,
+            status="published",
+            kind="standalone",
+            name=output_schema.name,
+            description=output_schema.description,
+            json_schema=output_schema.json_schema,
+            registry_refs=[],
+        )
 
     def _validate_run_input(
         self,
@@ -1674,13 +2053,16 @@ class RunService:
         return self.schema_compiler.build_runtime_model(candidate)
 
     def _object_field_map(self, node: SchemaNode) -> dict[str, SchemaField]:
+        return {field.name: field for field in self._object_schema(node).fields}
+
+    def _object_schema(self, node: SchemaNode) -> SchemaObject:
         dereferenced = self._dereference_node(node)
         if not isinstance(dereferenced, SchemaObject):
             raise RunExecutionError(
                 code="agent_input_schema_invalid",
                 message="Agent input schema must be an object schema",
             )
-        return {field.name: field for field in dereferenced.fields}
+        return dereferenced
 
     def _dereference_node(self, node: SchemaNode) -> SchemaNode:
         current = node
@@ -1739,6 +2121,18 @@ class RunService:
                 run_id=run.id,
                 run_status=run.status,
             )
+        if plan.target.kind == "workflow_package":
+            return create_logfire_span(
+                "Workflow package run {workflow_package_key} v{workflow_package_version} #{run_id}",
+                workflow_package_id=plan.target.id,
+                workflow_package_key=plan.target.key,
+                workflow_package_version=plan.target.version,
+                workflow_key=(
+                    plan.package_workflow.key if plan.package_workflow is not None else None
+                ),
+                run_id=run.id,
+                run_status=run.status,
+            )
         return create_logfire_span(
             "Agent run {agent_key} v{agent_version} #{run_id}",
             agent_id=plan.target.id,
@@ -1752,6 +2146,12 @@ class RunService:
     def _coerce_execution_error(exc: Exception) -> RunExecutionError:
         if isinstance(exc, RunExecutionError):
             return exc
+        if isinstance(exc, ApiError):
+            return RunExecutionError(
+                code=exc.code,
+                message=exc.message,
+                details=list(exc.details),
+            )
         if isinstance(exc, ExecutionPlanBuilderError):
             return RunExecutionError(
                 code=exc.code,
@@ -1821,6 +2221,41 @@ class RunService:
             }
         )
 
+    def _to_workflow_package_launch_read(
+        self,
+        prepared: _PreparedWorkflowPackageLaunch,
+    ) -> WorkflowPackageLaunchRead:
+        preflight = WorkflowPackagePreflightService(self.session).run(
+            prepared.package_version,
+            workflow_key=(
+                prepared.plan.package_workflow.key
+                if prepared.plan.package_workflow is not None
+                else prepared.package.key
+            ),
+            require_api_key=True,
+        )
+        package_workflow = prepared.plan.package_workflow
+        if package_workflow is None:
+            raise validation_error(
+                "Workflow package launch validation failed",
+                [{"field": "spec.workflows", "issue": "Package workflow plan is missing"}],
+            )
+        return WorkflowPackageLaunchRead.model_validate(
+            {
+                "packageId": prepared.package.id,
+                "packageKey": prepared.package.key,
+                "packageVersion": prepared.package_version.version,
+                "manifestHash": prepared.package_version.manifest_hash,
+                "workflowKey": package_workflow.key,
+                "name": package_workflow.name,
+                "description": package_workflow.description,
+                "inputSchema": prepared.plan.input_schema,
+                "ready": preflight.ready,
+                "blockingErrors": preflight.blocking_errors,
+                "warnings": preflight.warnings,
+            }
+        )
+
     @staticmethod
     def _to_created_read(run: Run) -> RunCreatedRead:
         return RunCreatedRead.model_validate(
@@ -1853,6 +2288,194 @@ class RunService:
                 "finishedAt": run.finished_at,
             }
         )
+
+    def _package_provenance_payload(self, run: Run) -> dict[str, Any] | None:
+        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            return None
+        if (
+            run.workflow_package_id is None
+            or run.workflow_package_key is None
+            or run.workflow_package_version is None
+            or run.workflow_package_hash is None
+            or run.workflow_package_workflow_key is None
+        ):
+            return None
+        package = self.workflow_package_repository.get(run.workflow_package_id)
+        package_version = self.workflow_package_repository.get_version(
+            run.workflow_package_id,
+            run.workflow_package_version,
+        )
+        selected_workflow = self._package_workflow_payload(
+            package_version,
+            run.workflow_package_workflow_key,
+        )
+        preflight_payload = None
+        resolved_models: list[dict[str, Any]] = []
+        if package_version is not None and selected_workflow is not None:
+            preflight = WorkflowPackagePreflightService(self.session).run(
+                package_version,
+                workflow_key=run.workflow_package_workflow_key,
+                require_api_key=False,
+            )
+            preflight_payload = {
+                "ready": preflight.ready,
+                "blockingErrors": preflight.blocking_errors,
+                "warnings": preflight.warnings,
+            }
+            resolved_models = [
+                self._model_binding_payload(binding)
+                for binding in sorted(preflight.model_bindings.values(), key=lambda item: item.key)
+            ]
+        return {
+            "workflowPackageId": run.workflow_package_id,
+            "workflowPackageKey": run.workflow_package_key,
+            "workflowPackageVersionId": run.workflow_package_version_id,
+            "workflowPackageVersion": run.workflow_package_version,
+            "workflowPackageHash": run.workflow_package_hash,
+            "workflowKey": run.workflow_package_workflow_key,
+            "launchSnapshot": self._package_launch_snapshot_payload(
+                run,
+                selected_workflow,
+            ),
+            "localResourceRefs": self._package_local_resource_refs(package_version),
+            "resolvedModelConnections": resolved_models,
+            "preflightSummary": preflight_payload,
+            "availability": self._package_availability_payload(
+                package,
+                package_version,
+                expected_version_id=run.workflow_package_version_id,
+            ),
+        }
+
+    @staticmethod
+    def _package_workflow_payload(
+        package_version: WorkflowPackageVersion | None,
+        workflow_key: str,
+    ) -> dict[str, Any] | None:
+        if package_version is None:
+            return None
+        workflows = package_version.compiled_plan.get("workflows") or []
+        for workflow in workflows if isinstance(workflows, list) else []:
+            if isinstance(workflow, dict) and str(workflow.get("key")) == workflow_key:
+                return cast(dict[str, Any], workflow)
+        return None
+
+    @staticmethod
+    def _package_launch_snapshot_payload(
+        run: Run,
+        workflow: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if workflow is None or run.workflow_package_workflow_key is None:
+            return None
+        return {
+            "workflowKey": run.workflow_package_workflow_key,
+            "workflowName": str(workflow.get("name") or run.workflow_package_workflow_key),
+            "workflowDescription": str(workflow.get("description") or ""),
+            "inputSchema": deepcopy(cast(dict[str, Any], workflow.get("inputSchema") or {})),
+            "parameters": deepcopy(run.input),
+        }
+
+    @staticmethod
+    def _package_local_resource_refs(
+        package_version: WorkflowPackageVersion | None,
+    ) -> dict[str, list[str]]:
+        if package_version is None:
+            return {
+                "agents": [],
+                "outputSchemas": [],
+                "capabilityProfiles": [],
+                "mcpServers": [],
+                "workflows": [],
+            }
+        compiled_plan = package_version.compiled_plan
+        return {
+            "agents": RunService._compiled_keys(compiled_plan, "agents"),
+            "outputSchemas": RunService._compiled_keys(compiled_plan, "outputSchemas"),
+            "capabilityProfiles": RunService._compiled_keys(
+                compiled_plan,
+                "capabilityProfiles",
+            ),
+            "mcpServers": RunService._compiled_keys(compiled_plan, "mcpServers"),
+            "workflows": RunService._compiled_keys(compiled_plan, "workflows"),
+        }
+
+    @staticmethod
+    def _compiled_keys(compiled_plan: dict[str, Any], section: str) -> list[str]:
+        raw_items = compiled_plan.get(section) or []
+        if not isinstance(raw_items, list):
+            return []
+        return sorted(
+            str(item["key"])
+            for item in raw_items
+            if isinstance(item, dict) and item.get("key") is not None
+        )
+
+    @staticmethod
+    def _model_binding_payload(binding: PackageResolvedModelBinding) -> dict[str, Any]:
+        return {
+            "key": binding.key,
+            "name": binding.name,
+            "baseUrl": binding.base_url,
+            "organization": binding.organization,
+            "project": binding.project,
+            "modelId": binding.model_id,
+            "reasoningEffort": binding.reasoning_effort,
+            "apiStyle": binding.api_style,
+            "timeoutSeconds": binding.timeout_seconds,
+            "hasApiKey": binding.has_api_key,
+        }
+
+    def _package_availability_payload(
+        self,
+        package: WorkflowPackage | None,
+        package_version: WorkflowPackageVersion | None,
+        *,
+        expected_version_id: int | None,
+    ) -> dict[str, Any]:
+        unavailable_reason = self._package_unavailable_reason(
+            package,
+            package_version,
+            expected_version_id=expected_version_id,
+        )
+        has_launched_versions = (
+            self._has_launched_versions(package.id) if package is not None else False
+        )
+        return {
+            "packageStatus": None if package is None else package.status,
+            "packageArchivedAt": None if package is None else package.archived_at,
+            "packageDeletedAt": None if package is None else package.deleted_at,
+            "packageVersionAvailable": unavailable_reason is None,
+            "canArchivePackage": (
+                package is not None and package.status != "archived" and package.deleted_at is None
+            ),
+            "canDeletePackage": package is not None and not has_launched_versions,
+            "unavailableReason": unavailable_reason,
+        }
+
+    def _has_launched_versions(self, package_id: int) -> bool:
+        return any(
+            version.launched_at is not None
+            for version in self.workflow_package_repository.list_versions(package_id)
+        )
+
+    @staticmethod
+    def _package_unavailable_reason(
+        package: WorkflowPackage | None,
+        package_version: WorkflowPackageVersion | None,
+        *,
+        expected_version_id: int | None,
+    ) -> str | None:
+        if package is None:
+            return "missingPackage"
+        if package.deleted_at is not None:
+            return "deletedPackage"
+        if package.status == "archived":
+            return "archivedPackage"
+        if package_version is None:
+            return "missingPackageVersion"
+        if expected_version_id is not None and package_version.id != expected_version_id:
+            return "changedPackageVersionArtifact"
+        return None
 
     def _to_read_model(self, run: Run) -> RunRead:
         return RunRead.model_validate(
@@ -1887,6 +2510,7 @@ class RunService:
                     )
                 ],
                 "memoryArtifacts": self._memory_artifact_links(run.id),
+                "packageProvenance": self._package_provenance_payload(run),
             }
         )
 

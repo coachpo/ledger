@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.formatting import utcnow
 from app.models.run import Run
 from app.models.run_step import RunStep
+from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.base import BaseRepository
 
 
@@ -25,6 +26,10 @@ class RunRepository(BaseRepository[Run]):
         workflow_id: int | None = None,
         workflow_key: str | None = None,
         workflow_version: int | None = None,
+        workflow_package_id: int | None = None,
+        workflow_package_key: str | None = None,
+        package_workflow_key: str | None = None,
+        model_connection_key: str | None = None,
     ) -> list[Run]:
         resolved_target_id = target_id if target_id is not None else workflow_id
         resolved_target_key = target_key if target_key is not None else workflow_key
@@ -41,6 +46,23 @@ class RunRepository(BaseRepository[Run]):
             statement = statement.where(self.model.target_version == resolved_target_version)
         if status is not None:
             statement = statement.where(self.model.status == status)
+        if workflow_package_id is not None:
+            statement = statement.where(self.model.workflow_package_id == workflow_package_id)
+        if workflow_package_key is not None:
+            statement = statement.where(self.model.workflow_package_key == workflow_package_key)
+        if package_workflow_key is not None:
+            statement = statement.where(
+                self.model.workflow_package_workflow_key == package_workflow_key
+            )
+        if model_connection_key is not None:
+            statement = statement.join(
+                WorkflowPackageVersion,
+                self.model.workflow_package_version_id == WorkflowPackageVersion.id,
+            ).where(
+                WorkflowPackageVersion.compiled_plan["agents"].contains(
+                    [{"modelConnection": model_connection_key}]
+                )
+            )
 
         statement = statement.order_by(
             self.model.queued_at.desc(),

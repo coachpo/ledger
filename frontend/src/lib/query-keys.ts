@@ -1,12 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
-import type { AgentListParams } from "./types/agent";
-import type { CapabilityListParams } from "./types/capability";
-import type { McpServerListParams } from "./types/mcp-server";
 import type { ModelConnectionListParams } from "./types/model-connection";
-import type { OutputSchemaListParams } from "./types/output-schema";
 import type { RunListParams } from "./types/run";
-import type { WorkflowListParams } from "./types/workflow";
+import type { WorkflowPackageListParams } from "./types/workflow-package";
 
 const apiRoot = ["api"] as const;
 const platformApiRoot = [...apiRoot, "platform"] as const;
@@ -27,7 +23,6 @@ function normalizeSymbols(symbols: readonly string[]) {
 function normalizePositionSymbol(symbol: string) {
   return symbol.trim().toUpperCase();
 }
-
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -47,62 +42,21 @@ function omitUndefined<T extends Record<string, unknown>>(value: T) {
   ) as Partial<T>;
 }
 
-function buildVersionedPlatformDetailKey(
-  resourceRoot: readonly unknown[],
-  id: IdParam,
-  version?: number | string,
-) {
-  const normalizedVersion = normalizeOptionalVersion(version);
-
-  if (normalizedVersion === undefined) {
-    return [...resourceRoot, "detail", normalizeId(id)] as const;
-  }
-
-  return [...resourceRoot, "detail", normalizeId(id), { version: normalizedVersion }] as const;
-}
-
 function normalizeHistoryParams(params: GetMarketHistoryParams) {
   return {
     range: params.range ?? "3mo",
     symbols: normalizeSymbols(params.symbols),
   };
 }
-
-function normalizeAgentListParams(params: AgentListParams = {}) {
-  return omitUndefined({
-    status: params.status,
-  });
-}
-
-function normalizeCapabilityListParams(params: CapabilityListParams = {}) {
-  return omitUndefined({
-    status: params.status,
-  });
-}
-
-function normalizeMcpServerListParams(params: McpServerListParams = {}) {
-  return omitUndefined({
-    enabled: params.enabled,
-    status: params.status,
-    transport: params.transport,
-  });
-}
-
 function normalizeModelConnectionListParams(params: ModelConnectionListParams = {}) {
   return omitUndefined({
     status: params.status,
   });
 }
 
-function normalizeOutputSchemaListParams(params: OutputSchemaListParams = {}) {
+function normalizeWorkflowPackageListParams(params: WorkflowPackageListParams = {}) {
   return omitUndefined({
-    kind: params.kind,
-    status: params.status,
-  });
-}
-
-function normalizeWorkflowListParams(params: WorkflowListParams = {}) {
-  return omitUndefined({
+    includeArchived: params.includeArchived,
     status: params.status,
   });
 }
@@ -110,15 +64,18 @@ function normalizeWorkflowListParams(params: WorkflowListParams = {}) {
 function normalizeRunListParams(params: RunListParams = {}) {
   return omitUndefined({
     limit: params.limit,
+    modelConnectionKey: normalizeOptionalText(params.modelConnectionKey),
     offset: params.offset ?? 0,
     status: params.status,
     targetId: params.targetId,
     targetKey: normalizeOptionalText(params.targetKey),
     targetKind: params.targetKind,
     targetVersion: params.targetVersion,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+    workflowPackageId: params.workflowPackageId,
+    workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),
   });
 }
-
 const portfoliosQueryKeys = {
   all: [...apiRoot, "portfolios"] as const,
   detail: (portfolioId: IdParam) =>
@@ -156,7 +113,6 @@ const marketDataQueryKeys = {
   quotes: (portfolioId: IdParam, params: GetMarketQuotesParams) =>
     [...portfolioRoot(portfolioId), "marketData", "quotes", normalizeSymbols(params.symbols)] as const,
 } as const;
-
 const marketHistoryQueryKeys = {
   all: (portfolioId: IdParam) => [...portfolioRoot(portfolioId), "marketHistory"] as const,
   series: (portfolioId: IdParam, params: GetMarketHistoryParams) =>
@@ -175,31 +131,47 @@ const reportsQueryKeys = {
   detail: (reportId: IdParam) => [...apiRoot, "reports", "detail", normalizeId(reportId)] as const,
   list: () => [...apiRoot, "reports", "list"] as const,
 } as const;
+const workflowPackagesRoot = [...platformApiRoot, "workflowPackages"] as const;
 
+const workflowPackagesQueryKeys = {
+  all: workflowPackagesRoot,
+  detail: (packageId: IdParam) =>
+    [...workflowPackagesRoot, "detail", normalizeId(packageId)] as const,
+  export: (packageId: IdParam, version?: number | string) => {
+    const normalizedVersion = normalizeOptionalVersion(version);
+    if (normalizedVersion === undefined) {
+      return [...workflowPackagesRoot, "export", normalizeId(packageId)] as const;
+    }
+    return [...workflowPackagesRoot, "export", normalizeId(packageId), { version: normalizedVersion }] as const;
+  },
+  launch: (packageId: IdParam, version?: number | string, workflowKey?: string | null) => {
+    const normalizedVersion = normalizeOptionalVersion(version);
+    const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
+    return [
+      ...workflowPackagesRoot,
+      "launch",
+      normalizeId(packageId),
+      omitUndefined({ version: normalizedVersion, workflowKey: normalizedWorkflowKey }),
+    ] as const;
+  },
+  list: (params: WorkflowPackageListParams = {}) =>
+    [...workflowPackagesRoot, "list", normalizeWorkflowPackageListParams(params)] as const,
+  preflight: (packageId: IdParam, version?: number | string, workflowKey?: string | null) => {
+    const normalizedVersion = normalizeOptionalVersion(version);
+    const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
+    return [
+      ...workflowPackagesRoot,
+      "preflight",
+      normalizeId(packageId),
+      omitUndefined({ version: normalizedVersion, workflowKey: normalizedWorkflowKey }),
+    ] as const;
+  },
+  validation: () => [...workflowPackagesRoot, "validation"] as const,
+  versions: (packageId: IdParam) =>
+    [...workflowPackagesRoot, "versions", normalizeId(packageId)] as const,
+} as const;
 const platformQueryKeys = {
   all: [...platformApiRoot] as const,
-  agents: {
-    all: [...platformApiRoot, "agents"] as const,
-    detail: (agentId: IdParam, version?: number | string) =>
-      buildVersionedPlatformDetailKey([...platformApiRoot, "agents"] as const, agentId, version),
-    list: (params: AgentListParams = {}) =>
-      [...platformApiRoot, "agents", "list", normalizeAgentListParams(params)] as const,
-  },
-  capabilities: {
-    all: [...platformApiRoot, "capabilities"] as const,
-    detail: (capabilityId: IdParam) =>
-      [...platformApiRoot, "capabilities", "detail", normalizeId(capabilityId)] as const,
-    list: (params: CapabilityListParams = {}) =>
-      [...platformApiRoot, "capabilities", "list", normalizeCapabilityListParams(params)] as const,
-    tools: () => [...platformApiRoot, "capabilities", "tools"] as const,
-  },
-  mcpServers: {
-    all: [...platformApiRoot, "mcpServers"] as const,
-    detail: (serverId: IdParam) =>
-      [...platformApiRoot, "mcpServers", "detail", normalizeId(serverId)] as const,
-    list: (params: McpServerListParams = {}) =>
-      [...platformApiRoot, "mcpServers", "list", normalizeMcpServerListParams(params)] as const,
-  },
   modelConnections: {
     all: [...platformApiRoot, "modelConnections"] as const,
     detail: (modelConnectionId: IdParam) =>
@@ -207,32 +179,9 @@ const platformQueryKeys = {
     list: (params: ModelConnectionListParams = {}) =>
       [...platformApiRoot, "modelConnections", "list", normalizeModelConnectionListParams(params)] as const,
   },
-  outputSchemas: {
-    all: [...platformApiRoot, "outputSchemas"] as const,
-    detail: (schemaId: IdParam) =>
-      [...platformApiRoot, "outputSchemas", "detail", normalizeId(schemaId)] as const,
-    list: (params: OutputSchemaListParams = {}) =>
-      [...platformApiRoot, "outputSchemas", "list", normalizeOutputSchemaListParams(params)] as const,
-  },
-  workflows: {
-    all: [...platformApiRoot, "workflows"] as const,
-    detail: (workflowId: IdParam, version?: number | string) =>
-      buildVersionedPlatformDetailKey(
-        [...platformApiRoot, "workflows"] as const,
-        workflowId,
-        version,
-      ),
-    launch: (workflowId: IdParam, version?: number | string) => {
-      const normalizedVersion = normalizeOptionalVersion(version);
-      if (normalizedVersion === undefined) {
-        return [...platformApiRoot, "workflows", "launch", normalizeId(workflowId)] as const;
-      }
-      return [...platformApiRoot, "workflows", "launch", normalizeId(workflowId), { version: normalizedVersion }] as const;
-    },
-    list: (params: WorkflowListParams = {}) =>
-      [...platformApiRoot, "workflows", "list", normalizeWorkflowListParams(params)] as const,
-    versions: (workflowId: IdParam) =>
-      [...platformApiRoot, "workflows", "versions", normalizeId(workflowId)] as const,
+  tools: {
+    all: [...platformApiRoot, "tools"] as const,
+    list: () => [...platformApiRoot, "tools", "list"] as const,
   },
   runs: {
     all: [...platformApiRoot, "runs"] as const,
@@ -245,8 +194,8 @@ const platformQueryKeys = {
     list: (params: RunListParams = {}) =>
       [...platformApiRoot, "runs", "list", normalizeRunListParams(params)] as const,
   },
+  workflowPackages: workflowPackagesQueryKeys,
 } as const;
-
 export const queryKeys = {
   portfolios: portfoliosQueryKeys,
   balances: balancesQueryKeys,

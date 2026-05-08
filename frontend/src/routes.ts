@@ -2,16 +2,8 @@ import { createBrowserRouter } from "react-router";
 
 import { Layout } from "./components/layout";
 import { Dashboard } from "./pages/dashboard";
-import { AgentsEditorPage } from "./pages/agents/editor";
-import { AgentsListPage } from "./pages/agents/list";
-import { CapabilitiesEditorPage } from "./pages/capabilities/editor";
-import { CapabilitiesListPage } from "./pages/capabilities/list";
-import { McpServersEditorPage } from "./pages/mcp-servers/editor";
-import { McpServersListPage } from "./pages/mcp-servers/list";
 import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
 import { ModelConnectionsListPage } from "./pages/model-connections/list";
-import { OutputSchemasEditorPage } from "./pages/output-schemas/editor";
-import { OutputSchemasListPage } from "./pages/output-schemas/list";
 import { PortfolioDetailPage } from "./pages/portfolios/detail";
 import { PortfolioListPage } from "./pages/portfolios/list";
 import { ReportDetailPage } from "./pages/reports/detail";
@@ -20,10 +12,8 @@ import { RunsDetailPage } from "./pages/runs/detail";
 import { RunsListPage } from "./pages/runs/list";
 import { TemplateEditorPage } from "./pages/templates/editor";
 import { TemplateListPage } from "./pages/templates/list";
-import { WorkflowDetailPage } from "./pages/workflows/detail";
-import { WorkflowsEditorPage } from "./pages/workflows/editor";
-import { WorkflowLaunchPage } from "./pages/workflows/launch";
-import { WorkflowsListPage } from "./pages/workflows/list";
+import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
+import { WorkflowPackagesListPage } from "./pages/workflow-packages/list";
 
 export const router = createBrowserRouter([
   {
@@ -38,29 +28,16 @@ export const router = createBrowserRouter([
       { path: "templates/:templateId/edit", Component: TemplateEditorPage },
       { path: "reports", Component: ReportListPage },
       { path: "reports/:slug", Component: ReportDetailPage },
-      { path: "agents", Component: AgentsListPage },
-      { path: "agents/new", Component: AgentsEditorPage },
-      { path: "agents/:agentId/edit", Component: AgentsEditorPage },
-      { path: "capabilities", Component: CapabilitiesListPage },
-      { path: "capabilities/new", Component: CapabilitiesEditorPage },
-      { path: "capabilities/:capabilityId/edit", Component: CapabilitiesEditorPage },
-      { path: "mcp-servers", Component: McpServersListPage },
-      { path: "mcp-servers/new", Component: McpServersEditorPage },
-      { path: "mcp-servers/:serverId/edit", Component: McpServersEditorPage },
+      { path: "workflow-packages", Component: WorkflowPackagesListPage },
+      { path: "workflow-packages/new", Component: WorkflowPackageEditorPage },
+      { path: "workflow-packages/:packageId", Component: WorkflowPackageEditorPage },
+      { path: "workflow-packages/:packageId/run", Component: WorkflowPackageEditorPage },
       { path: "model-connections", Component: ModelConnectionsListPage },
       { path: "model-connections/new", Component: ModelConnectionsEditorPage },
       {
         path: "model-connections/:modelConnectionId/edit",
         Component: ModelConnectionsEditorPage,
       },
-      { path: "output-schemas", Component: OutputSchemasListPage },
-      { path: "output-schemas/new", Component: OutputSchemasEditorPage },
-      { path: "output-schemas/:schemaId/edit", Component: OutputSchemasEditorPage },
-      { path: "workflows", Component: WorkflowsListPage },
-      { path: "workflows/new", Component: WorkflowsEditorPage },
-      { path: "workflows/:workflowId", Component: WorkflowDetailPage },
-      { path: "workflows/:workflowId/edit", Component: WorkflowsEditorPage },
-      { path: "workflows/:workflowId/run", Component: WorkflowLaunchPage },
       { path: "runs", Component: RunsListPage },
       { path: "runs/:runId", Component: RunsDetailPage },
     ],

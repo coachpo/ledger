@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { RunTargetKind } from "../types/run";
+
 const ORIGINAL_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -77,6 +79,29 @@ describe("runs api", () => {
       targetKey: "market_review",
       targetKind: "workflow",
       targetVersion: "3",
+    });
+  });
+
+  it("uses the camelCase workflowPackage run target kind for package run filters", async () => {
+    const { listRuns } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
+    const targetKind: RunTargetKind = "workflowPackage";
+
+    await expect(
+      listRuns({
+        targetKind,
+        workflowKey: " summarize ",
+        workflowPackageKey: " research_package ",
+      }),
+    ).resolves.toEqual({ items: [] });
+
+    const { url } = getLastFetchCall(fetchMock);
+
+    expect(Object.fromEntries(url.searchParams.entries())).toEqual({
+      offset: "0",
+      targetKind: "workflowPackage",
+      workflowKey: "summarize",
+      workflowPackageKey: "research_package",
     });
   });
 

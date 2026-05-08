@@ -36,43 +36,77 @@ describe("query keys", () => {
     expect(queryKeys.reports.list()).toEqual(["api", "reports", "list"]);
   });
 
-  it("adds an isolated unversioned platform namespace", () => {
-    expect(queryKeys.platform.agents.detail("7")).toEqual(queryKeys.platform.agents.detail(7));
-    expect(queryKeys.platform.agents.list({ status: "published" })).toEqual([
-      "api",
-      "platform",
-      "agents",
-      "list",
-      { status: "published" },
-    ]);
-
-    expect(queryKeys.platform.capabilities.detail("7")).toEqual(queryKeys.platform.capabilities.detail(7));
-    expect(queryKeys.platform.capabilities.list({ status: "published" })).toEqual([
-      "api",
-      "platform",
-      "capabilities",
-      "list",
-      { status: "published" },
-    ]);
-
-    expect(queryKeys.platform.workflows.detail("9", 2)).toEqual(
-      queryKeys.platform.workflows.detail(9, 2),
+  it("adds workflow package keys under the platform namespace", () => {
+    expect(queryKeys.platform.workflowPackages.detail("7")).toEqual(
+      queryKeys.platform.workflowPackages.detail(7),
     );
-    expect(queryKeys.platform.workflows.detail(9, 2)).toEqual([
+    expect(queryKeys.platform.workflowPackages.list({ includeArchived: false, status: "active" })).toEqual([
       "api",
       "platform",
-      "workflows",
-      "detail",
+      "workflowPackages",
+      "list",
+      { includeArchived: false, status: "active" },
+    ]);
+    expect(queryKeys.platform.workflowPackages.versions("9")).toEqual(
+      queryKeys.platform.workflowPackages.versions(9),
+    );
+    expect(queryKeys.platform.workflowPackages.versions(9)).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "versions",
+      "9",
+    ]);
+    expect(queryKeys.platform.workflowPackages.launch("9", "2", " review ")).toEqual(
+      queryKeys.platform.workflowPackages.launch(9, 2, "review"),
+    );
+    expect(queryKeys.platform.workflowPackages.launch(9, 2, "review")).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "launch",
+      "9",
+      { version: 2, workflowKey: "review" },
+    ]);
+    expect(queryKeys.platform.workflowPackages.preflight(9, 2)).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "preflight",
       "9",
       { version: 2 },
     ]);
+  });
 
+  it("keeps package-first platform keys separate from removed authoring namespaces", () => {
+    expect(queryKeys.platform.modelConnections.detail("7")).toEqual(
+      queryKeys.platform.modelConnections.detail(7),
+    );
+    expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
+    expect(queryKeys.platform.workflowPackages.all).not.toEqual(queryKeys.portfolios.all);
+
+    expect(Object.keys(queryKeys.platform)).toEqual([
+      "all",
+      "modelConnections",
+      "tools",
+      "runs",
+      "workflowPackages",
+    ]);
+    expect(Reflect.has(queryKeys.platform, "agents")).toBe(false);
+    expect(Reflect.has(queryKeys.platform, "capabilities")).toBe(false);
+    expect(Reflect.has(queryKeys.platform, "mcpServers")).toBe(false);
+    expect(Reflect.has(queryKeys.platform, "outputSchemas")).toBe(false);
+    expect(Reflect.has(queryKeys.platform, "workflows")).toBe(false);
+  });
+
+  it("normalizes package run filters", () => {
     expect(
       queryKeys.platform.runs.list({
         offset: 0,
         status: "succeeded",
-        targetKey: " report_lookup_reference ",
-        targetKind: "workflow",
+        targetKind: "workflowPackage",
+        workflowKey: " summarize ",
+        workflowPackageKey: " research_package ",
       }),
     ).toEqual([
       "api",
@@ -82,63 +116,10 @@ describe("query keys", () => {
       {
         offset: 0,
         status: "succeeded",
-        targetKey: "report_lookup_reference",
-        targetKind: "workflow",
+        targetKind: "workflowPackage",
+        workflowKey: "summarize",
+        workflowPackageKey: "research_package",
       },
     ]);
-    expect(queryKeys.platform.workflows.launch("9", 2)).toEqual(
-      queryKeys.platform.workflows.launch(9, 2),
-    );
-    expect(queryKeys.platform.workflows.launch(9, 2)).toEqual([
-      "api",
-      "platform",
-      "workflows",
-      "launch",
-      "9",
-      { version: 2 },
-    ]);
-    expect(queryKeys.platform.workflows.versions("9")).toEqual(queryKeys.platform.workflows.versions(9));
-    expect(queryKeys.platform.workflows.versions(9)).toEqual([
-      "api",
-      "platform",
-      "workflows",
-      "versions",
-      "9",
-    ]);
-
-    expect(queryKeys.platform.runs.rerunDraft("42")).toEqual(
-      queryKeys.platform.runs.rerunDraft(42),
-    );
-    expect(queryKeys.platform.runs.rerunDraft(42)).toEqual([
-      "api",
-      "platform",
-      "runs",
-      "rerunDraft",
-      "42",
-    ]);
-    expect(queryKeys.platform.runs.stepReplayDraft("42", 2)).toEqual(
-      queryKeys.platform.runs.stepReplayDraft(42, 2),
-    );
-    expect(queryKeys.platform.runs.stepReplayDraft(42, 2)).toEqual([
-      "api",
-      "platform",
-      "runs",
-      "stepReplayDraft",
-      "42",
-      { stepIndex: 2 },
-    ]);
-  });
-
-  it("keeps platform keys separate from preserved v1 resources", () => {
-    expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
-    expect(queryKeys.platform.agents.all).not.toEqual(queryKeys.portfolios.all);
-    expect(queryKeys.platform.runs.all).not.toEqual(queryKeys.templates.all);
-    expect(queryKeys.platform.capabilities.tools()).toEqual([
-      "api",
-      "platform",
-      "capabilities",
-      "tools",
-    ]);
-    expect(queryKeys.platform.capabilities.tools()).not.toEqual(queryKeys.platform.capabilities.list());
   });
 });

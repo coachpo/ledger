@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/platform-authoring/` owns pure TypeScript authoring helpers for platform agents, output schemas, workflow wiring, generated input values, resource refs, validation issues, and JSON serialization. It is intentionally React-free and request-free.
+`src/lib/platform-authoring/` owns pure TypeScript authoring helpers for package-local Workflow Package resources, output schemas, agents, workflows, generated input values, resource refs, validation issues, manifest parsing, and JSON serialization. It is intentionally React-free and request-free.
 
 ## STRUCTURE
 ```text
@@ -11,8 +11,9 @@ platform-authoring/
 ├── common/      # resource refs, JSON serialization, field paths, issue helpers
 ├── schema/      # schema IR, JSON Schema codec, factories, validation, preview
 ├── values/      # generated-form value-entry model, codec, factories, validation
-├── agents/      # agent editor draft, binding refs, validation
-└── workflows/   # workflow draft, wire-binding codec, validation
+├── agents/      # package-local agent manifest helpers and validation
+├── workflows/   # package-local workflow graph helpers and validation
+└── workflow-packages/ # package manifest parser, serializer, and resource assembly
 ```
 
 ## WHERE TO LOOK
@@ -20,11 +21,12 @@ platform-authoring/
 |---|---|---|
 | Schema builder contract | `schema/types.ts`, `schema/codec.ts` | IR ↔ JSON Schema conversion and parser boundary |
 | Schema defaults / preview | `schema/factories.ts`, `schema/preview.ts` | initial nodes and sample values for editors |
-| Schema validation | `schema/validation.ts` | builder issue model used by output-schema, agent, and workflow pages |
+| Schema validation | `schema/validation.ts` | builder issue model used by package-local output schema, agent, and workflow panels |
 | Value-entry helpers | `values/*.ts` | schema-driven form values and validation |
-| Workflow authoring | `workflows/*.ts` | draft creation, wire bindings, path validation |
-| Agent authoring | `agents/*.ts` | draft state, binding refs, agent validation |
-| Common helpers | `common/*.ts` | versioned resource refs, field paths, issue text, safe serialization |
+| Workflow Package manifests | `workflow-packages/*.ts` | package manifest parsing, serialization, diagnostics, and resource assembly |
+| Package-local workflow authoring | `workflows/*.ts` | draft creation, wire bindings, path validation |
+| Package-local agent authoring | `agents/*.ts` | draft state, binding refs, agent validation |
+| Common helpers | `common/*.ts` | resource refs, field paths, issue text, safe serialization |
 
 ## CONVENTIONS
 - Keep this layer pure: no React state, hooks, routing, toasts, or network requests.

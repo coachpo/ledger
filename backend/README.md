@@ -24,8 +24,10 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 
 - `/health` for backend health
 - `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
-- `/api/*` for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs
-- `/api/capabilities` for capability CRUD with `toolKeys` writes and read-only resolved `tools` metadata
+- `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
+- `/api/model-connections` for global live provider bindings and secret-safe connection testing
+- `/api/tools` for read-only server-declared tool metadata
+- `/api/runs` for global run list/detail, rerun, step replay, and immutable package provenance
 
 ## Tests
 

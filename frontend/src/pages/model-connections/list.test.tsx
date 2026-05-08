@@ -109,6 +109,7 @@ describe("ModelConnectionsListPage", () => {
 
     render(<ModelConnectionsListPage />);
 
+    expect(screen.getByText(/workflow packages reference by stable key/i)).toBeVisible();
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();

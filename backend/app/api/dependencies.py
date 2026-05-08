@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -30,6 +31,7 @@ from app.services.run_service import RunService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 from app.services.trading_operation_service import TradingOperationService
+from app.services.workflow_package_service import WorkflowPackageService
 from app.services.workflow_service import WorkflowService
 
 
@@ -141,6 +143,13 @@ def get_workflow_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> WorkflowService:
     return WorkflowService(session)
+
+
+def get_workflow_package_service(
+    session: Annotated[Session, Depends(get_session)],
+    quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
+) -> WorkflowPackageService:
+    return WorkflowPackageService(session, get_session_factory(), quote_provider=quote_provider)
 
 
 def get_run_service(

@@ -27,19 +27,19 @@ function textResponse(body: string, status: number): Response {
 async function loadApiModule(baseUrl: string = "") {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
-  const [apiClient, agentsApi, marketDataApi, portfoliosApi, positionsApi] =
+  const [apiClient, marketDataApi, modelConnectionsApi, portfoliosApi, positionsApi] =
     await Promise.all([
       import("./api-client"),
-      import("./api/agents"),
       import("./api/market-data"),
+      import("./api/model-connections"),
       import("./api/portfolios"),
       import("./api/positions"),
     ]);
 
   return {
-    ...agentsApi,
     ...apiClient,
     ...marketDataApi,
+    ...modelConnectionsApi,
     ...portfoliosApi,
     ...positionsApi,
   };
@@ -200,17 +200,19 @@ describe("api client", () => {
     const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule("https://ledger.example.com/api/v2/");
 
     expect(buildApiUrl("/portfolios")).toBe("https://ledger.example.com/api/v1/portfolios");
-    expect(buildPlatformApiUrl("/agents")).toBe("https://ledger.example.com/api/agents");
+    expect(buildPlatformApiUrl("/workflow-packages")).toBe(
+      "https://ledger.example.com/api/workflow-packages",
+    );
   });
 
   it("routes platform modules through the unversioned api base", async () => {
-    const { listAgents } = await loadApiModule("https://ledger.example.com/api/v1/");
+    const { listModelConnections } = await loadApiModule("https://ledger.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
-    await expect(listAgents()).resolves.toEqual({ items: [] });
+    await expect(listModelConnections()).resolves.toEqual({ items: [] });
 
     const { url } = getLastFetchCall(fetchMock);
-    expect(url).toBe("https://ledger.example.com/api/agents");
+    expect(url).toBe("https://ledger.example.com/api/model-connections");
   });
 
   it("encodes symbol lookup requests against the derived v1 base URL", async () => {

@@ -31,10 +31,16 @@ const ALL_STATUSES = "__all__";
 const ALL_TARGET_KINDS = "__all_target_kinds__";
 
 function formatTargetKindLabel(targetKind: RunTargetKind): string {
+  if (targetKind === "workflowPackage") {
+    return "Workflow Package";
+  }
   return targetKind === "agent" ? "Agent" : "Workflow";
 }
 
 function describeRunTarget(targetKind: RunTargetKind): string {
+  if (targetKind === "workflowPackage") {
+    return "Package workflow execution";
+  }
   return targetKind === "agent" ? "Standalone agent execution" : "Multi-step workflow execution";
 }
 
@@ -115,6 +121,7 @@ export function RunsListPage() {
                   <SelectItem value={ALL_TARGET_KINDS}>All targets</SelectItem>
                   <SelectItem value="agent">agent</SelectItem>
                   <SelectItem value="workflow">workflow</SelectItem>
+                  <SelectItem value="workflowPackage">workflow package</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -205,15 +212,15 @@ export function RunsListPage() {
               metadata={
                 <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    {run.targetKind === "workflow" ? (
+                    {run.targetKind === "workflowPackage" ? (
                       <Link
                         className="min-w-0 break-words text-primary underline-offset-4 hover:underline"
-                        to={`/workflows/${run.targetId}`}
+                        to={`/workflow-packages/${run.targetId}`}
                       >
-                        {`Workflow: ${run.targetId}`}
+                        {`Package: ${run.targetKey}@${run.targetVersion}`}
                       </Link>
                     ) : (
-                      <span className="min-w-0 break-words">{`Agent id: ${run.targetId}`}</span>
+                      <span className="min-w-0 break-words">{`${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`}</span>
                     )}
                     <span className="min-w-0 break-words">{`Total tokens: ${run.totalTokens}`}</span>
                   </div>

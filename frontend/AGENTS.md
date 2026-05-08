@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live in `e2e/`, `scripts/`, and throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, and the current agent-platform routes including model connections, plus shared forms and UI that keep route logic thin.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, Workflow Packages, Model Connections, and Runs, plus shared forms and UI that keep route logic thin.
 
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
@@ -16,13 +16,9 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/agents/AGENTS.md` — YAML manifest agent list/editor/duplicate/archive/run-launch flows
-- `src/pages/capabilities/AGENTS.md` — capabilities list, editor, activation, archive, and tool-key flows
-- `src/pages/mcp-servers/AGENTS.md` — MCP servers list, editor, activation, archive, and connection-test flows
+- `src/pages/workflow-packages/` — package list, editor, validation, preflight, launch, import, and export flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
-- `src/pages/output-schemas/AGENTS.md` — output schemas list, editor, activation, schema composer, raw JSON, and preview flows
-- `src/pages/workflows/AGENTS.md` — YAML manifest workflow list/editor/validation/run-launch flows
-- `src/pages/runs/AGENTS.md` — runs list, detail, polling monitor, and trace-link views
+- `src/pages/runs/AGENTS.md` — runs list, detail, package provenance, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
@@ -55,7 +51,7 @@ frontend/
 | Portfolio routes | `src/pages/portfolios/*.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/*.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/agents/AGENTS.md`, `src/pages/capabilities/AGENTS.md`, `src/pages/mcp-servers/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/output-schemas/AGENTS.md`, `src/pages/workflows/AGENTS.md`, `src/pages/runs/AGENTS.md` | agents, capabilities, MCP servers, model connections, output schemas, workflows, runs |
+| Agent-platform routes | `src/pages/workflow-packages/`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, Runs |
 | Preserved product routes | `src/pages/portfolios/AGENTS.md`, `src/pages/templates/AGENTS.md`, `src/pages/reports/AGENTS.md` | portfolio, template, and report routes |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/AGENTS.md` | layout shell, theme, shared UI, platform-authoring widgets, dialog forms, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
@@ -68,13 +64,13 @@ frontend/
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
-- Template, agent, and workflow editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container.
+- Template and workflow package editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
-- Agent and workflow editors are YAML-manifest editors with local parser feedback, backend validation, snippet insertion, compiled preview, and schema-driven run-input forms.
-- Agent-platform pages use dedicated hooks and route params to keep CRUD, catalog reads, and run inspection inside the routed page layer.
+- Workflow package editors are YAML-manifest editors with local package-resource editing, backend validation, compiled preview, preflight, launch, import, export, and schema-driven run-input forms.
+- Agent-platform pages use dedicated hooks and route params to keep package CRUD, global Model Connections, global Tools reads, and Run inspection inside the routed page layer.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
 - Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
 
@@ -87,8 +83,8 @@ frontend/
 - Do not change runtime-input row behavior, `inputs.*` expectations, or generation-dialog wiring without updating the editor, shared dialog, hooks, and backend compile contract together.
 - Do not change report route, slug, upload/download, or query-key shapes without updating hooks, types, and tests together.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
-- Do not document retired `/skills`, `/studio`, `/tryout`, `/orchestration`, or `/backtests` routes as live surfaces.
-- Do not hide agent-platform route ownership inside generic UI folders or stale docs.
+- Do not document retired `/skills`, `/studio`, `/tryout`, `/orchestration`, `/backtests`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` routes as live surfaces.
+- Do not hide package-first route ownership inside generic UI folders or stale docs.
 
 ## COMMANDS
 ```bash

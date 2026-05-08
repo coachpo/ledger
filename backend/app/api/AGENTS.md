@@ -17,7 +17,7 @@
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Agent-platform routes | `agents.py`, `capabilities.py`, `mcp_servers.py`, `model_connections.py`, `output_schemas.py`, `workflows.py`, `runs.py` | live `/api/*` routes for the current agent platform |
+| Agent-platform routes | `workflow_packages.py`, `model_connections.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Model Connections, Tools, and Runs |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
@@ -30,7 +30,7 @@
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only. Agent-created reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe memory-report purpose/type, and server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
-- Capability routes are canonical: `/api/capabilities` writes accept `toolKeys` and reads emit `toolKeys` plus read-only resolved `tools` metadata. `/api/skills`, `toolGrants`, and `toolDefinitions` are retired contracts and must not appear in live route docs or payload examples except rejection notes. Do not change runtime tool keys or OpenAI function names.
+- Workflow package routes are canonical for platform authoring. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed-route notes only, not live route docs. Do not change runtime tool keys or OpenAI function names.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.
@@ -51,5 +51,5 @@ uv run pytest tests/test_api.py tests/test_runtime_api.py tests/test_legacy_back
 
 ## NOTES
 - `router.py` mounts the live `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
-- `platform_router.py` mounts the live `/api/*` routers for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
-- `dependencies.py` constructs services with a shared request `Session` and wires the preserved product services, model-connection service, and current agent-platform services into the live API.
+- `platform_router.py` mounts the live `/api/*` routers for workflow packages, model connections, tools, and runs.
+- `dependencies.py` constructs services with a shared request `Session` and wires the preserved product services, model-connection service, tool catalog, workflow package services, and run service into the live API.

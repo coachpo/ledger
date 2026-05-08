@@ -1,24 +1,28 @@
 import { expect, test } from "@playwright/test";
 
 const platformRoutes = [
-  { pageTestId: "platform-agents-page", testId: "nav-agents", url: /\/agents$/ },
   {
-    pageTestId: "platform-capabilities-page",
-    testId: "nav-capabilities",
-    url: /\/capabilities$/,
+    pageTestId: "workflow-packages-list-page",
+    testId: "nav-workflow-packages",
+    url: /\/workflow-packages$/,
   },
   {
-    pageTestId: "platform-mcp-servers-page",
-    testId: "nav-mcp-servers",
-    url: /\/mcp-servers$/,
+    pageTestId: "platform-model-connections-page",
+    testId: "nav-model-connections",
+    url: /\/model-connections$/,
   },
-  {
-    pageTestId: "platform-output-schemas-page",
-    testId: "nav-output-schemas",
-    url: /\/output-schemas$/,
-  },
-  { pageTestId: "workflows-list-page", testId: "nav-workflows", url: /\/workflows$/ },
   { pageTestId: "runs-list-page", testId: "nav-runs", url: /\/runs$/ },
+] as const;
+
+const retiredNavTestIds = [
+  "nav-agents",
+  "nav-capabilities",
+  "nav-mcp-servers",
+  "nav-output-schemas",
+  "nav-workflows",
+  "nav-tryout",
+  "nav-studio",
+  "nav-orchestration",
 ] as const;
 
 test.describe("Primary workspace navigation", () => {
@@ -34,9 +38,9 @@ test.describe("Primary workspace navigation", () => {
       await expect(page.getByTestId(route.testId)).toBeVisible();
     }
 
-    await expect(page.getByTestId("nav-tryout")).toHaveCount(0);
-    await expect(page.getByTestId("nav-studio")).toHaveCount(0);
-    await expect(page.getByTestId("nav-orchestration")).toHaveCount(0);
+    for (const testId of retiredNavTestIds) {
+      await expect(page.getByTestId(testId)).toHaveCount(0);
+    }
 
     for (const route of platformRoutes) {
       await page.getByTestId(route.testId).click();

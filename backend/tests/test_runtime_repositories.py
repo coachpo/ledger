@@ -765,6 +765,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "updatedAt": run_detail.updated_at,
                     "steps": [],
                     "memoryArtifacts": [],
+                    "packageProvenance": None,
                 }
             ).model_dump(mode="json", by_alias=True),
         )
@@ -801,6 +802,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "updatedAt",
             "steps",
             "memoryArtifacts",
+            "packageProvenance",
         }
         assert serialized_detail["queuedAt"] == "2026-04-19T09:59:00Z"
         assert detail_steps[0].step_index == 1

@@ -17,8 +17,8 @@
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
-| Platform config entities | `capability.py`, `mcp_server.py`, `model_connection.py`, `output_schema.py` | versioned capabilities, MCP servers, saved model connections, and output schemas |
-| Platform execution entities | `agent.py`, `workflow.py`, `run.py` | versioned agents and workflows plus persisted run detail |
+| Platform package entities | `workflow_package.py` | package headers plus immutable package version artifacts |
+| Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail and package provenance |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
@@ -33,7 +33,7 @@
 - Do not omit indexes for frequently queried lookup paths.
 - Do not create relationships just for convenience when ids suffice.
 - Do not rename tables or columns casually; tests and upgrade helpers depend on them.
-- Do not document retired capability storage names as live behavior. The canonical persisted table is `capabilities`, agent capability refs are stored on `agents.capabilities`, and capability tool-key storage uses `tool_keys`.
+- Do not document retired global authoring tables as live behavior. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside `workflow_package_versions` JSON artifacts.
 
 ## VALIDATION
 ```bash
@@ -47,7 +47,8 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 
 ## NOTES
 - `app/models/__init__.py` imports the full preserved-product and agent-platform model surface for startup registration.
+- `workflow_package.py` stores mutable package headers and immutable package version artifacts without database ids in exported manifests.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
-- `run.py` persists workflow version identity, per-step outputs, final output, and run totals used by the run monitor.
+- `run.py` persists package version identity, package hash, workflow key, per-step outputs, final output, and run totals used by the run monitor.
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Agent-created memory reports use `source="agent"`; their `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.

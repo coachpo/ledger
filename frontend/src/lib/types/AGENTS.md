@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, and the current agent-platform domains. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Workflow Packages, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -14,8 +14,10 @@
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
-| Platform config contracts | `agent.ts`, `capability.ts`, `mcp-server.ts`, `model-connection.ts`, `output-schema.ts` | current agent-platform CRUD, saved model connections, and versioned reference payloads |
-| Platform execution contracts | `workflow.ts`, `run.ts` | workflow authoring, wiring, run detail, and monitor payloads |
+| Workflow Package contracts | `workflow-package.ts` | package manifests, versions, diagnostics, preflight, launch, import, and export payloads |
+| Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
+| Platform execution contracts | `run.ts` | run list/detail, monitor payloads, and package provenance |
+
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.
 - Money, quantities, market values, and similar numeric payloads stay as strings on the wire; conversion belongs in shared formatting and analytics helpers, not in the type layer.

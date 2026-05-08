@@ -32,22 +32,20 @@ Template/report series can be built by creating a template, previewing with `POS
 
 | Resource | Routes |
 |---|---|
-| Agents | `GET/POST /api/agents`, `GET/PATCH/DELETE /api/agents/{agentId}`, version reads, and run launch helpers |
-| Capabilities | `GET/POST /api/capabilities`, `GET/PATCH/DELETE /api/capabilities/{capabilityId}`, activation/version reads |
-| MCP servers | `GET/POST /api/mcp-servers`, `GET/PATCH/DELETE /api/mcp-servers/{serverId}`, connection testing |
+| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
+| Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, connection testing |
-| Output schemas | `GET/POST /api/output-schemas`, `GET/PATCH/DELETE /api/output-schemas/{schemaId}`, version reads and preview/validation helpers |
-| Workflows | `GET/POST /api/workflows`, `GET/PATCH/DELETE /api/workflows/{workflowId}` |
-| Workflow launches | `GET /api/workflows/{workflowId}/launch`, `GET /api/workflows/{workflowId}/versions`, `POST /api/workflows/{workflowId}/launches` |
+| Tools | `GET /api/tools` for read-only server-declared tool metadata |
 | Runs | `GET /api/runs`, `GET /api/runs/{runId}`, rerun draft/create, and step replay draft/create routes |
 
 ## Platform Compatibility Notes
 
-- Capabilities accept `toolKeys` on writes and emit `toolKeys` plus read-only resolved `tools`; `/api/skills`, `toolGrants`, and `toolDefinitions` are retired.
-- Agent and workflow manifests must use `spec.capabilities`; `spec.skills` is rejected.
-- Runtime tool keys and OpenAI function names stay stable even though capability terminology is canonical.
-- Model-connection secrets must be omitted or masked from read responses.
-- MCP outputs are redacted and length-limited before run persistence.
+- Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside `ledger.workflowPackage/v1` manifests.
+- `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
+- Package exports omit secrets, encrypted credential payloads, database ids, and run history.
+- Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
+- Tools are global read-only metadata from `/api/tools`; runtime tool keys and OpenAI function names stay stable.
+- Runs persist package provenance including package id, package key, version, hash, workflow key, and no-secret launch snapshots.
 
 ## HTTP Status Guidelines
 

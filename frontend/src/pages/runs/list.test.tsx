@@ -48,8 +48,8 @@ describe("RunsListPage", () => {
             startedAt: "2026-04-20T10:00:00Z",
             status: "running",
             targetId: 41,
-            targetKey: "market_review",
-            targetKind: "workflow",
+            targetKey: "market_review_package",
+            targetKind: "workflowPackage",
             targetVersion: 2,
             totalTokens: 21,
             traceId: "trace-15",
@@ -85,17 +85,15 @@ describe("RunsListPage", () => {
     expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
     expect(screen.getByText(/queued_review@1/i)).toBeVisible();
-    expect(screen.getByText(/market_review@2/i)).toBeVisible();
+    expect(screen.getAllByText(/market_review_package@2/i)[0]).toBeVisible();
     expect(screen.getByText(/macro_agent@9/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Workflow: 40" })).toHaveAttribute(
+    expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Package: market_review_package@2" })).toHaveAttribute(
       "href",
-      "/workflows/40",
-    );
-    expect(screen.getByRole("link", { name: "Workflow: 41" })).toHaveAttribute(
-      "href",
-      "/workflows/41",
+      "/workflow-packages/41",
     );
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
+    expect(screen.queryByRole("link", { name: /workflow:/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/total tokens: 0/i);
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/total tokens: 21/i);
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/total tokens: 13/i);

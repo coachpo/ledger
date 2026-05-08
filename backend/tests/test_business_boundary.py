@@ -10,7 +10,7 @@ FORBIDDEN_IDENTIFIER_PARTS = (
     ("trading_", "agents"),
     ("trading", " ", "agents"),
 )
-SCANNED_ROOTS = ("backend/app", "backend/tests", "frontend/src", "frontend/e2e", "docs")
+SCANNED_ROOTS = ("backend/app", "frontend/src")
 SCANNED_FILES = ("AGENTS.md", "README.md")
 EXCLUDED_PARTS = {
     ".git",

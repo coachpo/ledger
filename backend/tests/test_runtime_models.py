@@ -1602,4 +1602,5 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "updatedAt",
         "steps",
         "memoryArtifacts",
+        "packageProvenance",
     }

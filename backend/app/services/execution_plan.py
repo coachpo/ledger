@@ -1,3 +1,4 @@
+# pyright: reportExplicitAny=false
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 ExecutionPlanInputMode = Literal["passthrough", "wired"]
-ExecutionPlanTargetKind = Literal["agent", "workflow"]
+ExecutionPlanTargetKind = Literal["agent", "workflow", "workflow_package"]
 ExecutionPlanSourceKind = Literal["input", "step"]
 
 
@@ -38,6 +39,83 @@ class ExecutionPlanGraphMetadata:
 
 
 @dataclass(frozen=True)
+class PackageResolvedModelBinding:
+    key: str
+    name: str
+    base_url: str
+    organization: str | None
+    project: str | None
+    model_id: str
+    reasoning_effort: str | None
+    api_style: str
+    timeout_seconds: int
+    has_api_key: bool
+
+
+@dataclass(frozen=True)
+class PackageCapabilityProfileGrant:
+    key: str
+    name: str
+    description: str
+    tool_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PackagePrivateMcpConfig:
+    key: str
+    name: str
+    description: str
+    transport: str
+    command: str | None
+    args: tuple[str, ...]
+    url: str | None
+    tool_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PackageLocalOutputSchemaSpec:
+    local_id: int
+    key: str
+    name: str
+    description: str
+    json_schema: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PackageRuntimeAgentSpec:
+    local_id: int
+    key: str
+    name: str
+    description: str
+    model_binding: PackageResolvedModelBinding | None
+    system_prompt: str
+    input_schema: dict[str, Any]
+    output_schema: PackageLocalOutputSchemaSpec
+    capability_profiles: tuple[PackageCapabilityProfileGrant, ...]
+    mcp_servers: tuple[PackagePrivateMcpConfig, ...]
+    budget_usd: Decimal
+
+
+@dataclass(frozen=True)
+class PackageExecutionStep:
+    index: int
+    agents: tuple[PackageRuntimeAgentSpec, ...]
+    graph_metadata: ExecutionPlanGraphMetadata | None = None
+
+
+@dataclass(frozen=True)
+class PackageExecutionWorkflow:
+    package_key: str
+    key: str
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    steps: tuple[PackageExecutionStep, ...]
+    final_output: ExecutionPlanFinalOutput
+    compiled_graph: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class ExecutionPlanAgent:
     slot: str
     agent_id: int
@@ -49,6 +127,7 @@ class ExecutionPlanAgent:
     optional: bool = False
     input_mode: ExecutionPlanInputMode = "wired"
     graph_metadata: ExecutionPlanGraphMetadata | None = None
+    package_runtime_agent: PackageRuntimeAgentSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +135,7 @@ class ExecutionPlanStep:
     index: int
     agents: tuple[ExecutionPlanAgent, ...]
     graph_metadata: ExecutionPlanGraphMetadata | None = None
+    package_step: PackageExecutionStep | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +152,7 @@ class ExecutionPlan:
     aggregate_budget_usd: Decimal
     steps: tuple[ExecutionPlanStep, ...]
     final_output: ExecutionPlanFinalOutput
+    package_workflow: PackageExecutionWorkflow | None = None
 
 
 __all__ = [
@@ -85,4 +166,11 @@ __all__ = [
     "ExecutionPlanStep",
     "ExecutionPlanTarget",
     "ExecutionPlanTargetKind",
+    "PackageCapabilityProfileGrant",
+    "PackageExecutionStep",
+    "PackageExecutionWorkflow",
+    "PackageLocalOutputSchemaSpec",
+    "PackagePrivateMcpConfig",
+    "PackageResolvedModelBinding",
+    "PackageRuntimeAgentSpec",
 ]

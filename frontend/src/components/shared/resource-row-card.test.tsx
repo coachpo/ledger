@@ -54,14 +54,14 @@ describe("ResourceRowCard", () => {
   it("renders link primary actions with an href", () => {
     renderResourceRowCard(
       <ResourceRowCard
-        primaryAction={{ kind: "link", label: "Open Agent", to: "/agents/research", testId: "agent-link" }}
-        title="Research Agent"
+        primaryAction={{ kind: "link", label: "Open Resource", to: "/resources/research", testId: "resource-link" }}
+        title="Research Resource"
       />,
     );
 
-    const link = screen.getByRole("link", { name: "Open Agent" });
-    expect(link).toHaveAttribute("href", "/agents/research");
-    expect(link).toHaveAttribute("data-testid", "agent-link");
+    const link = screen.getByRole("link", { name: "Open Resource" });
+    expect(link).toHaveAttribute("href", "/resources/research");
+    expect(link).toHaveAttribute("data-testid", "resource-link");
   });
 
   it("keeps sibling actions isolated from the primary button", () => {

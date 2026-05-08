@@ -32,7 +32,24 @@ class _ModelConnectionTestResult:
     tested_at: datetime
 
 
+@dataclass(frozen=True)
+class PackageModelConnectionBinding:
+    key: str
+    name: str
+    base_url: str
+    organization: str | None
+    project: str | None
+    model_id: str
+    reasoning_effort: str | None
+    api_style: str
+    timeout_seconds: int
+    has_api_key: bool
+
+
 class ModelConnectionService:
+    session: Session
+    repository: ModelConnectionRepository
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repository = ModelConnectionRepository(session)
@@ -53,29 +70,44 @@ class ModelConnectionService:
         return ModelConnectionRead.model_validate(self._get_model(connection_id))
 
     def resolve_connection_by_key(self, key: str) -> ModelConnection:
-        normalized_key = self._normalize_key_for_resolver(key)
-        connection = self.repository.get_by_key(normalized_key)
+        return self._resolve_active_connection_by_key(
+            key,
+            path="modelConnection",
+            message="Model connection validation failed",
+        )
+
+    def lookup_package_model_connection_binding(
+        self,
+        key: str,
+    ) -> PackageModelConnectionBinding | None:
+        normalized_key = self._normalize_key_for_resolver(
+            key,
+            path="modelConnection",
+            message="Package model connection validation failed",
+        )
+        connection = self.repository.resolve_active_by_key(normalized_key)
         if connection is None:
+            return None
+        return self._to_package_binding(connection)
+
+    def resolve_package_model_connection_binding(
+        self,
+        key: str,
+        *,
+        path: str = "modelConnection",
+        require_api_key: bool = False,
+    ) -> PackageModelConnectionBinding:
+        connection = self._resolve_active_connection_by_key(
+            key,
+            path=path,
+            message="Package model connection validation failed",
+        )
+        if require_api_key and self._get_api_key(connection) is None:
             raise validation_error(
-                "Model connection validation failed",
-                [
-                    {
-                        "field": "modelConnection",
-                        "issue": f"Model connection {normalized_key!r} was not found",
-                    }
-                ],
+                "Package model connection validation failed",
+                [{"field": path, "issue": "API key is not configured"}],
             )
-        if connection.status != ModelConnectionStatus.ACTIVE.value:
-            raise validation_error(
-                "Model connection validation failed",
-                [
-                    {
-                        "field": "modelConnection",
-                        "issue": "Archived model connections cannot be selected",
-                    }
-                ],
-            )
-        return connection
+        return self._to_package_binding(connection)
 
     def create_connection(self, payload: ModelConnectionCreate) -> ModelConnectionRead:
         if self.repository.get_by_key(payload.key) is not None:
@@ -101,7 +133,7 @@ class ModelConnectionService:
         self._set_api_key(connection, payload.api_key)
 
         try:
-            self.repository.add(connection)
+            _ = self.repository.add(connection)
             self.session.commit()
             self.session.refresh(connection)
         except Exception:
@@ -201,15 +233,56 @@ class ModelConnectionService:
             raise not_found_error("Model connection")
         return connection
 
+    def _resolve_active_connection_by_key(
+        self,
+        key: str,
+        *,
+        path: str,
+        message: str,
+    ) -> ModelConnection:
+        normalized_key = self._normalize_key_for_resolver(key, path=path, message=message)
+        connection = self.repository.get_by_key(normalized_key)
+        if connection is None:
+            raise validation_error(
+                message,
+                [
+                    {
+                        "field": path,
+                        "issue": f"Model connection {normalized_key!r} was not found",
+                    }
+                ],
+            )
+        if connection.status != ModelConnectionStatus.ACTIVE.value:
+            raise validation_error(
+                message,
+                [{"field": path, "issue": "Archived model connections cannot be selected"}],
+            )
+        return connection
+
     @staticmethod
-    def _normalize_key_for_resolver(key: str) -> str:
+    def _normalize_key_for_resolver(key: str, *, path: str, message: str) -> str:
         try:
             return normalize_model_connection_key(key)
         except ValueError as exc:
             raise validation_error(
-                "Model connection validation failed",
-                [{"field": "modelConnection", "issue": str(exc)}],
+                message,
+                [{"field": path, "issue": str(exc)}],
             ) from exc
+
+    @classmethod
+    def _to_package_binding(cls, connection: ModelConnection) -> PackageModelConnectionBinding:
+        return PackageModelConnectionBinding(
+            key=connection.key,
+            name=connection.name,
+            base_url=connection.base_url,
+            organization=connection.organization,
+            project=connection.project,
+            model_id=connection.model_id,
+            reasoning_effort=connection.reasoning_effort,
+            api_style=connection.api_style,
+            timeout_seconds=connection.timeout_seconds,
+            has_api_key=cls._get_api_key(connection) is not None,
+        )
 
     def _run_connection_test(self, connection: ModelConnection) -> _ModelConnectionTestResult:
         tested_at = utcnow()
@@ -410,4 +483,4 @@ class ModelConnectionService:
         return normalized or "Connection test failed."
 
 
-__all__ = ["ModelConnectionService"]
+__all__ = ["ModelConnectionService", "PackageModelConnectionBinding"]

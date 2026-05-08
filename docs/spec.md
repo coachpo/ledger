@@ -1,10 +1,10 @@
 # Technical Specification
 
-> Status: Live technical reference as of 2026-05-05 (`a8ad8fb`).
+> Status: Live technical reference as of 2026-05-08.
 
 ## Overview
 
-Ledger is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a current stateless agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1`; platform routes live under `/api/*`.
+Ledger is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1`; platform routes live under `/api/*`.
 
 ## Runtime Topology
 
@@ -17,33 +17,32 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` mounts preserved `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
-- `backend/app/api/platform_router.py` mounts current `/api/*` routers for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
+- `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, tools, and runs.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; `backend/alembic/` is not the live migration authority.
-
 ## Key Backend Services
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, and report services own preserved product behavior.
-- Agent, capability, MCP server, model connection, output schema, workflow, and run services own platform CRUD, validation, and execution.
-- Runtime tool and MCP boundaries live under `backend/app/agents/`; service code grants and dispatches native tools plus frozen MCP tool snapshots.
+- Workflow package, model connection, tool catalog, and run services own platform authoring, validation, live bindings, and execution.
+- Runtime tool and MCP boundaries live under `backend/app/agents/`; package-private MCP configs are validated and dispatched only through service-owned security boundaries.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
+- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
 - Platform authoring helpers under `frontend/src/lib/platform-authoring/` keep schema/value/ref/manifest transforms out of routed pages.
 
 ## Domain Contracts
 
-- Capabilities are canonical. Use `/api/capabilities`, `/capabilities*`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, and `CapabilityService` terminology.
-- Legacy `spec.skills`, `/api/skills`, and `/skills*` are rejected/retired contracts.
-- MCP server configs must stay inside security boundaries, exact version pins, frozen runtime snapshots, and redacted/truncated output handling.
-- Model connections own provider endpoint/key/default runtime settings and preserve secret-safe behavior.
-- Output schemas compile into runtime models through the backend compiler before execution.
-- Runs persist lineage in `runs`, `run_steps`, and `run_agent_invocations` without relying on an external tracing system.
+- Workflow Packages are canonical for platform authoring. Use `/api/workflow-packages`, `/workflow-packages*`, `ledger.workflowPackage/v1`, and package-local agents, output schemas, capability profiles, private MCP configs, and workflow graphs.
+- Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
+- Package exports omit secrets, encrypted credential values, database ids, and run history.
+- Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
+- Tools are read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
+- Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations` without relying on an external tracing system.
 
 ## Data Flow Highlights
 
@@ -52,8 +51,8 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 3. Report generation compiles templates into immutable markdown snapshots with generated slug/name values.
 4. Reusable report-series loops use a stable runtime input such as `inputs.analysis_tag` plus matching report `metadata.tags`; `reports.by_tag(inputs.analysis_tag).latest.*` selects the latest prior report in the same series.
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
-6. Agent/workflow editors validate YAML manifests and pinned references before save.
-7. Workflow launch reads launch metadata, posts `{version, parameters}`, queues a run, and polls run detail/list state.
+6. Workflow package editors validate `ledger.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
+7. Package launch reads launch metadata, posts `{version, workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance.
 8. Rerun and step replay flows draft from persisted run state, then create new run/replay records through platform routes.
 
 ## CI And Verification

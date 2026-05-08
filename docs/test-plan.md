@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference as of 2026-05-05 (`a8ad8fb`).
+> Status: Live automated-coverage reference as of 2026-05-08.
 
 ## Backend Quality Gates
 
@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, manifest parsing, model connections, MCP runtime behavior, native runtime tools, memory reports, platform runs, DB upgrades, and removed-route guarantees.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, no-secret package import/export, model connections, global tools, package runtime behavior, native runtime tools, memory reports, global runs, DB upgrades, and removed-route guarantees.
 
 ## Frontend Quality Gates
 
@@ -20,8 +20,7 @@ Backend tests cover preserved `/api/v1` CRUD, templates, reports, manifest parsi
 - `pnpm test:run`
 - `pnpm test:e2e`
 
-Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, platform authoring helpers, routed platform editors, and browser E2E route families.
-
+Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, package editor flows, layout routing, and browser E2E route families.
 ## E2E Scope
 
 Playwright uses Chromium only. `frontend/playwright.config.ts` starts a dedicated backend on `8001` and built frontend preview on `4173`.
@@ -30,4 +29,4 @@ The backend helper runs `uv run --frozen uvicorn app.main:app --host 127.0.0.1 -
 
 Specs use API-assisted setup when it keeps UI assertions focused. Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 
-Route-family coverage includes smoke/navigation, portfolio CRUD, reports/templates, model connections, capabilities, MCP servers, agents/runs, output schemas, workflows/runs, and run detail fixtures. Removed-route assertions cover `/skills*`, `/templates/seed`, and legacy navigation entries.
+Route-family coverage includes smoke/navigation, portfolio CRUD, reports/templates, Workflow Packages, Model Connections, Runs, run detail fixtures, package import/export/preflight/launch flows, and the TradingAgents smoke package as ordinary demo data. Removed-route assertions cover `/skills*`, `/templates/seed`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, `/workflows*`, and legacy navigation entries.

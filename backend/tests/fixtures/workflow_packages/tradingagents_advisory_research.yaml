@@ -1,0 +1,437 @@
+apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: tradingagents_advisory_research
+  name: TradingAgents Advisory Research
+  description: Neutral advisory research package fixture for workflow-package smoke tests.
+spec:
+  inputs:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+      asOfDate:
+        type: string
+      portfolioId:
+        type: string
+      horizonDays:
+        type: integer
+      benchmarkSymbol:
+        type: string
+      initialInvestmentDebateState:
+        type: object
+        additionalProperties: true
+      initialRiskDebateState:
+        type: object
+        additionalProperties: true
+    required:
+      - ticker
+      - asOfDate
+      - portfolioId
+      - horizonDays
+      - benchmarkSymbol
+      - initialInvestmentDebateState
+      - initialRiskDebateState
+  capabilityProfiles:
+    - key: market_research_tools
+      name: Market Research Tools
+      description: Reads market prices, history, OHLCV, and indicators.
+      toolKeys:
+        - ledger.market_data.quote_lookup
+        - ledger.market_data.history_lookup
+        - ledger.market_data.ohlcv_lookup
+        - ledger.indicators.lookup
+    - key: fundamentals_tools
+      name: Fundamentals Tools
+      description: Reads fundamentals data exposed by the server catalog.
+      toolKeys:
+        - ledger.fundamentals.lookup
+    - key: news_research_tools
+      name: News Research Tools
+      description: Reads company news and insider-data context.
+      toolKeys:
+        - ledger.news.lookup
+        - ledger.insider_data.lookup
+    - key: report_context_tools
+      name: Report Context Tools
+      description: Reads persisted Ledger reports for research context.
+      toolKeys:
+        - ledger.reports.lookup
+    - key: portfolio_context_tools
+      name: Portfolio Context Tools
+      description: Reads persisted Ledger positions for portfolio context.
+      toolKeys:
+        - ledger.positions.lookup
+    - key: memory_write_tools
+      name: Memory Write Tools
+      description: Reads and writes research memory reports through server tools.
+      toolKeys:
+        - ledger.reports.lookup
+        - ledger.reports.write
+  outputSchemas:
+    - key: analyst_report
+      name: Analyst Report
+      description: Structured analyst research note.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          summary:
+            type: string
+          evidence:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+        required: [summary, evidence, limitations]
+    - key: investment_debate_transition
+      name: Investment Debate Transition
+      description: Complete investment debate state transition.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          nextState:
+            type: object
+            additionalProperties: true
+        required: [nextState]
+    - key: research_plan
+      name: Research Plan
+      description: Research manager advisory plan.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          recommendation:
+            type: string
+          thesis:
+            type: string
+          debateSummary:
+            type: string
+        required: [recommendation, thesis, debateSummary]
+    - key: trader_proposal
+      name: Trader Proposal
+      description: Advisory portfolio exposure proposal.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          posture:
+            type: string
+          rationale:
+            type: string
+          sizingNotes:
+            type: string
+        required: [posture, rationale, sizingNotes]
+    - key: risk_debate_transition
+      name: Risk Debate Transition
+      description: Complete risk debate state transition.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          nextState:
+            type: object
+            additionalProperties: true
+        required: [nextState]
+    - key: portfolio_decision
+      name: Portfolio Decision
+      description: Final advisory portfolio decision.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          posture:
+            type: string
+          rationale:
+            type: string
+          riskSummary:
+            type: string
+          implementationNotes:
+            type: string
+        required: [posture, rationale, riskSummary, implementationNotes]
+  agents:
+    - key: market_analyst
+      name: Market Analyst
+      description: Produces market structure research for the advisory workflow.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return neutral market research from granted market-data tools.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: analyst_report
+      capabilityProfiles: [market_research_tools]
+      budgetUsd: "0.20"
+    - key: social_analyst
+      name: Social Analyst
+      description: Produces social and sentiment context from available news signals.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return neutral social context from granted news and insider-data tools.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: analyst_report
+      capabilityProfiles: [news_research_tools]
+      budgetUsd: "0.20"
+    - key: news_analyst
+      name: News Analyst
+      description: Produces company news context for the advisory workflow.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return neutral news research from granted news and insider-data tools.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: analyst_report
+      capabilityProfiles: [news_research_tools]
+      budgetUsd: "0.20"
+    - key: fundamentals_analyst
+      name: Fundamentals Analyst
+      description: Produces fundamentals context for the advisory workflow.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return neutral fundamentals research from granted fundamentals tools.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: analyst_report
+      capabilityProfiles: [fundamentals_tools]
+      budgetUsd: "0.20"
+    - key: bull_researcher
+      name: Bull Researcher
+      description: Develops constructive research arguments within a bounded debate.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return the complete next investment debate state using available report context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: investment_debate_transition
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.25"
+    - key: bear_researcher
+      name: Bear Researcher
+      description: Develops cautious research arguments within a bounded debate.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return the complete next investment debate state using available report context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: investment_debate_transition
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.25"
+    - key: research_manager
+      name: Research Manager
+      description: Summarizes the investment debate into a research plan.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return a complete advisory research plan from the debate state.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: research_plan
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.25"
+    - key: trader
+      name: Trader
+      description: Converts the research plan into an advisory exposure proposal.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return an advisory proposal using granted portfolio position context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: trader_proposal
+      capabilityProfiles: [portfolio_context_tools]
+      budgetUsd: "0.20"
+    - key: aggressive_risk_analyst
+      name: Aggressive Risk Analyst
+      description: Develops risk arguments focused on opportunity cost.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return the complete next risk debate state using report context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: risk_debate_transition
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.20"
+    - key: neutral_risk_analyst
+      name: Neutral Risk Analyst
+      description: Develops balanced risk arguments within the risk debate.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return the complete next risk debate state using report context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: risk_debate_transition
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.20"
+    - key: conservative_risk_analyst
+      name: Conservative Risk Analyst
+      description: Develops risk arguments focused on drawdown protection.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return the complete next risk debate state using report context.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: risk_debate_transition
+      capabilityProfiles: [report_context_tools]
+      budgetUsd: "0.20"
+    - key: portfolio_manager
+      name: Portfolio Manager
+      description: Produces the final advisory portfolio decision and memory summary.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Return a complete advisory decision and use granted report memory tools when appropriate.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: portfolio_decision
+      capabilityProfiles: [report_context_tools, memory_write_tools]
+      budgetUsd: "0.25"
+  workflows:
+    - key: advisory_research
+      name: Advisory Research
+      description: Neutral advisory workflow fixture for package smoke coverage.
+      inputSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          portfolioId:
+            type: string
+          horizonDays:
+            type: integer
+          benchmarkSymbol:
+            type: string
+          initialInvestmentDebateState:
+            type: object
+            additionalProperties: true
+          initialRiskDebateState:
+            type: object
+            additionalProperties: true
+        required:
+          - ticker
+          - asOfDate
+          - portfolioId
+          - horizonDays
+          - benchmarkSymbol
+          - initialInvestmentDebateState
+          - initialRiskDebateState
+      flow:
+        kind: sequence
+        id: advisory_research_flow
+        nodes:
+          - kind: fanout
+            id: analyst_fanout
+            branches:
+              - id: market
+                node:
+                  kind: step
+                  id: market_analysis
+                  slot: market_report
+                  uses: market_analyst
+                  with:
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+              - id: social
+                node:
+                  kind: step
+                  id: social_analysis
+                  slot: social_sentiment_report
+                  uses: social_analyst
+                  with:
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+              - id: news
+                node:
+                  kind: step
+                  id: news_analysis
+                  slot: news_report
+                  uses: news_analyst
+                  with:
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+              - id: fundamentals
+                node:
+                  kind: step
+                  id: fundamentals_analysis
+                  slot: fundamentals_report
+                  uses: fundamentals_analyst
+                  with:
+                    ticker: ${{ inputs.ticker }}
+                    asOfDate: ${{ inputs.asOfDate }}
+          - kind: loop
+            id: investment_debate_loop
+            maxIterations: 2
+            sequence:
+              kind: sequence
+              id: investment_debate_round
+              nodes:
+                - kind: step
+                  id: bull_research
+                  slot: bull
+                  uses: bull_researcher
+                  with:
+                    priorState: ${{ inputs.initialInvestmentDebateState }}
+                    marketReport: ${{ nodes.analyst_fanout.outputs.market_report }}
+                    socialSentimentReport: ${{ nodes.analyst_fanout.outputs.social_sentiment_report }}
+                    newsReport: ${{ nodes.analyst_fanout.outputs.news_report }}
+                    fundamentalsReport: ${{ nodes.analyst_fanout.outputs.fundamentals_report }}
+                - kind: step
+                  id: bear_research
+                  slot: bear
+                  uses: bear_researcher
+                  with:
+                    priorState: ${{ nodes.bull_research.outputs.bull.nextState }}
+          - kind: step
+            id: research_manager_review
+            slot: research_plan
+            uses: research_manager
+            with:
+              debateState: ${{ nodes.investment_debate_loop.outputs.bear.nextState }}
+              ticker: ${{ inputs.ticker }}
+          - kind: step
+            id: trader_review
+            slot: trader_proposal
+            uses: trader
+            with:
+              researchPlan: ${{ nodes.research_manager_review.outputs.research_plan }}
+              portfolioId: ${{ inputs.portfolioId }}
+          - kind: loop
+            id: risk_debate_loop
+            maxIterations: 2
+            sequence:
+              kind: sequence
+              id: risk_debate_round
+              nodes:
+                - kind: step
+                  id: aggressive_risk
+                  slot: aggressive
+                  uses: aggressive_risk_analyst
+                  with:
+                    priorState: ${{ inputs.initialRiskDebateState }}
+                    researchPlan: ${{ nodes.research_manager_review.outputs.research_plan }}
+                    traderProposal: ${{ nodes.trader_review.outputs.trader_proposal }}
+                - kind: step
+                  id: neutral_risk
+                  slot: neutral
+                  uses: neutral_risk_analyst
+                  with:
+                    priorState: ${{ nodes.aggressive_risk.outputs.aggressive.nextState }}
+                - kind: step
+                  id: conservative_risk
+                  slot: conservative
+                  uses: conservative_risk_analyst
+                  with:
+                    priorState: ${{ nodes.neutral_risk.outputs.neutral.nextState }}
+          - kind: step
+            id: portfolio_manager_review
+            slot: decision
+            uses: portfolio_manager
+            with:
+              riskState: ${{ nodes.risk_debate_loop.outputs.conservative.nextState }}
+              benchmarkSymbol: ${{ inputs.benchmarkSymbol }}
+      output:
+        from: ${{ nodes.advisory_research_flow.outputs.decision }}

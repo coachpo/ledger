@@ -15,6 +15,7 @@ from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
 from app.models.workflow import Workflow
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 
 __all__ = [
     "Agent",
@@ -34,4 +35,6 @@ __all__ = [
     "TextTemplate",
     "TradingOperation",
     "Workflow",
+    "WorkflowPackage",
+    "WorkflowPackageVersion",
 ]

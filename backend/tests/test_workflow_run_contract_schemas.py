@@ -119,6 +119,7 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
         "targetKey": "portfolio_review",
         "targetVersion": 7,
         "parameters": {"ticker": "MSFT"},
+        "packageProvenance": None,
     }
 
     draft = RunRerunDraftRead.model_validate(draft_payload)
@@ -143,6 +144,7 @@ def test_step_replay_contracts_use_parameters_object_and_reject_extra_fields() -
         "targetKey": "portfolio_review",
         "targetVersion": 7,
         "parameters": {"ticker": "MSFT"},
+        "packageProvenance": None,
     }
 
     draft = RunStepReplayDraftRead.model_validate(draft_payload)

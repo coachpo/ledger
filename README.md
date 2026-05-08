@@ -12,15 +12,17 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 ## What Ships
 
-- Frontend routes for `portfolios`, `templates`, `reports`, and the agent-platform routes for `agents`, `capabilities`, `mcp-servers`, `model-connections`, `output-schemas`, `workflows`, and `runs`
+- Frontend routes for `portfolios`, `templates`, `reports`, `workflow-packages`, `model-connections`, and `runs`
 - Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
-- Backend `/api/*` platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs
+- Backend `/api/*` platform routes for workflow packages, model connections, tools, and runs
 
-## Capability Contract
+## Workflow Package Contract
 
-Capabilities are the canonical product and API term for agent tool access configuration. `/api/capabilities` write payloads use `toolKeys`; read payloads include both `toolKeys` and read-only resolved `tools` metadata.
+Workflow Packages are the only live platform authoring root. Package manifests use `ledger.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
-Legacy Skill contracts are unsupported. `/api/skills` and `/skills*` are not live routes, manifests must use `spec.capabilities`, and API payloads must not use `spec.skills`, `toolGrants`, or `toolDefinitions`. Runtime tool keys and OpenAI function names stay unchanged.
+Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports omit secrets, encrypted values, database ids, and run history. Runs store immutable package id/key/version/hash provenance.
+
+Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys and OpenAI function names stay unchanged.
 
 ## Prerequisites
 
@@ -112,8 +114,8 @@ Visit `http://127.0.0.1:25173/`.
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are the agent-platform routes for agents, capabilities, MCP servers, model-connections, output-schemas, workflows, and runs, plus the preserved portfolio, template, and report routes.
-- Agent manifests use `spec.capabilities`; `spec.skills` is rejected as a retired contract.
+- The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes.
+- Workflow package manifests use `ledger.workflowPackage/v1`; package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are authored inside one package.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
 - `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.

@@ -116,10 +116,16 @@ function formatTracePath(traceId: string | null, traceSpanEntries: TraceSpanEntr
 }
 
 function formatTargetKindLabel(targetKind: RunTargetKind): string {
+  if (targetKind === "workflowPackage") {
+    return "Workflow Package";
+  }
   return targetKind === "agent" ? "Agent" : "Workflow";
 }
 
 function describeRunTarget(targetKind: RunTargetKind): string {
+  if (targetKind === "workflowPackage") {
+    return "Workflow package execution with immutable package provenance.";
+  }
   return targetKind === "agent"
     ? "Standalone agent execution with a single runnable target."
     : "Workflow execution with step-by-step agent orchestration.";
@@ -162,7 +168,7 @@ function getStepReplayAvailability(
   steps: RunStepRead[],
   replayStepIndex: number | undefined,
 ): StepReplayAvailability {
-  if (targetKind !== "workflow") {
+  if (targetKind !== "workflow" && targetKind !== "workflowPackage") {
     return {
       isAvailable: false,
       reason: "Step replay is only available for workflow runs.",
@@ -966,12 +972,12 @@ export function RunsDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {run.targetKind === "workflow" ? (
-            <Button asChild data-testid="runs-detail-workflow-link" size="sm" variant="outline">
-              <Link to={`/workflows/${run.targetId}`}>Back to workflow</Link>
+          {run.targetKind === "workflowPackage" && run.packageProvenance ? (
+            <Button asChild data-testid="runs-detail-package-link" size="sm" variant="outline">
+              <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Back to package</Link>
             </Button>
           ) : null}
-          {run.targetKind === "workflow" ? (
+          {run.targetKind === "workflow" || run.targetKind === "workflowPackage" ? (
             <Button data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button" variant="outline">
               <PlayCircle data-icon="inline-start" />
               Rerun
@@ -1020,6 +1026,24 @@ export function RunsDetailPage() {
             <p className="min-w-0 max-w-full break-words rounded-md border bg-muted/30 px-2.5 py-1.5">Target id: {run.targetId}</p>
           </CardContent>
         </Card>
+        {run.packageProvenance ? (
+          <Card data-testid="runs-package-provenance">
+            <CardHeader>
+              <CardTitle className="text-base">Package provenance</CardTitle>
+              <CardDescription>Immutable workflow package identity captured when the run was created.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DetailGrid
+                items={[
+                  { label: "Package", value: <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>{run.packageProvenance.workflowPackageKey}@{run.packageProvenance.workflowPackageVersion}</Link> },
+                  { label: "Workflow key", value: run.packageProvenance.workflowKey },
+                  { label: "Manifest hash", value: run.packageProvenance.workflowPackageHash },
+                  { label: "Package id", value: `#${run.packageProvenance.workflowPackageId}` },
+                ]}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Usage</CardTitle>
@@ -1128,7 +1152,7 @@ export function RunsDetailPage() {
         </CardContent>
       </Card>
 
-      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && run.targetKind === "workflow"} runId={runId} />
+      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && (run.targetKind === "workflow" || run.targetKind === "workflowPackage")} runId={runId} />
 
       <RunStepReplayDialog
         onClose={closeStepReplayDialog}

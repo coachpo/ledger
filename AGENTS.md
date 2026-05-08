@@ -5,7 +5,7 @@
 **Branch:** main
 
 ## OVERVIEW
-Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the current agent-platform routes for YAML-authored agents/workflows, capabilities, MCP servers, model connections, output schemas, and runs.
+Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
 ## CHILD DOCS
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
@@ -13,7 +13,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries and dependency wiring
 - `backend/app/agents/AGENTS.md` — server tool catalog, native runtime tools, MCP security/runtime boundaries
-- `backend/app/services/AGENTS.md` — service ownership, manifest compilers, runtime execution, memory reports, and quote-provider wiring
+- `backend/app/services/AGENTS.md` — service ownership, workflow package compilers, runtime execution, memory reports, and quote-provider wiring
 - `backend/app/schemas/AGENTS.md` — Pydantic validation, manifest contracts, memory metadata, and camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, manifests, and run metadata
 - `backend/app/repositories/AGENTS.md` — query/repository patterns, report metadata filters, and runtime lookups
@@ -36,12 +36,8 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
 - `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, and agent-platform routes
-- `frontend/src/pages/agents/AGENTS.md` — YAML manifest agent list/editor/run-launch routes
-- `frontend/src/pages/capabilities/AGENTS.md` — capabilities list/editor routes and tool-key flows
-- `frontend/src/pages/mcp-servers/AGENTS.md` — MCP servers list and editor routes
+- `frontend/src/pages/workflow-packages/` — Workflow Package list/editor/preflight/launch/import/export routes
 - `frontend/src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret handling, and connection test routes
-- `frontend/src/pages/output-schemas/AGENTS.md` — output schemas list/editor routes and schema composer flow
-- `frontend/src/pages/workflows/AGENTS.md` — YAML manifest workflow list/editor/run-launch routes
 - `frontend/src/pages/runs/AGENTS.md` — runs list and detail routes
 - `frontend/src/pages/portfolios/AGENTS.md` — portfolio list/detail orchestration and quote-enriched workspace rules
 - `frontend/src/pages/templates/AGENTS.md` — template list/editor flows, debounce preview, runtime inputs, and placeholder browser rules
@@ -64,11 +60,11 @@ ledger/
 | Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; stops prior Ledger instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus preserved `/api/v1` and current `/api/*` composition |
-| Backend agent-platform flow | `backend/app/api/agents.py`, `backend/app/api/capabilities.py`, `backend/app/api/mcp_servers.py`, `backend/app/api/model_connections.py`, `backend/app/api/output_schemas.py`, `backend/app/api/workflows.py`, `backend/app/api/runs.py` | agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs |
+| Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Tools, and Runs |
 | Backend runtime tools and MCP | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, memory writes |
 | Backend preserved v1 flow | `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
-| Frontend agent-platform UI | `frontend/src/pages/agents/AGENTS.md`, `frontend/src/pages/capabilities/AGENTS.md`, `frontend/src/pages/mcp-servers/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/output-schemas/AGENTS.md`, `frontend/src/pages/workflows/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs |
+| Frontend agent-platform UI | `frontend/src/pages/workflow-packages/`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts` | markdown reports, compile preview, runtime input maps |
 | Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_agent_manifest_*.py`, `backend/tests/test_workflow_manifest_*.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_memory_reports.py` | preserved v1 CRUD plus manifest, runtime, MCP, memory, platform, and cutover regression coverage |
@@ -79,9 +75,9 @@ ledger/
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
 | `api_router` | `backend/app/api/router.py` | mounts live `/api/v1` routers for portfolios, balances, positions, trading, market data, templates, and reports |
-| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs |
-| `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, and the current agent-platform routes |
-| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template/agent/workflow editor full-height layout |
+| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, tools, and runs |
+| `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs |
+| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template/package editor full-height layout |
 
 ## CONVENTIONS
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliasing and `extra="forbid"` request validation.
@@ -90,9 +86,10 @@ ledger/
 - Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; ids are normalized to strings, and portfolio, template, report, and agent-platform caches live under dedicated namespaces.
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; canonical `source` origins are `compiled`, `uploaded`, `external`, and `agent`. `external` stays limited to true external user/API-created reports. Agent-created memory reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
-- Legacy orchestration, Studio, Tryout, and runtime-v2 routes are retired. Keep docs aligned with the current agent-platform routes for agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
-- Capabilities are the canonical agent-platform term. Live docs and examples use `/api/capabilities`, `/capabilities*`, `toolKeys`, read-only `tools` metadata, `spec.capabilities`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, and canonical `capabilities` storage. Runtime tool keys such as `ledger.reports.lookup` and OpenAI function names such as `ledger_reports_lookup` stay unchanged.
-- Agent and workflow authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and non-exact version pins.
+- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and old global authoring routes are retired. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Tools, and Runs.
+- Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside immutable package versions.
+- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Runtime tool keys such as `ledger.reports.lookup` and OpenAI function names such as `ledger_reports_lookup` stay unchanged.
+- Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS

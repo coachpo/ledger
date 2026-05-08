@@ -1,15 +1,11 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import {
-  Bot,
-  Braces,
   Briefcase,
   ClipboardList,
   FileText,
   LayoutDashboard,
   Link2,
   PlayCircle,
-  Server,
-  Sparkles,
   Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -52,22 +48,18 @@ const navItems: NavItem[] = [
   { icon: Briefcase, label: "Portfolios", testId: "nav-portfolios", to: "/portfolios" },
   { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
-  { icon: Bot, label: "Agents", testId: "nav-agents", to: "/agents" },
-  { icon: Sparkles, label: "Capabilities", testId: "nav-capabilities", to: "/capabilities" },
-  { icon: Server, label: "MCP Servers", testId: "nav-mcp-servers", to: "/mcp-servers" },
+  {
+    icon: Workflow,
+    label: "Workflow Packages",
+    testId: "nav-workflow-packages",
+    to: "/workflow-packages",
+  },
   {
     icon: Link2,
     label: "Model Connections",
     testId: "nav-model-connections",
     to: "/model-connections",
   },
-  {
-    icon: Braces,
-    label: "Output Schemas",
-    testId: "nav-output-schemas",
-    to: "/output-schemas",
-  },
-  { icon: Workflow, label: "Workflows", testId: "nav-workflows", to: "/workflows" },
   { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
 ];
 
@@ -110,32 +102,32 @@ function getPageMeta(pathname: string) {
     return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
   }
 
-  if (pathname === "/agents") {
-    return { section: "Agents", title: "Agents" };
+  if (pathname === "/workflow-packages") {
+    return { section: "Workflow Packages", title: "Workflow Packages" };
   }
 
-  if (pathname === "/agents/new") {
-    return { section: "Agents", sectionHref: "/agents", title: "New Agent" };
+  if (pathname === "/workflow-packages/new") {
+    return {
+      section: "Workflow Packages",
+      sectionHref: "/workflow-packages",
+      title: "New Workflow Package",
+    };
   }
 
-  if (pathname.startsWith("/agents/") && pathname.endsWith("/edit")) {
-    return { section: "Agents", sectionHref: "/agents", title: "Edit Agent" };
+  if (pathname.startsWith("/workflow-packages/") && pathname.endsWith("/run")) {
+    return {
+      section: "Workflow Packages",
+      sectionHref: "/workflow-packages",
+      title: "Launch Workflow Package",
+    };
   }
 
-  if (pathname === "/capabilities") {
-    return { section: "Capabilities", title: "Capabilities" };
-  }
-
-  if (pathname === "/capabilities/new") {
-    return { section: "Capabilities", sectionHref: "/capabilities", title: "New Capability" };
-  }
-
-  if (pathname.startsWith("/capabilities/") && pathname.endsWith("/edit")) {
-    return { section: "Capabilities", sectionHref: "/capabilities", title: "Edit Capability" };
-  }
-
-  if (pathname === "/mcp-servers") {
-    return { section: "MCP Servers", title: "MCP Servers" };
+  if (pathname.startsWith("/workflow-packages/")) {
+    return {
+      section: "Workflow Packages",
+      sectionHref: "/workflow-packages",
+      title: "Workflow Package Detail",
+    };
   }
 
   if (pathname === "/model-connections") {
@@ -156,38 +148,6 @@ function getPageMeta(pathname: string) {
       sectionHref: "/model-connections",
       title: "Edit Model Connection",
     };
-  }
-
-  if (pathname === "/output-schemas") {
-    return { section: "Output Schemas", title: "Output Schemas" };
-  }
-
-  if (pathname === "/output-schemas/new") {
-    return { section: "Output Schemas", sectionHref: "/output-schemas", title: "New Output Schema" };
-  }
-
-  if (pathname.startsWith("/output-schemas/") && pathname.endsWith("/edit")) {
-    return { section: "Output Schemas", sectionHref: "/output-schemas", title: "Edit Output Schema" };
-  }
-
-  if (pathname === "/workflows") {
-    return { section: "Workflows", title: "Workflows" };
-  }
-
-  if (pathname === "/workflows/new") {
-    return { section: "Workflows", sectionHref: "/workflows", title: "New Workflow" };
-  }
-
-  if (pathname.startsWith("/workflows/") && pathname.endsWith("/edit")) {
-    return { section: "Workflows", sectionHref: "/workflows", title: "Edit Workflow" };
-  }
-
-  if (pathname.startsWith("/workflows/") && pathname.endsWith("/run")) {
-    return { section: "Workflows", sectionHref: "/workflows", title: "Run Workflow" };
-  }
-
-  if (pathname.startsWith("/workflows/")) {
-    return { section: "Workflows", sectionHref: "/workflows", title: "Workflow Detail" };
   }
 
   if (pathname === "/runs") {
@@ -262,12 +222,9 @@ export function Layout() {
   const isTemplateEditorRoute =
     location.pathname === "/templates/new" ||
     (location.pathname.startsWith("/templates/") && location.pathname.endsWith("/edit"));
-  const isWorkflowEditorRoute =
-    location.pathname === "/workflows/new" ||
-    (location.pathname.startsWith("/workflows/") && location.pathname.endsWith("/edit"));
-  const isAgentEditorRoute =
-    location.pathname === "/agents/new" ||
-    (location.pathname.startsWith("/agents/") && location.pathname.endsWith("/edit"));
+  const isWorkflowPackageEditorRoute =
+    location.pathname === "/workflow-packages/new" ||
+    location.pathname.startsWith("/workflow-packages/");
 
   return (
     <SidebarProvider>
@@ -302,7 +259,7 @@ export function Layout() {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {isTemplateEditorRoute || isWorkflowEditorRoute || isAgentEditorRoute ? (
+          {isTemplateEditorRoute || isWorkflowPackageEditorRoute ? (
             <div className="h-full [&>*]:h-full [&>*]:w-full">
               <Outlet />
             </div>

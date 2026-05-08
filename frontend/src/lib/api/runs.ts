@@ -23,12 +23,16 @@ function normalizeOptionalText(value: string | undefined): string | undefined {
 export function normalizeRunListParams(params: RunListParams = {}): RunListParams {
   return {
     limit: params.limit,
+    modelConnectionKey: normalizeOptionalText(params.modelConnectionKey),
     offset: params.offset ?? 0,
     status: params.status,
     targetId: params.targetId,
     targetKey: normalizeOptionalText(params.targetKey),
     targetKind: params.targetKind,
     targetVersion: params.targetVersion,
+    workflowKey: normalizeOptionalText(params.workflowKey),
+    workflowPackageId: params.workflowPackageId,
+    workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),
   };
 }
 

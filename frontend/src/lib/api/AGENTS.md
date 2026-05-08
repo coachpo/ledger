@@ -15,12 +15,10 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-├── agents.ts              # agent-platform agent CRUD and run helpers
-├── capabilities.ts        # capability CRUD and activation
-├── mcp-servers.ts         # MCP server CRUD and connection testing
-├── output-schemas.ts      # output schema CRUD and version reads
-├── workflows.ts           # workflow CRUD and run launch
-└── runs.ts                # run list/detail reads
+├── workflow-packages.ts   # package manifest, version, preflight, launch, import, export
+├── tools.ts               # read-only server-declared tool catalog
+├── model-connections.ts   # saved model endpoint CRUD and connection testing
+└── runs.ts                # run list/detail reads with package provenance
 ```
 
 ## WHERE TO LOOK
@@ -28,7 +26,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `agents.ts`, `capabilities.ts`, `mcp-servers.ts`, `model-connections.ts`, `output-schemas.ts`, `workflows.ts`, `runs.ts` | browser-facing `/api/*` helpers |
+| Agent-platform contracts | `workflow-packages.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for package authoring, read-only tool metadata, model bindings, and run inspection |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 

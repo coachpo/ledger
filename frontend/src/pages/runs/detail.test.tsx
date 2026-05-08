@@ -107,6 +107,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
     memoryArtifacts: [],
+    packageProvenance: null,
     queuedAt: NOW,
     resumeStepIndex: 1,
     sourceRunId: null,
@@ -253,6 +254,23 @@ describe("RunsDetailPage", () => {
       lineageRootRunId: 40,
       resumeStepIndex: 2,
       sourceRunId: 41,
+      targetId: 7,
+      targetKey: "market_review_package",
+      targetKind: "workflowPackage",
+      targetVersion: 2,
+      packageProvenance: {
+        availability: { available: true },
+        launchSnapshot: null,
+        localResourceRefs: {},
+        preflightSummary: { ready: true },
+        resolvedModelConnections: [],
+        workflowKey: "market_review",
+        workflowPackageHash: "hash-abc",
+        workflowPackageId: 7,
+        workflowPackageKey: "market_review_package",
+        workflowPackageVersion: 2,
+        workflowPackageVersionId: 70,
+      },
       steps: [
         buildStep({
           invocations: [copiedInvocation],
@@ -276,9 +294,12 @@ describe("RunsDetailPage", () => {
 
     expect(screen.getByTestId("runs-detail-page")).toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/succeeded/i);
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/market_review@2/i);
-    expect(screen.getByRole("link", { name: /back to workflow/i })).toHaveAttribute("href", "/workflows/7");
+    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/market_review_package@2/i);
+    expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
+    expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
     expect(screen.getByTestId("runs-trace-linkage")).toHaveTextContent(/trace-42/i);

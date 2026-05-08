@@ -6,7 +6,7 @@ export type RunStepOrigin = "planned" | "copied";
 export type RunInvocationInputMode = "passthrough" | "wired";
 export type RunInvocationResolvedInputOrigin = "derived" | "edited" | "copied" | "passthrough";
 export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
-export type RunTargetKind = "agent" | "workflow";
+export type RunTargetKind = "agent" | "workflow" | "workflowPackage";
 
 export interface RunTargetIdentityRead {
   targetKind: RunTargetKind;
@@ -39,6 +39,20 @@ export interface RunMemoryArtifactRead {
   status: string;
   createdAt: string;
   sourceGraphMetadata: RunGraphMetadata | null;
+}
+
+export interface RunPackageProvenanceRead {
+  availability: UnknownRecord;
+  launchSnapshot: UnknownRecord | null;
+  localResourceRefs: UnknownRecord;
+  preflightSummary: UnknownRecord | null;
+  resolvedModelConnections: UnknownRecord[];
+  workflowKey: string;
+  workflowPackageHash: string;
+  workflowPackageId: number;
+  workflowPackageKey: string;
+  workflowPackageVersion: number;
+  workflowPackageVersionId: number | null;
 }
 
 export interface RunAgentInvocationRead {
@@ -137,6 +151,7 @@ export interface RunRead extends RunTargetIdentityRead {
   updatedAt: string;
   steps: RunStepRead[];
   memoryArtifacts: RunMemoryArtifactRead[];
+  packageProvenance: RunPackageProvenanceRead | null;
 }
 
 export interface RunRerunDraftRead extends RunTargetIdentityRead {
@@ -164,6 +179,10 @@ export interface RunListParams {
   targetId?: number;
   targetKey?: string;
   targetVersion?: number;
+  workflowPackageId?: number;
+  workflowPackageKey?: string;
+  workflowKey?: string;
+  modelConnectionKey?: string;
   status?: RunStatus;
   limit?: number;
   offset?: number;

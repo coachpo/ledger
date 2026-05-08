@@ -214,6 +214,12 @@ class CapabilityService:
     ) -> set[str]:
         granted_tool_keys: set[str] = set()
         for reference in capability_references:
+            package_tool_keys = reference.get("toolKeys")
+            if isinstance(package_tool_keys, list):
+                for package_tool_key in package_tool_keys:
+                    if isinstance(package_tool_key, str):
+                        granted_tool_keys.add(package_tool_key)
+                continue
             try:
                 resolved = self.resolve_toolset_version(
                     str(reference["capabilityKey"]),

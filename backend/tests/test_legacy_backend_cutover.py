@@ -7,6 +7,13 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
+REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS = (
+    "/api/agents",
+    "/api/workflows",
+    "/api/capabilities",
+    "/api/mcp-servers",
+    "/api/output-schemas",
+)
 LEGACY_ROUTE_PATHS = (
     "/api/v1/orchestration/roles",
     "/api/v1/orchestration/characters",
@@ -46,6 +53,12 @@ LEGACY_BACKEND_FILES = (
     "app/schemas/orchestration.py",
     "app/schemas/runtime.py",
 )
+DOCUMENTED_PLATFORM_ROUTE_PREFIXES = (
+    "/api/workflow-packages",
+    "/api/model-connections",
+    "/api/tools",
+    "/api/runs",
+)
 
 
 @pytest.mark.parametrize("path", LEGACY_ROUTE_PATHS)
@@ -54,9 +67,31 @@ def test_legacy_backend_routes_return_404(client: TestClient, path: str) -> None
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("path", REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS)
+def test_clean_break_removes_global_authoring_routes(client: TestClient, path: str) -> None:
+    assert client.get(path).status_code == 404
+    assert client.post(path, json={}).status_code == 404
+
+
 def test_legacy_backend_routes_are_not_registered(app: FastAPI) -> None:
     route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
-    assert route_paths.isdisjoint(LEGACY_ROUTE_PATHS)
+    assert route_paths.isdisjoint((*LEGACY_ROUTE_PATHS, *REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS))
+
+
+def test_documented_platform_routes_match_openapi(app: FastAPI) -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    docs_root = backend_root.parent / "docs"
+    api_design = (docs_root / "api-design.md").read_text(encoding="utf-8")
+    documented_section = api_design.split("## Platform Compatibility Notes", maxsplit=1)[0]
+    route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+
+    for prefix in DOCUMENTED_PLATFORM_ROUTE_PREFIXES:
+        assert prefix in documented_section
+        assert any(path.startswith(prefix) for path in route_paths)
+
+    for removed_path in REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS:
+        assert removed_path not in documented_section
+        assert removed_path not in route_paths
 
 
 def test_legacy_backend_modules_are_absent() -> None:

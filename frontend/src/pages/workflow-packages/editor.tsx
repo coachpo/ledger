@@ -1,0 +1,1304 @@
+import {
+  AlertCircle,
+  Boxes,
+  Braces,
+  Cable,
+  CheckCircle2,
+  Download,
+  FileCheck2,
+  FileUp,
+  Layers3,
+  Loader2,
+  PlayCircle,
+  Plus,
+  Save,
+  ShieldCheck,
+  Trash2,
+  Workflow,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
+
+import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
+import { SearchableSelect } from "@/components/shared/searchable-select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useModelConnections } from "@/hooks/use-model-connections";
+import {
+  useCreateWorkflowPackage,
+  useCreateWorkflowPackageLaunch,
+  useImportWorkflowPackage,
+  usePreflightWorkflowPackage,
+  useTools,
+  useUpdateWorkflowPackage,
+  useValidateWorkflowPackageManifest,
+  useWorkflowPackage,
+  useWorkflowPackageLaunch,
+  useWorkflowPackageVersions,
+} from "@/hooks/use-workflow-packages";
+import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
+import {
+  createPackageAgentDraft,
+  createPackageCapabilityProfileDraft,
+  createPackageMcpServerDraft,
+  createPackageOutputSchemaDraft,
+  createWorkflowPackageDraft,
+  diagnosticToEditorTarget,
+  mapBackendDiagnostics,
+  packageDraftFromManifestSource,
+  previewContainsSecretValue,
+  validateWorkflowPackageDraft,
+  workflowPackageDraftToManifestSource,
+  type PackageAgentDraft,
+  type PackageCapabilityProfileDraft,
+  type PackageMcpServerDraft,
+  type PackageOutputSchemaDraft,
+  type WorkflowPackageDraft,
+  type WorkflowPackageEditorIssue,
+} from "@/lib/platform-authoring/workflow-packages/manifest";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import type { UnknownRecord } from "@/lib/types/common";
+import type {
+  WorkflowPackageImportMode,
+  WorkflowPackageLaunchRead,
+  WorkflowPackageRead,
+  WorkflowPackageVersionRead,
+} from "@/lib/types/workflow-package";
+
+type WorkflowPackageEditorTab =
+  | "overview"
+  | "agents"
+  | "output-schemas"
+  | "capability-profiles"
+  | "private-mcp"
+  | "preflight"
+  | "launch"
+  | "exports";
+
+type WorkflowPackageEditorTabDefinition = {
+  description: string;
+  icon: typeof Workflow;
+  label: string;
+  value: WorkflowPackageEditorTab;
+};
+
+
+const agentFormSchema = z.object({
+  budgetUsd: z.string().min(1, "Budget USD is required."),
+  description: z.string(),
+  key: z.string().min(1, "Agent key is required."),
+  modelConnection: z.string().min(1, "Model connection key is required."),
+  name: z.string().min(1, "Agent name is required."),
+  outputSchema: z.string().min(1, "Output schema key is required."),
+  systemPrompt: z.string().min(1, "System prompt is required."),
+  timeoutSeconds: z.string().min(1, "Timeout seconds is required."),
+});
+
+type AgentFormValues = z.infer<typeof agentFormSchema>;
+
+type DiagnosticTarget = {
+  field: string;
+  tab: WorkflowPackageEditorTab;
+} | null;
+
+function agentIndexFromPath(path: string): number | null {
+  const match = /^spec\.agents\[(\d+)]/.exec(path);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function issueMessageForField(issues: readonly WorkflowPackageEditorIssue[], field: string) {
+  return issues.find((issue) => issue.field === field)?.issue ?? null;
+}
+
+function issueMessagesForPrefix(issues: readonly WorkflowPackageEditorIssue[], prefix: string) {
+  return issues.filter((issue) => issue.field === prefix || issue.field.startsWith(`${prefix}.`) || issue.field.startsWith(`${prefix}[`));
+}
+
+function fieldNameFromAgentPath(field: string): keyof AgentFormValues | null {
+  const match = /^spec\.agents\[\d+]\.(?<name>[A-Za-z][A-Za-z0-9]*)/.exec(field);
+  const name = match?.groups?.name;
+  if (
+    name === "budgetUsd" ||
+    name === "description" ||
+    name === "key" ||
+    name === "modelConnection" ||
+    name === "name" ||
+    name === "outputSchema" ||
+    name === "systemPrompt" ||
+    name === "timeoutSeconds"
+  ) {
+    return name;
+  }
+  return null;
+}
+
+function agentFormValues(agent: PackageAgentDraft): AgentFormValues {
+  return {
+    budgetUsd: agent.budgetUsd,
+    description: agent.description,
+    key: agent.key,
+    modelConnection: agent.modelConnection,
+    name: agent.name,
+    outputSchema: agent.outputSchema,
+    systemPrompt: agent.systemPrompt,
+    timeoutSeconds: agent.timeoutSeconds,
+  };
+}
+
+const editorTabs: WorkflowPackageEditorTabDefinition[] = [
+  { description: "Package metadata, manifest identity, version hashes, and draft status.", icon: Workflow, label: "Overview", value: "overview" },
+  { description: "Package-private agent definitions stay local to this package shell.", icon: Boxes, label: "Agents", value: "agents" },
+  { description: "Local output contracts are authored inside the package boundary.", icon: Braces, label: "Output Schemas", value: "output-schemas" },
+  { description: "Capability profiles collect server-declared tool keys for local agents.", icon: ShieldCheck, label: "Capability Profiles", value: "capability-profiles" },
+  { description: "Private MCP server bindings stay portable and secret-reference driven.", icon: Cable, label: "Private MCP", value: "private-mcp" },
+  { description: "Run package readiness checks before launch without mutating runtime state.", icon: FileCheck2, label: "Preflight", value: "preflight" },
+  { description: "Launch a selected package workflow after preflight readiness passes.", icon: PlayCircle, label: "Launch", value: "launch" },
+  { description: "Export clean package YAML without database ids or secret values.", icon: Download, label: "Exports", value: "exports" },
+];
+
+function routeTab(pathname: string): WorkflowPackageEditorTab {
+  return pathname.endsWith("/run") ? "launch" : "overview";
+}
+
+function packageTitle(workflowPackage: WorkflowPackageRead | undefined, isNew: boolean) {
+  return workflowPackage ? workflowPackage.name : isNew ? "New Workflow Package" : "Workflow Package";
+}
+
+function packageSubtitle(workflowPackage: WorkflowPackageRead | undefined, isNew: boolean) {
+  if (workflowPackage) {
+    return `${workflowPackage.key} · ${workflowPackage.latestVersion === null ? "No version" : `v${workflowPackage.latestVersion}`}`;
+  }
+  return isNew ? "Draft manifest shell" : "Loading package identity";
+}
+
+function statusBadge(workflowPackage: WorkflowPackageRead | undefined) {
+  if (!workflowPackage) {
+    return <Badge variant="outline">Draft shell</Badge>;
+  }
+  const className = workflowPackage.status === "active"
+    ? "border-positive/30 bg-positive/10 text-positive"
+    : workflowPackage.status === "draft"
+      ? "border-chart-3/30 bg-chart-3/10 text-chart-3"
+      : "border-muted bg-muted text-muted-foreground";
+  return <Badge className={className} variant="outline">{workflowPackage.status}</Badge>;
+}
+
+type PackageDiagnostic = {
+  field: string;
+  issue: string;
+  severity: "error" | "warning";
+};
+
+type RuntimeInputField = {
+  description: string;
+  key: string;
+  required: boolean;
+  title: string;
+  type: string;
+};
+
+function diagnosticFromRecord(value: unknown, severity: "error" | "warning"): PackageDiagnostic {
+  const record = isUnknownRecord(value) ? value : {};
+  const field = stringValue(record.field) || stringValue(record.path) || "$";
+  return {
+    field,
+    issue: stringValue(record.issue) || stringValue(record.message) || "Review this package diagnostic.",
+    severity,
+  };
+}
+
+function diagnosticsFromLaunch(read: WorkflowPackageLaunchRead | undefined): PackageDiagnostic[] {
+  if (!read) {
+    return [];
+  }
+  return [
+    ...read.blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
+    ...read.warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
+  ];
+}
+
+function diagnosticBadge(diagnostic: PackageDiagnostic) {
+  return diagnostic.severity === "error" ? (
+    <Badge variant="destructive">Blocking</Badge>
+  ) : (
+    <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
+  );
+}
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function runtimeInputFields(inputSchema: UnknownRecord | undefined): RuntimeInputField[] {
+  if (!inputSchema || inputSchema.type !== "object" || !isUnknownRecord(inputSchema.properties)) {
+    return [];
+  }
+  const requiredValues = Array.isArray(inputSchema.required) ? inputSchema.required.filter((item): item is string => typeof item === "string") : [];
+  return Object.entries(inputSchema.properties).filter((entry): entry is [string, UnknownRecord] => isUnknownRecord(entry[1])).map(([key, schema]) => ({
+    description: stringValue(schema.description),
+    key,
+    required: requiredValues.includes(key),
+    title: stringValue(schema.title) || key,
+    type: stringValue(schema.type) || "string",
+  }));
+}
+
+function parseRuntimeInput(value: string, type: string): unknown {
+  if (!value.trim()) {
+    return "";
+  }
+  if (type === "integer") {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+  if (type === "number") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+  if (type === "boolean") {
+    return value === "true";
+  }
+  if (type === "object" || type === "array") {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function sanitizePreviewText(text: string): string {
+  return text
+    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/(apiKey|secretPayload|encrypted|password):[^\n]*/gi, "$1: [redacted]");
+}
+
+function versionLabel(version: number | null | undefined) {
+  return version ? `v${version}` : "No version";
+}
+
+function DetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-background/60 p-3">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words font-['Fira_Code',ui-monospace,monospace] text-sm text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function EditorSkeleton() {
+  return (
+    <div className="space-y-4 p-4">
+      <Skeleton className="h-28 w-full" />
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-72 w-full" />
+    </div>
+  );
+}
+
+function issueForField(issues: readonly WorkflowPackageEditorIssue[], field: string) {
+  return issues.find((issue) => issue.field === field)?.issue ?? null;
+}
+
+function FieldMessage({ message }: { message: string | null }) {
+  return message ? <p className="text-sm text-destructive" role="alert">{message}</p> : null;
+}
+
+function ResourceChecks({ issues, tab }: { issues: readonly WorkflowPackageEditorIssue[]; tab: WorkflowPackageEditorTab }) {
+  const tabIssues = issues.filter((issue) => issue.tab === tab);
+  if (tabIssues.length === 0) {
+    return null;
+  }
+  return (
+    <Alert variant="destructive" data-testid={`${tab}-validation-feedback`}>
+      <FileCheck2 />
+      <AlertTitle>Validation needs attention</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc pl-5">
+          {tabIssues.map((issue) => (
+            <li key={`${issue.field}-${issue.issue}`}>{issue.field}: {issue.issue}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function updateArrayItem<T>(items: readonly T[], index: number, updater: (item: T) => T): T[] {
+  return items.map((item, itemIndex) => itemIndex === index ? updater(item) : item);
+}
+
+function toggleString(values: readonly string[], value: string, checked: boolean) {
+  if (checked) {
+    return values.includes(value) ? [...values] : [...values, value];
+  }
+  return values.filter((entry) => entry !== value);
+}
+
+function OverviewEditor({ draft, issues, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void }) {
+  const setMetadata = (key: keyof WorkflowPackageDraft["metadata"], value: string) => {
+    onChange({ ...draft, metadata: { ...draft.metadata, [key]: value } });
+  };
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+      <CardHeader>
+        <CardTitle>Package overview</CardTitle>
+        <CardDescription>Author the portable package identity that wraps all package-local resources.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="metadata-key">Local package key</Label>
+          <Input id="metadata-key" data-field="metadata.key" aria-label="Package key" value={draft.metadata.key} onChange={(event) => setMetadata("key", event.target.value)} />
+          <FieldMessage message={issueForField(issues, "metadata.key")} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="metadata-name">Name</Label>
+          <Input id="metadata-name" data-field="metadata.name" aria-label="Package name" value={draft.metadata.name} onChange={(event) => setMetadata("name", event.target.value)} />
+          <FieldMessage message={issueForField(issues, "metadata.name")} />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="metadata-description">Description</Label>
+          <Textarea id="metadata-description" aria-label="Package description" rows={3} value={draft.metadata.description} onChange={(event) => setMetadata("description", event.target.value)} />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label>Package input schema</Label>
+          <SchemaComposer label="Package inputs" node={draft.spec.inputs} onChange={(inputs) => onChange({ ...draft, spec: { ...draft.spec, inputs } })} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgentSheet(props: {
+  agent: PackageAgentDraft | null;
+  agentIndex: number | null;
+  capabilityProfileKeys: string[];
+  issues: readonly WorkflowPackageEditorIssue[];
+  mcpServerKeys: string[];
+  modelConnectionOptions: { description?: string; label: string; value: string }[];
+  open: boolean;
+  outputSchemaKeys: string[];
+  targetField: string | null;
+  onChange: (agent: PackageAgentDraft) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const {
+    agent,
+    agentIndex,
+    capabilityProfileKeys,
+    issues,
+    mcpServerKeys,
+    modelConnectionOptions,
+    onChange,
+    onOpenChange,
+    open,
+    outputSchemaKeys,
+    targetField,
+  } = props;
+  const form = useForm<AgentFormValues>({
+    resolver: zodResolver(agentFormSchema),
+    values: agent ? agentFormValues(agent) : undefined,
+  });
+
+  useEffect(() => {
+    form.clearErrors();
+    if (agentIndex === null) {
+      return;
+    }
+    for (const issue of issues) {
+      const fieldName = fieldNameFromAgentPath(issue.field);
+      if (fieldName && issue.field.startsWith(`spec.agents[${agentIndex}].`)) {
+        form.setError(fieldName, { message: issue.issue, type: "manual" });
+      }
+    }
+  }, [agentIndex, form, issues]);
+
+  useEffect(() => {
+    if (!open || !targetField) {
+      return;
+    }
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-field="${CSS.escape(targetField)}"]`)?.focus();
+    }, 75);
+  }, [open, targetField]);
+
+  if (!agent || agentIndex === null) {
+    return null;
+  }
+
+  const fieldPath = (field: keyof AgentFormValues) => `spec.agents[${agentIndex}].${field}`;
+  const setAgent = <Key extends keyof PackageAgentDraft>(key: Key, value: PackageAgentDraft[Key]) => {
+    onChange({ ...agent, [key]: value });
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-3xl" data-testid={`package-agent-sheet-${agentIndex}`}>
+        <SheetHeader>
+          <SheetTitle>Agent editor</SheetTitle>
+          <SheetDescription>Save model, schema, profile, MCP, budget, timeout, and prompt fields into this package manifest only.</SheetDescription>
+        </SheetHeader>
+        <Form {...form}>
+          <form className="grid gap-4 px-4 pb-4" onSubmit={(event) => event.preventDefault()}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="key"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Local key</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        data-field={fieldPath("key")}
+                        aria-label="Agent local key"
+                        onChange={(event) => {
+                          field.onChange(event);
+                          setAgent("key", event.target.value);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        data-field={fieldPath("name")}
+                        aria-label="Agent name"
+                        onChange={(event) => {
+                          field.onChange(event);
+                          setAgent("name", event.target.value);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      data-field={fieldPath("description")}
+                      aria-label="Agent description"
+                      onChange={(event) => {
+                        field.onChange(event);
+                        setAgent("description", event.target.value);
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="modelConnection"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Model connection key</FormLabel>
+                    <FormControl>
+                      <div data-field={fieldPath("modelConnection")} tabIndex={-1}>
+                        <SearchableSelect
+                          options={modelConnectionOptions}
+                          placeholder="Select global model connection"
+                          searchPlaceholder="Search model connections..."
+                          value={field.value}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setAgent("modelConnection", value);
+                          }}
+                        />
+                      </div>
+                    </FormControl>
+                    <FormDescription>Global model connections stay outside the package and are referenced by stable key.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outputSchema"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Output schema local key</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={field.value || "__none__"}
+                        onValueChange={(value) => {
+                          const nextValue = value === "__none__" ? "" : value;
+                          field.onChange(nextValue);
+                          setAgent("outputSchema", nextValue);
+                        }}
+                      >
+                        <SelectTrigger data-field={fieldPath("outputSchema")} aria-label="Output schema local key">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Select local schema</SelectItem>
+                          {outputSchemaKeys.map((key) => <SelectItem key={key} value={key}>{key}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="budgetUsd"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Budget USD</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        data-field={fieldPath("budgetUsd")}
+                        aria-label="Budget USD"
+                        onChange={(event) => {
+                          field.onChange(event);
+                          setAgent("budgetUsd", event.target.value);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="timeoutSeconds"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Timeout seconds</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        data-field={fieldPath("timeoutSeconds")}
+                        aria-label="Timeout seconds"
+                        onChange={(event) => {
+                          field.onChange(event);
+                          setAgent("timeoutSeconds", event.target.value);
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>Displayed for launch planning; package manifest save currently preserves backend-supported fields.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <MultiKeyPicker label="Capability profile local keys" keys={capabilityProfileKeys} selectedKeys={agent.capabilityProfiles} onChange={(nextKeys) => setAgent("capabilityProfiles", nextKeys)} />
+              <MultiKeyPicker label="Private MCP local keys" keys={mcpServerKeys} selectedKeys={agent.mcpServers} onChange={(nextKeys) => setAgent("mcpServers", nextKeys)} />
+            </div>
+            <FormField
+              control={form.control}
+              name="systemPrompt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>System prompt</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      data-field={fieldPath("systemPrompt")}
+                      aria-label="System prompt"
+                      rows={7}
+                      onChange={(event) => {
+                        field.onChange(event);
+                        setAgent("systemPrompt", event.target.value);
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="space-y-2" data-field={`spec.agents[${agentIndex}].inputSchema`} tabIndex={-1}>
+              <Label>Input schema</Label>
+              <SchemaComposer label="Agent input schema" node={agent.inputSchema} onChange={(inputSchema) => setAgent("inputSchema", inputSchema)} />
+              <FieldMessage message={issueMessageForField(issues, `spec.agents[${agentIndex}].inputSchema`)} />
+            </div>
+          </form>
+        </Form>
+        <SheetFooter>
+          <Button type="button" onClick={() => onOpenChange(false)}>Close agent editor</Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function MultiKeyPicker({ keys, label, onChange, selectedKeys }: { keys: string[]; label: string; onChange: (keys: string[]) => void; selectedKeys: string[] }) {
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <Label>{label}</Label>
+      {keys.length === 0 ? <p className="text-sm text-muted-foreground">Create local resources before binding them.</p> : null}
+      <div className="grid gap-2">
+        {keys.map((key) => (
+          <label key={key} className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={selectedKeys.includes(key)} onCheckedChange={(checked) => onChange(toggleString(selectedKeys, key, checked === true))} />
+            <span className="font-['Fira_Code',ui-monospace,monospace] text-xs">{key}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentsTab(props: {
+  diagnosticTarget: DiagnosticTarget;
+  draft: WorkflowPackageDraft;
+  issues: readonly WorkflowPackageEditorIssue[];
+  modelConnectionOptions: { description?: string; label: string; value: string }[];
+  onChange: (draft: WorkflowPackageDraft) => void;
+}) {
+  const { diagnosticTarget, draft, issues, modelConnectionOptions, onChange } = props;
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const outputSchemaKeys = draft.spec.outputSchemas.map((schema) => schema.key).filter(Boolean);
+  const capabilityProfileKeys = draft.spec.capabilityProfiles.map((profile) => profile.key).filter(Boolean);
+  const mcpServerKeys = draft.spec.mcpServers.map((server) => server.key).filter(Boolean);
+  const editingAgent = editingIndex === null ? null : draft.spec.agents[editingIndex] ?? null;
+  const updateAgents = (agents: PackageAgentDraft[]) => onChange({ ...draft, spec: { ...draft.spec, agents } });
+
+  useEffect(() => {
+    if (diagnosticTarget?.tab !== "agents") {
+      return;
+    }
+    const nextIndex = agentIndexFromPath(diagnosticTarget.field);
+    if (nextIndex !== null && draft.spec.agents[nextIndex]) {
+      setEditingIndex(nextIndex);
+    }
+  }, [diagnosticTarget, draft.spec.agents]);
+
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-agents-tab">
+      <CardHeader className="border-b pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Package-local agents</CardTitle>
+            <CardDescription>Agents save as local manifest entries and never call retired global agent APIs.</CardDescription>
+          </div>
+          <Button type="button" size="sm" onClick={() => { updateAgents([...draft.spec.agents, createPackageAgentDraft({ outputSchema: outputSchemaKeys[0] ?? "" })]); setEditingIndex(draft.spec.agents.length); }}>
+            <Plus data-icon="inline-start" />Add Agent
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <ResourceChecks issues={issues} tab="agents" />
+        {draft.spec.agents.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No package-local agents yet.</div> : null}
+        <div className="grid gap-3">
+          {draft.spec.agents.map((agent, index) => (
+            <div key={`${agent.key}-${index}`} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`package-agent-row-${agent.key}`}>
+              <div className="min-w-0 space-y-1">
+                <p className="font-medium">{agent.name || "Untitled agent"}</p>
+                <p className="break-all font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{agent.key || "missing_key"}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">model: {agent.modelConnection || "missing"}</Badge>
+                  <Badge variant="outline">schema: {agent.outputSchema || "missing"}</Badge>
+                  <Badge variant="secondary">{agent.capabilityProfiles.length} profiles</Badge>
+                  <Badge variant="secondary">{agent.mcpServers.length} MCP</Badge>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" aria-label={`Edit agent ${agent.name}`} onClick={() => setEditingIndex(index)}>Edit</Button>
+                <Button type="button" size="icon" variant="outline" aria-label={`Remove agent ${agent.name}`} onClick={() => updateAgents(draft.spec.agents.filter((_, itemIndex) => itemIndex !== index))}><Trash2 /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <AgentSheet agent={editingAgent} agentIndex={editingIndex} capabilityProfileKeys={capabilityProfileKeys} issues={issues} mcpServerKeys={mcpServerKeys} modelConnectionOptions={modelConnectionOptions} open={editingIndex !== null} outputSchemaKeys={outputSchemaKeys} targetField={diagnosticTarget?.tab === "agents" ? diagnosticTarget.field : null} onOpenChange={(open) => !open ? setEditingIndex(null) : undefined} onChange={(agent) => editingIndex !== null ? updateAgents(updateArrayItem(draft.spec.agents, editingIndex, () => agent)) : undefined} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function OutputSchemasTab({ draft, issues, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void }) {
+  const updateSchemas = (outputSchemas: PackageOutputSchemaDraft[]) => onChange({ ...draft, spec: { ...draft.spec, outputSchemas } });
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-output-schemas-tab">
+      <CardHeader className="border-b pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Package-local output schemas</CardTitle>
+            <CardDescription>Cards and accordions use the shared schema composer scoped to local schema keys.</CardDescription>
+          </div>
+          <Button type="button" size="sm" onClick={() => updateSchemas([...draft.spec.outputSchemas, createPackageOutputSchemaDraft()])}><Plus data-icon="inline-start" />Add Schema</Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <ResourceChecks issues={issues} tab="output-schemas" />
+        {draft.spec.outputSchemas.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No package-local output schemas yet.</div> : null}
+        <div className="grid gap-4 xl:grid-cols-2">
+          {draft.spec.outputSchemas.map((schema, index) => (
+            <Card key={`${schema.key}-${index}`} className="bg-background/60" data-field={`spec.outputSchemas[${index}]`} tabIndex={-1} data-testid={`package-output-schema-card-${schema.key}`}>
+              <CardHeader>
+                <CardTitle>{schema.name || "Untitled schema"}</CardTitle>
+                <CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{schema.key || "missing_key"}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2"><Label>Local key</Label><Input aria-label={`Output schema ${index + 1} local key`} data-field={`spec.outputSchemas[${index}].key`} value={schema.key} onChange={(event) => updateSchemas(updateArrayItem(draft.spec.outputSchemas, index, (item) => ({ ...item, key: event.target.value })))} /><FieldMessage message={issueMessageForField(issues, `spec.outputSchemas[${index}].key`) ?? issueMessageForField(issues, `spec.outputSchemas[${index}]`)} /></div>
+                  <div className="space-y-2"><Label>Name</Label><Input aria-label={`Output schema ${index + 1} name`} value={schema.name} onChange={(event) => updateSchemas(updateArrayItem(draft.spec.outputSchemas, index, (item) => ({ ...item, name: event.target.value })))} /></div>
+                </div>
+                <div className="space-y-2"><Label>Description</Label><Input aria-label={`Output schema ${index + 1} description`} value={schema.description} onChange={(event) => updateSchemas(updateArrayItem(draft.spec.outputSchemas, index, (item) => ({ ...item, description: event.target.value })))} /></div>
+                <SchemaComposer label="Output schema root" node={schema.jsonSchema} onChange={(jsonSchema) => updateSchemas(updateArrayItem(draft.spec.outputSchemas, index, (item) => ({ ...item, jsonSchema })))} />
+                <Button type="button" size="sm" variant="outline" onClick={() => updateSchemas(draft.spec.outputSchemas.filter((_, itemIndex) => itemIndex !== index))}>Remove schema</Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void; tools: { description: string; displayName: string; key: string; module: string }[]; toolsError: string | null; toolsLoading: boolean }) {
+  const { draft, issues, onChange, tools, toolsError, toolsLoading } = props;
+  const updateProfiles = (capabilityProfiles: PackageCapabilityProfileDraft[]) => onChange({ ...draft, spec: { ...draft.spec, capabilityProfiles } });
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-capability-profiles-tab">
+      <CardHeader className="border-b pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div><CardTitle>Capability profiles</CardTitle><CardDescription>Search the global tool catalog with Command and store only local profile keys plus tool keys.</CardDescription></div>
+          <Button type="button" size="sm" onClick={() => updateProfiles([...draft.spec.capabilityProfiles, createPackageCapabilityProfileDraft()])}><Plus data-icon="inline-start" />Add Profile</Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <ResourceChecks issues={issues} tab="capability-profiles" />
+        {toolsError ? <Alert variant="destructive"><AlertTitle>Tool catalog unavailable</AlertTitle><AlertDescription>{toolsError}</AlertDescription></Alert> : null}
+        {draft.spec.capabilityProfiles.map((profile, index) => (
+          <Card key={`${profile.key}-${index}`} className="bg-background/60" data-field={`spec.capabilityProfiles[${index}]`} tabIndex={-1} data-testid={`package-capability-profile-card-${profile.key}`}>
+            <CardHeader><CardTitle>{profile.name || "Untitled profile"}</CardTitle><CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{profile.key || "missing_key"}</CardDescription></CardHeader>
+            <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="space-y-3">
+                <div className="space-y-2"><Label>Local key</Label><Input aria-label={`Capability profile ${index + 1} local key`} data-field={`spec.capabilityProfiles[${index}].key`} value={profile.key} onChange={(event) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, key: event.target.value })))} /><FieldMessage message={issueMessageForField(issues, `spec.capabilityProfiles[${index}].key`)} /></div>
+                <div className="space-y-2"><Label>Name</Label><Input aria-label={`Capability profile ${index + 1} name`} value={profile.name} onChange={(event) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, name: event.target.value })))} /></div>
+                <div className="space-y-2"><Label>Description</Label><Textarea aria-label={`Capability profile ${index + 1} description`} rows={3} value={profile.description} onChange={(event) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, description: event.target.value })))} /></div>
+                <Button type="button" size="sm" variant="outline" onClick={() => updateProfiles(draft.spec.capabilityProfiles.filter((_, itemIndex) => itemIndex !== index))}>Remove profile</Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Global tool catalog</Label>
+                <div data-field={`spec.capabilityProfiles[${index}].toolKeys[0]`} tabIndex={-1}><Command className="rounded-lg border" data-testid="capability-tool-command">
+                  <CommandInput placeholder="Search server-declared tools..." />
+                  <CommandList>
+                    <CommandEmpty>{toolsLoading ? "Loading tools..." : "No catalog tools match."}</CommandEmpty>
+                    <CommandGroup>
+                      {tools.map((tool) => (
+                        <CommandItem key={tool.key} value={`${tool.displayName} ${tool.key} ${tool.description} ${tool.module}`} onSelect={() => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, !item.toolKeys.includes(tool.key)) })))}>
+                          <Checkbox aria-label={`Select tool ${tool.displayName}`} checked={profile.toolKeys.includes(tool.key)} onCheckedChange={(checked) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, checked === true) })))} />
+                          <div className="min-w-0"><p className="truncate text-sm">{tool.displayName}</p><p className="break-all text-xs text-muted-foreground">{tool.key}</p></div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command></div>
+                <FieldMessage message={issueMessagesForPrefix(issues, `spec.capabilityProfiles[${index}].toolKeys`)[0]?.issue ?? issueMessagesForPrefix(issues, `spec.capabilityProfiles.${profile.key}.toolKeys`)[0]?.issue ?? null} />
+                <div className="flex flex-wrap gap-2">{profile.toolKeys.map((key) => <Badge key={key} variant="secondary">{key}</Badge>)}</div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {draft.spec.capabilityProfiles.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No local capability profiles yet.</div> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PrivateMcpTab({ draft, issues, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void }) {
+  const updateServers = (mcpServers: PackageMcpServerDraft[]) => onChange({ ...draft, spec: { ...draft.spec, mcpServers } });
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-private-mcp-tab">
+      <CardHeader className="border-b pb-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Private MCP servers</CardTitle><CardDescription>Store config shape and required secret binding names only. Secret values are never rendered or saved.</CardDescription></div><Button type="button" size="sm" onClick={() => updateServers([...draft.spec.mcpServers, createPackageMcpServerDraft()])}><Plus data-icon="inline-start" />Add Private MCP</Button></div></CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <ResourceChecks issues={issues} tab="private-mcp" />
+        {draft.spec.mcpServers.map((server, index) => (
+          <Card key={`${server.key}-${index}`} className="bg-background/60" data-field={`spec.mcpServers[${index}]`} tabIndex={-1} data-testid={`package-private-mcp-card-${server.key}`}>
+            <CardHeader><CardTitle>{server.name || "Untitled MCP"}</CardTitle><CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{server.key || "missing_key"}</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3"><div className="space-y-2"><Label>Local key</Label><Input aria-label={`Private MCP ${index + 1} local key`} data-field={`spec.mcpServers[${index}].key`} value={server.key} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, key: event.target.value })))} /></div><div className="space-y-2"><Label>Name</Label><Input aria-label={`Private MCP ${index + 1} name`} value={server.name} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, name: event.target.value })))} /></div><div className="space-y-2"><Label>Transport</Label><Select value={server.transport} onValueChange={(transport: "stdio" | "http-sse") => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, transport })))}><SelectTrigger aria-label={`Private MCP ${index + 1} transport`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="stdio">stdio</SelectItem><SelectItem value="http-sse">http-sse</SelectItem></SelectContent></Select></div></div>
+              <div className="space-y-2"><Label>Description</Label><Input aria-label={`Private MCP ${index + 1} description`} value={server.description} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, description: event.target.value })))} /></div>
+              {server.transport === "stdio" ? <div className="grid gap-3 md:grid-cols-2"><div className="space-y-2"><Label>Command</Label><Input aria-label={`Private MCP ${index + 1} command`} value={server.command} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, command: event.target.value })))} /></div><div className="space-y-2"><Label>Args JSON array</Label><Textarea aria-label={`Private MCP ${index + 1} args`} rows={3} value={server.argsText} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, argsText: event.target.value })))} /></div></div> : <div className="space-y-2"><Label>URL</Label><Input aria-label={`Private MCP ${index + 1} URL`} value={server.url} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, url: event.target.value })))} /></div>}
+              <BindingEditor bindings={server.requiredBindings} issues={issues} serverIndex={index} onChange={(requiredBindings) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, requiredBindings })))} />
+              <Button type="button" size="sm" variant="outline" onClick={() => updateServers(draft.spec.mcpServers.filter((_, itemIndex) => itemIndex !== index))}>Remove private MCP</Button>
+            </CardContent>
+          </Card>
+        ))}
+        {draft.spec.mcpServers.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No package-private MCP servers yet.</div> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BindingEditor({ bindings, issues, onChange, serverIndex }: { bindings: string[]; issues: readonly WorkflowPackageEditorIssue[]; onChange: (bindings: string[]) => void; serverIndex: number }) {
+  return (
+    <div className="space-y-3 rounded-lg border p-3" data-testid="private-mcp-required-bindings">
+      <div className="flex items-center justify-between gap-3"><div><Label>Required secret binding names</Label><p className="text-sm text-muted-foreground">Use placeholders such as OPENAI_API_KEY. Do not enter secret values.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onChange([...bindings, ""])}>Add Binding</Button></div>
+      {bindings.length === 0 ? <p className="text-sm text-muted-foreground">No bindings required.</p> : null}
+      {bindings.map((binding, index) => <div key={index} className="flex gap-2"><Input aria-label={`Required secret binding ${index + 1}`} data-field={`spec.mcpServers[${serverIndex}].requiredBindings[${index}]`} value={binding} placeholder="SECRET_BINDING_NAME" onChange={(event) => onChange(updateArrayItem(bindings, index, () => event.target.value))} /><FieldMessage message={issueMessageForField(issues, `spec.mcpServers[${serverIndex}].requiredBindings[${index}]`)} /><Button type="button" size="icon" variant="outline" aria-label={`Remove required secret binding ${index + 1}`} onClick={() => onChange(bindings.filter((_, itemIndex) => itemIndex !== index))}><Trash2 /></Button></div>)}
+    </div>
+  );
+}
+
+function DiagnosticRows({ diagnostics, onOpenField }: { diagnostics: PackageDiagnostic[]; onOpenField: (diagnostic: PackageDiagnostic) => void }) {
+  if (diagnostics.length === 0) {
+    return <div className="rounded-xl border border-dashed bg-background/50 p-4 text-sm text-muted-foreground">No diagnostics returned for this package selection.</div>;
+  }
+  return (
+    <div className="overflow-hidden rounded-xl border">
+      <div className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] gap-3 bg-muted/40 px-3 py-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <span>Severity</span><span>Field</span><span>Diagnostic</span><span>Action</span>
+      </div>
+      {diagnostics.map((diagnostic, index) => (
+        <div className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] items-center gap-3 border-t px-3 py-3 text-sm" key={`${diagnostic.field}-${diagnostic.issue}-${index}`}>
+          {diagnosticBadge(diagnostic)}
+          <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
+          <span className="break-words text-muted-foreground">{diagnostic.issue}</span>
+          <Button size="sm" type="button" variant="outline" onClick={() => onOpenField(diagnostic)}>Open field</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PreflightTab(props: {
+  diagnostics: PackageDiagnostic[];
+  launchRead: WorkflowPackageLaunchRead | undefined;
+  loading: boolean;
+  onOpenField: (diagnostic: PackageDiagnostic) => void;
+  onRunPreflight: () => void;
+  preflightRead: WorkflowPackageLaunchRead | undefined;
+  workflowPackage: WorkflowPackageRead | undefined;
+}) {
+  const { diagnostics, launchRead, loading, onOpenField, onRunPreflight, preflightRead, workflowPackage } = props;
+  const read = preflightRead ?? launchRead;
+  const blockingCount = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+  const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+  const ready = read?.ready === true && blockingCount === 0;
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-preflight-tab">
+      <CardHeader className="border-b pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Package preflight</CardTitle>
+            <CardDescription>Run launch readiness checks and deep-link diagnostics back into package-local editor fields.</CardDescription>
+          </div>
+          <Button disabled={!workflowPackage || loading} size="sm" type="button" variant="outline" onClick={onRunPreflight}>
+            {loading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <FileCheck2 data-icon="inline-start" />}
+            Run preflight
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <Alert className={ready ? "border-positive/30 bg-positive/10" : blockingCount > 0 ? "border-destructive/30" : "border-chart-3/30 bg-chart-3/10"} variant={blockingCount > 0 ? "destructive" : "default"}>
+          {ready ? <CheckCircle2 /> : <AlertCircle />}
+          <AlertTitle>{ready ? "Ready to launch" : "Needs attention"}</AlertTitle>
+          <AlertDescription>
+            {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}@${read.packageVersion}.` : "Select a saved package version and run preflight to check readiness."}
+          </AlertDescription>
+        </Alert>
+        <div className="grid gap-3 md:grid-cols-4">
+          <DetailMetric label="Package" value={read?.packageKey ?? workflowPackage?.key ?? "unsaved-package"} />
+          <DetailMetric label="Version" value={read ? versionLabel(read.packageVersion) : versionLabel(workflowPackage?.latestVersion)} />
+          <DetailMetric label="Workflow" value={read?.workflowKey ?? "Not selected"} />
+          <DetailMetric label="Warnings" value={String(warningCount)} />
+        </div>
+        <DiagnosticRows diagnostics={diagnostics} onOpenField={onOpenField} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function LaunchTab(props: {
+  createLaunch: ReturnType<typeof useCreateWorkflowPackageLaunch>;
+  launchRead: WorkflowPackageLaunchRead | undefined;
+  launchLoading: boolean;
+  onRunPreflight: () => Promise<WorkflowPackageLaunchRead | null>;
+  packageId: string | undefined;
+  selectedVersion: number | undefined;
+  setSelectedVersion: (version: number | undefined) => void;
+  setWorkflowKey: (workflowKey: string) => void;
+  versions: WorkflowPackageVersionRead[];
+  workflowKey: string;
+  workflowPackage: WorkflowPackageRead | undefined;
+}) {
+  const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, selectedVersion, setSelectedVersion, setWorkflowKey, versions, workflowKey, workflowPackage } = props;
+  const navigate = useNavigate();
+  const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
+  const [parametersText, setParametersText] = useState("{}");
+  const fields = useMemo(() => runtimeInputFields(launchRead?.inputSchema), [launchRead?.inputSchema]);
+  const hasFieldInputs = fields.length > 0;
+  const blockingCount = diagnosticsFromLaunch(launchRead).filter((diagnostic) => diagnostic.severity === "error").length;
+
+  useEffect(() => {
+    const initialValues = Object.fromEntries(fields.map((field) => [field.key, ""]));
+    setRuntimeValues((current) => ({ ...initialValues, ...current }));
+  }, [fields]);
+
+  const buildParameters = () => {
+    if (hasFieldInputs) {
+      return Object.fromEntries(fields.map((field) => [field.key, parseRuntimeInput(runtimeValues[field.key] ?? "", field.type)]));
+    }
+    try {
+      const parsed = JSON.parse(parametersText || "{}") as unknown;
+      return isUnknownRecord(parsed) ? parsed : {};
+    } catch {
+      throw new Error("Runtime inputs JSON must be a valid object.");
+    }
+  };
+
+  const launchPackage = async () => {
+    if (!packageId) {
+      return;
+    }
+    try {
+      const preflight = await onRunPreflight();
+      if (preflight && !preflight.ready) {
+        toast.error("Resolve blocking preflight diagnostics before launch.");
+        return;
+      }
+      const run = await createLaunch.mutateAsync({
+        packageId,
+        payload: { parameters: buildParameters(), version: selectedVersion ?? null, workflowKey: workflowKey || null },
+      });
+      toast.success("Package run queued");
+      navigate(`/runs/${run.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to launch workflow package.");
+    }
+  };
+
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-launch-tab">
+      <CardHeader className="border-b pb-4">
+        <CardTitle>Launch package run</CardTitle>
+        <CardDescription>Select an immutable package version and workflow key, provide runtime inputs, preflight, then queue a run.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2"><Label>Package version</Label><Select value={selectedVersion ? String(selectedVersion) : "__latest__"} onValueChange={(value) => setSelectedVersion(value === "__latest__" ? undefined : Number(value))}><SelectTrigger aria-label="Package version"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__latest__">Latest ({versionLabel(workflowPackage?.latestVersion)})</SelectItem>{versions.map((version) => <SelectItem key={version.id} value={String(version.version)}>{versionLabel(version.version)}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label htmlFor="workflow-key">Workflow key</Label><Input id="workflow-key" aria-label="Workflow key" placeholder="Workflow key" value={workflowKey} onChange={(event) => setWorkflowKey(event.target.value)} /></div>
+        </div>
+        {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
+        {launchRead ? <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={`${launchRead.packageKey}@${launchRead.packageVersion}`} /><DetailMetric label="Workflow" value={launchRead.workflowKey} /><DetailMetric label="Readiness" value={launchRead.ready ? "Ready" : `${blockingCount} blockers`} /></div> : null}
+        <Card className="bg-background/60">
+          <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Fields are derived from backend launch metadata for the selected package workflow.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            {hasFieldInputs ? fields.map((field) => <div className="space-y-2" key={field.key}><Label htmlFor={`runtime-${field.key}`}>{field.title}{field.required ? " *" : ""}</Label><Input id={`runtime-${field.key}`} aria-label={field.title} value={runtimeValues[field.key] ?? ""} onChange={(event) => setRuntimeValues((current) => ({ ...current, [field.key]: event.target.value }))} /><p className="text-xs text-muted-foreground">{field.description || `${field.type} input`}</p></div>) : <div className="space-y-2"><Label htmlFor="runtime-json">Runtime inputs JSON</Label><Textarea id="runtime-json" aria-label="Runtime inputs JSON" rows={8} value={parametersText} onChange={(event) => setParametersText(event.target.value)} /></div>}
+          </CardContent>
+        </Card>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={!packageId || launchLoading} type="button" variant="outline" onClick={() => void onRunPreflight()}><FileCheck2 data-icon="inline-start" />Run preflight</Button>
+          <Button disabled={!packageId || createLaunch.isPending || launchLoading} type="button" onClick={() => void launchPackage()}>{createLaunch.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <PlayCircle data-icon="inline-start" />}Launch Run</Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExportsTab(props: {
+  draft: WorkflowPackageDraft;
+  importPackage: ReturnType<typeof useImportWorkflowPackage>;
+  packageId: string | undefined;
+  selectedVersion: number | undefined;
+  versions: WorkflowPackageVersionRead[];
+  workflowPackage: WorkflowPackageRead | undefined;
+}) {
+  const { draft, importPackage, packageId, selectedVersion, versions, workflowPackage } = props;
+  const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
+  const [exportPreview, setExportPreview] = useState("");
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importMode, setImportMode] = useState<WorkflowPackageImportMode>("create");
+  const [importSource, setImportSource] = useState("");
+  const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
+  const previewText = sanitizePreviewText(exportPreview || generatedManifestSource);
+  const secretLeak = previewContainsSecretValue(previewText);
+  const exportHref = packageId ? exportWorkflowPackageUrl(packageId, selectedVersion) : undefined;
+
+  const loadExportPreview = async () => {
+    if (!exportHref) {
+      setExportPreview(generatedManifestSource);
+      return;
+    }
+    try {
+      const response = await fetch(exportHref);
+      const text = await response.text();
+      setExportPreview(sanitizePreviewText(text));
+      toast.success("Loaded sanitized package export preview");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load export preview.");
+    }
+  };
+
+  const submitImport = async () => {
+    try {
+      const imported = await importPackage.mutateAsync({ manifestSource: importSource, mode: importMode });
+      setImportWarnings(imported.warnings);
+      toast.success(importMode === "createVersion" ? "Imported package version" : "Imported package");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to import package.");
+    }
+  };
+
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-exports-tab">
+      <CardHeader className="border-b pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package exports and imports</CardTitle><CardDescription>Preview and download no-secret YAML, then import package manifests as new packages or new versions.</CardDescription></div><div className="flex flex-wrap gap-2"><Button disabled={!packageId} size="sm" type="button" variant="outline" onClick={() => void loadExportPreview()}><Download data-icon="inline-start" />Preview export</Button>{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<Button size="sm" type="button" variant="outline" onClick={() => setImportDialogOpen(true)}><FileUp data-icon="inline-start" />Import Package</Button></div></div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={workflowPackage?.key ?? draft.metadata.key} /><DetailMetric label="Export Version" value={versionLabel(selectedVersion ?? workflowPackage?.latestVersion)} /><DetailMetric label="Available Versions" value={String(versions.length)} /></div>
+        {secretLeak ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Potential secret value detected</AlertTitle><AlertDescription>The preview was redacted. Package exports must contain binding names only, not secret values.</AlertDescription></Alert> : null}
+        <Textarea aria-label="Sanitized package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={previewText} />
+        {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{sanitizePreviewText(stringifyJson(warning))}</li>)}</ul></AlertDescription></Alert> : null}
+      </CardContent>
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
+          <DialogHeader><DialogTitle>Import workflow package YAML</DialogTitle><DialogDescription>Paste a package manifest. Secret-like values are redacted from preview text and should not be included.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <RadioGroup value={importMode} onValueChange={(value) => setImportMode(value as WorkflowPackageImportMode)}>
+              <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="create" />Create new package</label>
+              <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="createVersion" />Create version for matching package key</label>
+            </RadioGroup>
+            <div className="space-y-2"><Label htmlFor="import-yaml">Import package YAML</Label><Textarea id="import-yaml" aria-label="Import package YAML" className="min-h-64 font-mono text-xs" value={importSource} onChange={(event) => setImportSource(sanitizePreviewText(event.target.value))} /></div>
+          </div>
+          <DialogFooter><Button type="button" variant="ghost" onClick={() => setImportDialogOpen(false)}>Cancel</Button><Button disabled={importPackage.isPending || !importSource.trim()} type="button" onClick={() => void submitImport()}>{importPackage.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}Import package</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+export function WorkflowPackageEditorPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { packageId } = useParams<{ packageId: string }>();
+  const isNew = location.pathname === "/workflow-packages/new";
+  const packageQuery = useWorkflowPackage(isNew ? undefined : packageId);
+  const workflowPackage = packageQuery.data;
+  const previousPathname = useRef(location.pathname);
+  const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>(() => routeTab(location.pathname));
+  const [draft, setDraft] = useState<WorkflowPackageDraft>(() => createWorkflowPackageDraft());
+  const [issues, setIssues] = useState<WorkflowPackageEditorIssue[]>([]);
+  const [diagnosticTarget, setDiagnosticTarget] = useState<DiagnosticTarget>(null);
+  const [initializedKey, setInitializedKey] = useState("new");
+  const [selectedVersion, setSelectedVersion] = useState<number | undefined>(undefined);
+  const [workflowKey, setWorkflowKey] = useState("");
+  const [preflightRead, setPreflightRead] = useState<WorkflowPackageLaunchRead | undefined>(undefined);
+  const createPackage = useCreateWorkflowPackage();
+  const updatePackage = useUpdateWorkflowPackage();
+  const validatePackage = useValidateWorkflowPackageManifest();
+  const preflightPackage = usePreflightWorkflowPackage();
+  const createLaunch = useCreateWorkflowPackageLaunch();
+  const importPackage = useImportWorkflowPackage();
+  const versionsQuery = useWorkflowPackageVersions(isNew ? undefined : packageId);
+  const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, selectedVersion, workflowKey.trim() || undefined);
+  const modelConnectionsQuery = useModelConnections({ status: "active" });
+  const toolsQuery = useTools();
+
+  useEffect(() => {
+    if (previousPathname.current === location.pathname) {
+      return;
+    }
+    previousPathname.current = location.pathname;
+    setActiveTab(routeTab(location.pathname));
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (isNew) {
+      return;
+    }
+    if (!workflowPackage || initializedKey === `package:${workflowPackage.id}:${workflowPackage.updatedAt}`) {
+      return;
+    }
+    setInitializedKey(`package:${workflowPackage.id}:${workflowPackage.updatedAt}`);
+    setDraft(createWorkflowPackageDraft({ metadata: { description: workflowPackage.description, key: workflowPackage.key, name: workflowPackage.name } }));
+  }, [initializedKey, isNew, workflowPackage]);
+
+  useEffect(() => {
+    if (launchQuery.data?.workflowKey && !workflowKey) {
+      setWorkflowKey(launchQuery.data.workflowKey);
+    }
+  }, [launchQuery.data?.workflowKey, workflowKey]);
+
+  const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, MCP bindings, and launch flows." : "Package-local authoring shell for resources that must not become standalone global pages.");
+  const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
+  const combinedIssues = [...localIssues, ...issues];
+  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.status}`, label: connection.name, value: connection.key }));
+  const versions = versionsQuery.data?.items ?? [];
+  const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
+  const isSaving = createPackage.isPending || updatePackage.isPending;
+
+  const focusIssue = (issue: WorkflowPackageEditorIssue) => {
+    const target = diagnosticToEditorTarget(issue.field);
+    setDiagnosticTarget(target);
+    setActiveTab(target.tab);
+    window.setTimeout(() => {
+      const field = document.querySelector<HTMLElement>(`[data-field="${CSS.escape(issue.field)}"]`) ?? document.querySelector<HTMLElement>(`[data-field="${CSS.escape(target.field)}"]`);
+      field?.focus();
+      field?.scrollIntoView({ block: "center", inline: "nearest" });
+    }, 50);
+  };
+
+  const focusPackageDiagnostic = (diagnostic: PackageDiagnostic) => {
+    focusIssue({ field: diagnostic.field, issue: diagnostic.issue, tab: diagnosticToEditorTarget(diagnostic.field).tab });
+  };
+
+  const runPackagePreflight = async (): Promise<WorkflowPackageLaunchRead | null> => {
+    if (!packageId) {
+      return null;
+    }
+    try {
+      const result = await preflightPackage.mutateAsync({ packageId, payload: { version: selectedVersion ?? null, workflowKey: workflowKey || null, parameters: {} } });
+      setPreflightRead(result);
+      const diagnostics = diagnosticsFromLaunch(result);
+      const blockingIssue = diagnostics.find((diagnostic) => diagnostic.severity === "error");
+      if (blockingIssue) {
+        focusPackageDiagnostic(blockingIssue);
+        toast.warning("Package preflight found blocking diagnostics");
+      } else {
+        toast.success(result.warnings.length > 0 ? "Package preflight passed with warnings" : "Package preflight passed");
+      }
+      return result;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Package preflight failed.");
+      return null;
+    }
+  };
+
+  const validateCurrentDraft = async () => {
+    const manifestSource = workflowPackageDraftToManifestSource(draft);
+    const result = await validatePackage.mutateAsync({ manifestSource });
+    const backendIssues = mapBackendDiagnostics(result.diagnostics);
+    setIssues(backendIssues);
+    if (backendIssues[0]) {
+      focusIssue(backendIssues[0]);
+    }
+    toast[backendIssues.some((issue) => issue.issue) ? "warning" : "success"](backendIssues.length > 0 ? "Package validation returned diagnostics" : "Package validation passed");
+  };
+
+  const saveDraft = async () => {
+    const nextIssues = validateWorkflowPackageDraft(draft);
+    setIssues(nextIssues);
+    if (nextIssues[0]) {
+      focusIssue(nextIssues[0]);
+      toast.error("Resolve package editor validation before saving.");
+      return;
+    }
+    const manifestSource = workflowPackageDraftToManifestSource(draft);
+    if (isNew) {
+      const created = await createPackage.mutateAsync({ manifestSource });
+      toast.success("Workflow package created");
+      navigate(`/workflow-packages/${created.id}`);
+      return;
+    }
+    if (packageId) {
+      await updatePackage.mutateAsync({ packageId, payload: { manifestSource } });
+      toast.success("Workflow package draft saved");
+    }
+  };
+
+  if (!isNew && packageQuery.isPending) {
+    return <EditorSkeleton />;
+  }
+
+  return (
+    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
+      <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
+        <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{statusBadge(workflowPackage)}{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
+          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package draft" className="cursor-pointer" disabled={isSaving} type="button" size="sm" variant="outline" onClick={() => void saveDraft()}><Save data-icon="inline-start" />Save Draft</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
+        </CardContent>
+      </Card>
+      {packageQuery.isError ? <Card><CardContent className="p-4 text-sm text-muted-foreground" role="alert">{packageQuery.error instanceof Error ? packageQuery.error.message : "Failed to load workflow package."}</CardContent></Card> : null}
+      {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
+        <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full flex-wrap justify-start bg-muted/60 p-1">
+          {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+        </TabsList>
+        <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
+        <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={setDraft} /></TabsContent>
+        <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
+        <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={setDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key, module: tool.module }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
+        <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
+        <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
+        <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
+        <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} importPackage={importPackage} packageId={packageId} selectedVersion={selectedVersion} versions={versions} workflowPackage={workflowPackage} /></TabsContent>
+      </Tabs>
+      <Card className="border-border/70 bg-card/70"><CardContent className="flex flex-wrap items-center gap-3 p-4 text-xs text-muted-foreground"><Layers3 className="size-4 text-primary" aria-hidden="true" /><span>Package-private resources remain tabbed inside this shell; standalone global authoring routes stay retired.</span></CardContent></Card>
+    </div>
+  );
+}

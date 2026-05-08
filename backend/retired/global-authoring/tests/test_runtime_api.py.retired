@@ -35,7 +35,13 @@ from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
-from app.schemas.workflow import WorkflowCreate, WorkflowCreateRequest, WorkflowRead, WorkflowUpdate
+from app.schemas.workflow import (
+    WorkflowCreate,
+    WorkflowCreateRequest,
+    WorkflowLaunchCreateRequest,
+    WorkflowRead,
+    WorkflowUpdate,
+)
 from app.services.agent_service import AgentService
 from app.services.capability_service import (
     MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
@@ -2559,6 +2565,7 @@ def test_agent_platform_run_uses_live_model_connection_after_connection_update(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "live connection runtime output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     with session_factory() as session:
         connection = _build_model_connection(
@@ -2587,15 +2594,19 @@ def test_agent_platform_run_uses_live_model_connection_after_connection_update(
         connection.secret_payload = {"apiKey": "sk-rotated-secret-2222"}
         session.commit()
 
-    trigger = client.post(
-        f"/api/workflows/{workflow.id}/launches",
-        json={
-            "version": workflow.version,
-            "parameters": {"ticker": "MSFT"},
-        },
-    )
-    assert trigger.status_code == 201, trigger.json()
-    detail = _wait_for_agent_platform_run(client, trigger.json()["id"])
+    with session_factory() as session:
+        trigger = RunService(session, session_factory).create_workflow_launch(
+            workflow.id,
+            WorkflowLaunchCreateRequest(
+                version=workflow.version,
+                parameters={"ticker": "MSFT"},
+            ),
+        )
+    assert trigger.status == "queued"
+    with session_factory() as session:
+        drained = RunQueueService(session, session_factory).drain_once()
+    assert drained is True
+    detail = _wait_for_agent_platform_run(client, trigger.id)
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "live connection runtime output"}
@@ -7125,6 +7136,7 @@ def test_agent_platform_run_rerun_draft_and_create_starts_from_first_step(
         "targetKey": workflow.key,
         "targetVersion": workflow.version,
         "parameters": {"ticker": "NVDA"},
+        "packageProvenance": None,
     }
 
     calls.clear()

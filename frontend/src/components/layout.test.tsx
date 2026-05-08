@@ -23,9 +23,8 @@ describe("Layout", () => {
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<div>Dashboard content</div>} />
-              <Route path="workflows/:workflowId" element={<div>Workflow detail content</div>} />
-              <Route path="workflows/:workflowId/edit" element={<div>Workflow editor content</div>} />
-              <Route path="workflows/:workflowId/run" element={<div>Workflow launch content</div>} />
+              <Route path="workflow-packages/:packageId" element={<div>Package detail content</div>} />
+              <Route path="workflow-packages/:packageId/run" element={<div>Package launch content</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -33,30 +32,38 @@ describe("Layout", () => {
     );
   }
 
-  it("shows the primary platform shell navigation and hides legacy shell entries", () => {
+  it("shows the exact package-first shell navigation and hides old authoring entries", () => {
     renderLayout("/");
 
-    expect(screen.getByRole("link", { name: /agents/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /capabilities/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /mcp servers/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /output schemas/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /workflows/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/",
+      "/portfolios",
+      "/templates",
+      "/reports",
+      "/workflow-packages",
+      "/model-connections",
+      "/runs",
+    ]);
+    expect(screen.getByRole("link", { name: /workflow packages/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /model connections/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /runs/i })).toBeInTheDocument();
 
+    expect(screen.queryByRole("link", { name: /agents/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /capabilities/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /mcp servers/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /output schemas/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^workflows$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /tryout/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /studio/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /orchestration/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /backtests/i })).not.toBeInTheDocument();
   });
 
-  it("labels workflow detail, edit, and launch routes", () => {
-    renderLayout("/workflows/88");
-    expect(within(screen.getByRole("banner")).getByText("Workflow Detail")).toBeInTheDocument();
+  it("labels workflow package detail and launch routes", () => {
+    renderLayout("/workflow-packages/88");
+    expect(within(screen.getByRole("banner")).getByText("Workflow Package Detail")).toBeInTheDocument();
 
-    renderLayout("/workflows/88/edit#review");
-    expect(within(screen.getAllByRole("banner")[1]).getByText("Edit Workflow")).toBeInTheDocument();
-
-    renderLayout("/workflows/88/run");
-    expect(within(screen.getAllByRole("banner")[2]).getByText("Run Workflow")).toBeInTheDocument();
+    renderLayout("/workflow-packages/88/run");
+    expect(within(screen.getAllByRole("banner")[1]).getByText("Launch Workflow Package")).toBeInTheDocument();
   });
 });

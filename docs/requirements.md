@@ -1,10 +1,10 @@
 # Requirements Document
 
-> Status: Live requirements reference as of 2026-05-05 (`a8ad8fb`).
+> Status: Live requirements reference as of 2026-05-08.
 
 ## Purpose
 
-Define the shipped Ledger requirements for a trusted single-user portfolio workspace and stateless agent platform. Live code is the source of truth; this document mirrors the browser and API surfaces mounted at the current branch tip.
+Define the shipped Ledger requirements for a trusted single-user portfolio workspace and package-first agent platform. Live code is the source of truth; this document mirrors the browser and API surfaces mounted at the current branch tip.
 
 ## Product Scope
 
@@ -13,17 +13,16 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Portfolio CRUD with balances, positions, CSV import, quote/history context, and trading operations.
 - Template CRUD, placeholder browsing, inline compile, stored-template compile, and runtime inputs.
 - Report generation from templates, external JSON report creation, markdown upload, slug CRUD, filtering, and download.
-- Agent CRUD and YAML manifest validation.
-- Capability CRUD with canonical `toolKeys`, read-only resolved `tools` metadata, and server-declared tool catalog integration.
-- MCP server CRUD, security validation, connection testing, exact-pinned versions, and runtime tool snapshots.
-- Model connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing.
-- Output schema CRUD, schema composer, locked JSON Schema subset validation, preview, and runtime compilation.
-- Workflow CRUD, YAML manifest validation, launch metadata, version reads, launches, and run creation.
-- Run list/detail, rerun drafts, reruns, step replay drafts, and step replays.
+- Workflow Package authoring with `ledger.workflowPackage/v1` YAML validation, package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs.
+- Package import/export with no secrets, no encrypted credential payloads, no database ids, and no run history.
+- Model Connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing as global live bindings.
+- Global read-only Tools metadata from the server-declared catalog.
+- Run list/detail, package provenance, rerun drafts, reruns, step replay drafts, and step replays.
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, and tax-lot accounting.
-- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, and backtest workflows.
+- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and old global authoring routes.
+- TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
 ## Functional Requirements
@@ -42,17 +41,15 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Reports must support canonical `source` origins `compiled`, `uploaded`, `external`, and `agent`.
 - `external` must remain limited to true external user/API-created reports; agent-created reports must use `source="agent"`.
 - Report reads, updates, deletes, and downloads must be slug-addressed.
-- Report metadata must remain extensible JSON while canonical filters stay stable. For agent memory reports, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance including `runId`, `agentKey`, and `agentVersion`.
+### FR-3 Package-First Agent Platform
 
-### FR-3 Agent Platform Authoring
-
-- Agents and workflows must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate refs, non-exact version pins, and retired `spec.skills` fields.
-- Capabilities must be the canonical tool-key resource, accept `toolKeys` on writes, and expose read-only resolved `tools` metadata on reads.
-- MCP server saves/tests must enforce URL, stdio, exact-pin, snapshot, and redaction rules.
-- Model connections must preserve or replace stored secrets safely and never return raw secrets in read payloads.
-- Output schemas must validate against the supported schema subset before save and before runtime use.
-- Workflow launches must use the strict `{version, parameters}` envelope and create queued runs.
-- Runs must expose input, per-step outputs, final output, status, timing, token usage, trace ids, rerun metadata, and step replay metadata.
+- Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and retired `spec.skills` fields.
+- Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs must stay inside immutable package versions.
+- Package exports must omit secrets, encrypted credential payloads, database ids, and run history.
+- Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
+- Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
+- Package launches must use the strict launch envelope and create queued global runs with immutable package provenance.
+- Runs must expose input, per-step outputs, final output, status, timing, token usage, trace ids, package provenance, rerun metadata, and step replay metadata.
 
 ## Non-Functional Requirements
 
@@ -65,5 +62,5 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 ## Acceptance Criteria
 
 - A user can manage portfolio records and reports without provider availability.
-- A user can configure model connections, capabilities, agents, output schemas, workflows, and inspect runs from the browser.
-- Retired Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, and `/skills*` routes are not presented as current product surfaces.
+- A user can author Workflow Packages, configure Model Connections, view Tools, launch package runs, and inspect Runs from the browser.
+- Retired Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and old global authoring routes are not presented as current product surfaces.

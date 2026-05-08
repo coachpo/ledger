@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own agents, capabilities, MCP servers, model connections, output schemas, workflows, and runs.
+`app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own Workflow Packages, Model Connections, Tools, and Runs.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -18,8 +18,8 @@
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote provider contract | `quote_provider.py` | provider protocol, DTOs, Yahoo Finance adapter, provider errors |
-| Agent-platform catalog services | `agent_service.py`, `capability_service.py`, `mcp_server_service.py`, `output_schema_service.py`, `workflow_service.py` | immutable versioned CRUD and validation for agents, capabilities, MCP servers, output schemas, and workflows |
-| Run execution service | `run_service.py` | persisted run lifecycle, per-step detail, and background execution |
+| Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `workflow_package_manifest_decompiler.py` | package-first authoring, validation, import/export, preflight, and immutable package artifacts |
+| Run execution service | `run_service.py` | persisted global run lifecycle, package provenance, per-step detail, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
 | Service test hotspots | `../../tests/test_api.py`, `../../tests/test_runtime_api.py`, `../../tests/test_runtime_artifacts.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, platform execution, and cutover assertions |
@@ -33,9 +33,9 @@
 - `PositionService` may consult the quote provider to resolve symbol names and caches successful lookups in `symbol_name_cache`; lookup failures should not block manual position CRUD.
 - `TemplateCompilerService` resolves the `{{portfolios...}}` and `{{reports...}}` placeholder contract against repositories and powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
 - `ReportService` treats `source` as report origin: `compiled` for template snapshots, `uploaded` for markdown uploads, `external` for true external user/API-created JSON reports, and `agent` for agent-created reports. Agent-memory report purpose stays in `metadata.analysis.reviewType="agent_memory"` with `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
-- Agent-platform services keep versioned config immutable, validate typed contracts before save, preserve secret-safe model-connection semantics, and keep run persistence detailed enough for the run monitor.
-- Capability terminology is canonical in service docs and API-facing examples. Use `capability_service.py`, `CapabilityService`, `CapabilityRepository`, `ToolCatalog`, `capabilities`, `toolKeys`, `tools`, `capabilityId`, `capabilityKey`, and `capabilityVersion` for live behavior.
-- Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from model connections.
+- Workflow package services keep package versions immutable, validate typed contracts before save, preserve no-secret import/export behavior, and keep run persistence detailed enough for package provenance and the run monitor.
+- Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against `ToolCatalog`.
+- Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
 
 ## ANTI-PATTERNS
 - Do not commit from routers or repositories when a service already owns the workflow.

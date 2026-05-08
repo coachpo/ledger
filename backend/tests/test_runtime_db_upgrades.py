@@ -163,6 +163,69 @@ _INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
 _INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 
 
+def _insert_representable_workflow_package(
+    connection: Connection,
+    *,
+    key: str,
+    workflow_key: str = "upgrade_workflow",
+) -> dict[str, object]:
+    manifest_hash = "a" * 64
+    compiled_hash = "b" * 64
+    package_id = cast(
+        int,
+        connection.execute(
+            text(
+                """
+                INSERT INTO workflow_packages (key, name, description, status, draft_source)
+                VALUES (:key, :name, '', 'active', '')
+                RETURNING id
+                """
+            ),
+            {"key": key, "name": key.replace("_", " ").title()},
+        ).scalar_one(),
+    )
+    version_id = cast(
+        int,
+        connection.execute(
+            text(
+                """
+                INSERT INTO workflow_package_versions (
+                    package_id, version, manifest_source, manifest_hash, package_definition,
+                    compiled_plan, compiled_hash, validation_summary
+                ) VALUES (
+                    :package_id, 1, 'manifest', :manifest_hash,
+                    CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
+                    :compiled_hash, '{"diagnostics": []}'::jsonb
+                ) RETURNING id
+                """
+            ),
+            {
+                "compiled_hash": compiled_hash,
+                "compiled_plan": json.dumps(
+                    {"packageKey": key, "workflows": {workflow_key: {"key": workflow_key}}}
+                ),
+                "manifest_hash": manifest_hash,
+                "package_definition": json.dumps(
+                    {"metadata": {"key": key}, "spec": {"workflows": [{"key": workflow_key}]}}
+                ),
+                "package_id": package_id,
+            },
+        ).scalar_one(),
+    )
+    _ = connection.execute(
+        text("UPDATE workflow_packages SET latest_version_id = :version_id WHERE id = :id"),
+        {"id": package_id, "version_id": version_id},
+    )
+    return {
+        "package_id": package_id,
+        "package_key": key,
+        "version_id": version_id,
+        "version": 1,
+        "manifest_hash": manifest_hash,
+        "workflow_key": workflow_key,
+    }
+
+
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
     model_connection_id = connection.execute(
         text(
@@ -1000,7 +1063,7 @@ def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
         engine.dispose()
 
 
-def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
+def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -1031,6 +1094,11 @@ def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
             )
             _ = connection.exec_driver_sql(statement)
 
+            package = _insert_representable_workflow_package(
+                connection,
+                key="cost_package",
+                workflow_key="cost_workflow",
+            )
             run_cost_columns_sql = ", ".join(_RUN_COST_COLUMNS)
             run_cost_placeholders_sql = ", ".join(
                 f":run_legacy_amount_{index}" for index, _ in enumerate(_RUN_COST_COLUMNS)
@@ -1038,20 +1106,44 @@ def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
             run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "input, status, total_tokens, inherited_tokens, executed_tokens, "
+                    f"{run_cost_columns_sql}"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, '{}'::jsonb, 'succeeded', 17, 5, 12, "
+                    f"{run_cost_placeholders_sql}"
+                    ") RETURNING id"
+                ),
+                {
+                    **package,
+                    **{
+                        f"run_legacy_amount_{index}": index + 1
+                        for index, _ in enumerate(_RUN_COST_COLUMNS)
+                    },
+                },
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, input, status, "
                     "total_tokens, inherited_tokens, executed_tokens, "
                     f"{run_cost_columns_sql}"
                     ") VALUES ("
                     "'workflow', 42, 'legacy_cost_workflow', 1, '{}'::jsonb, 'succeeded', "
-                    "17, 5, 12, "
+                    "31, 11, 20, "
                     f"{run_cost_placeholders_sql}"
-                    ") RETURNING id"
+                    ")"
                 ),
                 {
                     f"run_legacy_amount_{index}": index + 1
                     for index, _ in enumerate(_RUN_COST_COLUMNS)
                 },
-            ).scalar_one()
+            )
             step_id = connection.execute(
                 text(
                     "INSERT INTO run_steps (run_id, step_index, status, origin, persisted_at) "
@@ -1114,7 +1206,7 @@ def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
             ).one()
 
         assert runtime_counts == (1, 1, 1)
-        assert preserved_run == ("legacy_cost_workflow", "succeeded", 17)
+        assert preserved_run == ("cost_package", "succeeded", 17)
         assert preserved_invocation == ("legacy_cost_agent", "succeeded", 19)
         assert set(_RUN_COST_COLUMNS).isdisjoint(run_columns)
         assert _INVOCATION_COST_COLUMN not in invocation_columns
@@ -1124,7 +1216,7 @@ def test_init_db_removed_cost_columns_without_deleting_runtime_rows(
         engine.dispose()
 
 
-def test_init_db_deletes_legacy_skill_storage_and_clears_agent_capabilities_idempotently(
+def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
     database_url: str,
 ) -> None:
     engine = create_engine(database_url, future=True)
@@ -1224,7 +1316,7 @@ def test_init_db_deletes_legacy_skill_storage_and_clears_agent_capabilities_idem
                 text(
                     "SELECT "
                     "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT capabilities FROM agents WHERE key = :key)"
+                    "(SELECT COUNT(*) FROM agents WHERE key = :key)"
                 ),
                 {"key": "legacy_agent"},
             ).one()
@@ -1234,7 +1326,7 @@ def test_init_db_deletes_legacy_skill_storage_and_clears_agent_capabilities_idem
         assert "tool_grants" not in capability_columns
         assert "tool_definitions" not in capability_columns
         assert "skills" not in agent_columns
-        assert first_snapshot == (0, [])
+        assert first_snapshot == (0, 0)
 
         init_db(database_url)
 
@@ -1243,7 +1335,7 @@ def test_init_db_deletes_legacy_skill_storage_and_clears_agent_capabilities_idem
                 text(
                     "SELECT "
                     "(SELECT COUNT(*) FROM capabilities), "
-                    "(SELECT capabilities FROM agents WHERE key = :key)"
+                    "(SELECT COUNT(*) FROM agents WHERE key = :key)"
                 ),
                 {"key": "legacy_agent"},
             ).one()
@@ -1352,24 +1444,43 @@ def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
 
     try:
         with engine.begin() as connection:
+            package = _insert_representable_workflow_package(
+                connection,
+                key="lifecycle_package",
+                workflow_key="lifecycle_workflow",
+            )
             succeeded_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input, "
-                    "started_at, finished_at, created_at"
-                    ") VALUES ('workflow', 1, 'preserved_success', 1, 'succeeded', '{}'::jsonb, "
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "status, input, started_at, finished_at, created_at"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, 'succeeded', '{}'::jsonb, "
                     "'2026-04-19T10:00:00Z', '2026-04-19T10:02:00Z', "
                     "'2026-04-19T09:59:00Z') RETURNING id"
-                )
+                ),
+                package,
             ).scalar_one()
             running_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input, "
-                    "started_at, created_at"
-                    ") VALUES ('workflow', 2, 'preserved_running', 1, 'running', '{}'::jsonb, "
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "status, input, started_at, created_at"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, 'running', '{}'::jsonb, "
                     "'2026-04-19T11:00:00Z', '2026-04-19T10:59:00Z') RETURNING id"
-                )
+                ),
+                package,
             ).scalar_one()
             connection.exec_driver_sql("ALTER TABLE runs DROP CONSTRAINT ck_runs_status")
             connection.exec_driver_sql(
@@ -1400,10 +1511,18 @@ def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
             queued_insert_status = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, input"
-                    ") VALUES ('workflow', 3, 'new_default', 1, '{}'::jsonb) "
-                    "RETURNING status"
-                )
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "input"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, '{}'::jsonb"
+                    ") RETURNING status"
+                ),
+                package,
             ).scalar_one()
 
         assert run_columns["queued_at"]["nullable"] is False
@@ -1429,30 +1548,58 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
     try:
         queued_run_id: int
         with engine.begin() as connection:
+            package = _insert_representable_workflow_package(
+                connection,
+                key="recovery_package",
+                workflow_key="recovery_workflow",
+            )
             running_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input"
-                    ") VALUES ('workflow', 1, 'stock_analysis', 1, 'running', '{}'::jsonb) "
-                    "RETURNING id"
-                )
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "status, input"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, 'running', '{}'::jsonb"
+                    ") RETURNING id"
+                ),
+                package,
             ).scalar_one()
             failed_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input, error"
-                    ") VALUES ('workflow', 2, 'already_failed', 1, 'failed', '{}'::jsonb, "
-                    "'existing failure') RETURNING id"
-                )
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "status, input, error"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, 'failed', '{}'::jsonb, 'existing failure'"
+                    ") RETURNING id"
+                ),
+                package,
             ).scalar_one()
             queued_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, status, input, "
-                    "started_at, finished_at"
-                    ") VALUES ('workflow', 3, 'queued_work', 1, 'queued', '{}'::jsonb, "
-                    "NULL, NULL) RETURNING id"
-                )
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
+                    "workflow_package_version, workflow_package_hash, "
+                    "workflow_package_workflow_key, "
+                    "status, input, started_at, finished_at"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, :package_key, :version, "
+                    ":package_id, :package_key, :version_id, :version, :manifest_hash, "
+                    ":workflow_key, 'queued', '{}'::jsonb, NULL, NULL"
+                    ") RETURNING id"
+                ),
+                package,
             ).scalar_one()
             step_rows = connection.execute(
                 text(
@@ -1599,8 +1746,8 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
 
         assert first_snapshot == {
             "output_schema_keys": [],
-            "capability_keys": [_LIVE_CAPABILITY_KEY, STOCK_ANALYSIS_CAPABILITY_KEY],
-            "mcp_server_keys": [_LIVE_MCP_SERVER_KEY, STOCK_ANALYSIS_MCP_SERVER_KEY],
+            "capability_keys": [],
+            "mcp_server_keys": [],
             "model_connection_keys": ["upgrade_test_connection"],
             "agent_keys": [],
             "workflow_keys": [],
@@ -1712,7 +1859,7 @@ def test_init_db_hard_cutover_deletes_runtime_rows_and_preserves_config_product_
         engine.dispose()
 
 
-def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agent_refs(
+def test_workflow_package_clean_break_removes_legacy_authoring_rows_preserves_model_connections(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -1720,6 +1867,20 @@ def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agen
 
     try:
         with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO model_connections (
+                        key, status, name, description, base_url, model_id, reasoning_effort,
+                        api_style, timeout_seconds, secret_payload, created_at, updated_at
+                    ) VALUES (
+                        'clean_break_model', 'active', 'Clean Break Model', '',
+                        'https://api.openai.com/v1', 'openai:gpt-5.4-mini', 'medium',
+                        'responses', 60, '{}'::jsonb, NOW(), NOW()
+                    )
+                    """
+                )
+            )
             stale_capability_id = connection.execute(
                 text(
                     """
@@ -1738,6 +1899,40 @@ def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agen
                     "tool_keys": json.dumps(["ledger.reports.lookup", "ledger.stale.lookup"]),
                 },
             ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO output_schemas (
+                        key, version, status, kind, name, description, json_schema,
+                        registry_refs, created_at, updated_at
+                    ) VALUES (
+                        'stale_output_schema', 1, 'draft', 'standalone', 'Stale Output', '',
+                        '{"type": "object"}'::jsonb, '[]'::jsonb, NOW(), NOW()
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO mcp_servers (key, version, status, config, created_at, updated_at)
+                    VALUES ('stale_mcp_server', 1, 'draft', '{}'::jsonb, NOW(), NOW())
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflows (
+                        key, version, status, name, input_schema, steps, output_spec
+                    )
+                    VALUES (
+                        'stale_workflow', 1, 'draft', 'Stale Workflow', '{}'::jsonb,
+                        '[]'::jsonb, '{}'::jsonb
+                    )
+                    """
+                )
+            )
             connection.execute(
                 text(
                     """
@@ -1772,13 +1967,16 @@ def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agen
             first_snapshot = connection.execute(
                 text(
                     "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities WHERE id = :capability_id), "
-                    "(SELECT capabilities FROM agents WHERE key = :agent_key)"
-                ),
-                {"agent_key": "stale_capability_agent", "capability_id": stale_capability_id},
+                    "(SELECT COUNT(*) FROM capabilities), "
+                    "(SELECT COUNT(*) FROM agents), "
+                    "(SELECT COUNT(*) FROM workflows), "
+                    "(SELECT COUNT(*) FROM mcp_servers), "
+                    "(SELECT COUNT(*) FROM output_schemas), "
+                    "(SELECT COUNT(*) FROM model_connections WHERE key = 'clean_break_model')"
+                )
             ).one()
 
-        assert first_snapshot == (0, [])
+        assert first_snapshot == (0, 0, 0, 0, 0, 1)
 
         init_db(database_url)
 
@@ -1786,10 +1984,13 @@ def test_init_db_deletes_stale_capability_tool_keys_idempotently_and_clears_agen
             second_snapshot = connection.execute(
                 text(
                     "SELECT "
-                    "(SELECT COUNT(*) FROM capabilities WHERE id = :capability_id), "
-                    "(SELECT capabilities FROM agents WHERE key = :agent_key)"
-                ),
-                {"agent_key": "stale_capability_agent", "capability_id": stale_capability_id},
+                    "(SELECT COUNT(*) FROM capabilities), "
+                    "(SELECT COUNT(*) FROM agents), "
+                    "(SELECT COUNT(*) FROM workflows), "
+                    "(SELECT COUNT(*) FROM mcp_servers), "
+                    "(SELECT COUNT(*) FROM output_schemas), "
+                    "(SELECT COUNT(*) FROM model_connections WHERE key = 'clean_break_model')"
+                )
             ).one()
 
         assert second_snapshot == first_snapshot
@@ -2470,33 +2671,20 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
         init_db(database_url)
 
         with engine.connect() as connection:
-            placeholder_row = connection.execute(
+            clean_break_counts = connection.execute(
                 text(
-                    "SELECT COUNT(*) AS row_count, MIN(api_style) AS api_style "
-                    "FROM model_connections WHERE model_id = :model_id"
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM agents WHERE key = :agent_key), "
+                    "(SELECT COUNT(*) FROM model_connections WHERE model_id = :model_id)"
                 ),
-                {"model_id": "openai:gpt-5.4-mini"},
-            ).one()
-            linked_agent = connection.execute(
-                text(
-                    "SELECT model_connection_id IS NOT NULL, model_connection_snapshot "
-                    "FROM agents WHERE key = :key AND version = 1"
-                ),
-                {"key": "repair_nullable_agent"},
+                {
+                    "agent_key": "repair_nullable_agent",
+                    "model_id": "openai:gpt-5.4-mini",
+                },
             ).one()
 
         agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert placeholder_row == (1, "responses")
-        assert linked_agent[0] is True
-        assert linked_agent[1] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:gpt-5.4-mini",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "medium",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
+        assert clean_break_counts == (0, 0)
         assert agent_columns["model_connection_id"]["nullable"] is False
         assert agent_columns["model_connection_snapshot"]["nullable"] is False
     finally:
@@ -2578,33 +2766,22 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
         init_db(database_url)
 
         with engine.connect() as connection:
-            linked_agent_id = connection.execute(
+            clean_break_counts = connection.execute(
                 text(
-                    "SELECT model_connection_id, model_connection_snapshot "
-                    "FROM agents WHERE key = :key AND version = 1"
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM agents WHERE key = :agent_key), "
+                    "(SELECT COUNT(*) AS row_count FROM model_connections "
+                    "WHERE id = :connection_id), "
+                    "(SELECT MIN(api_style) FROM model_connections WHERE id = :connection_id)"
                 ),
-                {"key": "already_linked_agent"},
-            ).one()
-            model_connection_row = connection.execute(
-                text(
-                    "SELECT COUNT(*) AS row_count, MIN(api_style) AS api_style "
-                    "FROM model_connections WHERE model_id = :model_id"
-                ),
-                {"model_id": "openai:gpt-5.4-mini"},
+                {
+                    "agent_key": "already_linked_agent",
+                    "connection_id": linked_model_connection_id,
+                },
             ).one()
 
         agent_columns = {column["name"]: column for column in inspect(engine).get_columns("agents")}
-        assert linked_agent_id[0] == linked_model_connection_id
-        assert linked_agent_id[1] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:gpt-5.4-mini",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "medium",
-            "api_style": "chat_completions",
-            "timeout_seconds": 60,
-        }
-        assert model_connection_row == (1, "chat_completions")
+        assert clean_break_counts == (0, 1, "chat_completions")
         assert agent_columns["model_connection_id"]["nullable"] is False
         assert agent_columns["model_connection_snapshot"]["nullable"] is False
     finally:
@@ -2675,46 +2852,21 @@ def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_cust
         init_db(database_url)
 
         with engine.connect() as connection:
-            snapshot_rows = connection.execute(
+            clean_break_counts = connection.execute(
                 text(
-                    "SELECT key, model_connection_snapshot FROM agents "
-                    "WHERE key LIKE 'snapshot_%_agent' ORDER BY key ASC"
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM agents WHERE key LIKE 'snapshot_%_agent'), "
+                    "(SELECT COUNT(*) FROM model_connections "
+                    "WHERE key LIKE 'snapshot_%_connection')"
                 )
-            ).all()
+            ).one()
 
-        snapshots = {row[0]: row[1] for row in snapshot_rows}
-        assert snapshots["snapshot_null_agent"] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:snapshot_null_connection",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": None,
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-        assert snapshots["snapshot_custom_agent"] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:snapshot_custom_connection",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "XHigh",
-            "api_style": "responses",
-            "timeout_seconds": 60,
-        }
-        assert snapshots["snapshot_missing_reasoning_agent"] == {
-            "base_url": "https://api.openai.com/v1",
-            "model_id": "openai:snapshot_missing_field_connection",
-            "organization": None,
-            "project": None,
-            "reasoning_effort": "custom-exact",
-            "api_style": "chat_completions",
-            "timeout_seconds": 60,
-        }
+        assert clean_break_counts == (0, 3)
     finally:
         engine.dispose()
 
 
-def test_upgrade_legacy_schema_flattens_wrapped_mcp_rows(session_factory) -> None:
+def test_upgrade_legacy_schema_deletes_wrapped_mcp_authoring_rows(session_factory) -> None:
     flat_config = {
         "name": "Market Data",
         "description": "Published MCP server",
@@ -2739,14 +2891,11 @@ def test_upgrade_legacy_schema_flattens_wrapped_mcp_rows(session_factory) -> Non
     upgrade_legacy_schema(engine)
 
     with session_factory() as session:
-        stored = session.query(McpServer).filter_by(key="market_data", version=1).one()
-        assert stored.config == flat_config
-        assert stored.flat_config == flat_config
-        assert stored.transport == "http-sse"
-        assert stored.enabled is True
+        stored_count = session.query(McpServer).filter_by(key="market_data", version=1).count()
+        assert stored_count == 0
 
 
-def test_upgrade_legacy_schema_leaves_mismatched_wrapped_mcp_rows_unchanged(
+def test_upgrade_legacy_schema_deletes_mismatched_wrapped_mcp_authoring_rows(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -2783,11 +2932,11 @@ def test_upgrade_legacy_schema_leaves_mismatched_wrapped_mcp_rows_unchanged(
         upgrade_legacy_schema(engine)
 
         with engine.connect() as connection:
-            stored = connection.execute(
-                text("SELECT config FROM mcp_servers WHERE key = :key AND version = :version"),
+            stored_count = connection.execute(
+                text("SELECT COUNT(*) FROM mcp_servers WHERE key = :key AND version = :version"),
                 {"key": "market_data", "version": 1},
             ).scalar_one()
 
-        assert stored == legacy_payload
+        assert stored_count == 0
     finally:
         engine.dispose()

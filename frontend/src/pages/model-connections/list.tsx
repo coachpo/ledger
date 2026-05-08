@@ -69,7 +69,7 @@ export function ModelConnectionsListPage() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Model Connections</h1>
           <p className="text-sm text-muted-foreground">
-            Manage saved model endpoints, credentials, and runtime defaults that agents will reference.
+            Manage live model endpoints, credentials, and runtime defaults that workflow packages reference by stable key.
           </p>
         </div>
         <Button
