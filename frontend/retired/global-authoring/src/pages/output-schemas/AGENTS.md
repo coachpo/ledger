@@ -1,9 +1,9 @@
 # FRONTEND OUTPUT SCHEMAS PAGES GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+> Retired global-authoring guide. The live app does not route these pages; package-private output schemas own current schema authoring.
 
 ## OVERVIEW
-`src/pages/output-schemas/` contains the routed output schema inventory and the builder-first editor. The editor keeps the builder tree, raw JSON Schema tab, and preview tab in sync through shared helpers in `shared.ts`.
+`src/pages/output-schemas/` was the retired output schema inventory and builder-first editor. These archived pages kept the builder tree, raw JSON Schema tab, and preview tab in sync before schemas moved inside Workflow Packages.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

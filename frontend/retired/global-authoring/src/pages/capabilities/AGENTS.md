@@ -1,9 +1,9 @@
 # FRONTEND CAPABILITIES PAGES GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+> Retired global-authoring guide. The live app does not route these pages; package-local capability profiles own current tool grants.
 
 ## OVERVIEW
-`src/pages/capabilities/` contains the routed capability inventory and capability editor. These pages support activation after creation, archive from the list, and strict catalog selection of `toolKeys` in the editor.
+`src/pages/capabilities/` was the retired routed capability inventory and editor. These archived pages supported activation, archive, and strict catalog selection before capability profiles moved inside Workflow Packages.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

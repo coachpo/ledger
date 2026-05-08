@@ -1,9 +1,9 @@
 # FRONTEND AGENTS PAGES GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+> Retired global-authoring guide. The live app does not route these pages; package-first Workflow Packages own current agent authoring.
 
 ## OVERVIEW
-`src/pages/agents/` contains the routed agent inventory and agent editor. These pages handle duplicate, archive, and run-launch flows, while the hook layer owns cache invalidation and run API calls.
+`src/pages/agents/` was the retired routed agent inventory and editor. These archived pages handled duplicate, archive, and run-launch flows before package-local agents moved under Workflow Packages.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
