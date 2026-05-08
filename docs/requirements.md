@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference as of 2026-05-08.
+> Status: Live requirements reference for branch `main` at `e8fd5af`.
 
 ## Purpose
 
@@ -18,6 +18,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing as global live bindings.
 - Global read-only Tools metadata from the server-declared catalog.
 - Run list/detail, package provenance, rerun drafts, reruns, step replay drafts, and step replays.
+
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, and tax-lot accounting.
@@ -41,6 +42,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Reports must support canonical `source` origins `compiled`, `uploaded`, `external`, and `agent`.
 - `external` must remain limited to true external user/API-created reports; agent-created reports must use `source="agent"`.
 - Report reads, updates, deletes, and downloads must be slug-addressed.
+
 ### FR-3 Package-First Agent Platform
 
 - Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and retired `spec.skills` fields.

@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference as of 2026-05-08.
+> Status: Live product-scope reference for branch `main` at `e8fd5af`.
 
 ## Product Summary
 
@@ -21,6 +21,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 - Live broker integration, order routing, realtime quotes, alerts, or autonomous schedulers.
 - Retired Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or retired legacy global authoring browser/API surfaces.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
+
 ## Product Areas
 
 1. Portfolio workspace: portfolio list/detail, balances, positions, CSV import, trades, quote-enriched metrics, and warnings.

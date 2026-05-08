@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference as of 2026-05-08.
+> Status: Live technical reference for branch `main` at `e8fd5af`.
 
 ## Overview
 
@@ -19,7 +19,8 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 - `backend/app/api/router.py` mounts preserved `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
 - `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, tools, and runs.
 - `backend/app/api/dependencies.py` is the service composition root.
-- `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; `backend/alembic/` is not the live migration authority.
+- `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; Alembic is not the live migration authority.
+
 ## Key Backend Services
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, and report services own preserved product behavior.
