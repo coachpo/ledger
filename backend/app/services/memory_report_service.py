@@ -50,14 +50,21 @@ class MemoryReportService:
         trusted_context: AgentMemoryTrustedCreateContext,
     ) -> ReportRead:
         memory_service = MemoryService(self.session)
-        result = memory_service.write_memory(
+        slug = self._pending_slug(model_input=payload.analysis, trusted_context=trusted_context)
+        _ = memory_service.write_memory(
             capability_references=capability_references,
             payload=memory_service.write_request_from_report_create(
                 payload=payload,
                 trusted_context=trusted_context,
             ),
         )
-        return self._read_memory_report(memory_service.report_id_from_memory_id(result.memory_id))
+        report = self.repository.get_by_slug(slug)
+        if report is None:
+            raise not_found_error("Report")
+        return self._read_existing_memory_report(
+            report,
+            metadata=AgentMemoryReportMetadata.model_validate(report.metadata_),
+        )
 
     def update_memory_report(
         self,

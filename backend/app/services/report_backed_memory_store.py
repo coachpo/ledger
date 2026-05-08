@@ -7,7 +7,7 @@ import unicodedata
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Final, Literal, cast
 
 from fastapi import status
 from pydantic import ValidationError
@@ -31,9 +31,8 @@ from app.schemas.memory import (
     MemoryReflection,
     MemoryWriteRequest,
     MemoryWriteResult,
-    format_report_backed_memory_id,
+    invalid_memory_id_error,
     memory_not_found_error,
-    parse_report_backed_memory_id,
 )
 from app.schemas.memory_report import (
     AGENT_MEMORY_REVIEW_TYPE,
@@ -47,9 +46,27 @@ from app.schemas.memory_report import (
 _MAX_NAME_LENGTH = 200
 _MEMORY_REPORT_SOURCE = "agent"
 _MEMORY_SLUG_FINGERPRINT_LENGTH = 12
+_MEMORY_ID_RE: Final = re.compile(r"^mem_(?P<report_id>[1-9][0-9]*)$")
+
+
+def _format_memory_id(report_id: int) -> str:
+    if report_id < 1:
+        raise invalid_memory_id_error()
+    return f"mem_{report_id}"
+
+
+def _parse_memory_id(memory_id: str) -> int:
+    match = _MEMORY_ID_RE.fullmatch(memory_id.strip())
+    if match is None:
+        raise invalid_memory_id_error()
+    return int(match.group("report_id"))
 
 
 class ReportBackedMemoryStore:
+    @staticmethod
+    def memory_id_from_report_id(report_id: int) -> str:
+        return _format_memory_id(report_id)
+
     def __init__(self, session: Session) -> None:
         self.session: Session = session
         self.repository: ReportRepository = ReportRepository(session)
@@ -187,7 +204,7 @@ class ReportBackedMemoryStore:
         return candidates[query.offset :]
 
     def _get_memory_report(self, memory_id: str) -> Report:
-        report_id = parse_report_backed_memory_id(memory_id)
+        report_id = _parse_memory_id(memory_id)
         report = self.repository.get(report_id)
         if report is None:
             raise memory_not_found_error()
@@ -261,7 +278,7 @@ class ReportBackedMemoryStore:
     ) -> MemoryWriteResult:
         metadata = self._valid_memory_metadata(report)
         return MemoryWriteResult(
-            memory_id=format_report_backed_memory_id(report.id),
+            memory_id=_format_memory_id(report.id),
             status=MemoryLifecycleStatus(metadata.analysis.resolved_status),
             action=action,
             created_at=report.created_at,
@@ -277,7 +294,7 @@ class ReportBackedMemoryStore:
         status_value = MemoryLifecycleStatus(analysis.resolved_status)
         outcome = self._outcome(analysis) if status_value != MemoryLifecycleStatus.PENDING else None
         return MemoryEntryRead(
-            memory_id=format_report_backed_memory_id(report.id),
+            memory_id=_format_memory_id(report.id),
             status=status_value,
             ticker=analysis.ticker,
             decision=self._decision(analysis.decision),
@@ -303,7 +320,7 @@ class ReportBackedMemoryStore:
         if outcome is None:
             raise memory_not_found_error()
         return MemoryPromptSnippet(
-            memory_id=format_report_backed_memory_id(report.id),
+            memory_id=_format_memory_id(report.id),
             text=self._render_prompt_text(analysis),
             provenance=self._provenance(analysis),
             outcome=outcome,
@@ -317,7 +334,7 @@ class ReportBackedMemoryStore:
     ) -> MemoryArtifactRead:
         analysis = metadata.analysis
         return MemoryArtifactRead(
-            memory_id=format_report_backed_memory_id(report.id),
+            memory_id=_format_memory_id(report.id),
             status=MemoryLifecycleStatus(analysis.resolved_status),
             summary=self._artifact_summary(analysis),
             provenance=self._provenance(analysis),

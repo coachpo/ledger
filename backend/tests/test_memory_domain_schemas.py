@@ -7,7 +7,6 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from app.core.errors import ApiError
 from app.schemas.memory import (
     INVALID_MEMORY_ID_CODE,
     MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS,
@@ -27,10 +26,8 @@ from app.schemas.memory import (
     MemoryReflection,
     MemoryWriteRequest,
     MemoryWriteResult,
-    format_report_backed_memory_id,
     invalid_memory_id_error,
     memory_not_found_error,
-    parse_report_backed_memory_id,
 )
 
 _CREATED_AT = datetime(2026, 5, 8, 9, 30, tzinfo=UTC)
@@ -109,25 +106,17 @@ def _serialized_text(payload: object) -> str:
     return str(payload)
 
 
-def test_report_backed_memory_id_is_opaque_phase_1_identity() -> None:
-    memory_id = MemoryId.from_report_id(123)
+def test_memory_id_is_opaque_phase_1_identity() -> None:
+    memory_id = MemoryId(value=" mem_123 ")
+    future_memory_id = MemoryId(value="memory-provider-token")
 
     assert memory_id.value == "mem_123"
     assert memory_id.model_dump(mode="json", by_alias=True) == {"value": "mem_123"}
-    assert memory_id.report_id_for_report_backed_store() == 123
-    assert format_report_backed_memory_id(456) == "mem_456"
-    assert parse_report_backed_memory_id("mem_456") == 456
+    assert future_memory_id.value == "memory-provider-token"
 
 
-@pytest.mark.parametrize(
-    "value",
-    ["", "mem_", "mem_0", "mem_-1", "mem_abc", "report_1", "mem_1_slug"],
-)
-def test_invalid_memory_id_uses_sanitized_memory_domain_error(value: str) -> None:
-    with pytest.raises(ApiError) as exc_info:
-        _ = parse_report_backed_memory_id(value)
-
-    error = exc_info.value
+def test_invalid_memory_id_error_uses_sanitized_memory_domain_error() -> None:
+    error = invalid_memory_id_error()
     serialized = _serialized_text(
         {"code": error.code, "message": error.message, "details": error.details}
     )

@@ -17,8 +17,6 @@ from app.schemas.memory import (
     MemoryReflection,
     MemoryWriteRequest,
     MemoryWriteResult,
-    format_report_backed_memory_id,
-    parse_report_backed_memory_id,
 )
 from app.schemas.memory_report import (
     AgentMemoryReflectionAppend,
@@ -46,15 +44,20 @@ class MemoryService:
         *,
         capability_references: Sequence[dict[str, object]],
         payload: MemoryWriteRequest,
+        commit: bool = True,
     ) -> MemoryWriteResult:
         self.capability_service.require_report_memory_write_grant(
             capability_references=capability_references
         )
         try:
             result = self.store.create_pending(payload)
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.session.flush()
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
         return result
 
@@ -89,7 +92,7 @@ class MemoryService:
         resolution: AgentMemoryResolutionUpdate,
     ) -> MemoryEntryRead:
         return self.resolve_memory(
-            self.memory_id_from_report_id(report_id),
+            ReportBackedMemoryStore.memory_id_from_report_id(report_id),
             self.outcome_from_report_resolution(resolution),
         )
 
@@ -98,7 +101,7 @@ class MemoryService:
         report_id: int,
         payload: AgentMemoryServiceUpdate,
     ) -> MemoryEntryRead:
-        memory_id = self.memory_id_from_report_id(report_id)
+        memory_id = ReportBackedMemoryStore.memory_id_from_report_id(report_id)
         try:
             if payload.resolution is not None:
                 entry = self.store.resolve(
@@ -126,14 +129,6 @@ class MemoryService:
 
     def get_audit_links(self, memory_id: str) -> MemoryAuditLinks:
         return self.store.audit_links(memory_id)
-
-    @staticmethod
-    def memory_id_from_report_id(report_id: int) -> str:
-        return format_report_backed_memory_id(report_id)
-
-    @staticmethod
-    def report_id_from_memory_id(memory_id: str) -> int:
-        return parse_report_backed_memory_id(memory_id)
 
     @staticmethod
     def write_request_from_report_create(

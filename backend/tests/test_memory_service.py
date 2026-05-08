@@ -173,7 +173,7 @@ def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(
 
 def test_memory_report_service_boundary_has_no_new_direct_production_create_call_sites() -> None:
     backend_root = Path(__file__).resolve().parents[1]
-    allowed = {Path("app/services/run_service.py")}
+    allowed: set[Path] = set()
     direct_call_re = re.compile(
         r"MemoryReportService\([^)]*\)\.create_pending_report\(",
         re.MULTILINE,

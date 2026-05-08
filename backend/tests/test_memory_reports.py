@@ -1309,7 +1309,7 @@ def _resolved_context_report(
 
 
 def _memory_id(report: ReportRead) -> str:
-    return MemoryService.memory_id_from_report_id(report.id)
+    return f"mem_{report.id}"
 
 
 def _memory_id_order(snippets: list[MemoryPromptSnippet]) -> list[str]:

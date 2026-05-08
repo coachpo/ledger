@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -18,9 +17,6 @@ from pydantic import (
 from app.core.errors import ApiError
 from app.core.formatting import normalize_symbol
 from app.schemas.common import CamelModel, ensure_timezone
-
-MEMORY_ID_PREFIX: Final = "mem_"
-_MEMORY_ID_RE: Final = re.compile(r"^mem_(?P<report_id>[1-9][0-9]*)$")
 
 INVALID_MEMORY_ID_CODE: Final = "invalid_memory_id"
 MEMORY_NOT_FOUND_CODE: Final = "memory_not_found"
@@ -52,19 +48,6 @@ MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
     "ui-visible": ("memoryId", "status", "summary", "provenance", "auditLinks"),
     "report-route-visible": ("auditLinks",),
 }
-
-
-def format_report_backed_memory_id(report_id: int) -> str:
-    if report_id < 1:
-        raise invalid_memory_id_error()
-    return f"{MEMORY_ID_PREFIX}{report_id}"
-
-
-def parse_report_backed_memory_id(memory_id: str) -> int:
-    match = _MEMORY_ID_RE.fullmatch(memory_id.strip())
-    if match is None:
-        raise invalid_memory_id_error()
-    return int(match.group("report_id"))
 
 
 def invalid_memory_id_error() -> ApiError:
@@ -118,21 +101,10 @@ class MemoryLifecycleStatus(str, Enum):  # noqa: UP042
 class MemoryId(CamelModel):
     value: str
 
-    @classmethod
-    def from_report_id(cls, report_id: int) -> MemoryId:
-        return cls(value=format_report_backed_memory_id(report_id))
-
     @field_validator("value", mode="before")
     @classmethod
     def validate_value(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("memoryId must be a string")
-        normalized = value.strip()
-        _ = parse_report_backed_memory_id(normalized)
-        return normalized
-
-    def report_id_for_report_backed_store(self) -> int:
-        return parse_report_backed_memory_id(self.value)
+        return _normalize_required_text(value, field_name="memoryId")
 
 
 class MemoryDecision(CamelModel):
@@ -279,11 +251,7 @@ class MemoryEntryRead(_MemoryProjectionMixin):
     @field_validator("memory_id", mode="before")
     @classmethod
     def validate_memory_id(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("memoryId must be a string")
-        normalized = value.strip()
-        _ = parse_report_backed_memory_id(normalized)
-        return normalized
+        return _normalize_required_text(value, field_name="memoryId")
 
     @field_validator("ticker", "benchmark_symbol", mode="before")
     @classmethod
@@ -354,11 +322,7 @@ class MemoryWriteResult(_MemoryProjectionMixin):
     @field_validator("memory_id", mode="before")
     @classmethod
     def validate_memory_id(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("memoryId must be a string")
-        normalized = value.strip()
-        _ = parse_report_backed_memory_id(normalized)
-        return normalized
+        return _normalize_required_text(value, field_name="memoryId")
 
     @field_validator("created_at")
     @classmethod
@@ -407,11 +371,7 @@ class MemoryPromptSnippet(_MemoryProjectionMixin):
     @field_validator("memory_id", mode="before")
     @classmethod
     def validate_memory_id(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("memoryId must be a string")
-        normalized = value.strip()
-        _ = parse_report_backed_memory_id(normalized)
-        return normalized
+        return _normalize_required_text(value, field_name="memoryId")
 
     @field_validator("text", mode="before")
     @classmethod
@@ -431,11 +391,7 @@ class MemoryArtifactRead(_MemoryProjectionMixin):
     @field_validator("memory_id", mode="before")
     @classmethod
     def validate_memory_id(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("memoryId must be a string")
-        normalized = value.strip()
-        _ = parse_report_backed_memory_id(normalized)
-        return normalized
+        return _normalize_required_text(value, field_name="memoryId")
 
     @field_validator("summary", mode="before")
     @classmethod
@@ -450,7 +406,6 @@ class MemoryArtifactRead(_MemoryProjectionMixin):
 
 __all__ = [
     "INVALID_MEMORY_ID_CODE",
-    "MEMORY_ID_PREFIX",
     "MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS",
     "MEMORY_NOT_FOUND_CODE",
     "MEMORY_PROJECTION_MATRIX",
@@ -469,8 +424,6 @@ __all__ = [
     "MemoryReflection",
     "MemoryWriteRequest",
     "MemoryWriteResult",
-    "format_report_backed_memory_id",
     "invalid_memory_id_error",
     "memory_not_found_error",
-    "parse_report_backed_memory_id",
 ]
