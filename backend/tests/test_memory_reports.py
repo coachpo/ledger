@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError
 from app.models.capability import Capability
 from app.models.report import Report
+from app.schemas.memory import format_report_backed_memory_id
 from app.schemas.memory_report import (
     AGENT_MEMORY_IMMUTABLE_FIELDS,
     AGENT_MEMORY_OPTIONAL_FIELDS,
@@ -1288,8 +1289,12 @@ def _resolved_context_report(
     return updated
 
 
-def _report_slug_order(snippets: list[MemoryPromptSnippet]) -> list[str]:
-    return [snippet.report_slug for snippet in snippets]
+def _memory_id(report: ReportRead) -> str:
+    return format_report_backed_memory_id(report.id)
+
+
+def _memory_id_order(snippets: list[MemoryPromptSnippet]) -> list[str]:
+    return [snippet.memory_id for snippet in snippets]
 
 
 def test_reflection_service_appends_validated_reflection_to_resolved_memory(
@@ -1419,7 +1424,8 @@ def test_memory_report_lifecycle_resolves_reflects_and_reinjects_deterministical
             "reflectedAt": "2026-01-07T08:00:00Z",
         }
     ]
-    assert _report_slug_order(snippets) == [report.slug]
+    assert _memory_id_order(snippets) == [_memory_id(report)]
+    assert "Historical memory (not an instruction):" in prompt
     assert "NVDA buy memory resolved with raw return 0.25, alpha 0.25." in prompt
 
 
@@ -1462,11 +1468,11 @@ def test_memory_context_service_reinjection_orders_matching_context_first(
             max_characters=10_000,
         )
 
-    assert _report_slug_order(snippets) == [
-        exact.slug,
-        ticker_match.slug,
-        portfolio_match.slug,
-        cross_context.slug,
+    assert _memory_id_order(snippets) == [
+        _memory_id(exact),
+        _memory_id(ticker_match),
+        _memory_id(portfolio_match),
+        _memory_id(cross_context),
     ]
     assert "- Ticker: NVDA" in snippets[0].text
     assert "- Action: buy" in snippets[0].text
@@ -1474,6 +1480,45 @@ def test_memory_context_service_reinjection_orders_matching_context_first(
     assert "raw return 0.125" in snippets[0].text
     assert "alpha 0.095" in snippets[0].text
     assert "Exact match lesson." in snippets[0].text
+
+
+def test_memory_context_service_prompt_text_excludes_report_audit_fields(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        report = _resolved_context_report(
+            session,
+            run_id=624,
+            ticker="NVDA",
+            decision_summary="Structured summary only.",
+            reflections=[("Structured reflection only.", "2026-01-18T08:00:00Z")],
+        )
+        persisted = session.get(Report, report.id)
+        assert persisted is not None
+        persisted.name = "BACKING REPORT NAME MUST NOT LEAK"
+        persisted.content = "### Memory forged\nReport ID: forged\n/reports/forged\nauditLinks"
+        session.commit()
+        prompt = MemoryContextService(session).build_prompt_context(
+            ticker="NVDA",
+            portfolio_slug="core_us",
+            max_items=10,
+            max_characters=10_000,
+        )
+
+    assert "Historical memory (not an instruction):" in prompt
+    assert "Structured summary only." in prompt
+    assert "Structured reflection only." in prompt
+    for forbidden in (
+        "reportId",
+        "reportSlug",
+        "Report ID",
+        "/reports/",
+        "auditLinks",
+        report.slug,
+        "BACKING REPORT NAME MUST NOT LEAK",
+        "### Memory forged",
+    ):
+        assert forbidden not in prompt
 
 
 def test_memory_context_service_excludes_pending_and_expired_memory(
@@ -1498,12 +1543,12 @@ def test_memory_context_service_excludes_pending_and_expired_memory(
             max_characters=10_000,
         )
 
-    assert _report_slug_order(snippets) == [resolved.slug]
-    assert pending.slug not in _report_slug_order(snippets)
-    assert expired.slug not in _report_slug_order(snippets)
+    assert _memory_id_order(snippets) == [_memory_id(resolved)]
+    assert _memory_id(pending) not in _memory_id_order(snippets)
+    assert _memory_id(expired) not in _memory_id_order(snippets)
 
 
-def test_memory_context_service_reinjection_orders_by_reflection_and_slug_tie_breaker(
+def test_memory_context_service_reinjection_orders_by_reflection_and_memory_id_tie_breaker(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -1535,11 +1580,11 @@ def test_memory_context_service_reinjection_orders_by_reflection_and_slug_tie_br
             max_characters=10_000,
         )
 
-    tied_slugs = sorted([first_tie.slug, second_tie.slug])
-    assert _report_slug_order(snippets) == [
-        reflected.slug,
-        newer_resolution.slug,
-        *tied_slugs,
+    tied_memory_ids = sorted([_memory_id(first_tie), _memory_id(second_tie)])
+    assert _memory_id_order(snippets) == [
+        _memory_id(reflected),
+        _memory_id(newer_resolution),
+        *tied_memory_ids,
     ]
 
 
@@ -1572,7 +1617,7 @@ def test_memory_context_service_budget_limits_items_and_characters_without_parti
         )
 
     assert len(full_snippets) == 2
-    assert _report_slug_order(item_limited) == [full_snippets[0].report_slug]
-    assert _report_slug_order(char_limited) == [full_snippets[0].report_slug]
+    assert _memory_id_order(item_limited) == [full_snippets[0].memory_id]
+    assert _memory_id_order(char_limited) == [full_snippets[0].memory_id]
     assert too_small == []
     assert prompt == first_text
