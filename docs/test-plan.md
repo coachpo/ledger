@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference as of 2026-05-08.
+> Status: Live automated-coverage reference for branch `main` at `e8fd5af`.
 
 ## Backend Quality Gates
 
@@ -21,6 +21,7 @@ Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow packa
 - `pnpm test:e2e`
 
 Frontend tests cover API helpers, query keys, formatting helpers, markdown formatting, portfolio analytics, workflow package helpers, package editor flows, layout routing, and browser E2E route families.
+
 ## E2E Scope
 
 Playwright uses Chromium only. `frontend/playwright.config.ts` starts a dedicated backend on `8001` and built frontend preview on `4173`.

@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Live API reference as of 2026-05-08 (`12ced2d`).
+> Status: Live API reference for branch `main` at `e8fd5af`.
 
 ## Conventions
 

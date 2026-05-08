@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference as of 2026-05-08.
+> Status: Live data-model reference for branch `main` at `e8fd5af`.
 
 ## Overview
 
@@ -20,6 +20,7 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the pack
 | `reports` | markdown snapshots keyed by unique `name` and `slug` with JSONB metadata |
 
 ## Agent-Platform Tables
+
 | Table | Role |
 |---|---|
 | `workflow_packages` | mutable package headers with stable key, name, description, status, draft source, and latest version pointers |
