@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers routed page components in `src/pages/`.
 
 ## CHILD DOCS
-- `workflow-packages/` — Workflow Package list/editor/preflight/launch/import/export route family
+- `workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export route family
 - `model-connections/AGENTS.md` — saved model connection list/editor route family
 - `runs/AGENTS.md` — runs list and detail route family
 - `portfolios/AGENTS.md` — portfolio list/detail workspace routes
@@ -30,7 +30,7 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
-| Agent-platform pages | `workflow-packages/`, `model-connections/AGENTS.md`, `runs/AGENTS.md` | package authoring, saved connections, and run inspection |
+| Agent-platform pages | `workflow-packages/AGENTS.md`, `model-connections/AGENTS.md`, `runs/AGENTS.md` | package authoring, saved connections, and run inspection |
 | Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
 | Template list/editor | `templates/AGENTS.md` | stored-template CRUD, inline compile preview, placeholder browser |
 | Report routes | `reports/AGENTS.md` | list/detail, upload/generate, markdown view/edit/download |
