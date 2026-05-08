@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { useCreateRunStepReplay, useRun, useRunStepReplayDraft } from "@/hooks/use-runs";
-import { downloadReportUrl } from "@/lib/api/reports";
 import { formatDateTime } from "@/lib/format";
 import type {
   RunAgentInvocationRead,
@@ -259,7 +258,7 @@ function JsonBlock({ label, testId, value }: { label: string; testId?: string; v
   );
 }
 
-function graphMetadataLabel(metadata: RunGraphMetadata | null): string {
+function graphMetadataLabel(metadata: RunGraphMetadata | null | undefined): string {
   if (!metadata) {
     return "Not recorded";
   }
@@ -435,6 +434,20 @@ function RunGraphSummary({ groups }: { groups: RunGraphGroup[] }) {
   );
 }
 
+function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
+  const provenance = artifact.provenance;
+  const workflow = provenance.workflowKey
+    ? `workflow ${provenance.workflowKey}${provenance.workflowVersion ? `@${provenance.workflowVersion}` : ""}`
+    : null;
+
+  return [
+    `${provenance.agentKey}@${provenance.agentVersion}`,
+    workflow,
+    provenance.slot ? `slot ${provenance.slot}` : null,
+    `run #${provenance.runId}`,
+  ].filter(Boolean).join(" · ");
+}
+
 function MemoryArtifacts({ artifacts }: { artifacts: RunMemoryArtifactRead[] }) {
   if (artifacts.length === 0) {
     return null;
@@ -444,32 +457,39 @@ function MemoryArtifacts({ artifacts }: { artifacts: RunMemoryArtifactRead[] }) 
     <Card data-testid="runs-memory-artifacts">
       <CardHeader>
         <CardTitle className="text-base">Memory artifacts</CardTitle>
-        <CardDescription>Agent memory reports created after this run.</CardDescription>
+        <CardDescription>Agent memory artifacts created after this run.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {artifacts.map((artifact) => (
-          <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-artifact-${artifact.slug}`} key={artifact.slug}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{artifact.name}</p>
-                <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+        {artifacts.map((artifact) => {
+          const auditReport = artifact.auditLinks?.report;
+
+          return (
+            <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-artifact-${artifact.memoryId}`} key={artifact.memoryId}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{artifact.summary}</p>
+                  <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+                </div>
+                <FileText className="size-4 shrink-0 text-muted-foreground" />
               </div>
-              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <p className="mt-2 text-xs text-muted-foreground">{memoryProvenanceLabel(artifact)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{graphMetadataLabel(artifact.sourceGraphMetadata)}</p>
+              {auditReport ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={auditReport.url}>Open report</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="ghost">
+                    <a href={auditReport.downloadUrl} download>
+                      <Download data-icon="inline-start" />
+                      Download
+                    </a>
+                  </Button>
+                </div>
+              ) : null}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">{graphMetadataLabel(artifact.sourceGraphMetadata)}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button asChild size="sm" variant="outline">
-                <Link to={`/reports/${artifact.slug}`}>Open report</Link>
-              </Button>
-              <Button asChild size="sm" variant="ghost">
-                <a href={downloadReportUrl(artifact.slug)} download>
-                  <Download data-icon="inline-start" />
-                  Download
-                </a>
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );

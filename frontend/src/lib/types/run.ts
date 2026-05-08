@@ -32,13 +32,36 @@ export interface RunGraphMetadata {
   sourceRefs?: unknown;
 }
 
-export interface RunMemoryArtifactRead {
-  reportId: number;
+export interface RunMemoryProvenanceRead {
+  agentKey: string;
+  agentName?: string | null;
+  agentVersion: number;
+  createdByType: "agent";
+  runId: number;
+  stepId?: string | null;
+  slot?: string | null;
+  traceId?: string | null;
+  workflowKey?: string | null;
+  workflowVersion?: number | null;
+}
+
+export interface RunMemoryAuditReportLinkRead {
   slug: string;
   name: string;
+  url: string;
+  downloadUrl: string;
+}
+
+export interface RunMemoryArtifactRead {
+  memoryId: string;
+  summary: string;
   status: string;
   createdAt: string;
-  sourceGraphMetadata: RunGraphMetadata | null;
+  provenance: RunMemoryProvenanceRead;
+  sourceGraphMetadata?: (RunGraphMetadata & UnknownRecord) | null;
+  auditLinks?: {
+    report?: RunMemoryAuditReportLinkRead | null;
+  } | null;
 }
 
 export interface RunPackageProvenanceRead {

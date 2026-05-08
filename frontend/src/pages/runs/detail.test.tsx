@@ -341,18 +341,34 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("link", { name: /trace link · span-2/i })).toBeVisible();
   });
 
-  it("groups graph metadata and renders memory artifact report links", () => {
+  it("groups graph metadata and renders memory artifact audit report links", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
           memoryArtifacts: [
             {
-              reportId: 701,
-              slug: "memory_aapl_decision",
-              name: "AAPL decision memory",
+              memoryId: "mem_701",
+              summary: "AAPL decision memory",
               status: "pending",
               createdAt: NOW,
+              provenance: {
+                agentKey: "portfolio_manager",
+                agentVersion: 3,
+                createdByType: "agent",
+                runId: 42,
+                slot: "decision",
+                workflowKey: "market_review",
+                workflowVersion: 2,
+              },
               sourceGraphMetadata: { nodeId: "decision", nodeKind: "step", loopId: "review_loop", loopIteration: 2 },
+              auditLinks: {
+                report: {
+                  slug: "memory_aapl_decision",
+                  name: "AAPL decision memory report",
+                  url: "/reports/memory_aapl_decision",
+                  downloadUrl: "/api/v1/reports/memory_aapl_decision/download",
+                },
+              },
             },
           ],
           steps: [
@@ -399,16 +415,57 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("branch market");
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Loop review_loop iteration 1");
     expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("node market_analysis");
-    const artifact = screen.getByTestId("runs-memory-artifact-memory_aapl_decision");
+    expect(screen.getByTestId("runs-memory-artifacts")).toBeInTheDocument();
+    const artifact = screen.getByTestId("runs-memory-artifact-mem_701");
     expect(artifact).toHaveTextContent("AAPL decision memory");
     expect(artifact).toHaveTextContent(/pending/i);
+    expect(artifact).toHaveTextContent(/portfolio_manager@3/i);
+    expect(artifact).toHaveTextContent(/workflow market_review@2/i);
+    expect(artifact).toHaveTextContent(/slot decision/i);
+    expect(artifact).toHaveTextContent(/run #42/i);
     expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
     expect(within(artifact).getByRole("link", { name: /open report/i })).toHaveAttribute("href", "/reports/memory_aapl_decision");
     expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute("download");
     expect(within(artifact).getByRole("link", { name: /download/i })).toHaveAttribute(
       "href",
-      expect.stringContaining("/reports/memory_aapl_decision/download"),
+      "/api/v1/reports/memory_aapl_decision/download",
     );
+  });
+
+  it("renders memory artifacts without report actions when audit links are absent", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          memoryArtifacts: [
+            {
+              memoryId: "mem_702",
+              summary: "AAPL risk memory",
+              status: "active",
+              createdAt: NOW,
+              provenance: {
+                agentKey: "risk_manager",
+                agentVersion: 1,
+                createdByType: "agent",
+                runId: 42,
+                workflowKey: "market_review",
+              },
+              sourceGraphMetadata: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const artifact = screen.getByTestId("runs-memory-artifact-mem_702");
+    expect(artifact).toHaveTextContent("AAPL risk memory");
+    expect(artifact).toHaveTextContent(/active/i);
+    expect(artifact).toHaveTextContent(/risk_manager@1/i);
+    expect(artifact).toHaveTextContent(/workflow market_review/i);
+    expect(artifact).toHaveTextContent(/run #42/i);
+    expect(within(artifact).queryByRole("link", { name: /open report/i })).not.toBeInTheDocument();
+    expect(within(artifact).queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
   });
 
   it("keeps repeated fanouts separate across loop iterations", () => {
