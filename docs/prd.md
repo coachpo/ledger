@@ -19,7 +19,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 
 - Authentication, authorization, or multi-tenant account management.
 - Live broker integration, order routing, realtime quotes, alerts, or autonomous schedulers.
-- Retired Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or old global authoring browser/API surfaces.
+- Retired Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or retired legacy global authoring browser/API surfaces.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 ## Product Areas
 

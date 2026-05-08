@@ -45,4 +45,4 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 
 ## Retired Data
 
-Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, legacy skill-contract tables, and old global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract. Do not reintroduce them as live schema documentation targets.
+Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, legacy skill-contract tables, and retired legacy global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract. Do not reintroduce them as live schema documentation targets.

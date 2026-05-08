@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This directory owns Playwright browser coverage only.
 
 ## OVERVIEW
-Playwright specs exercise the built frontend against dedicated test servers. Coverage is route-family based across smoke/navigation, preserved portfolios/templates/reports, Workflow Packages, Model Connections, Runs, and removed old global authoring routes.
+Playwright specs exercise the built frontend against dedicated test servers. Coverage is route-family based across smoke/navigation, preserved portfolios/templates/reports, Workflow Packages, Model Connections, Runs, and retired legacy global authoring route-removal guards.
 
 ## STRUCTURE
 ```text

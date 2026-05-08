@@ -21,7 +21,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, and tax-lot accounting.
-- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and old global authoring routes.
+- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and retired legacy global authoring routes.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
@@ -63,4 +63,4 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 
 - A user can manage portfolio records and reports without provider availability.
 - A user can author Workflow Packages, configure Model Connections, view Tools, launch package runs, and inspect Runs from the browser.
-- Retired Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and old global authoring routes are not presented as current product surfaces.
+- Retired Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and retired legacy global authoring routes are not presented as current product surfaces.
