@@ -10,10 +10,8 @@ from decimal import Decimal
 from typing import cast
 
 from fastapi import status
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import decimal_to_string, to_utc
 from app.models.report import Report
@@ -30,7 +28,7 @@ from app.schemas.memory_report import (
     AgentMemoryTrustedCreateContext,
 )
 from app.schemas.report import ReportRead
-from app.services.capability_service import CapabilityService
+from app.services.memory_service import MemoryService
 
 _MAX_NAME_LENGTH = 200
 _MEMORY_REPORT_SOURCE = "agent"
@@ -38,6 +36,8 @@ _MEMORY_SLUG_FINGERPRINT_LENGTH = 12
 
 
 class MemoryReportService:
+    """Compatibility adapter that delegates command writes through MemoryService."""
+
     def __init__(self, session: Session) -> None:
         self.session: Session = session
         self.repository: ReportRepository = ReportRepository(session)
@@ -49,43 +49,15 @@ class MemoryReportService:
         payload: AgentMemoryReportCreateMetadata,
         trusted_context: AgentMemoryTrustedCreateContext,
     ) -> ReportRead:
-        CapabilityService(
-            self.session,
-            get_default_tool_catalog(),
-        ).require_report_memory_write_grant(capability_references=capability_references)
-        model_input = payload.analysis
-        metadata = AgentMemoryReportMetadata.pending(
-            model_input=model_input,
-            trusted_context=trusted_context,
+        memory_service = MemoryService(self.session)
+        result = memory_service.write_memory(
+            capability_references=capability_references,
+            payload=memory_service.write_request_from_report_create(
+                payload=payload,
+                trusted_context=trusted_context,
+            ),
         )
-        slug = self._pending_slug(model_input=model_input, trusted_context=trusted_context)
-
-        existing = self.repository.get_by_slug(slug)
-        if existing is not None:
-            return self._read_existing_memory_report(existing, metadata=metadata)
-
-        report = Report(
-            name=self._resolve_unique_name(slug),
-            slug=slug,
-            source=_MEMORY_REPORT_SOURCE,
-            content=self._render_content(metadata.analysis),
-            metadata_=self._serialize_metadata(metadata),
-        )
-        _ = self.repository.add(report)
-        try:
-            self.session.commit()
-        except IntegrityError as exc:
-            self.session.rollback()
-            existing_after_conflict = self.repository.get_by_slug(slug)
-            if existing_after_conflict is not None:
-                return self._read_existing_memory_report(
-                    existing_after_conflict,
-                    metadata=metadata,
-                )
-            raise self._conflict(slug) from exc
-
-        self.session.refresh(report)
-        return ReportRead.model_validate(report)
+        return self._read_memory_report(memory_service.report_id_from_memory_id(result.memory_id))
 
     def update_memory_report(
         self,
@@ -134,18 +106,12 @@ class MemoryReportService:
         report: Report,
         payload: AgentMemoryServiceUpdate,
     ) -> ReportRead:
-        metadata = self._validate_existing_memory_metadata(report)
-        updated_metadata = self._apply_update_to_metadata(metadata, payload=payload)
+        _ = self._validate_existing_memory_metadata(report)
+        _ = MemoryService(self.session).update_memory_report(report.id, payload)
+        return self._read_memory_report(report.id)
 
-        try:
-            report.content = self._render_content(updated_metadata.analysis)
-            report.metadata_ = self._serialize_metadata(updated_metadata)
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
-
-        self.session.refresh(report)
+    def _read_memory_report(self, report_id: int) -> ReportRead:
+        report = self._get_memory_report_model(report_id)
         return ReportRead.model_validate(report)
 
     def _read_existing_memory_report(
