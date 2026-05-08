@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import tomllib
 from copy import deepcopy
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
@@ -297,6 +299,58 @@ def test_public_report_api_rejects_agent_memory_update_and_delete(
     get_response = client.get(f"/api/v1/reports/{report.slug}")
     assert get_response.status_code == 200
     assert get_response.json()["content"] == report.content
+
+
+def test_phase_1_memory_baseline_has_no_public_route_table_or_vector_dependency(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    openapi_paths = cast(dict[str, object], client.get("/openapi.json").json()["paths"])
+
+    assert not any(
+        path == "/api/memory"
+        or path.startswith("/api/memory/")
+        or path == "/api/v1/memory"
+        or path.startswith("/api/v1/memory/")
+        for path in openapi_paths
+    )
+    assert client.get("/api/memory").status_code == 404
+    assert client.get("/api/v1/memory").status_code == 404
+
+    with session_factory() as session:
+        report = _create_pending_report(session, run_id=700)
+        assert session.get(Report, report.id) is not None
+        table_names = set(inspect(session.get_bind()).get_table_names())
+
+    memory_tables = {
+        table_name
+        for table_name in table_names
+        if table_name == "memory"
+        or table_name.startswith("memory_")
+        or table_name.endswith("_memory")
+    }
+    assert memory_tables == set()
+
+    backend_pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    dependencies = cast(
+        list[str],
+        tomllib.loads(backend_pyproject.read_text(encoding="utf-8"))["project"]["dependencies"],
+    )
+    vector_dependency_fragments = (
+        "chromadb",
+        "faiss",
+        "milvus",
+        "pgvector",
+        "pinecone",
+        "qdrant",
+        "sentence-transformers",
+        "weaviate",
+    )
+    assert not any(
+        fragment in dependency.lower()
+        for dependency in dependencies
+        for fragment in vector_dependency_fragments
+    )
 
 
 def test_report_service_rejects_generic_agent_memory_update_and_delete(

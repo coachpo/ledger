@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 _CANONICAL_TOOL_KEYS = {
     "ledger.market_data.quote_lookup",
+    "ledger.reports.lookup",
     "ledger.reports.write",
 }
 
@@ -20,6 +21,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
 
     assert _CANONICAL_TOOL_KEYS <= set(tools_by_key)
     quote_tool = tools_by_key["ledger.market_data.quote_lookup"]
+    report_lookup_tool = tools_by_key["ledger.reports.lookup"]
     report_write_tool = tools_by_key["ledger.reports.write"]
     assert quote_tool == {
         "key": "ledger.market_data.quote_lookup",
@@ -27,10 +29,22 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "description": "Read trusted market quote snapshots from server-owned integrations.",
         "module": "app.agents.tool_catalog.server_declared",
     }
-    assert report_write_tool["displayName"] == "Report Memory Write"
-    assert report_write_tool["module"] == "app.agents.tool_catalog.server_declared"
-    assert "toolGrants" not in quote_tool
-    assert "toolDefinitions" not in quote_tool
+    assert report_lookup_tool == {
+        "key": "ledger.reports.lookup",
+        "displayName": "Report Lookup",
+        "description": "Read persisted Ledger reports through server-owned report lookups.",
+        "module": "app.agents.tool_catalog.server_declared",
+    }
+    assert report_write_tool == {
+        "key": "ledger.reports.write",
+        "displayName": "Report Memory Write",
+        "description": "Create pending agent-memory reports through server-owned memory writes.",
+        "module": "app.agents.tool_catalog.server_declared",
+    }
+    assert not any(key.startswith("ledger.memory.") for key in tools_by_key)
+    for tool in (quote_tool, report_lookup_tool, report_write_tool):
+        assert "toolGrants" not in tool
+        assert "toolDefinitions" not in tool
 
 
 def test_tools_catalog_route_is_get_only(client: TestClient) -> None:

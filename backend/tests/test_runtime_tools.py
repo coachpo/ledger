@@ -955,6 +955,8 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         created_at=_NOW,
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(memory_payload)
+    # Task 5 removes these report identity fields from model-visible ledger_reports_write output.
+    assert {"reportId", "reportSlug", "reportName"} <= set(memory_payload)
     assert memory_payload == {
         "toolKey": "ledger.reports.write",
         "reportId": 7,
@@ -1495,6 +1497,8 @@ def test_report_lookup_accepts_agent_source() -> None:
 
 
 def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_execution_fields() -> None:
+    assert REPORT_LOOKUP_TOOL_KEY == "ledger.reports.lookup"
+    assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "ledger_reports_lookup"
     assert REPORT_LOOKUP_TOOL_SPEC.key == REPORT_LOOKUP_TOOL_KEY
     assert REPORT_LOOKUP_TOOL_SPEC.openai_function_name == REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     assert REPORT_LOOKUP_TOOL_SPEC.display_name == "Report Lookup"
@@ -1502,6 +1506,8 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.openai_function_name
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.description
 
+    assert REPORT_MEMORY_WRITE_TOOL_KEY == "ledger.reports.write"
+    assert REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME == "ledger_reports_write"
     assert REPORT_MEMORY_WRITE_TOOL_SPEC.key == REPORT_MEMORY_WRITE_TOOL_KEY
     assert (
         REPORT_MEMORY_WRITE_TOOL_SPEC.openai_function_name
@@ -1632,6 +1638,9 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     registry = get_default_runtime_tool_registry()
 
     spec_by_key = {spec.key: spec for spec in registry.list_specs()}
+    assert spec_by_key[REPORT_LOOKUP_TOOL_KEY].openai_function_name == (
+        REPORT_LOOKUP_OPENAI_FUNCTION_NAME
+    )
     assert spec_by_key[REPORT_MEMORY_WRITE_TOOL_KEY].openai_function_name == (
         REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME
     )
@@ -1643,12 +1652,14 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     )
     tools = registry.get_openai_tools(
         {
+            REPORT_LOOKUP_TOOL_KEY,
             REPORT_MEMORY_WRITE_TOOL_KEY,
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
         }
     )
     assert [tool["name"] for tool in tools] == [
+        REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
         REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -1989,6 +2000,8 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
     report = reports[0]
     analysis = cast(dict[str, object], report.metadata_["analysis"])
     decision = cast(dict[str, object], analysis["decision"])
+    # Task 5 removes these report identity fields from model-visible ledger_reports_write output.
+    assert {"reportId", "reportSlug", "reportName"} <= set(first_payload)
     assert first_payload["reportId"] == report.id
     assert first_payload["reportSlug"] == report.slug
     assert first_payload["reportName"] == report.name
@@ -2650,7 +2663,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
     )
 
 
-def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_output_shape(
+def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_and_report_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC])
@@ -2712,7 +2725,21 @@ def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_outp
     assert payload["count"] == 1
     reports = cast(list[dict[str, object]], payload["reports"])
     assert len(reports) == 1
+    assert set(reports[0]) == {
+        "id",
+        "name",
+        "slug",
+        "source",
+        "content",
+        "metadata",
+        "createdAt",
+        "updatedAt",
+    }
+    assert reports[0]["id"] == 7
+    assert reports[0]["name"] == "NVDA Backend Lookup"
     assert reports[0]["slug"] == "nvda_backend_lookup"
+    assert reports[0]["source"] == "external"
+    assert reports[0]["content"] == "# NVDA\n\nRevenue acceleration remains intact."
     assert reports[0]["metadata"] == {
         "author": None,
         "description": None,
@@ -2720,6 +2747,7 @@ def test_report_runtime_tool_dispatches_to_report_service_with_defaults_and_outp
         "analysis": {"ticker": "NVDA", "reviewType": "fundamental"},
     }
     assert reports[0]["createdAt"] == "2026-01-02T03:04:05Z"
+    assert reports[0]["updatedAt"] == "2026-01-02T03:04:05Z"
 
 
 def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_output_shape(
