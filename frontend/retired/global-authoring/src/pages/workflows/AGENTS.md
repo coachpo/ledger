@@ -1,9 +1,9 @@
 # FRONTEND WORKFLOWS PAGES GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+> Retired global-authoring guide. The live app does not route these pages; package-private workflow graphs own current workflow authoring.
 
 ## OVERVIEW
-`src/pages/workflows/` contains the routed workflow inventory, detail, launch, and editor pages. The live route family is `/workflows`, `/workflows/new`, `/workflows/:workflowId`, `/workflows/:workflowId/edit`, and `/workflows/:workflowId/run`.
+`src/pages/workflows/` was the retired workflow inventory, detail, launch, and editor route family for `/workflows`, `/workflows/new`, `/workflows/:workflowId`, `/workflows/:workflowId/edit`, and `/workflows/:workflowId/run`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -20,7 +20,7 @@
 ## CONVENTIONS
 - `shared.ts` owns the draft shape, section list, validation rules, and payload conversion.
 - The editor keeps the wizard sections explicit instead of flattening everything into one form.
-- Run launch lives on `/workflows/:workflowId/run`, posts the strict `{version, parameters}` envelope through the launch hook, and then routes to the created run detail view.
+- Archived run launch lived on `/workflows/:workflowId/run`, posted the strict `{version, parameters}` envelope through the launch hook, and then routed to the created run detail view.
 - Review is an editor step, not a run-launch surface.
 - Agent selection and wiring stay versioned, with the editor loading agent catalog data to build the draft.
 - Hooks own cache invalidation and workflow launch creation, while pages own route state, review state, launch form state, and navigation.

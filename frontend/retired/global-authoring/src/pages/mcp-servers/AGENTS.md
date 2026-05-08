@@ -1,9 +1,9 @@
 # FRONTEND MCP SERVERS PAGES GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
+> Retired global-authoring guide. The live app does not route these pages; package-private MCP configs own current MCP authoring.
 
 ## OVERVIEW
-`src/pages/mcp-servers/` contains the routed MCP server inventory and editor for `/mcp-servers`, `/mcp-servers/new`, and `/mcp-servers/:serverId/edit`. The page family covers archive, activate, and connection-test flows. Transport-specific command and URL rules stay in the editor, while MCP security and runtime dispatch stay on the backend.
+`src/pages/mcp-servers/` was the retired MCP server inventory and editor for `/mcp-servers`, `/mcp-servers/new`, and `/mcp-servers/:serverId/edit`. These archived pages covered archive, activate, and connection-test flows before MCP configs moved inside Workflow Packages.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -24,9 +24,9 @@
 - Treat test-connection feedback as local UI state until the hook response updates server-backed fields.
 
 ## ROUTE NOTES
-- `/mcp-servers` is the inventory and action surface.
-- `/mcp-servers/new` creates a draft server config.
-- `/mcp-servers/:serverId/edit` edits, activates, archives, and tests an existing config.
+- `/mcp-servers` was the archived inventory and action surface.
+- `/mcp-servers/new` created a draft server config.
+- `/mcp-servers/:serverId/edit` edited, activated, archived, and tested an existing config.
 - Runtime tool snapshots, exact MCP version pins, redaction, and truncation are backend contracts. The page should display returned metadata without recreating those rules.
 
 ## ANTI-PATTERNS
