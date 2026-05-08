@@ -1,6 +1,6 @@
 # Run Input Schema Help Text
 
-> Status: Live runtime-input help text as of 2026-05-05 (`a8ad8fb`).
+> Status: Live runtime-input help text as of 2026-05-08 (`12ced2d`).
 
 Workflow package run input schemas can include optional `title` and `description` fields on supported JSON Schema nodes. These fields are display metadata for generated forms.
 
