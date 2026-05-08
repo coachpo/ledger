@@ -147,6 +147,22 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert all(set(cast(list[str], agent["capabilityProfiles"])) for agent in compiled_agents)
 
 
+def test_tradingagents_fixture_keeps_report_lookup_and_write_in_memory_profile() -> None:
+    compiled = compile_workflow_package_manifest(_fixture_source())
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+
+    assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
+        "ledger.reports.lookup"
+    ]
+    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
+        "ledger.reports.lookup",
+        "ledger.reports.write",
+    ]
+
+
 def test_fixture_compile_does_not_create_global_authoring_rows(
     session_factory: sessionmaker[Session],
 ) -> None:

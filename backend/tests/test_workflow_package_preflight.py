@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.model_connection import ModelConnection
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
 _FIXTURE = (
     Path(__file__).resolve().parent
@@ -47,6 +49,24 @@ def _seed_model_connection(
             )
         )
         session.commit()
+
+
+def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(_package_source())
+    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
+    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+
+    with session_factory() as session:
+        errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
+
+    assert errors == []
+    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
+        "ledger.reports.lookup",
+        "ledger.reports.write",
+    ]
 
 
 def test_save_warns_but_preflight_blocks_missing_model_connection(

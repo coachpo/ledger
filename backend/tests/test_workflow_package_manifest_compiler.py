@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -13,6 +14,13 @@ from app.services.workflow_package_manifest_compiler import (
 )
 from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
+
+_TRADINGAGENTS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tradingagents_advisory_research.yaml"
+)
 
 
 def _canonical_json(value: object) -> str:
@@ -80,6 +88,25 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     ]
     assert workflow["outputSpec"] == {"kind": "slot", "stepIndex": 1, "slot": "decision"}
     assert graph["rootNodeId"] == "market_analysis"
+
+
+def test_compile_tradingagents_fixture_preserves_report_tool_keys_in_memory_profile() -> None:
+    source = _TRADINGAGENTS_FIXTURE.read_text(encoding="utf-8")
+    compiled = compile_workflow_package_manifest(source)
+    roundtrip = decompile_workflow_package_manifest(compiled)
+    recompiled = compile_workflow_package_manifest(roundtrip.source)
+    package_definition = cast(dict[str, object], recompiled["packageDefinition"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+
+    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
+        "ledger.reports.lookup",
+        "ledger.reports.write",
+    ]
+    assert "ledger.reports.lookup" in roundtrip.source
+    assert "ledger.reports.write" in roundtrip.source
+    assert "ledger.memory." not in roundtrip.source
 
 
 def test_compile_package_manifest_rejects_unresolved_local_refs() -> None:
