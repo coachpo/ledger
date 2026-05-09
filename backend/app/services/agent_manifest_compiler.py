@@ -49,13 +49,13 @@ class AgentManifestCompiler:
         manifest, source_text = self._resolve_manifest(source)
         diagnostics: list[AgentManifestDiagnostic] = []
 
-        model_connection: ModelConnection | None = (
-            self.model_connection_repository.resolve_active_by_key(manifest.spec.model_connection)
+        model_connection: ModelConnection | None = self.model_connection_repository.get_by_key(
+            manifest.spec.model_connection
         )
         if model_connection is None:
             diagnostics.append(
                 self._diagnostic(
-                    f"Active model connection {manifest.spec.model_connection!r} was not found",
+                    f"Model connection {manifest.spec.model_connection!r} was not found",
                     path="spec.modelConnection",
                     source=source_text,
                 )

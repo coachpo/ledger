@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from fastapi import status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import (
@@ -12,7 +13,9 @@ from app.agents import (
     ToolCatalogValidationError,
 )
 from app.core.errors import ApiError, not_found_error, validation_error
+from app.models.agent import Agent
 from app.models.capability import Capability
+from app.models.platform_reference import AgentCapabilityRef
 from app.repositories.capability import CapabilityRepository
 from app.schemas.capability import (
     CapabilityDraftCreate,
@@ -153,7 +156,7 @@ class CapabilityService:
         )
 
         try:
-            source.status = CapabilityStatus.ARCHIVED.value
+            self.repository.delete(source)
             self.session.flush()
             _ = self.repository.add(updated)
             self.session.commit()
@@ -181,19 +184,41 @@ class CapabilityService:
             raise
         return self._to_read_model(capability)
 
-    def archive(self, capability_id: int) -> CapabilityRead:
+    def delete_capability(self, capability_id: int) -> None:
         capability = self._get_model(capability_id)
-        if capability.status == CapabilityStatus.ARCHIVED.value:
-            return self._to_read_model(capability)
+        agent_refs = self._agent_reference_details(capability.id)
+        if agent_refs:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="capability_delete_blocked",
+                message="Capability is referenced by agents",
+                details=agent_refs,
+            )
 
         try:
-            capability.status = CapabilityStatus.ARCHIVED.value
+            self.repository.delete(capability)
             self.session.commit()
-            self.session.refresh(capability)
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(capability)
+
+    def _agent_reference_details(self, capability_id: int) -> list[dict[str, object]]:
+        statement = (
+            select(Agent)
+            .join(AgentCapabilityRef, Agent.id == AgentCapabilityRef.agent_id)
+            .where(AgentCapabilityRef.capability_id == capability_id)
+            .order_by(Agent.key.asc(), Agent.version.desc(), Agent.id.asc())
+        )
+        return [
+            {
+                "field": "agentId",
+                "issue": "Capability is referenced by agent",
+                "agentId": agent.id,
+                "agentKey": agent.key,
+                "agentVersion": agent.version,
+            }
+            for agent in self.session.scalars(statement)
+        ]
 
     def resolve_toolset(self, capability_id: int) -> ResolvedCapabilityToolset:
         return self._resolve_toolset_model(self._get_model(capability_id))

@@ -52,6 +52,7 @@ from app.services.output_schema_compiler import (
     SchemaPrimitive,
     SchemaRef,
 )
+from app.services.run_service import RunService
 from app.services.workflow_manifest_compiler import (
     WorkflowManifestCompilerError,
     compile_workflow_manifest,
@@ -233,19 +234,18 @@ class WorkflowService:
             raise
         return self._to_read_model(workflow)
 
-    def archive_workflow(self, workflow_id: int) -> WorkflowRead:
+    def delete_workflow(self, workflow_id: int) -> None:
         workflow = self._get_model(workflow_id)
-        if workflow.status == WorkflowStatus.ARCHIVED.value:
-            return self._to_read_model(workflow)
-
+        RunService(self.session).delete_runs_for_target(
+            target_kind="workflow",
+            target_id=workflow.id,
+        )
         try:
-            workflow.status = WorkflowStatus.ARCHIVED.value
+            self.repository.delete(workflow)
             self.session.commit()
-            self.session.refresh(workflow)
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(workflow)
 
     def _build_state(
         self,

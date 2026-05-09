@@ -12,14 +12,13 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
-from app.repositories.model_connection import ModelConnectionRepository
+from app.repositories.model_connection import ModelConnectionReference, ModelConnectionRepository
 from app.schemas.model_connection import (
     ModelConnectionConnectionTestRead,
     ModelConnectionCreate,
     ModelConnectionListItemRead,
     ModelConnectionListRead,
     ModelConnectionRead,
-    ModelConnectionStatus,
     ModelConnectionUpdate,
     normalize_model_connection_key,
 )
@@ -52,14 +51,8 @@ class ModelConnectionService:
         self.session = session
         self.repository = ModelConnectionRepository(session)
 
-    def list_connections(
-        self,
-        *,
-        status_filter: ModelConnectionStatus | None = None,
-    ) -> ModelConnectionListRead:
-        items = self.repository.list_connections(
-            status=status_filter.value if status_filter is not None else None
-        )
+    def list_connections(self) -> ModelConnectionListRead:
+        items = self.repository.list_connections()
         return ModelConnectionListRead(
             items=[ModelConnectionListItemRead.model_validate(item) for item in items]
         )
@@ -68,7 +61,7 @@ class ModelConnectionService:
         return ModelConnectionRead.model_validate(self._get_model(connection_id))
 
     def resolve_connection_by_key(self, key: str) -> ModelConnection:
-        return self._resolve_active_connection_by_key(
+        return self._resolve_connection_by_key(
             key,
             path="modelConnection",
             message="Model connection validation failed",
@@ -83,7 +76,7 @@ class ModelConnectionService:
             path="modelConnection",
             message="Package model connection validation failed",
         )
-        connection = self.repository.resolve_active_by_key(normalized_key)
+        connection = self.repository.get_by_key(normalized_key)
         if connection is None:
             return None
         return self._to_package_binding(connection)
@@ -95,7 +88,7 @@ class ModelConnectionService:
         path: str = "modelConnection",
         require_api_key: bool = False,
     ) -> PackageModelConnectionBinding:
-        connection = self._resolve_active_connection_by_key(
+        connection = self._resolve_connection_by_key(
             key,
             path=path,
             message="Package model connection validation failed",
@@ -117,7 +110,7 @@ class ModelConnectionService:
 
         connection = ModelConnection(
             key=payload.key,
-            status=ModelConnectionStatus.ACTIVE.value,
+            status="active",
             name=payload.name,
             description=payload.description,
             api_style=payload.api_style.value,
@@ -203,19 +196,49 @@ class ModelConnectionService:
             }
         )
 
-    def archive_connection(self, connection_id: int) -> ModelConnectionRead:
+    def delete_connection(self, connection_id: int) -> None:
         connection = self._get_model(connection_id)
-        if connection.status == ModelConnectionStatus.ARCHIVED.value:
-            return ModelConnectionRead.model_validate(connection)
+        reference_details = self._connection_reference_details(connection)
+        if reference_details:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="model_connection_in_use",
+                message="Model connection is in use",
+                details=reference_details,
+            )
 
         try:
-            connection.status = ModelConnectionStatus.ARCHIVED.value
+            self.repository.delete(connection)
             self.session.commit()
-            self.session.refresh(connection)
         except Exception:
             self.session.rollback()
             raise
-        return ModelConnectionRead.model_validate(connection)
+
+    def _connection_reference_details(self, connection: ModelConnection) -> list[dict[str, object]]:
+        references_by_identity: dict[tuple[str, int], ModelConnectionReference] = {}
+        for reference in [
+            *self.repository.list_workflow_package_version_refs(connection.id),
+            *self.repository.list_agent_refs(connection.id),
+            *self.repository.list_compiled_plan_refs(connection.key),
+        ]:
+            references_by_identity[(reference.ref_type, reference.ref_id)] = reference
+        return [
+            self._reference_detail(reference)
+            for reference in sorted(
+                references_by_identity.values(),
+                key=lambda item: (item.ref_type, item.ref_key, item.ref_id),
+            )
+        ]
+
+    @staticmethod
+    def _reference_detail(reference: ModelConnectionReference) -> dict[str, object]:
+        return {
+            "field": "modelConnection",
+            "issue": "Model connection is referenced",
+            "refType": reference.ref_type,
+            "refId": reference.ref_id,
+            "refKey": reference.ref_key,
+        }
 
     def _get_model(self, connection_id: int) -> ModelConnection:
         connection = self.repository.get(connection_id)
@@ -223,7 +246,7 @@ class ModelConnectionService:
             raise not_found_error("Model connection")
         return connection
 
-    def _resolve_active_connection_by_key(
+    def _resolve_connection_by_key(
         self,
         key: str,
         *,
@@ -241,11 +264,6 @@ class ModelConnectionService:
                         "issue": f"Model connection {normalized_key!r} was not found",
                     }
                 ],
-            )
-        if connection.status != ModelConnectionStatus.ACTIVE.value:
-            raise validation_error(
-                message,
-                [{"field": path, "issue": "Archived model connections cannot be selected"}],
             )
         return connection
 

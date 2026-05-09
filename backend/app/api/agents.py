@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_agent_service
 from app.schemas.agent import (
@@ -62,12 +62,13 @@ def update_agent(
     return service.update_agent_from_manifest(agent_id, payload.manifest_source)
 
 
-@router.delete("/{agent_id}", response_model=AgentRead)
-def archive_agent(
+@router.delete("/{agent_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+def delete_agent(
     agent_id: int,
     service: Annotated[AgentService, Depends(get_agent_service)],
-) -> AgentRead:
-    return service.archive_agent(agent_id)
+) -> Response:
+    service.delete_agent(agent_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

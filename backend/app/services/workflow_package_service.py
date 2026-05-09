@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.schemas.model_connection import normalize_model_connection_key
 from app.schemas.workflow_package import (
     WorkflowPackageImportMode,
     WorkflowPackageImportRequest,
@@ -60,11 +61,9 @@ class WorkflowPackageService:
         self,
         *,
         status_filter: WorkflowPackageStatus | None = None,
-        include_archived: bool = False,
     ) -> WorkflowPackageListRead:
         packages = self.repository.list_packages(
             status=status_filter.value if status_filter is not None else None,
-            include_archived=include_archived,
         )
         return WorkflowPackageListRead(items=[self._to_package_read(item) for item in packages])
 
@@ -89,8 +88,9 @@ class WorkflowPackageService:
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="workflow_package_duplicate_key",
-                message="An active workflow package with this key already exists",
+                message="A workflow package with this key already exists",
             )
+        model_connection_refs = self._resolve_model_connection_refs(prepared)
         package = self.repository.create_package(
             key=key,
             name=str(cast(dict[str, Any], metadata)["name"]),
@@ -99,7 +99,12 @@ class WorkflowPackageService:
             draft_source=payload.manifest_source,
         )
         try:
-            version = self._create_version(package, prepared, payload.manifest_source)
+            version = self._create_version(
+                package,
+                prepared,
+                payload.manifest_source,
+                model_connection_refs=model_connection_refs,
+            )
             self.session.commit()
             self.session.refresh(package)
             self.session.refresh(version)
@@ -114,11 +119,6 @@ class WorkflowPackageService:
         payload: WorkflowPackageUpdateRequest,
     ) -> WorkflowPackageRead:
         package = self._get_package(package_id)
-        if package.status == "archived":
-            raise validation_error(
-                "Workflow package validation failed",
-                [{"field": "status", "issue": "Archived packages cannot be updated"}],
-            )
         if payload.manifest_source is not None:
             prepared = self._prepare_manifest_or_raise(payload.manifest_source)
             metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
@@ -133,6 +133,7 @@ class WorkflowPackageService:
                         }
                     ],
                 )
+            model_connection_refs = self._resolve_model_connection_refs(prepared)
             self.repository.update_package(
                 package,
                 name=str(cast(dict[str, Any], metadata)["name"]),
@@ -140,7 +141,12 @@ class WorkflowPackageService:
                 draft_source=payload.manifest_source,
                 status="active" if payload.status is None else payload.status.value,
             )
-            _ = self._create_version(package, prepared, payload.manifest_source)
+            _ = self._create_version(
+                package,
+                prepared,
+                payload.manifest_source,
+                model_connection_refs=model_connection_refs,
+            )
         elif payload.status is not None:
             self.repository.update_package(package, status=payload.status.value)
         else:
@@ -156,29 +162,23 @@ class WorkflowPackageService:
             raise
         return self._to_package_read(package)
 
-    def archive_or_delete_package(self, package_id: int) -> WorkflowPackageRead:
+    def delete_package(self, package_id: int) -> None:
         package = self._get_package(package_id)
-        if self._has_launched_versions(package.id):
-            try:
-                self.repository.archive_package(
-                    package,
-                    archived_by="system",
-                    archived_reason="Archived through workflow package API",
-                )
-                self.session.commit()
-                self.session.refresh(package)
-            except Exception:
-                self.session.rollback()
-                raise
-            return self._to_package_read(package)
-        read = self._to_package_read(package)
+        RunService(
+            self.session,
+            self.session_factory,
+            quote_provider=self.quote_provider,
+        ).delete_runs_for_target(
+            target_kind="workflowPackage",
+            target_id=package.id,
+            workflow_package_id=package.id,
+        )
         try:
             self.repository.delete(package)
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
-        return read
 
     def list_versions(self, package_id: int) -> WorkflowPackageVersionListRead:
         package = self._get_package(package_id)
@@ -207,6 +207,7 @@ class WorkflowPackageService:
                     }
                 ],
             )
+        model_connection_refs = self._resolve_model_connection_refs(prepared)
         try:
             self.repository.update_package(
                 package,
@@ -215,7 +216,12 @@ class WorkflowPackageService:
                 status="active",
                 draft_source=payload.manifest_source,
             )
-            _ = self._create_version(package, prepared, payload.manifest_source)
+            _ = self._create_version(
+                package,
+                prepared,
+                payload.manifest_source,
+                model_connection_refs=model_connection_refs,
+            )
             self.session.commit()
             self.session.refresh(package)
         except Exception:
@@ -333,6 +339,8 @@ class WorkflowPackageService:
         package: WorkflowPackage,
         prepared: dict[str, object],
         manifest_source: str,
+        *,
+        model_connection_refs: list[tuple[int, str]],
     ) -> WorkflowPackageVersion:
         return self.repository.create_version(
             package,
@@ -347,7 +355,45 @@ class WorkflowPackageService:
                     cast(dict[str, Any], prepared["packageDefinition"])
                 ),
             },
+            model_connection_refs=model_connection_refs,
         )
+
+    def _resolve_model_connection_refs(
+        self,
+        prepared: dict[str, object],
+    ) -> list[tuple[int, str]]:
+        compiled_plan = cast(dict[str, Any], prepared["compiledPlan"])
+        agents = compiled_plan.get("agents")
+        if not isinstance(agents, list):
+            return []
+        refs_by_id: dict[int, str] = {}
+        errors: list[dict[str, str]] = []
+        for index, raw_agent in enumerate(agents):
+            if not isinstance(raw_agent, dict):
+                continue
+            path = f"spec.agents[{index}].modelConnection"
+            try:
+                model_connection_key = normalize_model_connection_key(
+                    raw_agent.get("modelConnection")
+                )
+            except ValueError as exc:
+                errors.append({"field": path, "issue": str(exc)})
+                continue
+            model_connection = self.model_connection_service.repository.get_by_key(
+                model_connection_key
+            )
+            if model_connection is None:
+                errors.append(
+                    {
+                        "field": path,
+                        "issue": f"Model connection {model_connection_key!r} was not found",
+                    }
+                )
+                continue
+            refs_by_id[model_connection.id] = model_connection.key
+        if errors:
+            raise validation_error("Workflow package manifest validation failed", errors)
+        return list(refs_by_id.items())
 
     def _resolve_package_version(
         self,
@@ -387,11 +433,6 @@ class WorkflowPackageService:
                 return cast(dict[str, Any], workflow)
         raise not_found_error("Workflow package workflow")
 
-    def _has_launched_versions(self, package_id: int) -> bool:
-        return any(
-            version.launched_at is not None for version in self.repository.list_versions(package_id)
-        )
-
     def _get_package(self, package_id: int) -> WorkflowPackage:
         package = self.repository.get(package_id)
         if package is None:
@@ -414,7 +455,6 @@ class WorkflowPackageService:
                 "warnings": self._version_warnings(latest),
                 "createdAt": package.created_at,
                 "updatedAt": package.updated_at,
-                "archivedAt": package.archived_at,
             }
         )
 

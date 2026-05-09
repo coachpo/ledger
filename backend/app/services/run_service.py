@@ -29,6 +29,7 @@ from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.repositories.agent import AgentRepository
 from app.repositories.output_schema import OutputSchemaRepository
+from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_step import RunStepRepository
@@ -159,6 +160,7 @@ class RunService:
         self.quote_provider: QuoteProvider | None = quote_provider
         self.agent_repository = AgentRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
+        self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
         self.workflow_package_repository = WorkflowPackageRepository(session)
         self.run_step_repository = RunStepRepository(session)
@@ -208,6 +210,42 @@ class RunService:
 
     def get_run(self, run_id: int) -> RunRead:
         return self._to_read_model(self._get_run_or_raise(run_id))
+
+    def delete_run(self, run_id: int) -> None:
+        run = self.run_repository.get(run_id)
+        if run is None:
+            raise not_found_error("Run")
+        try:
+            _ = self.report_repository.delete_agent_memory_by_run_ids([run.id])
+            self.run_repository.delete(run)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def delete_runs_for_target(
+        self,
+        *,
+        target_kind: str,
+        target_id: int,
+        workflow_package_id: int | None = None,
+    ) -> None:
+        runs = self.run_repository.list_for_target_owner(
+            target_kind=target_kind,
+            target_id=target_id,
+            workflow_package_id=workflow_package_id,
+        )
+        if not runs:
+            return
+        run_ids = [run.id for run in runs]
+        try:
+            _ = self.report_repository.delete_agent_memory_by_run_ids(run_ids)
+            for run in runs:
+                self.run_repository.delete(run)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def get_workflow_launch(
         self,
@@ -416,12 +454,10 @@ class RunService:
                 "Workflow package run is missing package version provenance"
             )
         package = self.workflow_package_repository.get(run.workflow_package_id)
-        if package is None or package.deleted_at is not None:
+        if package is None:
             raise self._package_artifact_unavailable_error(
                 "Workflow package artifact is no longer available"
             )
-        if package.status == "archived":
-            raise self._package_artifact_unavailable_error("Workflow package artifact is archived")
         package_version = self.workflow_package_repository.get_version(
             package.id,
             run.workflow_package_version,
@@ -509,6 +545,33 @@ class RunService:
             return RunTargetKind.WORKFLOW_PACKAGE.value
         return plan.target.kind
 
+    @staticmethod
+    def _run_target_fk_identity(
+        plan: ExecutionPlan,
+        workflow_package_version: WorkflowPackageVersion | None,
+    ) -> dict[str, int | None]:
+        if plan.target.kind == "agent":
+            return {
+                "agent_id": plan.target.id,
+                "target_workflow_id": None,
+                "workflow_package_id": None,
+                "workflow_package_version_id": None,
+            }
+        if plan.target.kind == "workflow":
+            return {
+                "agent_id": None,
+                "target_workflow_id": plan.target.id,
+                "workflow_package_id": None,
+                "workflow_package_version_id": None,
+            }
+        assert workflow_package_version is not None
+        return {
+            "agent_id": None,
+            "target_workflow_id": None,
+            "workflow_package_id": workflow_package_version.package_id,
+            "workflow_package_version_id": workflow_package_version.id,
+        }
+
     def _create_run_from_plan(
         self,
         plan: ExecutionPlan,
@@ -525,21 +588,15 @@ class RunService:
         package_workflow_key = (
             plan.package_workflow.key if plan.package_workflow is not None else None
         )
+        target_fk_identity = self._run_target_fk_identity(plan, workflow_package_version)
         run = Run(
+            **target_fk_identity,
             target_kind=self._run_target_kind(plan),
             target_id=plan.target.id,
             target_key=plan.target.key,
             target_version=plan.target.version,
-            workflow_package_id=(
-                workflow_package_version.package_id
-                if workflow_package_version is not None
-                else None
-            ),
             workflow_package_key=(
                 plan.target.key if workflow_package_version is not None else None
-            ),
-            workflow_package_version_id=(
-                workflow_package_version.id if workflow_package_version is not None else None
             ),
             workflow_package_version=(
                 workflow_package_version.version if workflow_package_version is not None else None
@@ -684,6 +741,8 @@ class RunService:
     ) -> RunCreatedRead:
         inherited_tokens = self._copied_invocation_token_totals(copied_steps)
         run = Run(
+            agent_id=source_run.agent_id,
+            target_workflow_id=source_run.target_workflow_id,
             target_kind=source_run.target_kind,
             target_id=source_run.target_id,
             target_key=source_run.target_key,
@@ -2436,26 +2495,11 @@ class RunService:
             package_version,
             expected_version_id=expected_version_id,
         )
-        has_launched_versions = (
-            self._has_launched_versions(package.id) if package is not None else False
-        )
         return {
             "packageStatus": None if package is None else package.status,
-            "packageArchivedAt": None if package is None else package.archived_at,
-            "packageDeletedAt": None if package is None else package.deleted_at,
             "packageVersionAvailable": unavailable_reason is None,
-            "canArchivePackage": (
-                package is not None and package.status != "archived" and package.deleted_at is None
-            ),
-            "canDeletePackage": package is not None and not has_launched_versions,
             "unavailableReason": unavailable_reason,
         }
-
-    def _has_launched_versions(self, package_id: int) -> bool:
-        return any(
-            version.launched_at is not None
-            for version in self.workflow_package_repository.list_versions(package_id)
-        )
 
     @staticmethod
     def _package_unavailable_reason(
@@ -2466,10 +2510,6 @@ class RunService:
     ) -> str | None:
         if package is None:
             return "missingPackage"
-        if package.deleted_at is not None:
-            return "deletedPackage"
-        if package.status == "archived":
-            return "archivedPackage"
         if package_version is None:
             return "missingPackageVersion"
         if expected_version_id is not None and package_version.id != expected_version_id:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_run_service
 from app.core.errors import validation_error
@@ -109,6 +109,15 @@ def create_run_step_replay(
     service: Annotated[RunService, Depends(get_run_service)],
 ) -> RunCreatedRead:
     return service.create_step_replay(run_id, payload)
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_run(
+    run_id: int,
+    service: Annotated[RunService, Depends(get_run_service)],
+) -> Response:
+    service.delete_run(run_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{run_id}", response_model=RunRead)

@@ -4,9 +4,11 @@ from typing import Any
 
 from fastapi import status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
+from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.repositories.output_schema import OutputSchemaRepository
 from app.schemas.output_schema import (
@@ -67,7 +69,7 @@ class OutputSchemaService:
             registry_refs=prepared.registry_refs,
         )
         try:
-            self.repository.add(schema)
+            _ = self.repository.add(schema)
             self.session.commit()
             self.session.refresh(schema)
             self.compiler.clear_caches()
@@ -106,9 +108,9 @@ class OutputSchemaService:
         )
 
         try:
-            source.status = OutputSchemaStatus.ARCHIVED.value
+            self.repository.delete(source)
             self.session.flush()
-            self.repository.add(updated)
+            _ = self.repository.add(updated)
             self.session.commit()
             self.session.refresh(updated)
             self.compiler.clear_caches()
@@ -136,8 +138,44 @@ class OutputSchemaService:
             raise
         return self._to_read_model(schema)
 
+    def delete_schema(self, schema_id: int) -> None:
+        schema = self._get_model(schema_id)
+        agent_refs = self._agent_reference_details(schema.id)
+        if agent_refs:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="output_schema_delete_blocked",
+                message="Output schema is referenced by agents",
+                details=agent_refs,
+            )
+
+        try:
+            self.repository.delete(schema)
+            self.session.commit()
+            self.compiler.clear_caches()
+        except Exception:
+            self.session.rollback()
+            raise
+
     def compile_schema_model(self, schema_id: int) -> type[BaseModel]:
         return self.compiler.build_runtime_model(self._get_model(schema_id))
+
+    def _agent_reference_details(self, schema_id: int) -> list[dict[str, object]]:
+        statement = (
+            select(Agent)
+            .where(Agent.output_schema_id == schema_id)
+            .order_by(Agent.key.asc(), Agent.version.desc(), Agent.id.asc())
+        )
+        return [
+            {
+                "field": "agentId",
+                "issue": "Output schema is referenced by agent",
+                "agentId": agent.id,
+                "agentKey": agent.key,
+                "agentVersion": agent.version,
+            }
+            for agent in self.session.scalars(statement)
+        ]
 
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)
@@ -180,7 +218,7 @@ class OutputSchemaService:
 
     def _ensure_runtime_compiles(self, schema: OutputSchema) -> None:
         try:
-            self.compiler.build_runtime_model(schema)
+            _ = self.compiler.build_runtime_model(schema)
         except OutputSchemaCompilerError as exc:
             raise validation_error(
                 "Output schema validation failed",

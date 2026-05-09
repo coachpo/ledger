@@ -13,7 +13,6 @@ from app.models.output_schema import OutputSchema
 from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
-from app.schemas.model_connection import ModelConnectionStatus
 from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
@@ -313,11 +312,6 @@ class WorkflowPackagePreflightService:
             connection = self.model_connection_repository.get_by_key(binding.key)
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
-                continue
-            if connection.status != ModelConnectionStatus.ACTIVE.value:
-                errors.append(
-                    {"field": path, "issue": "Archived model connections cannot be selected"}
-                )
                 continue
             bindings[binding.key] = PackageResolvedModelBinding(
                 key=binding.key,

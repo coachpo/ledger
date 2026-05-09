@@ -195,13 +195,13 @@ class AgentExecutionService:
                     code="run_agent_model_connection_missing",
                     message=f"Package agent {agent.key!r} is missing its model connection",
                 )
-            connection = repository.resolve_active_by_key(agent.model_binding.key)
+            connection = repository.get_by_key(agent.model_binding.key)
             if connection is None:
                 raise RunExecutionError(
                     code="run_agent_model_connection_missing",
                     message=(
-                        f"Package agent {agent.key!r} references missing or archived "
-                        f"model connection {agent.model_binding.key!r}"
+                        f"Package agent {agent.key!r} references missing model connection "
+                        f"{agent.model_binding.key!r}"
                     ),
                 )
             return self._to_runtime_model_connection(connection)

@@ -28,12 +28,8 @@ router = APIRouter(prefix="/workflow-packages", tags=["workflow-packages"])
 def list_workflow_packages(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
     status_filter: Annotated[WorkflowPackageStatus | None, Query(alias="status")] = None,
-    include_archived: Annotated[bool, Query(alias="includeArchived")] = False,
 ) -> WorkflowPackageListRead:
-    return service.list_packages(
-        status_filter=status_filter,
-        include_archived=include_archived,
-    )
+    return service.list_packages(status_filter=status_filter)
 
 
 @router.post("", response_model=WorkflowPackageRead, status_code=status.HTTP_201_CREATED)
@@ -77,12 +73,17 @@ def update_workflow_package(
     return service.update_package(package_id, payload)
 
 
-@router.delete("/{package_id}", response_model=WorkflowPackageRead)
-def archive_or_delete_workflow_package(
+@router.delete(
+    "/{package_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def delete_workflow_package(
     package_id: int,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-) -> WorkflowPackageRead:
-    return service.archive_or_delete_package(package_id)
+) -> Response:
+    service.delete_package(package_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{package_id}/versions", response_model=WorkflowPackageVersionListRead)

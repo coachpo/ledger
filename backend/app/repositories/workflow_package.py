@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from app.core.errors import business_rule_error
-from app.core.formatting import utcnow
+from app.models.platform_reference import WorkflowPackageVersionModelConnection
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.repositories.base import BaseRepository
 
@@ -18,20 +18,15 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         self,
         *,
         status: str | None = None,
-        include_archived: bool = False,
     ) -> list[WorkflowPackage]:
         statement = select(self.model)
         if status is not None:
             statement = statement.where(self.model.status == status)
-        elif not include_archived:
-            statement = statement.where(self.model.status != "archived")
         statement = statement.order_by(self.model.key.asc(), self.model.id.asc())
         return self._list(statement)
 
-    def get_by_key(self, key: str, *, include_archived: bool = False) -> WorkflowPackage | None:
+    def get_by_key(self, key: str) -> WorkflowPackage | None:
         statement = select(self.model).where(self.model.key == key)
-        if not include_archived:
-            statement = statement.where(self.model.status != "archived")
         statement = statement.order_by(self.model.id.asc())
         return self._get_by_statement(statement)
 
@@ -58,19 +53,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
             setattr(package, field_name, value)
         return self.add(package)
 
-    def archive_package(
-        self,
-        package: WorkflowPackage,
-        *,
-        archived_by: str | None = None,
-        archived_reason: str | None = None,
-    ) -> WorkflowPackage:
-        package.status = "archived"
-        package.archived_at = utcnow()
-        package.archived_by = archived_by
-        package.archived_reason = archived_reason
-        return self.add(package)
-
     def create_version(
         self,
         package: WorkflowPackage,
@@ -82,6 +64,7 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         compiled_hash: str,
         validation_summary: dict[str, Any] | None = None,
         launched_at: datetime | None = None,
+        model_connection_refs: list[tuple[int, str]] | None = None,
     ) -> WorkflowPackageVersion:
         self.session.flush()
         package_id = package.id
@@ -114,6 +97,14 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         )
         self.session.add(version)
         self.session.flush()
+        for model_connection_id, model_connection_key in dict(model_connection_refs or []).items():
+            self.session.add(
+                WorkflowPackageVersionModelConnection(
+                    workflow_package_version_id=version.id,
+                    model_connection_id=model_connection_id,
+                    model_connection_key=model_connection_key,
+                )
+            )
         locked_package.latest_version_id = version.id
         return version
 

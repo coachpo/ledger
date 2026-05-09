@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_mcp_server_service
 from app.schemas.mcp_server import (
@@ -74,9 +74,10 @@ def test_mcp_server_connection(
     return service.test_connection(server_id)
 
 
-@router.delete("/{server_id}", response_model=McpServerRead)
-def archive_mcp_server(
+@router.delete("/{server_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+def delete_mcp_server(
     server_id: int,
     service: Annotated[McpServerService, Depends(get_mcp_server_service)],
-) -> McpServerRead:
-    return service.archive(server_id)
+) -> Response:
+    service.delete_server(server_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_run_service, get_workflow_service
 from app.schemas.workflow import (
@@ -96,9 +96,10 @@ def create_workflow_launch(
     return service.create_workflow_launch(workflow_id, payload)
 
 
-@router.delete("/{workflow_id}", response_model=WorkflowRead)
-def archive_workflow(
+@router.delete("/{workflow_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+def delete_workflow(
     workflow_id: int,
     service: Annotated[WorkflowService, Depends(get_workflow_service)],
-) -> WorkflowRead:
-    return service.archive_workflow(workflow_id)
+) -> Response:
+    service.delete_workflow(workflow_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

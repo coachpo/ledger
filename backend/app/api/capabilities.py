@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_capability_service
 from app.schemas.capability import (
@@ -66,9 +66,10 @@ def activate_capability(
     return service.activate(capability_id)
 
 
-@router.delete("/{capability_id}", response_model=CapabilityRead)
-def archive_capability(
+@router.delete("/{capability_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+def delete_capability(
     capability_id: int,
     service: Annotated[CapabilityService, Depends(get_capability_service)],
-) -> CapabilityRead:
-    return service.archive(capability_id)
+) -> Response:
+    service.delete_capability(capability_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

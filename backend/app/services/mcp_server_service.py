@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.mcp import (
@@ -10,7 +11,9 @@ from app.agents.mcp import (
     build_mcp_client_boundary,
 )
 from app.core.errors import ApiError, not_found_error, validation_error
+from app.models.agent import Agent
 from app.models.mcp_server import McpServer
+from app.models.platform_reference import AgentMcpServerRef
 from app.repositories.mcp_server import McpServerRepository
 from app.schemas.mcp_server import (
     McpClientBoundaryRead,
@@ -85,7 +88,7 @@ class McpServerService:
             config=self._validated_config_payload(payload, key=source.key),
         )
         try:
-            source.status = McpServerStatus.ARCHIVED.value
+            self.repository.delete(source)
             self.session.flush()
             _ = self.repository.add(updated)
             self.session.commit()
@@ -113,19 +116,41 @@ class McpServerService:
             raise
         return self._to_read_model(server)
 
-    def archive(self, server_id: int) -> McpServerRead:
+    def delete_server(self, server_id: int) -> None:
         server = self._get_model(server_id)
-        if server.status == McpServerStatus.ARCHIVED.value:
-            return self._to_read_model(server)
+        agent_refs = self._agent_reference_details(server.id)
+        if agent_refs:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="mcp_server_delete_blocked",
+                message="MCP server is referenced by agents",
+                details=agent_refs,
+            )
 
         try:
-            server.status = McpServerStatus.ARCHIVED.value
+            self.repository.delete(server)
             self.session.commit()
-            self.session.refresh(server)
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(server)
+
+    def _agent_reference_details(self, server_id: int) -> list[dict[str, object]]:
+        statement = (
+            select(Agent)
+            .join(AgentMcpServerRef, Agent.id == AgentMcpServerRef.agent_id)
+            .where(AgentMcpServerRef.mcp_server_id == server_id)
+            .order_by(Agent.key.asc(), Agent.version.desc(), Agent.id.asc())
+        )
+        return [
+            {
+                "field": "agentId",
+                "issue": "MCP server is referenced by agent",
+                "agentId": agent.id,
+                "agentKey": agent.key,
+                "agentVersion": agent.version,
+            }
+            for agent in self.session.scalars(statement)
+        ]
 
     def build_client_boundary(self, server_id: int) -> McpClientBoundary:
         return self._build_boundary_model(self._get_model(server_id))

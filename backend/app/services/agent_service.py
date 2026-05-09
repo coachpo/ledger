@@ -8,6 +8,7 @@ from typing import NoReturn, cast
 
 from fastapi import status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalog
@@ -19,6 +20,8 @@ from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
+from app.models.platform_reference import WorkflowAgentRef
+from app.models.workflow import Workflow
 from app.repositories.agent import AgentRepository
 from app.repositories.capability import CapabilityRepository
 from app.repositories.mcp_server import McpServerRepository
@@ -39,7 +42,7 @@ from app.schemas.agent import (
 )
 from app.schemas.agent_manifest import AgentManifestDiagnostic, AgentManifestDiagnosticSeverity
 from app.schemas.mcp_server import McpClientBoundaryRead
-from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionStatus
+from app.schemas.model_connection import ModelConnectionListItemRead
 from app.schemas.run import RunCreatedRead
 from app.services.agent_manifest_compiler import AgentManifestCompiler, AgentManifestCompilerError
 from app.services.agent_manifest_parser import locate_agent_manifest_path, parse_agent_manifest
@@ -200,19 +203,45 @@ class AgentService:
             raise
         return self._to_read_model(agent)
 
-    def archive_agent(self, agent_id: int) -> AgentRead:
+    def delete_agent(self, agent_id: int) -> None:
         agent = self._get_model(agent_id)
-        if agent.status == AgentStatus.ARCHIVED.value:
-            return self._to_read_model(agent)
+        workflow_refs = self._workflow_reference_details(agent.id)
+        if workflow_refs:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="agent_delete_blocked",
+                message="Agent is referenced by workflows",
+                details=workflow_refs,
+            )
 
+        RunService(self.session).delete_runs_for_target(
+            target_kind="agent",
+            target_id=agent.id,
+        )
         try:
-            agent.status = AgentStatus.ARCHIVED.value
+            self.repository.delete(agent)
             self.session.commit()
-            self.session.refresh(agent)
         except Exception:
             self.session.rollback()
             raise
-        return self._to_read_model(agent)
+
+    def _workflow_reference_details(self, agent_id: int) -> list[dict[str, object]]:
+        statement = (
+            select(Workflow)
+            .join(WorkflowAgentRef, Workflow.id == WorkflowAgentRef.workflow_id)
+            .where(WorkflowAgentRef.agent_id == agent_id)
+            .order_by(Workflow.key.asc(), Workflow.version.desc(), Workflow.id.asc())
+        )
+        return [
+            {
+                "field": "workflowId",
+                "issue": "Agent is referenced by workflow",
+                "workflowId": workflow.id,
+                "workflowKey": workflow.key,
+                "workflowVersion": workflow.version,
+            }
+            for workflow in self.session.scalars(statement)
+        ]
 
     def create_run(
         self,
@@ -552,16 +581,6 @@ class AgentService:
                     {
                         "field": "modelConnectionId",
                         "issue": f"Model connection {connection_id} was not found",
-                    }
-                ],
-            )
-        if connection.status != ModelConnectionStatus.ACTIVE.value:
-            raise validation_error(
-                "Agent validation failed",
-                [
-                    {
-                        "field": "modelConnectionId",
-                        "issue": "Archived model connections cannot be selected",
                     }
                 ],
             )

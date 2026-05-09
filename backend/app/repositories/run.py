@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.formatting import utcnow
 from app.models.run import Run
@@ -83,6 +84,63 @@ class RunRepository(BaseRepository[Run]):
             .options(selectinload(self.model.steps).selectinload(RunStep.invocations))
         )
         return self._get_by_statement(statement)
+
+    def list_ids_for_target_owner(
+        self,
+        *,
+        target_kind: str,
+        target_id: int,
+        workflow_package_id: int | None = None,
+    ) -> list[int]:
+        statement = select(self.model.id).where(
+            self._target_owner_filter(
+                target_kind=target_kind,
+                target_id=target_id,
+                workflow_package_id=workflow_package_id,
+            )
+        )
+        return list(self.session.scalars(statement))
+
+    def list_for_target_owner(
+        self,
+        *,
+        target_kind: str,
+        target_id: int,
+        workflow_package_id: int | None = None,
+    ) -> list[Run]:
+        statement = select(self.model).where(
+            self._target_owner_filter(
+                target_kind=target_kind,
+                target_id=target_id,
+                workflow_package_id=workflow_package_id,
+            )
+        )
+        return self._list(statement)
+
+    def _target_owner_filter(
+        self,
+        *,
+        target_kind: str,
+        target_id: int,
+        workflow_package_id: int | None,
+    ) -> ColumnElement[bool]:
+        owner_filters: list[ColumnElement[bool]] = [
+            (self.model.target_kind == target_kind) & (self.model.target_id == target_id)
+        ]
+        for column_name in self._target_owner_fk_column_names(target_kind):
+            target_fk_column = self.model.__table__.c.get(column_name)
+            if target_fk_column is not None:
+                owner_filters.append(target_fk_column == target_id)
+        if target_kind == "workflowPackage":
+            package_id = workflow_package_id if workflow_package_id is not None else target_id
+            owner_filters.append(self.model.workflow_package_id == package_id)
+        return or_(*owner_filters)
+
+    @staticmethod
+    def _target_owner_fk_column_names(target_kind: str) -> tuple[str, ...]:
+        if target_kind == "workflowPackage":
+            return ("target_workflow_package_id", "workflow_package_id")
+        return (f"target_{target_kind}_id", f"{target_kind}_id")
 
     def claim_next_queued(self, run_id: int | None = None) -> Run | None:
         statement = select(self.model).where(self.model.status == "queued")

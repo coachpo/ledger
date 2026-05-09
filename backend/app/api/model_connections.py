@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.api.dependencies import get_model_connection_service
 from app.schemas.model_connection import (
@@ -10,7 +10,6 @@ from app.schemas.model_connection import (
     ModelConnectionCreate,
     ModelConnectionListRead,
     ModelConnectionRead,
-    ModelConnectionStatus,
     ModelConnectionUpdate,
 )
 from app.services.model_connection_service import ModelConnectionService
@@ -21,9 +20,8 @@ router = APIRouter(prefix="/model-connections", tags=["model-connections"])
 @router.get("", response_model=ModelConnectionListRead)
 def list_model_connections(
     service: Annotated[ModelConnectionService, Depends(get_model_connection_service)],
-    status_filter: Annotated[ModelConnectionStatus | None, Query(alias="status")] = None,
 ) -> ModelConnectionListRead:
-    return service.list_connections(status_filter=status_filter)
+    return service.list_connections()
 
 
 @router.post("", response_model=ModelConnectionRead, status_code=status.HTTP_201_CREATED)
@@ -59,9 +57,10 @@ def test_model_connection(
     return service.test_connection(connection_id)
 
 
-@router.delete("/{connection_id}", response_model=ModelConnectionRead)
-def archive_model_connection(
+@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_model_connection(
     connection_id: int,
     service: Annotated[ModelConnectionService, Depends(get_model_connection_service)],
-) -> ModelConnectionRead:
-    return service.archive_connection(connection_id)
+) -> Response:
+    service.delete_connection(connection_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

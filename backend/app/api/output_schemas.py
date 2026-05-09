@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import get_output_schema_service
 from app.schemas.output_schema import (
@@ -58,3 +58,12 @@ def activate_output_schema(
     service: Annotated[OutputSchemaService, Depends(get_output_schema_service)],
 ) -> OutputSchemaRead:
     return service.activate(schema_id)
+
+
+@router.delete("/{schema_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+def delete_output_schema(
+    schema_id: int,
+    service: Annotated[OutputSchemaService, Depends(get_output_schema_service)],
+) -> Response:
+    service.delete_schema(schema_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
