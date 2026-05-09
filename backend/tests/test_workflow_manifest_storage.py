@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
 from app.models.agent import Agent
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.workflow import (
     TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
@@ -52,6 +53,17 @@ def _agent_output_schema() -> dict[str, object]:
 
 
 def _seed_agent(session: Session) -> None:
+    model_connection = ModelConnection(
+        key="manifest_contract_model",
+        status="active",
+        name="Manifest Contract Model",
+        description="Model connection for workflow manifest storage tests.",
+        base_url="https://api.openai.com/v1",
+        model_id="gpt-5.4-mini",
+        reasoning_effort="medium",
+        timeout_seconds=60,
+        secret_payload={"apiKey": "configured-test-value"},
+    )
     output_schema = OutputSchema(
         key="manifest_contract_note",
         version=1,
@@ -62,7 +74,7 @@ def _seed_agent(session: Session) -> None:
         json_schema=_agent_output_schema(),
         registry_refs=[],
     )
-    session.add(output_schema)
+    session.add_all([model_connection, output_schema])
     session.flush()
     session.add(
         Agent(
@@ -71,7 +83,7 @@ def _seed_agent(session: Session) -> None:
             status="published",
             name="Manifest Contract Agent",
             description="Agent for workflow manifest storage tests.",
-            model_connection_id=1,
+            model_connection_id=model_connection.id,
             model="openai:gpt-5.4-mini",
             system_prompt="Summarize the ticker.",
             input_schema=_workflow_input_schema(),

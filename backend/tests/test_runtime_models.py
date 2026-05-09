@@ -107,6 +107,25 @@ def _build_mcp_server(
     )
 
 
+def _build_model_connection(
+    *,
+    key: str = "default_model_connection",
+    status: str = "active",
+) -> ModelConnection:
+    return ModelConnection(
+        key=key,
+        status=status,
+        name=key.replace("_", " ").title(),
+        description="Model connection description",
+        base_url="https://api.openai.com/v1",
+        model_id="openai:gpt-5.4-mini",
+        reasoning_effort="medium",
+        api_style="responses",
+        timeout_seconds=60,
+        secret_payload={},
+    )
+
+
 def _build_agent(
     *,
     key: str,
@@ -369,7 +388,10 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_capability, published_schema, published_server])
+        model_connection = _build_model_connection()
+        session.add_all(
+            [published_capability, published_schema, published_server, model_connection]
+        )
         session.flush()
 
         published_agent = _build_agent(
@@ -1247,7 +1269,10 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_capability, published_schema, published_server])
+        model_connection = _build_model_connection()
+        session.add_all(
+            [published_capability, published_schema, published_server, model_connection]
+        )
         session.flush()
 
         published_agent = _build_agent(
@@ -1325,9 +1350,8 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
     assert str(run_table.c.status.default) == "ScalarElementColumnDefault('queued')"
     assert run_table.c.started_at.nullable is True
     assert run_table.c.queued_at.nullable is False
-    assert {"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(
-        run_table.c.keys()
-    )
+    assert "workflow_id" in run_table.c
+    assert {"workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(run_table.c.keys())
 
     with session_factory() as session:
         published_capability = _build_capability(
@@ -1346,7 +1370,10 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
             status="published",
             transport="http-sse",
         )
-        session.add_all([published_capability, published_schema, published_server])
+        model_connection = _build_model_connection()
+        session.add_all(
+            [published_capability, published_schema, published_server, model_connection]
+        )
         session.flush()
 
         published_agent = _build_agent(

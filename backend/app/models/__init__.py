@@ -5,6 +5,12 @@ from app.models.market_quote import MarketQuote
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
+from app.models.platform_reference import (
+    AgentCapabilityRef,
+    AgentMcpServerRef,
+    WorkflowAgentRef,
+    WorkflowPackageVersionModelConnection,
+)
 from app.models.portfolio import Portfolio
 from app.models.position import Position
 from app.models.report import Report
@@ -19,6 +25,8 @@ from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 
 __all__ = [
     "Agent",
+    "AgentCapabilityRef",
+    "AgentMcpServerRef",
     "Balance",
     "Capability",
     "MarketQuote",
@@ -35,6 +43,8 @@ __all__ = [
     "TextTemplate",
     "TradingOperation",
     "Workflow",
+    "WorkflowAgentRef",
     "WorkflowPackage",
+    "WorkflowPackageVersionModelConnection",
     "WorkflowPackageVersion",
 ]

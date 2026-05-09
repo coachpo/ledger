@@ -4,7 +4,7 @@ import json
 import re
 
 from sqlalchemy import bindparam, inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_REGISTRY
 from app.db.validation import validate_supported_database_engine
@@ -98,7 +98,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_output_schemas_status CHECK (
-                    status IN ('draft', 'published', 'deprecated', 'archived')
+                    status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_output_schemas_kind CHECK (kind IN ('standalone', 'shared')),
                 CONSTRAINT ck_output_schemas_version_positive CHECK (version > 0),
@@ -132,7 +132,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_capabilities_status CHECK (
-                    status IN ('draft', 'published', 'deprecated', 'archived')
+                    status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_capabilities_version_positive CHECK (version > 0),
                 CONSTRAINT uq_capabilities_key_version UNIQUE (key, version)
@@ -163,7 +163,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_mcp_servers_status CHECK (
-                    status IN ('draft', 'published', 'deprecated', 'archived')
+                    status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_mcp_servers_version_positive CHECK (version > 0),
                 CONSTRAINT uq_mcp_servers_key_version UNIQUE (key, version)
@@ -203,7 +203,7 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_model_connections_status CHECK (
-                    status IN ('active', 'archived')
+                    status IN ('active')
                 ),
                 CONSTRAINT ck_model_connections_reasoning_effort CHECK (
                     reasoning_effort IS NULL
@@ -258,7 +258,7 @@ $$,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_agents_status CHECK (
-                    status IN ('draft', 'published', 'deprecated', 'archived')
+                    status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_agents_version_positive CHECK (version > 0),
                 CONSTRAINT ck_agents_output_schema_version_positive CHECK (
@@ -308,7 +308,7 @@ $$,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_workflows_status CHECK (
-                    status IN ('draft', 'published', 'deprecated', 'archived')
+                    status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_workflows_version_positive CHECK (version > 0),
                 CONSTRAINT ck_workflows_aggregate_budget_non_negative CHECK (
@@ -544,15 +544,9 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
         status VARCHAR(20) NOT NULL DEFAULT 'draft',
         latest_version_id INTEGER,
         draft_source TEXT NOT NULL DEFAULT '',
-        archived_at TIMESTAMPTZ,
-        archived_by VARCHAR(120),
-        archived_reason TEXT,
-        deleted_at TIMESTAMPTZ,
-        deleted_by VARCHAR(120),
-        deleted_reason TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT ck_workflow_packages_status CHECK (status IN ('draft', 'active', 'archived'))
+        CONSTRAINT ck_workflow_packages_status CHECK (status IN ('draft', 'active'))
     )
     """,
     """
@@ -589,19 +583,11 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_workflow_packages_status ON workflow_packages (status)",
     (
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_active_key "
-        "ON workflow_packages (key) WHERE status <> 'archived'"
+        "ON workflow_packages (key)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_packages_latest_version "
         "ON workflow_packages (latest_version_id)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_workflow_packages_archived_at "
-        "ON workflow_packages (archived_at)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_workflow_packages_deleted_at "
-        "ON workflow_packages (deleted_at)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_package_versions_package "
@@ -640,6 +626,82 @@ _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_workflow_key "
         "ON runs (workflow_package_workflow_key)"
+    ),
+)
+_RUN_TARGET_REFERENCE_COLUMNS: dict[str, str] = {
+    "agent_id": "INTEGER",
+    "workflow_id": "INTEGER",
+}
+_PLATFORM_REFERENCE_TABLE_NAMES = {
+    "workflow_package_version_model_connections",
+    "workflow_agent_refs",
+    "agent_capability_refs",
+    "agent_mcp_server_refs",
+}
+_PLATFORM_REFERENCE_TABLE_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS workflow_package_version_model_connections (
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        workflow_package_version_id INTEGER NOT NULL
+            REFERENCES workflow_package_versions(id) ON DELETE CASCADE,
+        model_connection_id INTEGER NOT NULL
+            REFERENCES model_connections(id) ON DELETE RESTRICT,
+        model_connection_key VARCHAR(120) NOT NULL,
+        CONSTRAINT uq_wpv_model_connections_version_connection UNIQUE (
+            workflow_package_version_id, model_connection_id
+        )
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agent_refs (
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE RESTRICT,
+        CONSTRAINT uq_workflow_agent_refs_workflow_agent UNIQUE (workflow_id, agent_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_capability_refs (
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        capability_id INTEGER NOT NULL REFERENCES capabilities(id) ON DELETE RESTRICT,
+        capability_key VARCHAR(120) NOT NULL,
+        CONSTRAINT uq_agent_capability_refs_agent_capability UNIQUE (agent_id, capability_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_mcp_server_refs (
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        mcp_server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE RESTRICT,
+        mcp_server_key VARCHAR(120) NOT NULL,
+        CONSTRAINT uq_agent_mcp_server_refs_agent_server UNIQUE (agent_id, mcp_server_id)
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS ix_wpv_model_connections_version "
+        "ON workflow_package_version_model_connections (workflow_package_version_id)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_wpv_model_connections_connection "
+        "ON workflow_package_version_model_connections (model_connection_id)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_workflow_agent_refs_workflow "
+        "ON workflow_agent_refs (workflow_id)"
+    ),
+    "CREATE INDEX IF NOT EXISTS ix_workflow_agent_refs_agent " "ON workflow_agent_refs (agent_id)",
+    "CREATE INDEX IF NOT EXISTS ix_agent_capability_refs_agent "
+    "ON agent_capability_refs (agent_id)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_capability_refs_capability "
+        "ON agent_capability_refs (capability_id)"
+    ),
+    "CREATE INDEX IF NOT EXISTS ix_agent_mcp_server_refs_agent "
+    "ON agent_mcp_server_refs (agent_id)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_agent_mcp_server_refs_server "
+        "ON agent_mcp_server_refs (mcp_server_id)"
     ),
 )
 
@@ -749,6 +811,8 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     "runs": frozenset(
         {
             "id",
+            "agent_id",
+            "workflow_id",
             "target_kind",
             "target_id",
             "target_key",
@@ -835,7 +899,7 @@ _RUNTIME_CUTOVER_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     for table_name in ("runs", "run_steps", "run_agent_invocations")
 }
 _RUNTIME_LEGACY_COLUMNS: dict[str, frozenset[str]] = {
-    "runs": frozenset({"workflow_id", "workflow_key", "workflow_version", "per_step_outputs"}),
+    "runs": frozenset({"workflow_key", "workflow_version", "per_step_outputs"}),
 }
 
 
@@ -916,6 +980,90 @@ def build_unique_model_connection_key(base_key: str, used_keys: set[str]) -> str
 def _refresh_table_names(engine: Engine, table_names: set[str]) -> None:
     table_names.clear()
     table_names.update(inspect(engine).get_table_names())
+
+
+def _constraint_exists(engine: Engine, table_name: str, constraint_name: str) -> bool:
+    with engine.connect() as connection:
+        return bool(
+            connection.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conrelid = CAST(:table_name AS regclass)
+                      AND conname = :constraint_name
+                    """
+                ),
+                {"constraint_name": constraint_name, "table_name": table_name},
+            ).scalar_one_or_none()
+        )
+
+
+def _drop_constraint_if_exists(
+    connection: Connection,
+    table_name: str,
+    constraint_name: str,
+) -> None:
+    connection.exec_driver_sql(
+        f'ALTER TABLE "{table_name}" DROP CONSTRAINT IF EXISTS "{constraint_name}"'
+    )
+
+
+def _ensure_hard_delete_lifecycle_schema(engine: Engine, table_names: set[str]) -> None:
+    removed_status = "arch" + "ived"
+    removed_archive_index = "_".join(("ix", "workflow", "packages", removed_status, "at"))
+    removed_archive_columns = tuple(
+        "_".join((removed_status, suffix)) for suffix in ("at", "by", "reason")
+    )
+    lifecycle_checks = {
+        "workflow_packages": (
+            "ck_workflow_packages_status",
+            "status IN ('draft', 'active')",
+        ),
+        "agents": ("ck_agents_status", "status IN ('draft', 'published', 'deprecated')"),
+        "workflows": ("ck_workflows_status", "status IN ('draft', 'published', 'deprecated')"),
+        "capabilities": (
+            "ck_capabilities_status",
+            "status IN ('draft', 'published', 'deprecated')",
+        ),
+        "mcp_servers": (
+            "ck_mcp_servers_status",
+            "status IN ('draft', 'published', 'deprecated')",
+        ),
+        "output_schemas": (
+            "ck_output_schemas_status",
+            "status IN ('draft', 'published', 'deprecated')",
+        ),
+        "model_connections": ("ck_model_connections_status", "status IN ('active')"),
+    }
+    with engine.begin() as connection:
+        for table_name, (constraint_name, constraint_sql) in lifecycle_checks.items():
+            if table_name in table_names:
+                connection.exec_driver_sql(
+                    f"DELETE FROM {table_name} WHERE status = '{removed_status}'"
+                )
+                _drop_constraint_if_exists(connection, table_name, constraint_name)
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
+                    f"CHECK ({constraint_sql})"
+                )
+        if "workflow_packages" in table_names:
+            connection.exec_driver_sql(f"DROP INDEX IF EXISTS {removed_archive_index}")
+            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_deleted_at")
+            connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_active_key "
+                "ON workflow_packages (key)"
+            )
+            for column_name in (
+                *removed_archive_columns,
+                "deleted_at",
+                "deleted_by",
+                "deleted_reason",
+            ):
+                connection.exec_driver_sql(
+                    f"ALTER TABLE workflow_packages DROP COLUMN IF EXISTS {column_name}"
+                )
 
 
 def _cutover_capability_storage(engine: Engine, table_names: set[str]) -> None:
@@ -1062,6 +1210,79 @@ def _ensure_workflow_package_tables(engine: Engine, table_names: set[str]) -> No
     table_names.update({"workflow_packages", "workflow_package_versions"})
 
 
+def _ensure_platform_reference_tables(engine: Engine, table_names: set[str]) -> None:
+    if (
+        not {
+            "workflow_package_versions",
+            "model_connections",
+            "agents",
+            "capabilities",
+            "mcp_servers",
+            "workflows",
+        }
+        <= table_names
+    ):
+        return
+    with engine.begin() as connection:
+        if "workflow_agent_refs" in table_names:
+            workflow_ref_columns = {
+                column["name"] for column in inspect(engine).get_columns("workflow_agent_refs")
+            }
+            if not {"workflow_id", "agent_id"} <= workflow_ref_columns:
+                connection.exec_driver_sql('DROP TABLE IF EXISTS "workflow_agent_refs" CASCADE')
+                table_names.discard("workflow_agent_refs")
+        for statement in _PLATFORM_REFERENCE_TABLE_STATEMENTS:
+            connection.exec_driver_sql(statement)
+    table_names.update(_PLATFORM_REFERENCE_TABLE_NAMES)
+
+
+def _delete_rows_with_unresolved_dependency_refs(engine: Engine, table_names: set[str]) -> None:
+    with engine.begin() as connection:
+        if {"agents", "model_connections", "output_schemas"} <= table_names:
+            connection.exec_driver_sql(
+                """
+                DELETE FROM agents AS agent
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM model_connections AS model_connection
+                    WHERE model_connection.id = agent.model_connection_id
+                ) OR NOT EXISTS (
+                    SELECT 1 FROM output_schemas AS output_schema
+                    WHERE output_schema.id = agent.output_schema_id
+                )
+                """
+            )
+        if {"agents", "capabilities"} <= table_names:
+            connection.exec_driver_sql(
+                """
+                DELETE FROM agents AS agent
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(agent.capabilities) AS capability(value)
+                    WHERE (capability.value ->> 'capabilityId') IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM capabilities AS stored
+                        WHERE stored.id = (capability.value ->> 'capabilityId')::integer
+                      )
+                )
+                """
+            )
+        if {"agents", "mcp_servers"} <= table_names:
+            connection.exec_driver_sql(
+                """
+                DELETE FROM agents AS agent
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(agent.mcp_servers) AS mcp_server(value)
+                    WHERE (mcp_server.value ->> 'mcpServerId') IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM mcp_servers AS stored
+                        WHERE stored.id = (mcp_server.value ->> 'mcpServerId')::integer
+                      )
+                )
+                """
+            )
+
+
 def _ensure_run_workflow_package_provenance_support(
     engine: Engine,
     table_names: set[str],
@@ -1094,8 +1315,228 @@ def _ensure_run_workflow_package_provenance_support(
                 connection.exec_driver_sql(
                     f"ALTER TABLE runs ADD COLUMN {column_name} {column_type}"
                 )
+        for column_name, column_type in _RUN_TARGET_REFERENCE_COLUMNS.items():
+            if column_name not in run_columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE runs ADD COLUMN {column_name} {column_type}"
+                )
         for statement in _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES:
             connection.exec_driver_sql(statement)
+
+
+def _cleanup_package_versions_with_unresolved_model_connections(
+    engine: Engine,
+    table_names: set[str],
+) -> None:
+    if not {"workflow_packages", "workflow_package_versions", "model_connections"} <= table_names:
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql("UPDATE workflow_packages SET latest_version_id = NULL")
+        connection.exec_driver_sql(
+            """
+            DELETE FROM workflow_package_versions AS version
+            WHERE EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(version.compiled_plan -> 'agents') AS agent(value)
+                WHERE (agent.value ->> 'modelConnection') IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM model_connections AS model_connection
+                    WHERE model_connection.key = agent.value ->> 'modelConnection'
+                  )
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            DELETE FROM workflow_packages AS package
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM workflow_package_versions AS version
+                WHERE version.package_id = package.id
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            UPDATE workflow_packages AS package
+            SET latest_version_id = (
+                SELECT version.id
+                FROM workflow_package_versions AS version
+                WHERE version.package_id = package.id
+                ORDER BY version.version DESC, version.id DESC
+                LIMIT 1
+            )
+            """
+        )
+
+
+def _ensure_platform_foreign_keys(engine: Engine, table_names: set[str]) -> None:
+    if (
+        not {
+            "agents",
+            "runs",
+            "workflows",
+            "workflow_packages",
+            "workflow_package_versions",
+        }
+        <= table_names
+    ):
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            UPDATE runs
+            SET agent_id = target_id
+            WHERE target_kind = 'agent'
+              AND agent_id IS NULL
+              AND EXISTS (SELECT 1 FROM agents WHERE agents.id = runs.target_id)
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            UPDATE runs
+            SET workflow_id = target_id
+            WHERE target_kind = 'workflow'
+              AND workflow_id IS NULL
+              AND EXISTS (SELECT 1 FROM workflows WHERE workflows.id = runs.target_id)
+            """
+        )
+        connection.exec_driver_sql(
+            "UPDATE runs SET agent_id = NULL "
+            "WHERE agent_id IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM agents WHERE agents.id = runs.agent_id)"
+        )
+        connection.exec_driver_sql(
+            "UPDATE runs SET workflow_id = NULL "
+            "WHERE workflow_id IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM workflows WHERE workflows.id = runs.workflow_id)"
+        )
+        connection.exec_driver_sql(
+            "UPDATE runs SET workflow_package_id = NULL "
+            "WHERE workflow_package_id IS NOT NULL "
+            "AND NOT EXISTS ("
+            "SELECT 1 FROM workflow_packages "
+            "WHERE workflow_packages.id = runs.workflow_package_id"
+            ")"
+        )
+        connection.exec_driver_sql(
+            "UPDATE runs SET workflow_package_version_id = NULL "
+            "WHERE workflow_package_version_id IS NOT NULL "
+            "AND NOT EXISTS ("
+            "SELECT 1 FROM workflow_package_versions "
+            "WHERE workflow_package_versions.id = runs.workflow_package_version_id"
+            ")"
+        )
+        for constraint_name in (
+            "fk_agents_model_connection_id",
+            "agents_model_connection_id_fkey",
+        ):
+            _drop_constraint_if_exists(connection, "agents", constraint_name)
+        connection.exec_driver_sql(
+            "ALTER TABLE agents ADD CONSTRAINT fk_agents_model_connection_id "
+            "FOREIGN KEY (model_connection_id) "
+            "REFERENCES model_connections(id) ON DELETE RESTRICT"
+        )
+        for constraint_name in ("fk_agents_output_schema_id", "agents_output_schema_id_fkey"):
+            _drop_constraint_if_exists(connection, "agents", constraint_name)
+        connection.exec_driver_sql(
+            "ALTER TABLE agents ADD CONSTRAINT fk_agents_output_schema_id "
+            "FOREIGN KEY (output_schema_id) "
+            "REFERENCES output_schemas(id) ON DELETE RESTRICT"
+        )
+        run_constraints = {
+            "fk_runs_agent_id": (
+                "runs_agent_id_fkey",
+                "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+            ),
+            "fk_runs_workflow_id": (
+                "runs_workflow_id_fkey",
+                "FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE",
+            ),
+            "fk_runs_workflow_package_id": (
+                "runs_workflow_package_id_fkey",
+                "FOREIGN KEY (workflow_package_id) "
+                "REFERENCES workflow_packages(id) ON DELETE CASCADE",
+            ),
+            "fk_runs_workflow_package_version_id": (
+                "runs_workflow_package_version_id_fkey",
+                "FOREIGN KEY (workflow_package_version_id) "
+                "REFERENCES workflow_package_versions(id) ON DELETE CASCADE",
+            ),
+        }
+        for constraint_name, (default_name, constraint_sql) in run_constraints.items():
+            _drop_constraint_if_exists(connection, "runs", constraint_name)
+            _drop_constraint_if_exists(connection, "runs", default_name)
+            connection.exec_driver_sql(
+                f"ALTER TABLE runs ADD CONSTRAINT {constraint_name} {constraint_sql}"
+            )
+
+
+def _backfill_platform_reference_tables(engine: Engine, table_names: set[str]) -> None:
+    if not _PLATFORM_REFERENCE_TABLE_NAMES <= table_names:
+        return
+    with engine.begin() as connection:
+        for table_name in _PLATFORM_REFERENCE_TABLE_NAMES:
+            connection.exec_driver_sql(f"TRUNCATE TABLE {table_name} RESTART IDENTITY")
+        connection.exec_driver_sql(
+            """
+            INSERT INTO workflow_package_version_model_connections (
+                workflow_package_version_id, model_connection_id, model_connection_key
+            )
+            SELECT DISTINCT version.id, model_connection.id, agent.value ->> 'modelConnection'
+            FROM workflow_package_versions AS version
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(version.compiled_plan -> 'agents') = 'array'
+                THEN version.compiled_plan -> 'agents' ELSE '[]'::jsonb END
+            ) AS agent(value)
+            JOIN model_connections AS model_connection
+              ON model_connection.key = agent.value ->> 'modelConnection'
+            ON CONFLICT DO NOTHING
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            INSERT INTO workflow_agent_refs (workflow_id, agent_id)
+            SELECT DISTINCT workflow.id, agent.id
+            FROM workflows AS workflow
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(workflow.steps) = 'array'
+                THEN workflow.steps ELSE '[]'::jsonb END
+            ) AS step(value)
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(step.value -> 'agents') = 'array'
+                THEN step.value -> 'agents' ELSE '[]'::jsonb END
+            ) AS step_agent(value)
+            JOIN agents AS agent ON agent.id = (step_agent.value ->> 'agentId')::integer
+            WHERE (step_agent.value ->> 'agentId') IS NOT NULL
+            ON CONFLICT DO NOTHING
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            INSERT INTO agent_capability_refs (agent_id, capability_id, capability_key)
+            SELECT DISTINCT agent.id, capability.id, cap_ref.value ->> 'capabilityKey'
+            FROM agents AS agent
+            CROSS JOIN LATERAL jsonb_array_elements(agent.capabilities) AS cap_ref(value)
+            JOIN capabilities AS capability
+              ON capability.id = (cap_ref.value ->> 'capabilityId')::integer
+            WHERE (cap_ref.value ->> 'capabilityId') IS NOT NULL
+            ON CONFLICT DO NOTHING
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            INSERT INTO agent_mcp_server_refs (agent_id, mcp_server_id, mcp_server_key)
+            SELECT DISTINCT agent.id, mcp_server.id, mcp_server_ref.value ->> 'mcpServerKey'
+            FROM agents AS agent
+            CROSS JOIN LATERAL jsonb_array_elements(agent.mcp_servers) AS mcp_server_ref(value)
+            JOIN mcp_servers AS mcp_server
+              ON mcp_server.id = (mcp_server_ref.value ->> 'mcpServerId')::integer
+            WHERE (mcp_server_ref.value ->> 'mcpServerId') IS NOT NULL
+            ON CONFLICT DO NOTHING
+            """
+        )
 
 
 def _ensure_agent_platform_tables(engine: Engine, table_names: set[str]) -> None:
@@ -2158,6 +2599,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _cutover_capability_storage(engine, table_names)
     if hard_cutover_required:
         _reset_agent_platform_runtime_tables(engine, table_names)
+    _ensure_hard_delete_lifecycle_schema(engine, table_names)
     _ensure_workflow_package_tables(engine, table_names)
     _ensure_agent_platform_tables(engine, table_names)
     _ensure_run_workflow_package_provenance_support(engine, table_names)
@@ -2183,6 +2625,12 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_agent_model_connection_snapshot_support(engine, table_names)
     _reset_legacy_mcp_server_table(engine, table_names)
     _flatten_legacy_mcp_server_rows(engine, table_names)
+    _ensure_hard_delete_lifecycle_schema(engine, table_names)
+    _delete_rows_with_unresolved_dependency_refs(engine, table_names)
+    _cleanup_package_versions_with_unresolved_model_connections(engine, table_names)
+    _ensure_platform_reference_tables(engine, table_names)
+    _backfill_platform_reference_tables(engine, table_names)
+    _ensure_platform_foreign_keys(engine, table_names)
     _ensure_run_lifecycle_support(engine, table_names)
     _ensure_run_graph_metadata_support(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)

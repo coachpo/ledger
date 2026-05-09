@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.agent import Agent
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.workflow import (
     TEMPORARY_WORKFLOW_MANIFEST_SOURCE,
@@ -42,6 +43,17 @@ def _agent_output_schema() -> dict[str, object]:
 
 
 def _seed_agent(session: Session) -> None:
+    model_connection = ModelConnection(
+        key="backfill_model",
+        status="active",
+        name="Backfill Model",
+        description="Model connection for workflow manifest backfill tests.",
+        base_url="https://api.openai.com/v1",
+        model_id="gpt-5.4-mini",
+        reasoning_effort="medium",
+        timeout_seconds=60,
+        secret_payload={"apiKey": "configured-test-value"},
+    )
     output_schema = OutputSchema(
         key="backfill_note",
         version=1,
@@ -52,7 +64,7 @@ def _seed_agent(session: Session) -> None:
         json_schema=_agent_output_schema(),
         registry_refs=[],
     )
-    session.add(output_schema)
+    session.add_all([model_connection, output_schema])
     session.flush()
     session.add(
         Agent(
@@ -61,7 +73,7 @@ def _seed_agent(session: Session) -> None:
             status="published",
             name="Backfill Agent",
             description="Agent for workflow manifest backfill tests.",
-            model_connection_id=1,
+            model_connection_id=model_connection.id,
             model="openai:gpt-5.4-mini",
             system_prompt="Summarize the ticker.",
             input_schema=_workflow_input_schema(),

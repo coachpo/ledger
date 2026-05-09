@@ -15,7 +15,7 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
     __tablename__ = "model_connections"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active', 'archived')",
+            "status IN ('active')",
             name="ck_model_connections_status",
         ),
         CheckConstraint(

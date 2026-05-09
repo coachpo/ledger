@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,7 +27,7 @@ class Agent(IdMixin, TimestampMixin, Base):
     __tablename__ = "agents"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'published', 'deprecated', 'archived')",
+            "status IN ('draft', 'published', 'deprecated')",
             name="ck_agents_status",
         ),
         CheckConstraint("version > 0", name="ck_agents_version_positive"),
@@ -89,7 +89,10 @@ class Agent(IdMixin, TimestampMixin, Base):
         default=AGENT_MANIFEST_COMPILER_VERSION,
         server_default=AGENT_MANIFEST_COMPILER_VERSION,
     )
-    model_connection_id: Mapped[int] = mapped_column(nullable=False)
+    model_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("model_connections.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     model_connection_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -99,7 +102,10 @@ class Agent(IdMixin, TimestampMixin, Base):
     model: Mapped[str] = mapped_column(String(200), nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    output_schema_id: Mapped[int] = mapped_column(nullable=False)
+    output_schema_id: Mapped[int] = mapped_column(
+        ForeignKey("output_schemas.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     output_schema_version: Mapped[int] = mapped_column(nullable=False)
     capabilities: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,

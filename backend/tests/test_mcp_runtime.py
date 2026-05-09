@@ -208,7 +208,7 @@ def test_mcp_runtime_rejects_invalid_package_private_refs(
     assert exc_info.value.code == expected_code
 
 
-@pytest.mark.parametrize("status", ["draft", "archived"])
+@pytest.mark.parametrize("status", ["draft"])
 def test_mcp_runtime_rejects_non_runtime_statuses(
     session_factory: sessionmaker[Session],
     status: str,

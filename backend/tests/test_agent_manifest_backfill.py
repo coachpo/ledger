@@ -195,7 +195,7 @@ def test_agent_manifest_backfill_write_mode_rolls_back_when_any_agent_version_fa
         refs = _seed_manifest_refs(session)
         good_agent = _create_legacy_agent(session, refs, "good_agent")
         bad_agent = _create_legacy_agent(session, refs, "bad_agent")
-        bad_agent.output_schema_id = 999_999
+        bad_agent.output_schema_version = 999_999
         session.commit()
 
         with pytest.raises(AgentManifestBackfillError) as excinfo:

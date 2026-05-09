@@ -67,7 +67,6 @@ class OutputSchemaStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
     DEPRECATED = "deprecated"
-    ARCHIVED = "archived"
 
 
 class OutputSchemaKind(str, Enum):  # noqa: UP042

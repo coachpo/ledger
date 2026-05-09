@@ -87,11 +87,6 @@ def normalize_model_connection_key(value: object) -> str:
     return normalized
 
 
-class ModelConnectionStatus(str, Enum):  # noqa: UP042
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-
-
 type ModelConnectionReasoningEffort = str
 
 
@@ -209,7 +204,6 @@ class ModelConnectionUpdate(CamelModel):
 class ModelConnectionListItemRead(CamelModel):
     id: int
     key: str
-    status: ModelConnectionStatus
     name: str
     description: str
     base_url: str
@@ -266,7 +260,6 @@ __all__ = [
     "ModelConnectionListRead",
     "ModelConnectionRead",
     "ModelConnectionReasoningEffort",
-    "ModelConnectionStatus",
     "ModelConnectionUpdate",
     "normalize_model_connection_key",
 ]

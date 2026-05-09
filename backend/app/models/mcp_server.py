@@ -200,7 +200,7 @@ class McpServer(IdMixin, TimestampMixin, Base):
     __tablename__ = "mcp_servers"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'published', 'deprecated', 'archived')",
+            "status IN ('draft', 'published', 'deprecated')",
             name="ck_mcp_servers_status",
         ),
         CheckConstraint("version > 0", name="ck_mcp_servers_version_positive"),

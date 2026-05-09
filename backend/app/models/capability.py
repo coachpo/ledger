@@ -12,7 +12,7 @@ class Capability(IdMixin, TimestampMixin, Base):
     __tablename__ = "capabilities"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'published', 'deprecated', 'archived')",
+            "status IN ('draft', 'published', 'deprecated')",
             name="ck_capabilities_status",
         ),
         CheckConstraint("version > 0", name="ck_capabilities_version_positive"),

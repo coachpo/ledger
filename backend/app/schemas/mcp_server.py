@@ -224,7 +224,6 @@ class McpServerStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
     DEPRECATED = "deprecated"
-    ARCHIVED = "archived"
 
 
 class McpServerTransport(str, Enum):  # noqa: UP042

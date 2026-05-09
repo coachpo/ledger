@@ -251,19 +251,8 @@ class RunPackageLaunchSnapshotRead(CamelModel):
 
 class RunPackageAvailabilityRead(CamelModel):
     package_status: str | None = None
-    package_archived_at: datetime | None = None
-    package_deleted_at: datetime | None = None
     package_version_available: bool
-    can_archive_package: bool
-    can_delete_package: bool
     unavailable_reason: str | None = None
-
-    @field_validator("package_archived_at", "package_deleted_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return ensure_timezone(value)
 
 
 class RunPackageProvenanceRead(CamelModel):

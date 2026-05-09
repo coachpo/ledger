@@ -14,7 +14,7 @@ class OutputSchema(IdMixin, TimestampMixin, Base):
     __tablename__ = "output_schemas"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'published', 'deprecated', 'archived')",
+            "status IN ('draft', 'published', 'deprecated')",
             name="ck_output_schemas_status",
         ),
         CheckConstraint(

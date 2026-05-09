@@ -16,20 +16,13 @@ class WorkflowPackage(IdMixin, Base):
     __tablename__ = "workflow_packages"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'active', 'archived')",
+            "status IN ('draft', 'active')",
             name="ck_workflow_packages_status",
         ),
         Index("ix_workflow_packages_key", "key"),
         Index("ix_workflow_packages_status", "status"),
-        Index(
-            "uq_workflow_packages_active_key",
-            "key",
-            unique=True,
-            postgresql_where=sql_text("status <> 'archived'"),
-        ),
+        Index("uq_workflow_packages_active_key", "key", unique=True),
         Index("ix_workflow_packages_latest_version", "latest_version_id"),
-        Index("ix_workflow_packages_archived_at", "archived_at"),
-        Index("ix_workflow_packages_deleted_at", "deleted_at"),
     )
 
     key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -51,12 +44,6 @@ class WorkflowPackage(IdMixin, Base):
         nullable=True,
     )
     draft_source: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    archived_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    archived_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    deleted_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    deleted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

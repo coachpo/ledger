@@ -73,7 +73,6 @@ class AgentStatus(str, Enum):  # noqa: UP042
     DRAFT = "draft"
     PUBLISHED = "published"
     DEPRECATED = "deprecated"
-    ARCHIVED = "archived"
 
 
 class AgentCapabilityRefWrite(CamelModel):

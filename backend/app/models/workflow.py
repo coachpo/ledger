@@ -25,7 +25,7 @@ class Workflow(IdMixin, TimestampMixin, Base):
     __tablename__ = "workflows"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'published', 'deprecated', 'archived')",
+            "status IN ('draft', 'published', 'deprecated')",
             name="ck_workflows_status",
         ),
         CheckConstraint("version > 0", name="ck_workflows_version_positive"),

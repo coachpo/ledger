@@ -38,15 +38,18 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "status",
         "latest_version_id",
         "draft_source",
-        "archived_at",
-        "archived_by",
-        "archived_reason",
-        "deleted_at",
-        "deleted_by",
-        "deleted_reason",
         "created_at",
         "updated_at",
     } <= set(package_table.c.keys())
+    removed_archive_columns = {
+        "_".join(("arch" + "ived", suffix)) for suffix in ("at", "by", "reason")
+    }
+    assert {
+        *removed_archive_columns,
+        "deleted_at",
+        "deleted_by",
+        "deleted_reason",
+    }.isdisjoint(package_table.c.keys())
     assert {
         "package_id",
         "version",

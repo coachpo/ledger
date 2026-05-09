@@ -42,13 +42,28 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
     )
 
+    agent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    target_workflow_id: Mapped[int | None] = mapped_column(
+        "workflow_id",
+        ForeignKey("workflows.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[int] = mapped_column(nullable=False)
     target_key: Mapped[str] = mapped_column(String(120), nullable=False)
     target_version: Mapped[int] = mapped_column(nullable=False)
-    workflow_package_id: Mapped[int | None] = mapped_column(nullable=True)
+    workflow_package_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_packages.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     workflow_package_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    workflow_package_version_id: Mapped[int | None] = mapped_column(nullable=True)
+    workflow_package_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_package_versions.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     workflow_package_version: Mapped[int | None] = mapped_column(nullable=True)
     workflow_package_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
