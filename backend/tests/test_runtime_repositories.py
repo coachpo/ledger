@@ -101,8 +101,6 @@ def _build_model_connection(
         name=name,
         description=f"{name} description",
         base_url="https://api.openai.com/v1",
-        organization=None,
-        project=None,
         model_id=model_id,
         reasoning_effort="medium",
         api_style=api_style,

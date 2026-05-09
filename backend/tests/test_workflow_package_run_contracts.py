@@ -104,8 +104,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
             "key": "package_runtime_model",
             "name": "Package Runtime Model",
             "baseUrl": "https://runtime-v1.example.com/v1",
-            "organization": "org-v1",
-            "project": "proj-v1",
             "modelId": "gpt-package-v1",
             "reasoningEffort": "high",
             "apiStyle": "responses",

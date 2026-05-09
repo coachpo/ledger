@@ -9,6 +9,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from httpx import Response
+from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,6 +21,7 @@ from app.db.session import init_db, validate_supported_database_engine
 from app.models.market_quote import MarketQuote
 from app.models.report import Report
 from app.models.symbol_name_cache import SymbolNameCache
+from app.schemas.model_connection import ModelConnectionCreate, ModelConnectionUpdate
 from app.services.quote_provider import (
     ProviderHistoryPoint,
     ProviderHistorySeries,
@@ -201,6 +204,99 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
             }
         ],
     }
+
+
+_DELETED_MODEL_CONNECTION_FIELDS: dict[str, object] = {
+    "organization": "legacy-org",
+    "project": "legacy-project",
+    "organizationProject": "legacy-org-project",
+    "organization_project": "legacy_org_project",
+    "projectId": "legacy-project-id",
+}
+
+
+def _model_connection_create_payload() -> dict[str, object]:
+    return {
+        "key": "deleted_fields_model",
+        "name": "Deleted Fields Model",
+        "description": "Model connection without removed fields.",
+        "baseUrl": "https://api.openai.com/v1",
+        "modelId": "gpt-5.5-mini",
+        "reasoningEffort": "medium",
+        "apiStyle": "responses",
+        "timeoutSeconds": 60,
+        "apiKey": "sk-test-model-connection",
+    }
+
+
+def _assert_deleted_model_connection_fields_rejected(
+    response: Response,
+    field_names: set[str],
+) -> None:
+    assert response.status_code == 422, response.json()
+    body = cast(dict[str, object], response.json())
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Request validation failed"
+    detail_items = cast(list[dict[str, str]], body["details"])
+    details = {detail["field"]: detail["issue"] for detail in detail_items}
+    assert field_names <= details.keys()
+    for field_name in field_names:
+        assert details[field_name] == "Extra inputs are not permitted"
+
+
+def _assert_schema_extra_forbidden(
+    schema_type: type[ModelConnectionCreate] | type[ModelConnectionUpdate],
+    payload: dict[str, object],
+    field_names: set[str],
+) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        _ = schema_type.model_validate(payload)
+
+    extra_error_types = {
+        str(error["loc"][0]): error["type"]
+        for error in excinfo.value.errors()
+        if error["type"] == "extra_forbidden"
+    }
+    expected_error_types = {field_name: "extra_forbidden" for field_name in field_names}
+    assert expected_error_types.items() <= extra_error_types.items()
+
+
+def test_model_connection_create_rejects_deleted_organization_project_fields(
+    client: TestClient,
+) -> None:
+    payload = {**_model_connection_create_payload(), **_DELETED_MODEL_CONNECTION_FIELDS}
+
+    response = client.post("/api/model-connections", json=payload)
+
+    field_names = set(_DELETED_MODEL_CONNECTION_FIELDS)
+    _assert_deleted_model_connection_fields_rejected(response, field_names)
+    _assert_schema_extra_forbidden(ModelConnectionCreate, payload, field_names)
+
+
+def test_model_connection_update_rejects_deleted_organization_project_fields(
+    client: TestClient,
+) -> None:
+    create_response = client.post(
+        "/api/model-connections",
+        json=_model_connection_create_payload(),
+    )
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    connection_id = cast(int, create_body["id"])
+    payload: dict[str, object] = {
+        "description": "Attempted update should not persist.",
+        **_DELETED_MODEL_CONNECTION_FIELDS,
+    }
+
+    response = client.patch(f"/api/model-connections/{connection_id}", json=payload)
+
+    field_names = set(_DELETED_MODEL_CONNECTION_FIELDS)
+    _assert_deleted_model_connection_fields_rejected(response, field_names)
+    _assert_schema_extra_forbidden(ModelConnectionUpdate, payload, field_names)
+    unchanged_response = client.get(f"/api/model-connections/{connection_id}")
+    assert unchanged_response.status_code == 200, unchanged_response.json()
+    unchanged_body = cast(dict[str, object], unchanged_response.json())
+    assert unchanged_body["description"] == "Model connection without removed fields."
 
 
 def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:

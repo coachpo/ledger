@@ -153,8 +153,6 @@ def _seed_model_connection(
                 reasoning_effort="high",
                 api_style="responses",
                 timeout_seconds=31,
-                organization="org-v1",
-                project="proj-v1",
                 secret_payload=payload,
             )
         )
@@ -200,8 +198,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         connection.model_id = "gpt-package-v2"
         connection.reasoning_effort = "low"
         connection.timeout_seconds = 91
-        connection.organization = "org-v2"
-        connection.project = "proj-v2"
         connection.secret_payload = {"apiKey": "sk-package-runtime-v2"}
         session.commit()
 
@@ -225,8 +221,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         "api_key": "sk-package-runtime-v2",
         "base_url": "https://runtime-v2.example.com/v1",
         "timeout": 91.0,
-        "organization": "org-v2",
-        "project": "proj-v2",
     }
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v2"
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["reasoning"] == {"effort": "low"}

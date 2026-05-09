@@ -9,7 +9,10 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import init_db
-from app.db.upgrades import upgrade_legacy_schema
+from app.db.upgrades import (
+    _ensure_agent_model_connection_snapshot_support,
+    upgrade_legacy_schema,
+)
 from app.models.mcp_server import McpServer
 from app.reset_seed import (
     MAG7_COMPANIES,
@@ -230,11 +233,10 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
     model_connection_id = connection.execute(
         text(
             "INSERT INTO model_connections ("
-            "key, status, name, description, base_url, organization, project, "
-            "model_id, reasoning_effort, "
+            "key, status, name, description, base_url, model_id, reasoning_effort, "
             "timeout_seconds, secret_payload, created_at, updated_at"
             ") VALUES ("
-            ":key, 'active', :name, :description, 'https://api.openai.com/v1', NULL, NULL, "
+            ":key, 'active', :name, :description, 'https://api.openai.com/v1', "
             ":model_id, 'medium', 60, '{}'::jsonb, NOW(), NOW()"
             ") RETURNING id"
         ),
@@ -732,13 +734,11 @@ def _insert_model_connection_reasoning_effort_row(
             text(
                 """
                 INSERT INTO model_connections (
-                    key, status, name, description, base_url, organization, project, model_id,
-                    reasoning_effort, api_style, timeout_seconds, secret_payload,
-                    created_at, updated_at
+                    key, status, name, description, base_url, model_id, reasoning_effort,
+                    api_style, timeout_seconds, secret_payload, created_at, updated_at
                 ) VALUES (
-                    :key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL,
-                    :model_id, :reasoning_effort, :api_style, 60, '{}'::jsonb,
-                    NOW(), NOW()
+                    :key, 'active', :name, '', 'https://api.openai.com/v1', :model_id,
+                    :reasoning_effort, :api_style, 60, '{}'::jsonb, NOW(), NOW()
                 ) RETURNING id
                 """
             ),
@@ -785,6 +785,73 @@ def _insert_agent_model_connection_snapshot_row(
             "system_prompt": "Analyze the ticker.",
         },
     )
+
+
+def test_agent_model_connection_snapshot_upgrade_drops_legacy_org_project_keys(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO output_schemas (
+                        key, version, status, kind, name, description, json_schema,
+                        registry_refs, created_at, updated_at
+                    ) VALUES (
+                        'snapshot_cleanup_output', 1, 'published', 'standalone',
+                        'Snapshot Cleanup Output', '', '{"type":"object"}'::jsonb,
+                        '[]'::jsonb, NOW(), NOW()
+                    )
+                    """
+                )
+            )
+            model_connection_id = _insert_model_connection_reasoning_effort_row(
+                connection,
+                key="snapshot_cleanup_connection",
+                reasoning_effort="medium",
+            )
+            _insert_agent_model_connection_snapshot_row(
+                connection,
+                key="snapshot_cleanup_agent",
+                model_connection_id=model_connection_id,
+                model_id="openai:snapshot_cleanup_connection",
+                model_connection_snapshot={
+                    "base_url": "https://api.openai.com/v1",
+                    "model_id": "openai:snapshot_cleanup_connection",
+                    "reasoning_effort": "medium",
+                    "api_style": "responses",
+                    "timeout_seconds": 60,
+                    "organization": "legacy-org",
+                    "project": "legacy-project",
+                },
+            )
+
+        _ensure_agent_model_connection_snapshot_support(
+            engine,
+            set(inspect(engine).get_table_names()),
+        )
+
+        with engine.connect() as connection:
+            snapshot = connection.execute(
+                text(
+                    "SELECT model_connection_snapshot FROM agents "
+                    "WHERE key = 'snapshot_cleanup_agent'"
+                )
+            ).scalar_one()
+
+        assert snapshot == {
+            "base_url": "https://api.openai.com/v1",
+            "model_id": "openai:snapshot_cleanup_connection",
+            "reasoning_effort": "medium",
+            "api_style": "responses",
+            "timeout_seconds": 60,
+        }
+    finally:
+        engine.dispose()
 
 
 def _assert_model_connection_reasoning_effort_direct_sql_contract(
@@ -2122,6 +2189,7 @@ def test_init_db_fresh_schema_has_flexible_model_connection_reasoning_effort(
         model_connection_columns = {
             column["name"]: column for column in inspect(engine).get_columns("model_connections")
         }
+        assert {"organization", "project"}.isdisjoint(model_connection_columns)
         assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
             model_connection_columns
         )
@@ -2153,6 +2221,12 @@ def test_init_db_drops_legacy_model_connection_secret_metadata_columns(
             )
             connection.exec_driver_sql(
                 f"ALTER TABLE model_connections ADD COLUMN {suffix_column} VARCHAR(4)"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE model_connections ADD COLUMN organization VARCHAR(200)"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE model_connections ADD COLUMN project VARCHAR(200)"
             )
             connection.execute(
                 text(
@@ -2190,9 +2264,12 @@ def test_init_db_drops_legacy_model_connection_secret_metadata_columns(
                 )
             ).scalar_one()
 
-        assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
-            model_connection_columns
-        )
+        retired_columns = {
+            *_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS,
+            "organization",
+            "project",
+        }
+        assert retired_columns.isdisjoint(model_connection_columns)
         assert secret_payload == {"apiKey": "sk-forward-repair-1234"}
     finally:
         engine.dispose()
@@ -2275,6 +2352,7 @@ def test_init_db_backfills_model_connection_keys_deterministically(database_url:
         ]
         assert model_connection_columns["key"]["nullable"] is False
         assert model_connection_columns["api_style"]["nullable"] is False
+        assert {"organization", "project"}.isdisjoint(model_connection_columns)
         assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
             model_connection_columns
         )
@@ -2371,6 +2449,7 @@ def test_init_db_repairs_legacy_enum_only_model_connection_reasoning_effort(
                 )
             ).all()
 
+        assert {"organization", "project"}.isdisjoint(model_connection_columns)
         assert set(_LEGACY_MODEL_CONNECTION_SECRET_METADATA_COLUMNS).isdisjoint(
             model_connection_columns
         )
@@ -2702,12 +2781,10 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
             linked_model_connection_id = connection.execute(
                 text(
                     "INSERT INTO model_connections ("
-                    "key, status, name, description, base_url, organization, project, model_id, "
-                    "reasoning_effort, api_style, timeout_seconds, secret_payload, "
-                    "created_at, updated_at"
+                    "key, status, name, description, base_url, model_id, reasoning_effort, "
+                    "api_style, timeout_seconds, secret_payload, created_at, updated_at"
                     ") VALUES ("
-                    ":key, 'active', :name, '', 'https://api.openai.com/v1', NULL, NULL, "
-                    ":model_id, "
+                    ":key, 'active', :name, '', 'https://api.openai.com/v1', :model_id, "
                     "'medium', 'chat_completions', 60, '{}'::jsonb, NOW(), NOW()"
                     ") RETURNING id"
                 ),
@@ -2751,9 +2828,8 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                         {
                             "base_url": "https://api.openai.com/v1",
                             "model_id": "openai:gpt-5.4-mini",
-                            "organization": None,
-                            "project": None,
                             "reasoning_effort": "medium",
+                            "api_style": "chat_completions",
                             "timeout_seconds": 60,
                         }
                     ),
@@ -2827,8 +2903,6 @@ def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_cust
                 model_connection_snapshot={
                     "base_url": "https://api.openai.com/v1",
                     "model_id": "openai:snapshot_custom_connection",
-                    "organization": None,
-                    "project": None,
                     "reasoning_effort": "   ",
                     "api_style": "responses",
                     "timeout_seconds": 60,
@@ -2842,8 +2916,6 @@ def test_upgrade_legacy_schema_backfills_snapshot_reasoning_effort_null_and_cust
                 model_connection_snapshot={
                     "base_url": "https://api.openai.com/v1",
                     "model_id": "openai:snapshot_missing_field_connection",
-                    "organization": None,
-                    "project": None,
                     "api_style": "responses",
                     "timeout_seconds": 60,
                 },
