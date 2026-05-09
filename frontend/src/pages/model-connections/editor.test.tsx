@@ -27,7 +27,6 @@ const existingConnection = {
   modelId: "gpt-4.1",
   name: "Primary OpenAI",
   reasoningEffort: "high",
-  status: "active",
   timeoutSeconds: 90,
   updatedAt: "2026-04-22T08:31:00Z",
 };

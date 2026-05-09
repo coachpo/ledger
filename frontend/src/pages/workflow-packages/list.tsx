@@ -6,6 +6,7 @@ import {
   PlayCircle,
   Search,
   SquarePen,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -13,6 +14,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import {
+  useDeleteWorkflowPackage,
   useImportWorkflowPackage,
   useWorkflowPackages,
   useWorkflowPackageVersionSummaries,
@@ -24,6 +26,7 @@ import type {
   WorkflowPackageRead,
   WorkflowPackageStatus,
 } from "@/lib/types/workflow-package";
+import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,7 +50,6 @@ import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
 const statusLabel: Record<WorkflowPackageStatus, string> = {
   active: "Active",
-  archived: "Archived",
   draft: "Draft",
 };
 
@@ -90,9 +92,7 @@ function statusBadge(packageStatus: WorkflowPackageStatus) {
   const className =
     packageStatus === "active"
       ? "border-positive/30 bg-positive/10 text-positive"
-      : packageStatus === "draft"
-        ? "border-chart-3/30 bg-chart-3/10 text-chart-3"
-        : "border-muted bg-muted text-muted-foreground";
+      : "border-chart-3/30 bg-chart-3/10 text-chart-3";
 
   return (
     <Badge className={className} variant="outline">
@@ -188,8 +188,9 @@ function EmptyState({ search }: { search: string }) {
 
 export function WorkflowPackagesListPage() {
   const navigate = useNavigate();
+  const deletePackage = useDeleteWorkflowPackage();
   const importPackage = useImportWorkflowPackage();
-  const packagesQuery = useWorkflowPackages({ includeArchived: true });
+  const packagesQuery = useWorkflowPackages();
   const packages = useMemo(
     () => sortPackages(packagesQuery.data?.items ?? []),
     [packagesQuery.data?.items],
@@ -198,6 +199,7 @@ export function WorkflowPackagesListPage() {
     packages.map((item) => item.id),
     !packagesQuery.isPending && !packagesQuery.isError,
   );
+  const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const filteredPackages = useMemo(
@@ -216,6 +218,22 @@ export function WorkflowPackagesListPage() {
         error instanceof Error ? error.message : "Failed to import package.",
       );
       return null;
+    }
+  };
+
+  const deleteSelectedPackage = async () => {
+    if (!deleting) {
+      return;
+    }
+
+    try {
+      await deletePackage.mutateAsync(deleting.id);
+      toast.success("Workflow package permanently deleted");
+      setDeleting(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete workflow package.",
+      );
     }
   };
 
@@ -401,6 +419,18 @@ export function WorkflowPackagesListPage() {
                       <PlayCircle data-icon="inline-start" />
                       Launch
                     </Button>
+                    <Button
+                      aria-label={`Delete package ${workflowPackage.name}`}
+                      className="cursor-pointer"
+                      disabled={deletePackage.isPending}
+                      size="sm"
+                      variant="destructive"
+                      type="button"
+                      onClick={() => setDeleting(workflowPackage)}
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      Delete
+                    </Button>
                   </>
                 }
               />
@@ -490,6 +520,18 @@ export function WorkflowPackagesListPage() {
                         <PlayCircle data-icon="inline-start" />
                         Launch
                       </Button>
+                      <Button
+                        aria-label={`Delete package ${workflowPackage.name}`}
+                        className="cursor-pointer"
+                        disabled={deletePackage.isPending}
+                        size="sm"
+                        variant="destructive"
+                        type="button"
+                        onClick={() => setDeleting(workflowPackage)}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        Delete
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -498,6 +540,19 @@ export function WorkflowPackagesListPage() {
           </TableBody>
         </Table>
       ) : null}
+      <ConfirmDeleteDialog
+        open={deleting !== null}
+        title="Delete workflow package"
+        description={`Permanently delete ${deleting?.name ?? "this workflow package"}? This removes the package, package-owned runs, and related package resources. This cannot be undone.`}
+        confirmLabel="Delete package"
+        isPending={deletePackage.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleting(null);
+          }
+        }}
+        onConfirm={deleteSelectedPackage}
+      />
     </div>
   );
 }

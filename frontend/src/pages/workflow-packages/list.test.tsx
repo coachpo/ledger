@@ -13,14 +13,22 @@ import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { WorkflowPackagesListPage } from "./list";
 
 const {
+  deletePackageMock,
   importPackageMock,
   navigateMock,
+  toastErrorMock,
+  toastSuccessMock,
+  useDeletePackageMock,
   useImportPackageMock,
   useWorkflowPackagesMock,
   useWorkflowPackageVersionSummariesMock,
 } = vi.hoisted(() => ({
+  deletePackageMock: vi.fn(),
   importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
+  useDeletePackageMock: vi.fn(),
   useImportPackageMock: vi.fn(),
   useWorkflowPackagesMock: vi.fn(),
   useWorkflowPackageVersionSummariesMock: vi.fn(),
@@ -34,7 +42,15 @@ vi.mock("react-router", async (importOriginal) => {
   };
 });
 
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastErrorMock,
+    success: toastSuccessMock,
+  },
+}));
+
 vi.mock("@/hooks/use-workflow-packages", () => ({
+  useDeleteWorkflowPackage: () => useDeletePackageMock(),
   useImportWorkflowPackage: () => useImportPackageMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
   useWorkflowPackageVersionSummaries: (...args: unknown[]) =>
@@ -45,7 +61,6 @@ function packageFixture(
   overrides: Partial<WorkflowPackageRead>,
 ): WorkflowPackageRead {
   return {
-    archivedAt: null,
     compiledHash: "compiled-hash",
     createdAt: "2026-05-01T10:00:00Z",
     description: "Reusable package",
@@ -72,8 +87,12 @@ function renderPage() {
 
 describe("WorkflowPackagesListPage", () => {
   beforeEach(() => {
+    deletePackageMock.mockReset();
     importPackageMock.mockReset();
     navigateMock.mockReset();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    useDeletePackageMock.mockReset();
     useImportPackageMock.mockReset();
     useWorkflowPackagesMock.mockReset();
     useWorkflowPackageVersionSummariesMock.mockReset();
@@ -84,6 +103,11 @@ describe("WorkflowPackagesListPage", () => {
         name: "Imported Package",
       }),
     );
+    deletePackageMock.mockResolvedValue(undefined);
+    useDeletePackageMock.mockReturnValue({
+      isPending: false,
+      mutateAsync: deletePackageMock,
+    });
     useImportPackageMock.mockReturnValue({
       isPending: false,
       mutateAsync: importPackageMock,
@@ -230,6 +254,11 @@ describe("WorkflowPackagesListPage", () => {
         name: "Launch package Risk Review",
       }),
     ).toBeVisible();
+    expect(
+      within(riskRow).getByRole("button", {
+        name: "Delete package Risk Review",
+      }),
+    ).toBeVisible();
 
     const draftRow = screen.getByTestId(
       "workflow-packages-row-allocation_draft",
@@ -301,6 +330,42 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByRole("button", { name: "Launch package Macro Digest" }),
     );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
+  });
+
+  it("permanently deletes packages and surfaces backend delete errors", async () => {
+    useWorkflowPackagesMock.mockReturnValue({
+      data: {
+        items: [packageFixture({ id: 9, key: "risk_review", name: "Risk Review" })],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete package Risk Review" }),
+    );
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Permanently delete Risk Review?",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
+
+    await waitFor(() => expect(deletePackageMock).toHaveBeenCalledWith(9));
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Workflow package permanently deleted",
+    );
+
+    deletePackageMock.mockRejectedValueOnce(new Error("Package not found"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete package Risk Review" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("Package not found"),
+    );
   });
 
   it("imports a package manifest from the list dialog and routes to the imported package", async () => {

@@ -220,9 +220,7 @@ function statusBadge(workflowPackage: WorkflowPackageRead | undefined) {
   }
   const className = workflowPackage.status === "active"
     ? "border-positive/30 bg-positive/10 text-positive"
-    : workflowPackage.status === "draft"
-      ? "border-chart-3/30 bg-chart-3/10 text-chart-3"
-      : "border-muted bg-muted text-muted-foreground";
+    : "border-chart-3/30 bg-chart-3/10 text-chart-3";
   return <Badge className={className} variant="outline">{workflowPackage.status}</Badge>;
 }
 
@@ -1163,7 +1161,7 @@ export function WorkflowPackageEditorPage() {
   const importPackage = useImportWorkflowPackage();
   const versionsQuery = useWorkflowPackageVersions(isNew ? undefined : packageId);
   const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, selectedVersion, workflowKey.trim() || undefined);
-  const modelConnectionsQuery = useModelConnections({ status: "active" });
+  const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
 
   useEffect(() => {
@@ -1194,7 +1192,7 @@ export function WorkflowPackageEditorPage() {
   const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, MCP bindings, and launch flows." : "Package-local authoring shell for resources that must not become standalone global pages.");
   const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
   const combinedIssues = [...localIssues, ...issues];
-  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.status}`, label: connection.name, value: connection.key }));
+  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle}`, label: connection.name, value: connection.key }));
   const versions = versionsQuery.data?.items ?? [];
   const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
   const isSaving = createPackage.isPending || updatePackage.isPending;

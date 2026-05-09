@@ -67,7 +67,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
 }));
 
 const packageRead: WorkflowPackageRead = {
-  archivedAt: null,
   compiledHash: "compiled-hash-123",
   createdAt: "2026-05-01T10:00:00Z",
   description: "Package for neutral research workflows.",

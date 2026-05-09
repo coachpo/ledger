@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelConnectionsListPage } from "./list";
 
 const {
-  archiveModelConnectionMock,
+  deleteModelConnectionMock,
   navigateMock,
   toastErrorMock,
   toastSuccessMock,
   useModelConnectionsMock,
 } = vi.hoisted(() => ({
-  archiveModelConnectionMock: vi.fn(),
+  deleteModelConnectionMock: vi.fn(),
   navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
@@ -35,13 +35,13 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/use-model-connections", () => ({
-  useArchiveModelConnection: () => ({ isPending: false, mutateAsync: archiveModelConnectionMock }),
+  useDeleteModelConnection: () => ({ isPending: false, mutateAsync: deleteModelConnectionMock }),
   useModelConnections: () => useModelConnectionsMock(),
 }));
 
 describe("ModelConnectionsListPage", () => {
   beforeEach(() => {
-    archiveModelConnectionMock.mockReset();
+    deleteModelConnectionMock.mockReset();
     navigateMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
@@ -53,27 +53,27 @@ describe("ModelConnectionsListPage", () => {
             baseUrl: "https://api.openai.com/v1",
             description: "Production traffic",
             id: 9,
+            key: "primary_openai",
             lastTestMessage: "Connection OK",
             lastTestOk: true,
             lastTestedAt: "2026-04-22T08:00:00Z",
             modelId: "gpt-4.1",
             name: "Primary OpenAI",
             reasoningEffort: null,
-            status: "active",
             timeoutSeconds: 90,
           },
           {
             apiStyle: "chat_completions",
-            baseUrl: "https://archive.openai.com/v1",
-            description: "Historical archive",
+            baseUrl: "https://backup.openai.com/v1",
+            description: "Fallback traffic",
             id: 4,
+            key: "legacy_backup",
             lastTestMessage: "Key rejected",
             lastTestOk: false,
             lastTestedAt: "2026-04-21T08:00:00Z",
             modelId: "gpt-4o-mini",
-            name: "Legacy Archive",
+            name: "Legacy Backup",
             reasoningEffort: "xhigh",
-            status: "archived",
             timeoutSeconds: 45,
           },
           {
@@ -81,13 +81,13 @@ describe("ModelConnectionsListPage", () => {
             baseUrl: "https://literal.openai.com/v1",
             description: "Literal none reasoning value",
             id: 12,
+            key: "literal_none",
             lastTestMessage: null,
             lastTestOk: null,
             lastTestedAt: null,
             modelId: "gpt-none-literal",
             name: "Literal None",
             reasoningEffort: "none",
-            status: "active",
             timeoutSeconds: 30,
           },
         ],
@@ -98,8 +98,8 @@ describe("ModelConnectionsListPage", () => {
     });
   });
 
-  it("renders rows, archives active connections, and navigates to create and edit routes", async () => {
-    archiveModelConnectionMock.mockResolvedValue({ id: 9 });
+  it("renders rows, deletes connections, and navigates to create and edit routes", async () => {
+    deleteModelConnectionMock.mockResolvedValue(undefined);
 
     render(<ModelConnectionsListPage />);
 
@@ -115,16 +115,38 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
     expect(screen.getByText(/^passed$/i)).toBeVisible();
     expect(screen.getByText(/^failed$/i)).toBeVisible();
-    expect(screen.queryByTestId("model-connections-archive-4")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("model-connections-archive-9"));
-    await waitFor(() => expect(archiveModelConnectionMock).toHaveBeenCalledWith(9));
-    expect(toastSuccessMock).toHaveBeenCalledWith("Model connection archived");
+    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    await waitFor(() => expect(deleteModelConnectionMock).toHaveBeenCalledWith(9));
+    expect(toastSuccessMock).toHaveBeenCalledWith("Model connection deleted");
 
     fireEvent.click(screen.getByTestId("model-connections-new"));
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/new");
 
     fireEvent.click(screen.getByTestId("model-connections-open-9"));
     expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
+  });
+
+  it("shows blocked delete backend messages without rendering secret payloads", async () => {
+    const blockedError = Object.assign(
+      new Error("Model connection is used by workflow packages and cannot be deleted."),
+      {
+        details: [{ field: "apiKey", issue: "sk-live-secret" }],
+        ["secret" + "Payload"]: { apiKey: "sk-live-secret" },
+      },
+    );
+    deleteModelConnectionMock.mockRejectedValue(blockedError);
+
+    render(<ModelConnectionsListPage />);
+    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "Model connection is used by workflow packages and cannot be deleted.",
+      ),
+    );
+    expect(toastErrorMock).not.toHaveBeenCalledWith(expect.stringContaining("sk-live-secret"));
+    expect(screen.queryByText(/sk-live-secret/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret payload/i)).not.toBeInTheDocument();
   });
 });

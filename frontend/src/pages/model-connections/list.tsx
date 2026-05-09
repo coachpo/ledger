@@ -1,9 +1,9 @@
-import { Archive, Plus, SquarePen } from "lucide-react";
+import { Plus, SquarePen, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import {
-  useArchiveModelConnection,
+  useDeleteModelConnection,
   useModelConnections,
 } from "@/hooks/use-model-connections";
 import { formatDateTime } from "@/lib/format";
@@ -11,7 +11,6 @@ import type {
   ModelConnectionApiStyle,
   ModelConnectionListItemRead,
 } from "@/lib/types/model-connection";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -48,15 +47,15 @@ function formatReasoningEffort(value: ModelConnectionListItemRead["reasoningEffo
 export function ModelConnectionsListPage() {
   const navigate = useNavigate();
   const connectionsQuery = useModelConnections();
-  const archiveMutation = useArchiveModelConnection();
+  const deleteMutation = useDeleteModelConnection();
   const connections = sortConnections(connectionsQuery.data?.items ?? []);
 
-  const handleArchive = async (modelConnectionId: number) => {
+  const handleDelete = async (modelConnectionId: number) => {
     try {
-      await archiveMutation.mutateAsync(modelConnectionId);
-      toast.success("Model connection archived");
+      await deleteMutation.mutateAsync(modelConnectionId);
+      toast.success("Model connection deleted");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to archive model connection");
+      toast.error(error instanceof Error ? error.message : "Failed to delete model connection");
     }
   };
 
@@ -125,16 +124,6 @@ export function ModelConnectionsListPage() {
                 title={connection.name}
                 subtitle={connection.modelId}
                 description={connection.description}
-                badges={
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge
-                      variant={connection.status === "active" ? "secondary" : "outline"}
-                      className="capitalize"
-                    >
-                      {connection.status}
-                    </Badge>
-                  </div>
-                }
                 metadata={
                   <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
                     <div className="min-w-0">
@@ -175,18 +164,16 @@ export function ModelConnectionsListPage() {
                       <SquarePen data-icon="inline-start" />
                       Edit
                     </Button>
-                    {connection.status !== "archived" ? (
-                      <Button
-                        data-testid={`model-connections-archive-${connection.id}`}
-                        disabled={archiveMutation.isPending}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleArchive(connection.id)}
-                      >
-                        <Archive data-icon="inline-start" />
-                        Archive
-                      </Button>
-                    ) : null}
+                    <Button
+                      data-testid={`model-connections-delete-${connection.id}`}
+                      disabled={deleteMutation.isPending}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleDelete(connection.id)}
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      Delete
+                    </Button>
                   </>
                 }
               />

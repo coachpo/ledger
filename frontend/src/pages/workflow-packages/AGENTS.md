@@ -8,13 +8,13 @@
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Package inventory | `list.tsx` | include-archived list query, search, version summaries, import/create entry points |
+| Package inventory | `list.tsx` | active package list query, search, version summaries, import/create/delete entry points |
 | Package editor shell | `editor.tsx` | overview, agents, schemas, capability profiles, private MCP, workflows, preflight, launch, export/import tabs |
 | Placeholder shell | `placeholder.tsx` | obsolete placeholder retained only if tests/imports still reference it |
 | Editor shell tests | `editor-shell.test.tsx` | full-height shell, tab routing, save/validation behavior |
 | Resource editor tests | `resource-editors.test.tsx` | local package resource editing and no retired global API imports |
 | Preflight / launch tests | `preflight-launch-export.test.tsx` | blocking diagnostics, generated launch form labels/help text, import/export secret safety |
-| Package list tests | `list.test.tsx` | archive visibility, search, and version-summary behavior |
+| Package list tests | `list.test.tsx` | search, hard-delete, and version-summary behavior |
 
 ## CONVENTIONS
 - `editor.tsx` is the route-family hotspot; keep request policy in hooks and local draft/resource editing in the page.
@@ -36,5 +36,5 @@ pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workfl
 
 ## NOTES
 - `editor.tsx` is intentionally large because it composes every package authoring tab and launch/export flow.
-- `list.tsx` includes archived packages so existing runs and package provenance stay inspectable.
+- `list.tsx` shows current packages only; delete actions permanently remove packages and rely on query invalidation for list refresh.
 - `placeholder.tsx` is not routed by `src/routes.ts`; treat it as leftover placeholder code unless a test explicitly imports it.

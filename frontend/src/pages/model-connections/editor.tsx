@@ -39,7 +39,6 @@ import type {
 import {
   parseOptionalNumber,
   parseRequiredText,
-  PlatformResourceBadges,
 } from "../platform-resource-shared";
 
 type ConnectionFeedback = {
@@ -327,9 +326,6 @@ export function ModelConnectionsEditorPage() {
           <p className="text-sm text-muted-foreground">
             Save an OpenAI-family endpoint, credentials, and runtime defaults for reuse across agents.
           </p>
-          {connectionQuery.data ? (
-            <PlatformResourceBadges status={connectionQuery.data.status} />
-          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -361,7 +357,7 @@ export function ModelConnectionsEditorPage() {
         <CardHeader>
           <CardTitle>Connection details</CardTitle>
           <CardDescription>
-            Base URL should stay at the provider&apos;s `/v1` root. Archived connections remain editable for historical references.
+            Base URL should stay at the provider&apos;s `/v1` root. Saved connections remain available to workflow packages by stable key.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
