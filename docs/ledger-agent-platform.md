@@ -29,7 +29,7 @@ Package import/export is manifest based. Exports omit secrets, encrypted credent
 
 ## Model Connections
 
-Model Connections are global live bindings for provider endpoint, model id, API style, reasoning effort, timeout defaults, organization/project fields, encrypted API keys, status, and last connection-test metadata.
+Model Connections are global live bindings for provider endpoint, model id, API style, reasoning effort, timeout defaults, encrypted API keys, status, and last connection-test metadata.
 
 Read payloads and errors must mask or omit raw secrets. Blank API-key edits preserve the stored key; non-empty edits rotate it. Packages resolve Model Connections by key during validation, preflight, launch, and runtime.
 
