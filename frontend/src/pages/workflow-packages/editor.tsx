@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Download,
   FileCheck2,
-  FileUp,
   Layers3,
   Loader2,
   PlayCircle,
@@ -37,14 +36,6 @@ import {
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -56,7 +47,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -111,11 +101,12 @@ import {
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type { UnknownRecord } from "@/lib/types/common";
 import type {
-  WorkflowPackageImportMode,
+  WorkflowPackageImportRequest,
   WorkflowPackageLaunchRead,
   WorkflowPackageRead,
   WorkflowPackageVersionRead,
 } from "@/lib/types/workflow-package";
+import { WorkflowPackageImportDialog, sanitizePreviewText } from "./workflow-package-import-dialog";
 
 type WorkflowPackageEditorTab =
   | "overview"
@@ -205,7 +196,7 @@ const editorTabs: WorkflowPackageEditorTabDefinition[] = [
   { description: "Private MCP server bindings stay portable and secret-reference driven.", icon: Cable, label: "Private MCP", value: "private-mcp" },
   { description: "Run package readiness checks before launch without mutating runtime state.", icon: FileCheck2, label: "Preflight", value: "preflight" },
   { description: "Launch a selected package workflow after preflight readiness passes.", icon: PlayCircle, label: "Launch", value: "launch" },
-  { description: "Export clean package YAML without database ids or secret values.", icon: Download, label: "Exports", value: "exports" },
+  { description: "Import or export clean package YAML without database ids or secret values.", icon: Download, label: "Import / Export", value: "exports" },
 ];
 
 function routeTab(pathname: string): WorkflowPackageEditorTab {
@@ -263,9 +254,11 @@ function diagnosticsFromLaunch(read: WorkflowPackageLaunchRead | undefined): Pac
   if (!read) {
     return [];
   }
+  const blockingErrors = Array.isArray(read.blockingErrors) ? read.blockingErrors : [];
+  const warnings = Array.isArray(read.warnings) ? read.warnings : [];
   return [
-    ...read.blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
-    ...read.warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
+    ...blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
+    ...warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
   ];
 }
 
@@ -322,12 +315,6 @@ function parseRuntimeInput(value: string, type: string): unknown {
     }
   }
   return value;
-}
-
-function sanitizePreviewText(text: string): string {
-  return text
-    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
-    .replace(/(apiKey|secretPayload|encrypted|password):[^\n]*/gi, "$1: [redacted]");
 }
 
 function versionLabel(version: number | null | undefined) {
@@ -1080,44 +1067,67 @@ function ExportsTab(props: {
 }) {
   const { draft, importPackage, packageId, selectedVersion, versions, workflowPackage } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
-  const [exportPreview, setExportPreview] = useState("");
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importMode, setImportMode] = useState<WorkflowPackageImportMode>("create");
-  const [importSource, setImportSource] = useState("");
+  const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
-  const previewText = sanitizePreviewText(exportPreview || generatedManifestSource);
+  const previewText = sanitizePreviewText(exportPreview);
   const secretLeak = previewContainsSecretValue(previewText);
-  const exportHref = packageId ? exportWorkflowPackageUrl(packageId, selectedVersion) : undefined;
+  const exportHref = packageId && workflowPackage && workflowPackage.latestVersion !== null
+    ? exportWorkflowPackageUrl(packageId, selectedVersion)
+    : undefined;
 
-  const loadExportPreview = async () => {
+  useEffect(() => {
     if (!exportHref) {
       setExportPreview(generatedManifestSource);
+    }
+  }, [exportHref, generatedManifestSource]);
+
+  useEffect(() => {
+    if (!exportHref) {
       return;
     }
-    try {
-      const response = await fetch(exportHref);
-      const text = await response.text();
-      setExportPreview(sanitizePreviewText(text));
-      toast.success("Loaded sanitized package export preview");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load export preview.");
-    }
-  };
 
-  const submitImport = async () => {
+    let active = true;
+    setExportPreview("Loading sanitized package export preview...");
+    void fetch(exportHref)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load export preview.");
+        }
+        return response.text();
+      })
+      .then((text) => {
+        if (active) {
+          setExportPreview(sanitizePreviewText(text));
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setExportPreview(generatedManifestSource);
+          toast.error(error instanceof Error ? error.message : "Failed to load export preview.");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [exportHref, generatedManifestSource]);
+
+  const importManifest = async (payload: WorkflowPackageImportRequest) => {
     try {
-      const imported = await importPackage.mutateAsync({ manifestSource: importSource, mode: importMode });
+      const imported = await importPackage.mutateAsync(payload);
       setImportWarnings(imported.warnings);
-      toast.success(importMode === "createVersion" ? "Imported package version" : "Imported package");
+      toast.success(payload.mode === "createVersion" ? "Imported package version" : "Imported package");
+      return imported;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to import package.");
+      return null;
     }
   };
 
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-exports-tab">
       <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package exports and imports</CardTitle><CardDescription>Preview and download no-secret YAML, then import package manifests as new packages or new versions.</CardDescription></div><div className="flex flex-wrap gap-2"><Button disabled={!packageId} size="sm" type="button" variant="outline" onClick={() => void loadExportPreview()}><Download data-icon="inline-start" />Preview export</Button>{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<Button size="sm" type="button" variant="outline" onClick={() => setImportDialogOpen(true)}><FileUp data-icon="inline-start" />Import Package</Button></div></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download no-secret YAML, then import package manifests as new packages or new versions.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
         <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={workflowPackage?.key ?? draft.metadata.key} /><DetailMetric label="Export Version" value={versionLabel(selectedVersion ?? workflowPackage?.latestVersion)} /><DetailMetric label="Available Versions" value={String(versions.length)} /></div>
@@ -1125,19 +1135,6 @@ function ExportsTab(props: {
         <Textarea aria-label="Sanitized package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={previewText} />
         {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{sanitizePreviewText(stringifyJson(warning))}</li>)}</ul></AlertDescription></Alert> : null}
       </CardContent>
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
-          <DialogHeader><DialogTitle>Import workflow package YAML</DialogTitle><DialogDescription>Paste a package manifest. Secret-like values are redacted from preview text and should not be included.</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <RadioGroup value={importMode} onValueChange={(value) => setImportMode(value as WorkflowPackageImportMode)}>
-              <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="create" />Create new package</label>
-              <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="createVersion" />Create version for matching package key</label>
-            </RadioGroup>
-            <div className="space-y-2"><Label htmlFor="import-yaml">Import package YAML</Label><Textarea id="import-yaml" aria-label="Import package YAML" className="min-h-64 font-mono text-xs" value={importSource} onChange={(event) => setImportSource(sanitizePreviewText(event.target.value))} /></div>
-          </div>
-          <DialogFooter><Button type="button" variant="ghost" onClick={() => setImportDialogOpen(false)}>Cancel</Button><Button disabled={importPackage.isPending || !importSource.trim()} type="button" onClick={() => void submitImport()}>{importPackage.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}Import package</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }

@@ -129,6 +129,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package", workflowPackageVersion: 7 });
     importPackageMock.mockResolvedValue({ ...packageRead, warnings: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }] });
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       text: () => Promise.resolve("apiVersion: ledger.workflowPackage/v1\nmetadata:\n  key: market_review_package\nsecretPayload: sk-live-secret\n"),
     }) as unknown as typeof fetch;
     useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false });
@@ -180,15 +181,16 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
   });
 
-  it("previews and imports sanitized YAML without rendering secret-like strings", async () => {
+  it("auto-loads export preview and imports sanitized YAML without rendering secret-like strings", async () => {
     renderEditor();
-    clickTab("Exports");
-    fireEvent.click(screen.getByRole("button", { name: /preview export/i }));
+    clickTab("Import / Export");
 
+    expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
     const preview = await screen.findByLabelText("Sanitized package YAML preview");
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("[redacted]"));
     expect((preview as HTMLTextAreaElement).value).not.toContain("sk-live-secret");
-    fireEvent.click(screen.getByRole("button", { name: /import package/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
     fireEvent.change(screen.getByLabelText("Import package YAML"), {
       target: { value: "metadata:\n  key: imported\npassword: sk-import-secret\n" },
     });

@@ -1,14 +1,16 @@
-import { Box, FileUp, PackagePlus, PlayCircle, Search, SquarePen, TriangleAlert } from "lucide-react";
+import { Box, LayoutGrid, List, PackagePlus, PlayCircle, Search, SquarePen, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 
 import {
+  useImportWorkflowPackage,
   useWorkflowPackages,
   useWorkflowPackageVersionSummaries,
   type WorkflowPackageVersionSummary,
 } from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
-import type { WorkflowPackageRead, WorkflowPackageStatus } from "@/lib/types/workflow-package";
+import type { WorkflowPackageImportRequest, WorkflowPackageRead, WorkflowPackageStatus } from "@/lib/types/workflow-package";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +24,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+import { PlatformResourceCard, PlatformResourceList } from "../platform-resource-shared";
+import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
 const statusLabel: Record<WorkflowPackageStatus, string> = {
   active: "Active",
@@ -31,6 +37,10 @@ const statusLabel: Record<WorkflowPackageStatus, string> = {
 
 function formatNullableDateTime(value: string | null): string {
   return value ? formatDateTime(value) : "Not recorded";
+}
+
+function formatLatestVersion(value: number | null): string {
+  return value === null ? "None" : `v${value}`;
 }
 
 function sortPackages(items: readonly WorkflowPackageRead[]) {
@@ -171,6 +181,7 @@ function EmptyState({ search }: { search: string }) {
 
 export function WorkflowPackagesListPage() {
   const navigate = useNavigate();
+  const importPackage = useImportWorkflowPackage();
   const packagesQuery = useWorkflowPackages({ includeArchived: true });
   const packages = useMemo(() => sortPackages(packagesQuery.data?.items ?? []), [packagesQuery.data?.items]);
   const versionSummaries = useWorkflowPackageVersionSummaries(
@@ -178,10 +189,23 @@ export function WorkflowPackagesListPage() {
     !packagesQuery.isPending && !packagesQuery.isError,
   );
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const filteredPackages = useMemo(() => filterPackages(packages, search), [packages, search]);
   const activeCount = packages.filter((item) => item.status === "active").length;
   const warningCount = packages.reduce((sum, item) => sum + item.warnings.length, 0);
   const versionCount = packages.filter((item) => item.latestVersion !== null).length;
+
+  const importManifest = async (payload: WorkflowPackageImportRequest) => {
+    try {
+      const imported = await importPackage.mutateAsync(payload);
+      toast.success("Imported workflow package");
+      navigate(`/workflow-packages/${imported.id}`);
+      return imported;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to import package.");
+      return null;
+    }
+  };
 
   return (
     <div
@@ -196,17 +220,11 @@ export function WorkflowPackagesListPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button
-            aria-label="Import workflow package manifest"
-            className="cursor-pointer"
-            data-testid="workflow-packages-import"
-            size="sm"
-            variant="outline"
-            type="button"
-          >
-            <FileUp data-icon="inline-start" />
-            Import Package
-          </Button>
+          <WorkflowPackageImportDialog
+            buttonTestId="workflow-packages-import"
+            isPending={importPackage.isPending}
+            onImport={importManifest}
+          />
           <Button
             aria-label="Create new workflow package"
             className="cursor-pointer"
@@ -235,15 +253,25 @@ export function WorkflowPackagesListPage() {
               <CardTitle className="text-base">Package Inventory</CardTitle>
               <p className="text-sm text-muted-foreground">Command-search manifests by package identity, state, and version.</p>
             </div>
-            <div className="relative w-full lg:max-w-md" role="search">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input
-                aria-label="Search workflow packages"
-                className="h-10 bg-background/70 pl-9"
-                placeholder="Search packages by name, key, status, or version..."
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
+            <div className="flex w-full items-center gap-2 lg:max-w-lg">
+              <div className="relative min-w-0 flex-1" role="search">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input
+                  aria-label="Search workflow packages"
+                  className="h-10 bg-background/70 pl-9"
+                  placeholder="Search packages by name, key, status, or version..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as "cards" | "table")}>
+                <ToggleGroupItem value="cards" aria-label="Cards view" className="h-10 w-10 px-0">
+                  <LayoutGrid className="size-4" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="table" aria-label="Table view" className="h-10 w-10 px-0">
+                  <List className="size-4" />
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
           </div>
         </CardHeader>
@@ -256,7 +284,78 @@ export function WorkflowPackagesListPage() {
             </div>
           ) : null}
           {!packagesQuery.isPending && !packagesQuery.isError && filteredPackages.length === 0 ? <EmptyState search={search} /> : null}
-          {!packagesQuery.isPending && !packagesQuery.isError && filteredPackages.length > 0 ? (
+          {!packagesQuery.isPending && !packagesQuery.isError && filteredPackages.length > 0 && viewMode === "cards" ? (
+            <div className="p-3 sm:p-4">
+              <PlatformResourceList>
+                {filteredPackages.map((workflowPackage) => {
+                  const summary = versionSummaries.get(String(workflowPackage.id));
+                  const packagePath = `/workflow-packages/${workflowPackage.id}`;
+                  const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
+
+                  return (
+                    <PlatformResourceCard
+                      key={workflowPackage.id}
+                      density="compactPlus"
+                      testId={`workflow-packages-row-${workflowPackage.key}`}
+                      title={workflowPackage.name}
+                      subtitle={(
+                        <span className="font-['Fira_Code',ui-monospace,monospace] text-xs">
+                          {workflowPackage.key}
+                        </span>
+                      )}
+                      description={workflowPackage.description || "No description provided."}
+                      primaryAction={{
+                        kind: "button",
+                        label: `Open package details for ${workflowPackage.name}`,
+                        onClick: () => navigate(packagePath),
+                      }}
+                      badges={(
+                        <>
+                          {statusBadge(workflowPackage.status)}
+                          {preflightBadge(summary, workflowPackage.latestVersion)}
+                        </>
+                      )}
+                      metadata={(
+                        <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="min-w-0">
+                            <span className="font-medium text-foreground">Latest Version:</span>{" "}
+                            <span className="font-['Fira_Code',ui-monospace,monospace]">
+                              {formatLatestVersion(workflowPackage.latestVersion)}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-medium text-foreground">Last Preflight:</span>{" "}
+                            {preflightBadge(summary, workflowPackage.latestVersion)}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-medium text-foreground">Last Run:</span>{" "}
+                            <span>{lastRunLabel(summary)}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-medium text-foreground">Updated:</span>{" "}
+                            <span>{formatDateTime(workflowPackage.updatedAt)}</span>
+                          </div>
+                        </div>
+                      )}
+                      actions={(
+                        <>
+                          <Button aria-label={`Open package ${workflowPackage.name}`} className="cursor-pointer" size="sm" variant="outline" type="button" onClick={() => navigate(packagePath)}>
+                            <SquarePen data-icon="inline-start" />
+                            Open
+                          </Button>
+                          <Button aria-label={`Launch package ${workflowPackage.name}`} className="cursor-pointer" size="sm" variant="outline" type="button" onClick={() => navigate(launchPath)}>
+                            <PlayCircle data-icon="inline-start" />
+                            Launch
+                          </Button>
+                        </>
+                      )}
+                    />
+                  );
+                })}
+              </PlatformResourceList>
+            </div>
+          ) : null}
+          {!packagesQuery.isPending && !packagesQuery.isError && filteredPackages.length > 0 && viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -282,7 +381,7 @@ export function WorkflowPackagesListPage() {
                         </div>
                       </TableCell>
                       <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{workflowPackage.key}</TableCell>
-                      <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs">{workflowPackage.latestVersion === null ? "None" : `v${workflowPackage.latestVersion}`}</TableCell>
+                      <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs">{formatLatestVersion(workflowPackage.latestVersion)}</TableCell>
                       <TableCell>{statusBadge(workflowPackage.status)}</TableCell>
                       <TableCell>{preflightBadge(summary, workflowPackage.latestVersion)}</TableCell>
                       <TableCell className="max-w-44 whitespace-normal text-xs text-muted-foreground">{lastRunLabel(summary)}</TableCell>

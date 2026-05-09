@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,8 +6,10 @@ import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackagesListPage } from "./list";
 
-const { navigateMock, useWorkflowPackagesMock, useWorkflowPackageVersionSummariesMock } = vi.hoisted(() => ({
+const { importPackageMock, navigateMock, useImportPackageMock, useWorkflowPackagesMock, useWorkflowPackageVersionSummariesMock } = vi.hoisted(() => ({
+  importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
+  useImportPackageMock: vi.fn(),
   useWorkflowPackagesMock: vi.fn(),
   useWorkflowPackageVersionSummariesMock: vi.fn(),
 }));
@@ -21,6 +23,7 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
+  useImportWorkflowPackage: () => useImportPackageMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
   useWorkflowPackageVersionSummaries: (...args: unknown[]) => useWorkflowPackageVersionSummariesMock(...args),
 }));
@@ -54,9 +57,13 @@ function renderPage() {
 
 describe("WorkflowPackagesListPage", () => {
   beforeEach(() => {
+    importPackageMock.mockReset();
     navigateMock.mockReset();
+    useImportPackageMock.mockReset();
     useWorkflowPackagesMock.mockReset();
     useWorkflowPackageVersionSummariesMock.mockReset();
+    importPackageMock.mockResolvedValue(packageFixture({ id: 77, key: "imported_package", name: "Imported Package" }));
+    useImportPackageMock.mockReturnValue({ isPending: false, mutateAsync: importPackageMock });
     useWorkflowPackageVersionSummariesMock.mockReturnValue(new Map());
   });
 
@@ -98,7 +105,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByText("No workflow packages yet.")).toBeVisible();
   });
 
-  it("renders summary cards, package table columns, status, preflight, run, and action labels", () => {
+  it("renders summary cards, package cards by default, and table columns after toggling", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -162,18 +169,8 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByText("Total Packages")).toBeVisible();
     expect(screen.getByText("Validation Warnings")).toBeVisible();
 
-    for (const column of [
-      "Name",
-      "Key",
-      "Latest Version",
-      "Status",
-      "Last Preflight",
-      "Last Run",
-      "Updated",
-      "Actions",
-    ]) {
-      expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
-    }
+    expect(screen.getByLabelText("Cards view")).toHaveAttribute("data-state", "on");
+    expect(screen.queryByRole("columnheader", { name: "Name" })).not.toBeInTheDocument();
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
@@ -189,6 +186,22 @@ describe("WorkflowPackagesListPage", () => {
     expect(draftRow).toHaveTextContent("Draft");
     expect(draftRow).toHaveTextContent("2 warnings");
     expect(draftRow).toHaveTextContent("Not recorded");
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+    expect(screen.getByLabelText("Table view")).toHaveAttribute("data-state", "on");
+
+    for (const column of [
+      "Name",
+      "Key",
+      "Latest Version",
+      "Status",
+      "Last Preflight",
+      "Last Run",
+      "Updated",
+      "Actions",
+    ]) {
+      expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
+    }
   });
 
   it("filters packages through the command search and routes primary actions", () => {
@@ -221,5 +234,29 @@ describe("WorkflowPackagesListPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Launch package Macro Digest" }));
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
+  });
+
+  it("imports a package manifest from the list dialog and routes to the imported package", async () => {
+    useWorkflowPackagesMock.mockReturnValue({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
+    fireEvent.change(screen.getByLabelText("Import package YAML"), {
+      target: { value: "metadata:\n  key: imported\napiKey: sk-import-secret\n" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /import package/i }));
+
+    await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
+      manifestSource: expect.not.stringContaining("sk-import-secret"),
+      mode: "create",
+    }));
+    expect(importPackageMock.mock.calls[0][0].manifestSource).toContain("[redacted]");
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/77");
   });
 });

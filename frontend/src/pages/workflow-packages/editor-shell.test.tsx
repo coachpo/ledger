@@ -90,7 +90,7 @@ describe("WorkflowPackageEditorPage", () => {
       "Private MCP",
       "Preflight",
       "Launch",
-      "Exports",
+      "Import / Export",
     ]) {
       expect(screen.getByRole("tab", { name: `${tabName} tab` })).toBeVisible();
     }
