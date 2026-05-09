@@ -323,8 +323,6 @@ class WorkflowPackagePreflightService:
                 key=binding.key,
                 name=binding.name,
                 base_url=binding.base_url,
-                organization=binding.organization,
-                project=binding.project,
                 model_id=binding.model_id,
                 reasoning_effort=binding.reasoning_effort,
                 api_style=binding.api_style,

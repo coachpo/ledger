@@ -62,8 +62,6 @@ class _ResolvedModelConnectionConfig:
     id: int
     name: str
     base_url: str
-    organization: str | None
-    project: str | None
     model_id: str
     reasoning_effort: str | None
     api_style: str
@@ -232,8 +230,6 @@ class AgentExecutionService:
             id=connection.id,
             name=connection.name,
             base_url=connection.base_url,
-            organization=connection.organization,
-            project=connection.project,
             model_id=connection.model_id,
             reasoning_effort=connection.reasoning_effort,
             api_style=connection.api_style,
@@ -375,10 +371,6 @@ class AgentExecutionService:
             "base_url": model_connection.base_url,
             "timeout": float(model_connection.timeout_seconds),
         }
-        if model_connection.organization:
-            client_kwargs["organization"] = model_connection.organization
-        if model_connection.project:
-            client_kwargs["project"] = model_connection.project
 
         try:
             with openai_client_factory(**client_kwargs) as client:

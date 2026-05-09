@@ -9,8 +9,6 @@ from app.models.model_connection import ModelConnection
 MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS = (
     "base_url",
     "model_id",
-    "organization",
-    "project",
     "reasoning_effort",
     "api_style",
     "timeout_seconds",
@@ -21,8 +19,6 @@ MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS = (
 class ModelConnectionRuntimeSnapshot:
     base_url: str
     model_id: str
-    organization: str | None
-    project: str | None
     reasoning_effort: str | None
     api_style: str
     timeout_seconds: int
@@ -34,8 +30,6 @@ def build_model_connection_runtime_snapshot(
     return {
         "base_url": connection.base_url,
         "model_id": connection.model_id,
-        "organization": connection.organization,
-        "project": connection.project,
         "reasoning_effort": connection.reasoning_effort,
         "api_style": connection.api_style,
         "timeout_seconds": connection.timeout_seconds,
@@ -60,8 +54,6 @@ def parse_model_connection_runtime_snapshot(
 
     base_url = _required_snapshot_text(snapshot["base_url"], field_name="base_url")
     model_id = _required_snapshot_text(snapshot["model_id"], field_name="model_id")
-    organization = _optional_snapshot_text(snapshot["organization"], field_name="organization")
-    project = _optional_snapshot_text(snapshot["project"], field_name="project")
     if "reasoning_effort" in snapshot:
         reasoning_effort = _snapshot_reasoning_effort(snapshot["reasoning_effort"])
     else:
@@ -81,8 +73,6 @@ def parse_model_connection_runtime_snapshot(
     return ModelConnectionRuntimeSnapshot(
         base_url=base_url,
         model_id=model_id,
-        organization=organization,
-        project=project,
         reasoning_effort=reasoning_effort,
         api_style=api_style,
         timeout_seconds=timeout_seconds,
@@ -95,8 +85,6 @@ def snapshot_to_json(
     return {
         "base_url": snapshot.base_url,
         "model_id": snapshot.model_id,
-        "organization": snapshot.organization,
-        "project": snapshot.project,
         "reasoning_effort": snapshot.reasoning_effort,
         "api_style": snapshot.api_style,
         "timeout_seconds": snapshot.timeout_seconds,
@@ -128,15 +116,6 @@ def _snapshot_reasoning_effort(value: object) -> str | None:
             "Model connection snapshot reasoning_effort must be at most 128 characters"
         )
     return normalized
-
-
-def _optional_snapshot_text(value: object, *, field_name: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"Model connection snapshot {field_name} must be a string or null")
-    normalized = value.strip()
-    return normalized or None
 
 
 __all__ = [

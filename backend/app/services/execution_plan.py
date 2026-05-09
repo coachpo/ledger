@@ -43,8 +43,6 @@ class PackageResolvedModelBinding:
     key: str
     name: str
     base_url: str
-    organization: str | None
-    project: str | None
     model_id: str
     reasoning_effort: str | None
     api_style: str

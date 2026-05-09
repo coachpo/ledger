@@ -37,8 +37,6 @@ class PackageModelConnectionBinding:
     key: str
     name: str
     base_url: str
-    organization: str | None
-    project: str | None
     model_id: str
     reasoning_effort: str | None
     api_style: str
@@ -124,8 +122,6 @@ class ModelConnectionService:
             description=payload.description,
             api_style=payload.api_style.value,
             base_url=payload.base_url,
-            organization=payload.organization,
-            project=payload.project,
             model_id=payload.model_id,
             reasoning_effort=payload.reasoning_effort,
             timeout_seconds=payload.timeout_seconds,
@@ -159,12 +155,6 @@ class ModelConnectionService:
             reset_connection_test_result = True
         if "base_url" in payload.model_fields_set and payload.base_url is not None:
             connection.base_url = payload.base_url
-            reset_connection_test_result = True
-        if "organization" in payload.model_fields_set:
-            connection.organization = payload.organization
-            reset_connection_test_result = True
-        if "project" in payload.model_fields_set:
-            connection.project = payload.project
             reset_connection_test_result = True
         if "model_id" in payload.model_fields_set and payload.model_id is not None:
             connection.model_id = payload.model_id
@@ -275,8 +265,6 @@ class ModelConnectionService:
             key=connection.key,
             name=connection.name,
             base_url=connection.base_url,
-            organization=connection.organization,
-            project=connection.project,
             model_id=connection.model_id,
             reasoning_effort=connection.reasoning_effort,
             api_style=connection.api_style,
@@ -300,10 +288,6 @@ class ModelConnectionService:
             "timeout": float(connection.timeout_seconds),
             "max_retries": 0,
         }
-        if connection.organization:
-            client_kwargs["organization"] = connection.organization
-        if connection.project:
-            client_kwargs["project"] = connection.project
 
         try:
             if connection.api_style == "responses":

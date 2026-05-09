@@ -670,8 +670,6 @@ class PackageExecutionPlanBuilder:
             key=str(getattr(binding, "key", key)),
             name=str(getattr(binding, "name", key)),
             base_url=str(getattr(binding, "base_url", "")),
-            organization=cast(str | None, getattr(binding, "organization", None)),
-            project=cast(str | None, getattr(binding, "project", None)),
             model_id=str(getattr(binding, "model_id", "")),
             reasoning_effort=cast(str | None, getattr(binding, "reasoning_effort", None)),
             api_style=str(getattr(binding, "api_style", "responses")),
