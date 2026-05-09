@@ -105,8 +105,6 @@ class ModelConnectionCreate(CamelModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     base_url: str
-    organization: str | None = Field(default=None, max_length=200)
-    project: str | None = Field(default=None, max_length=200)
     model_id: str = Field(min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default="medium",
@@ -137,11 +135,6 @@ class ModelConnectionCreate(CamelModel):
     def validate_base_url(cls, value: object) -> str:
         return _normalize_base_url(value)
 
-    @field_validator("organization", "project", mode="before")
-    @classmethod
-    def validate_optional_identifiers(cls, value: object) -> str | None:
-        return _normalize_optional_text(value)
-
     @field_validator("reasoning_effort", mode="before")
     @classmethod
     def validate_reasoning_effort(cls, value: object) -> str | None:
@@ -157,8 +150,6 @@ class ModelConnectionUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     base_url: str | None = None
-    organization: str | None = Field(default=None, max_length=200)
-    project: str | None = Field(default=None, max_length=200)
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default=None,
@@ -178,7 +169,7 @@ class ModelConnectionUpdate(CamelModel):
         field_name = (info.field_name or "field").replace("_", " ").title()
         return _normalize_required_text(value, field_name=field_name)
 
-    @field_validator("description", "organization", "project", mode="before")
+    @field_validator("description", mode="before")
     @classmethod
     def validate_optional_text_fields(cls, value: object) -> str | None:
         return _normalize_optional_text(value)
@@ -222,8 +213,6 @@ class ModelConnectionListItemRead(CamelModel):
     name: str
     description: str
     base_url: str
-    organization: str | None = None
-    project: str | None = None
     model_id: str
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
         default=None,

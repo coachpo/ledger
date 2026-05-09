@@ -228,8 +228,6 @@ class RunPackageResolvedModelConnectionRead(CamelModel):
     key: str
     name: str
     base_url: str
-    organization: str | None = None
-    project: str | None = None
     model_id: str
     reasoning_effort: str | None = None
     api_style: str

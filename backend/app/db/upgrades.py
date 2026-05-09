@@ -192,8 +192,6 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 name VARCHAR(200) NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 base_url VARCHAR(500) NOT NULL,
-                organization VARCHAR(200),
-                project VARCHAR(200),
                 model_id VARCHAR(200) NOT NULL,
                 reasoning_effort VARCHAR(128) DEFAULT 'medium',
                 api_style VARCHAR(30) NOT NULL DEFAULT 'responses',
@@ -1373,14 +1371,18 @@ def _drop_model_connection_api_key_metadata_columns(
         column["name"] for column in inspector.get_columns("model_connections")
     }
     stale_columns = set(_MODEL_CONNECTION_STALE_SECRET_METADATA_COLUMNS) & model_connection_columns
-    if not stale_columns:
-        return
 
     with engine.begin() as connection:
         for column_name in sorted(stale_columns):
             _ = connection.exec_driver_sql(
                 f"ALTER TABLE model_connections DROP COLUMN IF EXISTS {column_name}"
             )
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE model_connections DROP COLUMN IF EXISTS organization"
+        )
+        _ = connection.exec_driver_sql(
+            "ALTER TABLE model_connections DROP COLUMN IF EXISTS project"
+        )
 
 
 def _ensure_agent_model_connection_support(engine: Engine, table_names: set[str]) -> None:
@@ -1428,8 +1430,6 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                 SET model_connection_snapshot = jsonb_build_object(
                         'base_url', model_connection.base_url,
                         'model_id', model_connection.model_id,
-                        'organization', model_connection.organization,
-                        'project', model_connection.project,
                         'reasoning_effort', model_connection.reasoning_effort,
                         'api_style', {api_style_snapshot_expression},
                         'timeout_seconds', model_connection.timeout_seconds
@@ -1445,8 +1445,6 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                         agent.model_connection_snapshot ?& ARRAY[
                             'base_url',
                             'model_id',
-                            'organization',
-                            'project',
                             'reasoning_effort',
                             'api_style',
                             'timeout_seconds'
@@ -1469,6 +1467,18 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
                         )
                     )
                   )
+                """
+            )
+        )
+        _ = connection.execute(
+            text(
+                """
+                UPDATE agents
+                SET model_connection_snapshot = (
+                    model_connection_snapshot - 'organization' - 'project'
+                ),
+                    updated_at = NOW()
+                WHERE model_connection_snapshot ?| ARRAY['organization', 'project']
                 """
             )
         )
@@ -1833,12 +1843,11 @@ def _backfill_agent_model_connections(
                 placeholder_connection_id = connection.execute(
                     text(
                         "INSERT INTO model_connections ("
-                        "key, status, name, description, base_url, organization, project, "
-                        "model_id, "
-                        "reasoning_effort, api_style, timeout_seconds, "
+                        "key, status, name, description, base_url, "
+                        "model_id, reasoning_effort, api_style, timeout_seconds, "
                         "secret_payload, created_at, updated_at"
                         ") VALUES ("
-                        ":key, 'active', :name, '', :base_url, NULL, NULL, :model_id, "
+                        ":key, 'active', :name, '', :base_url, :model_id, "
                         ":reasoning_effort, :api_style, :timeout_seconds, '{}'::jsonb, "
                         "NOW(), NOW()"
                         ") RETURNING id"

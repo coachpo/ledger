@@ -46,8 +46,6 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    organization: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    project: Mapped[str | None] = mapped_column(String(200), nullable=True)
     model_id: Mapped[str] = mapped_column(String(200), nullable=False)
     reasoning_effort: Mapped[str | None] = mapped_column(
         String(128).evaluates_none(),
