@@ -7,9 +7,17 @@ from typing import Protocol, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.mcp.boundaries import McpClientBoundary, build_mcp_client_boundary
+from app.agents.mcp.boundaries import (
+    McpClientBoundary,
+    build_mcp_client_boundary,
+    build_mcp_client_boundary_from_config,
+)
 from app.agents.mcp.security import redact_mcp_text
-from app.agents.mcp.tool_adapter import hash_strict_schema, snapshot_to_openai_tool
+from app.agents.mcp.tool_adapter import (
+    build_mcp_tool_snapshot,
+    hash_strict_schema,
+    snapshot_to_openai_tool,
+)
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.models.mcp_server import McpServer
 from app.repositories.mcp_server import McpServerRepository
@@ -17,6 +25,14 @@ from app.schemas.mcp_server import McpToolSnapshot
 
 _ALLOWED_RUNTIME_STATUSES = {"published", "deprecated"}
 _MAX_MCP_OUTPUT_LENGTH = 16_384
+_PACKAGE_PRIVATE_MCP_VERSION = 1
+SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS = frozenset({"web_search_exa"})
+_PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Search query for the MCP tool."},
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -121,17 +137,92 @@ class McpRuntimeResolver:
             tools: list[McpRuntimeTool] = []
             seen_functions: set[str] = set()
             for ref in mcp_server_refs:
+                if _is_package_private_ref(ref):
+                    tools.extend(
+                        _package_private_tools_from_ref(ref, seen_functions=seen_functions)
+                    )
+                    continue
                 server = _resolve_exact_runtime_server(repository, ref)
                 boundary = build_mcp_client_boundary(server)
                 for snapshot in _snapshots_from_server(server):
-                    if snapshot.openai_function_name in seen_functions:
-                        raise RuntimeToolError(
-                            code="mcp_tool_name_collision",
-                            message="MCP tool snapshots contain duplicate OpenAI function names.",
-                        )
-                    seen_functions.add(snapshot.openai_function_name)
+                    _remember_openai_function(snapshot.openai_function_name, seen_functions)
                     tools.append(McpRuntimeTool(boundary=boundary, snapshot=snapshot))
         return McpRuntimeDispatcher(tools=tools, client=client, timeout_seconds=timeout_seconds)
+
+
+def _is_package_private_ref(ref: Mapping[str, object]) -> bool:
+    return ref.get("packagePrivate") is True
+
+
+def _package_private_tools_from_ref(
+    ref: Mapping[str, object],
+    *,
+    seen_functions: set[str],
+) -> list[McpRuntimeTool]:
+    key = str(ref.get("key") or "").strip().lower()
+    if not key:
+        raise RuntimeToolError(
+            code="mcp_server_pin_invalid",
+            message="Package-private MCP runtime requires a server key.",
+        )
+    tool_names = _string_list(ref.get("toolKeys"))
+    if not tool_names:
+        raise RuntimeToolError(
+            code="mcp_tool_snapshots_missing",
+            message="Package-private MCP runtime requires declared tool keys.",
+        )
+    config: dict[str, object] = {"transport": ref.get("transport")}
+    if ref.get("command") is not None:
+        config["command"] = ref.get("command")
+    args = _string_list(ref.get("args"))
+    if args:
+        config["args"] = args
+    if ref.get("url") is not None:
+        config["url"] = ref.get("url")
+    boundary = build_mcp_client_boundary_from_config(
+        config,
+        server_id=None,
+        key=key,
+        version=_PACKAGE_PRIVATE_MCP_VERSION,
+        name=str(ref.get("name") or key),
+        enabled=True,
+    )
+    tools: list[McpRuntimeTool] = []
+    for tool_name in tool_names:
+        snapshot = build_mcp_tool_snapshot(
+            server_key=key,
+            server_version=_PACKAGE_PRIVATE_MCP_VERSION,
+            original_tool_name=tool_name,
+            input_schema=_package_private_tool_input_schema(tool_name),
+            reserved_function_names=seen_functions,
+        )
+        _remember_openai_function(snapshot.openai_function_name, seen_functions)
+        tools.append(McpRuntimeTool(boundary=boundary, snapshot=snapshot))
+    return tools
+
+
+def _package_private_tool_input_schema(tool_name: str) -> Mapping[str, object]:
+    if tool_name in SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS:
+        return _PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA
+    raise RuntimeToolError(
+        code="mcp_tool_schema_missing",
+        message=f"Package-private MCP tool {tool_name!r} does not have a runtime input schema.",
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _remember_openai_function(function_name: str, seen_functions: set[str]) -> None:
+    if function_name in seen_functions:
+        raise RuntimeToolError(
+            code="mcp_tool_name_collision",
+            message="MCP tool snapshots contain duplicate OpenAI function names.",
+        )
+    seen_functions.add(function_name)
 
 
 def _resolve_exact_runtime_server(
@@ -213,4 +304,5 @@ __all__ = [
     "McpRuntimeResolver",
     "McpRuntimeTool",
     "McpToolClient",
+    "SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS",
 ]

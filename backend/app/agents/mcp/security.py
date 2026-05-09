@@ -4,13 +4,17 @@ import ipaddress
 import re
 import socket
 from collections.abc import Iterable, Sequence
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
+_SECRET_FIELD_PATTERN = r"[A-Za-z0-9_]*(?:token|secret|api[_-]?key)[A-Za-z0-9_]*"
 _SECRET_VALUE_RE = re.compile(
     r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+|"
     + r"(sk-[A-Za-z0-9_-]{8,})|"
-    + r"([A-Za-z0-9_]*(?:token|secret|api[_-]?key)[A-Za-z0-9_]*=)[^\s,;]+"
+    + rf"({_SECRET_FIELD_PATTERN}=)[^\s,;]+|"
+    + rf"((?:\"{_SECRET_FIELD_PATTERN}\"|'{_SECRET_FIELD_PATTERN}'|{_SECRET_FIELD_PATTERN})"
+    + r"\s*:\s*(?:\"|'))[^\"']+((?:\"|'))"
 )
+_SECRET_QUERY_PARAM_RE = re.compile(r"(?i)(?:token|secret|api[_-]?key)")
 _SHELL_EXECUTABLES = {"bash", "sh", "zsh", "fish", "cmd", "powershell", "pwsh"}
 _MAX_REDACTED_TEXT_LENGTH = 16_384
 
@@ -32,6 +36,8 @@ def _redaction_replacement(match: re.Match[str]) -> str:
         return f"{match.group(1)}[REDACTED]"
     if match.group(3):
         return f"{match.group(3)}[REDACTED]"
+    if match.group(4):
+        return f"{match.group(4)}[REDACTED]{match.group(5)}"
     return "[REDACTED]"
 
 
@@ -45,6 +51,11 @@ def validate_http_sse_url(
         raise McpSecurityError("MCP HTTP/SSE URLs must use https")
     if parsed.username or parsed.password:
         raise McpSecurityError("MCP HTTP/SSE URLs cannot include credentials")
+    for name, _value in parse_qsl(parsed.query, keep_blank_values=True):
+        if _SECRET_QUERY_PARAM_RE.search(name):
+            raise McpSecurityError(
+                "MCP HTTP/SSE URLs cannot include secret-bearing query parameters"
+            )
     host = parsed.hostname
     if host is None:
         raise McpSecurityError("MCP HTTP/SSE URL must include a host")

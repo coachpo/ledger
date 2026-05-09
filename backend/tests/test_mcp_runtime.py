@@ -45,6 +45,19 @@ def _snapshot(*, server_key: str = "external_data", version: int = 1) -> dict[st
     return snapshot.model_dump(by_alias=True, mode="json")
 
 
+def _package_private_exa_ref(**overrides: object) -> dict[str, object]:
+    ref: dict[str, object] = {
+        "packagePrivate": True,
+        "key": "exa",
+        "name": "Exa Web Search",
+        "transport": "http-sse",
+        "url": "https://example.com/mcp?tools=web_search_exa",
+        "toolKeys": ["web_search_exa"],
+    }
+    ref.update(overrides)
+    return ref
+
+
 def _server(
     *,
     key: str = "external_data",
@@ -104,7 +117,12 @@ def test_mcp_runtime_resolves_exact_published_pin_and_redacts_output(
         session.add(server)
         session.commit()
 
-    client = _FakeMcpToolClient({"content": "Bearer secret-token sk-live-secret-123456"})
+    client = _FakeMcpToolClient(
+        {
+            "content": "Bearer secret-token sk-live-secret-123456",
+            "metadata": {"exaApiKey": "json-secret-value-123456"},
+        }
+    )
     dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
         mcp_server_refs=[{"mcpServerKey": "external_data", "mcpServerVersion": 1}],
         client=cast(McpToolClient, client),
@@ -122,9 +140,72 @@ def test_mcp_runtime_resolves_exact_published_pin_and_redacts_output(
     assert output["originalToolName"] == "vendor.lookup"
     assert "secret-token" not in json.dumps(output)
     assert "sk-live-secret" not in json.dumps(output)
+    assert "json-secret-value" not in json.dumps(output)
     assert "[REDACTED]" in json.dumps(output)
     assert client.calls[0]["tool_name"] == "vendor.lookup"
     assert client.calls[0]["timeout_seconds"] == 1.25
+
+
+def test_mcp_runtime_resolves_package_private_exa_tool(
+    session_factory: sessionmaker[Session],
+) -> None:
+    client = _FakeMcpToolClient(
+        {"content": "Exa result", "metadata": {"exaApiKey": "json-secret-value-123456"}}
+    )
+    dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
+        mcp_server_refs=[_package_private_exa_ref()],
+        client=cast(McpToolClient, client),
+        timeout_seconds=2.5,
+        enabled=True,
+    )
+
+    tools = dispatcher.get_openai_tools()
+    assert [tool["name"] for tool in tools] == ["mcp_exa_web_search_exa"]
+    assert tools[0]["parameters"] == {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search query for the MCP tool."}
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    }
+    output = dispatcher.dispatch(
+        name="mcp_exa_web_search_exa",
+        arguments_json=json.dumps({"query": "AAPL latest company news"}),
+    )
+
+    call = client.calls[0]
+    boundary = cast(McpClientBoundary, call["boundary"])
+    assert boundary.server_id is None
+    assert boundary.key == "exa"
+    assert boundary.version == 1
+    assert boundary.url == "https://example.com/mcp?tools=web_search_exa"
+    assert call["tool_name"] == "web_search_exa"
+    assert call["arguments"] == {"query": "AAPL latest company news"}
+    assert call["timeout_seconds"] == 2.5
+    assert "json-secret-value" not in json.dumps(output)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_code"),
+    [
+        ({"key": ""}, "mcp_server_pin_invalid"),
+        ({"toolKeys": []}, "mcp_tool_snapshots_missing"),
+        ({"toolKeys": ["web_fetch_exa"]}, "mcp_tool_schema_missing"),
+    ],
+)
+def test_mcp_runtime_rejects_invalid_package_private_refs(
+    session_factory: sessionmaker[Session],
+    overrides: dict[str, object],
+    expected_code: str,
+) -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[_package_private_exa_ref(**overrides)],
+            enabled=True,
+        )
+
+    assert exc_info.value.code == expected_code
 
 
 @pytest.mark.parametrize("status", ["draft", "archived"])
@@ -229,6 +310,11 @@ def test_mcp_security_blocks_ssrf_redirects_shells_and_truncates_output() -> Non
         validate_stdio_command(("bash", "-c", "echo $TOKEN"), allowed_commands={"bash"})
     with pytest.raises(McpSecurityError):
         validate_stdio_command(("python", "-c", "print('x')"), allowed_commands={"python"})
+    with pytest.raises(McpSecurityError, match="secret-bearing query"):
+        validate_http_sse_url(
+            "https://safe.example/mcp?exaApiKey=secret-token",
+            resolved_hosts={"safe.example": ["93.184.216.34"]},
+        )
 
     redacted = redact_mcp_text("token=secret-token " + ("x" * 20), max_length=24)
     assert "secret-token" not in redacted

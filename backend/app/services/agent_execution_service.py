@@ -274,7 +274,20 @@ class AgentExecutionService:
     @staticmethod
     def _runtime_mcp_server_refs(agent: RuntimeAgentSpec) -> Sequence[Mapping[str, object]]:
         if isinstance(agent, PackageRuntimeAgentSpec):
-            return []
+            return [
+                {
+                    "packagePrivate": True,
+                    "key": server.key,
+                    "name": server.name,
+                    "description": server.description,
+                    "transport": server.transport,
+                    "command": server.command,
+                    "args": list(server.args),
+                    "url": server.url,
+                    "toolKeys": list(server.tool_keys),
+                }
+                for server in agent.mcp_servers
+            ]
         return agent.mcp_servers
 
     @staticmethod

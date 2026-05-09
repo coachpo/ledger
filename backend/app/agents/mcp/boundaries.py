@@ -113,8 +113,26 @@ class DefaultMcpConnectionTester:
 
 
 def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
+    return build_mcp_client_boundary_from_config(
+        server.flat_config,
+        server_id=server.id,
+        key=server.key,
+        version=server.version,
+        name=server.name,
+        enabled=server.enabled,
+    )
+
+
+def build_mcp_client_boundary_from_config(
+    config: Mapping[str, Any],
+    *,
+    server_id: int | None,
+    key: str,
+    version: int,
+    name: str,
+    enabled: bool,
+) -> McpClientBoundary:
     details: list[dict[str, str]] = []
-    config = server.flat_config
     transport = _normalize_transport(config.get("transport"), details)
     command = _normalize_command(config, transport, details)
     url = _normalize_url(config, transport, details)
@@ -127,12 +145,12 @@ def build_mcp_client_boundary(server: McpServer) -> McpClientBoundary:
         raise McpClientConfigError(details)
 
     return McpClientBoundary(
-        server_id=server.id,
-        key=server.key,
-        version=server.version,
-        name=server.name,
+        server_id=server_id,
+        key=key,
+        version=version,
+        name=name,
         transport=transport,
-        enabled=server.enabled,
+        enabled=enabled,
         command=command,
         url=url,
         headers=headers,
