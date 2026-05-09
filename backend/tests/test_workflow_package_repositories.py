@@ -88,7 +88,7 @@ def test_workflow_package_repository_creates_versions_and_resolves_latest(
         assert stored_first_version.id == first_version.id
 
 
-def test_workflow_package_repository_lists_updates_and_archives(
+def test_workflow_package_repository_lists_and_updates_packages(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -97,26 +97,12 @@ def test_workflow_package_repository_lists_updates_and_archives(
 
         repository.update_package(package, name="Updated Market Review", status="active")
         session.commit()
+
+        assert repository.get_by_key("market_review") is not None
         assert [(item.key, item.status) for item in repository.list_packages()] == [
             ("market_review", "active")
         ]
-
-        repository.archive_package(
-            package,
-            archived_by="tester",
-            archived_reason="Replaced by package import",
-        )
-        session.commit()
-
-        assert repository.get_by_key("market_review") is None
-        archived = repository.get_by_key("market_review", include_archived=True)
-        assert archived is not None
-        assert archived.archived_at is not None
-        assert archived.archived_by == "tester"
-        assert repository.list_packages() == []
-        assert [item.key for item in repository.list_packages(include_archived=True)] == [
-            "market_review"
-        ]
+        assert [(item.key, item.status) for item in repository.list_packages(status="draft")] == []
 
 
 def test_package_versions_are_immutable(session_factory: sessionmaker[Session]) -> None:

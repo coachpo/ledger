@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.model_connection import ModelConnection
+from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
@@ -120,33 +121,27 @@ def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
     } in errors
 
 
-def test_save_warns_but_preflight_blocks_missing_model_connection(
+def test_create_blocks_missing_model_connection(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    created = _create_package(client)
+    response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
-    assert created["warnings"]
-    assert created["warnings"][0] == {
-        "field": "spec.agents[0].modelConnection",
-        "issue": "Model connection 'tradingagents_primary_model' was not found",
-        "severity": "warning",
+    assert response.status_code == 422, response.json()
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Workflow package manifest validation failed"
+    details = cast(list[dict[str, object]], body["details"])
+    expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
+    assert len(details) == expected_count
+    assert [detail["field"] for detail in details] == [
+        f"spec.agents[{index}].modelConnection" for index in range(expected_count)
+    ]
+    assert {detail["issue"] for detail in details} == {
+        "Model connection 'tradingagents_primary_model' was not found"
     }
     with session_factory() as session:
-        version = WorkflowPackageRepository(session).get_latest_version(int(created["id"]))
-        assert version is not None
-        assert version.validation_summary["warnings"] == created["warnings"]
-
-    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
-
-    assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
-    assert body["ready"] is False
-    assert body["blockingErrors"]
-    assert body["blockingErrors"][0] == {
-        "field": "spec.agents[0].modelConnection",
-        "issue": "Model connection 'tradingagents_primary_model' was not found",
-    }
+        assert session.query(WorkflowPackageVersion).count() == 0
 
 
 def test_preflight_reports_binding_schema_tool_and_graph_failures(
@@ -215,7 +210,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
     } in errors
 
 
-def test_preflight_blocks_archived_or_secretless_model_connection(
+def test_preflight_blocks_secretless_model_connection(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:

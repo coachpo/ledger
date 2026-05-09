@@ -7,6 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.models.report import Report
+from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
 from app.services.run_service import RunService
 from tests.test_workflow_package_runtime_api import (
     _create_package,
@@ -129,41 +133,48 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     )
 
 
-def test_package_run_drafts_reject_archived_package_artifacts(
+def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_reports(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "archived package output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "cascade package output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="archived_run_package")
+    package = _create_package(client, package_key="cascade_run_package")
     launched = _launch_package_run(client, package, ticker="NVDA")
+    run_id = int(launched["id"])
+    memory_slug = f"agent_memory_cascade_run_{run_id}"
 
     _drain_run_queue(session_factory)
-    succeeded_detail = _wait_for_run(client, int(launched["id"]))
+    succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
+    with session_factory() as session:
+        assert session.get(Run, run_id) is not None
+        assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
+        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
+        session.add(
+            Report(
+                name=f"Agent Memory Cascade Run {run_id}",
+                slug=memory_slug,
+                source="agent",
+                content="# Agent memory",
+                metadata_={
+                    "analysis": {"reviewType": "agent_memory", "runId": run_id},
+                },
+            )
+        )
+        session.commit()
 
-    archive = client.delete(f"/api/workflow-packages/{package['id']}")
-    assert archive.status_code == 200, archive.json()
-    assert archive.json()["status"] == "archived"
+    deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+    assert deleted.status_code == 204, deleted.text
+    assert deleted.content == b""
+    assert client.get(f"/api/runs/{run_id}").status_code == 404
 
-    archived_detail = client.get(f"/api/runs/{launched['id']}")
-    assert archived_detail.status_code == 200, archived_detail.json()
-    availability = archived_detail.json()["packageProvenance"]["availability"]
-    assert availability["packageStatus"] == "archived"
-    assert availability["packageVersionAvailable"] is False
-    assert availability["unavailableReason"] == "archivedPackage"
-
-    rerun_draft = client.get(f"/api/runs/{launched['id']}/rerun-draft")
-    assert rerun_draft.status_code == 400, rerun_draft.json()
-    assert rerun_draft.json()["code"] == "workflow_package_run_artifact_unavailable"
-
-    step_replay_draft = client.get(
-        f"/api/runs/{launched['id']}/step-replay-draft",
-        params={"stepIndex": 1},
-    )
-    assert step_replay_draft.status_code == 400, step_replay_draft.json()
-    assert step_replay_draft.json()["code"] == "workflow_package_run_artifact_unavailable"
+    with session_factory() as session:
+        assert session.get(Run, run_id) is None
+        assert session.query(RunStep).filter_by(run_id=run_id).count() == 0
+        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
+        assert session.query(Report).filter_by(slug=memory_slug).count() == 0

@@ -12,6 +12,7 @@ from app.models.model_connection import ModelConnection
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.workflow import Workflow
+from app.models.workflow_package import WorkflowPackageVersion
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 
@@ -241,32 +242,19 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         assert invocation.output == {"summary": "package live runtime output"}
 
 
-def test_workflow_package_launch_rejects_missing_model_connection(
+def test_workflow_package_create_rejects_missing_model_connection(
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
-    created = _create_package(client, package_key="runtime_missing_model_package")
-
-    launch = client.get(f"/api/workflow-packages/{created['id']}/launch")
-    assert launch.status_code == 200, launch.json()
-    assert launch.json()["ready"] is False
-    assert launch.json()["blockingErrors"] == [
-        {
-            "field": "spec.agents[0].modelConnection",
-            "issue": "Model connection 'package_runtime_model' was not found",
-        }
-    ]
-
     create = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+        "/api/workflow-packages",
+        json={"manifestSource": _package_source(package_key="runtime_missing_model_package")},
     )
+
     assert create.status_code == 422, create.json()
     body = create.json()
     assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package launch validation failed"
+    assert body["message"] == "Workflow package manifest validation failed"
     assert body["details"] == [
         {
             "field": "spec.agents[0].modelConnection",
@@ -275,3 +263,4 @@ def test_workflow_package_launch_rejects_missing_model_connection(
     ]
     with session_factory() as session:
         assert session.query(Run).count() == 0
+        assert session.query(WorkflowPackageVersion).count() == 0

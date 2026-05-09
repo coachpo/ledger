@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.model_connection import ModelConnection
+from app.models.platform_reference import WorkflowPackageVersionModelConnection
 from app.models.workflow_package import WorkflowPackageVersion
 
 _FIXTURE = (
@@ -100,8 +101,26 @@ def test_create_export_import_package_without_secrets(
         json={"manifestSource": export.text, "mode": "createVersion"},
     )
     assert imported_version.status_code == 201, imported_version.json()
-    assert imported_version.json()["id"] == created["id"]
-    assert imported_version.json()["latestVersion"] == 2
+    imported_version_body = cast(dict[str, object], imported_version.json())
+    created_latest_version_id = cast(int, created["latestVersionId"])
+    imported_latest_version_id = cast(int, imported_version_body["latestVersionId"])
+    assert imported_version_body["id"] == created["id"]
+    assert imported_version_body["latestVersion"] == 2
+
+    with session_factory() as session:
+        refs = (
+            session.query(WorkflowPackageVersionModelConnection)
+            .order_by(WorkflowPackageVersionModelConnection.workflow_package_version_id.asc())
+            .all()
+        )
+        assert [ref.workflow_package_version_id for ref in refs] == [
+            created_latest_version_id,
+            imported_latest_version_id,
+        ]
+        assert [ref.model_connection_key for ref in refs] == [
+            "tradingagents_primary_model",
+            "tradingagents_primary_model",
+        ]
 
     versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
     assert versions.status_code == 200, versions.json()
@@ -174,16 +193,34 @@ def test_launch_metadata_and_stub_creation(
     assert versions.status_code == 200, versions.json()
     assert versions.json()["items"][0]["launchedAt"] is not None
 
-    archive = client.delete(f"/api/workflow-packages/{created['id']}")
-    assert archive.status_code == 200, archive.json()
-    assert archive.json()["status"] == "archived"
+    latest_version_id = cast(int, created["latestVersionId"])
+    deleted = client.delete(f"/api/workflow-packages/{created['id']}")
+    assert deleted.status_code == 204, deleted.text
+    assert deleted.content == b""
+
+    missing_package = client.get(f"/api/workflow-packages/{created['id']}")
+    assert missing_package.status_code == 404, missing_package.json()
+    missing_run = client.get(f"/api/runs/{created_launch.json()['id']}")
+    assert missing_run.status_code == 404, missing_run.json()
+    with session_factory() as session:
+        assert session.get(WorkflowPackageVersion, latest_version_id) is None
+        assert (
+            session.query(WorkflowPackageVersionModelConnection)
+            .filter_by(workflow_package_version_id=latest_version_id)
+            .count()
+        ) == 0
 
 
-def test_delete_hard_deletes_never_launched_draft(client: TestClient) -> None:
+def test_delete_hard_deletes_never_launched_package(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
     created = _create_package(client)
 
     deleted = client.delete(f"/api/workflow-packages/{created['id']}")
-    assert deleted.status_code == 200, deleted.json()
+    assert deleted.status_code == 204, deleted.text
+    assert deleted.content == b""
 
     missing = client.get(f"/api/workflow-packages/{created['id']}")
     assert missing.status_code == 404, missing.json()
