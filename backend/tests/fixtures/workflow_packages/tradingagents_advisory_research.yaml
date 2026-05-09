@@ -154,6 +154,17 @@ spec:
           implementationNotes:
             type: string
         required: [posture, rationale, riskSummary, implementationNotes]
+  mcpServers:
+    - key: exa
+      name: Exa Web Search
+      description: Remote Exa MCP server for advisory information search.
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp?tools=web_search_exa
+      toolKeys:
+        - web_search_exa
+      secretRefs:
+        query:
+          - exaApiKey
   agents:
     - key: market_analyst
       name: Market Analyst
@@ -181,12 +192,13 @@ spec:
       name: News Analyst
       description: Produces company news context for the advisory workflow.
       modelConnection: tradingagents_primary_model
-      systemPrompt: Return neutral news research from granted news and insider-data tools.
+      systemPrompt: Use the Exa MCP web search tool to search current company information, then return neutral news research from granted news and insider-data tools.
       inputSchema:
         type: object
         additionalProperties: true
       outputSchema: analyst_report
       capabilityProfiles: [news_research_tools]
+      mcpServers: [exa]
       budgetUsd: "0.20"
     - key: fundamentals_analyst
       name: Fundamentals Analyst

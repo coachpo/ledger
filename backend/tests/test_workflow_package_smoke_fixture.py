@@ -131,6 +131,22 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert {
         schema["key"] for schema in cast(list[dict[str, object]], spec["outputSchemas"])
     } == EXPECTED_OUTPUT_SCHEMA_KEYS
+    assert cast(list[dict[str, object]], spec["mcpServers"]) == [
+        {
+            "key": "exa",
+            "name": "Exa Web Search",
+            "description": "Remote Exa MCP server for advisory information search.",
+            "transport": "http-sse",
+            "args": [],
+            "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+            "toolKeys": ["web_search_exa"],
+            "secretRefs": {"query": ["exaApiKey"]},
+        }
+    ]
+    agents_by_key = {
+        str(agent["key"]): agent for agent in cast(list[dict[str, object]], spec["agents"])
+    }
+    assert cast(list[str], agents_by_key["news_analyst"]["mcpServers"]) == ["exa"]
 
     profile_tool_keys = {
         tool_key
@@ -144,6 +160,8 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert {agent["modelConnection"] for agent in compiled_agents} == {
         "tradingagents_primary_model"
     }
+    compiled_agents_by_key = {str(agent["key"]): agent for agent in compiled_agents}
+    assert cast(list[str], compiled_agents_by_key["news_analyst"]["mcpServers"]) == ["exa"]
     assert all(set(cast(list[str], agent["capabilityProfiles"])) for agent in compiled_agents)
 
 
