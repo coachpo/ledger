@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,7 +12,13 @@ import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackagesListPage } from "./list";
 
-const { importPackageMock, navigateMock, useImportPackageMock, useWorkflowPackagesMock, useWorkflowPackageVersionSummariesMock } = vi.hoisted(() => ({
+const {
+  importPackageMock,
+  navigateMock,
+  useImportPackageMock,
+  useWorkflowPackagesMock,
+  useWorkflowPackageVersionSummariesMock,
+} = vi.hoisted(() => ({
   importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
   useImportPackageMock: vi.fn(),
@@ -25,10 +37,13 @@ vi.mock("react-router", async (importOriginal) => {
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useImportWorkflowPackage: () => useImportPackageMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
-  useWorkflowPackageVersionSummaries: (...args: unknown[]) => useWorkflowPackageVersionSummariesMock(...args),
+  useWorkflowPackageVersionSummaries: (...args: unknown[]) =>
+    useWorkflowPackageVersionSummariesMock(...args),
 }));
 
-function packageFixture(overrides: Partial<WorkflowPackageRead>): WorkflowPackageRead {
+function packageFixture(
+  overrides: Partial<WorkflowPackageRead>,
+): WorkflowPackageRead {
   return {
     archivedAt: null,
     compiledHash: "compiled-hash",
@@ -62,8 +77,17 @@ describe("WorkflowPackagesListPage", () => {
     useImportPackageMock.mockReset();
     useWorkflowPackagesMock.mockReset();
     useWorkflowPackageVersionSummariesMock.mockReset();
-    importPackageMock.mockResolvedValue(packageFixture({ id: 77, key: "imported_package", name: "Imported Package" }));
-    useImportPackageMock.mockReturnValue({ isPending: false, mutateAsync: importPackageMock });
+    importPackageMock.mockResolvedValue(
+      packageFixture({
+        id: 77,
+        key: "imported_package",
+        name: "Imported Package",
+      }),
+    );
+    useImportPackageMock.mockReturnValue({
+      isPending: false,
+      mutateAsync: importPackageMock,
+    });
     useWorkflowPackageVersionSummariesMock.mockReturnValue(new Map());
   });
 
@@ -75,7 +99,9 @@ describe("WorkflowPackagesListPage", () => {
       isPending: true,
     });
     const { rerender } = renderPage();
-    expect(screen.getByTestId("workflow-packages-list-page")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("workflow-packages-list-page"),
+    ).toBeInTheDocument();
     expect(document.querySelectorAll("[data-slot='skeleton']")).toHaveLength(4);
 
     useWorkflowPackagesMock.mockReturnValue({
@@ -89,7 +115,9 @@ describe("WorkflowPackagesListPage", () => {
         <WorkflowPackagesListPage />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Package API unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Package API unavailable",
+    );
 
     useWorkflowPackagesMock.mockReturnValue({
       data: { items: [] },
@@ -105,7 +133,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByText("No workflow packages yet.")).toBeVisible();
   });
 
-  it("renders summary cards, package cards by default, and table columns after toggling", () => {
+  it("renders package cards by default, search controls, and table columns after toggling", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -163,14 +191,29 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    expect(screen.getByRole("heading", { name: "Workflow Packages" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Create new workflow package" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Import workflow package manifest" })).toBeVisible();
-    expect(screen.getByText("Total Packages")).toBeVisible();
-    expect(screen.getByText("Validation Warnings")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Workflow Packages" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Create new workflow package" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Import workflow package manifest" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "Search workflow packages" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
+    expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
 
-    expect(screen.getByLabelText("Cards view")).toHaveAttribute("data-state", "on");
-    expect(screen.queryByRole("columnheader", { name: "Name" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Cards view")).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    expect(
+      screen.queryByRole("columnheader", { name: "Name" }),
+    ).not.toBeInTheDocument();
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
@@ -179,16 +222,27 @@ describe("WorkflowPackagesListPage", () => {
     expect(riskRow).toHaveTextContent("Active");
     expect(riskRow).toHaveTextContent("Passed");
     expect(riskRow).toHaveTextContent("May 4, 2026");
-    expect(within(riskRow).getByRole("button", { name: "Open package Risk Review" })).toBeVisible();
-    expect(within(riskRow).getByRole("button", { name: "Launch package Risk Review" })).toBeVisible();
+    expect(
+      within(riskRow).getByRole("button", { name: "Open package Risk Review" }),
+    ).toBeVisible();
+    expect(
+      within(riskRow).getByRole("button", {
+        name: "Launch package Risk Review",
+      }),
+    ).toBeVisible();
 
-    const draftRow = screen.getByTestId("workflow-packages-row-allocation_draft");
+    const draftRow = screen.getByTestId(
+      "workflow-packages-row-allocation_draft",
+    );
     expect(draftRow).toHaveTextContent("Draft");
     expect(draftRow).toHaveTextContent("2 warnings");
     expect(draftRow).toHaveTextContent("Not recorded");
 
     fireEvent.click(screen.getByLabelText("Table view"));
-    expect(screen.getByLabelText("Table view")).toHaveAttribute("data-state", "on");
+    expect(screen.getByLabelText("Table view")).toHaveAttribute(
+      "data-state",
+      "on",
+    );
 
     for (const column of [
       "Name",
@@ -219,20 +273,33 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Search workflow packages" }), {
-      target: { value: "macro" },
-    });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search workflow packages" }),
+      {
+        target: { value: "macro" },
+      },
+    );
 
-    expect(screen.queryByTestId("workflow-packages-row-risk_review")).not.toBeInTheDocument();
-    expect(screen.getByTestId("workflow-packages-row-macro_digest")).toBeVisible();
+    expect(
+      screen.queryByTestId("workflow-packages-row-risk_review"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("workflow-packages-row-macro_digest"),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create new workflow package" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create new workflow package" }),
+    );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/new");
 
-    fireEvent.click(screen.getByRole("button", { name: "Open package Macro Digest" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open package Macro Digest" }),
+    );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch package Macro Digest" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Launch package Macro Digest" }),
+    );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
   });
 
@@ -246,17 +313,29 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Import workflow package manifest" }),
+    );
     fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: { value: "metadata:\n  key: imported\napiKey: sk-import-secret\n" },
+      target: {
+        value: "metadata:\n  key: imported\napiKey: sk-import-secret\n",
+      },
     });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /import package/i }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /import package/i,
+      }),
+    );
 
-    await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
-      manifestSource: expect.not.stringContaining("sk-import-secret"),
-      mode: "create",
-    }));
-    expect(importPackageMock.mock.calls[0][0].manifestSource).toContain("[redacted]");
+    await waitFor(() =>
+      expect(importPackageMock).toHaveBeenCalledWith({
+        manifestSource: expect.not.stringContaining("sk-import-secret"),
+        mode: "create",
+      }),
+    );
+    expect(importPackageMock.mock.calls[0][0].manifestSource).toContain(
+      "[redacted]",
+    );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/77");
   });
 });
