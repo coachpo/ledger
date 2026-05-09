@@ -69,6 +69,30 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
     ]
 
 
+def test_preflight_rejects_private_mcp_without_runtime_supported_tool_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    mcp_servers = cast(list[dict[str, Any]], compiled_plan["mcpServers"])
+
+    mcp_servers[0]["toolKeys"] = []
+    with session_factory() as session:
+        missing_errors = WorkflowPackagePreflightService(session)._mcp_errors(compiled_plan)
+    assert {
+        "field": "spec.mcpServers.exa.toolKeys",
+        "issue": "toolKeys must contain at least one runtime-supported tool",
+    } in missing_errors
+
+    mcp_servers[0]["toolKeys"] = ["web_fetch_exa"]
+    with session_factory() as session:
+        unsupported_errors = WorkflowPackagePreflightService(session)._mcp_errors(compiled_plan)
+    assert {
+        "field": "spec.mcpServers.exa.toolKeys[0]",
+        "issue": "Unsupported package-private MCP tool 'web_fetch_exa'",
+    } in unsupported_errors
+
+
 def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -148,7 +172,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
                 "broken": {"type": "object", "patternProperties": {".*": {"type": "string"}}}
             },
         }
-        compiled_plan["mcpServers"] = [
+        cast(list[dict[str, Any]], compiled_plan["mcpServers"]).append(
             {
                 "key": "research_context",
                 "name": "Research Context",
@@ -157,7 +181,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
                 "args": ["server.py"],
                 "requiredBindings": ["env.RESEARCH_TOKEN"],
             }
-        ]
+        )
         workflow = cast(list[dict[str, Any]], compiled_plan["workflows"])[0]
         cast(list[dict[str, Any]], workflow["steps"])[0]["agents"][0]["wiring"] = {
             "ticker": {"from": "step", "stepIndex": 1, "slot": "market_report"}

@@ -7,6 +7,7 @@ from typing import Any, cast
 from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
+from app.agents.mcp.runtime import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
 from app.models.output_schema import OutputSchema
 from app.models.workflow_package import WorkflowPackageVersion
@@ -257,6 +258,27 @@ class WorkflowPackagePreflightService:
                         "issue": "transport must be stdio or http-sse",
                     }
                 )
+            tool_keys = server.get("toolKeys") or []
+            if not isinstance(tool_keys, list) or not tool_keys:
+                errors.append(
+                    {
+                        "field": f"spec.mcpServers.{key}.toolKeys",
+                        "issue": "toolKeys must contain at least one runtime-supported tool",
+                    }
+                )
+            else:
+                for index, tool_key in enumerate(tool_keys):
+                    normalized_tool_key = str(tool_key)
+                    if normalized_tool_key not in SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS:
+                        errors.append(
+                            {
+                                "field": f"spec.mcpServers.{key}.toolKeys[{index}]",
+                                "issue": (
+                                    "Unsupported package-private MCP tool "
+                                    f"{normalized_tool_key!r}"
+                                ),
+                            }
+                        )
             required_bindings = server.get("requiredBindings") or []
             if isinstance(required_bindings, list):
                 for index, binding in enumerate(required_bindings):
