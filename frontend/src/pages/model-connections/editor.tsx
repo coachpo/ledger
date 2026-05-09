@@ -73,8 +73,6 @@ type ModelConnectionEditorValues = {
   key: string;
   modelId: string;
   name: string;
-  organization: string;
-  project: string;
   reasoningEffort: ReasoningEffortSelection;
   timeoutSeconds: string;
 };
@@ -88,8 +86,6 @@ const initialValues: ModelConnectionEditorValues = {
   key: "",
   modelId: "",
   name: "",
-  organization: "",
-  project: "",
   reasoningEffort: "medium",
   timeoutSeconds: "60",
 };
@@ -122,8 +118,6 @@ function buildValuesFromConnection(connection: ModelConnectionRead): ModelConnec
     key: connection.key,
     modelId: connection.modelId,
     name: connection.name,
-    organization: connection.organization ?? "",
-    project: connection.project ?? "",
     reasoningEffort: getReasoningEffortSelection(connection.reasoningEffort),
     timeoutSeconds: String(connection.timeoutSeconds),
   };
@@ -180,8 +174,6 @@ function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectio
     description: values.description.trim() || undefined,
     apiStyle: values.apiStyle,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
-    organization: values.organization.trim() || undefined,
-    project: values.project.trim() || undefined,
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
@@ -197,8 +189,6 @@ function buildUpdatePayload(values: ModelConnectionEditorValues): ModelConnectio
     description: values.description.trim(),
     apiStyle: values.apiStyle,
     baseUrl: parseRequiredText("Base URL", values.baseUrl),
-    organization: values.organization.trim(),
-    project: values.project.trim(),
     modelId: parseRequiredText("Model ID", values.modelId),
     reasoningEffort: parseReasoningEffort(getReasoningEffortValue(values)),
     timeoutSeconds: parseTimeoutSeconds(values.timeoutSeconds),
@@ -469,26 +459,6 @@ export function ModelConnectionsEditorPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-organization">Organization</Label>
-              <Input
-                id="model-connection-organization"
-                aria-label="Organization"
-                disabled={isSaving}
-                value={values.organization}
-                onChange={(event) => updateValue("organization", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model-connection-project">Project</Label>
-              <Input
-                id="model-connection-project"
-                aria-label="Project"
-                disabled={isSaving}
-                value={values.project}
-                onChange={(event) => updateValue("project", event.target.value)}
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="model-connection-reasoning-effort">Reasoning Effort</Label>
               <Select

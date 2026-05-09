@@ -7,8 +7,6 @@ export interface ModelConnectionCreateInput {
   name: string;
   description?: string;
   baseUrl: string;
-  organization?: string | null;
-  project?: string | null;
   modelId: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
   timeoutSeconds?: number;
@@ -20,8 +18,6 @@ export interface ModelConnectionUpdateInput {
   name?: string;
   description?: string | null;
   baseUrl?: string;
-  organization?: string | null;
-  project?: string | null;
   modelId?: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
   timeoutSeconds?: number;
@@ -36,8 +32,6 @@ export interface ModelConnectionListItemRead {
   name: string;
   description: string;
   baseUrl: string;
-  organization?: string | null;
-  project?: string | null;
   modelId: string;
   reasoningEffort: ModelConnectionReasoningEffort | null;
   timeoutSeconds: number;
