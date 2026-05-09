@@ -82,11 +82,11 @@ export function updateWorkflowPackage(
   });
 }
 
-export function archiveOrDeleteWorkflowPackage(
+export function deleteWorkflowPackage(
   packageId: IdParam,
   signal?: AbortSignal,
-): Promise<WorkflowPackageRead> {
-  return requestPlatform<WorkflowPackageRead>(workflowPackagePath(packageId), {
+): Promise<void> {
+  return requestPlatform<void>(workflowPackagePath(packageId), {
     method: "DELETE",
     signal,
   });
@@ -169,7 +169,7 @@ export function createWorkflowPackageLaunch(
 }
 
 export const workflowPackagesApi = {
-  archiveOrDelete: archiveOrDeleteWorkflowPackage,
+  delete: deleteWorkflowPackage,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
   createVersion: createWorkflowPackageVersion,

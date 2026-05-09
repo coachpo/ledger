@@ -1,7 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  archiveModelConnection,
   createModelConnection,
+  deleteModelConnection,
   getModelConnection,
   listModelConnections,
   testModelConnection,
@@ -72,16 +72,18 @@ export function useUpdateModelConnection() {
   });
 }
 
-export function useArchiveModelConnection() {
+export function useDeleteModelConnection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (modelConnectionId: IdParam) => archiveModelConnection(modelConnectionId),
-    onSuccess: async (modelConnection, modelConnectionId) => {
+    mutationFn: (modelConnectionId: IdParam) => deleteModelConnection(modelConnectionId),
+    onSuccess: async (_result, modelConnectionId) => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.modelConnections.detail(modelConnectionId),
       });
-      await invalidateModelConnectionScope(queryClient, modelConnection.id);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.platform.modelConnections.all,
+      });
     },
   });
 }

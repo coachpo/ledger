@@ -1,7 +1,7 @@
 import type { UnknownRecord } from "./common";
 import type { RunStatus } from "./run";
 
-export type WorkflowPackageStatus = "draft" | "active" | "archived";
+export type WorkflowPackageStatus = "draft" | "active";
 export type WorkflowPackageImportMode = "create" | "createVersion";
 export type WorkflowPackageManifestApiVersion = "ledger.workflowPackage/v1";
 export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
@@ -57,7 +57,6 @@ export interface WorkflowPackageRead {
   warnings: UnknownRecord[];
   createdAt: string;
   updatedAt: string;
-  archivedAt: string | null;
 }
 
 export interface WorkflowPackageListRead {
@@ -93,6 +92,7 @@ export interface WorkflowPackageLaunchRead {
   blockingErrors: UnknownRecord[];
   warnings: UnknownRecord[];
 }
+
 export interface WorkflowPackageLaunchCreateRequest {
   version?: number | null;
   workflowKey?: string | null;
@@ -111,7 +111,6 @@ export interface WorkflowPackageLaunchCreateResponse {
 
 export interface WorkflowPackageListParams {
   status?: WorkflowPackageStatus;
-  includeArchived?: boolean;
 }
 
 export interface WorkflowPackageVersionedRequestOptions {

@@ -17,7 +17,7 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/workflow-packages/AGENTS.md` — package list, editor, validation, preflight, launch, import, and export flows
-- `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, archive, and connection-test flows
+- `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, delete flow, and connection-test flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, package provenance, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules

@@ -17,7 +17,7 @@
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, versions, validation, preflight, launch, import, export |
 | Tool catalog reads | `use-workflow-packages.ts` | read-only server-declared tool metadata for package capability profiles |
-| Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, archive, connection-test helpers |
+| Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance |
 | Hook test hotspots | `use-workflow-packages.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts` | focused cache and mutation coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |

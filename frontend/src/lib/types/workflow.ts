@@ -1,7 +1,7 @@
 import type { UnknownRecord } from "./common";
 import type { RunStatus } from "./run";
 
-export type WorkflowStatus = "draft" | "published" | "deprecated" | "archived";
+export type WorkflowStatus = "draft" | "published" | "deprecated";
 export type WorkflowManifestApiVersion = "ledger.workflow/v1" | "ledger.workflow/v2";
 export type WorkflowManifestDiagnosticSeverity = "error" | "warning";
 export type WorkflowCompiledGraphNodeKind = "step" | "sequence" | "fanout" | "loop";

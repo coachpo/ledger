@@ -40,12 +40,12 @@ describe("query keys", () => {
     expect(queryKeys.platform.workflowPackages.detail("7")).toEqual(
       queryKeys.platform.workflowPackages.detail(7),
     );
-    expect(queryKeys.platform.workflowPackages.list({ includeArchived: false, status: "active" })).toEqual([
+    expect(queryKeys.platform.workflowPackages.list({ status: "active" })).toEqual([
       "api",
       "platform",
       "workflowPackages",
       "list",
-      { includeArchived: false, status: "active" },
+      { status: "active" },
     ]);
     expect(queryKeys.platform.workflowPackages.versions("9")).toEqual(
       queryKeys.platform.workflowPackages.versions(9),

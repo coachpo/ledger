@@ -1,4 +1,4 @@
-export type CapabilityStatus = "draft" | "published" | "deprecated" | "archived";
+export type CapabilityStatus = "draft" | "published" | "deprecated";
 
 export interface CapabilityToolRead {
   key: string;

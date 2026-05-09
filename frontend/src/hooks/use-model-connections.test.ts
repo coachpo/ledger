@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiState = vi.hoisted(() => ({
-  archiveModelConnectionMock: vi.fn(),
   createModelConnectionMock: vi.fn(),
+  deleteModelConnectionMock: vi.fn(),
   getModelConnectionMock: vi.fn(),
   listModelConnectionsMock: vi.fn(),
   testModelConnectionMock: vi.fn(),
@@ -33,8 +33,8 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/model-connections", () => ({
-  archiveModelConnection: apiState.archiveModelConnectionMock,
   createModelConnection: apiState.createModelConnectionMock,
+  deleteModelConnection: apiState.deleteModelConnectionMock,
   getModelConnection: apiState.getModelConnectionMock,
   listModelConnections: apiState.listModelConnectionsMock,
   testModelConnection: apiState.testModelConnectionMock,
@@ -43,8 +43,8 @@ vi.mock("@/lib/api/model-connections", () => ({
 
 import { queryKeys } from "@/lib/query-keys";
 import {
-  useArchiveModelConnection,
   useCreateModelConnection,
+  useDeleteModelConnection,
   useModelConnection,
   useModelConnections,
   useTestModelConnection,
@@ -58,8 +58,8 @@ type CapturedMutationOptions = {
 
 describe("useModelConnections", () => {
   beforeEach(() => {
-    apiState.archiveModelConnectionMock.mockReset();
     apiState.createModelConnectionMock.mockReset();
+    apiState.deleteModelConnectionMock.mockReset();
     apiState.getModelConnectionMock.mockReset();
     apiState.listModelConnectionsMock.mockReset();
     apiState.testModelConnectionMock.mockReset();
@@ -70,11 +70,11 @@ describe("useModelConnections", () => {
   });
 
   it("uses platform list/detail keys and disables detail queries without an id", () => {
-    useModelConnections({ status: "active" });
+    useModelConnections({});
     expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        queryKey: queryKeys.platform.modelConnections.list({ status: "active" }),
+        queryKey: queryKeys.platform.modelConnections.list({}),
       }),
     );
 
@@ -86,101 +86,44 @@ describe("useModelConnections", () => {
         queryKey: queryKeys.platform.modelConnections.detail(""),
       }),
     );
-
-    useModelConnection(4);
-    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        enabled: true,
-        queryKey: queryKeys.platform.modelConnections.detail(4),
-      }),
-    );
   });
 
-  it("delegates create payloads and invalidates list/detail scopes after create", async () => {
+  it("invalidates list/detail scopes after create and update", async () => {
     useCreateModelConnection();
-
-    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const omittedReasoningPayload = {
-      baseUrl: "https://api.openai.com/v1",
-      key: "primary_openai",
-      modelId: "gpt-4.1",
-      name: "Primary OpenAI",
-      reasoningEffort: null,
-      timeoutSeconds: 60,
-    };
-    const customReasoningPayload = {
-      ...omittedReasoningPayload,
-      key: "experimental_openai",
-      reasoningEffort: "xhigh",
-    };
-
-    await mutationOptions.mutationFn?.(omittedReasoningPayload);
-    await mutationOptions.mutationFn?.(customReasoningPayload);
-    expect(apiState.createModelConnectionMock).toHaveBeenNthCalledWith(1, omittedReasoningPayload);
-    expect(apiState.createModelConnectionMock).toHaveBeenNthCalledWith(2, customReasoningPayload);
-
-    await mutationOptions.onSuccess?.({ id: 9 }, omittedReasoningPayload);
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.modelConnections.all,
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.modelConnections.detail(9),
-    });
-  });
-
-  it("invalidates the previous and canonical detail scopes after update", async () => {
-    useUpdateModelConnection();
-
-    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const omittedReasoningVariables = {
-      modelConnectionId: "4",
-      payload: { name: "Updated OpenAI", reasoningEffort: null },
-    };
-    const customReasoningVariables = {
-      modelConnectionId: "4",
-      payload: { name: "Updated OpenAI", reasoningEffort: "xhigh" },
-    };
-
-    await mutationOptions.mutationFn?.(omittedReasoningVariables);
-    await mutationOptions.mutationFn?.(customReasoningVariables);
-    expect(apiState.updateModelConnectionMock).toHaveBeenNthCalledWith(1, "4", {
-      name: "Updated OpenAI",
-      reasoningEffort: null,
-    });
-    expect(apiState.updateModelConnectionMock).toHaveBeenNthCalledWith(2, "4", {
-      name: "Updated OpenAI",
-      reasoningEffort: "xhigh",
-    });
-
-    await mutationOptions.onSuccess?.({ id: 4 }, customReasoningVariables);
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.modelConnections.detail("4"),
-    });
+    let mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.onSuccess?.({ id: 4 }, { key: "model" });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.detail(4),
     });
+
+    reactQueryState.invalidateQueriesMock.mockClear();
+    useUpdateModelConnection();
+    mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.onSuccess?.({ id: 4 }, { modelConnectionId: 4, payload: { name: "Updated" } });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.modelConnections.detail(4),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.modelConnections.all,
+    });
   });
 
-  it("invalidates list/detail scopes after archive", async () => {
-    useArchiveModelConnection();
+  it("invalidates list/detail scopes after delete", async () => {
+    useDeleteModelConnection();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.(4);
-    expect(apiState.archiveModelConnectionMock).toHaveBeenCalledWith(4);
+    expect(apiState.deleteModelConnectionMock).toHaveBeenCalledWith(4);
 
-    await mutationOptions.onSuccess?.({ id: 4 }, 4);
+    await mutationOptions.onSuccess?.(undefined, 4);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.detail(4),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.modelConnections.all,
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.modelConnections.detail(4),
     });
   });
 

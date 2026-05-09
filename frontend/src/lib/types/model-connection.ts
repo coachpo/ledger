@@ -1,4 +1,3 @@
-export type ModelConnectionStatus = "active" | "archived";
 export type ModelConnectionReasoningEffort = string;
 export type ModelConnectionApiStyle = "responses" | "chat_completions";
 
@@ -28,7 +27,6 @@ export interface ModelConnectionUpdateInput {
 export interface ModelConnectionListItemRead {
   id: number;
   key: string;
-  status: ModelConnectionStatus;
   name: string;
   description: string;
   baseUrl: string;
@@ -50,9 +48,7 @@ export interface ModelConnectionListRead {
   items: ModelConnectionListItemRead[];
 }
 
-export interface ModelConnectionListParams {
-  status?: ModelConnectionStatus;
-}
+export type ModelConnectionListParams = Record<string, never>;
 
 export interface ModelConnectionConnectionTestRead {
   modelConnectionId: number;

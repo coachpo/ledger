@@ -7,8 +7,8 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import {
-  archiveOrDeleteWorkflowPackage,
   createWorkflowPackage,
+  deleteWorkflowPackage,
   createWorkflowPackageLaunch,
   createWorkflowPackageVersion,
   getWorkflowPackage,
@@ -132,16 +132,21 @@ export function useUpdateWorkflowPackage() {
   });
 }
 
-export function useArchiveOrDeleteWorkflowPackage() {
+export function useDeleteWorkflowPackage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (packageId: IdParam) => archiveOrDeleteWorkflowPackage(packageId),
-    onSuccess: async (workflowPackage, packageId) => {
+    mutationFn: (packageId: IdParam) => deleteWorkflowPackage(packageId),
+    onSuccess: async (_result, packageId) => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.workflowPackages.detail(packageId),
       });
-      await invalidateWorkflowPackageScope(queryClient, workflowPackage);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.platform.workflowPackages.all,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.platform.workflowPackages.versions(packageId),
+      });
     },
   });
 }

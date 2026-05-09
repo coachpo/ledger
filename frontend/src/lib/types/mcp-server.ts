@@ -1,4 +1,4 @@
-export type McpServerStatus = "draft" | "published" | "deprecated" | "archived";
+export type McpServerStatus = "draft" | "published" | "deprecated";
 export type McpServerTransport = "stdio" | "http-sse";
 
 export interface McpServerStdioInput {

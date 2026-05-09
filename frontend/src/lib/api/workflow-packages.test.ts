@@ -55,12 +55,23 @@ describe("workflow packages api", () => {
     const { listWorkflowPackages } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
-    await expect(listWorkflowPackages({ includeArchived: false, status: "active" })).resolves.toEqual({ items: [] });
+    await expect(listWorkflowPackages({ status: "active" })).resolves.toEqual({ items: [] });
 
     const { init, url } = getLastFetchCall(fetchMock);
     expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages");
-    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ includeArchived: "false", status: "active" });
+    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ status: "active" });
     expect(init?.method).toBe("GET");
+  });
+
+  it("deletes workflow packages without expecting a response body", async () => {
+    const { deleteWorkflowPackage } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(deleteWorkflowPackage(17)).resolves.toBeUndefined();
+
+    const { init, url } = getLastFetchCall(fetchMock);
+    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/17");
+    expect(init?.method).toBe("DELETE");
   });
 
   it("posts manifest validation and create requests with manifestSource", async () => {
@@ -154,3 +165,4 @@ describe("workflow packages api", () => {
     expect(init?.body).toBe(JSON.stringify({ version: 3, workflowKey: "summarize", parameters: { ticker: "MSFT" } }));
   });
 });
+;

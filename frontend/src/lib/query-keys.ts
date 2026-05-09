@@ -48,15 +48,12 @@ function normalizeHistoryParams(params: GetMarketHistoryParams) {
     symbols: normalizeSymbols(params.symbols),
   };
 }
-function normalizeModelConnectionListParams(params: ModelConnectionListParams = {}) {
-  return omitUndefined({
-    status: params.status,
-  });
+function normalizeModelConnectionListParams(_params: ModelConnectionListParams = {}) {
+  return {};
 }
 
 function normalizeWorkflowPackageListParams(params: WorkflowPackageListParams = {}) {
   return omitUndefined({
-    includeArchived: params.includeArchived,
     status: params.status,
   });
 }

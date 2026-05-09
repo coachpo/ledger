@@ -2,7 +2,7 @@ import type { UnknownRecord } from "./common";
 
 export type JsonPrimitive = boolean | number | string;
 export type JsonValue = boolean | number | string | null | JsonValue[] | { [key: string]: JsonValue };
-export type OutputSchemaStatus = "draft" | "published" | "deprecated" | "archived";
+export type OutputSchemaStatus = "draft" | "published" | "deprecated";
 export type OutputSchemaKind = "standalone" | "shared";
 
 interface OutputSchemaBuilderBase {

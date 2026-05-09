@@ -67,19 +67,19 @@ export function testModelConnection(
   );
 }
 
-export function archiveModelConnection(
+export function deleteModelConnection(
   modelConnectionId: IdParam,
   signal?: AbortSignal,
-): Promise<ModelConnectionRead> {
-  return requestPlatform<ModelConnectionRead>(modelConnectionDetailPath(modelConnectionId), {
+): Promise<void> {
+  return requestPlatform<void>(modelConnectionDetailPath(modelConnectionId), {
     method: "DELETE",
     signal,
   });
 }
 
 export const modelConnectionsApi = {
-  archive: archiveModelConnection,
   create: createModelConnection,
+  delete: deleteModelConnection,
   get: getModelConnection,
   list: listModelConnections,
   testConnection: testModelConnection,

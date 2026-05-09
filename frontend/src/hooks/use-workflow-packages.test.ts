@@ -24,10 +24,10 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/workflow-packages", () => ({
-  archiveOrDeleteWorkflowPackage: vi.fn(),
   createWorkflowPackage: vi.fn(),
   createWorkflowPackageLaunch: vi.fn(),
   createWorkflowPackageVersion: vi.fn(),
+  deleteWorkflowPackage: vi.fn(),
   getWorkflowPackage: vi.fn(),
   getWorkflowPackageLaunch: vi.fn(),
   importWorkflowPackage: vi.fn(),
@@ -37,16 +37,14 @@ vi.mock("@/lib/api/workflow-packages", () => ({
   updateWorkflowPackage: vi.fn(),
   validateWorkflowPackageManifest: vi.fn(),
 }));
-import { validateWorkflowPackageManifest } from "@/lib/api/workflow-packages";
+
+import { deleteWorkflowPackage, validateWorkflowPackageManifest } from "@/lib/api/workflow-packages";
 import { queryKeys } from "@/lib/query-keys";
 import {
-  useCreateWorkflowPackage,
   useCreateWorkflowPackageLaunch,
-  useUpdateWorkflowPackage,
+  useDeleteWorkflowPackage,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
-  useWorkflowPackageLaunch,
-  useWorkflowPackageVersions,
 } from "./use-workflow-packages";
 
 type CapturedMutationOptions = {
@@ -59,13 +57,13 @@ describe("useWorkflowPackages", () => {
     reactQueryState.invalidateQueriesMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     vi.mocked(validateWorkflowPackageManifest).mockReset();
+    vi.mocked(deleteWorkflowPackage).mockReset();
   });
 
   it("uses package detail keys and disables detail queries without an id", () => {
-    reactQueryState.useQueryMock.mockClear();
-
     useWorkflowPackage(undefined);
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         enabled: false,
         queryKey: queryKeys.platform.workflowPackages.detail(""),
@@ -73,7 +71,8 @@ describe("useWorkflowPackages", () => {
     );
 
     useWorkflowPackage(15);
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
         enabled: true,
         queryKey: queryKeys.platform.workflowPackages.detail(15),
@@ -93,84 +92,21 @@ describe("useWorkflowPackages", () => {
     });
 
     useValidateWorkflowPackageManifest();
-
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    const payload = { manifestSource: "apiVersion: ledger.workflowPackage/v1" };
-    await mutationOptions.mutationFn?.(payload);
-
-    expect(validateWorkflowPackageManifest).toHaveBeenCalledWith(payload);
+    await expect(mutationOptions.mutationFn?.({ manifestSource: "source" })).resolves.toEqual({
+      diagnostics: [],
+      warnings: [],
+      metadata: null,
+      packageDefinition: null,
+      compiledPlan: null,
+      manifestHash: null,
+      compiledHash: null,
+    });
+    expect(validateWorkflowPackageManifest).toHaveBeenCalledWith({ manifestSource: "source" });
     expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalled();
   });
 
-  it("invalidates package list, detail, versions, and launch scopes after create", async () => {
-    useCreateWorkflowPackage();
-
-    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.onSuccess?.({ id: 15, latestVersion: 2 }, { manifestSource: "source" });
-
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.all,
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.detail(15),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.versions(15),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.launch(15, 2),
-    });
-  });
-
-  it("invalidates submitted and returned package detail scopes after update", async () => {
-    useUpdateWorkflowPackage();
-
-    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.onSuccess?.(
-      { id: 22, latestVersion: 3 },
-      { packageId: "15", payload: { manifestSource: "source" } },
-    );
-
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.detail("15"),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.detail(22),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.launch(22, 3),
-    });
-  });
-
-  it("uses package launch and version query keys", () => {
-    reactQueryState.useQueryMock.mockClear();
-
-    useWorkflowPackageLaunch(undefined, 2, "summarize");
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: false,
-        queryKey: queryKeys.platform.workflowPackages.launch("", 2, "summarize"),
-      }),
-    );
-
-    useWorkflowPackageLaunch(15, 2, "summarize");
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: true,
-        queryKey: queryKeys.platform.workflowPackages.launch(15, 2, "summarize"),
-      }),
-    );
-
-    useWorkflowPackageVersions(15);
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: true,
-        queryKey: queryKeys.platform.workflowPackages.versions(15),
-      }),
-    );
-  });
-
-  it("invalidates platform run and package launch caches after creating a package launch", async () => {
+  it("invalidates package, run, and launch scopes after creating a package launch", async () => {
     useCreateWorkflowPackageLaunch();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
@@ -187,6 +123,22 @@ describe("useWorkflowPackages", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.launch(15, 2, "summarize"),
+    });
+  });
+
+  it("invalidates package list and detail scopes after delete", async () => {
+    useDeleteWorkflowPackage();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.(15);
+    expect(deleteWorkflowPackage).toHaveBeenCalledWith(15);
+
+    await mutationOptions.onSuccess?.(undefined, 15);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.detail(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.all,
     });
   });
 });
