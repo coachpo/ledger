@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
@@ -15,6 +15,7 @@ const {
   useToolsMock,
   useUpdateWorkflowPackageMock,
   useValidateWorkflowPackageManifestMock,
+  useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
   validateManifestMock,
 } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const {
   useToolsMock: vi.fn(),
   useUpdateWorkflowPackageMock: vi.fn(),
   useValidateWorkflowPackageManifestMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
   validateManifestMock: vi.fn(),
 }));
@@ -49,6 +51,7 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useValidateWorkflowPackageManifest: () => useValidateWorkflowPackageManifestMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
+  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageVersions: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
@@ -65,6 +68,25 @@ const packageRead: WorkflowPackageRead = {
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
   warnings: [],
+};
+
+const manifestRead: WorkflowPackageManifestRead = {
+  compiledHash: "compiled-hash-123",
+  manifestHash: "manifest-hash-123",
+  manifestSource: `apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: hydrated_market_review
+  name: Hydrated Market Review
+  description: Manifest source description
+spec:
+  inputs:
+    type: object
+`,
+  packageDefinition: {},
+  packageId: 42,
+  packageKey: "market_review_package",
+  version: 7,
 };
 
 function renderEditor(initialEntry = "/workflow-packages/42") {
@@ -100,7 +122,8 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       packageDefinition: {},
       warnings: [],
     });
-    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
+    useWorkflowPackageManifestMock.mockReturnValue({ data: manifestRead, error: null, isError: false, isFetching: false, isPending: false, refetch: vi.fn() });
     useCreateWorkflowPackageMock.mockReturnValue({ isPending: false, mutateAsync: createPackageMock });
     useUpdateWorkflowPackageMock.mockReturnValue({ isPending: false, mutateAsync: updatePackageMock });
     useValidateWorkflowPackageManifestMock.mockReturnValue({ isPending: false, mutateAsync: validateManifestMock });
@@ -166,7 +189,23 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     const payload = updatePackageMock.mock.calls[0][0].payload.manifestSource as string;
     expect(payload).not.toContain("sk-");
     expect(payload).not.toContain("apiKey:");
+    expect(payload).toContain("secretRefs:");
+    expect(payload).toContain("requiredBindings:");
     expect(createPackageMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves workflow subtrees when saving unrelated tabs", async () => {
+    renderEditor();
+
+    clickTab("Output Schemas");
+    fireEvent.click(screen.getByRole("button", { name: "Add Schema" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save package draft" }));
+
+    const payload = updatePackageMock.mock.calls.at(-1)?.[0].payload.manifestSource as string;
+    expect(payload).toContain("agents:");
+    expect(payload).toContain("outputSchemas:");
+    expect(payload).toContain("mcpServers:");
+    expect(payload).toContain("outputSchemas:");
   });
 
   it("opens the matching agent sheet and focuses the diagnostic field", async () => {

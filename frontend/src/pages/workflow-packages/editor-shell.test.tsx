@@ -1,13 +1,14 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
-const { navigateMock, useWorkflowPackageMock } = vi.hoisted(() => ({
+const { navigateMock, useWorkflowPackageManifestMock, useWorkflowPackageMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
 }));
 
@@ -33,6 +34,7 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
+  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageVersions: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
@@ -51,6 +53,25 @@ const packageRead: WorkflowPackageRead = {
   warnings: [],
 };
 
+const manifestRead: WorkflowPackageManifestRead = {
+  compiledHash: "compiled-hash-123",
+  manifestHash: "manifest-hash-123",
+  manifestSource: `apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: hydrated_market_review
+  name: Hydrated Market Review
+  description: Manifest source description
+spec:
+  inputs:
+    type: object
+`,
+  packageDefinition: {},
+  packageId: 42,
+  packageKey: "market_review_package",
+  version: 7,
+};
+
 function renderEditor(initialEntry: string, routePath: string) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -65,11 +86,21 @@ describe("WorkflowPackageEditorPage", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     useWorkflowPackageMock.mockReset();
+    useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageMock.mockReturnValue({
       data: packageRead,
       error: null,
       isError: false,
       isPending: false,
+      refetch: vi.fn(),
+    });
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: manifestRead,
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: false,
+      refetch: vi.fn(),
     });
   });
 
@@ -103,6 +134,41 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
   });
 
+  it("hydrates existing package draft fields from manifestSource instead of summary metadata", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
+    expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
+    expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
+  });
+
+  it("keeps historical versions launch/export-only while hydration stays pinned to the latest draft", () => {
+    renderEditor("/workflow-packages/42?version=7", "/workflow-packages/:packageId");
+
+    expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
+    expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
+    expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
+    expect(screen.getByRole("button", { name: "Save package draft" })).toBeEnabled();
+  });
+
+  it("surfaces package load errors in a blocking retry state", () => {
+    useWorkflowPackageMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Package missing"),
+      isError: true,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
+  });
+
   it("opens the same shell with Launch active for the run route", () => {
     renderEditor("/workflow-packages/42/run", "/workflow-packages/:packageId/run");
 
@@ -112,17 +178,19 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Launch package run");
   });
 
-  it("renders the new package shell without loading package detail", () => {
+  it("renders the new package shell without loading package detail or manifest", () => {
     useWorkflowPackageMock.mockReturnValue({
       data: undefined,
       error: null,
       isError: false,
       isPending: false,
+      refetch: vi.fn(),
     });
 
     renderEditor("/workflow-packages/new", "/workflow-packages/new");
 
     expect(useWorkflowPackageMock).toHaveBeenCalledWith(undefined);
+    expect(useWorkflowPackageManifestMock).toHaveBeenCalledWith(undefined);
     expect(screen.getByRole("heading", { name: "New Workflow Package" })).toBeVisible();
     expect(screen.getByText("Draft manifest shell")).toBeVisible();
     expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeDisabled();
@@ -139,17 +207,43 @@ describe("WorkflowPackageEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
   });
 
-  it("surfaces package load errors without hiding tabs", () => {
+  it("surfaces package load errors in a blocking retry state", () => {
     useWorkflowPackageMock.mockReturnValue({
       data: undefined,
       error: new Error("Package missing"),
       isError: true,
       isPending: false,
+      refetch: vi.fn(),
     });
 
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
+    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
-    expect(within(screen.getByRole("tablist")).getByRole("tab", { name: "Overview tab" })).toBeVisible();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
+  });
+
+  it("surfaces manifest parse errors in a blocking retry state", () => {
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: {
+        ...manifestRead,
+        manifestSource: "apiVersion: ledger.workflowPackage/v1\nmetadata:\n  key: broken\n  name: Broken Package\n  description: [",
+      },
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("sufficiently indented");
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
   });
 });

@@ -12,6 +12,8 @@ import type {
   WorkflowPackageLaunchRead,
   WorkflowPackageListParams,
   WorkflowPackageListRead,
+  WorkflowPackageManifestRead,
+  WorkflowPackageManifestReadOptions,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
   WorkflowPackageUpdateRequest,
@@ -22,6 +24,16 @@ import type {
 
 function workflowPackagePath(packageId: IdParam): string {
   return `/workflow-packages/${toPathSegment(packageId)}`;
+}
+
+function normalizeManifestVersion(version: number | string | null | undefined) {
+  return version === undefined || version === null || version === "" ? undefined : version;
+}
+
+function manifestReadQuery(options: WorkflowPackageManifestReadOptions = {}) {
+  return toQueryRecord({
+    version: normalizeManifestVersion(options.version),
+  });
 }
 
 function versionedWorkflowQuery(options: WorkflowPackageVersionedRequestOptions = {}) {
@@ -46,6 +58,16 @@ export function getWorkflowPackage(
   signal?: AbortSignal,
 ): Promise<WorkflowPackageRead> {
   return requestPlatform<WorkflowPackageRead>(workflowPackagePath(packageId), { signal });
+}
+
+export function getWorkflowPackageManifest(
+  packageId: IdParam,
+  options: WorkflowPackageManifestReadOptions = {},
+): Promise<WorkflowPackageManifestRead> {
+  return requestPlatform<WorkflowPackageManifestRead>(`${workflowPackagePath(packageId)}/manifest`, {
+    query: manifestReadQuery(options),
+    signal: options.signal,
+  });
 }
 
 export function validateWorkflowPackageManifest(
@@ -176,6 +198,7 @@ export const workflowPackagesApi = {
   exportUrl: exportWorkflowPackageUrl,
   get: getWorkflowPackage,
   getLaunch: getWorkflowPackageLaunch,
+  getManifest: getWorkflowPackageManifest,
   import: importWorkflowPackage,
   list: listWorkflowPackages,
   listVersions: listWorkflowPackageVersions,

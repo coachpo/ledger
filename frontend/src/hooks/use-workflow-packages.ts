@@ -13,6 +13,7 @@ import {
   createWorkflowPackageVersion,
   getWorkflowPackage,
   getWorkflowPackageLaunch,
+  getWorkflowPackageManifest,
   importWorkflowPackage,
   listWorkflowPackageVersions,
   listWorkflowPackages,
@@ -29,6 +30,7 @@ import type {
   WorkflowPackageLaunchCreateResponse,
   WorkflowPackageLaunchRead,
   WorkflowPackageListParams,
+  WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
   WorkflowPackageUpdateRequest,
@@ -61,19 +63,36 @@ export type WorkflowPackageVersionSummary = {
   warningCount: number;
 };
 
+function hasWorkflowPackageId(packageId: IdParam | undefined): packageId is IdParam {
+  return Boolean(packageId) && packageId !== "new";
+}
+
+function normalizeManifestVersion(version: number | string | null | undefined) {
+  return version === undefined || version === null || version === "" ? undefined : version;
+}
+
 function invalidateWorkflowPackageScope(
   queryClient: QueryClient,
   packageRead: WorkflowPackageReadLike,
 ) {
+  const invalidateLatestVersion = packageRead.latestVersion === null
+    ? [Promise.resolve()]
+    : [
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.workflowPackages.manifest(packageRead.id, packageRead.latestVersion),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.workflowPackages.launch(packageRead.id, packageRead.latestVersion),
+        }),
+      ];
+
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.detail(packageRead.id) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.versions(packageRead.id) }),
-    packageRead.latestVersion === null
-      ? Promise.resolve()
-      : queryClient.invalidateQueries({
-          queryKey: queryKeys.platform.workflowPackages.launch(packageRead.id, packageRead.latestVersion),
-        }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.manifest(packageRead.id) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.launch(packageRead.id) }),
+    ...invalidateLatestVersion,
   ]);
 }
 
@@ -98,6 +117,22 @@ export function useWorkflowPackage(packageId: IdParam | undefined) {
     queryKey: queryKeys.platform.workflowPackages.detail(resolvedPackageId),
     queryFn: ({ signal }) => getWorkflowPackage(resolvedPackageId, signal),
     enabled: Boolean(packageId),
+  });
+}
+
+export function useWorkflowPackageManifest(
+  packageId: IdParam | undefined,
+  version?: number | string | null,
+): UseQueryResult<WorkflowPackageManifestRead, Error> {
+  const hasPackageId = hasWorkflowPackageId(packageId);
+  const resolvedPackageId = hasPackageId ? packageId : "";
+  const resolvedVersion = normalizeManifestVersion(version);
+
+  return useQuery({
+    queryKey: queryKeys.platform.workflowPackages.manifest(resolvedPackageId, resolvedVersion),
+    queryFn: ({ signal }) =>
+      getWorkflowPackageManifest(resolvedPackageId, { signal, version: resolvedVersion }),
+    enabled: hasPackageId,
   });
 }
 
@@ -138,6 +173,9 @@ export function useDeleteWorkflowPackage() {
   return useMutation({
     mutationFn: (packageId: IdParam) => deleteWorkflowPackage(packageId),
     onSuccess: async (_result, packageId) => {
+      queryClient.removeQueries?.({
+        queryKey: queryKeys.platform.workflowPackages.manifest(packageId),
+      });
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.workflowPackages.detail(packageId),
       });

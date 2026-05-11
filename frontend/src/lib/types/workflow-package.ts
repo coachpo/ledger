@@ -10,6 +10,21 @@ export interface WorkflowPackageManifestRequest {
   manifestSource: string;
 }
 
+export interface WorkflowPackageManifestReadOptions {
+  signal?: AbortSignal;
+  version?: number | string | null;
+}
+
+export interface WorkflowPackageManifestRead {
+  packageId: number;
+  packageKey: string;
+  version: number;
+  manifestSource: string;
+  packageDefinition: UnknownRecord;
+  manifestHash: string;
+  compiledHash: string;
+}
+
 export interface WorkflowPackageUpdateRequest {
   manifestSource?: string | null;
   status?: WorkflowPackageStatus | null;

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPackageLaunchRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type { WorkflowPackageLaunchRead, WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
@@ -21,6 +21,7 @@ const {
   useUpdatePackageMock,
   useValidatePackageMock,
   useWorkflowPackageLaunchMock,
+  useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
   useWorkflowPackageVersionsMock,
   validatePackageMock,
@@ -39,6 +40,7 @@ const {
   useUpdatePackageMock: vi.fn(),
   useValidatePackageMock: vi.fn(),
   useWorkflowPackageLaunchMock: vi.fn(),
+  useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
   useWorkflowPackageVersionsMock: vi.fn(),
   validatePackageMock: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useValidateWorkflowPackageManifest: () => useValidatePackageMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
+  useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageVersions: (...args: unknown[]) => useWorkflowPackageVersionsMock(...args),
 }));
 
@@ -79,6 +82,25 @@ const packageRead: WorkflowPackageRead = {
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
   warnings: [],
+};
+
+const manifestRead: WorkflowPackageManifestRead = {
+  compiledHash: "compiled-hash-123",
+  manifestHash: "manifest-hash-123",
+  manifestSource: `apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: hydrated_market_review
+  name: Hydrated Market Review
+  description: Manifest source description
+spec:
+  inputs:
+    type: object
+`,
+  packageDefinition: {},
+  packageId: 42,
+  packageKey: "market_review_package",
+  version: 7,
 };
 
 const launchRead: WorkflowPackageLaunchRead = {
@@ -131,7 +153,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       ok: true,
       text: () => Promise.resolve("apiVersion: ledger.workflowPackage/v1\nmetadata:\n  key: market_review_package\nsecretPayload: sk-live-secret\n"),
     }) as unknown as typeof fetch;
-    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
+    useWorkflowPackageManifestMock.mockReturnValue({ data: manifestRead, error: null, isError: false, isFetching: false, isPending: false, refetch: vi.fn() });
     useWorkflowPackageVersionsMock.mockReturnValue({ data: { items: [{ compiledHash: "compiled", createdAt: "2026-05-05T10:00:00Z", id: 70, launchedAt: null, manifestHash: "manifest", packageId: 42, validationSummary: {}, version: 7, warnings: [] }] }, error: null, isError: false, isPending: false });
     useWorkflowPackageLaunchMock.mockReturnValue({ data: launchRead, error: null, isError: false, isPending: false });
     useCreatePackageMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
@@ -196,10 +219,28 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /import package/i }));
 
     await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
-      manifestSource: expect.not.stringContaining("sk-import-secret"),
+      manifestSource: expect.stringContaining("[redacted]"),
       mode: "create",
     }));
     expect(await screen.findByText(/missing model connection primary_model/i)).toBeVisible();
     expect(screen.queryByText(/sk-import-secret/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps import input and preview redacted for secret-like strings", async () => {
+    renderEditor();
+    clickTab("Import / Export");
+
+    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
+    fireEvent.change(screen.getByLabelText("Import package YAML"), {
+      target: { value: "metadata:\n  key: imported\nsecretToken: sk-import-secret\n" },
+    });
+
+    const importEditor = screen.getByLabelText("Import package YAML") as HTMLTextAreaElement;
+    expect(importEditor.value).not.toContain("sk-import-secret");
+    expect(importEditor.value).toContain("[redacted]");
+
+    const preview = await screen.findByLabelText("Sanitized package YAML preview");
+    expect((preview as HTMLTextAreaElement).value).not.toContain("sk-import-secret");
+    expect((preview as HTMLTextAreaElement).value).toContain("[redacted]");
   });
 });

@@ -43,6 +43,7 @@ export type PackageMcpServerDraft = {
   key: string;
   name: string;
   requiredBindings: string[];
+  secretRefs: Record<string, string[]>;
   toolKeys: string[];
   transport: PackageMcpTransport;
   url: string;
@@ -135,6 +136,7 @@ export function createPackageMcpServerDraft(overrides: Partial<PackageMcpServerD
     key: createLocalKey("private-mcp"),
     name: "New Private MCP",
     requiredBindings: [],
+    secretRefs: {},
     toolKeys: [],
     transport: "stdio",
     url: "",
@@ -221,16 +223,39 @@ function parseCapabilityProfile(value: unknown, index: number): PackageCapabilit
   });
 }
 
+function parseSecretBindingNames(value: unknown): string[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const bindings = Object.values(value).flatMap((entry) => readStringArray(entry));
+  return [...new Set(bindings.map((binding) => binding.trim()).filter(Boolean))];
+}
+
+function parseSecretRefs(value: unknown): Record<string, string[]> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const entries = Object.entries(value)
+    .map(([key, entry]) => [key.trim(), readStringArray(entry)] as const)
+    .filter(([key, bindingNames]) => Boolean(key) && bindingNames.length > 0);
+  return Object.fromEntries(entries);
+}
+
 function parseMcpServer(value: unknown, index: number): PackageMcpServerDraft {
   const record = isRecord(value) ? value : {};
   const transport = record.transport === "http-sse" ? "http-sse" : "stdio";
+  const requiredBindings = readStringArray(record.requiredBindings);
+  const secretRefs = parseSecretRefs(record.secretRefs);
+  const secretBindings = parseSecretBindingNames(secretRefs);
+  const mergedRequiredBindings = [...new Set([...requiredBindings, ...secretBindings])];
   return createPackageMcpServerDraft({
     argsText: parseArgsText(record.args),
     command: readString(record.command),
     description: readString(record.description),
     key: readString(record.key, `private-mcp-${index + 1}`),
     name: readString(record.name, `Private MCP ${index + 1}`),
-    requiredBindings: readStringArray(record.requiredBindings),
+    requiredBindings: mergedRequiredBindings,
+    secretRefs,
     toolKeys: readStringArray(record.toolKeys),
     transport,
     url: readString(record.url),
@@ -320,7 +345,7 @@ export function workflowPackageDraftToManifestObject(draft: WorkflowPackageDraft
         key: server.key.trim().toLowerCase(),
         name: server.name.trim(),
         requiredBindings: server.requiredBindings.map((binding) => binding.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
-        secretRefs: mcpSecretRefs(server.requiredBindings),
+        secretRefs: Object.keys(server.secretRefs).length > 0 ? server.secretRefs : mcpSecretRefs(server.requiredBindings),
         toolKeys: [...server.toolKeys].sort((left, right) => left.localeCompare(right)),
         transport: server.transport,
       })),

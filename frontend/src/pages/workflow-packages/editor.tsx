@@ -75,6 +75,7 @@ import {
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
+  useWorkflowPackageManifest,
   useWorkflowPackageVersions,
 } from "@/hooks/use-workflow-packages";
 import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
@@ -100,8 +101,10 @@ import {
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type { UnknownRecord } from "@/lib/types/common";
 import type {
+  WorkflowPackageImportMode,
   WorkflowPackageImportRequest,
   WorkflowPackageLaunchRead,
+  WorkflowPackageManifestRead,
   WorkflowPackageRead,
   WorkflowPackageVersionRead,
 } from "@/lib/types/workflow-package";
@@ -223,6 +226,10 @@ function statusBadge(workflowPackage: WorkflowPackageRead | undefined) {
   return <Badge className={className} variant="outline">{workflowPackage.status}</Badge>;
 }
 
+function manifestIdentity(manifest: WorkflowPackageManifestRead) {
+  return `package:${manifest.packageId}:v${manifest.version}:${manifest.manifestHash}`;
+}
+
 type PackageDiagnostic = {
   field: string;
   issue: string;
@@ -318,6 +325,13 @@ function versionLabel(version: number | null | undefined) {
   return version ? `v${version}` : "No version";
 }
 
+function versionSelectionNotice(selectedVersion: number | undefined, latestVersion: number | null | undefined) {
+  if (selectedVersion === undefined || latestVersion === null || selectedVersion === latestVersion) {
+    return null;
+  }
+  return `Editing stays pinned to the latest saved version ${versionLabel(latestVersion)}. This selector only changes launch and export previews for ${versionLabel(selectedVersion)}.`;
+}
+
 function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border bg-background/60 p-3">
@@ -334,6 +348,32 @@ function EditorSkeleton() {
       <Skeleton className="h-12 w-full" />
       <Skeleton className="h-72 w-full" />
     </div>
+  );
+}
+
+function ManifestBlockingState({ errors, loading, onRetry, title }: { errors: readonly string[]; loading: boolean; onRetry: () => void; title: string }) {
+  return (
+    <Card className="border-destructive/30 bg-destructive/5 shadow-sm" data-testid="workflow-package-manifest-blocker">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-destructive"><AlertCircle className="size-5" />{title}</CardTitle>
+        <CardDescription>Manifest content must load and parse cleanly before package resources can be edited.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Alert variant="destructive" role="alert">
+          <AlertCircle />
+          <AlertTitle>Editor locked</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-5">
+              {errors.map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}
+            </ul>
+          </AlertDescription>
+        </Alert>
+        <Button disabled={loading} type="button" variant="outline" onClick={onRetry}>
+          {loading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+          Retry manifest load
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -376,7 +416,7 @@ function toggleString(values: readonly string[], value: string, checked: boolean
   return values.filter((entry) => entry !== value);
 }
 
-function OverviewEditor({ draft, issues, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void }) {
+function OverviewEditor({ draft, issues, isNew, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; isNew: boolean; onChange: (draft: WorkflowPackageDraft) => void }) {
   const setMetadata = (key: keyof WorkflowPackageDraft["metadata"], value: string) => {
     onChange({ ...draft, metadata: { ...draft.metadata, [key]: value } });
   };
@@ -389,8 +429,9 @@ function OverviewEditor({ draft, issues, onChange }: { draft: WorkflowPackageDra
       <CardContent className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="metadata-key">Local package key</Label>
-          <Input id="metadata-key" data-field="metadata.key" aria-label="Package key" value={draft.metadata.key} onChange={(event) => setMetadata("key", event.target.value)} />
+          <Input id="metadata-key" data-field="metadata.key" aria-label="Package key" readOnly={!isNew} value={draft.metadata.key} onChange={isNew ? (event) => setMetadata("key", event.target.value) : undefined} />
           <FieldMessage message={issueForField(issues, "metadata.key")} />
+          {isNew ? null : <p className="text-sm text-muted-foreground">Existing package keys are immutable and must stay aligned with the package identity.</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="metadata-name">Name</Label>
@@ -640,7 +681,7 @@ function AgentSheet(props: {
                         }}
                       />
                     </FormControl>
-                    <FormDescription>Displayed for launch planning; package manifest save currently preserves backend-supported fields.</FormDescription>
+                    <FormDescription>Launch planning only; this value is not serialized by the current package manifest contract.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1037,6 +1078,7 @@ function LaunchTab(props: {
           <div className="space-y-2"><Label>Package version</Label><Select value={selectedVersion ? String(selectedVersion) : "__latest__"} onValueChange={(value) => setSelectedVersion(value === "__latest__" ? undefined : Number(value))}><SelectTrigger aria-label="Package version"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__latest__">Latest ({versionLabel(workflowPackage?.latestVersion)})</SelectItem>{versions.map((version) => <SelectItem key={version.id} value={String(version.version)}>{versionLabel(version.version)}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label htmlFor="workflow-key">Workflow key</Label><Input id="workflow-key" aria-label="Workflow key" placeholder="Workflow key" value={workflowKey} onChange={(event) => setWorkflowKey(event.target.value)} /></div>
         </div>
+        {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
         {launchRead ? <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={`${launchRead.packageKey}@${launchRead.packageVersion}`} /><DetailMetric label="Workflow" value={launchRead.workflowKey} /><DetailMetric label="Readiness" value={launchRead.ready ? "Ready" : `${blockingCount} blockers`} /></div> : null}
         <Card className="bg-background/60">
@@ -1055,14 +1097,16 @@ function LaunchTab(props: {
 }
 
 function ExportsTab(props: {
+  confirmDiscardChanges: (action: string) => boolean;
   draft: WorkflowPackageDraft;
   importPackage: ReturnType<typeof useImportWorkflowPackage>;
+  onImportComplete: (mode: WorkflowPackageImportMode, imported: WorkflowPackageRead) => void;
   packageId: string | undefined;
   selectedVersion: number | undefined;
   versions: WorkflowPackageVersionRead[];
   workflowPackage: WorkflowPackageRead | undefined;
 }) {
-  const { draft, importPackage, packageId, selectedVersion, versions, workflowPackage } = props;
+  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId, selectedVersion, versions, workflowPackage } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
@@ -1110,10 +1154,16 @@ function ExportsTab(props: {
   }, [exportHref, generatedManifestSource]);
 
   const importManifest = async (payload: WorkflowPackageImportRequest) => {
+    const importMode: WorkflowPackageImportMode = payload.mode ?? "create";
+    const action = importMode === "createVersion" ? "import this package version" : "import this package";
+    if (!confirmDiscardChanges(action)) {
+      return null;
+    }
     try {
       const imported = await importPackage.mutateAsync(payload);
       setImportWarnings(imported.warnings);
-      toast.success(payload.mode === "createVersion" ? "Imported package version" : "Imported package");
+      onImportComplete(importMode, imported);
+      toast.success(importMode === "createVersion" ? "Imported package version" : "Imported package");
       return imported;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to import package.");
@@ -1128,6 +1178,7 @@ function ExportsTab(props: {
       </CardHeader>
       <CardContent className="space-y-4 p-4">
         <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={workflowPackage?.key ?? draft.metadata.key} /><DetailMetric label="Export Version" value={versionLabel(selectedVersion ?? workflowPackage?.latestVersion)} /><DetailMetric label="Available Versions" value={String(versions.length)} /></div>
+        {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         {secretLeak ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Potential secret value detected</AlertTitle><AlertDescription>The preview was redacted. Package exports must contain binding names only, not secret values.</AlertDescription></Alert> : null}
         <Textarea aria-label="Sanitized package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={previewText} />
         {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{sanitizePreviewText(stringifyJson(warning))}</li>)}</ul></AlertDescription></Alert> : null}
@@ -1142,13 +1193,15 @@ export function WorkflowPackageEditorPage() {
   const { packageId } = useParams<{ packageId: string }>();
   const isNew = location.pathname === "/workflow-packages/new";
   const packageQuery = useWorkflowPackage(isNew ? undefined : packageId);
+  const manifestQuery = useWorkflowPackageManifest(isNew ? undefined : packageId);
   const workflowPackage = packageQuery.data;
   const previousPathname = useRef(location.pathname);
   const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>(() => routeTab(location.pathname));
   const [draft, setDraft] = useState<WorkflowPackageDraft>(() => createWorkflowPackageDraft());
+  const [isDirty, setIsDirty] = useState(false);
   const [issues, setIssues] = useState<WorkflowPackageEditorIssue[]>([]);
   const [diagnosticTarget, setDiagnosticTarget] = useState<DiagnosticTarget>(null);
-  const [initializedKey, setInitializedKey] = useState("new");
+  const [initializedManifestIdentity, setInitializedManifestIdentity] = useState<string | null>(isNew ? "new" : null);
   const [selectedVersion, setSelectedVersion] = useState<number | undefined>(undefined);
   const [workflowKey, setWorkflowKey] = useState("");
   const [preflightRead, setPreflightRead] = useState<WorkflowPackageLaunchRead | undefined>(undefined);
@@ -1171,16 +1224,37 @@ export function WorkflowPackageEditorPage() {
     setActiveTab(routeTab(location.pathname));
   }, [location.pathname]);
 
+  const parsedManifest = useMemo(() => {
+    if (isNew || !manifestQuery.data) {
+      return null;
+    }
+    return packageDraftFromManifestSource(manifestQuery.data.manifestSource);
+  }, [isNew, manifestQuery.data]);
+
   useEffect(() => {
     if (isNew) {
+      if (initializedManifestIdentity !== "new") {
+        setDraft(createWorkflowPackageDraft());
+        setIssues([]);
+        setDiagnosticTarget(null);
+        setInitializedManifestIdentity("new");
+        setIsDirty(false);
+      }
       return;
     }
-    if (!workflowPackage || initializedKey === `package:${workflowPackage.id}:${workflowPackage.updatedAt}`) {
+    if (!manifestQuery.data || !parsedManifest || parsedManifest.errors.length > 0) {
       return;
     }
-    setInitializedKey(`package:${workflowPackage.id}:${workflowPackage.updatedAt}`);
-    setDraft(createWorkflowPackageDraft({ metadata: { description: workflowPackage.description, key: workflowPackage.key, name: workflowPackage.name } }));
-  }, [initializedKey, isNew, workflowPackage]);
+    const nextIdentity = manifestIdentity(manifestQuery.data);
+    if (initializedManifestIdentity === nextIdentity || (isDirty && initializedManifestIdentity !== null)) {
+      return;
+    }
+    setDraft(parsedManifest.draft);
+    setIssues([]);
+    setDiagnosticTarget(null);
+    setInitializedManifestIdentity(nextIdentity);
+    setIsDirty(false);
+  }, [initializedManifestIdentity, isDirty, isNew, manifestQuery.data, parsedManifest]);
 
   useEffect(() => {
     if (launchQuery.data?.workflowKey && !workflowKey) {
@@ -1195,6 +1269,64 @@ export function WorkflowPackageEditorPage() {
   const versions = versionsQuery.data?.items ?? [];
   const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
   const isSaving = createPackage.isPending || updatePackage.isPending;
+  const manifestParseErrors = parsedManifest?.errors ?? [];
+  const manifestLoadError = manifestQuery.error instanceof Error ? manifestQuery.error.message : "Failed to load package manifest.";
+  const packageLoadError = packageQuery.error instanceof Error ? packageQuery.error.message : "Failed to load workflow package.";
+  const editorBlocker = !isNew && packageQuery.isError
+    ? { errors: [packageLoadError], title: "Package identity could not be loaded" }
+    : !isNew && manifestQuery.isError
+      ? { errors: [manifestLoadError], title: "Package manifest could not be loaded" }
+      : !isNew && manifestParseErrors.length > 0
+        ? { errors: manifestParseErrors, title: "Package manifest could not be parsed" }
+        : null;
+  const isEditorBlocked = editorBlocker !== null;
+
+  const updateDraft = (nextDraft: WorkflowPackageDraft) => {
+    setIsDirty(true);
+    setDraft(nextDraft);
+  };
+
+  const clearTransientEditorState = () => {
+    setPreflightRead(undefined);
+    setIssues([]);
+    setDiagnosticTarget(null);
+    setIsDirty(false);
+  };
+
+  const discardLoadedDraftState = () => {
+    clearTransientEditorState();
+    setInitializedManifestIdentity(null);
+  };
+
+  const confirmDiscardUnsavedChanges = (action: string) => {
+    if (!isDirty) {
+      return true;
+    }
+    return window.confirm(`You have unsaved changes. Discard them and ${action}?`);
+  };
+
+  const retryManifestLoad = () => {
+    if (!confirmDiscardUnsavedChanges("retry the manifest load")) {
+      return;
+    }
+    if (isDirty) {
+      discardLoadedDraftState();
+    }
+    if (packageQuery.isError) {
+      void packageQuery.refetch();
+    }
+    void manifestQuery.refetch();
+  };
+
+  const handleImportSuccess = (mode: WorkflowPackageImportMode, imported: WorkflowPackageRead) => {
+    clearTransientEditorState();
+    if (mode !== "create") {
+      return;
+    }
+    setSelectedVersion(undefined);
+    setWorkflowKey("");
+    navigate(`/workflow-packages/${imported.id}`);
+  };
 
   const focusIssue = (issue: WorkflowPackageEditorIssue) => {
     const target = diagnosticToEditorTarget(issue.field);
@@ -1234,6 +1366,10 @@ export function WorkflowPackageEditorPage() {
   };
 
   const validateCurrentDraft = async () => {
+    if (isEditorBlocked) {
+      toast.error("Load a valid package manifest before validating.");
+      return;
+    }
     const manifestSource = workflowPackageDraftToManifestSource(draft);
     const result = await validatePackage.mutateAsync({ manifestSource });
     const backendIssues = mapBackendDiagnostics(result.diagnostics);
@@ -1245,6 +1381,10 @@ export function WorkflowPackageEditorPage() {
   };
 
   const saveDraft = async () => {
+    if (isEditorBlocked) {
+      toast.error("Load a valid package manifest before saving.");
+      return;
+    }
     const nextIssues = validateWorkflowPackageDraft(draft);
     setIssues(nextIssues);
     if (nextIssues[0]) {
@@ -1255,17 +1395,21 @@ export function WorkflowPackageEditorPage() {
     const manifestSource = workflowPackageDraftToManifestSource(draft);
     if (isNew) {
       const created = await createPackage.mutateAsync({ manifestSource });
+      clearTransientEditorState();
+      setSelectedVersion(undefined);
+      setWorkflowKey("");
       toast.success("Workflow package created");
       navigate(`/workflow-packages/${created.id}`);
       return;
     }
     if (packageId) {
       await updatePackage.mutateAsync({ packageId, payload: { manifestSource } });
+      clearTransientEditorState();
       toast.success("Workflow package draft saved");
     }
   };
 
-  if (!isNew && packageQuery.isPending) {
+  if (!isNew && (packageQuery.isPending || manifestQuery.isPending)) {
     return <EditorSkeleton />;
   }
 
@@ -1274,24 +1418,29 @@ export function WorkflowPackageEditorPage() {
       <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{statusBadge(workflowPackage)}{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package draft" className="cursor-pointer" disabled={isSaving} type="button" size="sm" variant="outline" onClick={() => void saveDraft()}><Save data-icon="inline-start" />Save Draft</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
+          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package draft" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void saveDraft()}><Save data-icon="inline-start" />Save Draft</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
         </CardContent>
       </Card>
-      {packageQuery.isError ? <Card><CardContent className="p-4 text-sm text-muted-foreground" role="alert">{packageQuery.error instanceof Error ? packageQuery.error.message : "Failed to load workflow package."}</CardContent></Card> : null}
-      {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
-        <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full flex-wrap justify-start bg-muted/60 p-1">
-          {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
-        </TabsList>
-        <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
-        <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={setDraft} /></TabsContent>
-        <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
-        <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={setDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key, module: tool.module }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
-        <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={setDraft} /></TabsContent>
-        <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
-        <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
-        <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} importPackage={importPackage} packageId={packageId} selectedVersion={selectedVersion} versions={versions} workflowPackage={workflowPackage} /></TabsContent>
-      </Tabs>
+      {editorBlocker ? (
+        <ManifestBlockingState errors={editorBlocker.errors} loading={packageQuery.isFetching || manifestQuery.isFetching} onRetry={retryManifestLoad} title={editorBlocker.title} />
+      ) : (
+        <>
+          {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
+            <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full flex-wrap justify-start bg-muted/60 p-1">
+              {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+            </TabsList>
+            <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key, module: tool.module }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
+            <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
+            <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
+            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} selectedVersion={selectedVersion} versions={versions} workflowPackage={workflowPackage} /></TabsContent>
+          </Tabs>
+        </>
+      )}
     </div>
   );
 }

@@ -134,6 +134,13 @@ const workflowPackagesQueryKeys = {
   all: workflowPackagesRoot,
   detail: (packageId: IdParam) =>
     [...workflowPackagesRoot, "detail", normalizeId(packageId)] as const,
+  manifest: (packageId: IdParam, version?: number | string | null) => {
+    const normalizedVersion = normalizeOptionalVersion(version);
+    if (normalizedVersion === undefined) {
+      return [...workflowPackagesRoot, "manifest", normalizeId(packageId)] as const;
+    }
+    return [...workflowPackagesRoot, "manifest", normalizeId(packageId), { version: normalizedVersion }] as const;
+  },
   export: (packageId: IdParam, version?: number | string) => {
     const normalizedVersion = normalizeOptionalVersion(version);
     if (normalizedVersion === undefined) {
