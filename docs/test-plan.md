@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `main` at `e8fd5af`.
+> Status: Live automated-coverage reference for branch `main` at `10063aa`.
 
 ## Backend Quality Gates
 
@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, no-secret package import/export, model connections, global tools, package runtime behavior, native runtime tools, memory reports, global runs, DB upgrades, and removed-route guarantees.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, no-secret package import/export, model connections, global tools, package runtime behavior, native runtime tools, memory reports, trace metadata, global runs, DB upgrades, and removed-route guarantees.
 
 ## Frontend Quality Gates
 

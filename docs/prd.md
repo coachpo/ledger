@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `main` at `e8fd5af`.
+> Status: Live product-scope reference for branch `main` at `10063aa`.
 
 ## Product Summary
 
@@ -29,7 +29,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
 4. Workflow Packages: YAML package manifest authoring, package-local agents, output schemas, capability profiles, private MCP configs, workflow graphs, validation, preflight, import, export, and launch flows.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
-6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles.
+6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
 7. Runs: global run list/detail, package provenance, launch snapshots, reruns, and step replays.
 
 ## Success Criteria

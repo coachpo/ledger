@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `e8fd5af`.
+> Status: Live technical reference for branch `main` at `10063aa`.
 
 ## Overview
 
@@ -19,12 +19,13 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 - `backend/app/api/router.py` mounts preserved `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
 - `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, tools, and runs.
 - `backend/app/api/dependencies.py` is the service composition root.
+- `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting for persisted run metadata.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; Alembic is not the live migration authority.
 
 ## Key Backend Services
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, and report services own preserved product behavior.
-- Workflow package, model connection, tool catalog, and run services own platform authoring, validation, live bindings, and execution.
+- Workflow package, model connection, tool catalog, and run services own platform authoring, validation, live bindings, execution, reruns, and step replays.
 - Runtime tool and MCP boundaries live under `backend/app/agents/`; package-private MCP configs are validated and dispatched only through service-owned security boundaries.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
@@ -43,7 +44,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 - Package exports omit secrets, encrypted credential values, database ids, and run history.
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
 - Tools are read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
-- Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations` without relying on an external tracing system.
+- Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token.
 
 ## Data Flow Highlights
 

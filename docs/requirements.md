@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `e8fd5af`.
+> Status: Live requirements reference for branch `main` at `10063aa`.
 
 ## Purpose
 
@@ -49,15 +49,16 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs must stay inside immutable package versions.
 - Package exports must omit secrets, encrypted credential payloads, database ids, and run history.
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
-- Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
+- Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
 - Package launches must use the strict launch envelope and create queued global runs with immutable package provenance.
-- Runs must expose input, per-step outputs, final output, status, timing, token usage, trace ids, package provenance, rerun metadata, and step replay metadata.
+- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun metadata, and step replay metadata.
 
 ## Non-Functional Requirements
 
 - Backend stack: Python 3.13+, FastAPI, SQLAlchemy, Pydantic, PostgreSQL.
 - Frontend stack: React 19, Vite, TanStack Query, React Router, shadcn/ui, Vitest, Playwright.
 - Backend validation errors must use the shared error envelope.
+- Logfire telemetry must remain optional: traces enrich persisted run metadata when configured, but provider or run execution cannot require a Logfire token.
 - Application LLM calls must use official SDKs rather than raw provider HTTP paths.
 - CI must run version sync, backend quality, frontend quality, and frontend E2E.
 
