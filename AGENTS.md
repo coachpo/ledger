@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-08
-**Commit:** e8fd5af
+**Generated:** 2026-05-11
+**Commit:** 10063aa
 **Branch:** main
 
 ## OVERVIEW
@@ -11,7 +11,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 ## CHILD DOCS
 
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
-- `backend/app/core/AGENTS.md` — config, error envelope, normalization helpers
+- `backend/app/core/AGENTS.md` — config, error envelope, telemetry, normalization helpers
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries and dependency wiring
 - `backend/app/agents/AGENTS.md` — server tool catalog, native runtime tools, MCP security/runtime boundaries
@@ -65,7 +65,7 @@ ledger/
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus preserved `/api/v1` and current `/api/*` composition |
 | Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Tools, and Runs |
-| Backend runtime tools and MCP | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, memory writes |
+| Backend runtime tools, MCP, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, Logfire trace ids/spans, memory writes |
 | Backend preserved v1 flow | `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
@@ -83,6 +83,7 @@ ledger/
 | `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, tools, and runs |
 | `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs |
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template/package editor full-height layout |
+| `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
 
 ## CONVENTIONS
 
@@ -92,9 +93,10 @@ ledger/
 - Query invalidation is centralized in `frontend/src/lib/query-keys.ts`; ids are normalized to strings, and portfolio, template, report, and agent-platform caches live under dedicated namespaces.
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; canonical `source` origins are `compiled`, `uploaded`, `external`, and `agent`. `external` stays limited to true external user/API-created reports. Agent-created memory reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
+- Logfire is configured in `backend/app/core/telemetry.py` with `send_to_logfire="if-token-present"`; run execution stores formatted trace ids and per-invocation span ids but still works without a Logfire token.
 - Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Tools, and Runs.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside immutable package versions.
-- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Runtime tool keys such as `ledger.reports.lookup` and OpenAI function names such as `ledger_reports_lookup` stay unchanged.
+- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, report lookup, and report memory writes. Runtime tool keys such as `ledger.reports.lookup` and OpenAI function names such as `ledger_reports_lookup` stay unchanged.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
