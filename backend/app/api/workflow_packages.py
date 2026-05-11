@@ -12,6 +12,7 @@ from app.schemas.workflow_package import (
     WorkflowPackageLaunchCreateResponse,
     WorkflowPackageLaunchRead,
     WorkflowPackageListRead,
+    WorkflowPackageManifestRead,
     WorkflowPackageManifestRequest,
     WorkflowPackageRead,
     WorkflowPackageStatus,
@@ -101,6 +102,15 @@ def create_workflow_package_version(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
 ) -> WorkflowPackageRead:
     return service.create_version(package_id, payload)
+
+
+@router.get("/{package_id}/manifest", response_model=WorkflowPackageManifestRead)
+def get_workflow_package_manifest(
+    package_id: int,
+    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
+    version: Annotated[int | None, Query(ge=1)] = None,
+) -> WorkflowPackageManifestRead:
+    return service.get_manifest(package_id, version=version)
 
 
 @router.get("/{package_id}/export", response_model=None)

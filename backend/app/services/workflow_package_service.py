@@ -17,6 +17,7 @@ from app.schemas.workflow_package import (
     WorkflowPackageLaunchCreateResponse,
     WorkflowPackageLaunchRead,
     WorkflowPackageListRead,
+    WorkflowPackageManifestRead,
     WorkflowPackageManifestRequest,
     WorkflowPackageRead,
     WorkflowPackageStatus,
@@ -29,7 +30,10 @@ from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnos
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
-from app.services.workflow_package_export import export_workflow_package_yaml
+from app.services.workflow_package_export import (
+    build_workflow_package_manifest_hydration_payload,
+    export_workflow_package_yaml,
+)
 from app.services.workflow_package_manifest_compiler import (
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
@@ -69,6 +73,25 @@ class WorkflowPackageService:
 
     def get_package(self, package_id: int) -> WorkflowPackageRead:
         return self._to_package_read(self._get_package(package_id))
+
+    def get_manifest(
+        self,
+        package_id: int,
+        *,
+        version: int | None = None,
+    ) -> WorkflowPackageManifestRead:
+        package, package_version = self._resolve_package_version(package_id, version=version)
+        hydrated = build_workflow_package_manifest_hydration_payload(
+            {"packageDefinition": package_version.package_definition}
+        )
+        return WorkflowPackageManifestRead.model_validate(
+            {
+                "packageId": package.id,
+                "packageKey": package.key,
+                "version": package_version.version,
+                **hydrated,
+            }
+        )
 
     def validate_manifest(
         self,

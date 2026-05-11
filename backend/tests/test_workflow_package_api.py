@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.model_connection import ModelConnection
 from app.models.platform_reference import WorkflowPackageVersionModelConnection
-from app.models.workflow_package import WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
 _FIXTURE = (
     Path(__file__).resolve().parent
@@ -50,7 +53,102 @@ def _create_package(client: TestClient) -> dict[str, object]:
     return cast(dict[str, object], response.json())
 
 
-def test_create_export_import_package_without_secrets(
+def _assert_manifest_payload(
+    body: dict[str, object],
+    *,
+    package_id: int,
+    package_key: str,
+    version: int,
+) -> dict[str, object]:
+    assert body["packageId"] == package_id
+    assert body["packageKey"] == package_key
+    assert body["version"] == version
+    assert "compiledPlan" not in body
+
+    source = cast(str, body["manifestSource"])
+    assert source.startswith("apiVersion: ledger.workflowPackage/v1")
+    compiled = compile_workflow_package_manifest(source)
+    package_definition = cast(dict[str, object], body["packageDefinition"])
+    assert compiled["packageDefinition"] == package_definition
+    assert isinstance(body["manifestHash"], str)
+    assert isinstance(body["compiledHash"], str)
+    assert body["manifestHash"] == compiled["manifestHash"]
+    assert body["compiledHash"] == compiled["compiledHash"]
+
+    spec = cast(dict[str, object], package_definition["spec"])
+    assert cast(dict[str, object], package_definition["metadata"])["key"] == package_key
+
+    agents = cast(list[dict[str, object]], spec["agents"])
+    assert agents and agents[0]["modelConnection"] == "tradingagents_primary_model"
+    assert "modelConnectionId" not in json.dumps(package_definition, sort_keys=True)
+
+    output_schemas = cast(list[dict[str, object]], spec["outputSchemas"])
+    assert output_schemas and output_schemas[0]["key"] == "analyst_report"
+
+    capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    assert capability_profiles and capability_profiles[0]["key"] == "market_research_tools"
+
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
+    assert mcp_servers and mcp_servers[0]["key"] == "exa"
+    secret_refs = cast(dict[str, list[str]], mcp_servers[0]["secretRefs"])
+    assert secret_refs["query"] == ["exaApiKey"]
+
+    workflows = cast(list[dict[str, object]], spec["workflows"])
+    assert workflows and workflows[0]["key"] == "advisory_research"
+
+    forbidden_fragments = (
+        "secretPayload",
+        "apiKey",
+        "encrypted",
+        "modelConnectionId",
+        "outputSchemaId",
+        "capabilityId",
+        "mcpServerId",
+        "workflowPackageVersionId",
+        "packageVersionId",
+        "packageId: ",
+        "runHistory",
+        "runtime",
+        "dbId",
+        "sk-package-api-secret",
+    )
+    payload_text = json.dumps(body, sort_keys=True)
+    for forbidden in forbidden_fragments:
+        assert forbidden not in payload_text
+
+    return compiled
+
+
+def _workflow_description(package_definition: dict[str, object], workflow_key: str) -> str:
+    spec = cast(dict[str, object], package_definition["spec"])
+    workflows = cast(list[dict[str, object]], spec["workflows"])
+    for workflow in workflows:
+        if workflow.get("key") == workflow_key:
+            return cast(str, workflow["description"])
+    raise AssertionError(f"Workflow {workflow_key!r} not found")
+
+
+def _manifest_semantics(body: dict[str, object]) -> dict[str, object]:
+    return {
+        "packageDefinition": body["packageDefinition"],
+        "manifestHash": body["manifestHash"],
+        "compiledHash": body["compiledHash"],
+    }
+
+
+def _edited_workflow_manifest_source(source: str) -> str:
+    old_description = (
+        "description: Neutral advisory workflow fixture for package smoke coverage."
+    )
+    new_description = (
+        "description: Neutral advisory workflow fixture for package smoke coverage "
+        "after edit."
+    )
+    assert old_description in source
+    return source.replace(old_description, new_description, 1)
+
+
+def test_manifest_reads_return_hydrated_safe_package_resources(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -62,6 +160,24 @@ def test_create_export_import_package_without_secrets(
     assert created["status"] == "active"
     assert created["latestVersion"] == 1
     assert isinstance(created["manifestHash"], str)
+
+    latest_manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
+    assert latest_manifest.status_code == 200, latest_manifest.json()
+    latest_manifest_body = cast(dict[str, object], latest_manifest.json())
+    _ = _assert_manifest_payload(
+        latest_manifest_body,
+        package_id=cast(int, created["id"]),
+        package_key="tradingagents_advisory_research",
+        version=1,
+    )
+
+    explicit_manifest = client.get(
+        f"/api/workflow-packages/{created['id']}/manifest",
+        params={"version": 1},
+    )
+    assert explicit_manifest.status_code == 200, explicit_manifest.json()
+    explicit_manifest_body = cast(dict[str, object], explicit_manifest.json())
+    assert explicit_manifest_body == latest_manifest_body
 
     detail = client.get(f"/api/workflow-packages/{created['id']}")
     assert detail.status_code == 200, detail.json()
@@ -126,6 +242,179 @@ def test_create_export_import_package_without_secrets(
     assert versions.status_code == 200, versions.json()
     version_items = cast(list[dict[str, object]], versions.json()["items"])
     assert [item["version"] for item in version_items] == [2, 1]
+
+
+def test_manifest_round_trip_save_creates_immutable_next_version(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client)
+    package_id = cast(int, created["id"])
+
+    version_one = client.get(
+        f"/api/workflow-packages/{package_id}/manifest",
+        params={"version": 1},
+    )
+    assert version_one.status_code == 200, version_one.json()
+    version_one_body = cast(dict[str, object], version_one.json())
+    _ = _assert_manifest_payload(
+        version_one_body,
+        package_id=package_id,
+        package_key="tradingagents_advisory_research",
+        version=1,
+    )
+    version_one_definition = cast(dict[str, object], version_one_body["packageDefinition"])
+    assert _workflow_description(version_one_definition, "advisory_research") == (
+        "Neutral advisory workflow fixture for package smoke coverage."
+    )
+
+    edited_source = _edited_workflow_manifest_source(
+        cast(str, version_one_body["manifestSource"])
+    )
+    saved = client.patch(
+        f"/api/workflow-packages/{package_id}",
+        json={"manifestSource": edited_source},
+    )
+    assert saved.status_code == 200, saved.json()
+    saved_body = cast(dict[str, object], saved.json())
+    assert saved_body["id"] == package_id
+    assert saved_body["latestVersion"] == 2
+    assert saved_body["latestVersionId"] != created["latestVersionId"]
+
+    latest = client.get(f"/api/workflow-packages/{package_id}/manifest")
+    assert latest.status_code == 200, latest.json()
+    version_two_body = cast(dict[str, object], latest.json())
+    _ = _assert_manifest_payload(
+        version_two_body,
+        package_id=package_id,
+        package_key="tradingagents_advisory_research",
+        version=2,
+    )
+    assert saved_body["manifestHash"] == version_two_body["manifestHash"]
+    assert saved_body["compiledHash"] == version_two_body["compiledHash"]
+    assert version_two_body["manifestHash"] != version_one_body["manifestHash"]
+    assert version_two_body["compiledHash"] != version_one_body["compiledHash"]
+    version_two_definition = cast(dict[str, object], version_two_body["packageDefinition"])
+    assert _workflow_description(version_two_definition, "advisory_research") == (
+        "Neutral advisory workflow fixture for package smoke coverage after edit."
+    )
+
+    historical = client.get(
+        f"/api/workflow-packages/{package_id}/manifest",
+        params={"version": 1},
+    )
+    assert historical.status_code == 200, historical.json()
+    historical_body = cast(dict[str, object], historical.json())
+    _ = _assert_manifest_payload(
+        historical_body,
+        package_id=package_id,
+        package_key="tradingagents_advisory_research",
+        version=1,
+    )
+    assert _manifest_semantics(historical_body) == _manifest_semantics(version_one_body)
+    assert _manifest_semantics(historical_body) != _manifest_semantics(version_two_body)
+    historical_definition = cast(dict[str, object], historical_body["packageDefinition"])
+    assert _workflow_description(historical_definition, "advisory_research") == (
+        "Neutral advisory workflow fixture for package smoke coverage."
+    )
+
+    versions = client.get(f"/api/workflow-packages/{package_id}/versions")
+    assert versions.status_code == 200, versions.json()
+    version_items = cast(list[dict[str, object]], versions.json()["items"])
+    assert [item["version"] for item in version_items] == [2, 1]
+
+
+def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client)
+
+    with session_factory() as session:
+        package = session.get(WorkflowPackage, cast(int, created["id"]))
+        assert package is not None
+        original_version = session.get(WorkflowPackageVersion, cast(int, created["latestVersionId"]))
+        assert original_version is not None
+        polluted_definition = deepcopy(cast(dict[str, Any], original_version.package_definition))
+        spec = cast(dict[str, Any], polluted_definition["spec"])
+        agent = cast(list[dict[str, Any]], spec["agents"])[0]
+        agent.update(
+            {
+                "id": 101,
+                "agentId": 202,
+                "modelConnectionId": 303,
+                "secretPayload": {"apiKey": "sk-polluted-agent-secret"},
+                "password": "agent-password",
+            }
+        )
+        mcp_server = cast(list[dict[str, Any]], spec["mcpServers"])[0]
+        mcp_server.update(
+            {
+                "id": 404,
+                "mcpServerId": 505,
+                "secretPayload": {"apiKey": "sk-polluted-mcp-secret"},
+                "env": {"EXA_TOKEN": "live-token", "EMPTY": ""},
+                "headers": {"Authorization": "Bearer live-header"},
+                "auth": {"header": "X-Api-Key", "apiKey": "live-auth-key"},
+                "encrypted": {"ciphertext": "encrypted-bytes"},
+            }
+        )
+        polluted_version = WorkflowPackageVersion(
+            package_id=package.id,
+            version=2,
+            manifest_source=original_version.manifest_source,
+            manifest_hash=original_version.manifest_hash,
+            package_definition=polluted_definition,
+            compiled_plan=deepcopy(cast(dict[str, Any], original_version.compiled_plan)),
+            compiled_hash=original_version.compiled_hash,
+            validation_summary=deepcopy(original_version.validation_summary),
+        )
+        polluted_version.compiled_plan["runtime"] = {"debug": True}
+        session.add(polluted_version)
+        session.flush()
+        package.latest_version_id = polluted_version.id
+        session.commit()
+
+    latest_manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
+    assert latest_manifest.status_code == 200, latest_manifest.json()
+    latest_manifest_body = cast(dict[str, object], latest_manifest.json())
+    _ = _assert_manifest_payload(
+        latest_manifest_body,
+        package_id=cast(int, created["id"]),
+        package_key="tradingagents_advisory_research",
+        version=2,
+    )
+    latest_spec = cast(
+        dict[str, Any],
+        cast(dict[str, Any], latest_manifest_body["packageDefinition"])["spec"],
+    )
+    latest_mcp = cast(list[dict[str, Any]], latest_spec["mcpServers"])[0]
+    assert latest_mcp["secretRefs"] == {
+        "query": ["exaApiKey"],
+        "env": ["EXA_TOKEN"],
+        "headers": ["Authorization", "X-Api-Key"],
+    }
+    assert latest_mcp["requiredBindings"] == [
+        "env.EXA_TOKEN",
+        "header.Authorization",
+        "header.X-Api-Key",
+    ]
+
+    explicit_manifest = client.get(
+        f"/api/workflow-packages/{created['id']}/manifest",
+        params={"version": 1},
+    )
+    assert explicit_manifest.status_code == 200, explicit_manifest.json()
+    explicit_manifest_body = cast(dict[str, object], explicit_manifest.json())
+    _ = _assert_manifest_payload(
+        explicit_manifest_body,
+        package_id=cast(int, created["id"]),
+        package_key="tradingagents_advisory_research",
+        version=1,
+    )
+    assert explicit_manifest_body["version"] == 1
 
 
 def test_validate_manifest_reports_diagnostics_without_persisting(

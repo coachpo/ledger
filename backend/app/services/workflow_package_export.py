@@ -5,7 +5,8 @@ from copy import deepcopy
 from typing import Any, cast
 
 from app.schemas.workflow_package_manifest import WorkflowPackageManifest
-from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_definition
 
 _FORBIDDEN_EXPORT_KEYS = {
     "id",
@@ -36,12 +37,22 @@ _MCP_EXPORT_KEYS = {
 
 
 def export_workflow_package_yaml(package_payload: dict[str, Any]) -> str:
+    hydrated = build_workflow_package_manifest_hydration_payload(package_payload)
+    return cast(str, hydrated["manifestSource"])
+
+
+def build_workflow_package_manifest_hydration_payload(
+    package_payload: dict[str, Any],
+) -> dict[str, object]:
     safe_definition = build_safe_package_definition(package_payload)
-    result = decompile_workflow_package_manifest(
-        {"packageDefinition": safe_definition},
-        verify_lossless=True,
-    )
-    return result.source
+    result = decompile_workflow_package_definition(safe_definition, verify_lossless=True)
+    compiled = compile_workflow_package_manifest(result.source)
+    return {
+        "manifestSource": result.source,
+        "packageDefinition": result.package_definition,
+        "manifestHash": str(compiled["manifestHash"]),
+        "compiledHash": str(compiled["compiledHash"]),
+    }
 
 
 def build_safe_package_definition(package_payload: dict[str, Any]) -> dict[str, object]:
@@ -173,4 +184,8 @@ def _string_list(value: object) -> list[str]:
     return result
 
 
-__all__ = ["build_safe_package_definition", "export_workflow_package_yaml"]
+__all__ = [
+    "build_safe_package_definition",
+    "build_workflow_package_manifest_hydration_payload",
+    "export_workflow_package_yaml",
+]

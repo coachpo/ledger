@@ -57,6 +57,17 @@ def decompile_workflow_package_manifest(
     )
 
 
+def decompile_workflow_package_definition(
+    package_definition: dict[str, object],
+    *,
+    verify_lossless: bool = True,
+) -> WorkflowPackageManifestDecompileResult:
+    return decompile_workflow_package_manifest(
+        {"packageDefinition": package_definition},
+        verify_lossless=verify_lossless,
+    )
+
+
 def _extract_package_definition(package_payload: dict[str, Any]) -> dict[str, object]:
     raw_definition = package_payload.get("packageDefinition", package_payload)
     if not isinstance(raw_definition, dict):
@@ -122,5 +133,6 @@ def _dump_manifest_yaml(manifest: dict[str, object]) -> str:
 __all__ = [
     "WorkflowPackageManifestDecompileResult",
     "WorkflowPackageManifestDecompilerError",
+    "decompile_workflow_package_definition",
     "decompile_workflow_package_manifest",
 ]

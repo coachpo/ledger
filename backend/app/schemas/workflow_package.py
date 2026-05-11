@@ -76,6 +76,16 @@ class WorkflowPackageValidationRead(CamelModel):
     compiled_hash: str | None = None
 
 
+class WorkflowPackageManifestRead(CamelModel):
+    package_id: int
+    package_key: str
+    version: int = Field(ge=1)
+    manifest_source: str
+    package_definition: dict[str, Any]
+    manifest_hash: str
+    compiled_hash: str
+
+
 class WorkflowPackageRead(CamelModel):
     id: int
     key: str
@@ -165,6 +175,7 @@ __all__ = [
     "WorkflowPackageLaunchCreateResponse",
     "WorkflowPackageLaunchRead",
     "WorkflowPackageListRead",
+    "WorkflowPackageManifestRead",
     "WorkflowPackageManifestRequest",
     "WorkflowPackageMetadataRead",
     "WorkflowPackageRead",
