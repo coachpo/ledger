@@ -3,10 +3,10 @@
 > Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
-FastAPI + SQLAlchemy + Pydantic backend for portfolio tracking. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and the live request path now includes template compilation, report generation/upload/download, plus package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
+FastAPI + SQLAlchemy + Pydantic backend for portfolio tracking. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and the live request path includes template compilation, report generation/upload/download, plus package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
 ## CHILD DOCS
-- `app/core/AGENTS.md` — settings, error envelope, normalization helpers
+- `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
 - `app/api/AGENTS.md` — route-handler delegation and dependency wiring
 - `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries
@@ -19,7 +19,7 @@ FastAPI + SQLAlchemy + Pydantic backend for portfolio tracking. Routers stay thi
 ## STRUCTURE
 ```text
 backend/
-├── app/core/                   # config, errors, formatting, constants
+├── app/core/                   # config, errors, formatting, telemetry, constants
 ├── app/db/                     # engine/session/init + PostgreSQL upgrade helpers
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
@@ -36,9 +36,9 @@ backend/
 | API route handlers | `app/api/AGENTS.md` | route handler rules, service delegation, error translation |
 | Service construction | `app/api/dependencies.py` | constructs CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/model_connections.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Model Connections, Tools, and Runs |
-| Runtime tools / MCP | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py` | server-declared tools, native runtime dispatch, MCP snapshots, memory writes |
+| Runtime tools / MCP / traces | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, native runtime dispatch, MCP snapshots, Logfire trace ids/spans, memory writes |
 | Preserved v1 route families | `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
-| Shared config / errors / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, decimal/symbol/currency helpers |
+| Shared config / errors / telemetry / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, Logfire setup, decimal/symbol/currency helpers |
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades |
 | Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, runtime execution, memory reports, market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, memory metadata, serialization, camelCase aliasing |
@@ -51,11 +51,12 @@ backend/
 - Schemas inherit `CamelModel`; external JSON is camelCase, extra fields are forbidden, decimals serialize to strings, and datetimes serialize as UTC `Z` timestamps.
 - Shared normalization and decimal parsing live in `app/core/formatting.py`; use `normalize_symbol`, `normalize_currency`, `parse_decimal_string`, `to_utc`, and `utcnow` instead of ad-hoc helpers.
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.
+- Logfire setup and trace/span id formatting live in `app/core/telemetry.py`; run execution must keep working when no Logfire token is configured.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
 - Workflow package writes use YAML manifest parser/compiler/decompiler services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid.
 - Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Model Connections, Tools, and Runs; legacy/unmounted modules are cutover context only.
-- Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Keep runtime tool keys and OpenAI function names unchanged.
+- Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, report lookup, and report memory writes. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
 ## ANTI-PATTERNS

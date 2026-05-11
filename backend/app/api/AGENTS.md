@@ -12,7 +12,7 @@
 | Service construction | `dependencies.py` | request-scoped session plus CRUD, trading, market-data, template, report, model-connection, and agent-platform service factories |
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
-| Position routes | `positions.py` | portfolio-scoped position CRUD plus symbol lookup |
+| Position routes | `positions.py` | portfolio-scoped position CRUD, symbol lookup, CSV preview, and CSV commit imports |
 | Trading routes | `trading_operations.py` | simulated BUY/SELL/DIVIDEND/SPLIT operations |
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
