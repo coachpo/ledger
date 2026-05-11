@@ -3,13 +3,14 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`.
 
 ## OVERVIEW
-`src/components/forms/` contains cross-route dialog forms that are reused outside a single feature page. Current coverage is portfolio create/edit and template-driven report generation.
+`src/components/forms/` contains cross-route dialog forms that are reused outside a single feature page. Current coverage is portfolio create/edit, SecretInput, and template-driven report generation.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Portfolio create/edit dialog | `portfolio-form-dialog.tsx` | react-hook-form + Zod dialog for create/update portfolio flows |
 | Report generation dialog | `generate-report-dialog.tsx` | shared template selector plus runtime-input row editor |
+| Secret input helper | `secret-input.tsx` | write-only secret field UI used by model connection forms |
 | Focused tests | `portfolio-form-dialog.test.tsx` | dialog validation and submit behavior |
 
 ## CONVENTIONS

@@ -3,13 +3,13 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail page exposes progress, usage, trace linkage, and per-agent accordion drilldowns.
+`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail page exposes progress, usage, rerun/step-replay flows, trace linkage, and per-agent accordion drilldowns.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Run inventory | `list.tsx` | filters, polling monitor, progress, token usage, and timing summary |
-| Run detail | `detail.tsx` | progress cards, trace linkage, final output, and per-agent accordion |
+| Run detail | `detail.tsx` | progress cards, rerun/step-replay actions, trace linkage, final output, and per-agent accordion |
 | Run hooks | `../../hooks/use-runs.ts` | list/detail queries and refetch intervals |
 | Shared formatting | `../../lib/format.ts`, `../platform-resource-shared.tsx` | timestamps and JSON helpers |
 | Run types | `../../lib/types/run.ts` | run status, step-agent reads, and trace fields |

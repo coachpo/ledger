@@ -13,6 +13,7 @@
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
 | Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
+| Row-card inventory UI | `resource-row-card.tsx` | compact inventory cards used by portfolio, template, and run lists |
 
 ## CONVENTIONS
 - Keep components generic enough to serve multiple features; pass feature-specific labels, callbacks, and columns from callers.

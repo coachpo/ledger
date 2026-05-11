@@ -50,7 +50,7 @@ src/components/
 - `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
-- Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across agents, output schemas, and workflows.
+- Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across package-local agents, output schemas, capability profiles, MCP configs, and workflow graphs.
 - Shared field schemas in `shared/form-schemas.ts` should stay aligned with the current routed forms that consume them.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/platform-authoring/` owns pure TypeScript authoring helpers for package-local Workflow Package resources, output schemas, agents, workflows, generated input values, resource refs, validation issues, manifest parsing, and JSON serialization. It is intentionally React-free and request-free.
+`src/lib/platform-authoring/` owns pure TypeScript authoring helpers for Workflow Package manifests and package-local resources: agents, output schemas, capability profiles, private MCP configs, workflow graphs, generated input values, resource refs, validation issues, manifest parsing, and JSON serialization. It is intentionally React-free and request-free.
 
 ## STRUCTURE
 ```text

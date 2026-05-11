@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`.
 
 ## OVERVIEW
-`src/components/platform-authoring/` contains editor widgets for platform authoring: schema composition, generated schema-driven forms, workflow wiring, versioned resource selectors, and structured value inspection. Components are UI-only and are driven by `src/lib/platform-authoring/**` types/helpers.
+`src/components/platform-authoring/` contains editor widgets for package-local platform authoring: schema composition, generated schema-driven forms, workflow wiring, package resource selectors, and structured value inspection. Components are UI-only and are driven by `src/lib/platform-authoring/**` types/helpers.
 
 ## STRUCTURE
 ```text
@@ -11,7 +11,7 @@ platform-authoring/
 ├── generated-form/   # schema-driven value-entry form renderer
 ├── schema-composer/  # JSON Schema subset builder UI
 ├── workflow-builder/ # workflow step/wire-binding wizard UI
-├── refs/             # single/multi versioned resource selectors
+├── refs/             # single/multi package-resource selectors
 └── inspectors/       # read-only structured output displays
 ```
 
@@ -21,7 +21,7 @@ platform-authoring/
 | Generated input forms | `generated-form/schema-form.tsx` | schema IR + value-entry rendering and validation display |
 | Schema builder UI | `schema-composer/schema-composer.tsx` | object/array/scalar/discriminated-union editor surface |
 | Workflow builder UI | `workflow-builder/workflow-builder-wizard.tsx` | step composition, slots, wire bindings, validation feedback |
-| Resource selectors | `refs/*.tsx` | versioned agent/capability/MCP/output-schema ref inputs |
+| Resource selectors | `refs/*.tsx` | package-local agent/capability/MCP/output-schema ref inputs |
 | Structured previews | `inspectors/structured-value-inspector.tsx` | read-only nested value display |
 
 ## CONVENTIONS

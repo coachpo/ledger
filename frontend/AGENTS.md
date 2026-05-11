@@ -18,16 +18,16 @@ React 19 + Vite frontend with a flat route shell, TanStack Query for server stat
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/workflow-packages/AGENTS.md` — package list, editor, validation, preflight, launch, import, and export flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, delete flow, and connection-test flows
-- `src/pages/runs/AGENTS.md` — runs list, detail, package provenance, polling monitor, and trace-link views
+- `src/pages/runs/AGENTS.md` — runs list, detail, rerun/step-replay, package provenance, polling monitor, and trace-link views
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail route orchestration
 - `src/pages/templates/AGENTS.md` — template list/editor orchestration and preview rules
 - `src/pages/reports/AGENTS.md` — report list/detail flows, markdown edit/download behavior
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, feature UI, primitives
 - `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
-- `src/components/forms/AGENTS.md` — shared dialog forms for portfolios and report generation
+- `src/components/forms/AGENTS.md` — shared dialog forms, SecretInput, and report generation
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
-- `src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and field schemas
+- `src/components/shared/AGENTS.md` — reusable tables, ResourceRowCard, metrics, error boundaries, and field schemas
 - `src/components/portfolios/AGENTS.md` — portfolio feature sections, dialogs, tables, and trading forms
 
 ## STRUCTURE
@@ -69,7 +69,7 @@ frontend/
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
-- Workflow package editors are YAML-manifest editors with local package-resource editing, backend validation, compiled preview, preflight, launch, import, export, and schema-driven run-input forms.
+- Workflow package editors are YAML-manifest editors with local package-resource editing, backend validation, preflight, launch, import, export, and schema-driven run-input forms.
 - Agent-platform pages use dedicated hooks and route params to keep package CRUD, global Model Connections, global Tools reads, and Run inspection inside the routed page layer.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
 - Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.

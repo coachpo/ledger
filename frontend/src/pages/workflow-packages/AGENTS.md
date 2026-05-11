@@ -3,13 +3,13 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/workflow-packages/` contains the package-first authoring route family: package inventory, full-height YAML/resource editor, local package agents, output schemas, capability profiles, private MCP configs, workflow graph editing, validation, preflight, launch, import, and no-secret export flows.
+`src/pages/workflow-packages/` contains the package-first authoring route family: package inventory, full-height YAML/resource editor, local package agents, output schemas, capability profiles, private MCP configs, validation, preflight, launch, import, and no-secret export flows.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
 | Package inventory | `list.tsx` | active package list query, search, version summaries, import/create/delete entry points |
-| Package editor shell | `editor.tsx` | overview, agents, schemas, capability profiles, private MCP, workflows, preflight, launch, export/import tabs |
+| Package editor shell | `editor.tsx` | overview, agents, output schemas, capability profiles, private MCP, preflight, launch, export/import tabs |
 | Placeholder shell | `placeholder.tsx` | obsolete placeholder retained only if tests/imports still reference it |
 | Editor shell tests | `editor-shell.test.tsx` | full-height shell, tab routing, save/validation behavior |
 | Resource editor tests | `resource-editors.test.tsx` | local package resource editing and no retired global API imports |
