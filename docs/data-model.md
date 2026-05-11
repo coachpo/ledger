@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference for branch `main` at `e8fd5af`.
+> Status: Live data-model reference for branch `main` at `10063aa`.
 
 ## Overview
 
@@ -26,9 +26,9 @@ Ledger uses PostgreSQL for preserved portfolio/report/template data and the pack
 | `workflow_packages` | mutable package headers with stable key, name, description, status, draft source, and latest version pointers |
 | `workflow_package_versions` | immutable package manifests, package definitions, compiled plans, hashes, validation summaries, and launch timestamps |
 | `model_connections` | global saved provider/model endpoint config, encrypted API keys, health/test metadata, and archive state |
-| `runs` | global persisted package execution input/output, status, totals, trace ids, rerun/replay metadata, package provenance, and no-secret launch snapshots |
+| `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun/replay metadata, package provenance, and no-secret launch snapshots |
 | `run_steps` | persisted workflow step status, copied replay context, graph metadata, errors, and timestamps |
-| `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, and copied replay context |
+| `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, and copied replay context |
 
 Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are stored inside immutable package version JSON. They are not normalized into global authoring tables.
 

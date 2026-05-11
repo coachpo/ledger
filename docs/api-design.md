@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Live API reference for branch `main` at `e8fd5af`.
+> Status: Live API reference for branch `main` at `10063aa`.
 
 ## Conventions
 
@@ -32,11 +32,11 @@ Template/report series can be built by creating a template, previewing with `POS
 
 | Resource | Routes |
 |---|---|
-| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
+| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET/POST /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
-| Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, connection testing |
-| Tools | `GET /api/tools` for read-only server-declared tool metadata |
-| Runs | `GET /api/runs`, `GET /api/runs/{runId}`, rerun draft/create, and step replay draft/create routes |
+| Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
+| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, and memory-write tool metadata |
+| Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
 
 ## Platform Compatibility Notes
 
@@ -44,8 +44,8 @@ Template/report series can be built by creating a template, previewing with `POS
 - `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
 - Package exports omit secrets, encrypted credential payloads, database ids, and run history.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
-- Tools are global read-only metadata from `/api/tools`; runtime tool keys and OpenAI function names stay stable.
-- Runs persist package provenance including package id, package key, version, hash, workflow key, and no-secret launch snapshots.
+- Tools are global read-only metadata from `/api/tools`; native tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, reports, and report memory writes, while runtime tool keys and OpenAI function names stay stable.
+- Runs persist package provenance including package id, package key, version, hash, workflow key, no-secret launch snapshots, optional Logfire trace ids, and per-invocation span ids.
 
 ## HTTP Status Guidelines
 

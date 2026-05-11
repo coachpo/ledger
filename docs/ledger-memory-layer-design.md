@@ -1,6 +1,6 @@
 # Ledger Memory Layer Design Note
 
-> Status: Phase 1 memory layer notes for branch `main` at `e8fd5af`.
+> Status: Phase 1 memory layer notes for branch `main` at `10063aa`.
 
 ## Scope
 

@@ -1,6 +1,6 @@
 # Ledger Agent Platform Reference
 
-> Status: Live package-first platform reference for branch `main` at `e8fd5af`. This is the canonical platform reference.
+> Status: Live package-first platform reference for branch `main` at `10063aa`. This is the canonical platform reference.
 
 ## Scope
 
@@ -37,13 +37,13 @@ Read payloads and errors must mask or omit raw secrets. Blank API-key edits pres
 
 Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route.
 
-Runtime tool keys and OpenAI function names stay stable. Examples include `ledger.reports.lookup`, `ledger.reports.write`, and OpenAI function names such as `ledger_reports_lookup`.
+Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, report lookup, and report memory writes. Runtime tool keys and OpenAI function names stay stable. Examples include `ledger.market_data.ohlcv_lookup`, `ledger.indicators.lookup`, `ledger.reports.lookup`, `ledger.reports.write`, and OpenAI function names such as `ledger_reports_lookup`.
 
 ## Runs
 
 Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{version, workflowKey, parameters}`.
 
-Runs persist status, inputs, final output, token/timing totals, trace ids, rerun metadata, step replay metadata, and package provenance. Detail payloads include steps and agent invocations for review without requiring a separate tracing product.
+Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-invocation span ids, rerun metadata, step replay metadata, and package provenance. Detail payloads include steps and agent invocations for review without requiring a separate tracing product or Logfire token.
 
 Run memory artifacts are memory-domain payloads. They expose `memoryId`, `summary`, `status`, `createdAt`, provenance, graph metadata when available, and optional `auditLinks.report` for report open/download actions while reports remain the backing store.
 
@@ -61,6 +61,7 @@ Workflow Package and Template editor routes use the full-height layout region in
 backend/app/api/platform_router.py
 backend/app/api/{workflow_packages,model_connections,tools,runs}.py
 backend/app/services/{workflow_package_service,workflow_package_preflight,workflow_package_export,run_service,model_connection_service}.py
+backend/app/core/telemetry.py
 backend/app/services/workflow_package_manifest_{parser,compiler,decompiler}.py
 backend/app/schemas/{workflow_package,workflow_package_manifest,model_connection,run}.py
 backend/app/models/{workflow_package,model_connection,run,run_step,run_agent_invocation}.py
