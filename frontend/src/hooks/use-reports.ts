@@ -89,3 +89,15 @@ export function useDeleteReport() {
       queryClient.invalidateQueries({ queryKey: queryKeys.reports.list() }),
   });
 }
+
+export function useDeleteReports() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (slugs: SlugParam[]) => {
+      await Promise.all(slugs.map((slug) => deleteReport(slug)));
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports.list() }),
+  });
+}

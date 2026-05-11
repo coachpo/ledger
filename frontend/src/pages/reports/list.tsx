@@ -1,9 +1,27 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Eye, LayoutGrid, List, MoreHorizontal, Plus, Search, Trash2, Upload } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Eye,
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
-import { useCompileReport, useDeleteReport, useReports, useUploadReport } from "@/hooks/use-reports";
+import {
+  useCompileReport,
+  useDeleteReport,
+  useDeleteReports,
+  useReports,
+  useUploadReport,
+} from "@/hooks/use-reports";
 import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
@@ -11,6 +29,7 @@ import type { ReportRead } from "@/lib/types/report";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +48,37 @@ import { GenerateReportDialog } from "@/components/forms/generate-report-dialog"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type GroupByOption, GROUP_BY_LABELS, filterReports, getReportSourceLabel, groupReports, type SortField, type SortDirection, sortReports } from "@/lib/report-grouping";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  type GroupByOption,
+  GROUP_BY_LABELS,
+  filterReports,
+  getReportSourceLabel,
+  groupReports,
+  type SortField,
+  type SortDirection,
+  sortReports,
+} from "@/lib/report-grouping";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 
@@ -43,8 +88,9 @@ export function ReportListPage() {
   const templatesQuery = useTemplates();
   const compileMutation = useCompileReport();
   const deleteMutation = useDeleteReport();
+  const deleteReportsMutation = useDeleteReports();
   const uploadMutation = useUploadReport();
-  
+
   const [deleting, setDeleting] = useState<ReportRead | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -57,15 +103,35 @@ export function ReportListPage() {
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState<GroupByOption>("tags");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    new Set(),
+  );
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
   const templates = templatesQuery.data ?? [];
 
-  const filtered = useMemo(() => filterReports(reports, search), [reports, search]);
-  const grouped = useMemo(() => groupReports(filtered, groupBy), [filtered, groupBy]);
+  const filtered = useMemo(
+    () => filterReports(reports, search),
+    [reports, search],
+  );
+  const grouped = useMemo(
+    () => groupReports(filtered, groupBy),
+    [filtered, groupBy],
+  );
+  const selectedReports = useMemo(
+    () => reports.filter((report) => selectedSlugs.has(report.slug)),
+    [reports, selectedSlugs],
+  );
+  const selectedCount = selectedReports.length;
+  const allFilteredSelected =
+    filtered.length > 0 &&
+    filtered.every((report) => selectedSlugs.has(report.slug));
+  const someFilteredSelected = filtered.some((report) =>
+    selectedSlugs.has(report.slug),
+  );
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups((prev) => {
@@ -85,6 +151,37 @@ export function ReportListPage() {
     }
   };
 
+  const setReportsSelected = (
+    reportsToUpdate: ReportRead[],
+    selected: boolean,
+  ) => {
+    setSelectedSlugs((prev) => {
+      const next = new Set(prev);
+      reportsToUpdate.forEach((report) => {
+        if (selected) next.add(report.slug);
+        else next.delete(report.slug);
+      });
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedReports.length === 0) return;
+
+    const slugs = selectedReports.map((report) => report.slug);
+    const count = selectedReports.length;
+    deleteReportsMutation.mutate(slugs, {
+      onError: (error) =>
+        toast.error(
+          error instanceof Error ? error.message : "Failed to delete reports",
+        ),
+      onSuccess: () => {
+        toast.success(`${count} ${count === 1 ? "report" : "reports"} deleted`);
+        setSelectedSlugs(new Set());
+      },
+    });
+  };
+
   const handleGenerate = ({
     inputs,
     templateId,
@@ -92,18 +189,25 @@ export function ReportListPage() {
     inputs: Record<string, string>;
     templateId: string;
   }) => {
-    compileMutation.mutate({
-      templateId,
-      input: { inputs },
-    }, {
-      onError: (error) =>
-        toast.error(error instanceof Error ? error.message : "Failed to generate report"),
-      onSuccess: (report) => {
-        toast.success(`Report "${report.name}" generated`);
-        setGenerateOpen(false);
-        navigate(`/reports/${report.slug}`);
+    compileMutation.mutate(
+      {
+        templateId,
+        input: { inputs },
       },
-    });
+      {
+        onError: (error) =>
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to generate report",
+          ),
+        onSuccess: (report) => {
+          toast.success(`Report "${report.name}" generated`);
+          setGenerateOpen(false);
+          navigate(`/reports/${report.slug}`);
+        },
+      },
+    );
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,7 +240,9 @@ export function ReportListPage() {
         if (status === 409) {
           toast.error("A report with this slug already exists");
         } else {
-          toast.error(error instanceof Error ? error.message : "Failed to upload report");
+          toast.error(
+            error instanceof Error ? error.message : "Failed to upload report",
+          );
         }
       },
       onSuccess: (report) => {
@@ -162,7 +268,11 @@ export function ReportListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setUploadOpen(true)}
+          >
             <Upload className="mr-1 size-3.5" /> Upload Report
           </Button>
           <Button size="sm" onClick={() => setGenerateOpen(true)}>
@@ -183,7 +293,10 @@ export function ReportListPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
+        <Select
+          value={groupBy}
+          onValueChange={(v) => setGroupBy(v as GroupByOption)}
+        >
           <SelectTrigger className="h-8 w-[140px] text-xs">
             <SelectValue placeholder="Group by" />
           </SelectTrigger>
@@ -195,15 +308,70 @@ export function ReportListPage() {
             ))}
           </SelectContent>
         </Select>
-        <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as "cards" | "table")}>
-          <ToggleGroupItem value="cards" aria-label="Cards view" className="h-8 w-8 px-0">
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(v) => v && setViewMode(v as "cards" | "table")}
+        >
+          <ToggleGroupItem
+            value="cards"
+            aria-label="Cards view"
+            className="h-8 w-8 px-0"
+          >
             <LayoutGrid className="size-3.5" />
           </ToggleGroupItem>
-          <ToggleGroupItem value="table" aria-label="Table view" className="h-8 w-8 px-0">
+          <ToggleGroupItem
+            value="table"
+            aria-label="Table view"
+            className="h-8 w-8 px-0"
+          >
             <List className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
+
+      {filtered.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <Checkbox
+              aria-label="Select all shown reports"
+              checked={
+                allFilteredSelected
+                  ? true
+                  : someFilteredSelected
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) =>
+                setReportsSelected(filtered, checked === true)
+              }
+            />
+            Select all shown
+          </label>
+          {selectedCount > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {selectedCount} selected
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={deleteReportsMutation.isPending}
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 className="size-3.5" /> Delete selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedSlugs(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {reportsQuery.isPending ? (
@@ -222,25 +390,37 @@ export function ReportListPage() {
             </CardContent>
           </Card>
         ) : null}
-        {!reportsQuery.isPending && !reportsQuery.isError && reports.length === 0 ? (
+        {!reportsQuery.isPending &&
+        !reportsQuery.isError &&
+        reports.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
-              No reports yet. Generate one from a template or upload a markdown file.
+              No reports yet. Generate one from a template or upload a markdown
+              file.
             </CardContent>
           </Card>
         ) : null}
-        {!reportsQuery.isPending && !reportsQuery.isError && reports.length > 0 && filtered.length === 0 ? (
+        {!reportsQuery.isPending &&
+        !reportsQuery.isError &&
+        reports.length > 0 &&
+        filtered.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
               No reports match your search.
             </CardContent>
           </Card>
         ) : null}
-        
+
         {Array.from(grouped.entries()).map(([groupLabel, groupReports]) => {
           const isCollapsed = collapsedGroups.has(groupLabel);
           const showHeader = groupBy !== "none" || grouped.size > 1;
           const sortedReports = sortReports(groupReports, sortField, sortDir);
+          const allGroupSelected =
+            sortedReports.length > 0 &&
+            sortedReports.every((report) => selectedSlugs.has(report.slug));
+          const someGroupSelected = sortedReports.some((report) =>
+            selectedSlugs.has(report.slug),
+          );
 
           return (
             <Collapsible
@@ -251,24 +431,52 @@ export function ReportListPage() {
             >
               {showHeader && (
                 <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="flex w-full items-center justify-start gap-2 p-0 hover:bg-transparent">
-                    {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                    <span className="text-xs font-medium text-muted-foreground">{groupLabel}</span>
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex w-full items-center justify-start gap-2 p-0 hover:bg-transparent"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="size-4" />
+                    ) : (
+                      <ChevronDown className="size-4" />
+                    )}
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {groupLabel}
+                    </span>
+                    <Badge
+                      variant="secondary"
+                      className="h-5 px-1.5 text-[10px]"
+                    >
                       {groupReports.length}
                     </Badge>
                   </Button>
                 </CollapsibleTrigger>
               )}
-              <CollapsibleContent className={viewMode === "cards" ? "space-y-2" : ""}>
+              <CollapsibleContent
+                className={viewMode === "cards" ? "space-y-2" : ""}
+              >
                 {viewMode === "cards" ? (
                   sortedReports.map((report) => {
                     const sourceLabel = getReportSourceLabel(report.source);
-                    const sourceBadgeVariant = report.source === "uploaded" ? "secondary" : "outline";
+                    const sourceBadgeVariant =
+                      report.source === "uploaded" ? "secondary" : "outline";
+                    const isSelected = selectedSlugs.has(report.slug);
 
                     return (
-                      <Card key={report.id} className="transition-colors hover:bg-accent/50">
+                      <Card
+                        key={report.id}
+                        data-state={isSelected ? "selected" : undefined}
+                        className="transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted"
+                      >
                         <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
+                          <Checkbox
+                            aria-label={`Select report ${report.name}`}
+                            checked={isSelected}
+                            onCheckedChange={(checked) =>
+                              setReportsSelected([report], checked === true)
+                            }
+                          />
                           <div
                             className="min-w-0 flex-1 cursor-pointer space-y-0.5"
                             onClick={() => navigate(`/reports/${report.slug}`)}
@@ -277,7 +485,10 @@ export function ReportListPage() {
                               <CardTitle className="text-sm font-medium tracking-tight">
                                 {report.name}
                               </CardTitle>
-                              <Badge variant={sourceBadgeVariant} className="h-4 px-1.5 text-[10px]">
+                              <Badge
+                                variant={sourceBadgeVariant}
+                                className="h-4 px-1.5 text-[10px]"
+                              >
                                 {sourceLabel}
                               </Badge>
                             </div>
@@ -298,12 +509,19 @@ export function ReportListPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => navigate(`/reports/${report.slug}`)}>
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    navigate(`/reports/${report.slug}`)
+                                  }
+                                >
                                   <Eye className="size-3.5" />
                                   View
                                 </DropdownMenuItem>
                                 <DropdownMenuItem asChild>
-                                  <a href={downloadReportUrl(report.slug)} download>
+                                  <a
+                                    href={downloadReportUrl(report.slug)}
+                                    download
+                                  >
                                     <Download className="size-3.5" />
                                     Download
                                   </a>
@@ -327,34 +545,93 @@ export function ReportListPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
-                            Name {sortField === "name" && (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead className="w-9">
+                            <Checkbox
+                              aria-label={`Select reports in ${groupLabel}`}
+                              checked={
+                                allGroupSelected
+                                  ? true
+                                  : someGroupSelected
+                                    ? "indeterminate"
+                                    : false
+                              }
+                              onCheckedChange={(checked) =>
+                                setReportsSelected(
+                                  sortedReports,
+                                  checked === true,
+                                )
+                              }
+                            />
                           </TableHead>
-                          <TableHead className="cursor-pointer" onClick={() => handleSort("source")}>
-                            Source {sortField === "source" && (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead
+                            className="cursor-pointer"
+                            onClick={() => handleSort("name")}
+                          >
+                            Name{" "}
+                            {sortField === "name" &&
+                              (sortDir === "asc" ? "↑" : "↓")}
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer"
+                            onClick={() => handleSort("source")}
+                          >
+                            Source{" "}
+                            {sortField === "source" &&
+                              (sortDir === "asc" ? "↑" : "↓")}
                           </TableHead>
                           <TableHead>Tags</TableHead>
-                          <TableHead className="cursor-pointer" onClick={() => handleSort("createdAt")}>
-                            Created {sortField === "createdAt" && (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead
+                            className="cursor-pointer"
+                            onClick={() => handleSort("createdAt")}
+                          >
+                            Created{" "}
+                            {sortField === "createdAt" &&
+                              (sortDir === "asc" ? "↑" : "↓")}
                           </TableHead>
                           <TableHead className="w-[50px]"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {sortedReports.map((report) => {
-                          const sourceLabel = getReportSourceLabel(report.source);
-                          const sourceBadgeVariant = report.source === "uploaded" ? "secondary" : "outline";
-                          
+                          const sourceLabel = getReportSourceLabel(
+                            report.source,
+                          );
+                          const sourceBadgeVariant =
+                            report.source === "uploaded"
+                              ? "secondary"
+                              : "outline";
+                          const isSelected = selectedSlugs.has(report.slug);
+
                           return (
-                            <TableRow key={report.id}>
-                              <TableCell 
-                                className="font-medium cursor-pointer" 
-                                onClick={() => navigate(`/reports/${report.slug}`)}
+                            <TableRow
+                              key={report.id}
+                              data-state={isSelected ? "selected" : undefined}
+                            >
+                              <TableCell>
+                                <Checkbox
+                                  aria-label={`Select report ${report.name}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) =>
+                                    setReportsSelected(
+                                      [report],
+                                      checked === true,
+                                    )
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell
+                                className="font-medium cursor-pointer"
+                                onClick={() =>
+                                  navigate(`/reports/${report.slug}`)
+                                }
                               >
                                 {report.name}
                               </TableCell>
                               <TableCell>
-                                <Badge variant={sourceBadgeVariant} className="h-4 px-1.5 text-[10px]">
+                                <Badge
+                                  variant={sourceBadgeVariant}
+                                  className="h-4 px-1.5 text-[10px]"
+                                >
                                   {sourceLabel}
                                 </Badge>
                               </TableCell>
@@ -377,12 +654,19 @@ export function ReportListPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={() => navigate(`/reports/${report.slug}`)}>
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        navigate(`/reports/${report.slug}`)
+                                      }
+                                    >
                                       <Eye className="size-3.5" />
                                       View
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>
-                                      <a href={downloadReportUrl(report.slug)} download>
+                                      <a
+                                        href={downloadReportUrl(report.slug)}
+                                        download
+                                      >
                                         <Download className="size-3.5" />
                                         Download
                                       </a>
@@ -420,12 +704,22 @@ export function ReportListPage() {
         }}
         onConfirm={() => {
           if (!deleting) return;
-          deleteMutation.mutate(deleting.slug, {
+          const slug = deleting.slug;
+          deleteMutation.mutate(slug, {
             onError: (error) =>
-              toast.error(error instanceof Error ? error.message : "Failed to delete report"),
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to delete report",
+              ),
             onSuccess: () => {
               toast.success("Report deleted");
               setDeleting(null);
+              setSelectedSlugs((prev) => {
+                const next = new Set(prev);
+                next.delete(slug);
+                return next;
+              });
             },
           });
         }}

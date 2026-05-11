@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Download,
   FileCheck2,
-  Layers3,
   Loader2,
   PlayCircle,
   Plus,
@@ -1293,7 +1292,6 @@ export function WorkflowPackageEditorPage() {
         <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
         <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} importPackage={importPackage} packageId={packageId} selectedVersion={selectedVersion} versions={versions} workflowPackage={workflowPackage} /></TabsContent>
       </Tabs>
-      <Card className="border-border/70 bg-card/70"><CardContent className="flex flex-wrap items-center gap-3 p-4 text-xs text-muted-foreground"><Layers3 className="size-4 text-primary" aria-hidden="true" /><span>Package-private resources remain tabbed inside this shell; standalone global authoring routes stay retired.</span></CardContent></Card>
     </div>
   );
 }

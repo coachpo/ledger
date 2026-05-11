@@ -278,7 +278,7 @@ export function WorkflowPackagesListPage() {
           />
           <Input
             aria-label="Search workflow packages"
-            className="h-8 bg-background/70 pl-8 text-xs"
+            className="h-8 pl-8 text-xs"
             placeholder="Search packages by name, key, status, or version..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}

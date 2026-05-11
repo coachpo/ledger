@@ -10,6 +10,7 @@ import { ReportListPage } from "./list";
 const {
   compileReportMutateMock,
   deleteReportMutateMock,
+  deleteReportsMutateMock,
   updateReportMutateAsyncMock,
   uploadReportMutateMock,
   useReportMock,
@@ -18,6 +19,7 @@ const {
 } = vi.hoisted(() => ({
   compileReportMutateMock: vi.fn(),
   deleteReportMutateMock: vi.fn(),
+  deleteReportsMutateMock: vi.fn(),
   updateReportMutateAsyncMock: vi.fn(),
   uploadReportMutateMock: vi.fn(),
   useReportMock: vi.fn(),
@@ -33,11 +35,21 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/use-reports", () => ({
-  useCompileReport: () => ({ isPending: false, mutate: compileReportMutateMock }),
+  useCompileReport: () => ({
+    isPending: false,
+    mutate: compileReportMutateMock,
+  }),
   useDeleteReport: () => ({ isPending: false, mutate: deleteReportMutateMock }),
+  useDeleteReports: () => ({
+    isPending: false,
+    mutate: deleteReportsMutateMock,
+  }),
   useReport: (...args: unknown[]) => useReportMock(...args),
   useReports: () => useReportsMock(),
-  useUpdateReport: () => ({ isPending: false, mutateAsync: updateReportMutateAsyncMock }),
+  useUpdateReport: () => ({
+    isPending: false,
+    mutateAsync: updateReportMutateAsyncMock,
+  }),
   useUploadReport: () => ({ isPending: false, mutate: uploadReportMutateMock }),
 }));
 
@@ -93,6 +105,7 @@ describe("report source labels", () => {
   beforeEach(() => {
     compileReportMutateMock.mockReset();
     deleteReportMutateMock.mockReset();
+    deleteReportsMutateMock.mockReset();
     updateReportMutateAsyncMock.mockReset();
     uploadReportMutateMock.mockReset();
     useReportMock.mockReset();
@@ -118,11 +131,45 @@ describe("report source labels", () => {
     expect(within(table).queryByText("External")).not.toBeInTheDocument();
   });
 
+  it("supports selecting multiple reports and batch deleting them", () => {
+    useReportsMock.mockReturnValue(
+      queryResult([
+        buildReport(),
+        buildReport({
+          id: 43,
+          name: "Uploaded Snapshot",
+          slug: "uploaded_snapshot",
+          source: "uploaded",
+        }),
+      ]),
+    );
+
+    renderReportRoute("/reports");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all shown reports/i }),
+    );
+    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /download selected/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+
+    expect(deleteReportsMutateMock).toHaveBeenCalledWith(
+      ["agent_memory_snapshot", "uploaded_snapshot"],
+      expect.any(Object),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
   it("renders Agent source badge on report detail", () => {
     renderReportRoute("/reports/agent_memory_snapshot");
 
     expect(useReportMock).toHaveBeenCalledWith("agent_memory_snapshot");
-    expect(screen.getAllByRole("heading", { name: "Memory Snapshot" })[0]).toBeVisible();
+    expect(
+      screen.getAllByRole("heading", { name: "Memory Snapshot" })[0],
+    ).toBeVisible();
     expect(screen.getByText("Agent")).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
   });
