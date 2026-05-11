@@ -884,7 +884,7 @@ function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: rea
                     <CommandEmpty>{toolsLoading ? "Loading tools..." : "No catalog tools match."}</CommandEmpty>
                     <CommandGroup>
                       {tools.map((tool) => (
-                        <CommandItem key={tool.key} value={`${tool.displayName} ${tool.key} ${tool.description} ${tool.module}`} onSelect={() => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, !item.toolKeys.includes(tool.key)) })))}>
+                        <CommandItem className="data-[selected=true]:bg-transparent data-[selected=true]:text-foreground data-[selected=true]:hover:bg-accent data-[selected=true]:hover:text-accent-foreground" key={tool.key} value={`${tool.displayName} ${tool.key} ${tool.description} ${tool.module}`} onSelect={() => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, !item.toolKeys.includes(tool.key)) })))}>
                           <Checkbox aria-label={`Select tool ${tool.displayName}`} checked={profile.toolKeys.includes(tool.key)} onCheckedChange={(checked) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, checked === true) })))} />
                           <div className="min-w-0"><p className="truncate text-sm">{tool.displayName}</p><p className="break-all text-xs text-muted-foreground">{tool.key}</p></div>
                         </CommandItem>
