@@ -70,9 +70,7 @@ def request_validation_to_details(exc: RequestValidationError) -> list[dict[str,
                 "field": (
                     ".".join(field_parts)
                     if field_parts
-                    else str(location[-1])
-                    if location
-                    else "request"
+                    else str(location[-1]) if location else "request"
                 ),
                 "issue": str(error.get("msg", "Invalid value")),
             }
