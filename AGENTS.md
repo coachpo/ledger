@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-11
-**Commit:** 10063aa
+**Generated:** 2026-05-12
+**Commit:** 987686e
 **Branch:** main
 
 ## OVERVIEW
@@ -20,6 +20,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, manifests, and run metadata
 - `backend/app/repositories/AGENTS.md` — query/repository patterns, report metadata filters, and runtime lookups
 - `backend/tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, and regression coverage
+- `docs/AGENTS.md` — live docs ownership, status metadata, and obsolete-content rules
 - `frontend/AGENTS.md` — frontend architecture, router shell, agent-platform surfaces, and validation workflow
 - `frontend/e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
 - `frontend/scripts/AGENTS.md` — Playwright backend/frontend startup helpers
@@ -142,4 +143,4 @@ ledger/
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/` surviving set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `ledger-agent-platform.md`, and phase-1 `ledger-memory-layer-design.md`. Live code remains source of truth, and no nested AGENTS docs belong there.
+- `docs/AGENTS.md` governs the surviving docs set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `ledger-agent-platform.md`, and phase-1 `ledger-memory-layer-design.md`. Live code remains source of truth for docs updates.
