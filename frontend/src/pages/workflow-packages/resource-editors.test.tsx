@@ -165,10 +165,11 @@ describe("WorkflowPackageEditorPage resource editors", () => {
 
     clickTab("Private MCP");
     fireEvent.click(screen.getByRole("button", { name: "Add Private MCP" }));
-    expect(screen.getByTestId(/package-private-mcp-card-/)).toHaveTextContent("Required secret binding names");
+    expect(screen.getByTestId(/package-private-mcp-card-/)).toHaveTextContent("Environment values");
+    expect(screen.getByText("Configure package-local MCP transport values inline for the selected transport.")).toBeVisible();
   });
 
-  it("saves local resource changes through workflow package update without secret values", async () => {
+  it("saves stdio private MCP inline env values through workflow package update", async () => {
     renderEditor();
 
     clickTab("Private MCP");
@@ -177,21 +178,72 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     fireEvent.change(screen.getByLabelText("Private MCP 1 name"), { target: { value: "Market MCP" } });
     fireEvent.change(screen.getByLabelText("Private MCP 1 command"), { target: { value: "market-mcp" } });
     fireEvent.change(screen.getByLabelText("Private MCP 1 args"), { target: { value: '["--token", "${MARKET_DATA_API_KEY}"]' } });
-    fireEvent.click(screen.getByRole("button", { name: "Add Binding" }));
-    fireEvent.change(screen.getByLabelText("Required secret binding 1"), { target: { value: "MARKET_DATA_API_KEY" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add Env" }));
+    fireEvent.change(screen.getByLabelText("Private MCP 1 env key 1"), { target: { value: "MARKET_DATA_API_KEY" } });
+    fireEvent.change(screen.getByLabelText("Private MCP 1 env value 1"), { target: { value: "${MARKET_DATA_API_KEY}" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save package draft" }));
 
     expect(updatePackageMock).toHaveBeenCalledWith({
       packageId: "42",
-      payload: expect.objectContaining({ manifestSource: expect.stringContaining("MARKET_DATA_API_KEY_SECRET") }),
+      payload: expect.objectContaining({ manifestSource: expect.stringContaining("env:") }),
     });
     const payload = updatePackageMock.mock.calls[0][0].payload.manifestSource as string;
-    expect(payload).not.toContain("sk-");
-    expect(payload).not.toContain("apiKey:");
-    expect(payload).toContain("secretRefs:");
-    expect(payload).toContain("requiredBindings:");
+    expect(payload).toContain("env:");
+    expect(payload).toContain("MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY}");
+    expect(payload).toContain("command: market-mcp");
+    expect(payload).toContain("args:");
     expect(createPackageMock).not.toHaveBeenCalled();
+  });
+
+  it("renders transport-specific inline value editors for private MCP servers", () => {
+    useWorkflowPackageManifestMock.mockReturnValue({
+      data: {
+        ...manifestRead,
+        manifestSource: `apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: hydrated_market_review
+  name: Hydrated Market Review
+  description: Manifest source description
+spec:
+  inputs:
+    type: object
+  mcpServers:
+    - key: stdio_market
+      name: Stdio Market
+      transport: stdio
+      command: market-mcp
+      args: []
+      env:
+        MARKET_DATA_API_KEY: \${MARKET_DATA_API_KEY}
+      toolKeys: []
+    - key: http_market
+      name: HTTP Market
+      transport: http-sse
+      url: https://example.com/mcp
+      headers:
+        Authorization: Bearer \${MARKET_DATA_API_KEY}
+      query:
+        apiKey: \${MARKET_DATA_API_KEY}
+      toolKeys: []
+`,
+      },
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    renderEditor();
+
+    clickTab("Private MCP");
+    expect(screen.getByLabelText("Private MCP 1 env key 1")).toHaveValue("MARKET_DATA_API_KEY");
+    expect(screen.queryByLabelText("Private MCP 1 header key 1")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Private MCP 2 header key 1")).toHaveValue("Authorization");
+    expect(screen.getByLabelText("Private MCP 2 query key 1")).toHaveValue("apiKey");
+    expect(screen.queryByLabelText("Private MCP 2 env key 1")).not.toBeInTheDocument();
   });
 
   it("preserves workflow subtrees when saving unrelated tabs", async () => {
@@ -271,7 +323,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     }).mockResolvedValueOnce({
       compiledHash: null,
       compiledPlan: null,
-      diagnostics: [{ column: null, line: null, message: "Binding name is required", path: "spec.mcpServers[1].requiredBindings[0]", severity: "error" }],
+      diagnostics: [{ column: null, line: null, message: "Environment value is required", path: "spec.mcpServers[1].env.MARKET_DATA_API_KEY", severity: "error" }],
       manifestHash: null,
       metadata: null,
       packageDefinition: null,
@@ -292,13 +344,14 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     clickTab("Private MCP");
     fireEvent.click(screen.getByRole("button", { name: "Add Private MCP" }));
     fireEvent.click(screen.getByRole("button", { name: "Add Private MCP" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Add Binding" })[1]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Add Env" })[1]);
+    fireEvent.change(screen.getByLabelText("Private MCP 2 env key 1"), { target: { value: "MARKET_DATA_API_KEY" } });
     clickTab("Overview");
     fireEvent.click(screen.getByRole("button", { name: "Run package preflight" }));
 
     expect(await screen.findByRole("tab", { name: "Private MCP tab" })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByText("Binding name is required")).toBeVisible();
-    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-field", "spec.mcpServers[1].requiredBindings[0]"));
+    expect(await screen.findByText("Environment value is required")).toBeVisible();
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-field", "spec.mcpServers[1].env.MARKET_DATA_API_KEY"));
   });
 
   it("does not import retired global authoring API clients", async () => {

@@ -19,12 +19,6 @@ import type {
   WorkflowPackageRead,
 } from "@/lib/types/workflow-package";
 
-export function sanitizePreviewText(text: string): string {
-  return text
-    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
-    .replace(/(apiKey|secretPayload|encrypted|password):[^\n]*/gi, "$1: [redacted]");
-}
-
 type WorkflowPackageImportDialogProps = {
   buttonAriaLabel?: string;
   buttonTestId?: string;
@@ -71,7 +65,7 @@ export function WorkflowPackageImportDialog(props: WorkflowPackageImportDialogPr
         <DialogHeader>
           <DialogTitle>Import workflow package YAML</DialogTitle>
           <DialogDescription>
-            Paste a package manifest. Secret-like values are redacted from preview text and should not be included.
+            Paste a package manifest. Package-private MCP inline values are imported exactly as shown.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -86,7 +80,7 @@ export function WorkflowPackageImportDialog(props: WorkflowPackageImportDialogPr
               aria-label="Import package YAML"
               className="min-h-64 font-mono text-xs"
               value={importSource}
-              onChange={(event) => setImportSource(sanitizePreviewText(event.target.value))}
+              onChange={(event) => setImportSource(event.target.value)}
             />
           </div>
         </div>

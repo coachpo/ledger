@@ -149,10 +149,12 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package", workflowPackageVersion: 7 });
     importPackageMock.mockResolvedValue({ ...packageRead, warnings: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }] });
-    global.fetch = vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve("apiVersion: ledger.workflowPackage/v1\nmetadata:\n  key: market_review_package\nsecretPayload: sk-live-secret\n"),
+      text: () => Promise.resolve("apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
     }) as unknown as typeof fetch;
+    global.fetch = fetchMock;
+    window.fetch = fetchMock;
     useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
     useWorkflowPackageManifestMock.mockReturnValue({ data: manifestRead, error: null, isError: false, isFetching: false, isPending: false, refetch: vi.fn() });
     useWorkflowPackageVersionsMock.mockReturnValue({ data: { items: [{ compiledHash: "compiled", createdAt: "2026-05-05T10:00:00Z", id: 70, launchedAt: null, manifestHash: "manifest", packageId: 42, validationSummary: {}, version: 7, warnings: [] }] }, error: null, isError: false, isPending: false });
@@ -203,44 +205,47 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
   });
 
-  it("auto-loads export preview and imports sanitized YAML without rendering secret-like strings", async () => {
+  it("auto-loads export preview and imports package YAML with inline private MCP values", async () => {
     renderEditor();
     clickTab("Import / Export");
 
     expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
-    const preview = await screen.findByLabelText("Sanitized package YAML preview");
+    expect(screen.getByText(/package-private mcp inline values remain visible in the manifest/i)).toBeVisible();
+    const preview = await screen.findByLabelText("Package YAML preview");
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("[redacted]"));
-    expect((preview as HTMLTextAreaElement).value).not.toContain("sk-live-secret");
+    await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret"));
+    expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
+    expect((preview as HTMLTextAreaElement).value).toContain("apiKey: sk-live-query-secret");
     fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
+    expect(screen.getByText(/package-private mcp inline values are imported exactly as shown/i)).toBeVisible();
     fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: { value: "metadata:\n  key: imported\npassword: sk-import-secret\n" },
+      target: { value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - headers:\n        Authorization: Bearer sk-import-secret\n" },
     });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /import package/i }));
 
     await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
-      manifestSource: expect.stringContaining("[redacted]"),
+      manifestSource: expect.stringContaining("sk-import-secret"),
       mode: "create",
     }));
     expect(await screen.findByText(/missing model connection primary_model/i)).toBeVisible();
-    expect(screen.queryByText(/sk-import-secret/i)).not.toBeInTheDocument();
   });
 
-  it("keeps import input and preview redacted for secret-like strings", async () => {
+  it("keeps import input as pasted for inline private MCP values", async () => {
     renderEditor();
     clickTab("Import / Export");
 
     fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
     fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: { value: "metadata:\n  key: imported\nsecretToken: sk-import-secret\n" },
+      target: { value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - headers:\n        Authorization: Bearer sk-import-secret\n" },
     });
 
     const importEditor = screen.getByLabelText("Import package YAML") as HTMLTextAreaElement;
-    expect(importEditor.value).not.toContain("sk-import-secret");
-    expect(importEditor.value).toContain("[redacted]");
+    expect(importEditor.value).toContain("sk-import-secret");
+    expect(importEditor.value).toContain("Authorization: Bearer sk-import-secret");
 
-    const preview = await screen.findByLabelText("Sanitized package YAML preview");
-    expect((preview as HTMLTextAreaElement).value).not.toContain("sk-import-secret");
-    expect((preview as HTMLTextAreaElement).value).toContain("[redacted]");
+    const preview = await screen.findByLabelText("Package YAML preview");
+    expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret");
+    expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
+    expect((preview as HTMLTextAreaElement).value).toContain("apiKey: sk-live-query-secret");
   });
 });

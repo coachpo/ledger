@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/workflow-packages/` contains the package-first authoring route family: package inventory, full-height YAML/resource editor, local package agents, output schemas, capability profiles, private MCP configs, validation, preflight, launch, import, and no-secret export flows.
+`src/pages/workflow-packages/` contains the package-first authoring route family: package inventory, full-height YAML/resource editor, local package agents, output schemas, capability profiles, private MCP configs, validation, preflight, launch, import, and export flows with inline `env`, `headers`, and `query` values.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -13,7 +13,7 @@
 | Placeholder shell | `placeholder.tsx` | obsolete placeholder retained only if tests/imports still reference it |
 | Editor shell tests | `editor-shell.test.tsx` | full-height shell, tab routing, save/validation behavior |
 | Resource editor tests | `resource-editors.test.tsx` | local package resource editing and no retired global API imports |
-| Preflight / launch tests | `preflight-launch-export.test.tsx` | blocking diagnostics, generated launch form labels/help text, import/export secret safety |
+| Preflight / launch tests | `preflight-launch-export.test.tsx` | blocking diagnostics, generated launch form labels/help text, import/export contract coverage |
 | Package list tests | `list.test.tsx` | search, hard-delete, and version-summary behavior |
 
 ## CONVENTIONS
@@ -21,7 +21,7 @@
 - Package-private resources stay tabbed inside the package editor and never call retired global authoring APIs.
 - Backend validation diagnostics should deep-link to package-local editor fields when possible.
 - Launch forms are generated from workflow input schemas and honor supported `title`/`description` metadata.
-- Exports must be previewed and imported through sanitized YAML paths that remove secrets and database ids.
+- Exports must be previewed and imported through YAML paths that keep private MCP `env`, `headers`, and `query` values inline and still omit database ids.
 
 ## ANTI-PATTERNS
 - Do not add standalone `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` pages.
@@ -38,3 +38,5 @@ pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workfl
 - `editor.tsx` is intentionally large because it composes every package authoring tab and launch/export flow.
 - `list.tsx` shows current packages only; delete actions permanently remove packages and rely on query invalidation for list refresh.
 - `placeholder.tsx` is not routed by `src/routes.ts`; treat it as leftover placeholder code unless a test explicitly imports it.
+rts it.
+nless a test explicitly imports it.

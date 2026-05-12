@@ -88,7 +88,6 @@ import {
   diagnosticToEditorTarget,
   mapBackendDiagnostics,
   packageDraftFromManifestSource,
-  previewContainsSecretValue,
   validateWorkflowPackageDraft,
   workflowPackageDraftToManifestSource,
   type PackageAgentDraft,
@@ -108,7 +107,7 @@ import type {
   WorkflowPackageRead,
   WorkflowPackageVersionRead,
 } from "@/lib/types/workflow-package";
-import { WorkflowPackageImportDialog, sanitizePreviewText } from "./workflow-package-import-dialog";
+import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
 type WorkflowPackageEditorTab =
   | "overview"
@@ -908,7 +907,7 @@ function PrivateMcpTab({ draft, issues, onChange }: { draft: WorkflowPackageDraf
   const updateServers = (mcpServers: PackageMcpServerDraft[]) => onChange({ ...draft, spec: { ...draft.spec, mcpServers } });
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-private-mcp-tab">
-      <CardHeader className="border-b pb-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Private MCP servers</CardTitle><CardDescription>Store config shape and required secret binding names only. Secret values are never rendered or saved.</CardDescription></div><Button type="button" size="sm" onClick={() => updateServers([...draft.spec.mcpServers, createPackageMcpServerDraft()])}><Plus data-icon="inline-start" />Add Private MCP</Button></div></CardHeader>
+      <CardHeader className="border-b pb-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Private MCP servers</CardTitle><CardDescription>Configure package-local MCP transport values inline for the selected transport.</CardDescription></div><Button type="button" size="sm" onClick={() => updateServers([...draft.spec.mcpServers, createPackageMcpServerDraft()])}><Plus data-icon="inline-start" />Add Private MCP</Button></div></CardHeader>
       <CardContent className="space-y-4 p-4">
         <ResourceChecks issues={issues} tab="private-mcp" />
         {draft.spec.mcpServers.map((server, index) => (
@@ -918,7 +917,41 @@ function PrivateMcpTab({ draft, issues, onChange }: { draft: WorkflowPackageDraf
               <div className="grid gap-3 md:grid-cols-3"><div className="space-y-2"><Label>Local key</Label><Input aria-label={`Private MCP ${index + 1} local key`} data-field={`spec.mcpServers[${index}].key`} value={server.key} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, key: event.target.value })))} /></div><div className="space-y-2"><Label>Name</Label><Input aria-label={`Private MCP ${index + 1} name`} value={server.name} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, name: event.target.value })))} /></div><div className="space-y-2"><Label>Transport</Label><Select value={server.transport} onValueChange={(transport: "stdio" | "http-sse") => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, transport })))}><SelectTrigger aria-label={`Private MCP ${index + 1} transport`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="stdio">stdio</SelectItem><SelectItem value="http-sse">http-sse</SelectItem></SelectContent></Select></div></div>
               <div className="space-y-2"><Label>Description</Label><Input aria-label={`Private MCP ${index + 1} description`} value={server.description} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, description: event.target.value })))} /></div>
               {server.transport === "stdio" ? <div className="grid gap-3 md:grid-cols-2"><div className="space-y-2"><Label>Command</Label><Input aria-label={`Private MCP ${index + 1} command`} value={server.command} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, command: event.target.value })))} /></div><div className="space-y-2"><Label>Args JSON array</Label><Textarea aria-label={`Private MCP ${index + 1} args`} rows={3} value={server.argsText} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, argsText: event.target.value })))} /></div></div> : <div className="space-y-2"><Label>URL</Label><Input aria-label={`Private MCP ${index + 1} URL`} value={server.url} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, url: event.target.value })))} /></div>}
-              <BindingEditor bindings={server.requiredBindings} issues={issues} serverIndex={index} onChange={(requiredBindings) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, requiredBindings })))} />
+              {server.transport === "stdio" ? (
+                <StringMapEditor
+                  addLabel="Add Env"
+                  emptyLabel="No environment values configured."
+                  issues={issues}
+                  label="Environment values"
+                  map={server.env}
+                  name="env"
+                  onChange={(env) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, env })))}
+                  serverIndex={index}
+                />
+              ) : (
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <StringMapEditor
+                    addLabel="Add Header"
+                    emptyLabel="No header values configured."
+                    issues={issues}
+                    label="Header values"
+                    map={server.headers}
+                    name="headers"
+                    onChange={(headers) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, headers })))}
+                    serverIndex={index}
+                  />
+                  <StringMapEditor
+                    addLabel="Add Query"
+                    emptyLabel="No query values configured."
+                    issues={issues}
+                    label="Query values"
+                    map={server.query}
+                    name="query"
+                    onChange={(query) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, query })))}
+                    serverIndex={index}
+                  />
+                </div>
+              )}
               <Button type="button" size="sm" variant="outline" onClick={() => updateServers(draft.spec.mcpServers.filter((_, itemIndex) => itemIndex !== index))}>Remove private MCP</Button>
             </CardContent>
           </Card>
@@ -929,12 +962,62 @@ function PrivateMcpTab({ draft, issues, onChange }: { draft: WorkflowPackageDraf
   );
 }
 
-function BindingEditor({ bindings, issues, onChange, serverIndex }: { bindings: string[]; issues: readonly WorkflowPackageEditorIssue[]; onChange: (bindings: string[]) => void; serverIndex: number }) {
+type PrivateMcpMapName = "env" | "headers" | "query";
+
+function replaceStringMapEntry(map: Record<string, string>, currentKey: string, nextKey: string, nextValue: string): Record<string, string> {
+  const entries = Object.entries(map);
+  const nextEntries = entries.map(([key, value]) => key === currentKey ? [nextKey, nextValue] : [key, value]);
+  return Object.fromEntries(nextEntries);
+}
+
+function StringMapEditor({
+  addLabel,
+  emptyLabel,
+  issues,
+  label,
+  map,
+  name,
+  onChange,
+  serverIndex,
+}: {
+  addLabel: string;
+  emptyLabel: string;
+  issues: readonly WorkflowPackageEditorIssue[];
+  label: string;
+  map: Record<string, string>;
+  name: PrivateMcpMapName;
+  onChange: (map: Record<string, string>) => void;
+  serverIndex: number;
+}) {
+  const entries = Object.entries(map);
+  const displayName = name === "headers" ? "header" : name;
   return (
-    <div className="space-y-3 rounded-lg border p-3" data-testid="private-mcp-required-bindings">
-      <div className="flex items-center justify-between gap-3"><div><Label>Required secret binding names</Label><p className="text-sm text-muted-foreground">Use placeholders such as OPENAI_API_KEY. Do not enter secret values.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onChange([...bindings, ""])}>Add Binding</Button></div>
-      {bindings.length === 0 ? <p className="text-sm text-muted-foreground">No bindings required.</p> : null}
-      {bindings.map((binding, index) => <div key={index} className="flex gap-2"><Input aria-label={`Required secret binding ${index + 1}`} data-field={`spec.mcpServers[${serverIndex}].requiredBindings[${index}]`} value={binding} placeholder="SECRET_BINDING_NAME" onChange={(event) => onChange(updateArrayItem(bindings, index, () => event.target.value))} /><FieldMessage message={issueMessageForField(issues, `spec.mcpServers[${serverIndex}].requiredBindings[${index}]`)} /><Button type="button" size="icon" variant="outline" aria-label={`Remove required secret binding ${index + 1}`} onClick={() => onChange(bindings.filter((_, itemIndex) => itemIndex !== index))}><Trash2 /></Button></div>)}
+    <div className="space-y-3 rounded-lg border p-3" data-testid={`private-mcp-${name}-values`}>
+      <div className="flex items-center justify-between gap-3"><Label>{label}</Label><Button type="button" size="sm" variant="outline" onClick={() => onChange({ ...map, "": "" })}>{addLabel}</Button></div>
+      {entries.length === 0 ? <p className="text-sm text-muted-foreground">{emptyLabel}</p> : null}
+      {entries.map(([key, value], index) => {
+        const field = `spec.mcpServers[${serverIndex}].${name}.${key}`;
+        return (
+          <div key={`${name}-${index}-${key}`} className="grid gap-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto]">
+            <Input
+              aria-label={`Private MCP ${serverIndex + 1} ${displayName} key ${index + 1}`}
+              data-field={field}
+              placeholder={name === "env" ? "MARKET_DATA_API_KEY" : name === "headers" ? "Authorization" : "apiKey"}
+              value={key}
+              onChange={(event) => onChange(replaceStringMapEntry(map, key, event.target.value, value))}
+            />
+            <Input
+              aria-label={`Private MCP ${serverIndex + 1} ${displayName} value ${index + 1}`}
+              data-field={field}
+              placeholder={name === "headers" ? "Bearer ${TOKEN}" : "${VALUE}"}
+              value={value}
+              onChange={(event) => onChange(replaceStringMapEntry(map, key, key, event.target.value))}
+            />
+            <Button type="button" size="icon" variant="outline" aria-label={`Remove Private MCP ${serverIndex + 1} ${displayName} ${index + 1}`} onClick={() => onChange(Object.fromEntries(entries.filter((_, itemIndex) => itemIndex !== index)))}><Trash2 /></Button>
+            <FieldMessage message={issueMessageForField(issues, field)} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1110,8 +1193,6 @@ function ExportsTab(props: {
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
-  const previewText = sanitizePreviewText(exportPreview);
-  const secretLeak = previewContainsSecretValue(previewText);
   const exportHref = packageId && workflowPackage && workflowPackage.latestVersion !== null
     ? exportWorkflowPackageUrl(packageId, selectedVersion)
     : undefined;
@@ -1128,7 +1209,7 @@ function ExportsTab(props: {
     }
 
     let active = true;
-    setExportPreview("Loading sanitized package export preview...");
+    setExportPreview("Loading package export preview...");
     void fetch(exportHref)
       .then(async (response) => {
         if (!response.ok) {
@@ -1138,7 +1219,7 @@ function ExportsTab(props: {
       })
       .then((text) => {
         if (active) {
-          setExportPreview(sanitizePreviewText(text));
+          setExportPreview(text);
         }
       })
       .catch((error) => {
@@ -1174,14 +1255,13 @@ function ExportsTab(props: {
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-exports-tab">
       <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download no-secret YAML, then import package manifests as new packages or new versions.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download and import package manifests as plain YAML. Package-private MCP inline values remain visible in the manifest.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
         <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={workflowPackage?.key ?? draft.metadata.key} /><DetailMetric label="Export Version" value={versionLabel(selectedVersion ?? workflowPackage?.latestVersion)} /><DetailMetric label="Available Versions" value={String(versions.length)} /></div>
         {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
-        {secretLeak ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Potential secret value detected</AlertTitle><AlertDescription>The preview was redacted. Package exports must contain binding names only, not secret values.</AlertDescription></Alert> : null}
-        <Textarea aria-label="Sanitized package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={previewText} />
-        {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{sanitizePreviewText(stringifyJson(warning))}</li>)}</ul></AlertDescription></Alert> : null}
+        <Textarea aria-label="Package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={exportPreview} />
+        {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{stringifyJson(warning)}</li>)}</ul></AlertDescription></Alert> : null}
       </CardContent>
     </Card>
   );

@@ -121,7 +121,7 @@ async function openPackageRow(page: Page, packageKey: string) {
   await page.getByLabel("Search workflow packages").fill(packageKey);
   const row = page.getByTestId(`workflow-packages-row-${packageKey}`);
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: /open package/i }).click();
+  await row.getByRole("button", { name: `Open package E2E Package ${packageKey}` }).click();
   await expect(page.getByTestId("workflow-package-editor-shell")).toBeVisible();
 }
 
@@ -160,7 +160,7 @@ test.describe("Workflow packages", () => {
     expect(exportResponse.ok()).toBeTruthy();
     const exported = await exportResponse.text();
     expect(exported).toContain(`modelConnection: ${modelKey}`);
-    for (const forbidden of ["apiKey", "secretPayload", "encrypted", "password", "modelConnectionId", "outputSchemaId"]) {
+    for (const forbidden of ["secretPayload", "encrypted", "password", "modelConnectionId", "outputSchemaId"]) {
       expect(exported).not.toContain(forbidden);
     }
 

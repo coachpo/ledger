@@ -62,7 +62,10 @@ async function createOrVersionPackage(request: APIRequestContext, manifestSource
   if (create.status() === 201) {
     return create.json();
   }
-  expect(create.status()).toBe(409);
+  const createBody = await create.text();
+  if (create.status() !== 409) {
+    throw new Error(`Unexpected workflow package create status ${create.status()}: ${createBody}`);
+  }
   const imported = await request.post(`${PLATFORM_API_BASE}/workflow-packages/import`, {
     data: { manifestSource, mode: "createVersion" },
   });
@@ -123,29 +126,31 @@ test.describe("TradingAgents workflow-package smoke", () => {
     expect(detail.finalOutput).toMatchObject({ posture: "deterministic posture" });
 
     const serialized = JSON.stringify(detail);
-    for (const forbidden of ["sk-e2e", "apiKey", "secretPayload", "encrypted", "password"]) {
+    expect(serialized).toContain("tradingagents_advisory_research");
+    for (const forbidden of ["secretPayload", "encrypted", "password"]) {
       expect(serialized).not.toContain(forbidden);
     }
   });
 
-  test("reports missing model binding through a separate preflight negative path", async ({ request }) => {
+  test("reports missing model binding through a separate create validation path", async ({ request }) => {
     const suffix = Date.now();
     const missingModelKey = `missing_tradingagents_model_${suffix}`;
     const manifestSource = fixtureSource()
       .replace("key: tradingagents_advisory_research", `key: e2e_missing_model_${suffix}`)
       .replace(/modelConnection: tradingagents_primary_model/g, `modelConnection: ${missingModelKey}`);
 
-    const workflowPackage = await createOrVersionPackage(request, manifestSource);
-    const preflight = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${workflowPackage.id}/preflight`, {
-      params: { workflowKey: "advisory_research" },
-    });
-    expect(preflight.ok()).toBeTruthy();
-    const body = await preflight.json();
+    const create = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, { data: { manifestSource } });
+    expect(create.status()).toBe(422);
+    const body = await create.json();
 
-    expect(body.ready).toBe(false);
-    expect(body.blockingErrors).toContainEqual({
-      field: "spec.agents[0].modelConnection",
-      issue: `Model connection '${missingModelKey}' was not found`,
-    });
+    expect(body).toMatchObject({ code: "validation_error" });
+    expect(body.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "spec.agents[0].modelConnection",
+          issue: `Model connection '${missingModelKey}' was not found`,
+        }),
+      ]),
+    );
   });
 });

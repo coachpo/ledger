@@ -383,7 +383,7 @@ describe("WorkflowPackagesListPage", () => {
     );
     fireEvent.change(screen.getByLabelText("Import package YAML"), {
       target: {
-        value: "metadata:\n  key: imported\napiKey: sk-import-secret\n",
+        value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - env:\n        API_KEY: sk-import-secret\n",
       },
     });
     fireEvent.click(
@@ -394,12 +394,12 @@ describe("WorkflowPackagesListPage", () => {
 
     await waitFor(() =>
       expect(importPackageMock).toHaveBeenCalledWith({
-        manifestSource: expect.not.stringContaining("sk-import-secret"),
+        manifestSource: expect.stringContaining("sk-import-secret"),
         mode: "create",
       }),
     );
     expect(importPackageMock.mock.calls[0][0].manifestSource).toContain(
-      "[redacted]",
+      "API_KEY: sk-import-secret",
     );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/77");
   });
