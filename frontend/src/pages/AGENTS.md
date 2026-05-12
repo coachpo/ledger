@@ -13,6 +13,8 @@
 ## OVERVIEW
 `src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, preserved portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 src/pages/

@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/pages/model-connections/` contains the routed saved-model-endpoint inventory and editor. These pages manage OpenAI-family base URLs, credentials, model ids, reasoning effort, timeout defaults, delete behavior, and connection-test feedback for agents that reference saved connections.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

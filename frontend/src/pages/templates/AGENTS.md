@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/pages/templates/` contains the template inventory route and the full-height template editor. This is the frontend entry point for template CRUD, live compile preview, placeholder browsing, runtime inputs, markdown formatting, and template-driven report generation.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

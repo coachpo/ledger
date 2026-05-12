@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/shared/` holds reusable components and helper schemas used across multiple feature areas. This folder is where cross-feature UI belongs once it has real reuse beyond a single route.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

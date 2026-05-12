@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/templates/` contains template-editor support widgets: placeholder browsing, grouped placeholder display, and inline runtime-input controls.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

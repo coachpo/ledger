@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/portfolios/` owns the portfolio workspace sections, dialogs, tables, and trading forms that support the routed list/detail pages. It also contains a couple of generic dialogs that other features reuse.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

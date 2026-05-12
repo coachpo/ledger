@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/pages/reports/` owns the routed report inventory and report detail experience: generate from template, upload markdown, group/search/sort the inventory, render/edit content, download files, and delete snapshots.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

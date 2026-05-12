@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/ui/` contains shadcn/ui-style primitives, shared variant helpers, sidebar shell primitives, and tiny UI-only utilities such as `cn()` and `useSidebar()`. Treat this folder as presentational infrastructure, not a feature layer.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the preserved portfolio/template/report routes and the current agent-platform routes.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 src/components/
