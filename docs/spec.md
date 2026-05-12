@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `10063aa`.
+> Status: Live technical reference for branch `main` at `987686e`.
 
 ## Overview
 

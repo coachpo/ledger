@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `main` at `10063aa`.
+> Status: Live product-scope reference for branch `main` at `987686e`.
 
 ## Product Summary
 
