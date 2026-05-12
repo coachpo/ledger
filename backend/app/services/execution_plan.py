@@ -67,6 +67,9 @@ class PackagePrivateMcpConfig:
     command: str | None
     args: tuple[str, ...]
     url: str | None
+    env: dict[str, str]
+    headers: dict[str, str]
+    query: dict[str, str]
     tool_keys: tuple[str, ...]
 
 

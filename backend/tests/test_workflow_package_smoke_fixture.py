@@ -59,7 +59,6 @@ EXPECTED_TOOL_KEYS = {
     "ledger.reports.write",
 }
 FORBIDDEN_EXPORT_FIELDS = {
-    "apiKey",
     "secretPayload",
     "encrypted",
     "modelConnectionId",
@@ -113,6 +112,8 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     serialized = _canonical_json(compiled) + roundtrip.source
     for forbidden_field in FORBIDDEN_EXPORT_FIELDS:
         assert forbidden_field not in serialized
+    assert "secretRefs" not in serialized
+    assert "requiredBindings" not in serialized
 
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
@@ -137,12 +138,14 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
             "name": "Exa Web Search",
             "description": "Remote Exa MCP server for advisory information search.",
             "transport": "http-sse",
-            "args": [],
             "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+            "headers": {"Authorization": "Bearer exa-inline-token"},
+            "query": {"exaApiKey": "exa-inline-key"},
             "toolKeys": ["web_search_exa"],
-            "secretRefs": {"query": ["exaApiKey"]},
         }
     ]
+    assert "Authorization: Bearer exa-inline-token" in roundtrip.source
+    assert "exaApiKey: exa-inline-key" in roundtrip.source
     agents_by_key = {
         str(agent["key"]): agent for agent in cast(list[dict[str, object]], spec["agents"])
     }

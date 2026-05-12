@@ -168,8 +168,13 @@ def _value_for_schema(name: str, schema: object) -> Any:
     return f"smoke {name}"
 
 
-def _allow_http_sse_url(url: str, *, resolved_hosts: object = None) -> str:
-    del resolved_hosts
+def _allow_http_sse_url(
+    url: str,
+    *,
+    resolved_hosts: object = None,
+    allowed_secret_query_param_names: object = None,
+) -> str:
+    del resolved_hosts, allowed_secret_query_param_names
     return url
 
 
@@ -212,6 +217,8 @@ def test_tradingagents_package_smoke_calls_private_exa_mcp(
     call = mcp_client.calls[0]
     boundary = cast(McpClientBoundary, call["boundary"])
     assert boundary.key == "exa"
-    assert boundary.url == "https://mcp.exa.ai/mcp?tools=web_search_exa"
+    assert boundary.url == "https://mcp.exa.ai/mcp?tools=web_search_exa&exaApiKey=exa-inline-key"
+    assert boundary.headers == {"Authorization": "Bearer exa-inline-token"}
+    assert boundary.query == {"exaApiKey": "exa-inline-key"}
     assert call["tool_name"] == "web_search_exa"
     assert call["arguments"] == {"query": _MCP_QUERY}

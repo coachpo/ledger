@@ -59,6 +59,8 @@ def _assert_manifest_payload(
     package_id: int,
     package_key: str,
     version: int,
+    expected_mcp_headers: dict[str, str] | None = None,
+    expected_mcp_query: dict[str, str] | None = None,
 ) -> dict[str, object]:
     assert body["packageId"] == package_id
     assert body["packageKey"] == package_key
@@ -67,6 +69,14 @@ def _assert_manifest_payload(
 
     source = cast(str, body["manifestSource"])
     assert source.startswith("apiVersion: ledger.workflowPackage/v1")
+    if expected_mcp_headers is None:
+        expected_mcp_headers = {"Authorization": "Bearer exa-inline-token"}
+    if expected_mcp_query is None:
+        expected_mcp_query = {"exaApiKey": "exa-inline-key"}
+    for value in expected_mcp_headers.values():
+        assert value in source
+    for value in expected_mcp_query.values():
+        assert value in source
     compiled = compile_workflow_package_manifest(source)
     package_definition = cast(dict[str, object], body["packageDefinition"])
     assert compiled["packageDefinition"] == package_definition
@@ -90,15 +100,18 @@ def _assert_manifest_payload(
 
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     assert mcp_servers and mcp_servers[0]["key"] == "exa"
-    secret_refs = cast(dict[str, list[str]], mcp_servers[0]["secretRefs"])
-    assert secret_refs["query"] == ["exaApiKey"]
+    assert mcp_servers[0]["headers"] == expected_mcp_headers
+    assert mcp_servers[0]["query"] == expected_mcp_query
+    assert "secretRefs" not in mcp_servers[0]
+    assert "requiredBindings" not in mcp_servers[0]
 
     workflows = cast(list[dict[str, object]], spec["workflows"])
     assert workflows and workflows[0]["key"] == "advisory_research"
 
     forbidden_fragments = (
         "secretPayload",
-        "apiKey",
+        "secretRefs",
+        "requiredBindings",
         "encrypted",
         "modelConnectionId",
         "outputSchemaId",
@@ -193,13 +206,18 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     assert export.headers["content-type"].startswith("application/yaml")
     assert "apiVersion: ledger.workflowPackage/v1" in export.text
     assert "modelConnection: tradingagents_primary_model" in export.text
+    assert "headers:" in export.text
+    assert "query:" in export.text
+    assert "Authorization: Bearer exa-inline-token" in export.text
+    assert "exaApiKey: exa-inline-key" in export.text
     for forbidden in (
         "modelConnectionId",
         "outputSchemaId",
         "capabilityId",
         "mcpServerId",
         "secretPayload",
-        "apiKey",
+        "secretRefs",
+        "requiredBindings",
         "encrypted",
         "sk-package-api-secret",
     ):
@@ -355,9 +373,11 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
                 "id": 404,
                 "mcpServerId": 505,
                 "secretPayload": {"apiKey": "sk-polluted-mcp-secret"},
-                "env": {"EXA_TOKEN": "live-token", "EMPTY": ""},
-                "headers": {"Authorization": "Bearer live-header"},
-                "auth": {"header": "X-Api-Key", "apiKey": "live-auth-key"},
+                "headers": {
+                    "Authorization": "Bearer live-header",
+                    "X-Api-Key": "live-api-key",
+                },
+                "query": {"exaApiKey": "live-query-key"},
                 "encrypted": {"ciphertext": "encrypted-bytes"},
             }
         )
@@ -385,22 +405,24 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
         package_id=cast(int, created["id"]),
         package_key="tradingagents_advisory_research",
         version=2,
+        expected_mcp_headers={
+            "Authorization": "Bearer live-header",
+            "X-Api-Key": "live-api-key",
+        },
+        expected_mcp_query={"exaApiKey": "live-query-key"},
     )
     latest_spec = cast(
         dict[str, Any],
         cast(dict[str, Any], latest_manifest_body["packageDefinition"])["spec"],
     )
     latest_mcp = cast(list[dict[str, Any]], latest_spec["mcpServers"])[0]
-    assert latest_mcp["secretRefs"] == {
-        "query": ["exaApiKey"],
-        "env": ["EXA_TOKEN"],
-        "headers": ["Authorization", "X-Api-Key"],
+    assert latest_mcp["headers"] == {
+        "Authorization": "Bearer live-header",
+        "X-Api-Key": "live-api-key",
     }
-    assert latest_mcp["requiredBindings"] == [
-        "env.EXA_TOKEN",
-        "header.Authorization",
-        "header.X-Api-Key",
-    ]
+    assert latest_mcp["query"] == {"exaApiKey": "live-query-key"}
+    assert "secretRefs" not in latest_mcp
+    assert "requiredBindings" not in latest_mcp
 
     explicit_manifest = client.get(
         f"/api/workflow-packages/{created['id']}/manifest",

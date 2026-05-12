@@ -13,8 +13,12 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
+from app.services.agent_execution_service import AgentExecutionService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
-from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
+from tests.test_workflow_package_manifest_parser import (
+    _valid_http_sse_package_manifest_source,
+    _valid_package_manifest_source,
+)
 
 
 def _compiled_plan(source: str | None = None) -> dict[str, Any]:
@@ -70,6 +74,47 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
         ("ledger.market_data.quote_lookup",)
     ]
     assert [server.key for server in runtime_agent.mcp_servers] == ["research_context"]
+    server = runtime_agent.mcp_servers[0]
+    assert server.env == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
+    assert server.headers == {}
+    assert server.query == {}
+
+
+def test_package_execution_plan_threads_private_mcp_flat_maps_into_runtime_refs() -> None:
+    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
+        _compiled_plan(_valid_http_sse_package_manifest_source()),
+        "daily_research",
+        model_bindings={"tradingagents_primary_model": _model_binding()},
+    )
+
+    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
+    assert runtime_agent is not None
+    server = runtime_agent.mcp_servers[0]
+    assert server.key == "research_context"
+    assert server.command is None
+    assert server.args == ()
+    assert server.url == "https://mcp.example.test/sse"
+    assert server.env == {}
+    assert server.headers == {"Authorization": "Bearer test-token"}
+    assert server.query == {"api_key": "test-api-key"}
+
+    runtime_refs = AgentExecutionService._runtime_mcp_server_refs(runtime_agent)
+    assert runtime_refs == [
+        {
+            "packagePrivate": True,
+            "key": "research_context",
+            "name": "Research Context",
+            "description": "Local context server declaration.",
+            "transport": "http-sse",
+            "command": None,
+            "args": [],
+            "url": "https://mcp.example.test/sse",
+            "env": {},
+            "headers": {"Authorization": "Bearer test-token"},
+            "query": {"api_key": "test-api-key"},
+            "toolKeys": ["research_context.search"],
+        }
+    ]
 
 
 def _graph_package_manifest_source() -> str:

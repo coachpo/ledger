@@ -7,7 +7,12 @@ import httpx
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.mcp.boundaries import DefaultMcpConnectionTester, McpClientBoundary
+from app.agents.mcp.boundaries import (
+    DefaultMcpConnectionTester,
+    McpClientBoundary,
+    McpClientConfigError,
+    build_mcp_client_boundary_from_config,
+)
 from app.agents.mcp.runtime import McpRuntimeResolver, McpToolClient
 from app.agents.mcp.security import (
     McpSecurityError,
@@ -153,7 +158,12 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
         {"content": "Exa result", "metadata": {"exaApiKey": "json-secret-value-123456"}}
     )
     dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
-        mcp_server_refs=[_package_private_exa_ref()],
+        mcp_server_refs=[
+            _package_private_exa_ref(
+                headers={" Authorization ": " Bearer package-token "},
+                query={" exaApiKey ": " secret-token ", "locale": " en-US "},
+            )
+        ],
         client=cast(McpToolClient, client),
         timeout_seconds=2.5,
         enabled=True,
@@ -179,11 +189,53 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     assert boundary.server_id is None
     assert boundary.key == "exa"
     assert boundary.version == 1
-    assert boundary.url == "https://example.com/mcp?tools=web_search_exa"
+    assert boundary.url == (
+        "https://example.com/mcp?tools=web_search_exa&exaApiKey=secret-token&locale=en-US"
+    )
+    assert boundary.headers == {"Authorization": "Bearer package-token"}
+    assert boundary.query == {"exaApiKey": "secret-token", "locale": "en-US"}
     assert call["tool_name"] == "web_search_exa"
     assert call["arguments"] == {"query": "AAPL latest company news"}
     assert call["timeout_seconds"] == 2.5
     assert "json-secret-value" not in json.dumps(output)
+
+
+def test_mcp_boundary_scopes_secret_query_names_to_package_private_query_map() -> None:
+    config = {
+        "transport": "http-sse",
+        "url": "https://example.com/mcp?tools=web_search_exa",
+        "query": {"exaApiKey": "secret-token"},
+    }
+
+    boundary = build_mcp_client_boundary_from_config(
+        config,
+        server_id=None,
+        key="exa",
+        version=1,
+        name="Exa Web Search",
+        enabled=True,
+        allow_secret_query_names=True,
+    )
+
+    assert boundary.url == (
+        "https://example.com/mcp?tools=web_search_exa&exaApiKey=secret-token"
+    )
+    assert boundary.query == {"exaApiKey": "secret-token"}
+    with pytest.raises(McpClientConfigError) as exc_info:
+        build_mcp_client_boundary_from_config(
+            config,
+            server_id=1,
+            key="exa",
+            version=1,
+            name="Exa Web Search",
+            enabled=True,
+        )
+    assert exc_info.value.details == [
+        {
+            "field": "transport",
+            "issue": "MCP HTTP/SSE URLs cannot include secret-bearing query parameters",
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -314,6 +366,20 @@ def test_mcp_security_blocks_ssrf_redirects_shells_and_truncates_output() -> Non
         validate_http_sse_url(
             "https://safe.example/mcp?exaApiKey=secret-token",
             resolved_hosts={"safe.example": ["93.184.216.34"]},
+        )
+    assert (
+        validate_http_sse_url(
+            "https://safe.example/mcp?tools=web_search_exa&exaApiKey=secret-token",
+            resolved_hosts={"safe.example": ["93.184.216.34"]},
+            allowed_secret_query_param_names={"exaApiKey"},
+        )
+        == "https://safe.example/mcp?tools=web_search_exa&exaApiKey=secret-token"
+    )
+    with pytest.raises(McpSecurityError, match="secret-bearing query"):
+        validate_http_sse_url(
+            "https://safe.example/mcp?exaApiKey=secret-token&accessToken=other-token",
+            resolved_hosts={"safe.example": ["93.184.216.34"]},
+            allowed_secret_query_param_names={"exaApiKey"},
         )
 
     redacted = redact_mcp_text("token=secret-token " + ("x" * 20), max_length=24)

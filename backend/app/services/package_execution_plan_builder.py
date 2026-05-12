@@ -256,6 +256,9 @@ class PackageExecutionPlanBuilder:
                 command=None if raw_server.get("command") is None else str(raw_server["command"]),
                 args=tuple(str(arg) for arg in raw_server.get("args") or []),
                 url=None if raw_server.get("url") is None else str(raw_server["url"]),
+                env=deepcopy(cast(dict[str, Any], raw_server.get("env") or {})),
+                headers=deepcopy(cast(dict[str, Any], raw_server.get("headers") or {})),
+                query=deepcopy(cast(dict[str, Any], raw_server.get("query") or {})),
                 tool_keys=tuple(str(key) for key in raw_server.get("toolKeys") or []),
             )
             for raw_server in self._iter_section("mcpServers")

@@ -179,6 +179,12 @@ def _package_private_tools_from_ref(
         config["args"] = args
     if ref.get("url") is not None:
         config["url"] = ref.get("url")
+    if ref.get("env"):
+        config["env"] = ref.get("env")
+    if ref.get("headers"):
+        config["headers"] = ref.get("headers")
+    if ref.get("query"):
+        config["query"] = ref.get("query")
     boundary = build_mcp_client_boundary_from_config(
         config,
         server_id=None,
@@ -186,6 +192,7 @@ def _package_private_tools_from_ref(
         version=_PACKAGE_PRIVATE_MCP_VERSION,
         name=str(ref.get("name") or key),
         enabled=True,
+        allow_secret_query_names=True,
     )
     tools: list[McpRuntimeTool] = []
     for tool_name in tool_names:

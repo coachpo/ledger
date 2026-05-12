@@ -280,6 +280,9 @@ class AgentExecutionService:
                     "command": server.command,
                     "args": list(server.args),
                     "url": server.url,
+                    "env": dict(server.env),
+                    "headers": dict(server.headers),
+                    "query": dict(server.query),
                     "toolKeys": list(server.tool_keys),
                 }
                 for server in agent.mcp_servers

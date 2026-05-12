@@ -160,11 +160,12 @@ spec:
       description: Remote Exa MCP server for advisory information search.
       transport: http-sse
       url: https://mcp.exa.ai/mcp?tools=web_search_exa
+      headers:
+        Authorization: Bearer exa-inline-token
+      query:
+        exaApiKey: exa-inline-key
       toolKeys:
         - web_search_exa
-      secretRefs:
-        query:
-          - exaApiKey
   agents:
     - key: market_analyst
       name: Market Analyst

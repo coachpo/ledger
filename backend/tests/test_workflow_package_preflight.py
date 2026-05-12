@@ -60,6 +60,8 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
     profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
+    mcp_server = cast(list[dict[str, Any]], compiled_plan["mcpServers"])[0]
+
     with session_factory() as session:
         errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
 
@@ -68,6 +70,10 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
         "ledger.reports.lookup",
         "ledger.reports.write",
     ]
+    assert mcp_server["headers"] == {"Authorization": "Bearer exa-inline-token"}
+    assert mcp_server["query"] == {"exaApiKey": "exa-inline-key"}
+    assert "secretRefs" not in mcp_server
+    assert "requiredBindings" not in mcp_server
 
 
 def test_preflight_rejects_private_mcp_without_runtime_supported_tool_key(
@@ -171,10 +177,11 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
             {
                 "key": "research_context",
                 "name": "Research Context",
-                "transport": "stdio",
-                "command": "python",
-                "args": ["server.py"],
-                "requiredBindings": ["env.RESEARCH_TOKEN"],
+                "transport": "http-sse",
+                "url": "https://mcp.example.test/sse?tools=web_search_exa",
+                "headers": {"Authorization": "Bearer inline-token"},
+                "query": {"exaApiKey": "inline-key"},
+                "toolKeys": ["web_search_exa"],
             }
         )
         workflow = cast(list[dict[str, Any]], compiled_plan["workflows"])[0]
@@ -200,10 +207,10 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
         and error["issue"] == "patternProperties is not supported"
         for error in errors
     )
-    assert {
-        "field": "spec.mcpServers.research_context.requiredBindings[0]",
-        "issue": "MCP secret binding 'env.RESEARCH_TOKEN' is not configured",
-    } in errors
+    assert not any(
+        str(error["field"]).startswith("spec.mcpServers.research_context")
+        for error in errors
+    )
     assert {
         "field": "spec.workflows.advisory_research.graph.steps[0].agents[0].with.ticker",
         "issue": "cycle",

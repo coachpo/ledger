@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -24,6 +25,7 @@ class McpClientBoundary:
     command: tuple[str, ...] | None = None
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
+    query: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
 
 
@@ -131,16 +133,27 @@ def build_mcp_client_boundary_from_config(
     version: int,
     name: str,
     enabled: bool,
+    allow_secret_query_names: bool = False,
 ) -> McpClientBoundary:
     details: list[dict[str, str]] = []
     transport = _normalize_transport(config.get("transport"), details)
     command = _normalize_command(config, transport, details)
-    url = _normalize_url(config, transport, details)
+    base_url = _normalize_url(config, transport, details)
     headers = _normalize_headers(config, transport, details)
+    query = _normalize_query(config, transport, details)
     env = _normalize_env(config, transport, details)
+    url = _merge_http_sse_query(base_url, query)
 
     if not details:
-        _validate_transport_security(transport=transport, command=command, url=url, details=details)
+        _validate_transport_security(
+            transport=transport,
+            command=command,
+            url=url,
+            allowed_secret_query_param_names=(
+                set(query) if allow_secret_query_names else set()
+            ),
+            details=details,
+        )
     if details:
         raise McpClientConfigError(details)
 
@@ -154,6 +167,7 @@ def build_mcp_client_boundary_from_config(
         command=command,
         url=url,
         headers=headers,
+        query=query,
         env=env,
     )
 
@@ -236,6 +250,18 @@ def _normalize_headers(
     return _normalize_string_mapping(config.get("headers"), field_name="headers", details=details)
 
 
+def _normalize_query(
+    config: Mapping[str, Any],
+    transport: str,
+    details: list[dict[str, str]],
+) -> dict[str, str]:
+    if transport != "http-sse":
+        if "query" in config:
+            details.append({"field": "query", "issue": "query is only supported for http-sse"})
+        return {}
+    return _normalize_string_mapping(config.get("query"), field_name="query", details=details)
+
+
 def _normalize_env(
     config: Mapping[str, Any],
     transport: str,
@@ -248,11 +274,28 @@ def _normalize_env(
     return _normalize_string_mapping(config.get("env"), field_name="env", details=details)
 
 
+def _merge_http_sse_query(url: str | None, query: Mapping[str, str]) -> str | None:
+    if url is None or not query:
+        return url
+    parsed = urlsplit(url)
+    query_names = set(query)
+    base_pairs = [
+        (name, value)
+        for name, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if name not in query_names
+    ]
+    merged_query = urlencode([*base_pairs, *query.items()])
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, merged_query, parsed.fragment)
+    )
+
+
 def _validate_transport_security(
     *,
     transport: str,
     command: tuple[str, ...] | None,
     url: str | None,
+    allowed_secret_query_param_names: set[str],
     details: list[dict[str, str]],
 ) -> None:
     try:
@@ -262,7 +305,10 @@ def _validate_transport_security(
                 allowed_commands=get_settings().mcp_stdio_allowed_commands,
             )
         elif transport == "http-sse":
-            validate_http_sse_url(url or "")
+            validate_http_sse_url(
+                url or "",
+                allowed_secret_query_param_names=allowed_secret_query_param_names,
+            )
     except McpSecurityError as exc:
         details.append({"field": "transport", "issue": str(exc)})
 
