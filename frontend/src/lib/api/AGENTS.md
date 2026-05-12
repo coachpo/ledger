@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/lib/api/` contains resource-specific request helpers layered on top of `api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 src/lib/api/

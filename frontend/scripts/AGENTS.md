@@ -5,6 +5,8 @@
 ## OVERVIEW
 These scripts are web-server commands used by `playwright.config.ts`. They start a dedicated backend and built frontend on fixed ports, forward logs through inherited stdio, and terminate child processes on shutdown signals.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 scripts/

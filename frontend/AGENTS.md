@@ -5,6 +5,8 @@
 ## OVERVIEW
 React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, Workflow Packages, Model Connections, and Runs, plus shared forms and UI that keep route logic thin.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
 - `scripts/AGENTS.md` — Playwright backend/frontend startup helpers

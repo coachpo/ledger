@@ -5,6 +5,8 @@
 ## OVERVIEW
 `setup.ts` prepares jsdom for React component and hook tests. It adds Testing Library matchers plus browser API and geometry shims expected by shared UI primitives and routed components.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 src/test/

@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, and the current agent-platform domains.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## CHILD DOCS
 - `api/AGENTS.md` — resource request helpers and upload/download boundaries
 - `types/AGENTS.md` — shared TypeScript wire contracts and enum-like unions
