@@ -14,7 +14,7 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -329,15 +329,6 @@ function versionSelectionNotice(selectedVersion: number | undefined, latestVersi
     return null;
   }
   return `Editing stays pinned to the latest saved version ${versionLabel(latestVersion)}. This selector only changes launch and export previews for ${versionLabel(selectedVersion)}.`;
-}
-
-function DetailMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border bg-background/60 p-3">
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
-      <p className="mt-1 break-words font-['Fira_Code',ui-monospace,monospace] text-sm text-foreground">{value}</p>
-    </div>
-  );
 }
 
 function EditorSkeleton() {
@@ -1178,10 +1169,9 @@ function ExportsTab(props: {
   onImportComplete: (mode: WorkflowPackageImportMode, imported: WorkflowPackageRead) => void;
   packageId: string | undefined;
   selectedVersion: number | undefined;
-  versions: WorkflowPackageVersionRead[];
   workflowPackage: WorkflowPackageRead | undefined;
 }) {
-  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId, selectedVersion, versions, workflowPackage } = props;
+  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId, selectedVersion, workflowPackage } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
@@ -1250,7 +1240,6 @@ function ExportsTab(props: {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download and import package manifests as plain YAML. Package-private MCP inline values remain visible in the manifest.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
-        <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={workflowPackage?.key ?? draft.metadata.key} /><DetailMetric label="Export Version" value={versionLabel(selectedVersion ?? workflowPackage?.latestVersion)} /><DetailMetric label="Available Versions" value={String(versions.length)} /></div>
         {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         <Textarea aria-label="Package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={exportPreview} />
         {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{stringifyJson(warning)}</li>)}</ul></AlertDescription></Alert> : null}
@@ -1267,6 +1256,8 @@ export function WorkflowPackageEditorPage() {
   const packageQuery = useWorkflowPackage(isNew ? undefined : packageId);
   const manifestQuery = useWorkflowPackageManifest(isNew ? undefined : packageId);
   const workflowPackage = packageQuery.data;
+  const editorShellRef = useRef<HTMLDivElement>(null);
+  const pendingTabScrollTop = useRef<number | null>(null);
   const previousPathname = useRef(location.pathname);
   const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>(() => routeTab(location.pathname));
   const [draft, setDraft] = useState<WorkflowPackageDraft>(() => createWorkflowPackageDraft());
@@ -1287,6 +1278,28 @@ export function WorkflowPackageEditorPage() {
   const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, selectedVersion, workflowKey.trim() || undefined);
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
+
+  const selectEditorTab = (tab: WorkflowPackageEditorTab) => {
+    pendingTabScrollTop.current = editorShellRef.current?.scrollTop ?? null;
+    setActiveTab(tab);
+  };
+
+  useLayoutEffect(() => {
+    const scrollTop = pendingTabScrollTop.current;
+    if (scrollTop === null) {
+      return;
+    }
+    pendingTabScrollTop.current = null;
+    const editorShell = editorShellRef.current;
+    if (!editorShell) {
+      return;
+    }
+    editorShell.scrollTop = scrollTop;
+    const frame = window.requestAnimationFrame(() => {
+      editorShell.scrollTop = scrollTop;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab]);
 
   useEffect(() => {
     if (previousPathname.current === location.pathname) {
@@ -1486,7 +1499,7 @@ export function WorkflowPackageEditorPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
+    <div ref={editorShellRef} className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
       <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{statusBadge(workflowPackage)}{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
@@ -1498,10 +1511,10 @@ export function WorkflowPackageEditorPage() {
       ) : (
         <>
           {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
+          <Tabs value={activeTab} onValueChange={(value) => selectEditorTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
             <div className="shrink-0 overflow-x-auto pb-1">
               <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto !w-max min-w-full flex-nowrap justify-start bg-muted/60 p-1">
-                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => selectEditorTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
               </TabsList>
             </div>
             <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
@@ -1511,7 +1524,7 @@ export function WorkflowPackageEditorPage() {
             <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
             <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
             <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
-            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} selectedVersion={selectedVersion} versions={versions} workflowPackage={workflowPackage} /></TabsContent>
+            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} selectedVersion={selectedVersion} workflowPackage={workflowPackage} /></TabsContent>
           </Tabs>
         </>
       )}
