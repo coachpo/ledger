@@ -32,7 +32,7 @@ describe("Layout", () => {
     );
   }
 
-  it("shows the exact package-first shell navigation and hides old authoring entries", () => {
+  it("shows the exact shell navigation and hides old authoring entries", () => {
     renderLayout("/");
 
     expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
@@ -40,8 +40,8 @@ describe("Layout", () => {
       "/portfolios",
       "/templates",
       "/reports",
-      "/workflow-packages",
       "/model-connections",
+      "/workflow-packages",
       "/runs",
     ]);
     expect(screen.getByRole("link", { name: /workflow packages/i })).toBeInTheDocument();

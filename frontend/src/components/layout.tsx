@@ -49,16 +49,16 @@ const navItems: NavItem[] = [
   { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
   { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
   {
-    icon: Workflow,
-    label: "Workflow Packages",
-    testId: "nav-workflow-packages",
-    to: "/workflow-packages",
-  },
-  {
     icon: Link2,
     label: "Model Connections",
     testId: "nav-model-connections",
     to: "/model-connections",
+  },
+  {
+    icon: Workflow,
+    label: "Workflow Packages",
+    testId: "nav-workflow-packages",
+    to: "/workflow-packages",
   },
   { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
 ];
