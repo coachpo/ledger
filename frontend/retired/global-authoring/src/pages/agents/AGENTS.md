@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/pages/agents/` was the retired routed agent inventory and editor. These archived pages handled duplicate, archive, and run-launch flows before package-local agents moved under Workflow Packages.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/pages/mcp-servers/` was the retired MCP server inventory and editor for `/mcp-servers`, `/mcp-servers/new`, and `/mcp-servers/:serverId/edit`. These archived pages covered archive, activate, and connection-test flows before MCP configs moved inside Workflow Packages.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
