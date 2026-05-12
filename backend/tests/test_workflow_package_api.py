@@ -8,6 +8,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
 from app.models.platform_reference import WorkflowPackageVersionModelConnection
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
@@ -25,7 +26,12 @@ def _package_source() -> str:
     return _FIXTURE.read_text()
 
 
-def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
+def _seed_model_connection(
+    session_factory: sessionmaker[Session],
+    *,
+    last_test_ok: bool | None = None,
+    last_test_message: str | None = None,
+) -> None:
     with session_factory() as session:
         session.add(
             ModelConnection(
@@ -39,6 +45,13 @@ def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
                 api_style="responses",
                 timeout_seconds=60,
                 secret_payload={"apiKey": "sk-package-api-secret"},
+                last_tested_at=(
+                    utcnow()
+                    if last_test_ok is not None or last_test_message is not None
+                    else None
+                ),
+                last_test_ok=last_test_ok,
+                last_test_message=last_test_message,
             )
         )
         session.commit()
@@ -523,6 +536,58 @@ def test_launch_metadata_and_stub_creation(
             .filter_by(workflow_package_version_id=latest_version_id)
             .count()
         ) == 0
+
+
+def test_launch_blocks_failed_model_connection(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        last_test_ok=False,
+        last_test_message="Connection test failed.",
+    )
+    created = _create_package(client)
+
+    launch = client.get(f"/api/workflow-packages/{created['id']}/launch")
+    assert launch.status_code == 200, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    assert launch_body["ready"] is False
+    launch_errors = cast(list[dict[str, object]], launch_body["blockingErrors"])
+    assert len(launch_errors) == 12
+    assert launch_errors[0] == {
+        "field": "spec.agents[0].modelConnection",
+        "issue": "Connection test failed.",
+    }
+    assert {error["issue"] for error in launch_errors} == {"Connection test failed."}
+
+    created_launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "advisory_research",
+            "parameters": {
+                "ticker": "AAPL",
+                "asOfDate": "2026-05-08",
+                "portfolioId": "tradingagents_demo",
+                "horizonDays": 30,
+                "benchmarkSymbol": "SPY",
+                "initialInvestmentDebateState": {},
+                "initialRiskDebateState": {},
+            },
+        },
+    )
+    assert created_launch.status_code == 422, created_launch.json()
+    created_launch_body = cast(dict[str, object], created_launch.json())
+    assert created_launch_body["code"] == "validation_error"
+    assert created_launch_body["message"] == "Workflow package launch validation failed"
+    launch_details = cast(list[dict[str, object]], created_launch_body["details"])
+    assert len(launch_details) == 12
+    assert launch_details[0] == {
+        "field": "spec.agents[0].modelConnection",
+        "issue": "Connection test failed.",
+    }
+    assert {detail["issue"] for detail in launch_details} == {"Connection test failed."}
 
 
 def test_delete_hard_deletes_never_launched_package(

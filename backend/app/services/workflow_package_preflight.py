@@ -313,6 +313,14 @@ class WorkflowPackagePreflightService:
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
                 continue
+            if require_api_key and connection.last_test_ok is False:
+                errors.append(
+                    {
+                        "field": path,
+                        "issue": connection.last_test_message or "Connection test failed",
+                    }
+                )
+                continue
             bindings[binding.key] = PackageResolvedModelBinding(
                 key=binding.key,
                 name=binding.name,

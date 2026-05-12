@@ -8,6 +8,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -33,7 +34,11 @@ def _create_package(client: TestClient) -> dict[str, Any]:
 
 
 def _seed_model_connection(
-    session_factory: sessionmaker[Session], *, api_key: str | None = "sk-preflight"
+    session_factory: sessionmaker[Session],
+    *,
+    api_key: str | None = "sk-preflight",
+    last_test_ok: bool | None = None,
+    last_test_message: str | None = None,
 ) -> None:
     with session_factory() as session:
         session.add(
@@ -47,6 +52,13 @@ def _seed_model_connection(
                 api_style="responses",
                 timeout_seconds=60,
                 secret_payload={} if api_key is None else {"apiKey": api_key},
+                last_tested_at=(
+                    utcnow()
+                    if last_test_ok is not None or last_test_message is not None
+                    else None
+                ),
+                last_test_ok=last_test_ok,
+                last_test_message=last_test_message,
             )
         )
         session.commit()
@@ -233,4 +245,27 @@ def test_preflight_blocks_secretless_model_connection(
     assert errors[0] == {
         "field": "spec.agents[0].modelConnection",
         "issue": "API key is not configured",
+    }
+
+
+def test_preflight_blocks_failed_model_connection(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        last_test_ok=False,
+        last_test_message="Connection test failed.",
+    )
+    created = _create_package(client)
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    assert preflight.json()["ready"] is False
+    errors = preflight.json()["blockingErrors"]
+    assert errors
+    assert errors[0] == {
+        "field": "spec.agents[0].modelConnection",
+        "issue": "Connection test failed.",
     }
