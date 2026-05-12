@@ -1,6 +1,6 @@
 # Ledger Agent Platform Reference
 
-> Status: Live package-first platform reference for branch `main` at `10063aa`. This is the canonical platform reference.
+> Status: Live package-first platform reference for branch `main` at `987686e`. This is the canonical platform reference.
 
 ## Scope
 
