@@ -97,8 +97,10 @@ def _canonical_manifest_definition(manifest: WorkflowPackageManifest) -> dict[st
 def _strip_empty_private_mcp_fields(value: object) -> object:
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
-        is_mcp_server = "transport" in source and "key" in source and (
-            "command" in source or "url" in source or "toolKeys" in source
+        is_mcp_server = (
+            "transport" in source
+            and "key" in source
+            and ("command" in source or "url" in source or "toolKeys" in source)
         )
         sanitized: dict[str, object] = {}
         for raw_key, item in source.items():

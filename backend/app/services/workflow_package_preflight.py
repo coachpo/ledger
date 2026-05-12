@@ -273,8 +273,7 @@ class WorkflowPackagePreflightService:
                             {
                                 "field": f"spec.mcpServers.{key}.toolKeys[{index}]",
                                 "issue": (
-                                    "Unsupported package-private MCP tool "
-                                    f"{normalized_tool_key!r}"
+                                    f"Unsupported package-private MCP tool {normalized_tool_key!r}"
                                 ),
                             }
                         )

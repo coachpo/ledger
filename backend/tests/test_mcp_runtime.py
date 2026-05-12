@@ -217,9 +217,7 @@ def test_mcp_boundary_scopes_secret_query_names_to_package_private_query_map() -
         allow_secret_query_names=True,
     )
 
-    assert boundary.url == (
-        "https://example.com/mcp?tools=web_search_exa&exaApiKey=secret-token"
-    )
+    assert boundary.url == ("https://example.com/mcp?tools=web_search_exa&exaApiKey=secret-token")
     assert boundary.query == {"exaApiKey": "secret-token"}
     with pytest.raises(McpClientConfigError) as exc_info:
         build_mcp_client_boundary_from_config(

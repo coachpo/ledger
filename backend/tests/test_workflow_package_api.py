@@ -46,9 +46,7 @@ def _seed_model_connection(
                 timeout_seconds=60,
                 secret_payload={"apiKey": "sk-package-api-secret"},
                 last_tested_at=(
-                    utcnow()
-                    if last_test_ok is not None or last_test_message is not None
-                    else None
+                    utcnow() if last_test_ok is not None or last_test_message is not None else None
                 ),
                 last_test_ok=last_test_ok,
                 last_test_message=last_test_message,
@@ -163,12 +161,9 @@ def _manifest_semantics(body: dict[str, object]) -> dict[str, object]:
 
 
 def _edited_workflow_manifest_source(source: str) -> str:
-    old_description = (
-        "description: Neutral advisory workflow fixture for package smoke coverage."
-    )
+    old_description = "description: Neutral advisory workflow fixture for package smoke coverage."
     new_description = (
-        "description: Neutral advisory workflow fixture for package smoke coverage "
-        "after edit."
+        "description: Neutral advisory workflow fixture for package smoke coverage after edit."
     )
     assert old_description in source
     return source.replace(old_description, new_description, 1)
@@ -300,9 +295,7 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
         "Neutral advisory workflow fixture for package smoke coverage."
     )
 
-    edited_source = _edited_workflow_manifest_source(
-        cast(str, version_one_body["manifestSource"])
-    )
+    edited_source = _edited_workflow_manifest_source(cast(str, version_one_body["manifestSource"]))
     saved = client.patch(
         f"/api/workflow-packages/{package_id}",
         json={"manifestSource": edited_source},

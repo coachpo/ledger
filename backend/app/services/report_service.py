@@ -22,7 +22,7 @@ _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
 _DEFAULT_EXTERNAL_REPORT_BASENAME = "external_report"
 _CREATED_BY_PROVENANCE_ERROR_MESSAGE = (
-    "Report createdBy provenance is server-owned and cannot be supplied for non-agent " "reports."
+    "Report createdBy provenance is server-owned and cannot be supplied for non-agent reports."
 )
 
 
@@ -247,7 +247,7 @@ class ReportService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 code="memory_report_mutation_forbidden",
                 message=(
-                    "Agent-memory reports can only be changed through " "memory lifecycle services"
+                    "Agent-memory reports can only be changed through memory lifecycle services"
                 ),
             )
 

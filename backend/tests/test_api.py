@@ -198,8 +198,7 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
             {
                 "field": "targetKind",
                 "issue": (
-                    "targetKind is required when targetId, targetKey, or "
-                    "targetVersion is provided"
+                    "targetKind is required when targetId, targetKey, or targetVersion is provided"
                 ),
             }
         ],
@@ -2333,8 +2332,7 @@ def test_public_report_create_rejects_agent_created_by_provenance(
         "agentVersion": 1,
     }
     expected_message = (
-        "Report createdBy provenance is server-owned and cannot be supplied for non-agent "
-        "reports."
+        "Report createdBy provenance is server-owned and cannot be supplied for non-agent reports."
     )
 
     create_response = client.post(

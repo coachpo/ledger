@@ -1743,7 +1743,7 @@ class RunService:
                             {
                                 "field": f"{agent_field_prefix}.{target_name}",
                                 "issue": (
-                                    "Optional slot failure cannot satisfy a required " "input field"
+                                    "Optional slot failure cannot satisfy a required input field"
                                 ),
                             }
                         ],
@@ -2138,8 +2138,7 @@ class RunService:
                     raise RunExecutionError(
                         code="run_registry_ref_missing",
                         message=(
-                            f"Shared registry ref {current.key!r} v{current.version} "
-                            "was not found"
+                            f"Shared registry ref {current.key!r} v{current.version} was not found"
                         ),
                     )
                 cached = self.schema_compiler.parse_stored_schema_node(row)

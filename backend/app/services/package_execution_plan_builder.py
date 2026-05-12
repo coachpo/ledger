@@ -338,7 +338,7 @@ class PackageExecutionPlanBuilder:
                 field=f"spec.agents.{agent_key}.capabilityProfiles[{profile_index}]",
                 issue="unknown_capability_profile",
                 message=(
-                    f"Package agent {agent_key!r} references missing " f"capability profile {key!r}"
+                    f"Package agent {agent_key!r} references missing capability profile {key!r}"
                 ),
             )
         return profile
@@ -429,8 +429,7 @@ class PackageExecutionPlanBuilder:
                             field=field,
                             issue="cycle",
                             message=(
-                                "Package workflow wiring cannot reference the same "
-                                "or a later step"
+                                "Package workflow wiring cannot reference the same or a later step"
                             ),
                         )
 

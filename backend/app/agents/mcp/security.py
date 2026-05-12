@@ -53,9 +53,7 @@ def validate_http_sse_url(
     if parsed.username or parsed.password:
         raise McpSecurityError("MCP HTTP/SSE URLs cannot include credentials")
     allowed_secret_names = {
-        str(name).strip()
-        for name in (allowed_secret_query_param_names or ())
-        if str(name).strip()
+        str(name).strip() for name in (allowed_secret_query_param_names or ()) if str(name).strip()
     }
     for name, _value in parse_qsl(parsed.query, keep_blank_values=True):
         if _SECRET_QUERY_PARAM_RE.search(name) and name not in allowed_secret_names:

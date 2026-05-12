@@ -178,7 +178,7 @@ class MemoryContextService:
     def _prompt_safe_snippet(snippet: MemoryPromptSnippet) -> MemoryPromptSnippet:
         text = snippet.text
         if text.startswith(_LEGACY_HISTORICAL_PREFIX):
-            text = f"{_HISTORICAL_PREFIX}{text[len(_LEGACY_HISTORICAL_PREFIX):]}"
+            text = f"{_HISTORICAL_PREFIX}{text[len(_LEGACY_HISTORICAL_PREFIX) :]}"
         elif not text.startswith(_HISTORICAL_PREFIX):
             text = f"{_HISTORICAL_PREFIX}\n{text}"
         return snippet.model_copy(update={"text": text})

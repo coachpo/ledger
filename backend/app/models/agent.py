@@ -15,10 +15,7 @@ from app.models.base import Base, IdMixin, TimestampMixin
 AGENT_MANIFEST_API_VERSION = "ledger.agent/v1"
 AGENT_MANIFEST_COMPILER_VERSION = "agent-manifest-compiler/v1"
 TEMPORARY_AGENT_MANIFEST_SOURCE = (
-    "apiVersion: ledger.agent/v1\n"
-    "kind: Agent\n"
-    "metadata:\n"
-    "  source: legacy-payload-placeholder\n"
+    "apiVersion: ledger.agent/v1\nkind: Agent\nmetadata:\n  source: legacy-payload-placeholder\n"
 )
 TEMPORARY_AGENT_MANIFEST_HASH = "98e17b8a6f1bd584aab673e2ab817f26173a7a1cd19ec5890c5bd2f0099c2f3b"
 

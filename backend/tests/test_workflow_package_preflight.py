@@ -53,9 +53,7 @@ def _seed_model_connection(
                 timeout_seconds=60,
                 secret_payload={} if api_key is None else {"apiKey": api_key},
                 last_tested_at=(
-                    utcnow()
-                    if last_test_ok is not None or last_test_message is not None
-                    else None
+                    utcnow() if last_test_ok is not None or last_test_message is not None else None
                 ),
                 last_test_ok=last_test_ok,
                 last_test_message=last_test_message,
@@ -220,8 +218,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
         for error in errors
     )
     assert not any(
-        str(error["field"]).startswith("spec.mcpServers.research_context")
-        for error in errors
+        str(error["field"]).startswith("spec.mcpServers.research_context") for error in errors
     )
     assert {
         "field": "spec.workflows.advisory_research.graph.steps[0].agents[0].with.ticker",

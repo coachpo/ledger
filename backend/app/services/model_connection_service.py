@@ -322,7 +322,7 @@ class ModelConnectionService:
                 )
             api_style = connection.api_style
             unsupported_api_style_message = (
-                "Model connection validation failed: unsupported API style " f"{api_style!r}."
+                f"Model connection validation failed: unsupported API style {api_style!r}."
             )
             return _ModelConnectionTestResult(
                 ok=False,

@@ -149,9 +149,7 @@ def build_mcp_client_boundary_from_config(
             transport=transport,
             command=command,
             url=url,
-            allowed_secret_query_param_names=(
-                set(query) if allow_secret_query_names else set()
-            ),
+            allowed_secret_query_param_names=(set(query) if allow_secret_query_names else set()),
             details=details,
         )
     if details:
@@ -285,9 +283,7 @@ def _merge_http_sse_query(url: str | None, query: Mapping[str, str]) -> str | No
         if name not in query_names
     ]
     merged_query = urlencode([*base_pairs, *query.items()])
-    return urlunsplit(
-        (parsed.scheme, parsed.netloc, parsed.path, merged_query, parsed.fragment)
-    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, merged_query, parsed.fragment))
 
 
 def _validate_transport_security(

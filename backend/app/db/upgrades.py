@@ -52,8 +52,7 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "it was still running."
 )
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
-    "Runtime row skipped during startup recovery because the parent run failed before it "
-    "started."
+    "Runtime row skipped during startup recovery because the parent run failed before it started."
 )
 _MODEL_CONNECTION_PLACEHOLDER_BASE_URL = "https://api.openai.com/v1"
 _MODEL_CONNECTION_PLACEHOLDER_REASONING_EFFORT = "medium"
@@ -438,7 +437,7 @@ $$,
                 "CREATE INDEX IF NOT EXISTS ix_run_steps_run_step_index "
                 "ON run_steps (run_id, step_index)"
             ),
-            ("CREATE INDEX IF NOT EXISTS ix_run_steps_run_status " "ON run_steps (run_id, status)"),
+            ("CREATE INDEX IF NOT EXISTS ix_run_steps_run_status ON run_steps (run_id, status)"),
             (
                 "CREATE INDEX IF NOT EXISTS ix_run_steps_source_run_step "
                 "ON run_steps (source_run_step_id)"
@@ -690,15 +689,13 @@ _PLATFORM_REFERENCE_TABLE_STATEMENTS: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS ix_workflow_agent_refs_workflow "
         "ON workflow_agent_refs (workflow_id)"
     ),
-    "CREATE INDEX IF NOT EXISTS ix_workflow_agent_refs_agent " "ON workflow_agent_refs (agent_id)",
-    "CREATE INDEX IF NOT EXISTS ix_agent_capability_refs_agent "
-    "ON agent_capability_refs (agent_id)",
+    "CREATE INDEX IF NOT EXISTS ix_workflow_agent_refs_agent ON workflow_agent_refs (agent_id)",
+    "CREATE INDEX IF NOT EXISTS ix_agent_capability_refs_agent ON agent_capability_refs (agent_id)",
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_capability_refs_capability "
         "ON agent_capability_refs (capability_id)"
     ),
-    "CREATE INDEX IF NOT EXISTS ix_agent_mcp_server_refs_agent "
-    "ON agent_mcp_server_refs (agent_id)",
+    "CREATE INDEX IF NOT EXISTS ix_agent_mcp_server_refs_agent ON agent_mcp_server_refs (agent_id)",
     (
         "CREATE INDEX IF NOT EXISTS ix_agent_mcp_server_refs_server "
         "ON agent_mcp_server_refs (mcp_server_id)"
@@ -1924,7 +1921,7 @@ def _ensure_agent_model_connection_snapshot_support(engine: Engine, table_names:
             )
         )
         connection.exec_driver_sql(
-            "ALTER TABLE agents " "ALTER COLUMN model_connection_snapshot SET DEFAULT '{}'::jsonb"
+            "ALTER TABLE agents ALTER COLUMN model_connection_snapshot SET DEFAULT '{}'::jsonb"
         )
         snapshot_column = agent_columns.get("model_connection_snapshot")
         if snapshot_column is None or snapshot_column.get("nullable", True):

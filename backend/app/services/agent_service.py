@@ -61,7 +61,7 @@ from app.services.output_schema_compiler import (
 from app.services.output_schema_service import OutputSchemaService
 from app.services.run_service import RunService
 
-type JsonValue = (str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"])
+type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 type JsonObject = dict[str, JsonValue]
 
 
@@ -610,10 +610,7 @@ class AgentService:
         if connection is None:
             raise business_rule_error(
                 "agent_model_connection_missing",
-                (
-                    f"Agent {agent.key!r} references missing model connection "
-                    f"{model_connection_id}"
-                ),
+                (f"Agent {agent.key!r} references missing model connection {model_connection_id}"),
             )
         return connection
 

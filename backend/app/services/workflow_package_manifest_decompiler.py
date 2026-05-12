@@ -83,8 +83,10 @@ def _strip_forbidden_fields(value: object) -> object:
             source.get("kind") in {"step", "sequence", "fanout", "loop"} or "node" in source
         )
         sanitized: dict[str, object] = {}
-        is_mcp_server = "transport" in source and "key" in source and (
-            "command" in source or "url" in source or "toolKeys" in source
+        is_mcp_server = (
+            "transport" in source
+            and "key" in source
+            and ("command" in source or "url" in source or "toolKeys" in source)
         )
         for key, item in source.items():
             if not isinstance(key, str):

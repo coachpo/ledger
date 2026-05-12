@@ -724,7 +724,7 @@ class AgentExecutionService:
                 raise RunExecutionError(
                     code="agent_tool_call_invalid",
                     message=(
-                        f"OpenAI chat response requested server tool {name!r} " "without a call id."
+                        f"OpenAI chat response requested server tool {name!r} without a call id."
                     ),
                 )
             pending.append(
@@ -905,7 +905,7 @@ class AgentExecutionService:
                 raise RunExecutionError(
                     code="agent_tool_call_invalid",
                     message=(
-                        f"OpenAI response requested server tool {name!r} " "without JSON arguments."
+                        f"OpenAI response requested server tool {name!r} without JSON arguments."
                     ),
                 )
             if not isinstance(call_id, str) or not call_id.strip():

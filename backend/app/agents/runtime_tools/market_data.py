@@ -398,7 +398,7 @@ def parse_indicators_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} " "endDate cannot be after currentDate."
+                f"{INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME} endDate cannot be after currentDate."
             ),
         )
     return {
@@ -905,7 +905,7 @@ def _parse_base_currency(value: object) -> str:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                f"{MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME} " "baseCurrency must be a string."
+                f"{MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME} baseCurrency must be a string."
             ),
         )
     normalized = normalize_currency(value)

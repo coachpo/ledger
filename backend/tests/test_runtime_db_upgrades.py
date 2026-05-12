@@ -54,8 +54,7 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "it was still running."
 )
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
-    "Runtime row skipped during startup recovery because the parent run failed before it "
-    "started."
+    "Runtime row skipped during startup recovery because the parent run failed before it started."
 )
 RETIRED_STOCK_ANALYSIS_AGENT_KEYS = STOCK_ANALYSIS_STEP_ONE_AGENT_KEYS + (
     STOCK_ANALYSIS_SYNTHESIZER_KEY,
@@ -1732,9 +1731,7 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
 
         with engine.connect() as connection:
             repaired_run = connection.execute(
-                text(
-                    "SELECT status, error, finished_at IS NOT NULL " "FROM runs WHERE id = :run_id"
-                ),
+                text("SELECT status, error, finished_at IS NOT NULL FROM runs WHERE id = :run_id"),
                 {"run_id": running_run_id},
             ).one()
             queued_run = connection.execute(
