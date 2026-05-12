@@ -9,11 +9,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
+import { sortByKey } from "@/pages/platform-resource-helpers";
+
 import {
   PlatformResourceBadges,
   PlatformResourceCard,
   PlatformResourceList,
-  sortByKey,
 } from "../platform-resource-shared";
 
 export function CapabilitiesListPage() {

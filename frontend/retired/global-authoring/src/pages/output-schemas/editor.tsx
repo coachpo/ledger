@@ -31,7 +31,9 @@ import { buildPreviewValue } from "@/lib/platform-authoring/schema/preview";
 import type { SchemaValidationIssue } from "@/lib/platform-authoring/schema/validation";
 import type { OutputSchemaBuilderNode, OutputSchemaKind, OutputSchemaRead } from "@/lib/types/output-schema";
 
-import { parseRequiredText, PlatformResourceBadges } from "../platform-resource-shared";
+import { parseRequiredText } from "@/pages/platform-resource-helpers";
+
+import { PlatformResourceBadges } from "../platform-resource-shared";
 
 function decodePersistedSchema(record: OutputSchemaRead) {
   return parseSchemaJsonText(stringifyJson(record.jsonSchema));

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpServerRead } from "@/lib/types/mcp-server";
 
 import { McpServersEditorPage } from "./editor";
-import { stringifyJson } from "../platform-resource-shared";
+import { stringifyJson } from "@/pages/platform-resource-helpers";
 
 const navigateMock = vi.fn();
 const paramsMock: { serverId?: string } = {};

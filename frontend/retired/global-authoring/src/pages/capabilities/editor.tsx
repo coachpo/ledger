@@ -20,7 +20,9 @@ import {
 } from "@/hooks/use-capabilities";
 import type { CapabilityCreateInput, CapabilityToolRead, CapabilityUpdateInput } from "@/lib/types/capability";
 
-import { parseRequiredText, PlatformResourceBadges, stringifyJson } from "../platform-resource-shared";
+import { parseRequiredText, stringifyJson } from "@/pages/platform-resource-helpers";
+
+import { PlatformResourceBadges } from "../platform-resource-shared";
 
 type CapabilityEditorValues = {
   description: string;
@@ -33,6 +35,9 @@ const initialValues: CapabilityEditorValues = {
   key: "",
   name: "",
 };
+
+const EMPTY_CAPABILITY_TOOLS: CapabilityToolRead[] = [];
+
 function filterCatalogTools(tools: CapabilityToolRead[], searchTerm: string) {
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
@@ -72,7 +77,7 @@ export function CapabilitiesEditorPage() {
     });
     setSelectedToolKeys(capabilityQuery.data.toolKeys);
   }, [capabilityQuery.data]);
-  const catalogTools = toolsQuery.data?.items ?? [];
+  const catalogTools = toolsQuery.data?.items ?? EMPTY_CAPABILITY_TOOLS;
   const catalogToolKeys = useMemo(() => new Set(catalogTools.map((tool) => tool.key)), [catalogTools]);
   const filteredCatalogTools = useMemo(() => filterCatalogTools(catalogTools, toolSearch), [catalogTools, toolSearch]);
   const missingSelectedToolKeys = useMemo(

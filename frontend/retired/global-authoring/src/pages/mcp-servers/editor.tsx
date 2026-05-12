@@ -35,9 +35,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   parseJsonValue,
   parseRequiredText,
-  PlatformResourceBadges,
   stringifyJson,
-} from "../platform-resource-shared";
+} from "@/pages/platform-resource-helpers";
+
+import { PlatformResourceBadges } from "../platform-resource-shared";
 
 type ConnectionFeedback = {
   message: string;

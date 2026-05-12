@@ -10,7 +10,7 @@ import type {
 import {
   parseJsonValue,
   parseRequiredText,
-} from "../platform-resource-shared";
+} from "@/pages/platform-resource-helpers";
 
 type JsonSchema = UnknownRecord;
 
