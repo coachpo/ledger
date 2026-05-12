@@ -95,10 +95,16 @@ class ModelConnectionApiStyle(str, Enum):  # noqa: UP042
     CHAT_COMPLETIONS = "chat_completions"
 
 
+class ModelConnectionKind(str, Enum):  # noqa: UP042
+    PROVIDER = "provider"
+    DETERMINISTIC_SMOKE = "deterministic_smoke"
+
+
 class ModelConnectionCreate(CamelModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
+    connection_kind: ModelConnectionKind = ModelConnectionKind.PROVIDER
     base_url: str
     model_id: str = Field(min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
@@ -144,6 +150,7 @@ class ModelConnectionCreate(CamelModel):
 class ModelConnectionUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
+    connection_kind: ModelConnectionKind | None = None
     base_url: str | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
@@ -179,7 +186,7 @@ class ModelConnectionUpdate(CamelModel):
     def validate_reasoning_effort(cls, value: object) -> str | None:
         return _normalize_reasoning_effort(value)
 
-    @field_validator("timeout_seconds", "api_style", mode="before")
+    @field_validator("timeout_seconds", "api_style", "connection_kind", mode="before")
     @classmethod
     def reject_null_scalar_updates(cls, value: object, info: ValidationInfo) -> object:
         if value is None:
@@ -206,6 +213,7 @@ class ModelConnectionListItemRead(CamelModel):
     key: str
     name: str
     description: str
+    connection_kind: ModelConnectionKind
     base_url: str
     model_id: str
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(
@@ -256,6 +264,7 @@ __all__ = [
     "ModelConnectionApiStyle",
     "ModelConnectionConnectionTestRead",
     "ModelConnectionCreate",
+    "ModelConnectionKind",
     "ModelConnectionListItemRead",
     "ModelConnectionListRead",
     "ModelConnectionRead",

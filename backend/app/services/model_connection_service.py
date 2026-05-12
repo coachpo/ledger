@@ -35,6 +35,7 @@ class _ModelConnectionTestResult:
 class PackageModelConnectionBinding:
     key: str
     name: str
+    connection_kind: str
     base_url: str
     model_id: str
     reasoning_effort: str | None
@@ -111,6 +112,7 @@ class ModelConnectionService:
         connection = ModelConnection(
             key=payload.key,
             status="active",
+            connection_kind=payload.connection_kind.value,
             name=payload.name,
             description=payload.description,
             api_style=payload.api_style.value,
@@ -143,6 +145,9 @@ class ModelConnectionService:
             connection.description = payload.description or ""
         reset_connection_test_result = False
 
+        if "connection_kind" in payload.model_fields_set and payload.connection_kind is not None:
+            connection.connection_kind = payload.connection_kind.value
+            reset_connection_test_result = True
         if "api_style" in payload.model_fields_set and payload.api_style is not None:
             connection.api_style = payload.api_style.value
             reset_connection_test_result = True
@@ -282,6 +287,7 @@ class ModelConnectionService:
         return PackageModelConnectionBinding(
             key=connection.key,
             name=connection.name,
+            connection_kind=connection.connection_kind,
             base_url=connection.base_url,
             model_id=connection.model_id,
             reasoning_effort=connection.reasoning_effort,
@@ -292,6 +298,13 @@ class ModelConnectionService:
 
     def _run_connection_test(self, connection: ModelConnection) -> _ModelConnectionTestResult:
         tested_at = utcnow()
+        if connection.connection_kind == "deterministic_smoke":
+            return _ModelConnectionTestResult(
+                ok=True,
+                message="Deterministic smoke test succeeded.",
+                tested_at=tested_at,
+            )
+
         api_key = self._get_api_key(connection)
         if api_key is None:
             return _ModelConnectionTestResult(

@@ -2760,3 +2760,140 @@ def test_init_db_upgrades_legacy_report_schema(database_url: str) -> None:
         assert row[2] == {}  # metadata defaults to empty object
     finally:
         engine.dispose()
+
+
+def test_model_connection_round_trips_connection_kind(client: TestClient) -> None:
+    payload = {**_model_connection_create_payload(), "connectionKind": "deterministic_smoke"}
+
+    create_response = client.post("/api/model-connections", json=payload)
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    assert create_body["connectionKind"] == "deterministic_smoke"
+    connection_id = cast(int, create_body["id"])
+
+    patch_response = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"connectionKind": "provider"},
+    )
+    assert patch_response.status_code == 200, patch_response.json()
+    patch_body = cast(dict[str, object], patch_response.json())
+    assert patch_body["connectionKind"] == "provider"
+
+    get_response = client.get(f"/api/model-connections/{connection_id}")
+    assert get_response.status_code == 200
+    get_body = cast(dict[str, object], get_response.json())
+    assert get_body["connectionKind"] == "provider"
+
+
+def test_model_connection_connection_test_uses_provider_openai_behavior(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 5, 12, 15, 0, tzinfo=UTC_TZ)
+
+    class _RecordingOpenAIResponse:
+        _request_id = "req-provider-connection-test"
+
+    class _RecordingOpenAIClient:
+        init_calls: list[dict[str, object]] = []
+        response_calls: list[dict[str, object]] = []
+
+        class _Responses:
+            def __init__(self, client: _RecordingOpenAIClient) -> None:
+                self._client = client
+
+            def create(self, **kwargs: object) -> _RecordingOpenAIResponse:
+                self._client.response_calls.append(dict(kwargs))
+                return _RecordingOpenAIResponse()
+
+        def __init__(self, **kwargs: object) -> None:
+            self.init_calls.append(dict(kwargs))
+            self.responses = self._Responses(self)
+
+        def __enter__(self) -> _RecordingOpenAIClient:
+            return self
+
+        def __exit__(self, exc_type: object, exc_value: object, exc_traceback: object) -> bool:
+            return False
+
+    monkeypatch.setattr("app.services.model_connection_service.OpenAI", _RecordingOpenAIClient)
+    monkeypatch.setattr("app.services.model_connection_service.utcnow", lambda: fixed_now)
+
+    create_response = client.post("/api/model-connections", json=_model_connection_create_payload())
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    connection_id = cast(int, create_body["id"])
+
+    test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
+    assert test_response.status_code == 200, test_response.json()
+    test_body = cast(dict[str, object], test_response.json())
+    assert test_body["modelConnectionId"] == connection_id
+    assert test_body["ok"] is True
+    assert test_body["message"] == "Connection test succeeded (request req-provider-connection-test)."
+    assert datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+    assert _RecordingOpenAIClient.init_calls == [
+        {
+            "api_key": "sk-test-model-connection",
+            "base_url": "https://api.openai.com/v1",
+            "timeout": 60.0,
+            "max_retries": 0,
+        }
+    ]
+    assert _RecordingOpenAIClient.response_calls == [
+        {
+            "model": "gpt-5.5-mini",
+            "instructions": "Reply with the single word OK.",
+            "input": "Connection test.",
+            "reasoning": {"effort": "medium"},
+        }
+    ]
+
+    get_response = client.get(f"/api/model-connections/{connection_id}")
+    assert get_response.status_code == 200, get_response.json()
+    get_body = cast(dict[str, object], get_response.json())
+    assert get_body["lastTestOk"] is True
+    assert get_body["lastTestMessage"] == "Connection test succeeded (request req-provider-connection-test)."
+    assert datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+
+
+def test_model_connection_connection_test_uses_smoke_kind_without_openai(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 5, 12, 15, 5, tzinfo=UTC_TZ)
+
+    class _UnexpectedOpenAIClient:
+        def __init__(self, **kwargs: object) -> None:
+            raise AssertionError("OpenAI should not be used for deterministic_smoke connections")
+
+    monkeypatch.setattr("app.services.model_connection_service.OpenAI", _UnexpectedOpenAIClient)
+    monkeypatch.setattr("app.services.model_connection_service.utcnow", lambda: fixed_now)
+
+    payload = {
+        **_model_connection_create_payload(),
+        "connectionKind": "deterministic_smoke",
+        "baseUrl": "https://smoke.invalid/v1",
+        "modelId": "smoke-check",
+        "apiStyle": "chat_completions",
+    }
+    payload.pop("apiKey")
+
+    create_response = client.post("/api/model-connections", json=payload)
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    connection_id = cast(int, create_body["id"])
+
+    test_response = client.post(f"/api/model-connections/{connection_id}/connection-test")
+    assert test_response.status_code == 200, test_response.json()
+    test_body = cast(dict[str, object], test_response.json())
+    assert test_body["modelConnectionId"] == connection_id
+    assert test_body["ok"] is True
+    assert test_body["message"] == "Deterministic smoke test succeeded."
+    assert datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+
+    get_response = client.get(f"/api/model-connections/{connection_id}")
+    assert get_response.status_code == 200, get_response.json()
+    get_body = cast(dict[str, object], get_response.json())
+    assert get_body["lastTestOk"] is True
+    assert get_body["lastTestMessage"] == "Deterministic smoke test succeeded."
+    assert datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now

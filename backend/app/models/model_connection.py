@@ -19,6 +19,10 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
             name="ck_model_connections_status",
         ),
         CheckConstraint(
+            "connection_kind IN ('provider', 'deterministic_smoke')",
+            name="ck_model_connections_connection_kind",
+        ),
+        CheckConstraint(
             "reasoning_effort IS NULL OR (length(btrim(reasoning_effort)) BETWEEN 1 AND 128)",
             name="ck_model_connections_reasoning_effort",
         ),
@@ -42,6 +46,12 @@ class ModelConnection(IdMixin, TimestampMixin, Base):
         nullable=False,
         default="active",
         server_default="active",
+    )
+    connection_kind: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="provider",
+        server_default="provider",
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
