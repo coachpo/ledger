@@ -6,6 +6,8 @@
 
 ## OVERVIEW
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
 ## CHILD DOCS

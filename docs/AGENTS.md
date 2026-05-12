@@ -5,6 +5,8 @@
 ## OVERVIEW
 `docs/` is the live product, requirements, spec, API, data-model, test, platform, run-input, and memory reference set. Live code remains source of truth; docs mirror the mounted browser/API surfaces and current persistence/runtime contracts.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
