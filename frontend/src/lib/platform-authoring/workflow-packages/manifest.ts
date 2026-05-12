@@ -40,10 +40,11 @@ export type PackageMcpServerDraft = {
   argsText: string;
   command: string;
   description: string;
+  env: Record<string, string>;
+  headers: Record<string, string>;
   key: string;
   name: string;
-  requiredBindings: string[];
-  secretRefs: Record<string, string[]>;
+  query: Record<string, string>;
   toolKeys: string[];
   transport: PackageMcpTransport;
   url: string;
@@ -133,10 +134,11 @@ export function createPackageMcpServerDraft(overrides: Partial<PackageMcpServerD
     argsText: "[]",
     command: "",
     description: "",
+    env: {},
+    headers: {},
     key: createLocalKey("private-mcp"),
     name: "New Private MCP",
-    requiredBindings: [],
-    secretRefs: {},
+    query: {},
     toolKeys: [],
     transport: "stdio",
     url: "",
@@ -223,39 +225,28 @@ function parseCapabilityProfile(value: unknown, index: number): PackageCapabilit
   });
 }
 
-function parseSecretBindingNames(value: unknown): string[] {
-  if (!isRecord(value)) {
-    return [];
-  }
-  const bindings = Object.values(value).flatMap((entry) => readStringArray(entry));
-  return [...new Set(bindings.map((binding) => binding.trim()).filter(Boolean))];
-}
-
-function parseSecretRefs(value: unknown): Record<string, string[]> {
+function normalizeStringMap(value: unknown): Record<string, string> {
   if (!isRecord(value)) {
     return {};
   }
   const entries = Object.entries(value)
-    .map(([key, entry]) => [key.trim(), readStringArray(entry)] as const)
-    .filter(([key, bindingNames]) => Boolean(key) && bindingNames.length > 0);
+    .map(([key, entry]) => [key.trim(), readString(entry).trim()] as const)
+    .filter(([key, entryValue]) => Boolean(key) && Boolean(entryValue));
   return Object.fromEntries(entries);
 }
 
 function parseMcpServer(value: unknown, index: number): PackageMcpServerDraft {
   const record = isRecord(value) ? value : {};
   const transport = record.transport === "http-sse" ? "http-sse" : "stdio";
-  const requiredBindings = readStringArray(record.requiredBindings);
-  const secretRefs = parseSecretRefs(record.secretRefs);
-  const secretBindings = parseSecretBindingNames(secretRefs);
-  const mergedRequiredBindings = [...new Set([...requiredBindings, ...secretBindings])];
   return createPackageMcpServerDraft({
     argsText: parseArgsText(record.args),
     command: readString(record.command),
     description: readString(record.description),
+    env: normalizeStringMap(record.env),
+    headers: normalizeStringMap(record.headers),
     key: readString(record.key, `private-mcp-${index + 1}`),
     name: readString(record.name, `Private MCP ${index + 1}`),
-    requiredBindings: mergedRequiredBindings,
-    secretRefs,
+    query: normalizeStringMap(record.query),
     toolKeys: readStringArray(record.toolKeys),
     transport,
     url: readString(record.url),
@@ -305,11 +296,6 @@ function parseMcpArgs(argsText: string): string[] {
   }
 }
 
-function mcpSecretRefs(requiredBindings: readonly string[]) {
-  const bindings = requiredBindings.map((binding) => binding.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
-  return bindings.length === 0 ? undefined : Object.fromEntries(bindings.map((binding) => [binding, [`${binding}_SECRET`]]));
-}
-
 export function workflowPackageDraftToManifestObject(draft: WorkflowPackageDraft): UnknownRecord {
   return {
     apiVersion: "ledger.workflowPackage/v1",
@@ -339,16 +325,28 @@ export function workflowPackageDraftToManifestObject(draft: WorkflowPackageDraft
         toolKeys: [...profile.toolKeys].sort((left, right) => left.localeCompare(right)),
       })),
       inputs: schemaBuilderToJsonSchema(draft.spec.inputs),
-      mcpServers: draft.spec.mcpServers.map((server) => ({
-        ...(server.transport === "stdio" ? { args: parseMcpArgs(server.argsText), command: server.command.trim() } : { url: server.url.trim() }),
-        description: server.description.trim(),
-        key: server.key.trim().toLowerCase(),
-        name: server.name.trim(),
-        requiredBindings: server.requiredBindings.map((binding) => binding.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
-        secretRefs: Object.keys(server.secretRefs).length > 0 ? server.secretRefs : mcpSecretRefs(server.requiredBindings),
-        toolKeys: [...server.toolKeys].sort((left, right) => left.localeCompare(right)),
-        transport: server.transport,
-      })),
+      mcpServers: draft.spec.mcpServers.map((server) => {
+        const common = {
+          description: server.description.trim(),
+          key: server.key.trim().toLowerCase(),
+          name: server.name.trim(),
+          toolKeys: [...server.toolKeys].sort((left, right) => left.localeCompare(right)),
+          transport: server.transport,
+        };
+        return server.transport === "stdio"
+          ? {
+              ...common,
+              args: parseMcpArgs(server.argsText),
+              command: server.command.trim(),
+              env: normalizeStringMap(server.env),
+            }
+          : {
+              ...common,
+              headers: normalizeStringMap(server.headers),
+              query: normalizeStringMap(server.query),
+              url: server.url.trim(),
+            };
+      }),
       outputSchemas: draft.spec.outputSchemas.map((schema) => ({
         description: schema.description.trim(),
         jsonSchema: schemaBuilderToJsonSchema(schema.jsonSchema),
@@ -428,10 +426,4 @@ export function mapBackendDiagnostics(diagnostics: readonly WorkflowPackageManif
     issue: diagnostic.message,
     tab: diagnosticToEditorTarget(diagnostic.path).tab,
   }));
-}
-
-export function previewContainsSecretValue(value: string): boolean {
-  return value.split(/\r?\n/).some((line) =>
-    /(api[_-]?key|password|secret|token)\s*[:=]\s*(?!$|\[|\{|null|"?\$\{|"?[A-Z0-9_]+_SECRET)/i.test(line),
-  );
 }

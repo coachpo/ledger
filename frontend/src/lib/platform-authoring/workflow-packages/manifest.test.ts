@@ -8,32 +8,81 @@ import {
   createWorkflowPackageDraft,
   diagnosticToEditorTarget,
   packageDraftFromManifestSource,
-  previewContainsSecretValue,
   validateWorkflowPackageDraft,
   workflowPackageDraftToManifestObject,
   workflowPackageDraftToManifestSource,
 } from "./manifest";
 
 describe("workflow package manifest helpers", () => {
-  it("roundtrips package-local resources without database ids or secret values", () => {
+  it("roundtrips package-local resources and inline private MCP maps without synthetic binding refs", () => {
     const draft = createWorkflowPackageDraft({
       metadata: { description: "Package", key: "research_package", name: "Research Package" },
     });
     draft.spec.outputSchemas = [createPackageOutputSchemaDraft({ key: "summary_schema", name: "Summary" })];
     draft.spec.capabilityProfiles = [createPackageCapabilityProfileDraft({ key: "research_tools", name: "Research tools", toolKeys: ["ledger.reports.lookup"] })];
-    draft.spec.mcpServers = [createPackageMcpServerDraft({ argsText: '["--api-key", "${MARKET_DATA_API_KEY}"]', command: "market-mcp", key: "market-mcp", name: "Market MCP", requiredBindings: ["MARKET_DATA_API_KEY"] })];
-    draft.spec.agents = [createPackageAgentDraft({ capabilityProfiles: ["research_tools"], key: "analyst", mcpServers: ["market-mcp"], modelConnection: "primary_model", name: "Analyst", outputSchema: "summary_schema" })];
+    draft.spec.mcpServers = [
+      createPackageMcpServerDraft({
+        argsText: '["--api-key", "${MARKET_DATA_API_KEY}"]',
+        command: "market-mcp",
+        env: { MARKET_DATA_API_KEY: "${MARKET_DATA_API_KEY}" },
+        key: "market-mcp",
+        name: "Market MCP",
+      }),
+      createPackageMcpServerDraft({
+        headers: { Authorization: "Bearer ${MARKET_DATA_API_KEY}" },
+        key: "market-http",
+        name: "Market HTTP MCP",
+        query: { apiKey: "${MARKET_DATA_API_KEY}" },
+        transport: "http-sse",
+        url: "https://example.com/mcp",
+      }),
+    ];
+    draft.spec.agents = [createPackageAgentDraft({ capabilityProfiles: ["research_tools"], key: "analyst", mcpServers: ["market-mcp", "market-http"], modelConnection: "primary_model", name: "Analyst", outputSchema: "summary_schema" })];
 
     const source = workflowPackageDraftToManifestSource(draft);
-    const object = workflowPackageDraftToManifestObject(draft);
+    const object = workflowPackageDraftToManifestObject(draft) as {
+      spec: {
+        mcpServers: Array<Record<string, unknown>>;
+      };
+    };
     const parsed = packageDraftFromManifestSource(source);
+
+    expect(source).toContain("env:");
+    expect(source).toContain("headers:");
+    expect(source).toContain("query:");
+    expect(source).toContain("MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY}");
+    expect(source).toContain("Authorization: Bearer ${MARKET_DATA_API_KEY}");
+    expect(source).toContain("apiKey: ${MARKET_DATA_API_KEY}");
+
+    expect(object.spec.mcpServers).toEqual([
+      {
+        args: ["--api-key", "${MARKET_DATA_API_KEY}"],
+        command: "market-mcp",
+        description: "",
+        env: { MARKET_DATA_API_KEY: "${MARKET_DATA_API_KEY}" },
+        key: "market-mcp",
+        name: "Market MCP",
+        toolKeys: [],
+        transport: "stdio",
+      },
+      {
+        description: "",
+        headers: { Authorization: "Bearer ${MARKET_DATA_API_KEY}" },
+        key: "market-http",
+        name: "Market HTTP MCP",
+        query: { apiKey: "${MARKET_DATA_API_KEY}" },
+        toolKeys: [],
+        transport: "http-sse",
+        url: "https://example.com/mcp",
+      },
+    ]);
 
     expect(parsed.errors).toEqual([]);
     expect(parsed.draft.spec.agents[0]).toMatchObject({ key: "analyst", outputSchema: "summary_schema" });
-    expect(JSON.stringify(object)).not.toContain("modelConnectionId");
-    expect(JSON.stringify(object)).not.toContain("apiKey");
-    expect(JSON.stringify(object)).not.toContain("secretPayload");
-    expect(JSON.stringify(object)).toContain("MARKET_DATA_API_KEY_SECRET");
+    expect(parsed.draft.spec.mcpServers).toMatchObject([
+      { env: { MARKET_DATA_API_KEY: "${MARKET_DATA_API_KEY}" }, key: "market-mcp", transport: "stdio" },
+      { headers: { Authorization: "Bearer ${MARKET_DATA_API_KEY}" }, key: "market-http", query: { apiKey: "${MARKET_DATA_API_KEY}" }, transport: "http-sse" },
+    ]);
   });
 
   it("validates local references and maps backend diagnostics to resource tabs", () => {
@@ -49,11 +98,6 @@ describe("workflow package manifest helpers", () => {
     expect(diagnosticToEditorTarget("spec.agents[0].modelConnection")).toEqual({ field: "spec.agents[0].modelConnection", tab: "agents" });
     expect(diagnosticToEditorTarget("spec.outputSchemas[0]")).toEqual({ field: "spec.outputSchemas[0]", tab: "output-schemas" });
     expect(diagnosticToEditorTarget("spec.capabilityProfiles.research.toolKeys[0]")).toEqual({ field: "spec.capabilityProfiles.research.toolKeys[0]", tab: "capability-profiles" });
-    expect(diagnosticToEditorTarget("spec.mcpServers[0].requiredBindings[0]")).toEqual({ field: "spec.mcpServers[0].requiredBindings[0]", tab: "private-mcp" });
-  });
-
-  it("detects likely secret values but permits binding placeholders", () => {
-    expect(previewContainsSecretValue("apiKey: sk-live-secret")).toBe(true);
-    expect(previewContainsSecretValue("secretRefs:\n  apiKey:\n    - MARKET_DATA_API_KEY_SECRET")).toBe(false);
+    expect(diagnosticToEditorTarget("spec.mcpServers[0].env.MARKET_DATA_API_KEY")).toEqual({ field: "spec.mcpServers[0].env.MARKET_DATA_API_KEY", tab: "private-mcp" });
   });
 });
