@@ -181,16 +181,22 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     renderEditor();
 
     clickTab("Preflight");
+    const preflightTab = screen.getByTestId("workflow-package-preflight-tab");
+    expect(within(preflightTab).queryByText("Version")).not.toBeInTheDocument();
+    expect(within(preflightTab).queryByText("Warnings")).not.toBeInTheDocument();
     expect(await screen.findByText(/needs attention/i)).toBeInTheDocument();
     expect(screen.getByText(/missing model connection/i)).toBeVisible();
-    fireEvent.click(within(screen.getByTestId("workflow-package-preflight-tab")).getByRole("button", { name: /^run preflight$/i }));
+    fireEvent.click(within(preflightTab).getByRole("button", { name: /^run preflight$/i }));
 
     expect(await screen.findByRole("tab", { name: "Agents tab" })).toHaveAttribute("aria-selected", "true");
   });
   it("launches package run after preflight and navigates to run detail", async () => {
     renderEditor("/workflow-packages/42/run");
 
-    expect(await screen.findByTestId("workflow-package-launch-tab")).toBeVisible();
+    const launchTab = await screen.findByTestId("workflow-package-launch-tab");
+    expect(launchTab).toBeVisible();
+    expect(within(launchTab).queryByText("Readiness")).not.toBeInTheDocument();
+    expect(within(launchTab).queryByText("Workflow")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "AAPL" } });
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 

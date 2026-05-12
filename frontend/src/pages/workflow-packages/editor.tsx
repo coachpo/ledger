@@ -1079,12 +1079,6 @@ function PreflightTab(props: {
             {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}@${read.packageVersion}.` : "Select a saved package version and run preflight to check readiness."}
           </AlertDescription>
         </Alert>
-        <div className="grid gap-3 md:grid-cols-4">
-          <DetailMetric label="Package" value={read?.packageKey ?? workflowPackage?.key ?? "unsaved-package"} />
-          <DetailMetric label="Version" value={read ? versionLabel(read.packageVersion) : versionLabel(workflowPackage?.latestVersion)} />
-          <DetailMetric label="Workflow" value={read?.workflowKey ?? "Not selected"} />
-          <DetailMetric label="Warnings" value={String(warningCount)} />
-        </div>
         <DiagnosticRows diagnostics={diagnostics} onOpenField={onOpenField} />
       </CardContent>
     </Card>
@@ -1110,7 +1104,6 @@ function LaunchTab(props: {
   const [parametersText, setParametersText] = useState("{}");
   const fields = useMemo(() => runtimeInputFields(launchRead?.inputSchema), [launchRead?.inputSchema]);
   const hasFieldInputs = fields.length > 0;
-  const blockingCount = diagnosticsFromLaunch(launchRead).filter((diagnostic) => diagnostic.severity === "error").length;
 
   useEffect(() => {
     const initialValues = Object.fromEntries(fields.map((field) => [field.key, ""]));
@@ -1163,7 +1156,6 @@ function LaunchTab(props: {
         </div>
         {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
-        {launchRead ? <div className="grid gap-3 md:grid-cols-3"><DetailMetric label="Package" value={`${launchRead.packageKey}@${launchRead.packageVersion}`} /><DetailMetric label="Workflow" value={launchRead.workflowKey} /><DetailMetric label="Readiness" value={launchRead.ready ? "Ready" : `${blockingCount} blockers`} /></div> : null}
         <Card className="bg-background/60">
           <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Fields are derived from backend launch metadata for the selected package workflow.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
@@ -1507,9 +1499,11 @@ export function WorkflowPackageEditorPage() {
         <>
           {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
-            <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full flex-wrap justify-start bg-muted/60 p-1">
-              {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
-            </TabsList>
+            <div className="shrink-0 overflow-x-auto pb-1">
+              <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto !w-max min-w-full flex-nowrap justify-start bg-muted/60 p-1">
+                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => setActiveTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+              </TabsList>
+            </div>
             <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
             <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
             <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>

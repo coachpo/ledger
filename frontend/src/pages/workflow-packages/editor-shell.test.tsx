@@ -134,6 +134,15 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
   });
 
+  it("keeps the package editor tab strip on one scrollable row", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    const tabList = screen.getByRole("tablist", { name: "Workflow package editor sections" });
+    expect(tabList.parentElement).toHaveClass("shrink-0", "overflow-x-auto");
+    expect(tabList).toHaveClass("flex-nowrap");
+    expect(tabList).not.toHaveClass("flex-wrap");
+  });
+
   it("hydrates existing package draft fields from manifestSource instead of summary metadata", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
