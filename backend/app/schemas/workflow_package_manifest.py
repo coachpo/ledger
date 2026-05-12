@@ -10,6 +10,7 @@ from pydantic import (
     Field,
     StrictBool,
     StrictInt,
+    ValidationInfo,
     field_validator,
     model_serializer,
     model_validator,
@@ -72,6 +73,19 @@ def _json_schema(value: dict[str, JsonValue], *, field_name: str) -> dict[str, J
     if value.get("type") != "object":
         raise ValueError(f"{field_name} must be an object schema")
     return value
+
+
+def _string_map(value: object, *, field_name: str) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object of string values")
+
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in cast(dict[object, object], value).items():
+        key = _required_text(raw_key, field_name=f"{field_name} key")
+        normalized[key] = _required_text(raw_value, field_name=f"{field_name}.{key}")
+    return normalized
 
 
 def _ref_list(value: object, *, field_name: str, allow_hyphen: bool = False) -> list[str]:
@@ -188,10 +202,31 @@ class WorkflowPackageMcpServer(CamelModel):
     transport: Literal["stdio", "http-sse"]
     command: str | None = None
     args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
     url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    query: dict[str, str] = Field(default_factory=dict)
     tool_keys: list[str] = Field(default_factory=list, alias="toolKeys")
-    secret_refs: dict[str, list[str]] | None = Field(default=None, alias="secretRefs")
-    required_bindings: list[str] | None = Field(default=None, alias="requiredBindings")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_secret_bindings(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        legacy_fields = [field for field in ("secretRefs", "requiredBindings") if field in value]
+        if not legacy_fields:
+            return value
+
+        if len(legacy_fields) == 1:
+            raise ValueError(
+                f"{legacy_fields[0]} is no longer supported on package MCP servers; "
+                + "use transport-specific inline env, headers, or query maps instead"
+            )
+        raise ValueError(
+            "secretRefs and requiredBindings are no longer supported on package MCP servers; "
+            + "use transport-specific inline env, headers, or query maps instead"
+        )
 
     @field_validator("key", mode="before")
     @classmethod
@@ -227,6 +262,11 @@ class WorkflowPackageMcpServer(CamelModel):
             _required_text(item, field_name="MCP argument") for item in cast(list[object], value)
         ]
 
+    @field_validator("env", "headers", "query", mode="before")
+    @classmethod
+    def validate_inline_string_map(cls, value: object, info: ValidationInfo) -> dict[str, str]:
+        return _string_map(value, field_name=info.field_name or "MCP inline map")
+
     @field_validator("tool_keys", mode="before")
     @classmethod
     def validate_tool_keys(cls, value: object) -> list[str]:
@@ -242,41 +282,29 @@ class WorkflowPackageMcpServer(CamelModel):
             keys.append(key)
         return keys
 
-    @field_validator("required_bindings", mode="before")
-    @classmethod
-    def validate_required_bindings(cls, value: object) -> list[str] | None:
-        if value is None:
-            return None
-        if not isinstance(value, list):
-            raise ValueError("requiredBindings must be an array of binding names")
-        return [
-            _required_text(item, field_name="MCP required binding")
-            for item in cast(list[object], value)
-        ]
-
-    @field_validator("secret_refs", mode="before")
-    @classmethod
-    def validate_secret_refs(cls, value: object) -> dict[str, list[str]] | None:
-        if value is None:
-            return None
-        if not isinstance(value, dict):
-            raise ValueError("secretRefs must be an object of binding-name arrays")
-        refs: dict[str, list[str]] = {}
-        for raw_key, raw_values in cast(dict[object, object], value).items():
-            key = _required_text(raw_key, field_name="MCP secret ref group")
-            if not isinstance(raw_values, list):
-                raise ValueError("secretRefs values must be arrays")
-            refs[key] = [_required_text(item, field_name="MCP secret ref") for item in raw_values]
-        return refs
-
     @model_validator(mode="after")
     def validate_transport_shape(self) -> WorkflowPackageMcpServer:
+        provided_fields = self.model_fields_set
         if self.transport == "stdio":
             if not self.command or not self.args:
                 raise ValueError("stdio MCP servers require command and args")
-            self.url = None
-        elif not self.url:
+            unsupported = sorted(provided_fields.intersection({"url", "headers", "query"}))
+            if unsupported:
+                raise ValueError(
+                    "stdio MCP servers only support inline env values; unsupported fields: "
+                    + ", ".join(unsupported)
+                )
+            return self
+
+        if not self.url:
             raise ValueError("http-sse MCP servers require url")
+        unsupported = sorted(provided_fields.intersection({"command", "args", "env"}))
+        if unsupported:
+            raise ValueError(
+                "http-sse MCP servers only support inline headers and query values; "
+                + "unsupported fields: "
+                + ", ".join(unsupported)
+            )
         return self
 
 

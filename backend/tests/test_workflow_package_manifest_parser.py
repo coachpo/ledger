@@ -48,6 +48,8 @@ spec:
       transport: stdio
       command: python
       args: [server.py]
+      env:
+        RESEARCH_CONTEXT_TOKEN: local-token
       toolKeys:
         - research_context.search
   agents:
@@ -85,6 +87,25 @@ spec:
       output:
         from: ${{ nodes.market_analysis.outputs.decision }}
 """
+
+
+def _valid_http_sse_package_manifest_source() -> str:
+    return _valid_package_manifest_source().replace(
+        """      transport: stdio
+      command: python
+      args: [server.py]
+      env:
+        RESEARCH_CONTEXT_TOKEN: local-token
+""",
+        """      transport: http-sse
+      url: https://mcp.example.test/sse
+      headers:
+        Authorization: Bearer test-token
+      query:
+        api_key: test-api-key
+""",
+        1,
+    )
 
 
 def _with_duplicate_output_schema() -> str:
@@ -145,10 +166,64 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     spec = cast(dict[str, object], dumped["spec"])
     agents = cast(list[dict[str, object]], spec["agents"])
     capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
     assert "modelConnectionId" not in agents[0]
     assert capability_profiles[0]["toolKeys"] == ["ledger.market_data.quote_lookup"]
     assert "tool_keys" not in capability_profiles[0]
+    assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
+    assert "secretRefs" not in mcp_servers[0]
+    assert "requiredBindings" not in mcp_servers[0]
+
+
+def test_parse_http_sse_mcp_server_accepts_headers_and_query() -> None:
+    result = parse_workflow_package_manifest(_valid_http_sse_package_manifest_source())
+
+    assert result.diagnostics == []
+    assert result.manifest is not None
+    server = result.manifest.spec.mcp_servers[0]
+    assert server.transport == "http-sse"
+    assert server.url == "https://mcp.example.test/sse"
+    assert server.headers == {"Authorization": "Bearer test-token"}
+    assert server.query == {"api_key": "test-api-key"}
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_message"),
+    [
+        (
+            _valid_package_manifest_source().replace(
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
+                + "      headers:\n        Authorization: Bearer test-token\n"
+                + "      query:\n        api_key: test-api-key\n"
+                + "      toolKeys:\n",
+                1,
+            ),
+            "stdio MCP servers only support inline env values; unsupported fields: headers, query",
+        ),
+        (
+            _valid_http_sse_package_manifest_source().replace(
+                "      headers:\n",
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      headers:\n",
+                1,
+            ),
+            "http-sse MCP servers only support inline headers and query values; "
+            + "unsupported fields: env",
+        ),
+    ],
+)
+def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
+    source: str,
+    expected_message: str,
+) -> None:
+    result = parse_workflow_package_manifest(source)
+
+    assert result.manifest is None
+    assert [diagnostic.path for diagnostic in result.diagnostics] == ["spec.mcpServers[0]"]
+    assert expected_message in result.diagnostics[0].message
+    assert result.diagnostics[0].line is not None
+    assert result.diagnostics[0].column is not None
 
 
 @pytest.mark.parametrize(
@@ -248,6 +323,30 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
             ),
             "spec.skills",
             "spec.skills is no longer supported",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
+                + "      secretRefs:\n        env: [RESEARCH_CONTEXT_TOKEN]\n"
+                + "      toolKeys:\n",
+                1,
+            ),
+            "spec.mcpServers[0]",
+            "secretRefs is no longer supported",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
+                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
+                + "      requiredBindings: [env.RESEARCH_CONTEXT_TOKEN]\n"
+                + "      toolKeys:\n",
+                1,
+            ),
+            "spec.mcpServers[0]",
+            "requiredBindings is no longer supported",
             True,
         ),
         (
