@@ -8,6 +8,7 @@ import type {
   RunAgentInvocationRead,
   RunGraphMetadata,
   RunMemoryArtifactRead,
+  RunPackageResolvedModelConnectionRead,
   RunStatus,
   RunStepRead,
   RunStepStatus,
@@ -158,6 +159,22 @@ function statusVariant(status: RunStatus | RunStepStatus): "secondary" | "destru
   return "secondary";
 }
 
+function modelConnectionKindLabel(connection: RunPackageResolvedModelConnectionRead): string {
+  return connection.connectionKind === "deterministic_smoke" ? "Deterministic smoke" : "Provider-backed";
+}
+
+function modelConnectionKindDescription(connection: RunPackageResolvedModelConnectionRead): string {
+  if (connection.connectionKind === "deterministic_smoke") {
+    return "Offline deterministic smoke path";
+  }
+
+  return connection.hasApiKey ? "Provider credentials configured" : "Provider credentials missing";
+}
+
+function sortedResolvedModelConnections(connections: RunPackageResolvedModelConnectionRead[]): RunPackageResolvedModelConnectionRead[] {
+  return [...connections].sort((left, right) => left.key.localeCompare(right.key));
+}
+
 function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvocationRead[] {
   return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
 }
@@ -244,6 +261,34 @@ function DetailGrid({ items }: { items: DetailItem[] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function ResolvedModelConnections({ connections }: { connections: RunPackageResolvedModelConnectionRead[] }) {
+  const sortedConnections = sortedResolvedModelConnections(connections);
+  if (sortedConnections.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed bg-background/50 p-3 text-sm text-muted-foreground">
+        No resolved model connections were captured for this run.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="runs-resolved-model-connections">
+      {sortedConnections.map((connection) => (
+        <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-resolved-model-connection-${connection.key}`} key={connection.key}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-foreground">{connection.name}</span>
+            <Badge variant={connection.connectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
+              {modelConnectionKindLabel(connection)}
+            </Badge>
+          </div>
+          <p className="mt-1 break-all text-xs text-muted-foreground">{connection.key} · {connection.modelId} · {connection.apiStyle}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{modelConnectionKindDescription(connection)} · {connection.timeoutSeconds}s timeout</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1052,7 +1097,7 @@ export function RunsDetailPage() {
               <CardTitle className="text-base">Package provenance</CardTitle>
               <CardDescription>Immutable workflow package identity captured when the run was created.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <DetailGrid
                 items={[
                   { label: "Package", value: <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>{run.packageProvenance.workflowPackageKey}@{run.packageProvenance.workflowPackageVersion}</Link> },
@@ -1061,6 +1106,10 @@ export function RunsDetailPage() {
                   { label: "Package id", value: `#${run.packageProvenance.workflowPackageId}` },
                 ]}
               />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Resolved model connections</p>
+                <ResolvedModelConnections connections={run.packageProvenance.resolvedModelConnections} />
+              </div>
             </CardContent>
           </Card>
         ) : null}

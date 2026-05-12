@@ -51,6 +51,7 @@ describe("ModelConnectionsListPage", () => {
           {
             apiStyle: "responses",
             baseUrl: "https://api.openai.com/v1",
+            connectionKind: "provider",
             description: "Production traffic",
             id: 9,
             key: "primary_openai",
@@ -65,6 +66,7 @@ describe("ModelConnectionsListPage", () => {
           {
             apiStyle: "chat_completions",
             baseUrl: "https://backup.openai.com/v1",
+            connectionKind: "deterministic_smoke",
             description: "Fallback traffic",
             id: 4,
             key: "legacy_backup",
@@ -79,6 +81,7 @@ describe("ModelConnectionsListPage", () => {
           {
             apiStyle: "responses",
             baseUrl: "https://literal.openai.com/v1",
+            connectionKind: "provider",
             description: "Literal none reasoning value",
             id: 12,
             key: "literal_none",
@@ -113,6 +116,8 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByText(/^xhigh$/)).toBeVisible();
     expect(screen.getByText(/^none$/)).toBeVisible();
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Provider-backed")).toHaveLength(4);
+    expect(screen.getAllByText("Deterministic smoke")).toHaveLength(2);
     expect(screen.getByText(/^passed$/i)).toBeVisible();
     expect(screen.getByText(/^failed$/i)).toBeVisible();
 

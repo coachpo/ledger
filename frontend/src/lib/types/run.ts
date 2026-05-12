@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./common";
+import type { ModelConnectionApiStyle, ModelConnectionKind, ModelConnectionReasoningEffort } from "./model-connection";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 export type RunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
@@ -64,12 +65,24 @@ export interface RunMemoryArtifactRead {
   } | null;
 }
 
+export interface RunPackageResolvedModelConnectionRead {
+  key: string;
+  name: string;
+  connectionKind: ModelConnectionKind;
+  baseUrl: string;
+  modelId: string;
+  reasoningEffort: ModelConnectionReasoningEffort | null;
+  apiStyle: ModelConnectionApiStyle;
+  timeoutSeconds: number;
+  hasApiKey: boolean;
+}
+
 export interface RunPackageProvenanceRead {
   availability: UnknownRecord;
   launchSnapshot: UnknownRecord | null;
   localResourceRefs: UnknownRecord;
   preflightSummary: UnknownRecord | null;
-  resolvedModelConnections: UnknownRecord[];
+  resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
   workflowKey: string;
   workflowPackageHash: string;
   workflowPackageId: number;

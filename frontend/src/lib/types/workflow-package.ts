@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./common";
+import type { ModelConnectionKind } from "./model-connection";
 import type { RunStatus } from "./run";
 
 export type WorkflowPackageStatus = "draft" | "active";
@@ -94,6 +95,15 @@ export interface WorkflowPackageVersionListRead {
   items: WorkflowPackageVersionRead[];
 }
 
+export interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
+  connectionKind?: ModelConnectionKind;
+  field?: string;
+  issue?: string;
+  message?: string;
+  path?: string;
+  severity?: WorkflowPackageManifestDiagnosticSeverity | string;
+}
+
 export interface WorkflowPackageLaunchRead {
   packageId: number;
   packageKey: string;
@@ -104,8 +114,8 @@ export interface WorkflowPackageLaunchRead {
   description: string;
   inputSchema: UnknownRecord;
   ready: boolean;
-  blockingErrors: UnknownRecord[];
-  warnings: UnknownRecord[];
+  blockingErrors: WorkflowPackageLaunchDiagnostic[];
+  warnings: WorkflowPackageLaunchDiagnostic[];
 }
 
 export interface WorkflowPackageLaunchCreateRequest {

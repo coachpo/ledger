@@ -263,7 +263,30 @@ describe("RunsDetailPage", () => {
         launchSnapshot: null,
         localResourceRefs: {},
         preflightSummary: { ready: true },
-        resolvedModelConnections: [],
+        resolvedModelConnections: [
+          {
+            apiStyle: "responses",
+            baseUrl: "https://api.openai.com/v1",
+            connectionKind: "provider",
+            hasApiKey: true,
+            key: "primary_openai",
+            modelId: "gpt-5.5",
+            name: "Primary OpenAI",
+            reasoningEffort: "medium",
+            timeoutSeconds: 60,
+          },
+          {
+            apiStyle: "responses",
+            baseUrl: "https://ledger-deterministic-model.local/v1",
+            connectionKind: "deterministic_smoke",
+            hasApiKey: false,
+            key: "smoke_model",
+            modelId: "ledger-smoke",
+            name: "Smoke Model",
+            reasoningEffort: null,
+            timeoutSeconds: 5,
+          },
+        ],
         workflowKey: "market_review",
         workflowPackageHash: "hash-abc",
         workflowPackageId: 7,
@@ -299,6 +322,10 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);

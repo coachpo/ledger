@@ -174,7 +174,10 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       ...launchRead,
       blockingErrors: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }],
       ready: false,
-      warnings: [{ field: "spec.capabilityProfiles[0].toolKeys[0]", issue: "Unknown tool key" }],
+      warnings: [
+        { field: "spec.agents[0].modelConnection", issue: "Deterministic smoke connection will run offline", connectionKind: "deterministic_smoke" },
+        { field: "spec.capabilityProfiles[0].toolKeys[0]", issue: "Unknown tool key" },
+      ],
     };
     preflightPackageMock.mockResolvedValueOnce(blockedRead);
     useWorkflowPackageLaunchMock.mockReturnValue({ data: blockedRead, error: null, isError: false, isPending: false });
@@ -186,6 +189,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(within(preflightTab).queryByText("Warnings")).not.toBeInTheDocument();
     expect(await screen.findByText(/needs attention/i)).toBeInTheDocument();
     expect(screen.getByText(/missing model connection/i)).toBeVisible();
+    expect(within(preflightTab).getAllByText(/deterministic smoke/i).length).toBeGreaterThan(0);
+    expect(within(preflightTab).getAllByText(/will run offline/i).length).toBeGreaterThan(1);
     fireEvent.click(within(preflightTab).getByRole("button", { name: /^run preflight$/i }));
 
     expect(await screen.findByRole("tab", { name: "Agents tab" })).toHaveAttribute("aria-selected", "true");
@@ -197,6 +202,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(launchTab).toBeVisible();
     expect(within(launchTab).queryByText("Readiness")).not.toBeInTheDocument();
     expect(within(launchTab).queryByText("Workflow")).not.toBeInTheDocument();
+    expect(within(launchTab).getByText("Provider-backed")).toBeVisible();
+    expect(within(launchTab).getByText(/saved model connections are provider-backed/i)).toBeVisible();
     fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "AAPL" } });
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 

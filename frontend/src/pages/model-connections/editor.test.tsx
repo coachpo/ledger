@@ -17,6 +17,7 @@ const toastSuccessMock = vi.fn();
 const existingConnection = {
   apiStyle: "chat_completions",
   baseUrl: "https://api.openai.com/v1",
+  connectionKind: "deterministic_smoke",
   createdAt: "2026-04-21T12:00:00Z",
   description: "Production OpenAI connection.",
   id: 4,
@@ -89,6 +90,7 @@ describe("ModelConnectionsEditorPage", () => {
 
     render(<ModelConnectionsEditorPage />);
 
+    expect(screen.getAllByText("Provider-backed")).toHaveLength(2);
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
@@ -343,7 +345,8 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
-    expect(screen.getByText(/leave blank to keep the current key\. enter a new value only to rotate it\./i)).toBeVisible();
+    expect(screen.getAllByText("Deterministic smoke")).toHaveLength(2);
+    expect(screen.getByText(/leave blank to keep the offline path credential-free\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
       "Chat Completions API - legacy / OpenAI-compatible",

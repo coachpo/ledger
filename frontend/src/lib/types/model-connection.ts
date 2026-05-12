@@ -1,10 +1,12 @@
 export type ModelConnectionReasoningEffort = string;
 export type ModelConnectionApiStyle = "responses" | "chat_completions";
+export type ModelConnectionKind = "provider" | "deterministic_smoke";
 
 export interface ModelConnectionCreateInput {
   key: string;
   name: string;
   description?: string;
+  connectionKind?: ModelConnectionKind;
   baseUrl: string;
   modelId: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
@@ -16,6 +18,7 @@ export interface ModelConnectionCreateInput {
 export interface ModelConnectionUpdateInput {
   name?: string;
   description?: string | null;
+  connectionKind?: ModelConnectionKind;
   baseUrl?: string;
   modelId?: string;
   reasoningEffort?: ModelConnectionReasoningEffort | null;
@@ -29,6 +32,7 @@ export interface ModelConnectionListItemRead {
   key: string;
   name: string;
   description: string;
+  connectionKind: ModelConnectionKind;
   baseUrl: string;
   modelId: string;
   reasoningEffort: ModelConnectionReasoningEffort | null;

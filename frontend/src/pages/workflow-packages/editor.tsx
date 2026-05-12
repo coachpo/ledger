@@ -99,6 +99,7 @@ import {
 } from "@/lib/platform-authoring/workflow-packages/manifest";
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type { UnknownRecord } from "@/lib/types/common";
+import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
   WorkflowPackageImportMode,
   WorkflowPackageImportRequest,
@@ -230,6 +231,7 @@ function manifestIdentity(manifest: WorkflowPackageManifestRead) {
 }
 
 type PackageDiagnostic = {
+  connectionKind?: ModelConnectionKind;
   field: string;
   issue: string;
   severity: "error" | "warning";
@@ -246,7 +248,9 @@ type RuntimeInputField = {
 function diagnosticFromRecord(value: unknown, severity: "error" | "warning"): PackageDiagnostic {
   const record = isUnknownRecord(value) ? value : {};
   const field = stringValue(record.field) || stringValue(record.path) || "$";
+  const connectionKind = modelConnectionKindValue(record.connectionKind);
   return {
+    ...(connectionKind ? { connectionKind } : {}),
     field,
     issue: stringValue(record.issue) || stringValue(record.message) || "Review this package diagnostic.",
     severity,
@@ -271,6 +275,23 @@ function diagnosticBadge(diagnostic: PackageDiagnostic) {
   ) : (
     <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
   );
+}
+
+const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
+  deterministic_smoke: "Deterministic smoke",
+  provider: "Provider-backed",
+};
+
+function connectionKindLabel(value: ModelConnectionKind | null | undefined): string {
+  return CONNECTION_KIND_LABELS[value ?? "provider"];
+}
+
+function modelConnectionKindValue(value: unknown): ModelConnectionKind | null {
+  return value === "provider" || value === "deterministic_smoke" ? value : null;
+}
+
+function isSmokeDiagnostic(diagnostic: PackageDiagnostic): boolean {
+  return diagnostic.connectionKind === "deterministic_smoke";
 }
 
 function isUnknownRecord(value: unknown): value is UnknownRecord {
@@ -1024,12 +1045,41 @@ function DiagnosticRows({ diagnostics, onOpenField }: { diagnostics: PackageDiag
       </div>
       {diagnostics.map((diagnostic, index) => (
         <div className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] items-center gap-3 border-t px-3 py-3 text-sm" key={`${diagnostic.field}-${diagnostic.issue}-${index}`}>
-          {diagnosticBadge(diagnostic)}
+          <div className="flex flex-wrap items-center gap-2">
+            {diagnosticBadge(diagnostic)}
+            {diagnostic.connectionKind ? (
+              <Badge variant={diagnostic.connectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
+                {connectionKindLabel(diagnostic.connectionKind)}
+              </Badge>
+            ) : null}
+          </div>
           <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
           <span className="break-words text-muted-foreground">{diagnostic.issue}</span>
           <Button size="sm" type="button" variant="outline" onClick={() => onOpenField(diagnostic)}>Open field</Button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ModelConnectionModeSummary({ diagnostics, read }: { diagnostics: PackageDiagnostic[]; read: WorkflowPackageLaunchRead | undefined }) {
+  if (!read) {
+    return null;
+  }
+
+  const smokeCount = diagnostics.filter(isSmokeDiagnostic).length;
+  return (
+    <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" data-testid="workflow-package-model-connection-modes">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-foreground">Model connection modes:</span>
+        <Badge variant="outline">{connectionKindLabel("provider")}</Badge>
+        {smokeCount > 0 ? <Badge variant="secondary">{connectionKindLabel("deterministic_smoke")}</Badge> : null}
+      </div>
+      <p className="mt-2">
+        {smokeCount > 0
+          ? `${smokeCount} deterministic smoke connection${smokeCount === 1 ? "" : "s"} will run offline; remaining saved model connections stay provider-backed.`
+          : "No deterministic smoke warnings were reported; saved model connections are provider-backed for this launch metadata."}
+      </p>
     </div>
   );
 }
@@ -1070,6 +1120,7 @@ function PreflightTab(props: {
             {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}@${read.packageVersion}.` : "Select a saved package version and run preflight to check readiness."}
           </AlertDescription>
         </Alert>
+        <ModelConnectionModeSummary diagnostics={diagnostics} read={read} />
         <DiagnosticRows diagnostics={diagnostics} onOpenField={onOpenField} />
       </CardContent>
     </Card>
@@ -1095,6 +1146,7 @@ function LaunchTab(props: {
   const [parametersText, setParametersText] = useState("{}");
   const fields = useMemo(() => runtimeInputFields(launchRead?.inputSchema), [launchRead?.inputSchema]);
   const hasFieldInputs = fields.length > 0;
+  const launchDiagnostics = useMemo(() => diagnosticsFromLaunch(launchRead), [launchRead]);
 
   useEffect(() => {
     const initialValues = Object.fromEntries(fields.map((field) => [field.key, ""]));
@@ -1147,6 +1199,7 @@ function LaunchTab(props: {
         </div>
         {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
+        <ModelConnectionModeSummary diagnostics={launchDiagnostics} read={launchRead} />
         <Card className="bg-background/60">
           <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Fields are derived from backend launch metadata for the selected package workflow.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
@@ -1350,7 +1403,7 @@ export function WorkflowPackageEditorPage() {
   const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, MCP bindings, and launch flows." : "Package-local authoring shell for resources that must not become standalone global pages.");
   const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
   const combinedIssues = [...localIssues, ...issues];
-  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle}`, label: connection.name, value: connection.key }));
+  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`, label: connection.name, value: connection.key }));
   const versions = versionsQuery.data?.items ?? [];
   const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
   const isSaving = createPackage.isPending || updatePackage.isPending;
