@@ -5,7 +5,7 @@ import type {
   WorkflowStepAgentWrite,
   WorkflowWireSource,
 } from "@/lib/types/workflow";
-import { parseJsonValue, parseRequiredText } from "@/pages/platform-resource-shared";
+import { parseJsonValue, parseRequiredText } from "@/pages/platform-resource-helpers";
 
 import { createEmptyWorkflowAgent, createEmptyWorkflowStep } from "./draft";
 import type {

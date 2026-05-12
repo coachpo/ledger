@@ -36,7 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
-import { stringifyJson } from "../platform-resource-shared";
+import { stringifyJson } from "../platform-resource-helpers";
 import { RunRerunDialog } from "./rerun-dialog";
 
 type TraceSpanEntry = {

@@ -39,7 +39,7 @@ import type {
 import {
   parseOptionalNumber,
   parseRequiredText,
-} from "../platform-resource-shared";
+} from "../platform-resource-helpers";
 
 type ConnectionFeedback = {
   message: string;

@@ -1,6 +1,6 @@
 import type { AgentRead } from "@/lib/types/agent";
 
-import { parseJsonValue, parseRequiredText } from "@/pages/platform-resource-shared";
+import { parseJsonValue, parseRequiredText } from "@/pages/platform-resource-helpers";
 
 import { createPlatformAuthoringIssue } from "../common/issues";
 import { joinFieldPath, type FieldPath } from "../common/field-path";
