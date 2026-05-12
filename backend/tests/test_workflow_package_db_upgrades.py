@@ -551,8 +551,9 @@ def test_model_connection_upgrade_backfills_connection_kind_for_deterministic_sm
         ]
         assert model_connection_columns["connection_kind"]["nullable"] is False
         assert "provider" in model_connection_check_sql["ck_model_connections_connection_kind"]
-        assert "deterministic_smoke" in model_connection_check_sql[
-            "ck_model_connections_connection_kind"
-        ]
+        assert (
+            "deterministic_smoke"
+            in model_connection_check_sql["ck_model_connections_connection_kind"]
+        )
     finally:
         engine.dispose()

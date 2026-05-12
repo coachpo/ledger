@@ -48,10 +48,7 @@ def parse_model_connection_runtime_snapshot(
     missing_keys = [
         key
         for key in MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS
-        if (
-            key not in {"api_style", "reasoning_effort", "connection_kind"}
-            and key not in snapshot
-        )
+        if (key not in {"api_style", "reasoning_effort", "connection_kind"} and key not in snapshot)
     ]
     if missing_keys:
         raise ValueError(

@@ -2829,8 +2829,13 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     test_body = cast(dict[str, object], test_response.json())
     assert test_body["modelConnectionId"] == connection_id
     assert test_body["ok"] is True
-    assert test_body["message"] == "Connection test succeeded (request req-provider-connection-test)."
-    assert datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+    assert (
+        test_body["message"] == "Connection test succeeded (request req-provider-connection-test)."
+    )
+    assert (
+        datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )
     assert _RecordingOpenAIClient.init_calls == [
         {
             "api_key": "sk-test-model-connection",
@@ -2852,8 +2857,14 @@ def test_model_connection_connection_test_uses_provider_openai_behavior(
     assert get_response.status_code == 200, get_response.json()
     get_body = cast(dict[str, object], get_response.json())
     assert get_body["lastTestOk"] is True
-    assert get_body["lastTestMessage"] == "Connection test succeeded (request req-provider-connection-test)."
-    assert datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+    assert (
+        get_body["lastTestMessage"]
+        == "Connection test succeeded (request req-provider-connection-test)."
+    )
+    assert (
+        datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )
 
 
 def test_model_connection_connection_test_uses_smoke_kind_without_openai(
@@ -2889,11 +2900,17 @@ def test_model_connection_connection_test_uses_smoke_kind_without_openai(
     assert test_body["modelConnectionId"] == connection_id
     assert test_body["ok"] is True
     assert test_body["message"] == "Deterministic smoke test succeeded."
-    assert datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+    assert (
+        datetime.fromisoformat(cast(str, test_body["lastTestedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )
 
     get_response = client.get(f"/api/model-connections/{connection_id}")
     assert get_response.status_code == 200, get_response.json()
     get_body = cast(dict[str, object], get_response.json())
     assert get_body["lastTestOk"] is True
     assert get_body["lastTestMessage"] == "Deterministic smoke test succeeded."
-    assert datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00")) == fixed_now
+    assert (
+        datetime.fromisoformat(cast(str, get_body["lastTestedAt"]).replace("Z", "+00:00"))
+        == fixed_now
+    )

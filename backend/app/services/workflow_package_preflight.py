@@ -319,7 +319,9 @@ class WorkflowPackagePreflightService:
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
                 continue
-            payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
+            payload = (
+                connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
+            )
             has_api_key = bool(str(payload.get("apiKey") or "").strip())
             model_binding = PackageResolvedModelBinding(
                 key=connection.key,
