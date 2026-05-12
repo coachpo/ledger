@@ -11,6 +11,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
+# Private MCP env, headers, and query maps are manifest data and must survive round-trips.
 _FORBIDDEN_EXPORT_KEYS = {
     "agentId",
     "modelConnectionId",
@@ -82,6 +83,9 @@ def _strip_forbidden_fields(value: object) -> object:
             source.get("kind") in {"step", "sequence", "fanout", "loop"} or "node" in source
         )
         sanitized: dict[str, object] = {}
+        is_mcp_server = "transport" in source and "key" in source and (
+            "command" in source or "url" in source or "toolKeys" in source
+        )
         for key, item in source.items():
             if not isinstance(key, str):
                 continue
@@ -89,7 +93,13 @@ def _strip_forbidden_fields(value: object) -> object:
                 continue
             if key in _FORBIDDEN_EXPORT_KEYS:
                 continue
-            sanitized[key] = _strip_forbidden_fields(item)
+            stripped_item = _strip_forbidden_fields(item)
+            if is_mcp_server and key in {"args", "env", "headers", "query"}:
+                if key == "args" and stripped_item == []:
+                    continue
+                if key != "args" and stripped_item == {}:
+                    continue
+            sanitized[key] = stripped_item
         return sanitized
     if isinstance(value, list):
         return [_strip_forbidden_fields(item) for item in value]

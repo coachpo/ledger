@@ -6,11 +6,11 @@ from typing import Any, cast
 
 from app.services.workflow_package_export import export_workflow_package_yaml
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
-from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
+from tests.test_workflow_package_manifest_parser import _valid_http_sse_package_manifest_source
 
 
-def test_export_never_contains_secrets_ids_or_encrypted_payloads() -> None:
-    compiled = compile_workflow_package_manifest(_valid_package_manifest_source())
+def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_metadata() -> None:
+    compiled = compile_workflow_package_manifest(_valid_http_sse_package_manifest_source())
     package_definition = deepcopy(cast(dict[str, Any], compiled["packageDefinition"]))
     compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
     spec = cast(dict[str, Any], package_definition["spec"])
@@ -30,8 +30,11 @@ def test_export_never_contains_secrets_ids_or_encrypted_payloads() -> None:
         {
             "id": 321,
             "mcpServerId": 654,
-            "env": {"RESEARCH_TOKEN": "raw-env-token"},
-            "headers": {"Authorization": "Bearer raw-header-token"},
+            "headers": {
+                "Authorization": "Bearer raw-header-token",
+                "X-Api-Key": "raw-api-key",
+            },
+            "query": {"api_key": "raw-query-token"},
             "auth": {"header": "X-Api-Key", "apiKey": "raw-auth-token"},
             "encrypted": {"ciphertext": "encrypted-bytes"},
         }
@@ -44,19 +47,19 @@ def test_export_never_contains_secrets_ids_or_encrypted_payloads() -> None:
 
     assert "apiVersion: ledger.workflowPackage/v1" in exported
     assert "modelConnection: tradingagents_primary_model" in exported
-    assert "secretRefs:" in exported
-    assert "requiredBindings:" in exported
-    assert "RESEARCH_TOKEN" in exported
-    assert "Authorization" in exported
-    assert "X-Api-Key" in exported
+    assert "headers:" in exported
+    assert "query:" in exported
+    assert "Authorization: Bearer raw-header-token" in exported
+    assert "X-Api-Key: raw-api-key" in exported
+    assert "api_key: raw-query-token" in exported
+    assert "secretRefs:" not in exported
+    assert "requiredBindings:" not in exported
     for forbidden in (
         b"sk-",
         b"apiKey",
         b"secretPayload",
         b"encrypted",
         b"password",
-        b"raw-env-token",
-        b"raw-header-token",
         b"raw-auth-token",
         b"modelConnectionId",
         b"mcpServerId",
@@ -71,12 +74,10 @@ def test_export_never_contains_secrets_ids_or_encrypted_payloads() -> None:
     safe_mcp_server = cast(
         list[dict[str, Any]], cast(dict[str, Any], safe_definition["spec"])["mcpServers"]
     )[0]
-    assert safe_mcp_server["secretRefs"] == {
-        "env": ["RESEARCH_TOKEN"],
-        "headers": ["Authorization", "X-Api-Key"],
+    assert safe_mcp_server["headers"] == {
+        "Authorization": "Bearer raw-header-token",
+        "X-Api-Key": "raw-api-key",
     }
-    assert safe_mcp_server["requiredBindings"] == [
-        "env.RESEARCH_TOKEN",
-        "header.Authorization",
-        "header.X-Api-Key",
-    ]
+    assert safe_mcp_server["query"] == {"api_key": "raw-query-token"}
+    assert "secretRefs" not in safe_mcp_server
+    assert "requiredBindings" not in safe_mcp_server

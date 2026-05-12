@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -15,16 +14,92 @@ from app.services.workflow_package_manifest_compiler import (
 from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
-_TRADINGAGENTS_FIXTURE = (
-    Path(__file__).resolve().parent
-    / "fixtures"
-    / "workflow_packages"
-    / "tradingagents_advisory_research.yaml"
-)
 
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _inline_private_mcp_manifest_source() -> str:
+    return """apiVersion: ledger.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: tradingagents_inline_private_mcp
+  name: Inline Private MCP Research
+  description: Round-trip manifest that keeps inline private MCP values.
+spec:
+  inputs:
+    type: object
+    additionalProperties: false
+    properties:
+      ticker:
+        type: string
+    required: [ticker]
+  capabilityProfiles:
+    - key: report_context_tools
+      name: Report Context Tools
+      description: Reads persisted Ledger reports for research context.
+      toolKeys:
+        - ledger.reports.lookup
+        - ledger.reports.write
+  outputSchemas:
+    - key: decision
+      name: Decision
+      description: Structured decision.
+      jsonSchema:
+        type: object
+        additionalProperties: false
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  mcpServers:
+    - key: exa
+      name: Exa Web Search
+      description: Remote Exa MCP server for advisory information search.
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp
+      headers:
+        Authorization: Bearer test-token
+      query:
+        api_key: test-api-key
+      toolKeys:
+        - web_search_exa
+  agents:
+    - key: researcher
+      name: Researcher
+      description: Produces market research.
+      modelConnection: tradingagents_primary_model
+      systemPrompt: |
+        Use provided tools and return structured output.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+      outputSchema: decision
+      capabilityProfiles: [report_context_tools]
+      mcpServers: [exa]
+      budgetUsd: "0.25"
+  workflows:
+    - key: inline_private_mcp_roundtrip
+      name: Inline Private MCP Roundtrip
+      description: Runs the researcher.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+      flow:
+        kind: step
+        id: research_step
+        slot: summary
+        uses: researcher
+        with:
+          ticker: ${{ inputs.ticker }}
+      output:
+        from: ${{ nodes.research_step.outputs.summary }}
+"""
 
 
 def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
@@ -62,6 +137,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
     spec = cast(dict[str, object], package_definition["spec"])
+    mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     agents = cast(list[dict[str, object]], spec["agents"])
     workflows = cast(list[dict[str, object]], compiled_plan["workflows"])
     workflow = workflows[0]
@@ -69,6 +145,10 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     graph = cast(dict[str, object], workflow["compiledGraph"])
 
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
+    assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
+    assert "RESEARCH_CONTEXT_TOKEN: local-token" in roundtrip.source
+    assert "secretRefs" not in roundtrip.source
+    assert "requiredBindings" not in roundtrip.source
     compiled_agents = cast(list[dict[str, object]], compiled_plan["agents"])
     assert compiled_agents[0]["capabilityProfiles"] == ["market_research_tools"]
     assert compiled_agents[0]["mcpServers"] == ["research_context"]
@@ -90,23 +170,29 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     assert graph["rootNodeId"] == "market_analysis"
 
 
-def test_compile_tradingagents_fixture_preserves_report_tool_keys_in_memory_profile() -> None:
-    source = _TRADINGAGENTS_FIXTURE.read_text(encoding="utf-8")
-    compiled = compile_workflow_package_manifest(source)
+def test_compile_inline_private_mcp_manifest_preserves_report_tool_keys_and_http_sse_values() -> None:
+    compiled = compile_workflow_package_manifest(_inline_private_mcp_manifest_source())
     roundtrip = decompile_workflow_package_manifest(compiled)
     recompiled = compile_workflow_package_manifest(roundtrip.source)
     package_definition = cast(dict[str, object], recompiled["packageDefinition"])
     spec = cast(dict[str, object], package_definition["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
+    mcp_server = cast(list[dict[str, object]], spec["mcpServers"])[0]
 
-    assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
+    assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
         "ledger.reports.lookup",
         "ledger.reports.write",
     ]
+    assert mcp_server["headers"] == {"Authorization": "Bearer test-token"}
+    assert mcp_server["query"] == {"api_key": "test-api-key"}
+    assert "Authorization: Bearer test-token" in roundtrip.source
+    assert "api_key: test-api-key" in roundtrip.source
+    assert "secretRefs" not in roundtrip.source
+    assert "requiredBindings" not in roundtrip.source
     assert "ledger.reports.lookup" in roundtrip.source
     assert "ledger.reports.write" in roundtrip.source
-    assert "ledger.memory." not in roundtrip.source
+    assert _canonical_json(compiled) == _canonical_json(recompiled)
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:

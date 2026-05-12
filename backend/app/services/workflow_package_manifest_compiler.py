@@ -63,6 +63,7 @@ def compile_workflow_package_manifest(
         raise WorkflowPackageManifestCompilerError(diagnostics)
 
     package_definition = _canonical_manifest_definition(manifest)
+    # Private MCP env, headers, and query values stay as ordinary manifest data.
     compiled_plan = _compile_plan(manifest, tool_catalog=resolved_tool_catalog)
     return {
         "packageDefinition": package_definition,
@@ -87,8 +88,33 @@ def _resolve_manifest(
 def _canonical_manifest_definition(manifest: WorkflowPackageManifest) -> dict[str, object]:
     return cast(
         dict[str, object],
-        manifest.model_dump(mode="json", by_alias=True, exclude_none=True),
+        _strip_empty_private_mcp_fields(
+            manifest.model_dump(mode="json", by_alias=True, exclude_none=True)
+        ),
     )
+
+
+def _strip_empty_private_mcp_fields(value: object) -> object:
+    if isinstance(value, dict):
+        source = cast(dict[object, object], value)
+        is_mcp_server = "transport" in source and "key" in source and (
+            "command" in source or "url" in source or "toolKeys" in source
+        )
+        sanitized: dict[str, object] = {}
+        for raw_key, item in source.items():
+            if not isinstance(raw_key, str):
+                continue
+            stripped_item = _strip_empty_private_mcp_fields(item)
+            if is_mcp_server and raw_key in {"args", "env", "headers", "query"}:
+                if raw_key == "args" and stripped_item == []:
+                    continue
+                if raw_key != "args" and stripped_item == {}:
+                    continue
+            sanitized[raw_key] = stripped_item
+        return sanitized
+    if isinstance(value, list):
+        return [_strip_empty_private_mcp_fields(item) for item in value]
+    return value
 
 
 def _compile_plan(

@@ -29,7 +29,10 @@ _MCP_EXPORT_KEYS = {
     "transport",
     "command",
     "args",
+    "env",
     "url",
+    "headers",
+    "query",
     "toolKeys",
     "secretRefs",
     "requiredBindings",
@@ -102,22 +105,7 @@ def _sanitize_mcp_server(server: dict[Any, Any]) -> dict[str, object]:
     for raw_key, item in server.items():
         if not isinstance(raw_key, str) or raw_key not in _MCP_EXPORT_KEYS:
             continue
-        if raw_key in {"secretRefs", "requiredBindings"}:
-            sanitized[raw_key] = _sanitize_secret_metadata(item)
-        else:
-            sanitized[raw_key] = _sanitize_package_definition(item)
-    secret_refs, required_bindings = _secret_metadata_from_raw_mcp(server)
-    merged_refs = _merge_secret_refs(
-        cast(dict[str, object], sanitized.get("secretRefs", {})),
-        secret_refs,
-    )
-    merged_bindings = sorted(
-        set(_string_list(sanitized.get("requiredBindings"))) | set(required_bindings)
-    )
-    if merged_refs:
-        sanitized["secretRefs"] = merged_refs
-    if merged_bindings:
-        sanitized["requiredBindings"] = merged_bindings
+        sanitized[raw_key] = _sanitize_package_definition(item)
     return sanitized
 
 
