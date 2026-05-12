@@ -42,6 +42,7 @@ class ExecutionPlanGraphMetadata:
 class PackageResolvedModelBinding:
     key: str
     name: str
+    connection_kind: str
     base_url: str
     model_id: str
     reasoning_effort: str | None

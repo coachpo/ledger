@@ -12,7 +12,11 @@ from app.schemas.agent_manifest import AgentManifestDiagnostic
 from app.schemas.capability import CapabilityRead
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.mcp_server import McpClientBoundaryRead, McpServerStatus, McpServerTransport
-from app.schemas.model_connection import ModelConnectionListItemRead, ModelConnectionReasoningEffort
+from app.schemas.model_connection import (
+    ModelConnectionKind,
+    ModelConnectionListItemRead,
+    ModelConnectionReasoningEffort,
+)
 from app.schemas.output_schema import OutputSchemaRead
 
 _STABLE_AGENT_KEY_RE = r"^[a-z][a-z0-9_]{0,119}$"
@@ -184,6 +188,7 @@ class AgentModelConnectionSnapshotRead(CamelModel):
     base_url: str
     model_id: str
     reasoning_effort: ModelConnectionReasoningEffort | None = Field(default=None, max_length=128)
+    connection_kind: ModelConnectionKind | None = None
     api_style: str
     timeout_seconds: int = Field(ge=1)
 

@@ -71,7 +71,7 @@ class WorkflowPackagePreflightService:
         blocking_errors.extend(self._schema_errors(compiled_plan))
         blocking_errors.extend(self._tool_errors(compiled_plan))
         blocking_errors.extend(self._mcp_errors(compiled_plan))
-        model_bindings, model_errors = self._model_bindings(
+        model_bindings, model_warnings, model_errors = self._model_bindings(
             compiled_plan,
             require_api_key=require_api_key,
         )
@@ -85,10 +85,12 @@ class WorkflowPackagePreflightService:
             )
         except WorkflowPackageExecutionPlanError as exc:
             blocking_errors.extend(dict(detail) for detail in exc.details)
+        warnings = self.save_warnings(package_definition)
+        warnings.extend(model_warnings)
         return WorkflowPackagePreflightResult(
             ready=not blocking_errors,
             blocking_errors=blocking_errors,
-            warnings=self.save_warnings(package_definition),
+            warnings=warnings,
             model_bindings=model_bindings,
         )
 
@@ -293,8 +295,13 @@ class WorkflowPackagePreflightService:
         compiled_plan: dict[str, Any],
         *,
         require_api_key: bool,
-    ) -> tuple[dict[str, PackageResolvedModelBinding], list[dict[str, Any]]]:
+    ) -> tuple[
+        dict[str, PackageResolvedModelBinding],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+    ]:
         bindings: dict[str, PackageResolvedModelBinding] = {}
+        warnings: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         for index, agent in enumerate(self._compiled_section(compiled_plan, "agents")):
             key = str(agent.get("modelConnection") or "")
@@ -303,7 +310,7 @@ class WorkflowPackagePreflightService:
                 binding = self.model_connection_service.resolve_package_model_connection_binding(
                     key,
                     path=path,
-                    require_api_key=require_api_key,
+                    require_api_key=False,
                 )
             except ApiError as exc:
                 errors.extend(dict(detail) for detail in exc.details)
@@ -312,7 +319,34 @@ class WorkflowPackagePreflightService:
             if connection is None:
                 errors.append({"field": path, "issue": f"Model connection {key!r} was not found"})
                 continue
-            if require_api_key and connection.last_test_ok is False:
+            payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
+            has_api_key = bool(str(payload.get("apiKey") or "").strip())
+            model_binding = PackageResolvedModelBinding(
+                key=connection.key,
+                name=connection.name,
+                connection_kind=connection.connection_kind,
+                base_url=connection.base_url,
+                model_id=connection.model_id,
+                reasoning_effort=connection.reasoning_effort,
+                api_style=connection.api_style,
+                timeout_seconds=connection.timeout_seconds,
+                has_api_key=has_api_key,
+            )
+            if connection.connection_kind == "deterministic_smoke":
+                warnings.append(
+                    {
+                        "field": path,
+                        "issue": "Deterministic smoke connection will run offline",
+                        "severity": "warning",
+                        "connectionKind": connection.connection_kind,
+                    }
+                )
+                bindings[connection.key] = model_binding
+                continue
+            if not has_api_key:
+                errors.append({"field": path, "issue": "API key is not configured"})
+                continue
+            if connection.last_test_ok is False:
                 errors.append(
                     {
                         "field": path,
@@ -320,17 +354,8 @@ class WorkflowPackagePreflightService:
                     }
                 )
                 continue
-            bindings[binding.key] = PackageResolvedModelBinding(
-                key=binding.key,
-                name=binding.name,
-                base_url=binding.base_url,
-                model_id=binding.model_id,
-                reasoning_effort=binding.reasoning_effort,
-                api_style=binding.api_style,
-                timeout_seconds=binding.timeout_seconds,
-                has_api_key=binding.has_api_key,
-            )
-        return bindings, errors
+            bindings[connection.key] = model_binding
+        return bindings, warnings, errors
 
 
 __all__ = ["WorkflowPackagePreflightResult", "WorkflowPackagePreflightService"]

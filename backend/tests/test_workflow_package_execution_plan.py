@@ -30,6 +30,7 @@ def _model_binding(key: str = "tradingagents_primary_model") -> PackageResolvedM
     return PackageResolvedModelBinding(
         key=key,
         name="Package Model",
+        connection_kind="provider",
         base_url="https://api.openai.com/v1",
         model_id="gpt-5.4-mini",
         reasoning_effort="medium",
@@ -66,6 +67,8 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
     runtime_agent = invocation.package_runtime_agent
     assert runtime_agent is not None
     assert runtime_agent.model_binding == _model_binding()
+    assert runtime_agent.model_binding is not None
+    assert runtime_agent.model_binding.connection_kind == "provider"
     assert runtime_agent.output_schema.key == "trading_decision"
     assert [profile.key for profile in runtime_agent.capability_profiles] == [
         "market_research_tools"

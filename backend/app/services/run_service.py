@@ -530,6 +530,7 @@ class RunService:
             bindings[key] = PackageResolvedModelBinding(
                 key=binding.key,
                 name=binding.name,
+                connection_kind=binding.connection_kind,
                 base_url=binding.base_url,
                 model_id=binding.model_id,
                 reasoning_effort=binding.reasoning_effort,
@@ -2474,6 +2475,7 @@ class RunService:
         return {
             "key": binding.key,
             "name": binding.name,
+            "connectionKind": binding.connection_kind,
             "baseUrl": binding.base_url,
             "modelId": binding.model_id,
             "reasoningEffort": binding.reasoning_effort,

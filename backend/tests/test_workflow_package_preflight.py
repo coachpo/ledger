@@ -37,6 +37,7 @@ def _seed_model_connection(
     session_factory: sessionmaker[Session],
     *,
     api_key: str | None = "sk-preflight",
+    connection_kind: str = "provider",
     last_test_ok: bool | None = None,
     last_test_message: str | None = None,
 ) -> None:
@@ -45,6 +46,7 @@ def _seed_model_connection(
             ModelConnection(
                 key="tradingagents_primary_model",
                 status="active",
+                connection_kind=connection_kind,
                 name="TradingAgents Primary Model",
                 description="Preflight model binding.",
                 base_url="https://api.openai.com/v1",
@@ -265,4 +267,33 @@ def test_preflight_blocks_failed_model_connection(
     assert errors[0] == {
         "field": "spec.agents[0].modelConnection",
         "issue": "Connection test failed.",
+    }
+
+
+def test_preflight_warns_on_deterministic_smoke_model_connection(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(
+        session_factory,
+        api_key=None,
+        connection_kind="deterministic_smoke",
+        last_test_ok=False,
+        last_test_message="Connection test failed.",
+    )
+    created = _create_package(client)
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+    warnings = cast(list[dict[str, object]], body["warnings"])
+    assert len(warnings) == 12
+    assert warnings[0] == {
+        "field": "spec.agents[0].modelConnection",
+        "issue": "Deterministic smoke connection will run offline",
+        "severity": "warning",
+        "connectionKind": "deterministic_smoke",
     }

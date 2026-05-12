@@ -6,7 +6,6 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 import openai
 from openai import OpenAI
@@ -61,6 +60,7 @@ RuntimeAgentSpec = Agent | PackageRuntimeAgentSpec
 class _ResolvedModelConnectionConfig:
     id: int
     name: str
+    connection_kind: str
     base_url: str
     model_id: str
     reasoning_effort: str | None
@@ -229,6 +229,7 @@ class AgentExecutionService:
         return _ResolvedModelConnectionConfig(
             id=connection.id,
             name=connection.name,
+            connection_kind=connection.connection_kind,
             base_url=connection.base_url,
             model_id=connection.model_id,
             reasoning_effort=connection.reasoning_effort,
@@ -322,6 +323,12 @@ class AgentExecutionService:
         slot: str,
         trace_id: str | None,
     ) -> RunAgentInvocationResult:
+        if model_connection.connection_kind == "deterministic_smoke":
+            return RunAgentInvocationResult(
+                output=self._deterministic_output_for_schema(output_model),
+                tokens=1,
+                duration_ms=0,
+            )
         if model_connection.api_key is None:
             raise RunExecutionError(
                 code="agent_model_connection_api_key_missing",
@@ -329,12 +336,6 @@ class AgentExecutionService:
                     f"Agent {agent.key!r} cannot run because model connection "
                     f"{model_connection.name!r} is missing an API key"
                 ),
-            )
-        if self._is_deterministic_model_connection(model_connection):
-            return RunAgentInvocationResult(
-                output=self._deterministic_output_for_schema(output_model),
-                tokens=1,
-                duration_ms=0,
             )
 
         runtime_tool_registry = get_default_runtime_tool_registry()
@@ -574,13 +575,6 @@ class AgentExecutionService:
             code="agent_tool_round_limit_exceeded",
             message="Agent exceeded the supported server tool call round limit.",
         )
-
-    @staticmethod
-    def _is_deterministic_model_connection(
-        model_connection: _ResolvedModelConnectionConfig,
-    ) -> bool:
-        parsed = urlsplit(model_connection.base_url)
-        return parsed.hostname == "ledger-deterministic-model.local"
 
     @classmethod
     def _deterministic_output_for_schema(cls, output_model: type[BaseModel]) -> Any:

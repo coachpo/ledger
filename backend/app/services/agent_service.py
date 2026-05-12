@@ -660,9 +660,11 @@ class AgentService:
         model_connection_row = self._resolve_stored_model_connection_row(agent)
         model_connection = ModelConnectionListItemRead.model_validate(model_connection_row)
         try:
-            model_connection_snapshot = snapshot_to_json(
-                parse_model_connection_runtime_snapshot(agent.model_connection_snapshot)
+            parsed_model_connection_snapshot = parse_model_connection_runtime_snapshot(
+                agent.model_connection_snapshot
             )
+            model_connection_snapshot = snapshot_to_json(parsed_model_connection_snapshot)
+            model_connection_snapshot["connection_kind"] = model_connection.connection_kind.value
         except ValueError as exc:
             raise business_rule_error(
                 "agent_model_connection_snapshot_invalid",

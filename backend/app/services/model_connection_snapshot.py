@@ -10,6 +10,7 @@ MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS = (
     "base_url",
     "model_id",
     "reasoning_effort",
+    "connection_kind",
     "api_style",
     "timeout_seconds",
 )
@@ -20,6 +21,7 @@ class ModelConnectionRuntimeSnapshot:
     base_url: str
     model_id: str
     reasoning_effort: str | None
+    connection_kind: str | None
     api_style: str
     timeout_seconds: int
 
@@ -31,6 +33,7 @@ def build_model_connection_runtime_snapshot(
         "base_url": connection.base_url,
         "model_id": connection.model_id,
         "reasoning_effort": connection.reasoning_effort,
+        "connection_kind": connection.connection_kind,
         "api_style": connection.api_style,
         "timeout_seconds": connection.timeout_seconds,
     }
@@ -45,7 +48,10 @@ def parse_model_connection_runtime_snapshot(
     missing_keys = [
         key
         for key in MODEL_CONNECTION_RUNTIME_SNAPSHOT_KEYS
-        if key not in {"api_style", "reasoning_effort"} and key not in snapshot
+        if (
+            key not in {"api_style", "reasoning_effort", "connection_kind"}
+            and key not in snapshot
+        )
     ]
     if missing_keys:
         raise ValueError(
@@ -58,6 +64,10 @@ def parse_model_connection_runtime_snapshot(
         reasoning_effort = _snapshot_reasoning_effort(snapshot["reasoning_effort"])
     else:
         reasoning_effort = "medium"
+    if "connection_kind" in snapshot:
+        connection_kind = _snapshot_connection_kind(snapshot["connection_kind"])
+    else:
+        connection_kind = None
     api_style = _required_snapshot_text(
         snapshot.get("api_style", "responses"),
         field_name="api_style",
@@ -74,6 +84,7 @@ def parse_model_connection_runtime_snapshot(
         base_url=base_url,
         model_id=model_id,
         reasoning_effort=reasoning_effort,
+        connection_kind=connection_kind,
         api_style=api_style,
         timeout_seconds=timeout_seconds,
     )
@@ -86,6 +97,7 @@ def snapshot_to_json(
         "base_url": snapshot.base_url,
         "model_id": snapshot.model_id,
         "reasoning_effort": snapshot.reasoning_effort,
+        "connection_kind": snapshot.connection_kind,
         "api_style": snapshot.api_style,
         "timeout_seconds": snapshot.timeout_seconds,
     }
@@ -115,6 +127,19 @@ def _snapshot_reasoning_effort(value: object) -> str | None:
         raise ValueError(
             "Model connection snapshot reasoning_effort must be at most 128 characters"
         )
+    return normalized
+
+
+def _snapshot_connection_kind(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Model connection snapshot connection_kind must be a string or null")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Model connection snapshot connection_kind must be a non-empty string")
+    if normalized not in {"provider", "deterministic_smoke"}:
+        raise ValueError("Model connection snapshot connection_kind is invalid")
     return normalized
 
 

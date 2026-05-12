@@ -97,8 +97,19 @@ def test_agent_manifest_save_read_decompile_preserves_reasoning_snapshot(
         assert (
             created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
         )
+        assert created.model_connection_snapshot.connection_kind == connection.connection_kind
+        assert (
+            created_payload["modelConnectionSnapshot"]["connectionKind"]
+            == connection.connection_kind
+        )
+        assert created_row.model_connection_snapshot["connection_kind"] == connection.connection_kind
 
         decompiled = decompile_agent_model(created_row, session)
+        created_row.model_connection_snapshot = {
+            **created_row.model_connection_snapshot,
+            "connection_kind": "deterministic_smoke",
+        }
+        session.commit()
         session.refresh(created_row)
         reread = service.get_agent(created.id)
 
@@ -109,7 +120,11 @@ def test_agent_manifest_save_read_decompile_preserves_reasoning_snapshot(
         assert (
             created_row.model_connection_snapshot["reasoning_effort"] == expected_reasoning_effort
         )
+        assert (
+            created_row.model_connection_snapshot["connection_kind"] == "deterministic_smoke"
+        )
         assert reread.model_connection_snapshot.reasoning_effort == expected_reasoning_effort
+        assert reread.model_connection_snapshot.connection_kind == connection.connection_kind
 
 
 def test_agent_service_structured_create_write_is_rejected_without_persisting_row(

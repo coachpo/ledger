@@ -107,6 +107,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         {
             "key": "package_runtime_model",
             "name": "Package Runtime Model",
+            "connectionKind": "provider",
             "baseUrl": "https://runtime-v1.example.com/v1",
             "modelId": "gpt-package-v1",
             "reasoningEffort": "high",
@@ -128,9 +129,9 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
 
     rerun_draft = client.get(f"/api/runs/{first_run['id']}/rerun-draft")
     assert rerun_draft.status_code == 200, rerun_draft.json()
-    assert rerun_draft.json()["packageProvenance"]["workflowPackageKey"] == (
-        "provenance_filter_package"
-    )
+    rerun_provenance = cast(dict[str, Any], rerun_draft.json()["packageProvenance"])
+    assert rerun_provenance["workflowPackageKey"] == "provenance_filter_package"
+    assert rerun_provenance["resolvedModelConnections"][0]["connectionKind"] == "provider"
 
 
 def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_reports(

@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
+from app.schemas.model_connection import ModelConnectionKind
 from app.schemas.memory import MemoryArtifactRead
 
 
@@ -227,6 +228,7 @@ class RunPackageLocalResourceRefsRead(CamelModel):
 class RunPackageResolvedModelConnectionRead(CamelModel):
     key: str
     name: str
+    connection_kind: ModelConnectionKind
     base_url: str
     model_id: str
     reasoning_effort: str | None = None
