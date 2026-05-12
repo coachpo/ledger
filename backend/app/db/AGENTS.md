@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for the preserved product tables plus the current agent-platform tables. The package is split by responsibility across `engine.py`, `validation.py`, `upgrades.py`, and a thin `session.py` composition layer.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

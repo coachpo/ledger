@@ -5,6 +5,8 @@
 ## OVERVIEW
 `backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs; the current agent-platform APIs; startup schema upgrades; and destructive cutover assertions. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

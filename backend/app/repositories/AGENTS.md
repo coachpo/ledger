@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/repositories/` owns database queries: CRUD operations, filtering, aggregate lookups, quote-cache access, symbol-name cache access, stored-template and report lookup, and the current agent-platform config and run persistence reads. Repositories abstract SQLAlchemy queries from services.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|

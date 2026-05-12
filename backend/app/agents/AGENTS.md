@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/agents/` owns server-declared tools, native runtime tool dispatch, and MCP execution boundaries. Services decide when capabilities grant tool access; this package defines the tool catalog, native tool registry, OpenAI function payloads, MCP boundary checks, snapshots, and safe output wrapping.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## STRUCTURE
 ```text
 app/agents/

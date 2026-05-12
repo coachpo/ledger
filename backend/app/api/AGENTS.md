@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts the preserved `/api/v1` product routes plus the current `/api/*` agent-platform routes.
 
+The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
