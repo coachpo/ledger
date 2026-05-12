@@ -1,6 +1,6 @@
 # Test Plan
 
-> Status: Live automated-coverage reference for branch `main` at `10063aa`.
+> Status: Live automated-coverage reference for branch `main` at `987686e`.
 
 ## Backend Quality Gates
 

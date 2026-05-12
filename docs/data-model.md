@@ -1,6 +1,6 @@
 # Data Model Design
 
-> Status: Live data-model reference for branch `main` at `10063aa`.
+> Status: Live data-model reference for branch `main` at `987686e`.
 
 ## Overview
 
