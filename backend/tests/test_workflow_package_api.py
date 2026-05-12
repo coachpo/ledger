@@ -353,7 +353,10 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
     with session_factory() as session:
         package = session.get(WorkflowPackage, cast(int, created["id"]))
         assert package is not None
-        original_version = session.get(WorkflowPackageVersion, cast(int, created["latestVersionId"]))
+        original_version = session.get(
+            WorkflowPackageVersion,
+            cast(int, created["latestVersionId"]),
+        )
         assert original_version is not None
         polluted_definition = deepcopy(cast(dict[str, Any], original_version.package_definition))
         spec = cast(dict[str, Any], polluted_definition["spec"])

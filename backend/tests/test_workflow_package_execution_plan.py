@@ -8,12 +8,12 @@ from typing import Any, cast
 
 import pytest
 
+from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.agent_execution_service import AgentExecutionService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import (
     _valid_http_sse_package_manifest_source,

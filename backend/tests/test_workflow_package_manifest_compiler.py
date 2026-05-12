@@ -15,7 +15,6 @@ from app.services.workflow_package_manifest_decompiler import decompile_workflow
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
 
-
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
@@ -170,7 +169,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     assert graph["rootNodeId"] == "market_analysis"
 
 
-def test_compile_inline_private_mcp_manifest_preserves_report_tool_keys_and_http_sse_values() -> None:
+def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_values() -> None:
     compiled = compile_workflow_package_manifest(_inline_private_mcp_manifest_source())
     roundtrip = decompile_workflow_package_manifest(compiled)
     recompiled = compile_workflow_package_manifest(roundtrip.source)
