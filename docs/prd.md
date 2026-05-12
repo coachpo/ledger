@@ -27,7 +27,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 1. Portfolio workspace: portfolio list/detail, balances, positions, CSV import, trades, quote-enriched metrics, and warnings.
 2. Template manager: global templates, placeholder browser, runtime inputs, inline compile preview, and stored-template compile.
 3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
-4. Workflow Packages: YAML package manifest authoring, package-local agents, output schemas, capability profiles, private MCP configs, workflow graphs, validation, preflight, import, export, and launch flows.
+4. Workflow Packages: YAML package manifest authoring with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, preflight, import, export, and launch flows. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
 6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
 7. Runs: global run list/detail, package provenance, launch snapshots, reruns, and step replays.
@@ -40,6 +40,6 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 - Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
 - Agent memory reports keep `source="agent"` for origin, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` for purpose/type, and server-owned `metadata.createdBy.type="agent"` provenance.
 - Workflow Packages can be authored from `ledger.workflowPackage/v1` YAML manifests and validated before save.
-- Package exports omit secrets, encrypted values, database ids, and run history.
+- Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections remain global live bindings, global Tools remain read-only metadata, and package-private resources stay inside package versions.
 - Package launches create persisted runs with visible package provenance, per-step details, final output, and safe error states.

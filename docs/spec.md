@@ -39,9 +39,9 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 ## Domain Contracts
 
-- Workflow Packages are canonical for platform authoring. Use `/api/workflow-packages`, `/workflow-packages*`, `ledger.workflowPackage/v1`, and package-local agents, output schemas, capability profiles, private MCP configs, and workflow graphs.
+- Workflow Packages are canonical for platform authoring. Use `/api/workflow-packages`, `/workflow-packages*`, `ledger.workflowPackage/v1`, and package-local agents, output schemas, capability profiles, and workflow graphs. Private MCP configs are flat inline `env`, `headers`, and `query` manifest text, and that export/import contract is intentionally breaking.
 - Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
-- Package exports omit secrets, encrypted credential values, database ids, and run history.
+- Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
 - Tools are read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
 - Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token.

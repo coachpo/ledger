@@ -10,7 +10,7 @@
 - `uv run mypy app`
 - `uv run pytest`
 
-Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, no-secret package import/export, model connections, global tools, package runtime behavior, native runtime tools, memory reports, trace metadata, global runs, DB upgrades, and removed-route guarantees.
+Backend tests cover preserved `/api/v1` CRUD, templates, reports, workflow package manifests, package import/export with inline private MCP `env`, `headers`, and `query` values, model connections, global tools, package runtime behavior, native runtime tools, memory reports, trace metadata, global runs, DB upgrades, and removed-route guarantees.
 
 ## Frontend Quality Gates
 

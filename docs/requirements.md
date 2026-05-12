@@ -46,8 +46,8 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 ### FR-3 Package-First Agent Platform
 
 - Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and retired `spec.skills` fields.
-- Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs must stay inside immutable package versions.
-- Package exports must omit secrets, encrypted credential payloads, database ids, and run history.
+- Package-private agents, output schemas, capability profiles, and workflow graphs must stay inside immutable package versions. Private MCP configs must stay inline as `env`, `headers`, and `query` manifest text.
+- Package exports must keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
 - Package launches must use the strict launch envelope and create queued global runs with immutable package provenance.

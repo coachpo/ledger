@@ -20,7 +20,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 Workflow Packages are the only live platform authoring root. Package manifests use `ledger.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
-Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports omit secrets, encrypted values, database ids, and run history. Runs store immutable package id/key/version/hash provenance.
+Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable package id/key/version/hash provenance.
 
 Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys and OpenAI function names stay unchanged.
 
@@ -115,7 +115,7 @@ Visit `http://127.0.0.1:25173/`.
 ## Runtime Notes
 
 - The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes.
-- Workflow package manifests use `ledger.workflowPackage/v1`; package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are authored inside one package.
+- Workflow package manifests use `ledger.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
 - `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.

@@ -37,7 +37,7 @@
 - Phase 1 memory stays report backed. `ReportBackedMemoryStore` is the only service-layer component that may parse or format `mem_<report_id>`; `MemoryService`, prompt assembly, runtime tools, run artifacts, and callers treat `memoryId` values as opaque strings.
 - Phase 1 does not have vector search, embeddings, or a memory table. Memory lookup remains metadata-filter based over report-backed rows.
 - Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links. API/UI projections may include nested `auditLinks.report` only for human audit actions.
-- Workflow package services keep package versions immutable, validate typed contracts before save, preserve no-secret import/export behavior, and keep run persistence detailed enough for package provenance and the run monitor.
+- Workflow package services keep package versions immutable, validate typed contracts before save, keep private MCP `env`, `headers`, and `query` values inline through import/export, and keep run persistence detailed enough for package provenance and the run monitor.
 - `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, and falls back to trace-free execution when telemetry setup fails.
 - Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
@@ -68,3 +68,4 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
 - `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, rerun/step-replay lineage, memory artifact report links, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.
+B.

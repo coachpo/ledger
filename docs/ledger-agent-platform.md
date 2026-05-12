@@ -25,7 +25,7 @@ Workflow Packages are the only live platform authoring root. Manifests use `ledg
 
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles.
 
-Package import/export is manifest based. Exports omit secrets, encrypted credential payloads, database ids, and run history. Private MCP secret refs and required bindings may be exported as metadata, but secret values never are.
+Package import/export is manifest based. Exports keep private MCP `env`, `headers`, and `query` values inline in the package text. This is an intentional breaking change, and the old binding-based private MCP contract no longer applies. Exports still omit database ids and run history.
 
 ## Model Connections
 

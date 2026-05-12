@@ -42,10 +42,10 @@ Template/report series can be built by creating a template, previewing with `POS
 
 - Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside `ledger.workflowPackage/v1` manifests.
 - `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
-- Package exports omit secrets, encrypted credential payloads, database ids, and run history.
+- Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
 - Tools are global read-only metadata from `/api/tools`; native tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, reports, and report memory writes, while runtime tool keys and OpenAI function names stay stable.
-- Runs persist package provenance including package id, package key, version, hash, workflow key, no-secret launch snapshots, optional Logfire trace ids, and per-invocation span ids.
+- Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, and per-invocation span ids.
 
 ## HTTP Status Guidelines
 
