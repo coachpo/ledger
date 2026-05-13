@@ -9,10 +9,8 @@ import {
 import { formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionApiStyle,
-  ModelConnectionKind,
   ModelConnectionListItemRead,
 } from "@/lib/types/model-connection";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -21,11 +19,6 @@ import { PlatformResourceCard, PlatformResourceList } from "../platform-resource
 const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
   responses: "Responses API",
-};
-
-const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
-  deterministic_smoke: "Deterministic smoke",
-  provider: "Provider-backed",
 };
 
 function sortConnections(items: readonly ModelConnectionListItemRead[]) {
@@ -130,11 +123,6 @@ export function ModelConnectionsListPage() {
                 testId={`model-connections-row-${connection.id}`}
                 title={connection.name}
                 subtitle={connection.modelId}
-                badges={
-                  <Badge variant={connection.connectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
-                    {CONNECTION_KIND_LABELS[connection.connectionKind]}
-                  </Badge>
-                }
                 description={connection.description}
                 metadata={
                   <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
@@ -149,10 +137,6 @@ export function ModelConnectionsListPage() {
                       <span className="break-words">{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
                       <span aria-hidden="true">·</span>{" "}
                       <span>{connection.timeoutSeconds}s timeout</span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">Mode:</span>{" "}
-                      <span>{CONNECTION_KIND_LABELS[connection.connectionKind]}</span>
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">Last Test:</span>{" "}

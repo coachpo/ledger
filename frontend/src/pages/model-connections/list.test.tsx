@@ -116,8 +116,8 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByText(/^xhigh$/)).toBeVisible();
     expect(screen.getByText(/^none$/)).toBeVisible();
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("Provider-backed")).toHaveLength(4);
-    expect(screen.getAllByText("Deterministic smoke")).toHaveLength(2);
+    expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
     expect(screen.getByText(/^passed$/i)).toBeVisible();
     expect(screen.getByText(/^failed$/i)).toBeVisible();
 
