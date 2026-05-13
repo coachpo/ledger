@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/pages/capabilities/` was the retired routed capability inventory and editor. These archived pages supported activation, archive, and strict catalog selection before capability profiles moved inside Workflow Packages.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

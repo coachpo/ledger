@@ -9,11 +9,12 @@
 - `portfolios/AGENTS.md` — portfolio list/detail workspace routes
 - `templates/AGENTS.md` — template list/editor routes and preview rules
 - `reports/AGENTS.md` — report list/detail routes and markdown workflows
+- `../../retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 
 ## OVERVIEW
 `src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, preserved portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## STRUCTURE
 ```text

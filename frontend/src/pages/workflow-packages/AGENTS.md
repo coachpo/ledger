@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/pages/workflow-packages/` contains the package-first authoring route family: package inventory, full-height YAML/resource editor, local package agents, output schemas, capability profiles, private MCP configs, validation, preflight, launch, import, and export flows with inline `env`, `headers`, and `query` values.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

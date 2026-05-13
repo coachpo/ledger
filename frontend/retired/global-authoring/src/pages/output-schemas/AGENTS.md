@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/pages/output-schemas/` was the retired output schema inventory and builder-first editor. These archived pages kept the builder tree, raw JSON Schema tab, and preview tab in sync before schemas moved inside Workflow Packages.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
