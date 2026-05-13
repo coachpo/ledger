@@ -5,7 +5,7 @@
 ## OVERVIEW
 Global styling is split into Tailwind setup, theme tokens, and the app CSS entrypoint. Component styling should stay in components through Tailwind classes and shared UI variants unless it truly belongs to the global layer.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## STRUCTURE
 ```text

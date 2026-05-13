@@ -5,7 +5,7 @@
 ## OVERVIEW
 React 19 + Vite frontend with a flat route shell, TanStack Query for server state, routed workspace areas for portfolios, templates, reports, Workflow Packages, Model Connections, and Runs, plus shared forms and UI that keep route logic thin.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
@@ -18,6 +18,7 @@ The application is under active development and has no users at the moment; futu
 - `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
+- `retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 - `src/pages/workflow-packages/AGENTS.md` — package list, editor, validation, preflight, launch, import, and export flows
 - `src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret preservation, delete flow, and connection-test flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, rerun/step-replay, package provenance, polling monitor, and trace-link views
