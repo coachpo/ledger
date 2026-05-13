@@ -5,7 +5,7 @@
 ## OVERVIEW
 `app/models/` defines SQLAlchemy ORM entities, table names, constraints, indexes, cache tables, and relationships for the preserved product data model plus the current agent-platform tables. Models stay persistence-focused and should not contain service-layer business rules.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

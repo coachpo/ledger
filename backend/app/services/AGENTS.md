@@ -5,7 +5,7 @@
 ## OVERVIEW
 `app/services/` holds the backend business workflows plus a few stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, while `quote_provider.py` stays stateless, the template/report services keep the preserved product flows intact, and the agent-platform services own Workflow Packages, Model Connections, Tools, and Runs.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

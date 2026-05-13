@@ -5,7 +5,7 @@
 ## OVERVIEW
 `app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, the preserved product payloads, and the current agent-platform payloads. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
