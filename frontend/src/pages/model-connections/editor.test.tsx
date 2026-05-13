@@ -90,7 +90,8 @@ describe("ModelConnectionsEditorPage", () => {
 
     render(<ModelConnectionsEditorPage />);
 
-    expect(screen.getAllByText("Provider-backed")).toHaveLength(2);
+    expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
@@ -345,7 +346,7 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
-    expect(screen.getAllByText("Deterministic smoke")).toHaveLength(2);
+
     expect(screen.getByText(/leave blank to keep the offline path credential-free\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(

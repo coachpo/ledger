@@ -31,7 +31,6 @@ import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type {
   ModelConnectionApiStyle,
   ModelConnectionCreateInput,
-  ModelConnectionKind,
   ModelConnectionRead,
   ModelConnectionReasoningEffort,
   ModelConnectionUpdateInput,
@@ -53,15 +52,7 @@ const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   responses: "Responses API",
 };
 
-const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
-  deterministic_smoke: "Deterministic smoke",
-  provider: "Provider-backed",
-};
 
-const CONNECTION_KIND_HELP_TEXT: Record<ModelConnectionKind, string> = {
-  deterministic_smoke: "Runs offline deterministic smoke responses and does not require a provider API key.",
-  provider: "Calls the configured provider endpoint with stored credentials during tests and runs.",
-};
 
 const REASONING_EFFORT_OMIT_VALUE = "__omit__";
 const REASONING_EFFORT_CUSTOM_VALUE = "__custom__";
@@ -334,14 +325,9 @@ export function ModelConnectionsEditorPage() {
     <div className="space-y-4 p-4" data-testid="model-connections-editor">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {isEditing ? "Edit Model Connection" : "Create Model Connection"}
-            </h1>
-            <Badge variant={currentConnectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
-              {CONNECTION_KIND_LABELS[currentConnectionKind]}
-            </Badge>
-          </div>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {isEditing ? "Edit Model Connection" : "Create Model Connection"}
+          </h1>
           <p className="text-sm text-muted-foreground">
             Save an OpenAI-family endpoint, credentials, and runtime defaults for reuse across agents.
           </p>
@@ -380,16 +366,6 @@ export function ModelConnectionsEditorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-foreground">Connection mode:</span>
-              <Badge variant={currentConnectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
-                {CONNECTION_KIND_LABELS[currentConnectionKind]}
-              </Badge>
-            </div>
-            <p className="mt-2">{CONNECTION_KIND_HELP_TEXT[currentConnectionKind]}</p>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="model-connection-key">Key</Label>
