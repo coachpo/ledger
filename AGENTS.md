@@ -1,12 +1,12 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-12
-**Commit:** 987686e
+**Generated:** 2026-05-13
+**Commit:** 01312c0
 **Branch:** main
 
 ## OVERVIEW
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
 
@@ -41,6 +41,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
 - `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, and agent-platform routes
+- `frontend/retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 - `frontend/src/pages/workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export routes
 - `frontend/src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret handling, and connection test routes
 - `frontend/src/pages/runs/AGENTS.md` — runs list and detail routes
