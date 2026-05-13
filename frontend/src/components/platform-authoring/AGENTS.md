@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/components/platform-authoring/` contains editor widgets for package-local platform authoring: schema composition, generated schema-driven forms, workflow wiring, package resource selectors, and structured value inspection. Components are UI-only and are driven by `src/lib/platform-authoring/**` types/helpers.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## STRUCTURE
 ```text

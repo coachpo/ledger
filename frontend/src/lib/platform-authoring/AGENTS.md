@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/lib/platform-authoring/` owns pure TypeScript authoring helpers for Workflow Package manifests and package-local resources: agents, output schemas, capability profiles, private MCP configs, workflow graphs, generated input values, resource refs, validation issues, manifest parsing, and JSON serialization. It is intentionally React-free and request-free.
 
-The application is under active development and has no users at the moment; future upgrade, migration, and compatibility design must account for that and should not preserve speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 ## STRUCTURE
 ```text
