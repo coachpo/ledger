@@ -493,11 +493,7 @@ class AgentExecutionService:
                 request_kwargs["previous_response_id"] = previous_response_id
             if available_tools:
                 request_kwargs["tools"] = available_tools
-            response = self._create_response_with_stateless_fallback(
-                client=client,
-                request_kwargs=request_kwargs,
-                previous_response_id=previous_response_id,
-            )
+            response = client.responses.create(**request_kwargs)
             total_tokens += self._extract_total_tokens(response)
             pending_tool_calls = self._extract_pending_tool_calls(response)
             if not pending_tool_calls:
@@ -817,38 +813,6 @@ class AgentExecutionService:
         if isinstance(value, dict):
             return value.get(field)
         return getattr(value, field, None)
-
-    def _create_response_with_stateless_fallback(
-        self,
-        *,
-        client: Any,
-        request_kwargs: dict[str, Any],
-        previous_response_id: str | None,
-    ) -> Any:
-        try:
-            return client.responses.create(**request_kwargs)
-        except openai.APIStatusError as exc:
-            if previous_response_id is None or not self._is_previous_response_rejection(exc):
-                raise
-            stateless_kwargs = dict(request_kwargs)
-            stateless_kwargs.pop("previous_response_id", None)
-            return client.responses.create(**stateless_kwargs)
-
-    @classmethod
-    def _is_previous_response_rejection(cls, exc: openai.APIStatusError) -> bool:
-        status_code = getattr(exc, "status_code", None)
-        if status_code not in {400, 404}:
-            return False
-        normalized = cls._extract_api_status_message(exc).lower()
-        rejection_markers = (
-            "previous_response_id",
-            "previous response",
-            "previous_response",
-            "response not found",
-            "no response found",
-            "does not exist",
-        )
-        return any(marker in normalized for marker in rejection_markers)
 
     @staticmethod
     def _build_openai_instructions(
