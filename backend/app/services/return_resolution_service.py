@@ -50,8 +50,16 @@ class ReturnResolutionService:
         *,
         end_date: datetime,
         benchmark_symbol: str | None = None,
+        commit: bool = True,
     ) -> ReturnResolutionResult:
         memory = self.memory_service.get_memory(memory_id)
+        if memory.status.value != "pending":
+            return ReturnResolutionResult(
+                status=memory.status.value,
+                memory=memory,
+                reason="already_finalized",
+            )
+
         start_boundary = self._start_boundary(memory.created_at)
         requested_end_boundary = self._end_boundary(end_date)
         resolution_end = self._resolution_end_boundary(
@@ -72,7 +80,11 @@ class ReturnResolutionService:
             end_boundary=resolution_end,
             benchmark_symbol=benchmark_symbol,
         )
-        updated_memory = self.memory_service.resolve_memory(memory_id, outcome)
+        updated_memory = self.memory_service.resolve_memory(
+            memory_id,
+            outcome,
+            commit=commit,
+        )
         return ReturnResolutionResult(
             status=outcome.resolved_status,
             memory=updated_memory,

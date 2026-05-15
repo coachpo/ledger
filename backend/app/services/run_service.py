@@ -5,6 +5,7 @@ import logging
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any, cast
 
 from openai import OpenAI
@@ -97,7 +98,9 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.quote_provider import QuoteProvider
+from app.services.market_data_service import MarketDataService
+from app.services.memory_follow_up_service import MemoryFollowUpService
+from app.services.quote_provider import DeterministicQuoteProvider, QuoteProvider
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
 logger = logging.getLogger(__name__)
@@ -1075,8 +1078,10 @@ class RunService:
         if run.status != _RUN_STATUS_RUNNING:
             return
         if run.started_at is None:
-            run.started_at = utcnow()
+            started_at = utcnow()
+            run.started_at = started_at
             self.session.commit()
+            self._run_workflow_package_start_follow_up(run, now=started_at)
         plan = self._build_plan_for_run(run)
         try:
             trace_session = self._start_trace_session(run=run, plan=plan)
@@ -1160,6 +1165,15 @@ class RunService:
         run.finished_at = utcnow()
         self._create_post_run_memory_artifact(run.id)
         self.session.commit()
+
+    def _run_workflow_package_start_follow_up(self, run: Run, *, now: datetime) -> None:
+        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            return
+        quote_provider = self.quote_provider or DeterministicQuoteProvider()
+        MemoryFollowUpService(
+            self.session,
+            MarketDataService(session=self.session, quote_provider=quote_provider),
+        ).run_due(now)
 
     def _create_post_run_memory_artifact(self, run_id: int) -> None:
         run = self._get_run_or_raise(run_id)

@@ -53,6 +53,11 @@ spec:
       toolKeys:
         - ledger.news.lookup
         - ledger.insider_data.lookup
+    - key: social_sentiment_tools
+      name: Social Sentiment Tools
+      description: Reads normalized social sentiment source blocks.
+      toolKeys:
+        - ledger.social_sentiment.lookup
     - key: report_context_tools
       name: Report Context Tools
       description: Reads persisted Ledger reports for research context.
@@ -180,14 +185,14 @@ spec:
       budgetUsd: "0.20"
     - key: social_analyst
       name: Social Analyst
-      description: Produces social and sentiment context from available news signals.
+      description: Produces social and sentiment context from native social signals.
       modelConnection: tradingagents_primary_model
-      systemPrompt: Return neutral social context from granted news and insider-data tools.
+      systemPrompt: Return neutral social context from granted social sentiment tools.
       inputSchema:
         type: object
         additionalProperties: true
       outputSchema: analyst_report
-      capabilityProfiles: [news_research_tools]
+      capabilityProfiles: [social_sentiment_tools]
       budgetUsd: "0.20"
     - key: news_analyst
       name: News Analyst
@@ -336,45 +341,37 @@ spec:
         kind: sequence
         id: advisory_research_flow
         nodes:
-          - kind: fanout
-            id: analyst_fanout
-            branches:
-              - id: market
-                node:
-                  kind: step
-                  id: market_analysis
-                  slot: market_report
-                  uses: market_analyst
-                  with:
-                    ticker: ${{ inputs.ticker }}
-                    asOfDate: ${{ inputs.asOfDate }}
-              - id: social
-                node:
-                  kind: step
-                  id: social_analysis
-                  slot: social_sentiment_report
-                  uses: social_analyst
-                  with:
-                    ticker: ${{ inputs.ticker }}
-                    asOfDate: ${{ inputs.asOfDate }}
-              - id: news
-                node:
-                  kind: step
-                  id: news_analysis
-                  slot: news_report
-                  uses: news_analyst
-                  with:
-                    ticker: ${{ inputs.ticker }}
-                    asOfDate: ${{ inputs.asOfDate }}
-              - id: fundamentals
-                node:
-                  kind: step
-                  id: fundamentals_analysis
-                  slot: fundamentals_report
-                  uses: fundamentals_analyst
-                  with:
-                    ticker: ${{ inputs.ticker }}
-                    asOfDate: ${{ inputs.asOfDate }}
+          - kind: sequence
+            id: analyst_sequence
+            nodes:
+              - kind: step
+                id: market_analysis
+                slot: market_report
+                uses: market_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+              - kind: step
+                id: social_analysis
+                slot: social_sentiment_report
+                uses: social_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+              - kind: step
+                id: news_analysis
+                slot: news_report
+                uses: news_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
+              - kind: step
+                id: fundamentals_analysis
+                slot: fundamentals_report
+                uses: fundamentals_analyst
+                with:
+                  ticker: ${{ inputs.ticker }}
+                  asOfDate: ${{ inputs.asOfDate }}
           - kind: loop
             id: investment_debate_loop
             maxIterations: 2
@@ -388,10 +385,10 @@ spec:
                   uses: bull_researcher
                   with:
                     priorState: ${{ inputs.initialInvestmentDebateState }}
-                    marketReport: ${{ nodes.analyst_fanout.outputs.market_report }}
-                    socialSentimentReport: ${{ nodes.analyst_fanout.outputs.social_sentiment_report }}
-                    newsReport: ${{ nodes.analyst_fanout.outputs.news_report }}
-                    fundamentalsReport: ${{ nodes.analyst_fanout.outputs.fundamentals_report }}
+                    marketReport: ${{ nodes.analyst_sequence.outputs.market_report }}
+                    socialSentimentReport: ${{ nodes.analyst_sequence.outputs.social_sentiment_report }}
+                    newsReport: ${{ nodes.analyst_sequence.outputs.news_report }}
+                    fundamentalsReport: ${{ nodes.analyst_sequence.outputs.fundamentals_report }}
                 - kind: step
                   id: bear_research
                   slot: bear

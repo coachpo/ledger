@@ -4,7 +4,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.formatting import utcnow
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.models.workflow_package import WorkflowPackageVersion
@@ -155,7 +154,6 @@ class RunRepository(BaseRepository[Run]):
         if run is None:
             return None
         run.status = "running"
-        run.started_at = utcnow()
         run.error = None
         run.finished_at = None
         return self.add(run)

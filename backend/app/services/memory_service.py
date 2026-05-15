@@ -64,12 +64,22 @@ class MemoryService:
     def get_memory(self, memory_id: str) -> MemoryEntryRead:
         return self.store.get(memory_id)
 
-    def resolve_memory(self, memory_id: str, outcome: MemoryOutcome) -> MemoryEntryRead:
+    def resolve_memory(
+        self,
+        memory_id: str,
+        outcome: MemoryOutcome,
+        *,
+        commit: bool = True,
+    ) -> MemoryEntryRead:
         try:
             entry = self.store.resolve(memory_id, outcome)
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.session.flush()
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
         return entry
 
@@ -77,12 +87,18 @@ class MemoryService:
         self,
         memory_id: str,
         reflection: MemoryReflection,
+        *,
+        commit: bool = True,
     ) -> MemoryEntryRead:
         try:
             entry = self.store.append_reflection(memory_id, reflection)
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.session.flush()
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
         return entry
 

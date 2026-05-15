@@ -20,18 +20,24 @@ class ReflectionService:
         *,
         reflection: str,
         reflected_at: datetime,
+        commit: bool = True,
     ) -> MemoryEntryRead:
         payload = MemoryReflection(
             reflection=reflection,
             reflected_at=reflected_at,
         )
-        return self.memory_service.append_reflection(memory_id, payload)
+        return self.memory_service.append_reflection(
+            memory_id,
+            payload,
+            commit=commit,
+        )
 
     def generate_and_append_reflection(
         self,
         memory_id: str,
         *,
         reflected_at: datetime,
+        commit: bool = True,
     ) -> MemoryEntryRead:
         memory = self.memory_service.get_memory(memory_id)
         reflection = self.generate_reflection_text(memory)
@@ -39,6 +45,7 @@ class ReflectionService:
             memory_id,
             reflection=reflection,
             reflected_at=reflected_at,
+            commit=commit,
         )
 
     @classmethod

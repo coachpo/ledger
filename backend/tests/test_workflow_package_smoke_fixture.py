@@ -53,6 +53,7 @@ EXPECTED_TOOL_KEYS = {
     "ledger.indicators.lookup",
     "ledger.fundamentals.lookup",
     "ledger.news.lookup",
+    "ledger.social_sentiment.lookup",
     "ledger.insider_data.lookup",
     "ledger.positions.lookup",
     "ledger.reports.lookup",
@@ -121,10 +122,14 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     workflows = cast(list[dict[str, object]], compiled_plan["workflows"])
     workflow = workflows[0]
     compiled_graph = cast(dict[str, object], workflow["compiledGraph"])
+    compiled_nodes = cast(list[dict[str, object]], compiled_graph["nodes"])
 
     assert compiled_plan["packageKey"] == "tradingagents_advisory_research"
     assert [workflow["key"] for workflow in workflows] == ["advisory_research"]
     assert compiled_graph["rootNodeId"] == "advisory_research_flow"
+    assert compiled_nodes[0]["kind"] == "sequence"
+    assert "kind: sequence\n            id: analyst_sequence" in roundtrip.source
+    assert "kind: fanout" not in source
     assert workflow["outputSpec"] == {"kind": "slot", "stepIndex": 17, "slot": "decision"}
     assert {
         agent["key"] for agent in cast(list[dict[str, object]], spec["agents"])
