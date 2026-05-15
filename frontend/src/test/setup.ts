@@ -32,6 +32,12 @@ class IntersectionObserverMock {
 globalThis.IntersectionObserver =
   IntersectionObserverMock as unknown as typeof IntersectionObserver;
 
+Object.defineProperty(Element.prototype, "scrollIntoView", {
+  configurable: true,
+  value() {},
+  writable: true,
+});
+
 Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
   configurable: true,
   get() {

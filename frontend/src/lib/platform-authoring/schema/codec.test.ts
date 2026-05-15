@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseSchemaJsonObject,
   parseSchemaJsonText,
   schemaBuilderToJsonSchema,
   validateSchemaDefaultValue,
@@ -187,6 +188,31 @@ describe("schema codec", () => {
 
     expect(result.issues).toEqual([]);
     expect(result.builder).toEqual(metadataRichBuilder);
+  });
+
+  it("parses already-decoded JSON Schema objects through the shared schema parser", () => {
+    const result = parseSchemaJsonObject(metadataRichJsonSchema);
+
+    expect(result).toEqual({
+      builder: metadataRichBuilder,
+      issues: [],
+      jsonSchema: metadataRichJsonSchema,
+    });
+  });
+
+  it("returns structured parser failures for invalid already-decoded JSON Schema values", () => {
+    const result = parseSchemaJsonObject({ type: "object", additionalProperties: { type: "string" } });
+
+    expect(result).toEqual({
+      builder: null,
+      issues: [
+        {
+          field: "jsonSchema.additionalProperties",
+          issue: "Schema-valued additionalProperties is not supported",
+        },
+      ],
+      jsonSchema: null,
+    });
   });
 
   it("writes primitive builder defaultValue entries as JSON Schema defaults", () => {

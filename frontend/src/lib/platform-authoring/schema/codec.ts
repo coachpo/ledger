@@ -401,6 +401,16 @@ function validateDefaultJsonValue(value: JsonValue, path: string, issues: Schema
   }
 }
 
+export function parseSchemaJsonObject(jsonSchema: unknown): SchemaCodecParseResult {
+  const issues: SchemaCodecIssue[] = [];
+  const builder = jsonSchemaToSchemaBuilder(jsonSchema, { issues, path: "jsonSchema" });
+  if (issues.length > 0) {
+    return { builder: null, jsonSchema: null, issues };
+  }
+
+  return { builder, jsonSchema: jsonSchema as UnknownRecord, issues: [] };
+}
+
 export function parseSchemaJsonText(value: string): SchemaCodecParseResult {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -412,14 +422,7 @@ export function parseSchemaJsonText(value: string): SchemaCodecParseResult {
   }
 
   try {
-    const jsonSchema = JSON.parse(trimmed) as unknown;
-    const issues: SchemaCodecIssue[] = [];
-    const builder = jsonSchemaToSchemaBuilder(jsonSchema, { issues, path: "jsonSchema" });
-    if (issues.length > 0) {
-      return { builder: null, jsonSchema: null, issues };
-    }
-
-    return { builder, jsonSchema: jsonSchema as UnknownRecord, issues: [] };
+    return parseSchemaJsonObject(JSON.parse(trimmed) as unknown);
   } catch {
     return {
       builder: null,

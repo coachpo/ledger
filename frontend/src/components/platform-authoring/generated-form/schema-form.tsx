@@ -57,14 +57,17 @@ import { cn } from "@/components/ui/utils";
 
 const NONE_OPTION = "__none__";
 
-type SchemaFormProps = {
-  description?: string;
+export type SchemaValueEntryFormProps = {
   disabled?: boolean;
   label?: string;
   onChange: (nextValue: ValueEntry) => void;
   schema: SchemaIRNode;
   value?: ValueEntry | null;
 } & Omit<ComponentProps<"div">, "onChange">;
+
+type SchemaFormProps = SchemaValueEntryFormProps & {
+  description?: string;
+};
 
 type SchemaNodeEditorProps = {
   depth: number;
@@ -504,6 +507,26 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
   );
 }
 
+export function SchemaValueEntryForm({
+  className,
+  disabled = false,
+  label = "Schema form",
+  onChange,
+  schema,
+  value,
+  ...props
+}: SchemaValueEntryFormProps) {
+  const resolvedValue = useMemo(() => coerceValueEntryForSchema(schema, value), [schema, value]);
+  const validationIssues = useMemo(() => validateValueEntryNode(resolvedValue), [resolvedValue]);
+
+  return (
+    <div className={cn("flex flex-col gap-4", className)} {...props}>
+      <ValidationIssuesAlert issues={validationIssues} />
+      <SchemaNodeEditor depth={0} disabled={disabled} label={schema.title ?? label} onChange={onChange} schema={schema} value={resolvedValue} />
+    </div>
+  );
+}
+
 export function SchemaForm({
   className,
   description,
@@ -514,9 +537,6 @@ export function SchemaForm({
   value,
   ...props
 }: SchemaFormProps) {
-  const resolvedValue = useMemo(() => coerceValueEntryForSchema(schema, value), [schema, value]);
-  const validationIssues = useMemo(() => validateValueEntryNode(resolvedValue), [resolvedValue]);
-
   return (
     <div className={cn("flex flex-col gap-4", className)} {...props}>
       <Card>
@@ -526,9 +546,8 @@ export function SchemaForm({
             {description ?? schema.description ?? "Enter structured values directly from the shared schema and value-entry foundations."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <ValidationIssuesAlert issues={validationIssues} />
-          <SchemaNodeEditor depth={0} disabled={disabled} label={schema.title ?? label} onChange={onChange} schema={schema} value={resolvedValue} />
+        <CardContent>
+          <SchemaValueEntryForm disabled={disabled} label={label} onChange={onChange} schema={schema} value={value} />
         </CardContent>
       </Card>
     </div>

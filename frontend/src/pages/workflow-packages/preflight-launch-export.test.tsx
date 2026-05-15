@@ -126,19 +126,30 @@ const launchRead: WorkflowPackageLaunchRead = {
   workflowKey: "market_review",
 };
 
-function renderEditor(initialEntry = "/workflow-packages/42") {
-  return render(
+function editorElement(initialEntry = "/workflow-packages/42") {
+  return (
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/workflow-packages/:packageId" element={<WorkflowPackageEditorPage />} />
         <Route path="/workflow-packages/:packageId/run" element={<WorkflowPackageEditorPage />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderEditor(initialEntry = "/workflow-packages/42") {
+  return render(editorElement(initialEntry));
 }
 
 function clickTab(name: string) {
   fireEvent.click(screen.getByRole("tab", { name: `${name} tab` }));
+}
+
+async function choosePackageVersion(name: RegExp) {
+  const versionSelect = screen.getByLabelText("Package version");
+  versionSelect.focus();
+  fireEvent.keyDown(versionSelect, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name }));
 }
 
 describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => {
@@ -219,6 +230,169 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       payload: { parameters: { ticker: "AAPL" }, version: null, workflowKey: "market_review" },
     });
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
+  });
+
+  it("submits typed launch parameters while preserving optional omission, defaults, and explicit empty strings", async () => {
+    const typedLaunchRead: WorkflowPackageLaunchRead = {
+      ...launchRead,
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          includeNews: { title: "Include News", type: "boolean" },
+          horizonDays: { title: "Horizon Days", type: "integer" },
+          filters: {
+            additionalProperties: false,
+            properties: {
+              sector: { title: "Sector", type: "string" },
+            },
+            required: ["sector"],
+            title: "Filters",
+            type: "object",
+          },
+          comment: { title: "Comment", type: "string" },
+          defaultLimit: { default: 10, title: "Default Limit", type: "integer" },
+          emptyOverride: { default: "preset", title: "Empty Override", type: "string" },
+        },
+        required: ["includeNews", "horizonDays", "filters"],
+        type: "object",
+      },
+    };
+    useWorkflowPackageLaunchMock.mockReturnValue({ data: typedLaunchRead, error: null, isError: false, isPending: false });
+    renderEditor("/workflow-packages/42/run");
+
+    fireEvent.click(await screen.findByRole("switch", { name: "Include News" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Horizon Days" }), { target: { value: "14" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Sector" }), { target: { value: "technology" } });
+    const emptyOverride = screen.getByRole("textbox", { name: "Empty Override" });
+    expect(screen.queryByRole("textbox", { name: "Comment" })).not.toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Default Limit" })).toHaveValue(10);
+    expect(emptyOverride).toHaveValue("preset");
+    fireEvent.change(emptyOverride, { target: { value: "temporary" } });
+    fireEvent.change(emptyOverride, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: {
+        parameters: {
+          defaultLimit: 10,
+          emptyOverride: "",
+          filters: { sector: "technology" },
+          horizonDays: 14,
+          includeNews: true,
+        },
+        version: null,
+        workflowKey: "market_review",
+      },
+    }));
+  });
+
+  it("resets typed launch state when workflow key, selected version, or schema identity changes", async () => {
+    const resetLaunchRead: WorkflowPackageLaunchRead = {
+      ...launchRead,
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          ticker: { title: "Ticker", type: "string" },
+        },
+        required: ["ticker"],
+        type: "object",
+      },
+      workflowKey: "reset_workflow",
+    };
+    useWorkflowPackageLaunchMock.mockReturnValue({ data: resetLaunchRead, error: null, isError: false, isPending: false });
+    useWorkflowPackageVersionsMock.mockReturnValue({
+      data: {
+        items: [
+          { compiledHash: "compiled", createdAt: "2026-05-05T10:00:00Z", id: 70, launchedAt: null, manifestHash: "manifest", packageId: 42, validationSummary: {}, version: 7, warnings: [] },
+          { compiledHash: "compiled-6", createdAt: "2026-05-04T10:00:00Z", id: 60, launchedAt: null, manifestHash: "manifest-6", packageId: 42, validationSummary: {}, version: 6, warnings: [] },
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    const view = renderEditor("/workflow-packages/42/run");
+
+    const ticker = await screen.findByRole("textbox", { name: "Ticker" });
+    fireEvent.change(ticker, { target: { value: "AAPL" } });
+    expect(ticker).toHaveValue("AAPL");
+
+    fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "alternate_workflow" } });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ticker" })).toHaveValue(""));
+    fireEvent.change(screen.getByRole("textbox", { name: "Ticker" }), { target: { value: "MSFT" } });
+
+    await choosePackageVersion(/^v6$/);
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ticker" })).toHaveValue(""));
+    fireEvent.change(screen.getByRole("textbox", { name: "Ticker" }), { target: { value: "NVDA" } });
+
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: {
+        ...resetLaunchRead,
+        inputSchema: {
+          additionalProperties: false,
+          properties: {
+            symbol: { title: "Symbol", type: "string" },
+          },
+          required: ["symbol"],
+          type: "object",
+        },
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    view.rerender(editorElement("/workflow-packages/42/run"));
+
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "Symbol" })).toHaveValue("");
+  });
+
+  it.each([
+    {
+      expectedReason: /allows additional properties/i,
+      inputSchema: {
+        additionalProperties: true,
+        properties: { ticker: { title: "Ticker", type: "string" } },
+        required: ["ticker"],
+        type: "object",
+      },
+      name: "additional-properties",
+    },
+    {
+      expectedReason: /unsupported JSON Schema features/i,
+      inputSchema: {
+        patternProperties: { "^x-": { type: "string" } },
+        properties: {},
+        type: "object",
+      },
+      name: "unsupported",
+    },
+  ])("uses raw JSON fallback for $name launch schemas", async ({ expectedReason, inputSchema }) => {
+    useWorkflowPackageLaunchMock.mockReturnValue({
+      data: { ...launchRead, inputSchema },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    renderEditor("/workflow-packages/42/run");
+
+    expect(await screen.findByText("Raw JSON parameters required")).toBeVisible();
+    expect(screen.getByText(expectedReason)).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
+      target: { value: '{"enabled":true,"limit":3,"filters":{"sector":"energy"}}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: {
+        parameters: { enabled: true, filters: { sector: "energy" }, limit: 3 },
+        version: null,
+        workflowKey: "market_review",
+      },
+    }));
   });
 
   it("auto-loads export preview and imports package YAML with inline private MCP values", async () => {

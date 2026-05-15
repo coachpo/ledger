@@ -23,6 +23,7 @@ import { z } from "zod";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
+import { SchemaValueEntryForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -105,7 +106,12 @@ import {
   type WorkflowPackageDraft,
   type WorkflowPackageEditorIssue,
 } from "@/lib/platform-authoring/workflow-packages/manifest";
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { parseJsonValue, stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import { parseSchemaJsonObject, type SchemaCodecIssue } from "@/lib/platform-authoring/schema/codec";
+import type { SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
+import { decodeValueEntry } from "@/lib/platform-authoring/values/codec";
+import { coerceValueEntryForSchema, createValueEntryForSchema } from "@/lib/platform-authoring/values/factories";
+import type { ValueEntry } from "@/lib/platform-authoring/values/types";
 import type { UnknownRecord } from "@/lib/types/common";
 import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
@@ -250,14 +256,6 @@ type PackageDiagnostic = {
   severity: "error" | "warning";
 };
 
-type RuntimeInputField = {
-  description: string;
-  key: string;
-  required: boolean;
-  title: string;
-  type: string;
-};
-
 function diagnosticFromRecord(value: unknown, severity: "error" | "warning"): PackageDiagnostic {
   const record = isUnknownRecord(value) ? value : {};
   const field = stringValue(record.field) || stringValue(record.path) || "$";
@@ -322,45 +320,6 @@ function collectSecretReferenceKeys(value: unknown): string[] {
 
 function sortedSecretBindings(bindings: readonly WorkflowPackageSecretBindingRead[]): WorkflowPackageSecretBindingRead[] {
   return [...bindings].sort((left, right) => left.key.localeCompare(right.key));
-}
-
-function runtimeInputFields(inputSchema: UnknownRecord | undefined): RuntimeInputField[] {
-  if (!inputSchema || inputSchema.type !== "object" || !isUnknownRecord(inputSchema.properties)) {
-    return [];
-  }
-  const requiredValues = Array.isArray(inputSchema.required) ? inputSchema.required.filter((item): item is string => typeof item === "string") : [];
-  return Object.entries(inputSchema.properties).filter((entry): entry is [string, UnknownRecord] => isUnknownRecord(entry[1])).map(([key, schema]) => ({
-    description: stringValue(schema.description),
-    key,
-    required: requiredValues.includes(key),
-    title: stringValue(schema.title) || key,
-    type: stringValue(schema.type) || "string",
-  }));
-}
-
-function parseRuntimeInput(value: string, type: string): unknown {
-  if (!value.trim()) {
-    return "";
-  }
-  if (type === "integer") {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-  if (type === "number") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-  if (type === "boolean") {
-    return value === "true";
-  }
-  if (type === "object" || type === "array") {
-    try {
-      return JSON.parse(value) as unknown;
-    } catch {
-      return value;
-    }
-  }
-  return value;
 }
 
 function versionLabel(version: number | null | undefined) {
@@ -1213,6 +1172,71 @@ function ModelConnectionModeSummary({ diagnostics, read }: { diagnostics: Packag
   );
 }
 
+type LaunchSchemaState =
+  | { mode: "typed"; schema: SchemaIRObject }
+  | { issues: SchemaCodecIssue[]; mode: "raw"; reason: string };
+
+function schemaAllowsAdditionalProperties(schema: SchemaIRNode): boolean {
+  if (schema.kind === "object") {
+    return Boolean(schema.allowAdditionalProperties) || (schema.fields ?? []).some((field) => schemaAllowsAdditionalProperties(field.schema));
+  }
+
+  if (schema.kind === "array") {
+    return schemaAllowsAdditionalProperties(schema.items);
+  }
+
+  if (schema.kind === "discriminated_union") {
+    return schema.variants.some(schemaAllowsAdditionalProperties);
+  }
+
+  return false;
+}
+
+function launchSchemaState(inputSchema: unknown): LaunchSchemaState {
+  const parsed = parseSchemaJsonObject(inputSchema);
+  if (!parsed.builder) {
+    return {
+      issues: parsed.issues,
+      mode: "raw",
+      reason: "The workflow input schema uses unsupported JSON Schema features, so edit the full parameters payload as raw JSON.",
+    };
+  }
+
+  if (parsed.builder.kind !== "object") {
+    return {
+      issues: [],
+      mode: "raw",
+      reason: "Workflow launch parameters require an object input schema, so edit the full parameters payload as raw JSON.",
+    };
+  }
+
+  if (schemaAllowsAdditionalProperties(parsed.builder)) {
+    return {
+      issues: [],
+      mode: "raw",
+      reason: "This workflow input schema allows additional properties. The typed form cannot safely represent free-form keys yet, so edit the whole parameters object as raw JSON.",
+    };
+  }
+
+  return { mode: "typed", schema: parsed.builder };
+}
+
+function parseRawLaunchParameters(parametersText: string): UnknownRecord {
+  const parsed = parseJsonValue<unknown>("Runtime inputs JSON", parametersText, {});
+  if (!isUnknownRecord(parsed)) {
+    throw new Error("Runtime inputs JSON must be a valid object.");
+  }
+  return parsed;
+}
+
+function decodeLaunchValueEntry(schema: SchemaIRObject, value: ValueEntry | null | undefined): UnknownRecord {
+  const decoded = decodeValueEntry(coerceValueEntryForSchema(schema, value));
+  if (!isUnknownRecord(decoded)) {
+    return {};
+  }
+  return decoded;
+}
+
 function PreflightTab(props: {
   diagnostics: PackageDiagnostic[];
   launchRead: WorkflowPackageLaunchRead | undefined;
@@ -1271,28 +1295,27 @@ function LaunchTab(props: {
 }) {
   const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, selectedVersion, setSelectedVersion, setWorkflowKey, versions, workflowKey, workflowPackage } = props;
   const navigate = useNavigate();
-  const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
-  const [parametersText, setParametersText] = useState("{}");
-  const fields = useMemo(() => runtimeInputFields(launchRead?.inputSchema), [launchRead?.inputSchema]);
-  const hasFieldInputs = fields.length > 0;
+  const [launchValueEntry, setLaunchValueEntry] = useState<ValueEntry | null | undefined>(undefined);
+  const [parametersText, setParametersText] = useState(() => stringifyJson({}));
+  const inputSchemaFingerprint = useMemo(() => stringifyJson(launchRead?.inputSchema), [launchRead?.inputSchema]);
+  const inputSchemaSnapshot = useMemo(() => inputSchemaFingerprint ? JSON.parse(inputSchemaFingerprint) as unknown : undefined, [inputSchemaFingerprint]);
+  const inputSchemaState = useMemo(() => launchSchemaState(inputSchemaSnapshot), [inputSchemaSnapshot]);
   const launchDiagnostics = useMemo(() => diagnosticsFromLaunch(launchRead), [launchRead]);
+  const resolvedVersion = selectedVersion ?? launchRead?.packageVersion ?? workflowPackage?.latestVersion ?? null;
+  const launchFormIdentity = `${packageId ?? ""}:${resolvedVersion ?? ""}:${workflowKey}:${inputSchemaFingerprint}`;
 
   useEffect(() => {
-    const initialValues = Object.fromEntries(fields.map((field) => [field.key, ""]));
-    setRuntimeValues((current) => ({ ...initialValues, ...current }));
-  }, [fields]);
+    if (inputSchemaState.mode === "typed") {
+      setLaunchValueEntry(createValueEntryForSchema(inputSchemaState.schema));
+    } else {
+      setLaunchValueEntry(null);
+    }
+    setParametersText(stringifyJson({}));
+  }, [inputSchemaState, launchFormIdentity]);
 
-  const buildParameters = () => {
-    if (hasFieldInputs) {
-      return Object.fromEntries(fields.map((field) => [field.key, parseRuntimeInput(runtimeValues[field.key] ?? "", field.type)]));
-    }
-    try {
-      const parsed = JSON.parse(parametersText || "{}") as unknown;
-      return isUnknownRecord(parsed) ? parsed : {};
-    } catch {
-      throw new Error("Runtime inputs JSON must be a valid object.");
-    }
-  };
+  const buildParameters = () => inputSchemaState.mode === "typed"
+    ? decodeLaunchValueEntry(inputSchemaState.schema, launchValueEntry)
+    : parseRawLaunchParameters(parametersText);
 
   const launchPackage = async () => {
     if (!packageId) {
@@ -1330,9 +1353,35 @@ function LaunchTab(props: {
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
         <ModelConnectionModeSummary diagnostics={launchDiagnostics} read={launchRead} />
         <Card className="bg-background/60">
-          <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Fields are derived from backend launch metadata for the selected package workflow.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Values are derived from backend launch metadata and submitted as typed JSON parameters.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            {hasFieldInputs ? fields.map((field) => <div className="space-y-2" key={field.key}><Label htmlFor={`runtime-${field.key}`}>{field.title}{field.required ? " *" : ""}</Label><Input id={`runtime-${field.key}`} aria-label={field.title} value={runtimeValues[field.key] ?? ""} onChange={(event) => setRuntimeValues((current) => ({ ...current, [field.key]: event.target.value }))} /><p className="text-xs text-muted-foreground">{field.description || `${field.type} input`}</p></div>) : <div className="space-y-2"><Label htmlFor="runtime-json">Runtime inputs JSON</Label><Textarea id="runtime-json" aria-label="Runtime inputs JSON" rows={8} value={parametersText} onChange={(event) => setParametersText(event.target.value)} /></div>}
+            {inputSchemaState.mode === "typed" ? (
+              <SchemaValueEntryForm
+                label="Runtime inputs"
+                schema={inputSchemaState.schema}
+                value={launchValueEntry}
+                onChange={setLaunchValueEntry}
+              />
+            ) : (
+              <div className="space-y-4">
+                <Alert className="border-chart-3/30 bg-chart-3/10">
+                  <AlertCircle />
+                  <AlertTitle>Raw JSON parameters required</AlertTitle>
+                  <AlertDescription>
+                    <p>{inputSchemaState.reason}</p>
+                    {inputSchemaState.issues.length > 0 ? (
+                      <ul className="list-disc pl-5">
+                        {inputSchemaState.issues.map((issue) => <li key={`${issue.field}-${issue.issue}`}>{issue.field}: {issue.issue}</li>)}
+                      </ul>
+                    ) : null}
+                  </AlertDescription>
+                </Alert>
+                <div className="space-y-2">
+                  <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                  <Textarea id="runtime-json" aria-label="Runtime inputs JSON" rows={8} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

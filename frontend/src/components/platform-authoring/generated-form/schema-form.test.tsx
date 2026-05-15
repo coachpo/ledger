@@ -11,7 +11,7 @@ import {
 } from "@/lib/platform-authoring/values/factories";
 import type { ValueEntry } from "@/lib/platform-authoring/values/types";
 
-import { SchemaForm } from "./schema-form";
+import { SchemaForm, SchemaValueEntryForm } from "./schema-form";
 
 Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
   configurable: true,
@@ -65,6 +65,21 @@ function lastDecodedChange(onChange: ReturnType<typeof vi.fn>) {
 }
 
 describe("SchemaForm", () => {
+  it("renders the value-entry editor body without the authoring card shell", () => {
+    const onChange = vi.fn();
+    const schema = {
+      fields: [{ name: "ticker", schema: { kind: "string", title: "Ticker" } }],
+      kind: "object",
+      title: "Run Ticket",
+    } satisfies SchemaIRNode;
+
+    render(<SchemaValueEntryForm label="Run input" onChange={onChange} schema={schema} />);
+
+    expect(screen.queryByText("Enter structured values directly from the shared schema and value-entry foundations.")).not.toBeInTheDocument();
+    expect(screen.getByText("Run Ticket")).toBeVisible();
+    expect(screen.getByLabelText("Ticker")).toBeVisible();
+  });
+
   it("uses schema titles for field labels, falls back to property keys, and preserves value-entry payloads", () => {
     const onChange = vi.fn();
     const schema = {
