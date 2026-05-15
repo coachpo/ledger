@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import to_utc
+from app.extensions.ledger_finance.hooks import (
+    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.repositories.report import ReportRepository
 from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE
@@ -14,10 +18,7 @@ from app.services.market_data_service import MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.reflection_service import ReflectionService
 from app.services.report_backed_memory_store import ReportBackedMemoryStore
-from app.services.return_resolution_service import (
-    ReturnResolutionService,
-    ReturnResolutionStatus,
-)
+from app.services.return_resolution_service import ReturnResolutionService, ReturnResolutionStatus
 
 _MEMORY_REPORT_SOURCE = "agent"
 
@@ -55,7 +56,14 @@ class MemoryFollowUpService:
         )
         self.reflection_service: ReflectionService = ReflectionService(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(
+            self.session,
+            surface=MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+        )
+
     def run_due(self, now: datetime) -> MemoryFollowUpRunResult:
+        self._require_enabled()
         reflected_at = to_utc(now)
         items: list[MemoryFollowUpItem] = []
 

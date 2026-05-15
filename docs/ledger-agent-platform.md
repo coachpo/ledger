@@ -15,10 +15,11 @@ This document describes shipped behavior only. Studio, Tryout, orchestration, ru
 | Workflow Packages | `/api/workflow-packages*` | `/workflow-packages*` |
 | Package Secret Bindings | `/api/workflow-packages/{packageId}/secret-bindings*` | Secret Bindings tab inside `/workflow-packages/{packageId}` |
 | Model Connections | `/api/model-connections*` | `/model-connections*` |
+| Extensions | `/api/extensions*` | extension state consumers |
 | Tools | `/api/tools` | surfaced inside package capability-profile editors |
 | Runs | `/api/runs*` | `/runs*` |
 
-Preserved product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`.
+Preserved finance product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`. They are bundled in `ledger.finance`, which is enabled by default and supports enable/disable state only. Generic platform capabilities remain core: Workflow Packages, Model Connections, Runs, HTTP operation nodes, package secret bindings, manifest parsing, and the `/api/tools` discovery host.
 
 ## Workflow Packages
 
@@ -77,9 +78,9 @@ Read payloads and errors must mask or omit raw secrets. Blank API-key edits pres
 
 ## Tools
 
-Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route.
+Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are `ledger.finance` contributions.
 
-Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. Runtime tool keys and OpenAI function names stay stable. Examples include `ledger.market_data.ohlcv_lookup`, `ledger.indicators.lookup`, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, `ledger.reports.lookup`, `ledger.reports.write`, and OpenAI function names such as `ledger_social_sentiment_lookup` and `ledger_reports_lookup`.
+Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. They remain visible to smoke and demo Workflow Packages while `ledger.finance` is enabled by default. Runtime tool keys and OpenAI function names stay stable. Examples include `ledger.market_data.ohlcv_lookup`, `ledger.indicators.lookup`, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, `ledger.reports.lookup`, `ledger.reports.write`, and OpenAI function names such as `ledger_social_sentiment_lookup` and `ledger_reports_lookup`.
 
 `ledger.news.lookup` remains the company/query/macro news contract. `ledger.social_sentiment.lookup` is separate and additive: it accepts `symbol`, optional `sources` (`reddit`, `stocktwits`), optional `startDate`, optional `endDate`, and optional `itemLimit` capped at `50`; output contains `sourceBlocks`, aggregate `metrics`, and structured `warnings`. Provider outage, timeout, rate-limit, empty-source, partial-result, and truncation paths return deterministic warnings rather than raw provider errors.
 

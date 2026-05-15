@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -23,6 +23,7 @@ class ResolvedTool:
     display_name: str
     description: str
     module: str
+    owner_extension_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -36,30 +37,42 @@ class ResolvedCapabilityToolset:
 
 
 class ToolCatalogValidationError(ValueError):
-    def __init__(self, details: Sequence[dict[str, str]]) -> None:
+    def __init__(self, details: Sequence[dict[str, object]]) -> None:
         super().__init__("Tool catalog validation failed")
-        self.details = list(details)
+        self.details: list[dict[str, object]] = [dict(detail) for detail in details]
 
 
 class ToolCatalog:
-    def __init__(self, tool_registry: dict[str, ServerDeclaredToolSpec] | None = None) -> None:
-        self.tool_registry = dict(tool_registry or SERVER_DECLARED_TOOL_REGISTRY)
+    def __init__(
+        self,
+        tool_registry: Mapping[str, ServerDeclaredToolSpec] | None = None,
+        *,
+        enabled_extension_keys: Collection[str] | None = None,
+    ) -> None:
+        self.tool_registry: dict[str, ServerDeclaredToolSpec] = dict(
+            tool_registry or SERVER_DECLARED_TOOL_REGISTRY
+        )
+        self.enabled_extension_keys: frozenset[str] | None = (
+            None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
+        )
 
     def list_registered_tools(self) -> tuple[ResolvedTool, ...]:
         return tuple(
-            ResolvedTool(
-                key=tool.key,
-                display_name=tool.display_name,
-                description=tool.description,
-                module=tool.module,
-            )
+            self._to_resolved_tool(tool)
+            for tool in sorted(self.tool_registry.values(), key=lambda item: item.key)
+            if self._is_enabled_tool(tool)
+        )
+
+    def list_known_tools(self) -> tuple[ResolvedTool, ...]:
+        return tuple(
+            self._to_resolved_tool(tool)
             for tool in sorted(self.tool_registry.values(), key=lambda item: item.key)
         )
 
     def resolve_tool_keys(self, tool_keys: Sequence[object]) -> tuple[ResolvedTool, ...]:
         resolved_tools: list[ResolvedTool] = []
         seen_keys: set[str] = set()
-        details: list[dict[str, str]] = []
+        details: list[dict[str, object]] = []
 
         for index, raw_tool_key in enumerate(tool_keys):
             tool_key = self._normalize_tool_key_value(raw_tool_key, index=index, details=details)
@@ -82,6 +95,11 @@ class ToolCatalog:
                     }
                 )
                 continue
+            if not self._is_enabled_tool(tool_spec):
+                details.append(
+                    self._disabled_tool_detail(field=f"toolKeys.{index}", tool_spec=tool_spec)
+                )
+                continue
             resolved_tools.append(self._to_resolved_tool(tool_spec))
             seen_keys.add(tool_key)
 
@@ -95,7 +113,7 @@ class ToolCatalog:
     ) -> tuple[ResolvedTool, ...]:
         resolved_tools: list[ResolvedTool] = []
         seen_keys: set[str] = set()
-        details: list[dict[str, str]] = []
+        details: list[dict[str, object]] = []
 
         for index, raw_grant in enumerate(tool_grants):
             tool_key = self._normalize_tool_key(raw_grant, index=index, details=details)
@@ -116,6 +134,14 @@ class ToolCatalog:
                         "field": f"toolGrants.{index}.tool",
                         "issue": f"Unknown server-declared tool {tool_key!r}",
                     }
+                )
+                continue
+            if not self._is_enabled_tool(tool_spec):
+                details.append(
+                    self._disabled_tool_detail(
+                        field=f"toolGrants.{index}.tool",
+                        tool_spec=tool_spec,
+                    )
                 )
                 continue
             resolved_tools.append(self._to_resolved_tool(tool_spec))
@@ -141,7 +167,7 @@ class ToolCatalog:
         raw_grant: dict[str, Any],
         *,
         index: int,
-        details: list[dict[str, str]],
+        details: list[dict[str, object]],
     ) -> str | None:
         if not isinstance(raw_grant, dict):
             details.append(
@@ -168,7 +194,7 @@ class ToolCatalog:
         raw_tool_key: object,
         *,
         index: int,
-        details: list[dict[str, str]],
+        details: list[dict[str, object]],
     ) -> str | None:
         if not isinstance(raw_tool_key, str):
             details.append(
@@ -197,6 +223,29 @@ class ToolCatalog:
             return None
         return normalized_tool_key
 
+    def _is_enabled_tool(self, tool_spec: ServerDeclaredToolSpec) -> bool:
+        if self.enabled_extension_keys is None or tool_spec.owner_extension_key is None:
+            return True
+        return tool_spec.owner_extension_key in self.enabled_extension_keys
+
+    @staticmethod
+    def _disabled_tool_detail(
+        *,
+        field: str,
+        tool_spec: ServerDeclaredToolSpec,
+    ) -> dict[str, object]:
+        extension_key = tool_spec.owner_extension_key or "unknown"
+        return {
+            "field": field,
+            "issue": (
+                f"Server-declared tool {tool_spec.key!r} is disabled because extension "
+                f"{extension_key!r} is disabled"
+            ),
+            "code": "extension_disabled",
+            "extensionKey": extension_key,
+            "surface": f"tool.{tool_spec.key}",
+        }
+
     @staticmethod
     def _to_resolved_tool(tool_spec: ServerDeclaredToolSpec) -> ResolvedTool:
         return ResolvedTool(
@@ -204,6 +253,7 @@ class ToolCatalog:
             display_name=tool_spec.display_name,
             description=tool_spec.description,
             module=tool_spec.module,
+            owner_extension_key=tool_spec.owner_extension_key,
         )
 
 

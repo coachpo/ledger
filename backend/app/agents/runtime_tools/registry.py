@@ -7,9 +7,17 @@ from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError,
 
 
 class RuntimeToolRegistry:
-    def __init__(self, specs: Sequence[RuntimeToolSpec]) -> None:
+    def __init__(
+        self,
+        specs: Sequence[RuntimeToolSpec],
+        *,
+        enabled_extension_keys: Collection[str] | None = None,
+    ) -> None:
         self._specs: tuple[RuntimeToolSpec, ...] = tuple(
             sorted(specs, key=lambda spec: (spec.sort_order, spec.key))
+        )
+        self._enabled_extension_keys: frozenset[str] | None = (
+            None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
         )
         self._specs_by_openai_function_name: dict[str, RuntimeToolSpec] = {}
         self._validate_unique_specs(self._specs)
@@ -19,6 +27,9 @@ class RuntimeToolRegistry:
     def list_specs(self) -> tuple[RuntimeToolSpec, ...]:
         return self._specs
 
+    def list_enabled_specs(self) -> tuple[RuntimeToolSpec, ...]:
+        return tuple(spec for spec in self._specs if self._is_enabled_spec(spec))
+
     def get_openai_tools(
         self,
         granted_tool_keys: Collection[str],
@@ -26,12 +37,14 @@ class RuntimeToolRegistry:
         return [
             self._build_openai_tool_definition(spec)
             for spec in self._specs
-            if spec.key in granted_tool_keys
+            if spec.key in granted_tool_keys and self._is_enabled_spec(spec)
         ]
 
     def get_guidance(self, granted_tool_keys: Collection[str]) -> str:
         return "\n\n".join(
-            spec.guidance for spec in self._specs if spec.key in granted_tool_keys and spec.guidance
+            spec.guidance
+            for spec in self._specs
+            if spec.key in granted_tool_keys and spec.guidance and self._is_enabled_spec(spec)
         )
 
     def dispatch(
@@ -48,10 +61,31 @@ class RuntimeToolRegistry:
                 code="agent_tool_call_unsupported",
                 message=f"Agent requested unsupported server tool {name!r}.",
             )
+        if not self._is_enabled_spec(spec):
+            raise self._disabled_tool_error(spec)
         if spec.key not in granted_tool_keys:
             raise RuntimeToolError(code=spec.denied_code, message=spec.denied_message)
         arguments = spec.parser(arguments_json)
         return spec.executor(context, arguments)
+
+    def _is_enabled_spec(self, spec: RuntimeToolSpec) -> bool:
+        if self._enabled_extension_keys is None or spec.owner_extension_key is None:
+            return True
+        return spec.owner_extension_key in self._enabled_extension_keys
+
+    @staticmethod
+    def _disabled_tool_error(spec: RuntimeToolSpec) -> RuntimeToolError:
+        extension_key = spec.owner_extension_key or "unknown"
+        return RuntimeToolError(
+            code="extension_disabled",
+            message="Extension is disabled",
+            details=[
+                {
+                    "extensionKey": extension_key,
+                    "surface": f"runtime.tool.{spec.key}",
+                }
+            ],
+        )
 
     @staticmethod
     def _build_openai_tool_definition(spec: RuntimeToolSpec) -> dict[str, object]:

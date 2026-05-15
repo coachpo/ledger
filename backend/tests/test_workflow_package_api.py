@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.platform_reference import WorkflowPackageVersionModelConnection
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
@@ -20,6 +21,19 @@ _FIXTURE = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_EXPECTED_FINANCE_TOOL_KEYS = {
+    "ledger.market_data.quote_lookup",
+    "ledger.market_data.history_lookup",
+    "ledger.market_data.ohlcv_lookup",
+    "ledger.indicators.lookup",
+    "ledger.fundamentals.lookup",
+    "ledger.news.lookup",
+    "ledger.social_sentiment.lookup",
+    "ledger.insider_data.lookup",
+    "ledger.positions.lookup",
+    "ledger.reports.lookup",
+    "ledger.reports.write",
+}
 
 
 def _package_source() -> str:
@@ -160,6 +174,15 @@ def _manifest_semantics(body: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _profile_tool_keys(package_definition: dict[str, object]) -> set[str]:
+    spec = cast(dict[str, object], package_definition["spec"])
+    return {
+        tool_key
+        for profile in cast(list[dict[str, object]], spec["capabilityProfiles"])
+        for tool_key in cast(list[str], profile["toolKeys"])
+    }
+
+
 def _edited_workflow_manifest_source(source: str) -> str:
     old_description = "description: Neutral advisory workflow fixture for package smoke coverage."
     new_description = (
@@ -167,6 +190,32 @@ def _edited_workflow_manifest_source(source: str) -> str:
     )
     assert old_description in source
     return source.replace(old_description, new_description, 1)
+
+
+def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+
+    extensions_response = client.get("/api/extensions")
+    assert extensions_response.status_code == 200, extensions_response.json()
+    extension_items = cast(list[dict[str, object]], extensions_response.json()["items"])
+    finance_extension = next(
+        item for item in extension_items if item["key"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    )
+    assert finance_extension["enabled"] is True
+    assert finance_extension["defaultEnabled"] is True
+
+    source = _package_source()
+    assert FINANCE_WORKSPACE_EXTENSION_KEY not in source
+
+    created = _create_package(client)
+    manifest_response = client.get(f"/api/workflow-packages/{created['id']}/manifest")
+    assert manifest_response.status_code == 200, manifest_response.json()
+    manifest_body = cast(dict[str, object], manifest_response.json())
+    package_definition = cast(dict[str, object], manifest_body["packageDefinition"])
+    assert _profile_tool_keys(package_definition) == _EXPECTED_FINANCE_TOOL_KEYS
 
 
 def test_manifest_reads_return_hydrated_safe_package_resources(

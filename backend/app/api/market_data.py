@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies import get_market_data_service
+from app.extensions.ledger_finance.dependencies import get_market_data_service
 from app.schemas.market_data import MarketHistoryRead, MarketQuoteListRead
 from app.services.market_data_service import MarketDataService
 

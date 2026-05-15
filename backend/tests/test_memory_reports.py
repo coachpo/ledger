@@ -14,8 +14,17 @@ from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
+from app.extensions.ledger_finance.hooks import (
+    MEMORY_CONTEXT_SERVICE_SURFACE,
+    MEMORY_REPORT_SERVICE_SURFACE,
+    MEMORY_SERVICE_SURFACE,
+    REFLECTION_SERVICE_SURFACE,
+    RETURN_RESOLUTION_SERVICE_SURFACE,
+)
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.capability import Capability
 from app.models.report import Report
+from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import MemoryEntryRead
 from app.schemas.memory_report import (
     AGENT_MEMORY_IMMUTABLE_FIELDS,
@@ -41,6 +50,7 @@ from app.services.capability_service import (
     REPORT_MEMORY_WRITE_TOOL_KEY,
     RuntimeToolGrantError,
 )
+from app.services.extension_service import ExtensionService
 from app.services.market_data_service import MarketDataService
 from app.services.memory_context_service import MemoryContextService, MemoryPromptSnippet
 from app.services.memory_report_service import MemoryReportService
@@ -164,6 +174,26 @@ def _create_pending_report(
         payload=_pending_create_metadata(),
         trusted_context=_trusted_context({"runId": run_id}),
     )
+
+
+def _disable_finance_workspace(session: Session) -> None:
+    ExtensionService(session).set_extension_enabled(
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        ExtensionToggleRequest.model_validate(
+            {"enabled": False, "disabledReason": "memory data safety check"}
+        ),
+    )
+
+
+def _assert_extension_disabled(
+    exc_info: pytest.ExceptionInfo[ApiError],
+    surface: str,
+) -> None:
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.code == "extension_disabled"
+    assert exc_info.value.details == [
+        {"extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY, "surface": surface}
+    ]
 
 
 class _MemoryHistoryQuoteProvider:
@@ -1314,6 +1344,69 @@ def _memory_id(report: ReportRead) -> str:
 
 def _memory_id_order(snippets: list[MemoryPromptSnippet]) -> list[str]:
     return [snippet.memory_id for snippet in snippets]
+
+
+def test_disabled_finance_workspace_blocks_memory_services_without_mutating_reports(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        report = _create_pending_report(session)
+        persisted = session.get(Report, report.id)
+        assert persisted is not None
+        original_content = persisted.content
+        original_metadata = deepcopy(persisted.metadata_)
+        _disable_finance_workspace(session)
+        write_request = MemoryService.write_request_from_report_create(
+            payload=_pending_create_metadata(),
+            trusted_context=_trusted_context({"runId": 999}),
+        )
+
+        with pytest.raises(ApiError) as get_error:
+            _ = MemoryService(session).get_memory(_memory_id(report))
+        with pytest.raises(ApiError) as write_error:
+            _ = MemoryService(session).write_memory(
+                capability_references=_memory_write_capability_references(),
+                payload=write_request,
+            )
+        with pytest.raises(ApiError) as context_error:
+            _ = MemoryContextService(session).get_prompt_snippets(ticker="NVDA")
+        with pytest.raises(ApiError) as resolution_error:
+            _ = _return_resolution_service(
+                session,
+                {
+                    "NVDA": [
+                        (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
+                    ],
+                },
+            ).resolve_memory(
+                _memory_id(report),
+                end_date=datetime(2026, 1, 6, tzinfo=UTC),
+            )
+        with pytest.raises(ApiError) as reflection_error:
+            _ = ReflectionService(session).append_reflection(
+                _memory_id(report),
+                reflection="Disabled extension must not append this.",
+                reflected_at=datetime(2026, 1, 7, tzinfo=UTC),
+            )
+        with pytest.raises(ApiError) as memory_report_error:
+            _ = MemoryReportService(session).resolve_memory_report(
+                report.id,
+                _resolution_update(),
+            )
+
+        persisted_after = session.get(Report, report.id)
+        reports = list(session.scalars(select(Report).order_by(Report.id)))
+
+    _assert_extension_disabled(get_error, MEMORY_SERVICE_SURFACE)
+    _assert_extension_disabled(write_error, MEMORY_SERVICE_SURFACE)
+    _assert_extension_disabled(context_error, MEMORY_CONTEXT_SERVICE_SURFACE)
+    _assert_extension_disabled(resolution_error, RETURN_RESOLUTION_SERVICE_SURFACE)
+    _assert_extension_disabled(reflection_error, REFLECTION_SERVICE_SURFACE)
+    _assert_extension_disabled(memory_report_error, MEMORY_REPORT_SERVICE_SURFACE)
+    assert persisted_after is not None
+    assert len(reports) == 1
+    assert persisted_after.content == original_content
+    assert persisted_after.metadata_ == original_metadata
 
 
 def test_reflection_service_appends_validated_reflection_to_resolved_memory(

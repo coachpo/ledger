@@ -67,6 +67,12 @@ class Run(IdMixin, TimestampMixin, Base):
     workflow_package_version: Mapped[int | None] = mapped_column(nullable=True)
     workflow_package_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    extension_snapshots: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
+    )
     input: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20),

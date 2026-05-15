@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
+from app.extensions.ledger_finance.hooks import (
+    REPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
@@ -31,6 +35,9 @@ class ReportService:
         self.session: Session = session
         self.repository: ReportRepository = ReportRepository(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=REPORT_SERVICE_SURFACE)
+
     def list_reports(
         self,
         *,
@@ -42,6 +49,7 @@ class ReportService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ReportRead]:
+        self._require_enabled()
         return self._list_report_reads(
             ticker=ticker,
             tag=tag,
@@ -64,6 +72,7 @@ class ReportService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ReportRead]:
+        self._require_enabled()
         CapabilityService(self.session, get_default_tool_catalog()).require_report_lookup_grant(
             capability_references=capability_references
         )
@@ -78,17 +87,21 @@ class ReportService:
         )
 
     def get_report(self, report_id: int) -> ReportRead:
+        self._require_enabled()
         report = self._get_model(report_id)
         return ReportRead.model_validate(report)
 
     def get_report_model(self, report_id: int) -> Report:
+        self._require_enabled()
         return self._get_model(report_id)
 
     def get_report_by_slug(self, slug: str) -> ReportRead:
+        self._require_enabled()
         report = self._get_model_by_slug(slug)
         return ReportRead.model_validate(report)
 
     def get_report_model_by_slug(self, slug: str) -> Report:
+        self._require_enabled()
         return self._get_model_by_slug(slug)
 
     def create_from_template(
@@ -97,6 +110,7 @@ class ReportService:
         compiled_content: str,
         metadata: ReportMetadata | Mapping[str, object] | None = None,
     ) -> ReportRead:
+        self._require_enabled()
         name = self._generate_unique_name(template.name)
         return self._create_report_record(
             name=name,
@@ -114,6 +128,7 @@ class ReportService:
         name: str,
         metadata: Mapping[str, object] | None = None,
     ) -> ReportRead:
+        self._require_enabled()
         normalized_slug = self._normalize_name(slug)
         if not normalized_slug:
             raise ApiError(
@@ -156,6 +171,7 @@ class ReportService:
         slug: str | None = None,
         metadata: ReportMetadata | Mapping[str, object] | None = None,
     ) -> ReportRead:
+        self._require_enabled()
         report_name = self._resolve_external_report_name(name)
 
         if slug is not None:
@@ -178,6 +194,7 @@ class ReportService:
         )
 
     def update_report_by_slug(self, slug: str, payload: ReportUpdate) -> ReportRead:
+        self._require_enabled()
         report = self._get_model_by_slug(slug)
         self._ensure_public_mutation_allowed(report)
         if payload.content is not None:
@@ -187,12 +204,14 @@ class ReportService:
         return ReportRead.model_validate(report)
 
     def delete_report_by_slug(self, slug: str) -> None:
+        self._require_enabled()
         report = self._get_model_by_slug(slug)
         self._ensure_public_mutation_allowed(report)
         self.repository.delete(report)
         self.session.commit()
 
     def update_report(self, report_id: int, payload: ReportUpdate) -> ReportRead:
+        self._require_enabled()
         report = self._get_model(report_id)
         self._ensure_public_mutation_allowed(report)
         if payload.content is not None:
@@ -202,6 +221,7 @@ class ReportService:
         return ReportRead.model_validate(report)
 
     def delete_report(self, report_id: int) -> None:
+        self._require_enabled()
         report = self._get_model(report_id)
         self._ensure_public_mutation_allowed(report)
         self.repository.delete(report)

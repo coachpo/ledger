@@ -21,6 +21,8 @@ from app.core.telemetry import (
     format_current_trace_id,
 )
 from app.db.engine import get_session_factory
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.ledger_finance.provider_factories import create_deterministic_quote_provider
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
@@ -87,6 +89,8 @@ from app.services.execution_plan import (
     PackageRuntimeAgentSpec,
 )
 from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
+from app.services.extension_dependency_service import ExtensionDependencyService
+from app.services.extension_service import ExtensionService
 from app.services.http_operation_execution_service import (
     HttpOperationExecutionError,
     HttpOperationExecutionResult,
@@ -108,7 +112,7 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.quote_provider import DeterministicQuoteProvider, QuoteProvider
+from app.services.quote_provider import QuoteProvider
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
 logger = logging.getLogger(__name__)
@@ -597,6 +601,43 @@ class RunService:
             "workflow_package_version_id": workflow_package_version.id,
         }
 
+    def _extension_snapshots_for_launch(
+        self,
+        workflow_package_version: WorkflowPackageVersion | None,
+    ) -> list[dict[str, Any]]:
+        if workflow_package_version is None:
+            return []
+        dependency_service = ExtensionDependencyService(ExtensionService(self.session))
+        return dependency_service.snapshot_compiled_plan_dependencies(
+            workflow_package_version.compiled_plan
+        )
+
+    def _assert_run_extension_dependencies_enabled(self, run: Run) -> None:
+        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            return
+        snapshots = run.extension_snapshots or []
+        if not snapshots:
+            return
+        extension_service = ExtensionService(self.session)
+        for snapshot in snapshots:
+            extension_key = str(snapshot.get("extensionKey") or "")
+            if not extension_key:
+                continue
+            surfaces = snapshot.get("surfaces")
+            surface = (
+                str(surfaces[0])
+                if isinstance(surfaces, list) and surfaces
+                else f"workflowPackage.{run.target_key}"
+            )
+            extension_service.require_enabled(extension_key, surface=surface)
+
+    @staticmethod
+    def _run_depends_on_finance_workspace(run: Run) -> bool:
+        return any(
+            str(snapshot.get("extensionKey") or "") == FINANCE_WORKSPACE_EXTENSION_KEY
+            for snapshot in (run.extension_snapshots or [])
+        )
+
     def _create_run_from_plan(
         self,
         plan: ExecutionPlan,
@@ -614,6 +655,7 @@ class RunService:
             plan.package_workflow.key if plan.package_workflow is not None else None
         )
         target_fk_identity = self._run_target_fk_identity(plan, workflow_package_version)
+        extension_snapshots = self._extension_snapshots_for_launch(workflow_package_version)
         run = Run(
             **target_fk_identity,
             target_kind=self._run_target_kind(plan),
@@ -632,6 +674,7 @@ class RunService:
                 else None
             ),
             workflow_package_workflow_key=package_workflow_key,
+            extension_snapshots=extension_snapshots,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -778,6 +821,7 @@ class RunService:
             workflow_package_version=source_run.workflow_package_version,
             workflow_package_hash=source_run.workflow_package_hash,
             workflow_package_workflow_key=source_run.workflow_package_workflow_key,
+            extension_snapshots=deepcopy(source_run.extension_snapshots),
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -1174,6 +1218,7 @@ class RunService:
         run = self._get_run_or_raise(run_id)
         if run.status != _RUN_STATUS_RUNNING:
             return
+        self._assert_run_extension_dependencies_enabled(run)
         if run.started_at is None:
             started_at = utcnow()
             run.started_at = started_at
@@ -1266,7 +1311,9 @@ class RunService:
     def _run_workflow_package_start_follow_up(self, run: Run, *, now: datetime) -> None:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             return
-        quote_provider = self.quote_provider or DeterministicQuoteProvider()
+        if not self._run_depends_on_finance_workspace(run):
+            return
+        quote_provider = self.quote_provider or create_deterministic_quote_provider()
         MemoryFollowUpService(
             self.session,
             MarketDataService(session=self.session, quote_provider=quote_provider),
@@ -2954,15 +3001,19 @@ class RunService:
                     )
                 ],
                 "memoryArtifacts": self._memory_artifact_links(run.id),
+                "extensionSnapshots": deepcopy(run.extension_snapshots),
                 "packageProvenance": self._package_provenance_payload(run),
             }
         )
 
     def _memory_artifact_links(self, run_id: int) -> list[RunMemoryArtifactRead]:
-        return [
-            self._memory_artifact_link(artifact)
-            for artifact in MemoryService(self.session).list_run_artifacts(run_id)
-        ]
+        try:
+            artifacts = MemoryService(self.session).list_run_artifacts(run_id)
+        except ApiError as exc:
+            if exc.code != "extension_disabled":
+                raise
+            return []
+        return [self._memory_artifact_link(artifact) for artifact in artifacts]
 
     @staticmethod
     def _memory_artifact_link(artifact: MemoryArtifactRead) -> RunMemoryArtifactRead:

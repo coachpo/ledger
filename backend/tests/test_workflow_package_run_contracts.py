@@ -7,13 +7,20 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
+from app.schemas.extension import ExtensionToggleRequest
+from app.services.extension_service import ExtensionService
 from app.services.run_service import RunService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
+from tests.test_workflow_package_preflight import _package_source as _tradingagents_package_source
+from tests.test_workflow_package_preflight import (
+    _seed_model_connection as _seed_tradingagents_model_connection,
+)
 from tests.test_workflow_package_runtime_api import (
     _create_package,
     _drain_run_queue,
@@ -246,3 +253,125 @@ def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_repo
         assert session.query(RunStep).filter_by(run_id=run_id).count() == 0
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
         assert session.query(Report).filter_by(slug=memory_slug).count() == 0
+
+
+def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _tradingagents_package_source()},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, Any], response.json())
+
+
+def _tradingagents_parameters() -> dict[str, object]:
+    return {
+        "ticker": "MSFT",
+        "asOfDate": "2026-05-15",
+        "portfolioId": "portfolio-1",
+        "horizonDays": 30,
+        "benchmarkSymbol": "SPY",
+        "initialInvestmentDebateState": {},
+        "initialRiskDebateState": {},
+    }
+
+
+def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            FINANCE_WORKSPACE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+        )
+
+
+def test_tradingagents_advisory_research_launch_persists_extension_snapshots(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_tradingagents_model_connection(session_factory)
+    package = _create_tradingagents_package(client)
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "advisory_research",
+            "parameters": _tradingagents_parameters(),
+        },
+    )
+
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = detail_response.json()
+    snapshots = cast(list[dict[str, object]], detail["extensionSnapshots"])
+    assert snapshots
+    assert snapshots[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert snapshots[0]["enabled"] is True
+    surfaces = cast(list[str], snapshots[0]["surfaces"])
+    assert "tool.ledger.market_data.quote_lookup" in surfaces
+
+
+def test_tradingagents_advisory_research_launch_blocks_extension_disabled(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_tradingagents_model_connection(session_factory)
+    package = _create_tradingagents_package(client)
+    _disable_finance_extension(session_factory)
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "advisory_research",
+            "parameters": _tradingagents_parameters(),
+        },
+    )
+
+    assert launch_response.status_code == 422, launch_response.json()
+    body = launch_response.json()
+    assert body["code"] == "validation_error"
+    details = cast(list[dict[str, object]], body["details"])
+    assert any(
+        detail.get("code") == "extension_disabled"
+        and detail.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        for detail in details
+    )
+
+
+def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_after_launch(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_tradingagents_model_connection(session_factory)
+    package = _create_tradingagents_package(client)
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "advisory_research",
+            "parameters": _tradingagents_parameters(),
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    _disable_finance_extension(session_factory)
+
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(run_id)
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = detail_response.json()
+    assert detail["status"] == "failed"
+    assert detail["error"] == "Extension is disabled"
+    snapshots = cast(list[dict[str, object]], detail["extensionSnapshots"])
+    assert snapshots[0]["enabled"] is True

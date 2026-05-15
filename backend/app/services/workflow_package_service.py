@@ -6,6 +6,7 @@ from typing import Any, NoReturn, cast
 from fastapi import Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents import ToolCatalog
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.models.workflow_package import (
     WorkflowPackage,
@@ -36,6 +37,7 @@ from app.schemas.workflow_package import (
     normalize_workflow_package_secret_binding_key,
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
+from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
@@ -63,10 +65,12 @@ class WorkflowPackageService:
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
         quote_provider: QuoteProvider | None = None,
+        tool_catalog: ToolCatalog | None = None,
     ) -> None:
         self.session = session
         self.session_factory = session_factory
         self.quote_provider = quote_provider
+        self.tool_catalog = tool_catalog or ExtensionService(session).get_tool_catalog()
         self.repository = WorkflowPackageRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
         self.model_connection_service = ModelConnectionService(session)
@@ -403,7 +407,10 @@ class WorkflowPackageService:
         if parsed.manifest is None or parsed.diagnostics:
             raise _WorkflowPackageDiagnosticsError(parsed.diagnostics)
         try:
-            compiled = compile_workflow_package_manifest(parsed.manifest)
+            compiled = compile_workflow_package_manifest(
+                parsed.manifest,
+                tool_catalog=self.tool_catalog,
+            )
         except WorkflowPackageManifestCompilerError as exc:
             raise _WorkflowPackageDiagnosticsError(exc.diagnostics) from exc
         return compiled

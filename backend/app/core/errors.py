@@ -42,6 +42,15 @@ def business_rule_error(
     )
 
 
+def extension_disabled_error(extension_key: str, surface: str) -> ApiError:
+    return ApiError(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="extension_disabled",
+        message="Extension is disabled",
+        details=[{"extensionKey": extension_key, "surface": surface}],
+    )
+
+
 def validation_error(message: str, details: Sequence[dict[str, Any]] | None = None) -> ApiError:
     return ApiError(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -70,9 +79,7 @@ def request_validation_to_details(exc: RequestValidationError) -> list[dict[str,
                 "field": (
                     ".".join(field_parts)
                     if field_parts
-                    else str(location[-1])
-                    if location
-                    else "request"
+                    else str(location[-1]) if location else "request"
                 ),
                 "issue": str(error.get("msg", "Invalid value")),
             }

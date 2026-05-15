@@ -4,7 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import get_template_compiler_service, get_text_template_service
+from app.extensions.ledger_finance.dependencies import (
+    get_template_compiler_service,
+    get_text_template_service,
+)
 from app.schemas.text_template import (
     PlaceholderTreeRead,
     TextTemplateCompileRead,

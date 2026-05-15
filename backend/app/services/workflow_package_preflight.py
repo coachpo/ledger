@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
-from app.agents import ToolCatalogValidationError, get_default_tool_catalog
+from app.agents import ToolCatalogValidationError
 from app.agents.mcp.runtime import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
 from app.models.output_schema import OutputSchema
@@ -16,6 +16,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package_manifest import WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS
 from app.services.execution_plan import PackageResolvedModelBinding
+from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -196,8 +197,8 @@ class WorkflowPackagePreflightService:
         return f"{base_field}.{issue_field}"
 
     def _tool_errors(self, compiled_plan: dict[str, Any]) -> list[dict[str, Any]]:
-        catalog = get_default_tool_catalog()
-        registered_keys = {tool.key for tool in catalog.list_registered_tools()}
+        catalog = ExtensionService(self.session).get_tool_catalog()
+        known_keys = {tool.key for tool in catalog.list_known_tools()}
         errors: list[dict[str, Any]] = []
         for profile in self._compiled_section(compiled_plan, "capabilityProfiles"):
             profile_key = str(profile.get("key") or "")
@@ -206,17 +207,9 @@ class WorkflowPackagePreflightService:
                 _ = catalog.resolve_tool_keys(tool_keys)
             except ToolCatalogValidationError as exc:
                 for detail in exc.details:
-                    errors.append(
-                        {
-                            "field": self._profile_tool_key_path(
-                                profile_key,
-                                str(detail.get("field", "toolKeys")),
-                            ),
-                            "issue": detail.get("issue", "Invalid server-declared tool key"),
-                        }
-                    )
+                    errors.append(self._profile_tool_error(profile_key=profile_key, detail=detail))
             for index, tool_key in enumerate(tool_keys):
-                if tool_key not in registered_keys and not any(
+                if tool_key not in known_keys and not any(
                     error["field"] == f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
                     for error in errors
                 ):
@@ -227,6 +220,25 @@ class WorkflowPackagePreflightService:
                         }
                     )
         return errors
+
+    @classmethod
+    def _profile_tool_error(
+        cls,
+        *,
+        profile_key: str,
+        detail: dict[str, object],
+    ) -> dict[str, Any]:
+        error: dict[str, Any] = {
+            "field": cls._profile_tool_key_path(
+                profile_key,
+                str(detail.get("field", "toolKeys")),
+            ),
+            "issue": detail.get("issue", "Invalid server-declared tool key"),
+        }
+        for key in ("code", "extensionKey", "surface"):
+            if key in detail:
+                error[key] = detail[key]
+        return error
 
     @staticmethod
     def _profile_tool_key_path(profile_key: str, field: str) -> str:

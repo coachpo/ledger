@@ -9,9 +9,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.schemas.extension import ExtensionToggleRequest
+from app.services.extension_service import ExtensionService
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
@@ -392,3 +395,53 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
         "field": "spec.workflows.notify.graph.steps[0].operations[0].request.body",
         "issue": "HTTP node step reference is malformed",
     } in errors
+
+
+def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            FINANCE_WORKSPACE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+        )
+
+
+def test_create_blocks_tradingagents_advisory_research_when_extension_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    _disable_finance_extension(session_factory)
+
+    response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
+
+    assert response.status_code == 422, response.json()
+    body = response.json()
+    assert body["code"] == "validation_error"
+    details = cast(list[dict[str, object]], body["details"])
+    assert any(
+        "extension 'ledger.finance' is disabled" in str(detail.get("issue"))
+        and str(detail.get("path", "")).startswith("spec.capabilityProfiles.")
+        for detail in details
+    )
+
+
+def test_preflight_blocks_tradingagents_advisory_research_when_extension_disabled(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client)
+    _disable_finance_extension(session_factory)
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert any(
+        error.get("code") == "extension_disabled"
+        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error.get("surface") == "tool.ledger.market_data.quote_lookup"
+        for error in errors
+    )

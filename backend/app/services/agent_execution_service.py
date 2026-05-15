@@ -14,23 +14,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
-from app.agents.runtime_tools import (
-    RuntimeToolContext,
-    RuntimeToolError,
-    RuntimeToolRegistry,
-    get_default_runtime_tool_registry,
-)
+from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolError, RuntimeToolRegistry
 from app.core.config import get_settings
+from app.extensions.ledger_finance.provider_factories import create_social_sentiment_adapters
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.execution_plan import PackageRuntimeAgentSpec
+from app.services.extension_service import ExtensionService
 from app.services.quote_provider import QuoteProvider
-from app.services.social_sentiment_provider import (
-    SocialSentimentSourceAdapter,
-    create_default_social_sentiment_adapters,
-)
+from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 
 
 class RunExecutionError(Exception):
@@ -116,9 +110,7 @@ class AgentExecutionService:
         self.social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = (
             tuple(social_sentiment_adapters)
             if social_sentiment_adapters is not None
-            else create_default_social_sentiment_adapters(
-                timeout=get_settings().quote_provider_timeout_seconds
-            )
+            else create_social_sentiment_adapters()
         )
         self.openai_client_factory: type[Any] = openai_client_factory
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
@@ -308,6 +300,10 @@ class AgentExecutionService:
             return 1
         return agent.version
 
+    def _runtime_tool_registry(self) -> RuntimeToolRegistry:
+        with self.session_factory() as session:
+            return ExtensionService(session).get_runtime_tool_registry()
+
     @staticmethod
     def _extract_model_connection_api_key(connection: ModelConnection) -> str | None:
         payload = connection.secret_payload if isinstance(connection.secret_payload, dict) else {}
@@ -350,7 +346,7 @@ class AgentExecutionService:
                 ),
             )
 
-        runtime_tool_registry = get_default_runtime_tool_registry()
+        runtime_tool_registry = self._runtime_tool_registry()
         settings = get_settings()
         mcp_dispatcher = McpRuntimeResolver(self.session_factory).build_dispatcher(
             mcp_server_refs=mcp_server_refs,

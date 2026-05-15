@@ -17,6 +17,10 @@ from app.agents.runtime_tools.types import (
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeSocialSentimentLookupResult,
 )
+from app.extensions.ledger_finance.provider_factories import create_social_sentiment_adapters
+from app.extensions.ledger_finance.provider_factories import (
+    register as register_finance_workspace_provider_factories,
+)
 from app.services.social_sentiment_provider import (
     ProviderSocialSentimentMetric,
     ProviderSocialSentimentSourceBlock,
@@ -75,6 +79,17 @@ def _failing_session_factory() -> object:
 
 def _payload(result: RuntimeSocialSentimentLookupResult) -> dict[str, object]:
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True))
+
+
+def test_social_sentiment_provider_factories_are_extension_owned() -> None:
+    registrations = {
+        registration.key: registration
+        for registration in register_finance_workspace_provider_factories()
+    }
+    adapters = create_social_sentiment_adapters()
+
+    assert registrations["social_sentiment_adapters"].factory is create_social_sentiment_adapters
+    assert [adapter.source for adapter in adapters] == ["reddit", "stocktwits"]
 
 
 def test_social_adapter_aggregates_reddit_stocktwits_source_blocks_and_metrics() -> None:

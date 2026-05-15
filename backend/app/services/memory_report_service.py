@@ -14,6 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import decimal_to_string, to_utc
+from app.extensions.ledger_finance.hooks import (
+    MEMORY_REPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 from app.schemas.memory_report import (
@@ -42,6 +46,9 @@ class MemoryReportService:
         self.session: Session = session
         self.repository: ReportRepository = ReportRepository(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=MEMORY_REPORT_SERVICE_SURFACE)
+
     def create_pending_report(
         self,
         *,
@@ -49,6 +56,7 @@ class MemoryReportService:
         payload: AgentMemoryReportCreateMetadata,
         trusted_context: AgentMemoryTrustedCreateContext,
     ) -> ReportRead:
+        self._require_enabled()
         memory_service = MemoryService(self.session)
         slug = self._pending_slug(model_input=payload.analysis, trusted_context=trusted_context)
         _ = memory_service.write_memory(
@@ -71,6 +79,7 @@ class MemoryReportService:
         report_id: int,
         payload: AgentMemoryServiceUpdate,
     ) -> ReportRead:
+        self._require_enabled()
         report = self._get_memory_report_model(report_id)
         return self._apply_service_update(report=report, payload=payload)
 
@@ -98,6 +107,7 @@ class MemoryReportService:
         self,
         report_id: int,
     ) -> tuple[Report, AgentMemoryReportMetadata]:
+        self._require_enabled()
         report = self._get_memory_report_model(report_id)
         return report, self._validate_existing_memory_metadata(report)
 

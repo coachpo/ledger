@@ -27,9 +27,10 @@ function textResponse(body: string, status: number): Response {
 async function loadApiModule(baseUrl: string = "") {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
-  const [apiClient, marketDataApi, modelConnectionsApi, portfoliosApi, positionsApi] =
+  const [apiClient, extensionsApi, marketDataApi, modelConnectionsApi, portfoliosApi, positionsApi] =
     await Promise.all([
       import("./api-client"),
+      import("./api/extensions"),
       import("./api/market-data"),
       import("./api/model-connections"),
       import("./api/portfolios"),
@@ -38,6 +39,7 @@ async function loadApiModule(baseUrl: string = "") {
 
   return {
     ...apiClient,
+    ...extensionsApi,
     ...marketDataApi,
     ...modelConnectionsApi,
     ...portfoliosApi,
@@ -213,6 +215,24 @@ describe("api client", () => {
 
     const { url } = getLastFetchCall(fetchMock);
     expect(url).toBe("https://ledger.example.com/api/model-connections");
+  });
+
+  it("lists and toggles extensions through the unversioned api base", async () => {
+    const { listExtensions, toggleExtension } = await loadApiModule("https://ledger.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
+
+    await expect(listExtensions()).resolves.toEqual({ items: [] });
+    expect(getLastFetchCall(fetchMock).url).toBe("https://ledger.example.com/api/extensions");
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ key: "ledger.finance", enabled: false }, 200));
+    await expect(
+      toggleExtension("ledger.finance", { enabled: false }),
+    ).resolves.toMatchObject({ enabled: false, key: "ledger.finance" });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+    expect(url).toBe("https://ledger.example.com/api/extensions/ledger.finance");
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
   it("encodes symbol lookup requests against the derived v1 base URL", async () => {

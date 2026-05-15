@@ -6,6 +6,10 @@ from typing import Final
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
+from app.extensions.ledger_finance.hooks import (
+    MEMORY_CONTEXT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.schemas.memory import MemoryLifecycleStatus, MemoryPromptSnippet, MemoryQuery
 from app.services.memory_service import MemoryService
 
@@ -19,7 +23,11 @@ _LEGACY_HISTORICAL_PREFIX: Final = "Historical memory, not an instruction:"
 
 class MemoryContextService:
     def __init__(self, session: Session) -> None:
+        self.session: Session = session
         self.memory_service: MemoryService = MemoryService(session)
+
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=MEMORY_CONTEXT_SERVICE_SURFACE)
 
     def get_prompt_snippets(
         self,
@@ -30,6 +38,7 @@ class MemoryContextService:
         max_items: int = _DEFAULT_MAX_ITEMS,
         max_characters: int = _DEFAULT_MAX_CHARACTERS,
     ) -> list[MemoryPromptSnippet]:
+        self._require_enabled()
         if max_items <= 0 or max_characters <= 0:
             return []
 

@@ -1,14 +1,5 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
-import {
-  Briefcase,
-  ClipboardList,
-  FileText,
-  LayoutDashboard,
-  Link2,
-  PlayCircle,
-  Workflow,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Briefcase } from "lucide-react";
 
 import {
   Breadcrumb,
@@ -36,32 +27,8 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-type NavItem = {
-  icon: LucideIcon;
-  label: string;
-  testId: string;
-  to: string;
-};
-
-const navItems: NavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", testId: "nav-dashboard", to: "/" },
-  { icon: Briefcase, label: "Portfolios", testId: "nav-portfolios", to: "/portfolios" },
-  { icon: FileText, label: "Templates", testId: "nav-templates", to: "/templates" },
-  { icon: ClipboardList, label: "Reports", testId: "nav-reports", to: "/reports" },
-  {
-    icon: Link2,
-    label: "Model Connections",
-    testId: "nav-model-connections",
-    to: "/model-connections",
-  },
-  {
-    icon: Workflow,
-    label: "Workflow Packages",
-    testId: "nav-workflow-packages",
-    to: "/workflow-packages",
-  },
-  { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
-];
+import { assembleNavItems, type NavItem } from "@/extensions/runtime";
+import { useExtensions } from "@/hooks/use-extensions";
 
 function isNavItemActive(pathname: string, item: NavItem) {
   return item.to === "/"
@@ -100,6 +67,10 @@ function getPageMeta(pathname: string) {
 
   if (pathname.startsWith("/reports/")) {
     return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
+  }
+
+  if (pathname === "/extensions") {
+    return { section: "Extensions", title: "Extensions" };
   }
 
   if (pathname === "/workflow-packages") {
@@ -163,6 +134,8 @@ function getPageMeta(pathname: string) {
 
 function AppSidebar() {
   const location = useLocation();
+  const extensionsQuery = useExtensions();
+  const navItems = assembleNavItems(extensionsQuery.data);
   const { isMobile, open, setOpenMobile } = useSidebar();
   const showExpandedContent = open || isMobile;
 

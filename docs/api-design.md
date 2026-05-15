@@ -5,7 +5,7 @@
 ## Conventions
 
 - Health path: `/health`.
-- Preserved product base path: `/api/v1`.
+- Preserved product base path: `/api/v1`, contributed by the bundled `ledger.finance` extension.
 - Current agent-platform base path: `/api`.
 - Standard format: JSON, except CSV and markdown uploads use `multipart/form-data`.
 - External field names are camelCase.
@@ -14,6 +14,8 @@
 - Error envelopes use `{code, message, details[]}`.
 
 ## Preserved Product API
+
+The preserved finance product API is bundled as `ledger.finance`. It is enabled by default during startup and reset/seed initialization, so local development, tests, and demo packages keep today's behavior without manifest edits. Extension state supports enable and disable only. The generic platform routes, manifest contract, run lifecycle, model bindings, and `/api/tools` host stay core.
 
 | Resource | Routes |
 |---|---|
@@ -36,7 +38,8 @@ Template/report series can be built by creating a template, previewing with `POS
 | Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
-| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `ledger.social_sentiment.lookup` tool metadata |
+| Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for enable/disable state of bundled extensions |
+| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `ledger.social_sentiment.lookup` tool metadata contributed by enabled extensions |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
 
 ## Workflow Package HTTP Nodes and Secret Bindings
@@ -65,7 +68,7 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 
 ## Runtime Tool Contract Notes
 
-`/api/tools` exposes global read-only server-declared metadata. Native runtime tools currently include quote/history/OHLCV, indicators, fundamentals, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, insider data, positions, `ledger.reports.lookup`, and `ledger.reports.write`. `ledger.social_sentiment.lookup` is a separate tool, not an extension of news lookup; it accepts one symbol plus optional `sources` (`reddit`, `stocktwits`), optional date bounds, and `itemLimit` up to `50`, then returns `sourceBlocks`, aggregate `metrics`, and structured `warnings`.
+`/api/tools` is the core global read-only discovery host. Its current finance/product/provider entries come from the bundled `ledger.finance` extension, which is enabled by default. Native runtime tools currently include quote/history/OHLCV, indicators, fundamentals, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, insider data, positions, `ledger.reports.lookup`, and `ledger.reports.write`. `ledger.social_sentiment.lookup` is a separate tool, not an extension of news lookup; it accepts one symbol plus optional `sources` (`reddit`, `stocktwits`), optional date bounds, and `itemLimit` up to `50`, then returns `sourceBlocks`, aggregate `metrics`, and structured `warnings`.
 
 ## Platform Compatibility Notes
 
@@ -73,7 +76,8 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 - `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline, omit database ids and run history, and omit package secret binding rows and values.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
-- Tools are global read-only metadata from `/api/tools`; native tool keys cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, reports, and report memory writes, while runtime tool keys and OpenAI function names stay stable.
+- Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `ledger.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
+- `ledger.finance` is created enabled by default at startup/reset and supports enable/disable state only.
 - Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
 
 ## HTTP Status Guidelines

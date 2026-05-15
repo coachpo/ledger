@@ -1,36 +1,45 @@
 # pyright: reportMissingImports=false
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.agents import ToolCatalog, get_default_tool_catalog
+from app.agents import ToolCatalog
 from app.agents.mcp import DefaultMcpConnectionTester, McpConnectionTester
-from app.core.config import get_settings
 from app.db.session import get_db_session, get_session_factory
+from app.extensions.ledger_finance.dependencies import get_balance_service as get_balance_service
+from app.extensions.ledger_finance.dependencies import (
+    get_csv_import_service as get_csv_import_service,
+)
+from app.extensions.ledger_finance.dependencies import (
+    get_market_data_service as get_market_data_service,
+)
+from app.extensions.ledger_finance.dependencies import (
+    get_portfolio_service as get_portfolio_service,
+)
+from app.extensions.ledger_finance.dependencies import get_position_service as get_position_service
+from app.extensions.ledger_finance.dependencies import get_quote_provider as get_quote_provider
+from app.extensions.ledger_finance.dependencies import get_report_service as get_report_service
+from app.extensions.ledger_finance.dependencies import (
+    get_template_compiler_service as get_template_compiler_service,
+)
+from app.extensions.ledger_finance.dependencies import (
+    get_text_template_service as get_text_template_service,
+)
+from app.extensions.ledger_finance.dependencies import (
+    get_trading_operation_service as get_trading_operation_service,
+)
 from app.services.agent_service import AgentService
-from app.services.balance_service import BalanceService
 from app.services.capability_service import CapabilityService
-from app.services.csv_import_service import CsvImportService
-from app.services.market_data_service import MarketDataService
+from app.services.extension_service import ExtensionService, ExtensionStateSnapshot
 from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_service import OutputSchemaService
-from app.services.portfolio_service import PortfolioService
-from app.services.position_service import PositionService
-from app.services.quote_provider import (
-    DeterministicQuoteProvider,
-    QuoteProvider,
-    YahooFinanceQuoteProvider,
-)
-from app.services.report_service import ReportService
+from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
-from app.services.template_compiler_service import TemplateCompilerService
-from app.services.text_template_service import TextTemplateService
-from app.services.trading_operation_service import TradingOperationService
 from app.services.workflow_package_service import WorkflowPackageService
 from app.services.workflow_service import WorkflowService
 
@@ -39,66 +48,29 @@ def get_session() -> Iterator[Session]:
     yield from get_db_session()
 
 
-def get_portfolio_service(
+def get_tool_catalog(
     session: Annotated[Session, Depends(get_session)],
-) -> PortfolioService:
-    return PortfolioService(session)
+) -> ToolCatalog:
+    return ExtensionService(session).get_tool_catalog()
 
 
-def get_balance_service(
+def get_extension_service(
     session: Annotated[Session, Depends(get_session)],
-) -> BalanceService:
-    return BalanceService(session)
+) -> ExtensionService:
+    return ExtensionService(session)
 
 
-def get_quote_provider() -> QuoteProvider:
-    settings = get_settings()
-    if settings.quote_provider_backend == "deterministic":
-        return DeterministicQuoteProvider()
-    return YahooFinanceQuoteProvider(timeout=settings.quote_provider_timeout_seconds)
+def require_extension_enabled(
+    *,
+    extension_key: str,
+    surface: str,
+) -> Callable[[ExtensionService], ExtensionStateSnapshot]:
+    def dependency(
+        service: Annotated[ExtensionService, Depends(get_extension_service)],
+    ) -> ExtensionStateSnapshot:
+        return service.require_enabled(extension_key, surface=surface)
 
-
-def get_position_service(
-    session: Annotated[Session, Depends(get_session)],
-    quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
-) -> PositionService:
-    return PositionService(session, quote_provider)
-
-
-def get_csv_import_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> CsvImportService:
-    return CsvImportService(session)
-
-
-def get_trading_operation_service(
-    session: Annotated[Session, Depends(get_session)],
-    quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
-) -> TradingOperationService:
-    return TradingOperationService(session, quote_provider)
-
-
-def get_market_data_service(
-    session: Annotated[Session, Depends(get_session)],
-    quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
-) -> MarketDataService:
-    return MarketDataService(session=session, quote_provider=quote_provider)
-
-
-def get_text_template_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> TextTemplateService:
-    return TextTemplateService(session)
-
-
-def get_report_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> ReportService:
-    return ReportService(session)
-
-
-def get_tool_catalog() -> ToolCatalog:
-    return get_default_tool_catalog()
+    return dependency
 
 
 def get_capability_service(
@@ -148,8 +120,14 @@ def get_workflow_service(
 def get_workflow_package_service(
     session: Annotated[Session, Depends(get_session)],
     quote_provider: Annotated[QuoteProvider, Depends(get_quote_provider)],
+    tool_catalog: Annotated[ToolCatalog, Depends(get_tool_catalog)],
 ) -> WorkflowPackageService:
-    return WorkflowPackageService(session, get_session_factory(), quote_provider=quote_provider)
+    return WorkflowPackageService(
+        session,
+        get_session_factory(),
+        quote_provider=quote_provider,
+        tool_catalog=tool_catalog,
+    )
 
 
 def get_run_service(
@@ -159,8 +137,28 @@ def get_run_service(
     return RunService(session, get_session_factory(), quote_provider=quote_provider)
 
 
-def get_template_compiler_service(
-    session: Annotated[Session, Depends(get_session)],
-    market_data_service: Annotated[MarketDataService, Depends(get_market_data_service)],
-) -> TemplateCompilerService:
-    return TemplateCompilerService(session, market_data_service)
+__all__ = [
+    "get_agent_service",
+    "get_balance_service",
+    "get_capability_service",
+    "get_csv_import_service",
+    "get_extension_service",
+    "get_market_data_service",
+    "get_mcp_connection_tester",
+    "get_mcp_server_service",
+    "get_model_connection_service",
+    "get_output_schema_service",
+    "get_portfolio_service",
+    "get_position_service",
+    "get_quote_provider",
+    "get_report_service",
+    "get_run_service",
+    "get_session",
+    "get_template_compiler_service",
+    "get_text_template_service",
+    "get_tool_catalog",
+    "get_trading_operation_service",
+    "get_workflow_package_service",
+    "get_workflow_service",
+    "require_extension_enabled",
+]

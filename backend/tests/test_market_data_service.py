@@ -7,6 +7,9 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
+from app.extensions.ledger_finance.provider_factories import (
+    register as register_finance_workspace_provider_factories,
+)
 from app.services.market_data_service import MarketDataService
 from app.services.quote_provider import (
     ProviderNewsItem,
@@ -62,6 +65,20 @@ class _NewsProvider:
         if self.failure is not None:
             raise self.failure
         return ProviderNewsResult(provider=self.provider_name, items=self.items[:limit])
+
+
+def test_market_data_provider_factories_are_extension_owned() -> None:
+    registrations = {
+        registration.key: registration
+        for registration in register_finance_workspace_provider_factories()
+    }
+
+    assert "quote_provider" in registrations
+    quote_provider = registrations["quote_provider"].factory()
+    assert quote_provider.__class__.__name__ in {
+        "DeterministicQuoteProvider",
+        "YahooFinanceQuoteProvider",
+    }
 
 
 def test_news_adapter_yahoo_normalizes_company_and_macro_news(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -8,10 +9,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import ApiError
+from app.extensions.ledger_finance.hooks import MEMORY_FOLLOW_UP_SERVICE_SURFACE
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_step import RunStep
 from app.repositories.run import RunRepository
+from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MemoryDecision,
     MemoryLifecycleStatus,
@@ -24,6 +29,7 @@ from app.services.execution_plan import (
     ExecutionPlanStep,
     ExecutionPlanTarget,
 )
+from app.services.extension_service import ExtensionService
 from app.services.market_data_service import (
     MarketDataService,
     ProviderFundamentals,
@@ -120,6 +126,15 @@ def _create_pending_memory(
     return result.memory_id, report
 
 
+def _disable_finance_workspace(session: Session) -> None:
+    ExtensionService(session).set_extension_enabled(
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        ExtensionToggleRequest.model_validate(
+            {"enabled": False, "disabledReason": "follow-up data safety check"}
+        ),
+    )
+
+
 class _MemoryHistoryQuoteProvider:
     provider_name: str = "memory_follow_up_test"
 
@@ -208,6 +223,44 @@ def _market_data_service(
         session=session,
         quote_provider=_MemoryHistoryQuoteProvider(rows_by_symbol),
     )
+
+
+def test_disabled_finance_workspace_blocks_follow_up_without_mutating_memory(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _, report = _create_pending_memory(session)
+        original_content = report.content
+        original_metadata = deepcopy(report.metadata_)
+        _disable_finance_workspace(session)
+
+        with pytest.raises(ApiError) as exc_info:
+            _ = MemoryFollowUpService(
+                session,
+                _market_data_service(
+                    session,
+                    {
+                        "NVDA": [
+                            (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
+                            (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
+                        ],
+                    },
+                ),
+            ).run_due(datetime(2026, 1, 6, 9, tzinfo=UTC))
+
+        persisted = session.get(Report, report.id)
+        assert persisted is not None
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.code == "extension_disabled"
+    assert exc_info.value.details == [
+        {
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+        }
+    ]
+    assert persisted.content == original_content
+    assert persisted.metadata_ == original_metadata
 
 
 def test_matured_follow_up_resolves_and_append_reflection_prompt_safe(
@@ -426,6 +479,12 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
             workflow_package_version=1,
             workflow_package_hash="hash-follow",
             workflow_package_workflow_key="follow_workflow",
+            extension_snapshots=[
+                {
+                    "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+                    "surfaces": ["tool.ledger.reports.lookup"],
+                }
+            ],
             input={},
             status="queued",
             total_tokens=0,

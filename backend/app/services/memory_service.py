@@ -5,6 +5,10 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
+from app.extensions.ledger_finance.hooks import (
+    MEMORY_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.schemas.memory import (
     MemoryArtifactRead,
     MemoryAuditLinks,
@@ -39,6 +43,9 @@ class MemoryService:
             get_default_tool_catalog(),
         )
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=MEMORY_SERVICE_SURFACE)
+
     def write_memory(
         self,
         *,
@@ -46,6 +53,7 @@ class MemoryService:
         payload: MemoryWriteRequest,
         commit: bool = True,
     ) -> MemoryWriteResult:
+        self._require_enabled()
         self.capability_service.require_report_memory_write_grant(
             capability_references=capability_references
         )
@@ -62,6 +70,7 @@ class MemoryService:
         return result
 
     def get_memory(self, memory_id: str) -> MemoryEntryRead:
+        self._require_enabled()
         return self.store.get(memory_id)
 
     def resolve_memory(
@@ -71,6 +80,7 @@ class MemoryService:
         *,
         commit: bool = True,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         try:
             entry = self.store.resolve(memory_id, outcome)
             if commit:
@@ -90,6 +100,7 @@ class MemoryService:
         *,
         commit: bool = True,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         try:
             entry = self.store.append_reflection(memory_id, reflection)
             if commit:
@@ -107,6 +118,7 @@ class MemoryService:
         report_id: int,
         resolution: AgentMemoryResolutionUpdate,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         return self.resolve_memory(
             ReportBackedMemoryStore.memory_id_from_report_id(report_id),
             self.outcome_from_report_resolution(resolution),
@@ -117,6 +129,7 @@ class MemoryService:
         report_id: int,
         payload: AgentMemoryServiceUpdate,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         memory_id = ReportBackedMemoryStore.memory_id_from_report_id(report_id)
         try:
             if payload.resolution is not None:
@@ -138,12 +151,15 @@ class MemoryService:
         return entry
 
     def list_run_artifacts(self, run_id: int) -> list[MemoryArtifactRead]:
+        self._require_enabled()
         return self.store.list_artifacts_for_run(run_id)
 
     def query_memory(self, query: MemoryQuery) -> list[MemoryPromptSnippet]:
+        self._require_enabled()
         return self.store.query(query)
 
     def get_audit_links(self, memory_id: str) -> MemoryAuditLinks:
+        self._require_enabled()
         return self.store.audit_links(memory_id)
 
     @staticmethod

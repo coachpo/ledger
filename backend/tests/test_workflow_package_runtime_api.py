@@ -7,12 +7,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackageVersion
+from app.schemas.extension import ExtensionToggleRequest
+from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 
@@ -165,6 +168,14 @@ def _seed_model_connection(
         session.commit()
 
 
+def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            FINANCE_WORKSPACE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+        )
+
+
 def _drain_run_queue(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         drained = RunQueueService(session, session_factory).drain_once()
@@ -283,6 +294,49 @@ def test_workflow_package_runtime_uses_smoke_kind_without_openai(
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "deterministic summary"}
     assert detail["executedTokens"] == 1
+
+
+def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_finance_disabled(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    class _UnexpectedOpenAIClient:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+            raise AssertionError("OpenAI should not be used for deterministic smoke runs")
+
+    monkeypatch.setattr("app.services.run_service.OpenAI", _UnexpectedOpenAIClient)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+
+    _seed_model_connection(
+        session_factory,
+        api_key=None,
+        connection_kind="deterministic_smoke",
+        base_url="https://not-a-smoke-host.example.com/v1",
+        model_id="smoke-runtime-model",
+        api_style="chat_completions",
+    )
+    created = _create_package(client, package_key="runtime_core_no_finance_package")
+    _disable_finance_extension(session_factory)
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "runtime_workflow",
+            "parameters": {"ticker": "AMD"},
+        },
+    )
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert detail["finalOutput"] == {"summary": "deterministic summary"}
+    assert detail["extensionSnapshots"] == []
 
 
 def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(

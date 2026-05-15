@@ -4,7 +4,7 @@
 
 ## Overview
 
-Ledger is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1`; platform routes live under `/api/*`.
+Ledger is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1` as the bundled `ledger.finance` extension, enabled by default; platform routes live under `/api/*`.
 
 ## Runtime Topology
 
@@ -16,16 +16,17 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 ## Backend Architecture
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
-- `backend/app/api/router.py` mounts preserved `/api/v1` routers for portfolios, balances, positions, trading operations, market data, templates, and reports.
-- `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, tools, and runs.
+- `backend/app/api/router.py` is the `/api/v1` composition host for the bundled finance workspace routes.
+- `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, extensions, tools, and runs.
+- `backend/app/extensions/ledger_finance/` contributes the current finance/product/provider surfaces as `ledger.finance`, with startup and reset/seed defaults keeping it enabled.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting for persisted run metadata.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; Alembic is not the live migration authority.
 
 ## Key Backend Services
 
-- Portfolio, balance, position, CSV import, trading operation, market data, template, and report services own preserved product behavior.
-- Workflow package, model connection, tool catalog, and run services own platform authoring, validation, live bindings, execution, reruns, and step replays.
+- Portfolio, balance, position, CSV import, trading operation, market data, template, report, provider, and report-backed memory services are finance workspace contributions.
+- Workflow package, model connection, extension-state, tool catalog, and run services own platform authoring, validation, live bindings, enable/disable state, execution, reruns, and step replays.
 - Runtime tool and MCP boundaries live under `backend/app/agents/`; package-private MCP configs are validated and dispatched only through service-owned security boundaries.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
@@ -43,7 +44,8 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 - Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
-- Tools are read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
+- Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries come from enabled `ledger.finance` contributions.
+- `ledger.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup.
 - Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token.
 
 ## Data Flow Highlights

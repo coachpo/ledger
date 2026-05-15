@@ -82,6 +82,7 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     key,
     name: `E2E deterministic model ${key}`,
     description: "Deterministic model connection for package-first E2E.",
+    connectionKind: "deterministic_smoke",
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
     modelId: "ledger-deterministic-json",
     reasoningEffort: "low",

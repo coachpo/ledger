@@ -340,15 +340,6 @@ class StockTwitsSocialSentimentAdapter:
         ]
 
 
-def create_default_social_sentiment_adapters(
-    *, timeout: float
-) -> tuple[SocialSentimentSourceAdapter, ...]:
-    return (
-        RedditSocialSentimentAdapter(timeout=timeout),
-        StockTwitsSocialSentimentAdapter(timeout=timeout),
-    )
-
-
 def _request_json(
     url: str,
     *,

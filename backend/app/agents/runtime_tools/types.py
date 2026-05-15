@@ -76,6 +76,7 @@ class RuntimeToolSpec:
     denied_message: str
     parser: RuntimeToolParser
     executor: RuntimeToolExecutor
+    owner_extension_key: str | None = None
 
 
 MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "ledger.market_data.quote_lookup"

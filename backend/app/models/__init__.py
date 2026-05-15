@@ -1,6 +1,7 @@
 from app.models.agent import Agent
 from app.models.balance import Balance
 from app.models.capability import Capability
+from app.models.extension import ExtensionState
 from app.models.market_quote import MarketQuote
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
@@ -34,6 +35,7 @@ __all__ = [
     "AgentMcpServerRef",
     "Balance",
     "Capability",
+    "ExtensionState",
     "MarketQuote",
     "McpServer",
     "ModelConnection",

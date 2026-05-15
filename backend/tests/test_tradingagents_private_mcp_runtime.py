@@ -194,7 +194,9 @@ spec:
       name: News Analyst
       description: Produces company news context for the rejection workflow.
       modelConnection: tradingagents_primary_model
-      systemPrompt: Use the Exa MCP web search tool to search current company information, then return a short JSON summary.
+      systemPrompt: >-
+        Use the Exa MCP web search tool to search current company information,
+        then return a short JSON summary.
       inputSchema:
         type: object
         additionalProperties: true

@@ -130,7 +130,9 @@ class _ManualReplayClient:
                 400,
                 request=request,
                 json={
-                    "message": "No tool call found for function call output with call_id call_quote.",
+                    "message": (
+                        "No tool call found for function call output with call_id " "call_quote."
+                    ),
                     "type": "invalid_request_error",
                     "param": "input",
                     "code": None,

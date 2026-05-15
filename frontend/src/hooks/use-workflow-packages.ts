@@ -24,6 +24,8 @@ import {
   upsertWorkflowPackageSecretBinding,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
+import { filterToolsForExtensionState } from "@/extensions/runtime";
+import { useExtensions } from "@/hooks/use-extensions";
 import { listTools } from "@/lib/api/tools";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -111,10 +113,24 @@ function invalidateWorkflowPackageScope(
 }
 
 export function useTools() {
-  return useQuery({
+  const extensionsQuery = useExtensions();
+  const toolsQuery = useQuery({
     queryKey: queryKeys.platform.tools.list(),
     queryFn: ({ signal }) => listTools(signal),
   });
+
+  return {
+    ...toolsQuery,
+    data: toolsQuery.data
+      ? {
+          ...toolsQuery.data,
+          items: filterToolsForExtensionState(toolsQuery.data.items, extensionsQuery.data),
+        }
+      : toolsQuery.data,
+    error: toolsQuery.error ?? extensionsQuery.error,
+    isError: toolsQuery.isError || extensionsQuery.isError,
+    isPending: toolsQuery.isPending || extensionsQuery.isPending,
+  };
 }
 
 export function useWorkflowPackages(params: WorkflowPackageListParams = {}) {

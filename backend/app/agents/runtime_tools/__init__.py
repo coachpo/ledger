@@ -54,20 +54,30 @@ from app.agents.runtime_tools.reports import (
     parse_report_memory_write_arguments,
 )
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
-
-RUNTIME_TOOL_SPECS = (
-    REPORT_LOOKUP_TOOL_SPEC,
-    REPORT_MEMORY_WRITE_TOOL_SPEC,
-    POSITION_LOOKUP_TOOL_SPEC,
-    MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
-    MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC,
-    MARKET_DATA_OHLCV_LOOKUP_TOOL_SPEC,
-    INDICATORS_LOOKUP_TOOL_SPEC,
-    FUNDAMENTALS_LOOKUP_TOOL_SPEC,
-    NEWS_LOOKUP_TOOL_SPEC,
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
-    INSIDER_DATA_LOOKUP_TOOL_SPEC,
+from app.extensions.registry import (
+    get_bundled_extension_registry,
+    load_extension_contribution_registrar,
 )
+
+
+def _load_runtime_tool_specs() -> tuple[RuntimeToolSpec, ...]:
+    specs: list[RuntimeToolSpec] = []
+    for extension in get_bundled_extension_registry().list_extensions():
+        if extension.scaffold is None:
+            continue
+        for registrar in extension.scaffold.runtime_executors:
+            for contribution in load_extension_contribution_registrar(registrar.registrar):
+                if not isinstance(contribution, RuntimeToolSpec):
+                    message = (
+                        f"Runtime tool registrar {registrar.registrar!r} returned "
+                        + f"unsupported contribution {type(contribution).__name__!r}"
+                    )
+                    raise ValueError(message)
+                specs.append(contribution)
+    return tuple(specs)
+
+
+RUNTIME_TOOL_SPECS = _load_runtime_tool_specs()
 
 
 @lru_cache

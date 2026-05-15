@@ -8,6 +8,10 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
+from app.extensions.ledger_finance.hooks import (
+    RETURN_RESOLUTION_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.schemas.memory import MemoryEntryRead, MemoryOutcome
 from app.services.market_data_service import MarketClosePoint, MarketDataService
 from app.services.memory_service import MemoryService
@@ -44,6 +48,12 @@ class ReturnResolutionService:
         self.market_data_service: MarketDataService = market_data_service
         self.memory_service: MemoryService = MemoryService(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(
+            self.session,
+            surface=RETURN_RESOLUTION_SERVICE_SURFACE,
+        )
+
     def resolve_memory(
         self,
         memory_id: str,
@@ -52,6 +62,7 @@ class ReturnResolutionService:
         benchmark_symbol: str | None = None,
         commit: bool = True,
     ) -> ReturnResolutionResult:
+        self._require_enabled()
         memory = self.memory_service.get_memory(memory_id)
         if memory.status.value != "pending":
             return ReturnResolutionResult(

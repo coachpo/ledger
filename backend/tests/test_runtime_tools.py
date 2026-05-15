@@ -94,6 +94,7 @@ from app.agents.runtime_tools.types import (
     RuntimeToolWarning,
 )
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
@@ -1844,6 +1845,31 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     ]
     for tool in tools:
         _assert_strict_openai_tool_schema(tool)
+
+
+def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typed_error() -> None:
+    registry = RuntimeToolRegistry(RUNTIME_TOOL_SPECS, enabled_extension_keys=set())
+    context = _runtime_context(fail_on_session=True)
+
+    assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY}) == []
+    assert registry.get_guidance({REPORT_LOOKUP_TOOL_KEY}) == ""
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json='{"limit":50}',
+            granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+
+    assert exc_info.value.code == "extension_disabled"
+    assert exc_info.value.message == "Extension is disabled"
+    assert exc_info.value.details == [
+        {
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": f"runtime.tool.{REPORT_LOOKUP_TOOL_KEY}",
+        }
+    ]
 
 
 def test_financial_runtime_tool_exposure_follows_quote_history_and_report_write_grants() -> None:

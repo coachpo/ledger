@@ -40,6 +40,7 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
     key: "tradingagents_primary_model",
     name: "TradingAgents Primary Model",
     description: "Deterministic smoke model binding for workflow-package E2E.",
+    connectionKind: "deterministic_smoke",
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
     modelId: "ledger-deterministic-json",
     reasoningEffort: "low",

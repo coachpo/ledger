@@ -6,13 +6,21 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string
+from app.extensions.ledger_finance.hooks import (
+    REFLECTION_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.schemas.memory import MemoryEntryRead, MemoryReflection
 from app.services.memory_service import MemoryService
 
 
 class ReflectionService:
     def __init__(self, session: Session) -> None:
+        self.session: Session = session
         self.memory_service: MemoryService = MemoryService(session)
+
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=REFLECTION_SERVICE_SURFACE)
 
     def append_reflection(
         self,
@@ -22,6 +30,7 @@ class ReflectionService:
         reflected_at: datetime,
         commit: bool = True,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         payload = MemoryReflection(
             reflection=reflection,
             reflected_at=reflected_at,
@@ -39,6 +48,7 @@ class ReflectionService:
         reflected_at: datetime,
         commit: bool = True,
     ) -> MemoryEntryRead:
+        self._require_enabled()
         memory = self.memory_service.get_memory(memory_id)
         reflection = self.generate_reflection_text(memory)
         return self.append_reflection(

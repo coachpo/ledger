@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import decimal_to_string, to_utc
+from app.extensions.ledger_finance.hooks import (
+    REPORT_BACKED_MEMORY_STORE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 from app.schemas.memory import (
@@ -71,7 +75,14 @@ class ReportBackedMemoryStore:
         self.session: Session = session
         self.repository: ReportRepository = ReportRepository(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(
+            self.session,
+            surface=REPORT_BACKED_MEMORY_STORE_SURFACE,
+        )
+
     def create_pending(self, payload: MemoryWriteRequest) -> MemoryWriteResult:
+        self._require_enabled()
         metadata = self._pending_metadata(payload)
         slug = self._pending_slug(metadata.analysis)
         existing = self.repository.get_by_slug(slug)
@@ -92,11 +103,13 @@ class ReportBackedMemoryStore:
         return self._write_result(report, action="created")
 
     def get(self, memory_id: str) -> MemoryEntryRead:
+        self._require_enabled()
         report = self._get_memory_report(memory_id)
         metadata = self._valid_memory_metadata(report)
         return self._entry_from_report(report, metadata)
 
     def query(self, query: MemoryQuery) -> list[MemoryPromptSnippet]:
+        self._require_enabled()
         candidates = self._query_candidates(query)
         snippets: list[MemoryPromptSnippet] = []
         used_characters = 0
@@ -118,6 +131,7 @@ class ReportBackedMemoryStore:
         return snippets
 
     def resolve(self, memory_id: str, outcome: MemoryOutcome) -> MemoryEntryRead:
+        self._require_enabled()
         report = self._get_memory_report(memory_id)
         metadata = self._valid_memory_metadata(report)
         analysis_payload = metadata.analysis.model_dump(
@@ -135,6 +149,7 @@ class ReportBackedMemoryStore:
         return self._entry_from_report(report, updated)
 
     def append_reflection(self, memory_id: str, reflection: MemoryReflection) -> MemoryEntryRead:
+        self._require_enabled()
         report = self._get_memory_report(memory_id)
         metadata = self._valid_memory_metadata(report)
         analysis_payload = metadata.analysis.model_dump(
@@ -162,6 +177,7 @@ class ReportBackedMemoryStore:
         return self._entry_from_report(report, updated)
 
     def list_artifacts_for_run(self, run_id: int) -> list[MemoryArtifactRead]:
+        self._require_enabled()
         artifacts: list[MemoryArtifactRead] = []
         for report in self.repository.list_agent_memory_by_run_id(run_id):
             metadata = self._memory_metadata_or_none(report)
@@ -171,6 +187,7 @@ class ReportBackedMemoryStore:
         return artifacts
 
     def audit_links(self, memory_id: str) -> MemoryAuditLinks:
+        self._require_enabled()
         report = self._get_memory_report(memory_id)
         _ = self._valid_memory_metadata(report)
         return self._audit_links_for_report(report)

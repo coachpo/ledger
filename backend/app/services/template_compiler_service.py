@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string, portfolio_cash_total, to_utc
+from app.extensions.ledger_finance.hooks import (
+    TEMPLATE_COMPILER_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.models.balance import Balance
 from app.models.portfolio import Portfolio
 from app.models.position import Position
@@ -116,7 +120,11 @@ class TemplateCompilerService:
         self._report_resolve_stack: set[str] = set()
         self._inputs: dict[str, str] = {}
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=TEMPLATE_COMPILER_SURFACE)
+
     def compile(self, content: str, inputs: dict[str, str] | None = None) -> str:
+        self._require_enabled()
         self._quote_cache = {}
         self._report_resolve_stack = set()
         self._inputs = inputs or {}
@@ -128,6 +136,7 @@ class TemplateCompilerService:
         return _PLACEHOLDER_RE.sub(replacer, content)
 
     def get_placeholder_tree(self) -> dict[str, list[dict[str, object]]]:
+        self._require_enabled()
         portfolios = self.portfolio_repo.list_all()
         portfolio_result: list[dict[str, object]] = []
         for portfolio in portfolios:

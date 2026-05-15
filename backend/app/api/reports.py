@@ -4,12 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 
-from app.api.dependencies import (
+from app.core.errors import ApiError
+from app.extensions.ledger_finance.dependencies import (
     get_report_service,
     get_template_compiler_service,
     get_text_template_service,
 )
-from app.core.errors import ApiError
 from app.schemas.report import (
     ReportCompileCreate,
     ReportCreate,

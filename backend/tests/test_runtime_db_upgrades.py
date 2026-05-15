@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.session import init_db
 from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
+from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.mcp_server import McpServer
 from app.reset_seed import (
     MAG7_COMPANIES,
@@ -82,6 +83,7 @@ _RUN_HEADER_COLUMNS = {
     "target_id",
     "target_key",
     "target_version",
+    "extension_snapshots",
     "input",
     "status",
     "source_run_id",
@@ -1021,6 +1023,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert run_columns["source_run_id"]["nullable"] is True
     assert run_columns["lineage_root_run_id"]["nullable"] is True
     assert run_columns["resume_step_index"]["nullable"] is False
+    assert run_columns["extension_snapshots"]["nullable"] is False
     assert run_columns["queued_at"]["nullable"] is False
     assert run_columns["started_at"]["nullable"] is True
     assert all(status in run_status_sql for status in ("queued", "running", "succeeded", "failed"))
@@ -3191,5 +3194,150 @@ def test_upgrade_legacy_schema_deletes_mismatched_wrapped_mcp_authoring_rows(
             ).scalar_one()
 
         assert stored_count == 0
+    finally:
+        engine.dispose()
+
+
+def test_init_db_creates_extension_state_table_and_default_row(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+        columns = {column["name"]: column for column in inspector.get_columns("extension_states")}
+        indexes = {index["name"] for index in inspector.get_indexes("extension_states")}
+        unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("extension_states")
+        }
+
+        assert "extension_states" in table_names
+        assert {
+            "id",
+            "extension_key",
+            "enabled",
+            "enabled_at",
+            "disabled_at",
+            "disabled_reason",
+            "state_version",
+            "created_at",
+            "updated_at",
+        } <= set(columns)
+        assert columns["extension_key"]["nullable"] is False
+        assert columns["enabled"]["nullable"] is False
+        assert columns["state_version"]["nullable"] is False
+        assert "ix_extension_states_extension_key" in indexes
+        assert "ix_extension_states_enabled" in indexes
+        assert "uq_extension_states_extension_key" in unique_constraints
+
+        with engine.connect() as connection:
+            row = (
+                connection.execute(
+                    text(
+                        """
+                    SELECT extension_key, enabled, enabled_at, disabled_at,
+                           disabled_reason, state_version
+                    FROM extension_states
+                    WHERE extension_key = :extension_key
+                    """
+                    ),
+                    {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY},
+                )
+                .mappings()
+                .one()
+            )
+
+        assert row["extension_key"] == FINANCE_WORKSPACE_EXTENSION_KEY
+        assert row["enabled"] is True
+        assert row["enabled_at"] is not None
+        assert row["disabled_at"] is None
+        assert row["disabled_reason"] is None
+        assert row["state_version"] == 1
+    finally:
+        engine.dispose()
+
+
+def test_upgrade_legacy_schema_extension_state_is_idempotent_and_preserves_toggle(
+    session_factory,
+) -> None:
+    with session_factory() as session:
+        engine = session.get_bind()
+        with engine.begin() as connection:
+            connection.exec_driver_sql('DROP TABLE IF EXISTS "extension_states" CASCADE')
+
+    upgrade_legacy_schema(engine)
+    upgrade_legacy_schema(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE extension_states
+                SET enabled = FALSE,
+                    disabled_at = NOW(),
+                    disabled_reason = 'maintenance',
+                    state_version = 7,
+                    updated_at = NOW()
+                WHERE extension_key = :extension_key
+                """
+            ),
+            {"extension_key": FINANCE_WORKSPACE_EXTENSION_KEY},
+        )
+
+    upgrade_legacy_schema(engine)
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT extension_key, enabled, disabled_reason, state_version
+                FROM extension_states
+                ORDER BY extension_key ASC
+                """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    assert rows == [
+        {
+            "extension_key": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "enabled": False,
+            "disabled_reason": "maintenance",
+            "state_version": 7,
+        }
+    ]
+
+
+def test_upgrade_legacy_schema_adds_run_extension_snapshots_column(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE runs DROP COLUMN extension_snapshots")
+        upgrade_legacy_schema(engine)
+
+        inspector = inspect(engine)
+        run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
+        assert "extension_snapshots" in run_columns
+        assert run_columns["extension_snapshots"]["nullable"] is False
+
+        with engine.begin() as connection:
+            value = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'upgrade_package', 1, '{}'::jsonb, 'queued'
+                    ) RETURNING extension_snapshots
+                    """
+                )
+            ).scalar_one()
+        assert value == []
     finally:
         engine.dispose()
