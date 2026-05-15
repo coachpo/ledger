@@ -392,8 +392,7 @@ def _compile_http_request_value(value: object, context: _WorkflowCompileContext)
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
         return {
-            str(key): _compile_http_request_value(item, context)
-            for key, item in source.items()
+            str(key): _compile_http_request_value(item, context) for key, item in source.items()
         }
     if isinstance(value, list):
         return [_compile_http_request_value(item, context) for item in cast(list[object], value)]
@@ -414,8 +413,7 @@ def _compile_graph_request_refs(value: object, context: _WorkflowCompileContext)
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
         compiled_mapping = {
-            str(key): _compile_graph_request_refs(item, context)
-            for key, item in source.items()
+            str(key): _compile_graph_request_refs(item, context) for key, item in source.items()
         }
         return {key: item for key, item in compiled_mapping.items() if item is not None}
     if isinstance(value, list):

@@ -26,7 +26,9 @@ class _DispatchRecorder:
     def __init__(self) -> None:
         self.dispatch_calls: list[dict[str, Any]] = []
 
-    def executor(self, context: RuntimeToolContext, arguments: dict[str, object]) -> dict[str, object]:
+    def executor(
+        self, context: RuntimeToolContext, arguments: dict[str, object]
+    ) -> dict[str, object]:
         tool_name = str(arguments.pop("__tool_name"))
         self.dispatch_calls.append(
             {
@@ -181,9 +183,7 @@ class _ManualReplayClient:
                 {
                     "type": "function_call",
                     "name": "ledger_market_data_history_lookup",
-                    "arguments": json.dumps(
-                        {"symbols": ["AAPL"], "range": "1mo", "pointLimit": 5}
-                    ),
+                    "arguments": json.dumps({"symbols": ["AAPL"], "range": "1mo", "pointLimit": 5}),
                     "call_id": "call_history",
                 },
                 {
@@ -208,7 +208,9 @@ class _ManualReplayClient:
                 "output": [
                     {
                         "type": "message",
-                        "content": [{"type": "output_text", "text": '{"summary":"manual replay ok"}'}],
+                        "content": [
+                            {"type": "output_text", "text": '{"summary":"manual replay ok"}'}
+                        ],
                     }
                 ],
                 "usage": {"total_tokens": 1},

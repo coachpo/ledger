@@ -148,7 +148,9 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
 
         detail_payload = cast(
             dict[str, Any],
-            RunService(session, session_factory).get_run(run.id).model_dump(
+            RunService(session, session_factory)
+            .get_run(run.id)
+            .model_dump(
                 mode="json",
                 by_alias=True,
             ),
@@ -202,7 +204,9 @@ def test_replay_copy_preserves_operation_provenance_and_redacted_metadata(
         )
         copied_detail = cast(
             dict[str, Any],
-            RunService(session, session_factory).get_run(target_run.id).model_dump(
+            RunService(session, session_factory)
+            .get_run(target_run.id)
+            .model_dump(
                 mode="json",
                 by_alias=True,
             ),

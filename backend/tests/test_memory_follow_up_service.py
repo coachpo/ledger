@@ -301,8 +301,7 @@ def test_matured_follow_up_expires_and_append_reflection_when_history_missing(
     assert memory.outcome is not None
     assert memory.outcome.raw_return is None
     assert [reflection.reflection for reflection in memory.reflections] == [
-        "NVDA buy memory resolved with status expired. "
-        + "Lesson: Long-term compounding memory."
+        "NVDA buy memory resolved with status expired. " + "Lesson: Long-term compounding memory."
     ]
     assert persisted.content.count("### Reflection") == 1
 

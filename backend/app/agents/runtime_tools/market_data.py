@@ -827,9 +827,7 @@ def execute_social_sentiment_lookup(
 ) -> dict[str, object]:
     from app.services.social_sentiment_service import SocialSentimentService
 
-    service = SocialSentimentService(
-        source_adapters=tuple(context.social_sentiment_adapters or ())
-    )
+    service = SocialSentimentService(source_adapters=tuple(context.social_sentiment_adapters or ()))
     result = service.get_social_sentiment_snapshot(
         cast(str, arguments["symbol"]),
         sources=cast(tuple[str, ...], arguments["sources"]),

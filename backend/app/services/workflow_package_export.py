@@ -77,8 +77,7 @@ def _sanitize_package_definition(value: object) -> object:
             return _sanitize_mcp_server(source)
         sanitized: dict[str, object] = {}
         allow_local_id = (
-            source.get("kind") in {"step", "http", "sequence", "fanout", "loop"}
-            or "node" in source
+            source.get("kind") in {"step", "http", "sequence", "fanout", "loop"} or "node" in source
         )
         for raw_key, item in source.items():
             if not isinstance(raw_key, str):

@@ -92,7 +92,9 @@ class _TradingAgentsOpenAIClient:
                 request=request,
                 json={"error": {"message": "previous_response_id rejected by provider"}},
             )
-            raise NotFoundError("previous_response_id rejected by provider", response=response, body=response.json())
+            raise NotFoundError(
+                "previous_response_id rejected by provider", response=response, body=response.json()
+            )
         return _json_response(_output_for_request_schema(kwargs))
 
 

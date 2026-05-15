@@ -1251,7 +1251,6 @@ def test_init_db_creates_run_operation_invocations_table(database_url: str) -> N
         engine.dispose()
 
 
-
 def test_init_db_creates_workflow_package_secret_binding_table(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)

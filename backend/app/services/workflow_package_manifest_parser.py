@@ -594,9 +594,7 @@ class WorkflowPackageManifestParser:
         if isinstance(value, dict):
             mapped_references: list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]] = []
             for key, item in cast(dict[str, object], value).items():
-                mapped_references.extend(
-                    self._collect_http_request_references(item, (*path, key))
-                )
+                mapped_references.extend(self._collect_http_request_references(item, (*path, key)))
             return mapped_references
         if isinstance(value, list):
             listed_references: list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]] = []

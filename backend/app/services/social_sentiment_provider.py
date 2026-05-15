@@ -479,7 +479,7 @@ def _within_bounds(
 
 
 def _stocktwits_sentiment(
-    message: dict[str, object]
+    message: dict[str, object],
 ) -> Literal["positive", "neutral", "negative", "mixed"] | None:
     entities = _object_dict(message.get("entities"))
     sentiment_payload = _object_dict(entities.get("sentiment"))

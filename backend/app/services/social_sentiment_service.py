@@ -40,9 +40,7 @@ _SUPPORTED_SOURCE_BY_KEY: dict[str, SocialSentimentSource] = {
 class SocialSentimentService:
     default_item_limit: int = 25
     max_item_limit: int = 50
-    supported_sources: tuple[SocialSentimentSource, ...] = tuple(
-        _SUPPORTED_SOURCE_BY_KEY.values()
-    )
+    supported_sources: tuple[SocialSentimentSource, ...] = tuple(_SUPPORTED_SOURCE_BY_KEY.values())
 
     def __init__(
         self,

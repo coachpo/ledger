@@ -169,9 +169,7 @@ def test_final_output_resolves_from_http_operation_slot(
     assert transport.requests[0].method == "POST"
     with session_factory() as session:
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
-        persisted_operation = (
-            session.query(RunOperationInvocation).filter_by(run_id=run_id).one()
-        )
+        persisted_operation = session.query(RunOperationInvocation).filter_by(run_id=run_id).one()
         assert persisted_operation.output == {"ok": True, "message": "queued"}
 
 
@@ -348,9 +346,7 @@ def test_mixed_execution_runs_agent_and_http_operation_families(
         assert operation.status == "succeeded"
         assert operation.output_origin == "executed"
         assert operation.output == {"ok": True}
-        assert operation.request_metadata["body"] == {
-            "ticker": {"from": "input", "path": "ticker"}
-        }
+        assert operation.request_metadata["body"] == {"ticker": {"from": "input", "path": "ticker"}}
 
     assert len(agent_calls) == 1
     assert transport.requests[0].method == "POST"

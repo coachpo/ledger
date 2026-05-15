@@ -756,8 +756,7 @@ class HttpOperationExecutionService:
                 self._raise_error(
                     code="http_operation_source_missing",
                     message=(
-                        f"HTTP source slot {slot!r} from step {int(step_index)} "
-                        "was not available"
+                        f"HTTP source slot {slot!r} from step {int(step_index)} was not available"
                     ),
                     details=[
                         {
@@ -843,8 +842,7 @@ class HttpOperationExecutionService:
             self._raise_error(
                 code="http_operation_secret_session_missing",
                 message=(
-                    f"HTTP secret binding {key!r} could not be resolved "
-                    "without a package session"
+                    f"HTTP secret binding {key!r} could not be resolved without a package session"
                 ),
                 details=[{"field": "secrets", "issue": "Secret binding session is required"}],
             )
