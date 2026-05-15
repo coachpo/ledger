@@ -30,6 +30,7 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "model_connections",
     "output_schemas",
     "run_agent_invocations",
+    "run_operation_invocations",
     "run_steps",
     "runs",
     "capabilities",
@@ -144,6 +145,41 @@ _RUN_AGENT_INVOCATION_COLUMNS = {
     "duration_ms",
     "trace_span_id",
     "source_invocation_id",
+    "started_at",
+    "finished_at",
+    "persisted_at",
+    "created_at",
+    "updated_at",
+}
+_RUN_OPERATION_INVOCATION_COLUMNS = {
+    "id",
+    "run_step_id",
+    "run_id",
+    "step_index",
+    "slot",
+    "position",
+    "operation_key",
+    "operation_kind",
+    "output_schema_id",
+    "output_schema_version",
+    "method",
+    "timeout_seconds",
+    "request_metadata",
+    "response_metadata",
+    "graph_metadata",
+    "optional",
+    "status",
+    "output",
+    "output_origin",
+    "error_code",
+    "error_message",
+    "error_details",
+    "duration_ms",
+    "trace_span_id",
+    "source_operation_invocation_id",
+    "source_run_id",
+    "source_run_step_id",
+    "source_step_index",
     "started_at",
     "finished_at",
     "persisted_at",
@@ -915,9 +951,15 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     invocation_columns = {
         column["name"]: column for column in inspector.get_columns("run_agent_invocations")
     }
+    operation_columns = {
+        column["name"]: column for column in inspector.get_columns("run_operation_invocations")
+    }
     run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
     run_step_indexes = {index["name"] for index in inspector.get_indexes("run_steps")}
     invocation_indexes = {index["name"] for index in inspector.get_indexes("run_agent_invocations")}
+    operation_indexes = {
+        index["name"] for index in inspector.get_indexes("run_operation_invocations")
+    }
     run_check_constraints = inspector.get_check_constraints("runs")
     run_checks = {
         constraint["name"] for constraint in run_check_constraints if constraint.get("name")
@@ -937,12 +979,21 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         for constraint in inspector.get_check_constraints("run_agent_invocations")
         if constraint.get("name")
     }
+    operation_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("run_operation_invocations")
+        if constraint.get("name")
+    }
     run_step_unique_constraints = {
         constraint["name"] for constraint in inspector.get_unique_constraints("run_steps")
     }
     invocation_unique_constraints = {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("run_agent_invocations")
+    }
+    operation_unique_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("run_operation_invocations")
     }
     run_foreign_keys = {
         _foreign_key_signature(foreign_key) for foreign_key in inspector.get_foreign_keys("runs")
@@ -954,6 +1005,10 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     invocation_foreign_keys = {
         _foreign_key_signature(foreign_key)
         for foreign_key in inspector.get_foreign_keys("run_agent_invocations")
+    }
+    operation_foreign_keys = {
+        _foreign_key_signature(foreign_key)
+        for foreign_key in inspector.get_foreign_keys("run_operation_invocations")
     }
 
     assert _RUN_HEADER_COLUMNS <= set(run_columns)
@@ -1052,6 +1107,43 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "SET NULL",
     ) in invocation_foreign_keys
 
+    assert _RUN_OPERATION_INVOCATION_COLUMNS <= set(operation_columns)
+    assert operation_columns["run_step_id"]["nullable"] is False
+    assert operation_columns["run_id"]["nullable"] is False
+    assert operation_columns["slot"]["nullable"] is False
+    assert operation_columns["request_metadata"]["nullable"] is False
+    assert operation_columns["response_metadata"]["nullable"] is False
+    assert {
+        "ix_run_operation_invocations_run_step_index",
+        "ix_run_operation_invocations_run_status",
+        "ix_run_operation_invocations_operation_key",
+        "ix_run_operation_invocations_source_operation",
+        "ix_run_operation_invocations_source_run",
+        "ix_run_operation_invocations_source_run_step",
+    } <= operation_indexes
+    assert {
+        "ck_run_operation_invocations_step_index_positive",
+        "ck_run_operation_invocations_position_non_negative",
+        "ck_run_operation_invocations_operation_kind",
+        "ck_run_operation_invocations_status",
+        "ck_run_operation_invocations_output_schema_id_positive",
+        "ck_run_operation_invocations_output_schema_version_positive",
+        "ck_run_operation_invocations_source_step_index_positive",
+        "ck_run_operation_invocations_output_origin",
+        "ck_run_operation_invocations_duration_non_negative",
+        "ck_run_operation_invocations_timeout_positive",
+    } <= operation_checks
+    assert "uq_run_operation_invocations_step_slot" in operation_unique_constraints
+    assert (("run_step_id",), "run_steps", "CASCADE") in operation_foreign_keys
+    assert (("run_id",), "runs", "CASCADE") in operation_foreign_keys
+    assert (
+        ("source_operation_invocation_id",),
+        "run_operation_invocations",
+        "SET NULL",
+    ) in operation_foreign_keys
+    assert (("source_run_id",), "runs", "SET NULL") in operation_foreign_keys
+    assert (("source_run_step_id",), "run_steps", "SET NULL") in operation_foreign_keys
+
 
 def _stock_analysis_sanitation_snapshot(
     connection,
@@ -1145,6 +1237,56 @@ def test_init_db_creates_capability_tool_keys_and_drops_legacy_backend_tables(
         assert "capabilities" in agent_columns
         assert "skills" not in agent_columns
         _assert_runtime_execution_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_creates_run_operation_invocations_table(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        _assert_runtime_execution_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+
+def test_init_db_creates_workflow_package_secret_binding_table(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        inspector = inspect(engine)
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("workflow_package_secret_bindings")
+        }
+        indexes = {
+            index["name"] for index in inspector.get_indexes("workflow_package_secret_bindings")
+        }
+        unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("workflow_package_secret_bindings")
+        }
+        foreign_keys = {
+            _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+            for foreign_key in inspector.get_foreign_keys("workflow_package_secret_bindings")
+        }
+
+        assert {
+            "id",
+            "package_id",
+            "key",
+            "secret_payload",
+            "created_at",
+            "updated_at",
+        } <= set(columns)
+        assert columns["secret_payload"]["nullable"] is False
+        assert "ix_workflow_package_secret_bindings_package" in indexes
+        assert "ix_workflow_package_secret_bindings_key" in indexes
+        assert "uq_workflow_package_secret_bindings_package_key" in unique_constraints
+        assert (("package_id",), "workflow_packages", "CASCADE") in foreign_keys
     finally:
         engine.dispose()
 

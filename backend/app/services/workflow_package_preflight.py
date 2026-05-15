@@ -13,6 +13,8 @@ from app.models.output_schema import OutputSchema
 from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
+from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
+from app.schemas.workflow_package_manifest import WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS
 from app.services.execution_plan import PackageResolvedModelBinding
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
@@ -39,6 +41,7 @@ class WorkflowPackagePreflightService:
         self.session = session
         self.model_connection_service = ModelConnectionService(session)
         self.model_connection_repository = ModelConnectionRepository(session)
+        self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
         self.schema_compiler = OutputSchemaCompiler(OutputSchemaRepository(session))
 
     def save_warnings(self, package_definition: dict[str, Any]) -> list[dict[str, Any]]:
@@ -71,20 +74,22 @@ class WorkflowPackagePreflightService:
         blocking_errors.extend(self._schema_errors(compiled_plan))
         blocking_errors.extend(self._tool_errors(compiled_plan))
         blocking_errors.extend(self._mcp_errors(compiled_plan))
+        blocking_errors.extend(self._http_errors(package_version, compiled_plan))
         model_bindings, model_warnings, model_errors = self._model_bindings(
             compiled_plan,
             require_api_key=require_api_key,
         )
         blocking_errors.extend(model_errors)
-        try:
-            _ = PackageExecutionPlanBuilder.build_from_compiled_plan(
-                compiled_plan,
-                workflow_key,
-                model_bindings=model_bindings,
-                package_version=package_version.version,
-            )
-        except WorkflowPackageExecutionPlanError as exc:
-            blocking_errors.extend(dict(detail) for detail in exc.details)
+        if not self._has_http_operations(compiled_plan):
+            try:
+                _ = PackageExecutionPlanBuilder.build_from_compiled_plan(
+                    compiled_plan,
+                    workflow_key,
+                    model_bindings=model_bindings,
+                    package_version=package_version.version,
+                )
+            except WorkflowPackageExecutionPlanError as exc:
+                blocking_errors.extend(dict(detail) for detail in exc.details)
         warnings = self.save_warnings(package_definition)
         warnings.extend(model_warnings)
         return WorkflowPackagePreflightResult(
@@ -289,6 +294,212 @@ class WorkflowPackagePreflightService:
                         }
                     )
         return errors
+
+    def _http_errors(
+        self,
+        package_version: WorkflowPackageVersion,
+        compiled_plan: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        errors: list[dict[str, Any]] = []
+        output_schema_keys = {
+            str(schema.get("key"))
+            for schema in self._compiled_section(compiled_plan, "outputSchemas")
+            if schema.get("key")
+        }
+        configured_secret_keys = self.secret_binding_repository.list_keys_for_package(
+            package_version.package_id
+        )
+        for workflow in self._compiled_section(compiled_plan, "workflows"):
+            workflow_key = str(workflow.get("key") or "workflow")
+            seen_operation_keys: set[str] = set()
+            for step_position, step in enumerate(cast(list[Any], workflow.get("steps") or [])):
+                if not isinstance(step, dict):
+                    continue
+                step_index = int(step.get("index") or step_position + 1)
+                seen_slots: set[str] = set()
+                for agent in cast(list[Any], step.get("agents") or []):
+                    if isinstance(agent, dict):
+                        self._record_step_slot_error(
+                            errors,
+                            seen_slots,
+                            slot=str(agent.get("slot") or ""),
+                            field=(
+                                f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+                                ".agents.slot"
+                            ),
+                        )
+                for operation_index, operation in enumerate(
+                    cast(list[Any], step.get("operations") or [])
+                ):
+                    if not isinstance(operation, dict):
+                        errors.append(
+                            {
+                                "field": (
+                                    f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+                                    f".operations[{operation_index}]"
+                                ),
+                                "issue": "HTTP operation must be an object",
+                            }
+                        )
+                        continue
+                    errors.extend(
+                        self._http_operation_errors(
+                            operation,
+                            workflow_key=workflow_key,
+                            step_index=step_index,
+                            operation_index=operation_index,
+                            output_schema_keys=output_schema_keys,
+                            configured_secret_keys=configured_secret_keys,
+                            seen_operation_keys=seen_operation_keys,
+                            seen_slots=seen_slots,
+                        )
+                    )
+        return errors
+
+    def _http_operation_errors(
+        self,
+        operation: dict[str, Any],
+        *,
+        workflow_key: str,
+        step_index: int,
+        operation_index: int,
+        output_schema_keys: set[str],
+        configured_secret_keys: set[str],
+        seen_operation_keys: set[str],
+        seen_slots: set[str],
+    ) -> list[dict[str, Any]]:
+        field_base = (
+            f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+            f".operations[{operation_index}]"
+        )
+        errors: list[dict[str, Any]] = []
+        if str(operation.get("operationKind") or "") != "http":
+            return errors
+        operation_key = str(operation.get("operationKey") or "")
+        if operation_key in seen_operation_keys:
+            errors.append(
+                {"field": f"{field_base}.operationKey", "issue": "Duplicate HTTP node id"}
+            )
+        if operation_key:
+            seen_operation_keys.add(operation_key)
+        self._record_step_slot_error(
+            errors,
+            seen_slots,
+            slot=str(operation.get("slot") or ""),
+            field=f"{field_base}.slot",
+        )
+        method = str(operation.get("method") or "").upper()
+        if method not in WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS:
+            allowed = ", ".join(WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS)
+            errors.append(
+                {
+                    "field": f"{field_base}.method",
+                    "issue": f"Unsupported HTTP method {method!r}; allowed methods: {allowed}",
+                }
+            )
+        response = operation.get("response")
+        if not isinstance(response, dict):
+            errors.append({"field": f"{field_base}.response", "issue": "response is required"})
+        else:
+            schema_key = str(response.get("outputSchema") or "")
+            if schema_key not in output_schema_keys:
+                errors.append(
+                    {
+                        "field": f"{field_base}.response.outputSchema",
+                        "issue": f"Package output schema {schema_key!r} was not found",
+                    }
+                )
+        request = operation.get("request")
+        if not isinstance(request, dict):
+            errors.append({"field": f"{field_base}.request", "issue": "request is required"})
+            return errors
+        secret_keys, request_errors = self._collect_http_request_secret_refs(
+            request,
+            field=f"{field_base}.request",
+        )
+        errors.extend(request_errors)
+        for secret_key in sorted(secret_keys - configured_secret_keys):
+            errors.append(
+                {
+                    "field": f"{field_base}.request",
+                    "issue": f"HTTP secret binding {secret_key!r} is not configured",
+                }
+            )
+        return errors
+
+    @staticmethod
+    def _record_step_slot_error(
+        errors: list[dict[str, Any]],
+        seen_slots: set[str],
+        *,
+        slot: str,
+        field: str,
+    ) -> None:
+        if not slot:
+            errors.append({"field": field, "issue": "slot is required"})
+            return
+        if slot in seen_slots:
+            errors.append(
+                {
+                    "field": field,
+                    "issue": "Duplicate output slot name within the same step",
+                }
+            )
+        seen_slots.add(slot)
+
+    def _collect_http_request_secret_refs(
+        self,
+        value: object,
+        *,
+        field: str,
+    ) -> tuple[set[str], list[dict[str, Any]]]:
+        if isinstance(value, dict):
+            source = cast(dict[str, Any], value)
+            if source.get("from") == "secret":
+                key = str(source.get("key") or "")
+                if not key:
+                    return set(), [
+                        {"field": field, "issue": "HTTP secret reference key is required"}
+                    ]
+                return {key}, []
+            if source.get("from") == "step" and (
+                source.get("stepIndex") is None or source.get("slot") is None
+            ):
+                return set(), [{"field": field, "issue": "HTTP node step reference is malformed"}]
+            secret_keys: set[str] = set()
+            errors: list[dict[str, Any]] = []
+            for key, item in source.items():
+                child_keys, child_errors = self._collect_http_request_secret_refs(
+                    item,
+                    field=f"{field}.{key}",
+                )
+                secret_keys.update(child_keys)
+                errors.extend(child_errors)
+            return secret_keys, errors
+        if isinstance(value, list):
+            listed_secret_keys: set[str] = set()
+            listed_errors: list[dict[str, Any]] = []
+            for index, item in enumerate(value):
+                child_keys, child_errors = self._collect_http_request_secret_refs(
+                    item,
+                    field=f"{field}[{index}]",
+                )
+                listed_secret_keys.update(child_keys)
+                listed_errors.extend(child_errors)
+            return listed_secret_keys, listed_errors
+        return set(), []
+
+    @staticmethod
+    def _has_http_operations(compiled_plan: dict[str, Any]) -> bool:
+        workflows = WorkflowPackagePreflightService._compiled_section(
+            compiled_plan,
+            "workflows",
+        )
+        for workflow in workflows:
+            for step in cast(list[Any], workflow.get("steps") or []):
+                if isinstance(step, dict) and step.get("operations"):
+                    return True
+        return False
 
     def _model_bindings(
         self,

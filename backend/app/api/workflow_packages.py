@@ -15,6 +15,9 @@ from app.schemas.workflow_package import (
     WorkflowPackageManifestRead,
     WorkflowPackageManifestRequest,
     WorkflowPackageRead,
+    WorkflowPackageSecretBindingListRead,
+    WorkflowPackageSecretBindingRead,
+    WorkflowPackageSecretBindingUpdateRequest,
     WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
@@ -84,6 +87,44 @@ def delete_workflow_package(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
 ) -> Response:
     service.delete_package(package_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{package_id}/secret-bindings",
+    response_model=WorkflowPackageSecretBindingListRead,
+)
+def list_workflow_package_secret_bindings(
+    package_id: int,
+    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
+) -> WorkflowPackageSecretBindingListRead:
+    return service.list_secret_bindings(package_id)
+
+
+@router.put(
+    "/{package_id}/secret-bindings/{key}",
+    response_model=WorkflowPackageSecretBindingRead,
+)
+def upsert_workflow_package_secret_binding(
+    package_id: int,
+    key: str,
+    payload: WorkflowPackageSecretBindingUpdateRequest,
+    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
+) -> WorkflowPackageSecretBindingRead:
+    return service.upsert_secret_binding(package_id, key, payload)
+
+
+@router.delete(
+    "/{package_id}/secret-bindings/{key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def delete_workflow_package_secret_binding(
+    package_id: int,
+    key: str,
+    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
+) -> Response:
+    service.delete_secret_binding(package_id, key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

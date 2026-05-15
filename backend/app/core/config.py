@@ -27,6 +27,38 @@ class Settings(BaseSettings):
     public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
     mcp_runtime_enabled: bool = Field(default=False, alias="MCP_RUNTIME_ENABLED")
     mcp_runtime_timeout_seconds: float = Field(default=5.0, alias="MCP_RUNTIME_TIMEOUT")
+    http_operation_allowed_methods: Annotated[list[str], NoDecode] = Field(
+        default=["GET", "POST"],
+        alias="HTTP_OPERATION_ALLOWED_METHODS",
+    )
+    http_operation_allow_insecure_http: bool = Field(
+        default=False,
+        alias="HTTP_OPERATION_ALLOW_INSECURE_HTTP",
+    )
+    http_operation_block_private_networks: bool = Field(
+        default=True,
+        alias="HTTP_OPERATION_BLOCK_PRIVATE_NETWORKS",
+    )
+    http_operation_timeout_max_seconds: int = Field(
+        default=30,
+        alias="HTTP_OPERATION_TIMEOUT_MAX_SECONDS",
+        gt=0,
+    )
+    http_operation_request_max_bytes: int = Field(
+        default=131072,
+        alias="HTTP_OPERATION_REQUEST_MAX_BYTES",
+        gt=0,
+    )
+    http_operation_response_max_bytes: int = Field(
+        default=262144,
+        alias="HTTP_OPERATION_RESPONSE_MAX_BYTES",
+        gt=0,
+    )
+    http_operation_max_redirects: int = Field(
+        default=0,
+        alias="HTTP_OPERATION_MAX_REDIRECTS",
+        ge=0,
+    )
     mcp_stdio_allowed_commands: Annotated[list[str], NoDecode] = Field(
         default=["node", "npx", "python", "python3"],
         alias="MCP_STDIO_ALLOWED_COMMANDS",
@@ -52,12 +84,27 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    @field_validator("cors_allowed_origins", "mcp_stdio_allowed_commands", mode="before")
+    @field_validator(
+        "cors_allowed_origins",
+        "mcp_stdio_allowed_commands",
+        "http_operation_allowed_methods",
+        mode="before",
+    )
     @classmethod
     def split_string_lists(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @field_validator("http_operation_allowed_methods")
+    @classmethod
+    def normalize_http_operation_allowed_methods(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip().upper() for item in value if item.strip()]
+        if not normalized:
+            raise ValueError("HTTP_OPERATION_ALLOWED_METHODS must include at least one method")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("HTTP_OPERATION_ALLOWED_METHODS must not contain duplicates")
+        return normalized
 
     @field_validator("public_base_url", mode="before")
     @classmethod

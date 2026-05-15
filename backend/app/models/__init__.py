@@ -16,12 +16,17 @@ from app.models.position import Position
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
 from app.models.workflow import Workflow
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.workflow_package import (
+    WorkflowPackage,
+    WorkflowPackageSecretBinding,
+    WorkflowPackageVersion,
+)
 
 __all__ = [
     "Agent",
@@ -38,6 +43,7 @@ __all__ = [
     "Report",
     "Run",
     "RunAgentInvocation",
+    "RunOperationInvocation",
     "RunStep",
     "SymbolNameCache",
     "TextTemplate",
@@ -45,6 +51,7 @@ __all__ = [
     "Workflow",
     "WorkflowAgentRef",
     "WorkflowPackage",
+    "WorkflowPackageSecretBinding",
     "WorkflowPackageVersionModelConnection",
     "WorkflowPackageVersion",
 ]

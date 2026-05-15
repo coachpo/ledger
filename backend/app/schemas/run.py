@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import CamelModel, ensure_timezone
-from app.schemas.model_connection import ModelConnectionKind
 from app.schemas.memory import MemoryArtifactRead
+from app.schemas.model_connection import ModelConnectionKind
 
 
 class RunStatus(str, Enum):  # noqa: UP042
@@ -47,6 +47,10 @@ class RunInvocationOutputOrigin(str, Enum):  # noqa: UP042
     EXECUTED = "executed"
     EDITED = "edited"
     COPIED = "copied"
+
+
+class RunOperationKind(str, Enum):  # noqa: UP042
+    HTTP = "http"
 
 
 class RunTargetKind(str, Enum):  # noqa: UP042
@@ -136,6 +140,49 @@ class RunAgentInvocationRead(CamelModel):
         return ensure_timezone(value)
 
 
+class RunOperationInvocationRead(CamelModel):
+    id: int
+    run_step_id: int
+    run_id: int
+    step_index: int = Field(ge=1)
+    slot: str
+    position: int = Field(ge=0)
+    operation_key: str
+    operation_kind: RunOperationKind
+    output_schema_id: int = Field(ge=1)
+    output_schema_version: int = Field(ge=1)
+    method: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1)
+    request_metadata: dict[str, Any] = Field(default_factory=dict)
+    response_metadata: dict[str, Any] = Field(default_factory=dict)
+    graph_metadata: dict[str, Any] | None = None
+    optional: bool
+    status: RunStepStatus
+    output: Any | None = None
+    output_origin: RunInvocationOutputOrigin | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    error_details: list[dict[str, Any]] = Field(default_factory=list)
+    duration_ms: int | None = Field(default=None, ge=0)
+    trace_span_id: str | None = None
+    source_operation_invocation_id: int | None = None
+    source_run_id: int | None = None
+    source_run_step_id: int | None = None
+    source_step_index: int | None = Field(default=None, ge=1)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    persisted_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_timezone(value)
+
+
 class RunStepRead(CamelModel):
     id: int
     run_id: int
@@ -153,6 +200,7 @@ class RunStepRead(CamelModel):
     created_at: datetime
     updated_at: datetime
     invocations: list[RunAgentInvocationRead] = Field(default_factory=list)
+    operation_invocations: list[RunOperationInvocationRead] = Field(default_factory=list)
 
     @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
     @classmethod
@@ -351,6 +399,8 @@ __all__ = [
     "RunInvocationOutputOrigin",
     "RunInvocationResolvedInputOrigin",
     "RunListItemRead",
+    "RunOperationInvocationRead",
+    "RunOperationKind",
     "RunListRead",
     "RunMemoryArtifactRead",
     "RunPackageAvailabilityRead",

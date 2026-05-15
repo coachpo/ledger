@@ -80,7 +80,10 @@ class RunRepository(BaseRepository[Run]):
         statement = (
             select(self.model)
             .where(self.model.id == run_id)
-            .options(selectinload(self.model.steps).selectinload(RunStep.invocations))
+            .options(
+                selectinload(self.model.steps).selectinload(RunStep.invocations),
+                selectinload(self.model.steps).selectinload(RunStep.operation_invocations),
+            )
         )
         return self._get_by_statement(statement)
 

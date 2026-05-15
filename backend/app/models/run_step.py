@@ -100,3 +100,11 @@ class RunStep(IdMixin, TimestampMixin, Base):
         passive_deletes=True,
         order_by="RunAgentInvocation.position",
     )
+    operation_invocations: Mapped[list[object]] = relationship(
+        "RunOperationInvocation",
+        back_populates="run_step",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="RunOperationInvocation.run_step_id",
+        order_by="RunOperationInvocation.position",
+    )

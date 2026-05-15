@@ -51,6 +51,7 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "agents",
     "workflows",
     "runs",
+    "run_operation_invocations",
 }
 
 

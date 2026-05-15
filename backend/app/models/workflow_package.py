@@ -9,7 +9,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.formatting import utcnow
-from app.models.base import Base, IdMixin
+from app.models.base import Base, IdMixin, TimestampMixin
+from app.models.mcp_server import EncryptedJSONB
 
 
 class WorkflowPackage(IdMixin, Base):
@@ -70,6 +71,43 @@ class WorkflowPackage(IdMixin, Base):
         "WorkflowPackageVersion",
         foreign_keys=lambda: [WorkflowPackage.latest_version_id],
         post_update=True,
+    )
+    secret_bindings: Mapped[list[WorkflowPackageSecretBinding]] = relationship(
+        "WorkflowPackageSecretBinding",
+        back_populates="package",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="WorkflowPackageSecretBinding.key.asc()",
+    )
+
+
+class WorkflowPackageSecretBinding(IdMixin, TimestampMixin, Base):
+    __tablename__ = "workflow_package_secret_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "package_id",
+            "key",
+            name="uq_workflow_package_secret_bindings_package_key",
+        ),
+        Index("ix_workflow_package_secret_bindings_package", "package_id"),
+        Index("ix_workflow_package_secret_bindings_key", "key"),
+    )
+
+    package_id: Mapped[int] = mapped_column(
+        ForeignKey("workflow_packages.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    key: Mapped[str] = mapped_column(String(120), nullable=False)
+    secret_payload: Mapped[dict[str, Any]] = mapped_column(
+        EncryptedJSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+
+    package: Mapped[WorkflowPackage] = relationship(
+        "WorkflowPackage",
+        back_populates="secret_bindings",
     )
 
 

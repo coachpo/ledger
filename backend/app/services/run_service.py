@@ -25,6 +25,7 @@ from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
@@ -33,6 +34,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
+from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.memory import MemoryArtifactRead
@@ -76,6 +78,7 @@ from app.services.execution_plan import (
     ExecutionPlanAgent,
     ExecutionPlanFinalOutput,
     ExecutionPlanGraphMetadata,
+    ExecutionPlanOperation,
     ExecutionPlanSource,
     ExecutionPlanStep,
     ExecutionPlanTarget,
@@ -84,6 +87,13 @@ from app.services.execution_plan import (
     PackageRuntimeAgentSpec,
 )
 from app.services.execution_plan_builder import ExecutionPlanBuilder, ExecutionPlanBuilderError
+from app.services.http_operation_execution_service import (
+    HttpOperationExecutionError,
+    HttpOperationExecutionResult,
+    HttpOperationExecutionService,
+)
+from app.services.market_data_service import MarketDataService
+from app.services.memory_follow_up_service import MemoryFollowUpService
 from app.services.memory_service import MemoryService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
@@ -98,8 +108,6 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.market_data_service import MarketDataService
-from app.services.memory_follow_up_service import MemoryFollowUpService
 from app.services.quote_provider import DeterministicQuoteProvider, QuoteProvider
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
@@ -145,6 +153,17 @@ class _PreparedAgentInvocation:
     runtime_context: _RuntimeInvocationContext
 
 
+@dataclass
+class _PreparedOperationInvocation:
+    operation: ExecutionPlanOperation
+    output_model: type[BaseModel]
+    invocation: RunOperationInvocation
+    optional: bool
+    step_index: int
+    slot: str
+    workflow_package_id: int | None
+
+
 _CURRENT_RUNTIME_INVOCATION_CONTEXT: ContextVar[_RuntimeInvocationContext | None] = ContextVar(
     "ledger_runtime_invocation_context",
     default=None,
@@ -168,11 +187,13 @@ class RunService:
         self.workflow_package_repository = WorkflowPackageRepository(session)
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
+        self.run_operation_invocation_repository = RunOperationInvocationRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
         self.agent_execution_service = AgentExecutionService(
             self.session_factory,
             quote_provider=quote_provider,
         )
+        self.http_operation_execution_service = HttpOperationExecutionService(session)
         self.schema_compiler = OutputSchemaCompiler(self.output_schema_repository)
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
 
@@ -836,6 +857,23 @@ class RunService:
                     resolved_input=resolved_input,
                     resolved_input_origin=resolved_input_origin,
                 )
+            for position, plan_operation in enumerate(plan_step.operations):
+                _ = self.run_operation_invocation_repository.create_operation(
+                    run_step_id=run_step.id,
+                    run_id=run.id,
+                    step_index=plan_step.index,
+                    slot=plan_operation.slot,
+                    position=position,
+                    operation_key=plan_operation.operation_key,
+                    operation_kind=plan_operation.operation_kind,
+                    output_schema_id=plan_operation.output_schema_id,
+                    output_schema_version=plan_operation.output_schema_version,
+                    method=plan_operation.method,
+                    timeout_seconds=plan_operation.timeout_seconds,
+                    request_metadata=deepcopy(plan_operation.request),
+                    graph_metadata=self._graph_metadata_payload(plan_operation.graph_metadata),
+                    optional=plan_operation.optional,
+                )
 
     @classmethod
     def _step_graph_metadata_payloads(
@@ -964,6 +1002,19 @@ class RunService:
                             }
                         ],
                     )
+            operations = cast(list[RunOperationInvocation], step.operation_invocations)
+            for operation in operations:
+                if not self._source_context_operation_is_persisted(operation):
+                    raise business_rule_error(
+                        "run_step_replay_context_operation_not_persisted",
+                        "All source context operation outputs must be succeeded and persisted",
+                        details=[
+                            {
+                                "field": f"steps.{step_index}.{operation.slot}",
+                                "issue": "Operation output is not persisted",
+                            }
+                        ],
+                    )
             copied_steps.append(step)
         return source_run, plan, copied_steps
 
@@ -974,6 +1025,14 @@ class RunService:
         if invocation.status == _RUN_STATUS_SUCCEEDED:
             return invocation.output_origin is not None
         return invocation.optional and invocation.status in {_RUN_STATUS_FAILED, "skipped"}
+
+    @staticmethod
+    def _source_context_operation_is_persisted(operation: RunOperationInvocation) -> bool:
+        if operation.persisted_at is None:
+            return False
+        if operation.status == _RUN_STATUS_SUCCEEDED:
+            return operation.output_origin is not None
+        return operation.optional and operation.status in {_RUN_STATUS_FAILED, "skipped"}
 
     @staticmethod
     def _copied_invocation_token_totals(source_steps: list[RunStep]) -> int:
@@ -1046,6 +1105,44 @@ class RunService:
                 copied_invocation.started_at = source_invocation.started_at
                 copied_invocation.finished_at = source_invocation.finished_at
                 copied_invocation.persisted_at = copied_at
+            for source_operation in cast(
+                list[RunOperationInvocation],
+                source_step.operation_invocations,
+            ):
+                copied_operation = self.run_operation_invocation_repository.create_operation(
+                    run_step_id=copied_step.id,
+                    run_id=run.id,
+                    step_index=source_operation.step_index,
+                    slot=source_operation.slot,
+                    position=source_operation.position,
+                    operation_key=source_operation.operation_key,
+                    operation_kind=source_operation.operation_kind,
+                    output_schema_id=source_operation.output_schema_id,
+                    output_schema_version=source_operation.output_schema_version,
+                    method=source_operation.method,
+                    timeout_seconds=source_operation.timeout_seconds,
+                    request_metadata=deepcopy(source_operation.request_metadata),
+                    response_metadata=deepcopy(source_operation.response_metadata),
+                    graph_metadata=deepcopy(source_operation.graph_metadata),
+                    optional=source_operation.optional,
+                    status=source_operation.status,
+                    output=deepcopy(source_operation.output),
+                    output_origin=(
+                        "copied" if source_operation.output_origin is not None else None
+                    ),
+                    source_operation_invocation_id=source_operation.id,
+                    source_run_id=source_operation.run_id,
+                    source_run_step_id=source_operation.run_step_id,
+                    source_step_index=source_operation.step_index,
+                )
+                copied_operation.error_code = source_operation.error_code
+                copied_operation.error_message = source_operation.error_message
+                copied_operation.error_details = deepcopy(source_operation.error_details)
+                copied_operation.duration_ms = source_operation.duration_ms
+                copied_operation.trace_span_id = source_operation.trace_span_id
+                copied_operation.started_at = source_operation.started_at
+                copied_operation.finished_at = source_operation.finished_at
+                copied_operation.persisted_at = copied_at
 
     def execute_run(self, run_id: int) -> None:
         try:
@@ -1416,11 +1513,22 @@ class RunService:
             run_id,
             before_step_index=before_step_index,
         )
+        slot_outputs.update(
+            self.run_operation_invocation_repository.hydrate_successful_outputs(
+                run_id,
+                before_step_index=before_step_index,
+            )
+        )
         for invocation in self.run_agent_invocation_repository.list_by_run(run_id):
             if before_step_index is not None and invocation.step_index >= before_step_index:
                 continue
             if invocation.optional and invocation.status in {"failed", "skipped"}:
                 slot_outputs[(invocation.step_index, invocation.slot)] = None
+        for operation in self.run_operation_invocation_repository.list_by_run(run_id):
+            if before_step_index is not None and operation.step_index >= before_step_index:
+                continue
+            if operation.optional and operation.status in {"failed", "skipped"}:
+                slot_outputs[(operation.step_index, operation.slot)] = None
         return slot_outputs
 
     def _get_planned_step_or_raise(self, *, run_id: int, step_index: int) -> RunStep:
@@ -1451,12 +1559,37 @@ class RunService:
             )
         return invocation
 
+    def _get_planned_operation_or_raise(
+        self,
+        *,
+        run_id: int,
+        step_index: int,
+        slot: str,
+    ) -> RunOperationInvocation:
+        operation = self.run_operation_invocation_repository.get_by_run_step_slot(
+            run_id,
+            step_index,
+            slot,
+        )
+        if operation is None:
+            raise RunExecutionError(
+                code="run_planned_operation_missing",
+                message=f"Run {run_id} is missing planned operation {step_index}.{slot}",
+            )
+        return operation
+
     def _assert_planned_invocations_exist(self, *, run_id: int, step: ExecutionPlanStep) -> None:
         for plan_agent in step.agents:
             _ = self._get_planned_invocation_or_raise(
                 run_id=run_id,
                 step_index=step.index,
                 slot=plan_agent.slot,
+            )
+        for plan_operation in step.operations:
+            _ = self._get_planned_operation_or_raise(
+                run_id=run_id,
+                step_index=step.index,
+                slot=plan_operation.slot,
             )
 
     def _persist_failed_invocation(
@@ -1478,6 +1611,28 @@ class RunService:
             trace_span_id=trace_span_id,
         )
 
+    def _persist_failed_operation(
+        self,
+        operation: RunOperationInvocation,
+        failure: RunExecutionError,
+        *,
+        request_metadata: dict[str, Any] | None,
+        response_metadata: dict[str, Any] | None,
+        duration_ms: int | None,
+        trace_span_id: str | None,
+    ) -> None:
+        if request_metadata is not None:
+            operation.request_metadata = deepcopy(request_metadata)
+        _ = self.run_operation_invocation_repository.persist_failure(
+            operation,
+            error_code=failure.code,
+            error_message=failure.message,
+            error_details=list(failure.details),
+            response_metadata=response_metadata,
+            duration_ms=duration_ms,
+            trace_span_id=trace_span_id,
+        )
+
     def _skip_pending_steps_after_failure(self, *, run_id: int, after_step_index: int) -> None:
         for step in self.run_step_repository.list_by_run(run_id):
             if step.step_index <= after_step_index or step.status != "pending":
@@ -1495,6 +1650,16 @@ class RunService:
                         invocation,
                         error_code="run_step_skipped",
                         error_message="Run failed before this invocation started",
+                    )
+            for operation in self.run_operation_invocation_repository.list_by_run_step(
+                run_id,
+                step.step_index,
+            ):
+                if operation.status == "pending":
+                    _ = self.run_operation_invocation_repository.persist_skipped(
+                        operation,
+                        error_code="run_step_skipped",
+                        error_message="Run failed before this operation started",
                     )
 
     @staticmethod
@@ -1545,6 +1710,7 @@ class RunService:
     ) -> tuple[dict[str, Any], int, str | None]:
         step_index = step.index
         prepared_invocations: list[_PreparedAgentInvocation] = []
+        prepared_operations: list[_PreparedOperationInvocation] = []
         step_slot_outputs: dict[str, Any] = {}
         fatal_error: str | None = None
 
@@ -1554,7 +1720,7 @@ class RunService:
                 step_index=step_index,
                 slot=plan_agent.slot,
             )
-            prepared, failure = self._prepare_agent_invocation(
+            prepared_agent, agent_failure = self._prepare_agent_invocation(
                 runtime_context=_RuntimeInvocationContext(
                     run_id=run.id,
                     target_kind=self._run_target_kind(plan),
@@ -1570,63 +1736,155 @@ class RunService:
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
             )
-            if prepared is None:
-                assert failure is not None
+            if prepared_agent is None:
+                assert agent_failure is not None
                 self._persist_failed_invocation(
                     invocation,
-                    failure,
+                    agent_failure,
                     tokens=0,
                     duration_ms=None,
-                    trace_span_id=failure.trace_span_id,
+                    trace_span_id=agent_failure.trace_span_id,
                 )
                 step_slot_outputs[plan_agent.slot] = None
                 if not plan_agent.optional and fatal_error is None:
-                    fatal_error = failure.message
+                    fatal_error = agent_failure.message
                 continue
             _ = self.run_agent_invocation_repository.mark_running(
                 invocation,
-                resolved_input=prepared.resolved_input,
+                resolved_input=prepared_agent.resolved_input,
                 resolved_input_origin=self._runtime_resolved_input_origin(plan_agent),
             )
-            prepared_invocations.append(prepared)
+            prepared_invocations.append(prepared_agent)
+
+        for plan_operation in step.operations:
+            operation = self._get_planned_operation_or_raise(
+                run_id=run.id,
+                step_index=step_index,
+                slot=plan_operation.slot,
+            )
+            prepared_operation, operation_failure = self._prepare_operation_invocation(
+                step_index=step_index,
+                plan_operation=plan_operation,
+                invocation=operation,
+                workflow_package_id=run.workflow_package_id,
+            )
+            if prepared_operation is None:
+                assert operation_failure is not None
+                self._persist_failed_operation(
+                    operation,
+                    operation_failure,
+                    request_metadata=None,
+                    response_metadata=None,
+                    duration_ms=None,
+                    trace_span_id=operation_failure.trace_span_id,
+                )
+                step_slot_outputs[plan_operation.slot] = None
+                if not plan_operation.optional and fatal_error is None:
+                    fatal_error = operation_failure.message
+                continue
+            _ = self.run_operation_invocation_repository.mark_running(operation)
+            prepared_operations.append(prepared_operation)
 
         self.session.commit()
-        results = await asyncio.gather(
+        invocation_results = await asyncio.gather(
             *(
-                self._execute_invocation(prepared, trace_id=trace_id)
-                for prepared in prepared_invocations
+                self._execute_invocation(prepared_agent, trace_id=trace_id)
+                for prepared_agent in prepared_invocations
+            ),
+            return_exceptions=True,
+        )
+        operation_results = await asyncio.gather(
+            *(
+                self._execute_operation(
+                    prepared_operation,
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                    trace_id=trace_id,
+                )
+                for prepared_operation in prepared_operations
             ),
             return_exceptions=True,
         )
 
         step_tokens = 0
-        for index, prepared in enumerate(prepared_invocations):
-            result = results[index]
-            if isinstance(result, Exception):
-                failure = self._coerce_execution_error(result)
+        for index, prepared_agent in enumerate(prepared_invocations):
+            agent_result = invocation_results[index]
+            if isinstance(agent_result, BaseException):
+                failure = self._coerce_execution_error(agent_result)
                 self._persist_failed_invocation(
-                    prepared.invocation,
+                    prepared_agent.invocation,
                     failure,
                     tokens=0,
                     duration_ms=None,
                     trace_span_id=failure.trace_span_id,
                 )
-                step_slot_outputs[prepared.slot] = None
-                if not prepared.optional and fatal_error is None:
+                step_slot_outputs[prepared_agent.slot] = None
+                if not prepared_agent.optional and fatal_error is None:
                     fatal_error = failure.message
                 continue
 
-            assert isinstance(result, RunAgentInvocationResult)
-            step_tokens += result.tokens
+            assert isinstance(agent_result, RunAgentInvocationResult)
+            step_tokens += agent_result.tokens
             _ = self.run_agent_invocation_repository.persist_success(
-                prepared.invocation,
-                output=result.output,
+                prepared_agent.invocation,
+                output=agent_result.output,
                 output_origin="executed",
-                tokens=result.tokens,
-                duration_ms=result.duration_ms,
-                trace_span_id=result.trace_span_id,
+                tokens=agent_result.tokens,
+                duration_ms=agent_result.duration_ms,
+                trace_span_id=agent_result.trace_span_id,
             )
-            step_slot_outputs[prepared.slot] = result.output
+            step_slot_outputs[prepared_agent.slot] = agent_result.output
+
+        for index, prepared_operation in enumerate(prepared_operations):
+            operation_result_entry = operation_results[index]
+            if isinstance(operation_result_entry, BaseException):
+                failure = self._coerce_operation_execution_error(operation_result_entry)
+                self._persist_failed_operation(
+                    prepared_operation.invocation,
+                    failure,
+                    request_metadata=None,
+                    response_metadata=None,
+                    duration_ms=None,
+                    trace_span_id=failure.trace_span_id,
+                )
+                step_slot_outputs[prepared_operation.slot] = None
+                if not prepared_operation.optional and fatal_error is None:
+                    fatal_error = failure.message
+                continue
+
+            operation_result, trace_span_id = operation_result_entry
+            if operation_result.error is not None:
+                failure = RunExecutionError(
+                    code=operation_result.error.code,
+                    message=operation_result.error.message,
+                    details=operation_result.error.details,
+                    trace_span_id=trace_span_id,
+                )
+                self._persist_failed_operation(
+                    prepared_operation.invocation,
+                    failure,
+                    request_metadata=operation_result.request_metadata,
+                    response_metadata=operation_result.response_metadata,
+                    duration_ms=operation_result.duration_ms,
+                    trace_span_id=trace_span_id,
+                )
+                step_slot_outputs[prepared_operation.slot] = None
+                if not prepared_operation.optional and fatal_error is None:
+                    fatal_error = failure.message
+                continue
+
+            prepared_operation.invocation.request_metadata = deepcopy(
+                operation_result.request_metadata
+            )
+            _ = self.run_operation_invocation_repository.persist_success(
+                prepared_operation.invocation,
+                output=operation_result.output,
+                output_origin="executed",
+                response_metadata=operation_result.response_metadata,
+                duration_ms=operation_result.duration_ms,
+                trace_span_id=trace_span_id,
+            )
+            step_slot_outputs[prepared_operation.slot] = operation_result.output
 
         return step_slot_outputs, step_tokens, fatal_error
 
@@ -1679,6 +1937,37 @@ class RunService:
         except OutputSchemaCompilerError as exc:
             failure = RunExecutionError(
                 code="agent_schema_build_failed",
+                message=str(exc),
+            )
+            return None, failure
+
+    def _prepare_operation_invocation(
+        self,
+        *,
+        step_index: int,
+        plan_operation: ExecutionPlanOperation,
+        invocation: RunOperationInvocation,
+        workflow_package_id: int | None,
+    ) -> tuple[_PreparedOperationInvocation | None, RunExecutionError | None]:
+        try:
+            output_model = self._resolve_runtime_operation_output_model(plan_operation)
+            return (
+                _PreparedOperationInvocation(
+                    operation=plan_operation,
+                    output_model=output_model,
+                    invocation=invocation,
+                    optional=plan_operation.optional,
+                    step_index=step_index,
+                    slot=plan_operation.slot,
+                    workflow_package_id=workflow_package_id,
+                ),
+                None,
+            )
+        except RunExecutionError as exc:
+            return None, exc
+        except OutputSchemaCompilerError as exc:
+            failure = RunExecutionError(
+                code="operation_schema_build_failed",
                 message=str(exc),
             )
             return None, failure
@@ -1978,6 +2267,63 @@ class RunService:
             trace_span_id=trace_span_id,
         )
 
+    async def _execute_operation(
+        self,
+        prepared: _PreparedOperationInvocation,
+        *,
+        initial_input: dict[str, Any],
+        slot_outputs: dict[tuple[int, str], Any],
+        trace_id: str | None,
+    ) -> tuple[HttpOperationExecutionResult, str | None]:
+        if trace_id is None:
+            return await self._execute_operation_with_trace_span(
+                prepared,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+                trace_span_id=None,
+            )
+
+        with create_logfire_span(
+            "Run step {step_index} slot {slot} operation {operation_key}",
+            step_index=prepared.step_index,
+            slot=prepared.slot,
+            operation_key=prepared.operation.operation_key,
+            run_trace_id=trace_id,
+        ) as operation_span:
+            return await self._execute_operation_with_trace_span(
+                prepared,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+                trace_span_id=format_current_span_id(operation_span),
+            )
+
+    async def _execute_operation_with_trace_span(
+        self,
+        prepared: _PreparedOperationInvocation,
+        *,
+        initial_input: dict[str, Any],
+        slot_outputs: dict[tuple[int, str], Any],
+        trace_span_id: str | None,
+    ) -> tuple[HttpOperationExecutionResult, str | None]:
+        try:
+            result = await self.http_operation_execution_service.invoke(
+                operation=prepared.operation,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+                workflow_package_id=prepared.workflow_package_id,
+                output_model=prepared.output_model,
+            )
+        except HttpOperationExecutionError as exc:
+            result = HttpOperationExecutionResult(
+                output=None,
+                request_metadata=deepcopy(exc.request_metadata or {}),
+                response_metadata=deepcopy(exc.response_metadata or {}),
+                duration_ms=0 if exc.duration_ms is None else exc.duration_ms,
+                status_code=exc.status_code,
+                error=exc,
+            )
+        return result, trace_span_id
+
     async def _invoke_agent(
         self,
         *,
@@ -2066,6 +2412,32 @@ class RunService:
             raise RunExecutionError(
                 code="run_output_schema_missing",
                 message=f"Agent {agent.key!r} references a missing output schema version",
+            )
+        return output_schema
+
+    def _resolve_runtime_operation_output_model(
+        self,
+        operation: ExecutionPlanOperation,
+    ) -> type[BaseModel]:
+        output_schema = self._resolve_runtime_operation_output_schema(operation)
+        return self.schema_compiler.build_runtime_model(output_schema)
+
+    def _resolve_runtime_operation_output_schema(
+        self,
+        operation: ExecutionPlanOperation,
+    ) -> OutputSchema:
+        if operation.package_runtime_operation is not None:
+            return self._package_output_schema_candidate(
+                operation.package_runtime_operation.output_schema
+            )
+        output_schema = self.output_schema_repository.get(operation.output_schema_id)
+        if output_schema is None or output_schema.version != operation.output_schema_version:
+            raise RunExecutionError(
+                code="run_operation_output_schema_missing",
+                message=(
+                    f"Operation {operation.operation_key!r} references a missing "
+                    "output schema version"
+                ),
             )
         return output_schema
 
@@ -2217,7 +2589,7 @@ class RunService:
         )
 
     @staticmethod
-    def _coerce_execution_error(exc: Exception) -> RunExecutionError:
+    def _coerce_execution_error(exc: BaseException) -> RunExecutionError:
         if isinstance(exc, RunExecutionError):
             return exc
         if isinstance(exc, ApiError):
@@ -2233,6 +2605,24 @@ class RunService:
                 details=list(exc.details),
             )
         return RunExecutionError(code="agent_execution_failed", message=str(exc))
+
+    @staticmethod
+    def _coerce_operation_execution_error(exc: BaseException) -> RunExecutionError:
+        if isinstance(exc, RunExecutionError):
+            return exc
+        if isinstance(exc, HttpOperationExecutionError):
+            return RunExecutionError(
+                code=exc.code,
+                message=exc.message,
+                details=list(exc.details),
+            )
+        if isinstance(exc, ApiError):
+            return RunExecutionError(
+                code=exc.code,
+                message=exc.message,
+                details=list(exc.details),
+            )
+        return RunExecutionError(code="operation_execution_failed", message=str(exc))
 
     @staticmethod
     def _error_payload(error: RunExecutionError) -> dict[str, Any]:
@@ -2603,6 +2993,13 @@ class RunService:
                     key=lambda item: (item.position, item.id),
                 )
             ],
+            "operationInvocations": [
+                RunService._to_operation_invocation_read(operation)
+                for operation in sorted(
+                    cast(list[RunOperationInvocation], step.operation_invocations),
+                    key=lambda item: (item.position, item.id),
+                )
+            ],
         }
 
     @staticmethod
@@ -2640,6 +3037,44 @@ class RunService:
             "persistedAt": invocation.persisted_at,
             "createdAt": invocation.created_at,
             "updatedAt": invocation.updated_at,
+        }
+
+    @staticmethod
+    def _to_operation_invocation_read(operation: RunOperationInvocation) -> dict[str, Any]:
+        return {
+            "id": operation.id,
+            "runStepId": operation.run_step_id,
+            "runId": operation.run_id,
+            "stepIndex": operation.step_index,
+            "slot": operation.slot,
+            "position": operation.position,
+            "operationKey": operation.operation_key,
+            "operationKind": operation.operation_kind,
+            "outputSchemaId": operation.output_schema_id,
+            "outputSchemaVersion": operation.output_schema_version,
+            "method": operation.method,
+            "timeoutSeconds": operation.timeout_seconds,
+            "requestMetadata": deepcopy(operation.request_metadata),
+            "responseMetadata": deepcopy(operation.response_metadata),
+            "graphMetadata": deepcopy(operation.graph_metadata),
+            "optional": operation.optional,
+            "status": operation.status,
+            "output": deepcopy(operation.output),
+            "outputOrigin": operation.output_origin,
+            "errorCode": operation.error_code,
+            "errorMessage": operation.error_message,
+            "errorDetails": operation.error_details,
+            "durationMs": operation.duration_ms,
+            "traceSpanId": operation.trace_span_id,
+            "sourceOperationInvocationId": operation.source_operation_invocation_id,
+            "sourceRunId": operation.source_run_id,
+            "sourceRunStepId": operation.source_run_step_id,
+            "sourceStepIndex": operation.source_step_index,
+            "startedAt": operation.started_at,
+            "finishedAt": operation.finished_at,
+            "persistedAt": operation.persisted_at,
+            "createdAt": operation.created_at,
+            "updatedAt": operation.updated_at,
         }
 
 

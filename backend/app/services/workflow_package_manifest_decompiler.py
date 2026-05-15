@@ -80,7 +80,8 @@ def _strip_forbidden_fields(value: object) -> object:
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
         allow_local_id = (
-            source.get("kind") in {"step", "sequence", "fanout", "loop"} or "node" in source
+            source.get("kind") in {"step", "http", "sequence", "fanout", "loop"}
+            or "node" in source
         )
         sanitized: dict[str, object] = {}
         is_mcp_server = (

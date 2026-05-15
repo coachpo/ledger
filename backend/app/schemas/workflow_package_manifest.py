@@ -19,6 +19,7 @@ from pydantic import (
 from app.schemas.common import CamelModel
 
 WORKFLOW_PACKAGE_MANIFEST_API_VERSION = "ledger.workflowPackage/v1"
+WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS = ("GET", "POST")
 
 _STABLE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 _MCP_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,119}$")
@@ -29,6 +30,7 @@ _NODE_OUTPUT_RE = re.compile(
     r"^nodes\.(?P<node_id>[a-z][a-z0-9_]{0,119})\.outputs\."
     + r"(?P<slot>[a-z][a-z0-9_]{0,119})(?:\.(?P<path>.+))?$"
 )
+_SECRET_REF_BODY_RE = re.compile(r"^secrets\.(?P<key>[a-z][a-z0-9_]{0,119})$")
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
@@ -431,6 +433,128 @@ class WorkflowPackageReference(CamelModel):
         return self.expression
 
 
+class WorkflowPackageSecretReference(CamelModel):
+    expression: str
+    source: Literal["secrets"]
+    key: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_expression(cls, value: object) -> dict[str, str]:
+        if isinstance(value, cls):
+            return value.model_dump()
+        if not isinstance(value, str):
+            raise ValueError("Secret references must use ${{ secrets.<key> }} expression strings")
+        expression = value.strip()
+        match = _REF_EXPR_RE.fullmatch(expression)
+        if match is None:
+            raise ValueError("Secret references must use ${{ secrets.<key> }} expression strings")
+        body = match.group("body").strip()
+        secret_match = _SECRET_REF_BODY_RE.fullmatch(body)
+        if secret_match is None:
+            raise ValueError("Secret references must target secrets.<key>")
+        return {"expression": expression, "source": "secrets", "key": secret_match.group("key")}
+
+    @model_serializer(mode="plain")
+    def serialize_expression(self) -> str:
+        return self.expression
+
+
+def _validate_http_request_value(value: object, *, field_name: str) -> JsonValue:
+    if isinstance(value, dict):
+        return {
+            _required_text(key, field_name=f"{field_name} key"): _validate_http_request_value(
+                item,
+                field_name=f"{field_name}.{key}",
+            )
+            for key, item in cast(dict[object, object], value).items()
+        }
+    if isinstance(value, list):
+        return [
+            _validate_http_request_value(item, field_name=f"{field_name}[{index}]")
+            for index, item in enumerate(cast(list[object], value))
+        ]
+    if isinstance(value, str):
+        expression = value.strip()
+        if "${{" not in expression:
+            return value
+        match = _REF_EXPR_RE.fullmatch(expression)
+        if match is None:
+            raise ValueError(
+                f"{field_name} references must use standalone ${{{{ ... }}}} expression strings"
+            )
+        body = match.group("body").strip()
+        if body.startswith("secrets."):
+            _ = WorkflowPackageSecretReference.model_validate(expression)
+            return expression
+        _ = WorkflowPackageReference.model_validate(expression)
+        return expression
+    if isinstance(value, int | float | bool) or value is None:
+        return cast(JsonValue, value)
+    raise ValueError(f"{field_name} must be JSON-compatible")
+
+
+class WorkflowPackageHttpResponse(CamelModel):
+    output_schema: str = Field(alias="outputSchema", min_length=1, max_length=120)
+
+    @field_validator("output_schema", mode="before")
+    @classmethod
+    def validate_output_schema(cls, value: object) -> str:
+        return _local_ref(value, field_name="HTTP response outputSchema")
+
+
+class WorkflowPackageHttpNode(CamelModel):
+    kind: Literal["http"] = "http"
+    id: str = Field(min_length=1, max_length=120)
+    slot: str = Field(min_length=1, max_length=120)
+    method: str = Field(min_length=1, max_length=16)
+    url: str = Field(min_length=1)
+    headers: dict[str, str] = Field(default_factory=dict)
+    query: dict[str, str] = Field(default_factory=dict)
+    body: JsonValue | None = None
+    response: WorkflowPackageHttpResponse
+    timeout_seconds: StrictInt = Field(default=30, alias="timeoutSeconds", gt=0, le=30)
+    optional: StrictBool = False
+
+    @field_validator("id", "slot", mode="before")
+    @classmethod
+    def validate_local_id(cls, value: object) -> str:
+        return _stable_key(value, field_name="HTTP node field")
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def validate_method(cls, value: object) -> str:
+        normalized = _required_text(value, field_name="HTTP method").upper()
+        if not normalized.isalpha():
+            raise ValueError("HTTP method must contain only letters")
+        return normalized
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def validate_url(cls, value: object) -> str:
+        normalized = _required_text(value, field_name="HTTP url")
+        _ = _validate_http_request_value(normalized, field_name="url")
+        return normalized
+
+    @field_validator("headers", "query", mode="before")
+    @classmethod
+    def validate_request_string_map(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> dict[str, str]:
+        field_name = info.field_name or "HTTP request map"
+        mapping = _string_map(value, field_name=field_name)
+        for key, item in mapping.items():
+            _ = _validate_http_request_value(item, field_name=f"{field_name}.{key}")
+        return mapping
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def validate_body(cls, value: object) -> JsonValue | None:
+        return _validate_http_request_value(value, field_name="body")
+
+
 class WorkflowPackageStepNode(CamelModel):
     kind: Literal["step"] = "step"
     id: str = Field(min_length=1, max_length=120)
@@ -497,6 +621,7 @@ class WorkflowPackageLoopNode(CamelModel):
 
 WorkflowPackageNode = Annotated[
     WorkflowPackageStepNode
+    | WorkflowPackageHttpNode
     | WorkflowPackageSequenceNode
     | WorkflowPackageFanoutNode
     | WorkflowPackageLoopNode,
@@ -574,6 +699,7 @@ class WorkflowPackageManifestParseResult(CamelModel):
     diagnostics: list[WorkflowPackageManifestDiagnostic] = Field(default_factory=list)
 
 
+_ = WorkflowPackageHttpNode.model_rebuild()
 _ = WorkflowPackageSequenceNode.model_rebuild()
 _ = WorkflowPackageFanoutBranch.model_rebuild()
 _ = WorkflowPackageFanoutNode.model_rebuild()
@@ -583,12 +709,15 @@ _ = WorkflowPackageManifest.model_rebuild()
 
 
 __all__ = [
+    "WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS",
     "WORKFLOW_PACKAGE_MANIFEST_API_VERSION",
     "JsonValue",
     "WorkflowPackageAgent",
     "WorkflowPackageCapabilityProfile",
     "WorkflowPackageFanoutBranch",
     "WorkflowPackageFanoutNode",
+    "WorkflowPackageHttpNode",
+    "WorkflowPackageHttpResponse",
     "WorkflowPackageLoopNode",
     "WorkflowPackageManifest",
     "WorkflowPackageManifestDiagnostic",
@@ -600,6 +729,7 @@ __all__ = [
     "WorkflowPackageNode",
     "WorkflowPackageOutputSchema",
     "WorkflowPackageReference",
+    "WorkflowPackageSecretReference",
     "WorkflowPackageSequenceNode",
     "WorkflowPackageStepNode",
     "WorkflowPackageWorkflow",

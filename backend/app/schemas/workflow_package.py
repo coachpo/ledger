@@ -1,6 +1,7 @@
 # pyright: reportExplicitAny=false
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
@@ -20,6 +21,21 @@ class WorkflowPackageStatus(str, Enum):  # noqa: UP042
 class WorkflowPackageImportMode(str, Enum):  # noqa: UP042
     CREATE = "create"
     CREATE_VERSION = "createVersion"
+
+
+_SECRET_BINDING_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
+
+
+def normalize_workflow_package_secret_binding_key(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Secret binding key must be a string")
+    normalized = value.strip()
+    if _SECRET_BINDING_KEY_RE.fullmatch(normalized) is None:
+        raise ValueError(
+            "Secret binding key must start with a lowercase letter and use only "
+            + "lowercase letters, numbers, and underscores"
+        )
+    return normalized
 
 
 def _validate_manifest_source(value: object) -> str:
@@ -84,6 +100,37 @@ class WorkflowPackageManifestRead(CamelModel):
     package_definition: dict[str, Any]
     manifest_hash: str
     compiled_hash: str
+
+
+class WorkflowPackageSecretBindingRead(CamelModel):
+    package_id: int
+    key: str
+    has_value: bool = Field(alias="hasValue")
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class WorkflowPackageSecretBindingListRead(CamelModel):
+    items: list[WorkflowPackageSecretBindingRead]
+
+
+class WorkflowPackageSecretBindingUpdateRequest(CamelModel):
+    value: str = Field(min_length=1)
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Secret binding value must be a string")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Secret binding value is required")
+        return normalized
 
 
 class WorkflowPackageRead(CamelModel):
@@ -179,9 +226,13 @@ __all__ = [
     "WorkflowPackageManifestRequest",
     "WorkflowPackageMetadataRead",
     "WorkflowPackageRead",
+    "WorkflowPackageSecretBindingListRead",
+    "WorkflowPackageSecretBindingRead",
+    "WorkflowPackageSecretBindingUpdateRequest",
     "WorkflowPackageStatus",
     "WorkflowPackageUpdateRequest",
     "WorkflowPackageValidationRead",
     "WorkflowPackageVersionListRead",
     "WorkflowPackageVersionRead",
+    "normalize_workflow_package_secret_binding_key",
 ]

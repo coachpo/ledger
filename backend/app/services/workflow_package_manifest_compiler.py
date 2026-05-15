@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -10,12 +11,14 @@ from app.schemas.workflow_package_manifest import (
     WorkflowPackageAgent,
     WorkflowPackageCapabilityProfile,
     WorkflowPackageFanoutNode,
+    WorkflowPackageHttpNode,
     WorkflowPackageManifest,
     WorkflowPackageManifestDiagnostic,
     WorkflowPackageManifestDiagnosticSeverity,
     WorkflowPackageMcpServer,
     WorkflowPackageNode,
     WorkflowPackageReference,
+    WorkflowPackageSecretReference,
     WorkflowPackageSequenceNode,
     WorkflowPackageStepNode,
     WorkflowPackageWorkflow,
@@ -24,6 +27,8 @@ from app.services.workflow_package_manifest_parser import (
     locate_workflow_package_manifest_path,
     parse_workflow_package_manifest,
 )
+
+_REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 
 
 class WorkflowPackageManifestCompilerError(ValueError):
@@ -42,6 +47,11 @@ class _WorkflowCompileContext:
         step_index = len(self.steps) + 1
         self.steps.append({"index": step_index, "agents": [agent]})
         return step_index, str(agent["slot"])
+
+    def create_operation(self, operation: dict[str, object]) -> tuple[int, str]:
+        step_index = len(self.steps) + 1
+        self.steps.append({"index": step_index, "operations": [operation]})
+        return step_index, str(operation["slot"])
 
     def register_outputs(self, node_id: str, outputs: dict[str, tuple[int, str]]) -> None:
         self.node_outputs[node_id] = dict(outputs)
@@ -115,7 +125,7 @@ def _strip_empty_private_mcp_fields(value: object) -> object:
             sanitized[raw_key] = stripped_item
         return sanitized
     if isinstance(value, list):
-        return [_strip_empty_private_mcp_fields(item) for item in value]
+        return [_strip_empty_private_mcp_fields(item) for item in cast(list[object], value)]
     return value
 
 
@@ -215,6 +225,8 @@ def _compile_node(
 ) -> dict[str, tuple[int, str]]:
     if isinstance(node, WorkflowPackageStepNode):
         return _compile_step_node(node, context=context, graph_path=graph_path)
+    if isinstance(node, WorkflowPackageHttpNode):
+        return _compile_http_node(node, context=context, graph_path=graph_path)
     if isinstance(node, WorkflowPackageSequenceNode):
         sequence_outputs: dict[str, tuple[int, str]] = {}
         context.graph_nodes.append(
@@ -317,6 +329,53 @@ def _compile_step_node(
     return output
 
 
+def _compile_http_node(
+    node: WorkflowPackageHttpNode, *, context: _WorkflowCompileContext, graph_path: str
+) -> dict[str, tuple[int, str]]:
+    request: dict[str, object] = {
+        "url": _compile_http_request_value(node.url, context),
+        "headers": _compile_http_request_value(node.headers, context),
+        "query": _compile_http_request_value(node.query, context),
+    }
+    if node.body is not None:
+        request["body"] = _compile_http_request_value(node.body, context)
+    operation: dict[str, object] = {
+        "operationKind": "http",
+        "operationKey": node.id,
+        "slot": node.slot,
+        "method": node.method,
+        "request": request,
+        "response": {"outputSchema": node.response.output_schema},
+        "timeoutSeconds": node.timeout_seconds,
+        "optional": node.optional,
+    }
+    step_index, slot = context.create_operation(operation)
+    output = {node.slot: (step_index, slot)}
+    context.register_outputs(node.id, output)
+    context.graph_nodes.append(
+        {
+            "id": graph_path,
+            "nodeId": node.id,
+            "kind": "http",
+            "stepIndex": step_index,
+            "slot": node.slot,
+            "operationKey": node.id,
+            "method": node.method,
+            "refs": _compile_graph_request_refs(
+                {
+                    "url": node.url,
+                    "headers": node.headers,
+                    "query": node.query,
+                    "body": node.body,
+                },
+                context,
+            ),
+            "optional": node.optional,
+        }
+    )
+    return output
+
+
 def _compile_ref(
     reference: WorkflowPackageReference, context: _WorkflowCompileContext
 ) -> dict[str, object]:
@@ -327,6 +386,54 @@ def _compile_ref(
     if reference.output_path is not None:
         payload["path"] = reference.output_path
     return payload
+
+
+def _compile_http_request_value(value: object, context: _WorkflowCompileContext) -> object:
+    if isinstance(value, dict):
+        source = cast(dict[object, object], value)
+        return {
+            str(key): _compile_http_request_value(item, context)
+            for key, item in source.items()
+        }
+    if isinstance(value, list):
+        return [_compile_http_request_value(item, context) for item in cast(list[object], value)]
+    if not isinstance(value, str):
+        return value
+    expression = value.strip()
+    match = _REF_EXPR_RE.fullmatch(expression)
+    if match is None:
+        return value
+    body = match.group("body").strip()
+    if body.startswith("secrets."):
+        secret_ref = WorkflowPackageSecretReference.model_validate(expression)
+        return {"from": "secret", "key": secret_ref.key}
+    return _compile_ref(WorkflowPackageReference.model_validate(expression), context)
+
+
+def _compile_graph_request_refs(value: object, context: _WorkflowCompileContext) -> object:
+    if isinstance(value, dict):
+        source = cast(dict[object, object], value)
+        compiled_mapping = {
+            str(key): _compile_graph_request_refs(item, context)
+            for key, item in source.items()
+        }
+        return {key: item for key, item in compiled_mapping.items() if item is not None}
+    if isinstance(value, list):
+        compiled_items = [
+            _compile_graph_request_refs(item, context) for item in cast(list[object], value)
+        ]
+        return [item for item in compiled_items if item is not None]
+    if not isinstance(value, str):
+        return None
+    expression = value.strip()
+    match = _REF_EXPR_RE.fullmatch(expression)
+    if match is None:
+        return None
+    body = match.group("body").strip()
+    if body.startswith("secrets."):
+        secret_ref = WorkflowPackageSecretReference.model_validate(expression)
+        return {"source": "secrets", "key": secret_ref.key}
+    return _compile_graph_ref(WorkflowPackageReference.model_validate(expression), context)
 
 
 def _compile_graph_ref(
@@ -401,9 +508,10 @@ def _validate_package_refs(
                 )
 
     for workflow_index, workflow in enumerate(manifest.spec.workflows):
-        _validate_workflow_agent_refs(
+        _validate_workflow_refs(
             workflow.flow,
             agents,
+            output_schemas,
             path=f"spec.workflows[{workflow_index}].flow",
             source=source,
             diagnostics=diagnostics,
@@ -437,9 +545,10 @@ def _profile_tool_key_path(profile_key: str, field: str) -> str:
     return f"spec.capabilityProfiles.{profile_key}.toolKeys"
 
 
-def _validate_workflow_agent_refs(
+def _validate_workflow_refs(
     node: WorkflowPackageNode,
     agents: set[str],
+    output_schemas: set[str],
     *,
     path: str,
     source: str | None,
@@ -453,24 +562,45 @@ def _validate_workflow_agent_refs(
                 )
             )
         return
+    if isinstance(node, WorkflowPackageHttpNode):
+        if node.response.output_schema not in output_schemas:
+            diagnostics.append(
+                _diagnostic(
+                    f"Package output schema {node.response.output_schema!r} was not found",
+                    path=f"{path}.response.outputSchema",
+                    source=source,
+                )
+            )
+        return
     if isinstance(node, WorkflowPackageSequenceNode):
         for index, child in enumerate(node.nodes):
-            _validate_workflow_agent_refs(
-                child, agents, path=f"{path}.nodes[{index}]", source=source, diagnostics=diagnostics
+            _validate_workflow_refs(
+                child,
+                agents,
+                output_schemas,
+                path=f"{path}.nodes[{index}]",
+                source=source,
+                diagnostics=diagnostics,
             )
         return
     if isinstance(node, WorkflowPackageFanoutNode):
         for index, branch in enumerate(node.branches):
-            _validate_workflow_agent_refs(
+            _validate_workflow_refs(
                 branch.node,
                 agents,
+                output_schemas,
                 path=f"{path}.branches[{index}].node",
                 source=source,
                 diagnostics=diagnostics,
             )
         return
-    _validate_workflow_agent_refs(
-        node.sequence, agents, path=f"{path}.sequence", source=source, diagnostics=diagnostics
+    _validate_workflow_refs(
+        node.sequence,
+        agents,
+        output_schemas,
+        path=f"{path}.sequence",
+        source=source,
+        diagnostics=diagnostics,
     )
 
 

@@ -16,6 +16,7 @@ from ruamel.yaml.events import AliasEvent, ScalarEvent
 from app.schemas.workflow_package_manifest import (
     WORKFLOW_PACKAGE_MANIFEST_API_VERSION,
     WorkflowPackageFanoutNode,
+    WorkflowPackageHttpNode,
     WorkflowPackageLoopNode,
     WorkflowPackageManifest,
     WorkflowPackageManifestDiagnostic,
@@ -50,6 +51,9 @@ _FORBIDDEN_MANIFEST_KEYS = {
     "encrypted",
     "password",
 }
+_REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
+_HTTP_REQUEST_REF_FIELDS = {"url", "headers", "query", "body"}
+
 _ALIAS_LOC = {
     "api_version": "apiVersion",
     "capability_profiles": "capabilityProfiles",
@@ -64,6 +68,7 @@ _ALIAS_LOC = {
     "budget_usd": "budgetUsd",
     "from_": "from",
     "max_iterations": "maxIterations",
+    "timeout_seconds": "timeoutSeconds",
 }
 
 
@@ -118,6 +123,10 @@ class WorkflowPackageManifestParser:
         forbidden_diagnostics = self._validate_forbidden_keys(data, ())
         if forbidden_diagnostics:
             return WorkflowPackageManifestParseResult(diagnostics=forbidden_diagnostics)
+
+        secret_ref_diagnostics = self._validate_secret_reference_locations(data, data, (), False)
+        if secret_ref_diagnostics:
+            return WorkflowPackageManifestParseResult(diagnostics=secret_ref_diagnostics)
 
         api_version = data.get("apiVersion")
         if api_version != WORKFLOW_PACKAGE_MANIFEST_API_VERSION:
@@ -271,6 +280,56 @@ class WorkflowPackageManifestParser:
                 diagnostics.extend(self._validate_forbidden_keys(child, (*tokens, index)))
         return diagnostics
 
+    def _validate_secret_reference_locations(
+        self,
+        root: object,
+        value: object,
+        tokens: tuple[_PathToken, ...],
+        in_http_request_field: bool,
+    ) -> list[WorkflowPackageManifestDiagnostic]:
+        diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+        if isinstance(value, Mapping):
+            is_http_node = cast(Mapping[object, object], value).get("kind") == "http"
+            for key, child in cast(Mapping[object, object], value).items():
+                child_tokens = (*tokens, key) if isinstance(key, str) else tokens
+                child_in_http_request = in_http_request_field or (
+                    is_http_node and isinstance(key, str) and key in _HTTP_REQUEST_REF_FIELDS
+                )
+                diagnostics.extend(
+                    self._validate_secret_reference_locations(
+                        root,
+                        child,
+                        child_tokens,
+                        child_in_http_request,
+                    )
+                )
+            return diagnostics
+        if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            for index, child in enumerate(value):
+                diagnostics.extend(
+                    self._validate_secret_reference_locations(
+                        root,
+                        child,
+                        (*tokens, index),
+                        in_http_request_field,
+                    )
+                )
+            return diagnostics
+        if (
+            isinstance(value, str)
+            and "${{" in value
+            and "secrets." in value
+            and not in_http_request_field
+        ):
+            diagnostics.append(
+                self._diagnostic(
+                    "Secret references are only supported in HTTP request fields",
+                    path=self._manifest_path(tokens),
+                    location=self._location_for(root, tokens),
+                )
+            )
+        return diagnostics
+
     def _validate_legacy_skill_refs(self, data: object) -> list[WorkflowPackageManifestDiagnostic]:
         if not isinstance(data, Mapping):
             return []
@@ -395,7 +454,7 @@ class WorkflowPackageManifestParser:
                 slots: set[str] = set()
                 for index, child in enumerate(current.nodes):
                     child_path = (*current_path, "nodes", index)
-                    if isinstance(child, WorkflowPackageStepNode):
+                    if isinstance(child, WorkflowPackageStepNode | WorkflowPackageHttpNode):
                         if child.slot in slots:
                             slot_path = (*child_path, "slot")
                             diagnostics.append(
@@ -450,6 +509,19 @@ class WorkflowPackageManifestParser:
                     diagnostics.append(diagnostic)
             available_outputs[node.id] = {node.slot}
             return diagnostics
+        if isinstance(node, WorkflowPackageHttpNode):
+            for request_path, reference in self._http_request_references(node):
+                diagnostic = self._validate_reference(
+                    reference,
+                    (*path, *request_path),
+                    data,
+                    available_outputs,
+                    all_node_ids,
+                )
+                if diagnostic is not None:
+                    diagnostics.append(diagnostic)
+            available_outputs[node.id] = {node.slot}
+            return diagnostics
         if isinstance(node, WorkflowPackageSequenceNode):
             sequence_outputs: set[str] = set()
             for index, child in enumerate(node.nodes):
@@ -499,6 +571,50 @@ class WorkflowPackageManifestParser:
         )
         available_outputs[node.id] = set(available_outputs.get(node.sequence.id, set()))
         return diagnostics
+
+    def _http_request_references(
+        self,
+        node: WorkflowPackageHttpNode,
+    ) -> list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]]:
+        references: list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]] = []
+        for field_name, value in (
+            ("url", node.url),
+            ("headers", node.headers),
+            ("query", node.query),
+            ("body", node.body),
+        ):
+            references.extend(self._collect_http_request_references(value, (field_name,)))
+        return references
+
+    def _collect_http_request_references(
+        self,
+        value: object,
+        path: tuple[_PathToken, ...],
+    ) -> list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]]:
+        if isinstance(value, dict):
+            mapped_references: list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]] = []
+            for key, item in cast(dict[str, object], value).items():
+                mapped_references.extend(
+                    self._collect_http_request_references(item, (*path, key))
+                )
+            return mapped_references
+        if isinstance(value, list):
+            listed_references: list[tuple[tuple[_PathToken, ...], WorkflowPackageReference]] = []
+            for index, item in enumerate(value):
+                listed_references.extend(
+                    self._collect_http_request_references(item, (*path, index))
+                )
+            return listed_references
+        if not isinstance(value, str):
+            return []
+        expression = value.strip()
+        match = _REF_EXPR_RE.fullmatch(expression)
+        if match is None:
+            return []
+        body = match.group("body").strip()
+        if body.startswith("secrets."):
+            return []
+        return [(path, WorkflowPackageReference.model_validate(expression))]
 
     def _validate_reference(
         self,
@@ -590,7 +706,7 @@ class WorkflowPackageManifestParser:
         tokens: list[_PathToken] = []
         for item in loc:
             if isinstance(item, str):
-                if item in {"step", "sequence", "fanout", "loop"}:
+                if item in {"step", "http", "sequence", "fanout", "loop"}:
                     continue
                 tokens.append(_ALIAS_LOC.get(item, item))
             elif isinstance(item, int):

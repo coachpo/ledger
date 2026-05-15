@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.services.run_service import RunService
+from tests.test_workflow_package_manifest_http_node import http_node_package_source
 from tests.test_workflow_package_runtime_api import (
     _create_package,
     _drain_run_queue,
@@ -37,6 +39,71 @@ def _launch_package_run(
     )
     assert response.status_code == 201, response.json()
     return cast(dict[str, Any], response.json())
+
+
+def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": http_node_package_source()},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    for key, value in {
+        "slack_webhook_token": "slack-secret-value",
+        "body_token": "body-secret-value",
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package['id']}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "notify",
+            "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "MSFT"},
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    step = cast(dict[str, Any], detail["steps"][0])
+    operation_invocations = cast(list[dict[str, Any]], step["operationInvocations"])
+    request_metadata = cast(dict[str, Any], operation_invocations[0]["requestMetadata"])
+    serialized = json.dumps(detail, sort_keys=True)
+
+    assert step["invocations"] == []
+    assert len(operation_invocations) == 1
+    assert operation_invocations[0]["operationKey"] == "notify_slack"
+    assert operation_invocations[0]["operationKind"] == "http"
+    assert operation_invocations[0]["status"] == "pending"
+    assert request_metadata["headers"]["Authorization"] == {
+        "from": "secret",
+        "key": "slack_webhook_token",
+        "redacted": True,
+    }
+    assert request_metadata["body"]["token"] == {
+        "from": "secret",
+        "key": "body_token",
+        "redacted": True,
+    }
+    assert "slack-secret-value" not in serialized
+    assert "body-secret-value" not in serialized
+    assert "secretPayload" not in serialized
+    with session_factory() as session:
+        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
+        operation = session.query(RunOperationInvocation).filter_by(run_id=run_id).one()
+        assert operation.request_metadata == request_metadata
 
 
 def test_package_run_list_filters_and_detail_provenance_are_secret_safe(

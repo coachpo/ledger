@@ -14,6 +14,7 @@ from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
+from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 _FIXTURE = (
     Path(__file__).resolve().parent
@@ -86,6 +87,8 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
     assert mcp_server["query"] == {"exaApiKey": "exa-inline-key"}
     assert "secretRefs" not in mcp_server
     assert "requiredBindings" not in mcp_server
+    assert "fanout" not in _package_source()
+    assert "kind: sequence" in _package_source()
 
 
 def test_preflight_rejects_private_mcp_without_runtime_supported_tool_key(
@@ -297,3 +300,95 @@ def test_preflight_warns_on_deterministic_smoke_model_connection(
         "severity": "warning",
         "connectionKind": "deterministic_smoke",
     }
+
+
+def _create_http_package(client: TestClient) -> dict[str, Any]:
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": http_node_package_source()},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, Any], response.json())
+
+
+def test_preflight_blocks_missing_secret_binding_for_http_node(
+    client: TestClient,
+) -> None:
+    created = _create_http_package(client)
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'body_token' is not configured",
+    } in errors
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'slack_webhook_token' is not configured",
+    } in errors
+
+
+def test_preflight_accepts_configured_secret_bindings_for_http_node(
+    client: TestClient,
+) -> None:
+    created = _create_http_package(client)
+    for key in ("body_token", "slack_webhook_token"):
+        response = client.put(
+            f"/api/workflow-packages/{created['id']}/secret-bindings/{key}",
+            json={"value": f"{key}-secret"},
+        )
+        assert response.status_code == 200, response.json()
+        assert response.json() == {
+            "packageId": created["id"],
+            "key": key,
+            "hasValue": True,
+            "createdAt": response.json()["createdAt"],
+            "updatedAt": response.json()["updatedAt"],
+        }
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is True
+    assert body["blockingErrors"] == []
+
+
+def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
+    session_factory: sessionmaker[Session],
+) -> None:
+    compiled = compile_workflow_package_manifest(http_node_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    workflow = cast(list[dict[str, Any]], compiled_plan["workflows"])[0]
+    operation = cast(list[dict[str, Any]], workflow["steps"])[0]["operations"][0]
+    operation["method"] = "PATCH"
+    cast(dict[str, Any], operation["request"])["body"] = {"from": "step", "stepIndex": 1}
+    package_version = WorkflowPackageVersion(
+        package_id=987,
+        version=1,
+        manifest_source=http_node_package_source(),
+        manifest_hash="a" * 64,
+        package_definition=cast(dict[str, Any], compiled["packageDefinition"]),
+        compiled_plan=compiled_plan,
+        compiled_hash="b" * 64,
+        validation_summary={"diagnostics": []},
+    )
+
+    with session_factory() as session:
+        errors = WorkflowPackagePreflightService(session)._http_errors(
+            package_version,
+            compiled_plan,
+        )
+
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].method",
+        "issue": "Unsupported HTTP method 'PATCH'; allowed methods: GET, POST",
+    } in errors
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request.body",
+        "issue": "HTTP node step reference is malformed",
+    } in errors

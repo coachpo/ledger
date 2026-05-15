@@ -13,6 +13,7 @@ from app.services.execution_plan import (
     ExecutionPlanAgent,
     ExecutionPlanFinalOutput,
     ExecutionPlanGraphMetadata,
+    ExecutionPlanOperation,
     ExecutionPlanSource,
     ExecutionPlanSourceKind,
     ExecutionPlanStep,
@@ -24,13 +25,15 @@ from app.services.execution_plan import (
     PackagePrivateMcpConfig,
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
+    PackageRuntimeOperationSpec,
 )
 
 _PACKAGE_TARGET_ID = 1
 _PACKAGE_TARGET_VERSION = 1
 _PACKAGE_OUTPUT_SCHEMA_VERSION = 1
 _PACKAGE_AGENT_VERSION = 1
-_SUPPORTED_GRAPH_NODE_KINDS = {"sequence", "fanout", "loop", "step"}
+_SUPPORTED_GRAPH_NODE_KINDS = {"sequence", "fanout", "loop", "step", "http"}
+_EXECUTABLE_GRAPH_NODE_KINDS = {"step", "http"}
 
 
 @dataclass(frozen=True)
@@ -133,16 +136,23 @@ class PackageExecutionPlanBuilder:
                 for agent in step.agents
                 if agent.package_runtime_agent is not None
             )
+            package_operations = tuple(
+                operation.package_runtime_operation
+                for operation in step.operations
+                if operation.package_runtime_operation is not None
+            )
             package_steps.append(
                 PackageExecutionStep(
                     index=step.index,
                     agents=package_agents,
+                    operations=package_operations,
                     graph_metadata=step.graph_metadata,
                 )
             )
             steps[-1] = ExecutionPlanStep(
                 index=step.index,
                 agents=step.agents,
+                operations=step.operations,
                 graph_metadata=step.graph_metadata,
                 package_step=package_steps[-1],
             )
@@ -285,10 +295,27 @@ class PackageExecutionPlanBuilder:
             )
             for agent_index, raw_agent in enumerate(cast(list[Any], raw_step.get("agents") or []))
         )
+        operations = tuple(
+            self._build_step_operation(
+                workflow_key,
+                step_index,
+                operation_index,
+                self._require_mapping(
+                    raw_operation,
+                    field="operation",
+                    issue="invalid_operation",
+                ),
+                graph_metadata_by_step_slot=graph_metadata_by_step_slot,
+            )
+            for operation_index, raw_operation in enumerate(
+                cast(list[Any], raw_step.get("operations") or [])
+            )
+        )
         return ExecutionPlanStep(
             index=step_index,
             agents=agents,
-            graph_metadata=self._build_step_graph_metadata(agents),
+            operations=operations,
+            graph_metadata=self._build_step_graph_metadata(agents, operations),
         )
 
     def _build_step_agent(
@@ -328,6 +355,73 @@ class PackageExecutionPlanBuilder:
             package_runtime_agent=runtime_agent,
         )
 
+    def _build_step_operation(
+        self,
+        workflow_key: str,
+        step_index: int,
+        operation_index: int,
+        raw_operation: dict[str, Any],
+        *,
+        graph_metadata_by_step_slot: dict[tuple[int, str], ExecutionPlanGraphMetadata],
+    ) -> ExecutionPlanOperation:
+        field_base = (
+            f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+            f".operations[{operation_index}]"
+        )
+        operation_kind = str(raw_operation.get("operationKind") or "")
+        if operation_kind != "http":
+            raise WorkflowPackageExecutionPlanError.validation(
+                field=f"{field_base}.operationKind",
+                issue="unsupported_operation_kind",
+                message=f"Package workflow {workflow_key!r} has an unsupported operation",
+            )
+        operation_key = str(raw_operation.get("operationKey") or "")
+        response = self._require_mapping(
+            raw_operation.get("response"),
+            field=f"{field_base}.response",
+            issue="missing_operation_response",
+        )
+        schema_key = str(response.get("outputSchema") or "")
+        output_schema = self.output_schemas.get(schema_key)
+        if output_schema is None:
+            raise WorkflowPackageExecutionPlanError.validation(
+                field=f"{field_base}.response.outputSchema",
+                issue="missing_local_output_schema",
+                message=(
+                    f"Package operation {operation_key!r} references missing "
+                    f"output schema {schema_key!r}"
+                ),
+            )
+        request = self._require_mapping(
+            raw_operation.get("request"),
+            field=f"{field_base}.request",
+            issue="missing_operation_request",
+        )
+        slot = str(raw_operation["slot"])
+        runtime_operation = PackageRuntimeOperationSpec(
+            key=operation_key,
+            kind="http",
+            slot=slot,
+            method=str(raw_operation.get("method") or ""),
+            request=deepcopy(request),
+            output_schema=output_schema,
+            timeout_seconds=int(raw_operation.get("timeoutSeconds") or 30),
+            optional=bool(raw_operation.get("optional", False)),
+        )
+        return ExecutionPlanOperation(
+            slot=slot,
+            operation_key=runtime_operation.key,
+            operation_kind=runtime_operation.kind,
+            output_schema_id=output_schema.local_id,
+            output_schema_version=_PACKAGE_OUTPUT_SCHEMA_VERSION,
+            request=deepcopy(request),
+            method=runtime_operation.method,
+            timeout_seconds=runtime_operation.timeout_seconds,
+            optional=runtime_operation.optional,
+            graph_metadata=graph_metadata_by_step_slot.get((step_index, slot)),
+            package_runtime_operation=runtime_operation,
+        )
+
     def _resolve_capability_profile(
         self, agent_key: str, profile_key: object, profile_index: int
     ) -> PackageCapabilityProfileGrant:
@@ -364,7 +458,7 @@ class PackageExecutionPlanBuilder:
         compiled_graph: dict[str, Any] | None,
     ) -> None:
         known_step_slots = self._known_step_slots(raw_steps)
-        graph_step_slots: set[tuple[int, str]] = set()
+        graph_executable_slots: set[tuple[int, str]] = set()
         if compiled_graph is not None:
             for index, node in enumerate(cast(list[Any], compiled_graph.get("nodes") or [])):
                 if not isinstance(node, dict):
@@ -372,9 +466,9 @@ class PackageExecutionPlanBuilder:
                 kind = str(node.get("kind") or "")
                 if kind not in _SUPPORTED_GRAPH_NODE_KINDS:
                     raise self._graph_error(workflow_key, index, "kind", "unsupported_graph_edge")
-                if kind == "step":
+                if kind in _EXECUTABLE_GRAPH_NODE_KINDS:
                     slot_key = (int(node["stepIndex"]), str(node["slot"]))
-                    graph_step_slots.add(slot_key)
+                    graph_executable_slots.add(slot_key)
                     if slot_key not in known_step_slots:
                         raise self._graph_error(
                             workflow_key, index, "stepIndex", "unreachable_node"
@@ -387,7 +481,11 @@ class PackageExecutionPlanBuilder:
                 issue="unreachable_node",
                 message="Package workflow output references an unreachable step slot",
             )
-        if compiled_graph is not None and graph_step_slots and graph_step_slots != known_step_slots:
+        if (
+            compiled_graph is not None
+            and graph_executable_slots
+            and graph_executable_slots != known_step_slots
+        ):
             raise WorkflowPackageExecutionPlanError.validation(
                 field=f"spec.workflows.{workflow_key}.compiledGraph.nodes",
                 issue="unreachable_node",
@@ -409,29 +507,95 @@ class PackageExecutionPlanBuilder:
                     dict[str, Any], agent.get("wiring") or {}
                 ).items():
                     source = self._require_mapping(
-                        raw_source, field="source", issue="invalid_source"
+                        raw_source,
+                        field="source",
+                        issue="invalid_source",
                     )
                     if str(source.get("from") or source.get("source") or "") != "step":
                         continue
-                    source_key = (int(source["stepIndex"]), str(source["slot"]))
-                    field = (
-                        f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
-                        f".agents[{agent_index}].with.{target_name}"
+                    self._validate_step_source(
+                        workflow_key=workflow_key,
+                        step_index=step_index,
+                        field=(
+                            f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+                            f".agents[{agent_index}].with.{target_name}"
+                        ),
+                        source=source,
+                        known_step_slots=known_step_slots,
                     )
-                    if source_key not in known_step_slots:
-                        raise WorkflowPackageExecutionPlanError.validation(
-                            field=field,
-                            issue="unreachable_node",
-                            message="Package workflow wiring references an unreachable step slot",
-                        )
-                    if source_key[0] >= step_index:
-                        raise WorkflowPackageExecutionPlanError.validation(
-                            field=field,
-                            issue="cycle",
-                            message=(
-                                "Package workflow wiring cannot reference the same or a later step"
-                            ),
-                        )
+            for operation_index, raw_operation in enumerate(
+                cast(list[Any], step.get("operations") or [])
+            ):
+                operation = self._require_mapping(
+                    raw_operation,
+                    field="operation",
+                    issue="invalid_operation",
+                )
+                request = operation.get("request") or {}
+                for source_path, source in self._iter_step_sources(request):
+                    self._validate_step_source(
+                        workflow_key=workflow_key,
+                        step_index=step_index,
+                        field=(
+                            f"spec.workflows.{workflow_key}.graph.steps[{step_index - 1}]"
+                            f".operations[{operation_index}].request{source_path}"
+                        ),
+                        source=source,
+                        known_step_slots=known_step_slots,
+                    )
+
+    @staticmethod
+    def _validate_step_source(
+        *,
+        workflow_key: str,
+        step_index: int,
+        field: str,
+        source: dict[str, Any],
+        known_step_slots: set[tuple[int, str]],
+    ) -> None:
+        source_key = (int(source["stepIndex"]), str(source["slot"]))
+        if source_key not in known_step_slots:
+            raise WorkflowPackageExecutionPlanError.validation(
+                field=field,
+                issue="unreachable_node",
+                message="Package workflow wiring references an unreachable step slot",
+            )
+        if source_key[0] >= step_index:
+            raise WorkflowPackageExecutionPlanError.validation(
+                field=field,
+                issue="cycle",
+                message=f"Package workflow {workflow_key!r} cannot reference a later step",
+            )
+
+    @staticmethod
+    def _iter_step_sources(
+        value: object,
+        path: str = "",
+    ) -> list[tuple[str, dict[str, Any]]]:
+        if isinstance(value, dict):
+            source = cast(dict[str, Any], value)
+            if str(source.get("from") or source.get("source") or "") == "step":
+                return [(path, source)]
+            step_sources: list[tuple[str, dict[str, Any]]] = []
+            for key, item in source.items():
+                step_sources.extend(
+                    PackageExecutionPlanBuilder._iter_step_sources(
+                        item,
+                        f"{path}.{key}",
+                    )
+                )
+            return step_sources
+        if isinstance(value, list):
+            step_sources = []
+            for index, item in enumerate(value):
+                step_sources.extend(
+                    PackageExecutionPlanBuilder._iter_step_sources(
+                        item,
+                        f"{path}[{index}]",
+                    )
+                )
+            return step_sources
+        return []
 
     @staticmethod
     def _known_step_slots(raw_steps: list[Any]) -> set[tuple[int, str]]:
@@ -442,6 +606,9 @@ class PackageExecutionPlanBuilder:
             for raw_agent in raw_step.get("agents") or []:
                 if isinstance(raw_agent, dict):
                     known.add((int(raw_step["index"]), str(raw_agent["slot"])))
+            for raw_operation in raw_step.get("operations") or []:
+                if isinstance(raw_operation, dict):
+                    known.add((int(raw_step["index"]), str(raw_operation["slot"])))
         return known
 
     @staticmethod
@@ -465,7 +632,8 @@ class PackageExecutionPlanBuilder:
         loop_nodes = [node for node in nodes if node.get("kind") == "loop"]
         metadata: dict[tuple[int, str], ExecutionPlanGraphMetadata] = {}
         for node in nodes:
-            if node.get("kind") != "step":
+            node_kind = str(node.get("kind") or "")
+            if node_kind not in _EXECUTABLE_GRAPH_NODE_KINDS:
                 continue
             step_index = int(node["stepIndex"])
             slot = str(node["slot"])
@@ -473,7 +641,7 @@ class PackageExecutionPlanBuilder:
             loop_id, loop_iteration = self._resolve_loop_metadata(node, loop_nodes)
             metadata[(step_index, slot)] = ExecutionPlanGraphMetadata(
                 node_id=None if node.get("nodeId") is None else str(node["nodeId"]),
-                node_kind="step",
+                node_kind=node_kind,
                 graph_path=None if node.get("id") is None else str(node["id"]),
                 fanout_id=self._resolve_fanout_id(node, fanout_nodes, branch_id),
                 branch_id=branch_id,
@@ -553,27 +721,34 @@ class PackageExecutionPlanBuilder:
     @staticmethod
     def _build_step_graph_metadata(
         agents: tuple[ExecutionPlanAgent, ...],
+        operations: tuple[ExecutionPlanOperation, ...],
     ) -> ExecutionPlanGraphMetadata | None:
-        agent_metadata = [agent.graph_metadata for agent in agents if agent.graph_metadata]
-        if not agent_metadata:
+        item_metadata: list[tuple[str, ExecutionPlanGraphMetadata]] = []
+        for agent in agents:
+            if agent.graph_metadata is not None:
+                item_metadata.append((agent.slot, agent.graph_metadata))
+        for operation in operations:
+            if operation.graph_metadata is not None:
+                item_metadata.append((operation.slot, operation.graph_metadata))
+        if not item_metadata:
             return None
-        if len(agent_metadata) == 1:
-            return agent_metadata[0]
-        fanout_ids = {metadata.fanout_id for metadata in agent_metadata if metadata.fanout_id}
+        if len(item_metadata) == 1:
+            return item_metadata[0][1]
+        fanout_ids = {metadata.fanout_id for _slot, metadata in item_metadata if metadata.fanout_id}
         if len(fanout_ids) == 1:
             return ExecutionPlanGraphMetadata(
                 node_kind="fanout",
                 fanout_id=next(iter(fanout_ids)),
-                loop_id=agent_metadata[0].loop_id,
-                loop_iteration=agent_metadata[0].loop_iteration,
+                loop_id=item_metadata[0][1].loop_id,
+                loop_iteration=item_metadata[0][1].loop_iteration,
                 source_refs={
                     "branches": [
                         {
                             "nodeId": metadata.node_id,
                             "branchId": metadata.branch_id,
-                            "slot": agent.slot,
+                            "slot": slot,
                         }
-                        for agent, metadata in zip(agents, agent_metadata, strict=False)
+                        for slot, metadata in item_metadata
                     ]
                 },
             )

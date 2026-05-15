@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 ExecutionPlanInputMode = Literal["passthrough", "wired"]
+ExecutionPlanOperationKind = Literal["http"]
 ExecutionPlanTargetKind = Literal["agent", "workflow", "workflow_package"]
 ExecutionPlanSourceKind = Literal["input", "step"]
 
@@ -99,9 +100,22 @@ class PackageRuntimeAgentSpec:
 
 
 @dataclass(frozen=True)
+class PackageRuntimeOperationSpec:
+    key: str
+    kind: ExecutionPlanOperationKind
+    slot: str
+    method: str
+    request: dict[str, Any]
+    output_schema: PackageLocalOutputSchemaSpec
+    timeout_seconds: int
+    optional: bool
+
+
+@dataclass(frozen=True)
 class PackageExecutionStep:
     index: int
     agents: tuple[PackageRuntimeAgentSpec, ...]
+    operations: tuple[PackageRuntimeOperationSpec, ...] = ()
     graph_metadata: ExecutionPlanGraphMetadata | None = None
 
 
@@ -133,9 +147,25 @@ class ExecutionPlanAgent:
 
 
 @dataclass(frozen=True)
+class ExecutionPlanOperation:
+    slot: str
+    operation_key: str
+    operation_kind: ExecutionPlanOperationKind
+    output_schema_id: int
+    output_schema_version: int
+    request: dict[str, Any]
+    method: str | None = None
+    timeout_seconds: int | None = None
+    optional: bool = False
+    graph_metadata: ExecutionPlanGraphMetadata | None = None
+    package_runtime_operation: PackageRuntimeOperationSpec | None = None
+
+
+@dataclass(frozen=True)
 class ExecutionPlanStep:
     index: int
     agents: tuple[ExecutionPlanAgent, ...]
+    operations: tuple[ExecutionPlanOperation, ...] = ()
     graph_metadata: ExecutionPlanGraphMetadata | None = None
     package_step: PackageExecutionStep | None = None
 
@@ -163,6 +193,8 @@ __all__ = [
     "ExecutionPlanFinalOutput",
     "ExecutionPlanGraphMetadata",
     "ExecutionPlanInputMode",
+    "ExecutionPlanOperation",
+    "ExecutionPlanOperationKind",
     "ExecutionPlanSource",
     "ExecutionPlanSourceKind",
     "ExecutionPlanStep",
@@ -175,4 +207,5 @@ __all__ = [
     "PackagePrivateMcpConfig",
     "PackageResolvedModelBinding",
     "PackageRuntimeAgentSpec",
+    "PackageRuntimeOperationSpec",
 ]

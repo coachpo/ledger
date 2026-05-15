@@ -175,6 +175,15 @@ def test_compile_workflow_manifest_accepts_validated_manifest() -> None:
     assert compile_workflow_manifest(result.manifest) == _current_workflow_payload()
 
 
+def test_backward_compat_compile_workflow_manifest_keeps_agent_only_steps() -> None:
+    payload = compile_workflow_manifest(_manifest_source())
+    steps = cast(list[dict[str, object]], payload["steps"])
+
+    assert payload == _current_workflow_payload()
+    assert all("agents" in step for step in steps)
+    assert all("operations" not in step for step in steps)
+
+
 def test_compile_workflow_manifest_preserves_input_schema_metadata() -> None:
     source = _manifest_source().replace(
         """inputSchema:

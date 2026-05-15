@@ -7,8 +7,13 @@ from fastapi import Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError, not_found_error, validation_error
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.workflow_package import (
+    WorkflowPackage,
+    WorkflowPackageSecretBinding,
+    WorkflowPackageVersion,
+)
 from app.repositories.workflow_package import WorkflowPackageRepository
+from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.model_connection import normalize_model_connection_key
 from app.schemas.workflow_package import (
     WorkflowPackageImportMode,
@@ -20,11 +25,15 @@ from app.schemas.workflow_package import (
     WorkflowPackageManifestRead,
     WorkflowPackageManifestRequest,
     WorkflowPackageRead,
+    WorkflowPackageSecretBindingListRead,
+    WorkflowPackageSecretBindingRead,
+    WorkflowPackageSecretBindingUpdateRequest,
     WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
     WorkflowPackageVersionListRead,
     WorkflowPackageVersionRead,
+    normalize_workflow_package_secret_binding_key,
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 from app.services.model_connection_service import ModelConnectionService
@@ -59,6 +68,7 @@ class WorkflowPackageService:
         self.session_factory = session_factory
         self.quote_provider = quote_provider
         self.repository = WorkflowPackageRepository(session)
+        self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
         self.model_connection_service = ModelConnectionService(session)
 
     def list_packages(
@@ -198,6 +208,47 @@ class WorkflowPackageService:
         )
         try:
             self.repository.delete(package)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def list_secret_bindings(self, package_id: int) -> WorkflowPackageSecretBindingListRead:
+        package = self._get_package(package_id)
+        bindings = self.secret_binding_repository.list_for_package(package.id)
+        return WorkflowPackageSecretBindingListRead(
+            items=[self._to_secret_binding_read(binding) for binding in bindings]
+        )
+
+    def upsert_secret_binding(
+        self,
+        package_id: int,
+        key: str,
+        payload: WorkflowPackageSecretBindingUpdateRequest,
+    ) -> WorkflowPackageSecretBindingRead:
+        package = self._get_package(package_id)
+        normalized_key = self._normalize_secret_binding_key(key)
+        try:
+            binding = self.secret_binding_repository.upsert(
+                package_id=package.id,
+                key=normalized_key,
+                value=payload.value,
+            )
+            self.session.commit()
+            self.session.refresh(binding)
+        except Exception:
+            self.session.rollback()
+            raise
+        return self._to_secret_binding_read(binding)
+
+    def delete_secret_binding(self, package_id: int, key: str) -> None:
+        package = self._get_package(package_id)
+        normalized_key = self._normalize_secret_binding_key(key)
+        binding = self.secret_binding_repository.get_by_key(package.id, normalized_key)
+        if binding is None:
+            raise not_found_error("Workflow package secret binding")
+        try:
+            self.secret_binding_repository.delete(binding)
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -462,6 +513,16 @@ class WorkflowPackageService:
             raise not_found_error("Workflow package")
         return package
 
+    @staticmethod
+    def _normalize_secret_binding_key(key: str) -> str:
+        try:
+            return normalize_workflow_package_secret_binding_key(key)
+        except ValueError as exc:
+            raise validation_error(
+                "Workflow package secret binding validation failed",
+                [{"field": "key", "issue": str(exc)}],
+            ) from exc
+
     def _to_package_read(self, package: WorkflowPackage) -> WorkflowPackageRead:
         latest = package.latest_version or self.repository.get_latest_version(package.id)
         return WorkflowPackageRead.model_validate(
@@ -478,6 +539,21 @@ class WorkflowPackageService:
                 "warnings": self._version_warnings(latest),
                 "createdAt": package.created_at,
                 "updatedAt": package.updated_at,
+            }
+        )
+
+    @staticmethod
+    def _to_secret_binding_read(
+        binding: WorkflowPackageSecretBinding,
+    ) -> WorkflowPackageSecretBindingRead:
+        payload = binding.secret_payload if isinstance(binding.secret_payload, dict) else {}
+        return WorkflowPackageSecretBindingRead.model_validate(
+            {
+                "packageId": binding.package_id,
+                "key": binding.key,
+                "hasValue": bool(str(payload.get("value") or "").strip()),
+                "createdAt": binding.created_at,
+                "updatedAt": binding.updated_at,
             }
         )
 
