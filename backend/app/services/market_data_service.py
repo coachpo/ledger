@@ -39,6 +39,7 @@ from app.services.quote_provider import (
     ProviderQuote,
     QuoteProvider,
     QuoteProviderError,
+    QuoteProviderRateLimitError,
 )
 
 if TYPE_CHECKING:
@@ -94,6 +95,7 @@ __all__ = [
     "ProviderQuote",
     "QuoteProvider",
     "QuoteProviderError",
+    "QuoteProviderRateLimitError",
 ]
 
 
@@ -839,6 +841,8 @@ class MarketDataService:
             return f"{operation}_api_key_missing"
         if exc.code == "provider_timeout":
             return f"{operation}_provider_timeout"
+        if exc.code == "provider_rate_limited":
+            return f"{operation}_provider_rate_limited"
         if exc.code == "provider_unavailable":
             return f"{operation}_provider_unavailable"
         return f"{operation}_provider_error"

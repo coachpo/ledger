@@ -57,6 +57,15 @@ SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
         module=_SERVER_DECLARED_MODULE,
     ),
     ServerDeclaredToolSpec(
+        key="ledger.social_sentiment.lookup",
+        display_name="Social Sentiment Lookup",
+        description=(
+            "Read server-owned social sentiment data when provider support is "
+            "available; otherwise return structured warnings."
+        ),
+        module=_SERVER_DECLARED_MODULE,
+    ),
+    ServerDeclaredToolSpec(
         key="ledger.insider_data.lookup",
         display_name="Insider Data Lookup",
         description=(

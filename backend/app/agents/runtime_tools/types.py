@@ -5,15 +5,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal, Protocol, Self
+from typing import TYPE_CHECKING, Literal, Protocol, Self
 
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.formatting import normalize_symbol
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.market_data import MarketHistorySeriesRead, MarketQuoteRead
 from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryWriteResult
 from app.services.quote_provider import QuoteProvider
+
+if TYPE_CHECKING:
+    from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
 
 
 class RuntimeToolError(Exception):
@@ -35,6 +39,7 @@ class RuntimeToolContext:
     session_factory: sessionmaker[Session]
     capability_references: Sequence[dict[str, object]]
     quote_provider: QuoteProvider | None = None
+    social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None
     run_id: int | None = None
     agent_key: str | None = None
     agent_version: int | None = None
@@ -79,6 +84,7 @@ MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY = "ledger.market_data.ohlcv_lookup"
 INDICATORS_LOOKUP_TOOL_KEY = "ledger.indicators.lookup"
 FUNDAMENTALS_LOOKUP_TOOL_KEY = "ledger.fundamentals.lookup"
 NEWS_LOOKUP_TOOL_KEY = "ledger.news.lookup"
+SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "ledger.social_sentiment.lookup"
 INSIDER_DATA_LOOKUP_TOOL_KEY = "ledger.insider_data.lookup"
 REPORT_MEMORY_WRITE_TOOL_KEY = "ledger.reports.write"
 
@@ -89,11 +95,13 @@ NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
     INDICATORS_LOOKUP_TOOL_KEY,
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     NEWS_LOOKUP_TOOL_KEY,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     INSIDER_DATA_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
 )
 
 _NATIVE_TOOL_KEY_RE = re.compile(r"^ledger\.[a-z0-9_]+(?:\.[a-z0-9_]+)*$")
+_NORMALIZED_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 _WARNING_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
 
@@ -109,6 +117,25 @@ def _validate_chronological_datetimes(rows: Sequence[datetime]) -> None:
         if previous is not None and current < previous:
             raise ValueError("Rows must be chronological")
         previous = current
+
+
+def _normalize_identifier(value: str, *, field_name: str) -> str:
+    normalized = "_".join(value.strip().lower().split())
+    if _NORMALIZED_IDENTIFIER_RE.fullmatch(normalized) is None:
+        raise ValueError(f"{field_name} must be a lowercase identifier")
+    return normalized
+
+
+def _normalize_symbols(values: Sequence[str]) -> list[str]:
+    symbols: list[str] = []
+    seen_symbols: set[str] = set()
+    for raw_symbol in values:
+        symbol = normalize_symbol(raw_symbol)
+        if not symbol or symbol in seen_symbols:
+            continue
+        symbols.append(symbol)
+        seen_symbols.add(symbol)
+    return symbols
 
 
 class RuntimeNativeToolResult(CamelModel):
@@ -357,6 +384,129 @@ class RuntimeNewsLookupResult(CamelModel):
         return _validate_datetime(value)
 
 
+class RuntimeSocialSentimentMetric(CamelModel):
+    name: str = Field(min_length=1, max_length=120)
+    value: Decimal | str | None
+    unit: str | None = Field(default=None, max_length=80)
+    source: str | None = Field(default=None, max_length=120)
+    as_of: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_identifier(value, field_name="Metric name")
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_identifier(value, field_name="Metric source")
+
+    @field_validator("unit")
+    @classmethod
+    def validate_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("as_of")
+    @classmethod
+    def validate_as_of(cls, value: datetime | None) -> datetime | None:
+        return _validate_datetime(value)
+
+
+class RuntimeSocialSentimentSourceBlock(CamelModel):
+    source: str = Field(min_length=1, max_length=120)
+    provider: str = Field(min_length=1, max_length=120)
+    title: str | None = Field(default=None, max_length=300)
+    summary: str | None = None
+    url: str | None = None
+    as_of: datetime | None = None
+    symbols: list[str] = Field(default_factory=list)
+    sentiment: Literal["positive", "neutral", "negative", "mixed"] | None = None
+    metrics: list[RuntimeSocialSentimentMetric] = Field(default_factory=list)
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        return _normalize_identifier(value, field_name="Source")
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Provider is required")
+        return normalized
+
+    @field_validator("title", "summary", "url")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("as_of")
+    @classmethod
+    def validate_as_of(cls, value: datetime | None) -> datetime | None:
+        return _validate_datetime(value)
+
+    @field_validator("symbols")
+    @classmethod
+    def validate_symbols(cls, value: list[str]) -> list[str]:
+        return _normalize_symbols(value)
+
+
+class RuntimeSocialSentimentLookupResult(CamelModel):
+    tool_key: Literal["ledger.social_sentiment.lookup"] = "ledger.social_sentiment.lookup"
+    symbol: str
+    sources: list[str] = Field(default_factory=list)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    source_blocks: list[RuntimeSocialSentimentSourceBlock] = Field(default_factory=list)
+    metrics: list[RuntimeSocialSentimentMetric] = Field(default_factory=list)
+    warnings: list[RuntimeToolWarning] = Field(default_factory=list)
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, value: str) -> str:
+        normalized = normalize_symbol(value)
+        if not normalized:
+            raise ValueError("Social sentiment symbol is required")
+        return normalized
+
+    @field_validator("sources")
+    @classmethod
+    def validate_sources(cls, value: list[str]) -> list[str]:
+        sources: list[str] = []
+        seen_sources: set[str] = set()
+        for raw_source in value:
+            source = _normalize_identifier(raw_source, field_name="Source")
+            if source in seen_sources:
+                continue
+            sources.append(source)
+            seen_sources.add(source)
+        return sources
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_bounds(cls, value: datetime | None) -> datetime | None:
+        return _validate_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_date_bounds(self) -> Self:
+        if (
+            self.start_date is not None
+            and self.end_date is not None
+            and self.start_date > self.end_date
+        ):
+            raise ValueError("startDate must be before or equal to endDate")
+        return self
+
+
 class RuntimeInsiderTransaction(CamelModel):
     insider_name: str
     role: str | None = None
@@ -423,6 +573,7 @@ __all__ = [
     "MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY",
     "NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS",
     "NEWS_LOOKUP_TOOL_KEY",
+    "SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY",
     "REPORT_MEMORY_WRITE_TOOL_KEY",
     "RuntimeFinancialStatement",
     "RuntimeFinancialStatementLine",
@@ -437,6 +588,9 @@ __all__ = [
     "RuntimeNativeToolResult",
     "RuntimeNewsItem",
     "RuntimeNewsLookupResult",
+    "RuntimeSocialSentimentLookupResult",
+    "RuntimeSocialSentimentMetric",
+    "RuntimeSocialSentimentSourceBlock",
     "RuntimeOhlcvLookupResult",
     "RuntimeOhlcvRow",
     "RuntimeOhlcvSeries",

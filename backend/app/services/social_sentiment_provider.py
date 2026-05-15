@@ -1,0 +1,521 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Literal, Protocol, cast
+
+import httpx
+
+from app.core.formatting import normalize_symbol, to_utc
+
+SocialSentimentSource = Literal["reddit", "stocktwits"]
+
+
+class SocialSentimentProviderError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        details: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code: str = code
+        self.details: dict[str, str] = details or {}
+
+
+class SocialSentimentProviderTimeoutError(SocialSentimentProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_timeout", details=details)
+
+
+class SocialSentimentProviderRateLimitError(SocialSentimentProviderError):
+    def __init__(self, message: str, *, details: dict[str, str] | None = None) -> None:
+        super().__init__(message, code="provider_rate_limited", details=details)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSocialSentimentMetric:
+    name: str
+    value: Decimal | str | None
+    unit: str | None = None
+    source: str | None = None
+    as_of: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSocialSentimentSourceBlock:
+    source: SocialSentimentSource
+    provider: str
+    title: str | None = None
+    summary: str | None = None
+    url: str | None = None
+    as_of: datetime | None = None
+    symbols: list[str] = field(default_factory=list)
+    sentiment: Literal["positive", "neutral", "negative", "mixed"] | None = None
+    metrics: list[ProviderSocialSentimentMetric] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSocialSentimentWarning:
+    code: str
+    message: str
+    details: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSocialSentimentSourceResult:
+    source: SocialSentimentSource
+    provider: str
+    source_blocks: list[ProviderSocialSentimentSourceBlock] = field(default_factory=list)
+    metrics: list[ProviderSocialSentimentMetric] = field(default_factory=list)
+    warnings: list[ProviderSocialSentimentWarning] = field(default_factory=list)
+
+
+class SocialSentimentSourceAdapter(Protocol):
+    source: SocialSentimentSource
+    provider_name: str
+
+    def fetch_source_blocks(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderSocialSentimentSourceResult: ...
+
+
+class RedditSocialSentimentAdapter:
+    source: SocialSentimentSource = "reddit"
+    provider_name: str = "reddit_public_search"
+    _API: str = "https://www.reddit.com/r/{subreddit}/search.json"
+    _USER_AGENT: str = "ledger-backend/0.1"
+
+    def __init__(
+        self,
+        *,
+        timeout: float,
+        subreddits: Sequence[str] | None = None,
+    ) -> None:
+        self.timeout: float = timeout
+        self.subreddits: tuple[str, ...] = tuple(
+            subreddits or ("wallstreetbets", "stocks", "investing")
+        )
+
+    def fetch_source_blocks(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderSocialSentimentSourceResult:
+        normalized_symbol = normalize_symbol(symbol)
+        blocks: list[ProviderSocialSentimentSourceBlock] = []
+        warnings: list[ProviderSocialSentimentWarning] = []
+        limit_per_subreddit = max(1, (limit + len(self.subreddits) - 1) // len(self.subreddits))
+
+        for subreddit in self.subreddits:
+            try:
+                posts = self._fetch_subreddit_posts(
+                    normalized_symbol,
+                    subreddit=subreddit,
+                    limit=limit_per_subreddit,
+                )
+            except SocialSentimentProviderError as exc:
+                warnings.append(
+                    _warning_from_error(exc, source=self.source, provider=self.provider_name)
+                )
+                continue
+            for post in posts:
+                block = self._build_post_block(
+                    post,
+                    symbol=normalized_symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                if block is not None:
+                    blocks.append(block)
+
+        filtered_blocks = blocks[:limit]
+        metrics = _count_metrics(
+            source=self.source,
+            as_of=_latest_as_of(filtered_blocks),
+            count=len(filtered_blocks),
+        )
+        return ProviderSocialSentimentSourceResult(
+            source=self.source,
+            provider=self.provider_name,
+            source_blocks=filtered_blocks,
+            metrics=metrics,
+            warnings=warnings,
+        )
+
+    def _fetch_subreddit_posts(
+        self,
+        symbol: str,
+        *,
+        subreddit: str,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        params: dict[str, str | int] = {
+            "q": symbol,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",
+            "limit": limit,
+        }
+        payload = _request_json(
+            self._API.format(subreddit=subreddit),
+            params=params,
+            timeout=self.timeout,
+            provider=self.provider_name,
+            source=self.source,
+        )
+        data = _object_dict(payload.get("data"))
+        children = _object_list(data.get("children"))
+        posts: list[dict[str, object]] = []
+        for child in children:
+            child_payload = _object_dict(child)
+            post = _object_dict(child_payload.get("data"))
+            posts.append(post)
+        return posts
+
+    def _build_post_block(
+        self,
+        post: dict[str, object],
+        *,
+        symbol: str,
+        start_date: datetime | None,
+        end_date: datetime | None,
+    ) -> ProviderSocialSentimentSourceBlock | None:
+        as_of = _unix_datetime(post.get("created_utc"))
+        if not _within_bounds(as_of, start_date=start_date, end_date=end_date):
+            return None
+        title = _text(post.get("title"))
+        summary = _truncate(_text(post.get("selftext")), limit=280)
+        permalink = _text(post.get("permalink"))
+        score = _decimal_int(post.get("score"))
+        comments = _decimal_int(post.get("num_comments"))
+        return ProviderSocialSentimentSourceBlock(
+            source=self.source,
+            provider=self.provider_name,
+            title=title,
+            summary=summary,
+            url=f"https://www.reddit.com{permalink}" if permalink is not None else None,
+            as_of=as_of,
+            symbols=[symbol],
+            metrics=[
+                ProviderSocialSentimentMetric(
+                    name="score",
+                    value=score,
+                    unit="count",
+                    source=self.source,
+                    as_of=as_of,
+                ),
+                ProviderSocialSentimentMetric(
+                    name="comment_count",
+                    value=comments,
+                    unit="count",
+                    source=self.source,
+                    as_of=as_of,
+                ),
+            ],
+        )
+
+
+class StockTwitsSocialSentimentAdapter:
+    source: SocialSentimentSource = "stocktwits"
+    provider_name: str = "stocktwits_public_stream"
+    _API: str = "https://api.stocktwits.com/api/2/streams/symbol/{symbol}.json"
+
+    def __init__(self, *, timeout: float) -> None:
+        self.timeout: float = timeout
+
+    def fetch_source_blocks(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderSocialSentimentSourceResult:
+        normalized_symbol = normalize_symbol(symbol)
+        payload = _request_json(
+            self._API.format(symbol=normalized_symbol),
+            params={},
+            timeout=self.timeout,
+            provider=self.provider_name,
+            source=self.source,
+        )
+        messages = _object_list(payload.get("messages"))
+        blocks: list[ProviderSocialSentimentSourceBlock] = []
+        for message in messages[:limit]:
+            block = self._build_message_block(
+                _object_dict(message),
+                symbol=normalized_symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if block is not None:
+                blocks.append(block)
+
+        return ProviderSocialSentimentSourceResult(
+            source=self.source,
+            provider=self.provider_name,
+            source_blocks=blocks,
+            metrics=self._aggregate_metrics(blocks),
+        )
+
+    def _build_message_block(
+        self,
+        message: dict[str, object],
+        *,
+        symbol: str,
+        start_date: datetime | None,
+        end_date: datetime | None,
+    ) -> ProviderSocialSentimentSourceBlock | None:
+        as_of = _iso_datetime(_text(message.get("created_at")))
+        if not _within_bounds(as_of, start_date=start_date, end_date=end_date):
+            return None
+        user = _object_dict(message.get("user"))
+        username = _text(user.get("username")) or "unknown"
+        sentiment = _stocktwits_sentiment(message)
+        message_id = _text(message.get("id"))
+        return ProviderSocialSentimentSourceBlock(
+            source=self.source,
+            provider=self.provider_name,
+            title=f"@{username}",
+            summary=_truncate(_text(message.get("body")), limit=280),
+            url=(
+                f"https://stocktwits.com/{username}/message/{message_id}"
+                if message_id is not None
+                else None
+            ),
+            as_of=as_of,
+            symbols=[symbol],
+            sentiment=sentiment,
+            metrics=[
+                ProviderSocialSentimentMetric(
+                    name="message_count",
+                    value=Decimal("1"),
+                    unit="count",
+                    source=self.source,
+                    as_of=as_of,
+                )
+            ],
+        )
+
+    def _aggregate_metrics(
+        self,
+        blocks: list[ProviderSocialSentimentSourceBlock],
+    ) -> list[ProviderSocialSentimentMetric]:
+        total = len(blocks)
+        bullish = sum(1 for block in blocks if block.sentiment == "positive")
+        bearish = sum(1 for block in blocks if block.sentiment == "negative")
+        unlabeled = total - bullish - bearish
+        as_of = _latest_as_of(blocks)
+        return [
+            ProviderSocialSentimentMetric(
+                "message_count", Decimal(total), "count", self.source, as_of
+            ),
+            ProviderSocialSentimentMetric(
+                "bullish_count", Decimal(bullish), "count", self.source, as_of
+            ),
+            ProviderSocialSentimentMetric(
+                "bearish_count", Decimal(bearish), "count", self.source, as_of
+            ),
+            ProviderSocialSentimentMetric(
+                "unlabeled_count", Decimal(unlabeled), "count", self.source, as_of
+            ),
+            ProviderSocialSentimentMetric(
+                "bullish_ratio", _ratio(bullish, total), None, self.source, as_of
+            ),
+            ProviderSocialSentimentMetric(
+                "bearish_ratio", _ratio(bearish, total), None, self.source, as_of
+            ),
+        ]
+
+
+def create_default_social_sentiment_adapters(
+    *, timeout: float
+) -> tuple[SocialSentimentSourceAdapter, ...]:
+    return (
+        RedditSocialSentimentAdapter(timeout=timeout),
+        StockTwitsSocialSentimentAdapter(timeout=timeout),
+    )
+
+
+def _request_json(
+    url: str,
+    *,
+    params: dict[str, str | int],
+    timeout: float,
+    provider: str,
+    source: SocialSentimentSource,
+) -> dict[str, object]:
+    headers = {"User-Agent": "ledger-backend/0.1", "Accept": "application/json"}
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(url, params=params, headers=headers)
+            _ = response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise SocialSentimentProviderTimeoutError(
+            f"{provider} timed out while fetching {source} sentiment",
+            details={"provider": provider, "source": source},
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        if status_code == 429:
+            raise SocialSentimentProviderRateLimitError(
+                f"{provider} rate limited {source} sentiment",
+                details={"provider": provider, "source": source, "status": str(status_code)},
+            ) from exc
+        if status_code >= 500:
+            raise SocialSentimentProviderError(
+                f"{provider} outage while fetching {source} sentiment",
+                code="provider_unavailable",
+                details={"provider": provider, "source": source, "status": str(status_code)},
+            ) from exc
+        raise SocialSentimentProviderError(
+            f"{provider} failed while fetching {source} sentiment",
+            details={"provider": provider, "source": source, "status": str(status_code)},
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise SocialSentimentProviderError(
+            f"{provider} is unavailable for {source} sentiment",
+            code="provider_unavailable",
+            details={"provider": provider, "source": source},
+        ) from exc
+
+    payload = cast(object, response.json())
+    if not isinstance(payload, dict):
+        raise SocialSentimentProviderError(
+            f"{provider} returned malformed {source} sentiment",
+            details={"provider": provider, "source": source},
+        )
+    return cast(dict[str, object], payload)
+
+
+def _warning_from_error(
+    error: SocialSentimentProviderError,
+    *,
+    source: SocialSentimentSource,
+    provider: str,
+) -> ProviderSocialSentimentWarning:
+    return ProviderSocialSentimentWarning(
+        code=error.code,
+        message=str(error),
+        details={**error.details, "provider": provider, "source": source},
+    )
+
+
+def _object_dict(value: object) -> dict[str, object]:
+    return cast(dict[str, object], value) if isinstance(value, dict) else {}
+
+
+def _object_list(value: object) -> list[object]:
+    return cast(list[object], value) if isinstance(value, list) else []
+
+
+def _text(value: object) -> str | None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, int):
+        return str(value)
+    return None
+
+
+def _truncate(value: str | None, *, limit: int) -> str | None:
+    if value is None or len(value) <= limit:
+        return value
+    return f"{value[:limit].rstrip()}…"
+
+
+def _decimal_int(value: object) -> Decimal:
+    if isinstance(value, bool):
+        return Decimal("0")
+    if isinstance(value, int | float):
+        return Decimal(str(int(value)))
+    return Decimal("0")
+
+
+def _unix_datetime(value: object) -> datetime | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return datetime.fromtimestamp(float(value), tz=UTC)
+    return None
+
+
+def _iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        iso_value = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+        return to_utc(datetime.fromisoformat(iso_value))
+    except ValueError:
+        return None
+
+
+def _within_bounds(
+    value: datetime | None,
+    *,
+    start_date: datetime | None,
+    end_date: datetime | None,
+) -> bool:
+    if value is None:
+        return True
+    normalized = to_utc(value)
+    if start_date is not None and normalized < to_utc(start_date):
+        return False
+    if end_date is not None and normalized > to_utc(end_date):
+        return False
+    return True
+
+
+def _stocktwits_sentiment(
+    message: dict[str, object]
+) -> Literal["positive", "neutral", "negative", "mixed"] | None:
+    entities = _object_dict(message.get("entities"))
+    sentiment_payload = _object_dict(entities.get("sentiment"))
+    basic = _text(sentiment_payload.get("basic"))
+    if basic is None:
+        return None
+    if basic.lower() == "bullish":
+        return "positive"
+    if basic.lower() == "bearish":
+        return "negative"
+    return "neutral"
+
+
+def _latest_as_of(blocks: Sequence[ProviderSocialSentimentSourceBlock]) -> datetime | None:
+    timestamps = [to_utc(block.as_of) for block in blocks if block.as_of is not None]
+    return max(timestamps) if timestamps else None
+
+
+def _count_metrics(
+    *,
+    source: SocialSentimentSource,
+    as_of: datetime | None,
+    count: int,
+) -> list[ProviderSocialSentimentMetric]:
+    return [
+        ProviderSocialSentimentMetric(
+            name="mention_count",
+            value=Decimal(count),
+            unit="count",
+            source=source,
+            as_of=as_of,
+        )
+    ]
+
+
+def _ratio(numerator: int, denominator: int) -> Decimal:
+    if denominator == 0:
+        return Decimal("0")
+    return (Decimal(numerator) / Decimal(denominator)).quantize(Decimal("0.0001"))

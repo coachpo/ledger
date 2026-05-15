@@ -12,6 +12,7 @@ from app.agents.runtime_tools.types import (
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     NEWS_LOOKUP_TOOL_KEY,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeHistoryLookupResult,
     RuntimeQuoteLookupResult,
     RuntimeToolContext,
@@ -35,6 +36,7 @@ MARKET_DATA_OHLCV_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_market_data_ohlcv_lookup
 INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_indicators_lookup"
 FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_fundamentals_lookup"
 NEWS_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_news_lookup"
+SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_social_sentiment_lookup"
 INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_insider_data_lookup"
 
 _QUOTE_SYMBOL_LIMIT = 10
@@ -51,6 +53,9 @@ _FUNDAMENTALS_DEFAULT_STATEMENT_LIMIT = 6
 _FUNDAMENTALS_MAX_STATEMENT_LIMIT = 12
 _NEWS_DEFAULT_ITEM_LIMIT = 25
 _NEWS_MAX_ITEM_LIMIT = 50
+_SOCIAL_SENTIMENT_DEFAULT_ITEM_LIMIT = 25
+_SOCIAL_SENTIMENT_MAX_ITEM_LIMIT = 50
+_SOCIAL_SENTIMENT_SOURCES = {"reddit", "stocktwits"}
 _INSIDER_DEFAULT_TRANSACTION_LIMIT = 50
 _INSIDER_MAX_TRANSACTION_LIMIT = 100
 _FINANCIAL_STATEMENT_TYPES = {"income_statement", "balance_sheet", "cash_flow"}
@@ -59,6 +64,7 @@ MARKET_DATA_OHLCV_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 INDICATORS_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 FUNDAMENTALS_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 NEWS_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
+SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 INSIDER_DATA_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 MARKET_DATA_OHLCV_LOOKUP_ACCESS_DENIED_MESSAGE = (
     "Agent is not authorized to use ledger.market_data.ohlcv_lookup."
@@ -68,6 +74,9 @@ FUNDAMENTALS_LOOKUP_ACCESS_DENIED_MESSAGE = (
     "Agent is not authorized to use ledger.fundamentals.lookup."
 )
 NEWS_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.news.lookup."
+SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use ledger.social_sentiment.lookup."
+)
 INSIDER_DATA_LOOKUP_ACCESS_DENIED_MESSAGE = (
     "Agent is not authorized to use ledger.insider_data.lookup."
 )
@@ -244,6 +253,38 @@ _NEWS_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         },
     },
     "required": ["symbols", "query", "startDate", "endDate", "itemLimit"],
+    "additionalProperties": False,
+}
+
+_SOCIAL_SENTIMENT_LOOKUP_DESCRIPTION = (
+    "Read provider-backed social sentiment source blocks for one symbol and optional sources."
+)
+_SOCIAL_SENTIMENT_LOOKUP_GUIDANCE = (
+    "When you need retail or social sentiment, call ledger_social_sentiment_lookup with a "
+    "symbol instead of treating news as social data. Use only returned source blocks and "
+    "metrics, disclose warnings or empty payloads as data quality or provider limitations, "
+    "and keep this output separate from ledger_news_lookup results."
+)
+_SOCIAL_SENTIMENT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "symbol": {"type": "string"},
+        "sources": {
+            "type": ["array", "null"],
+            "items": {
+                "type": "string",
+                "enum": ["reddit", "stocktwits"],
+            },
+        },
+        "startDate": {"type": ["string", "null"]},
+        "endDate": {"type": ["string", "null"]},
+        "itemLimit": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": _SOCIAL_SENTIMENT_MAX_ITEM_LIMIT,
+        },
+    },
+    "required": ["symbol", "sources", "startDate", "endDate", "itemLimit"],
     "additionalProperties": False,
 }
 
@@ -513,6 +554,58 @@ def parse_news_lookup_arguments(arguments_json: str) -> dict[str, object]:
     }
 
 
+def parse_social_sentiment_lookup_arguments(arguments_json: str) -> dict[str, object]:
+    raw_arguments = _parse_json_object(
+        arguments_json,
+        function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    )
+    _reject_unexpected_keys(
+        raw_arguments,
+        allowed_keys={"symbol", "sources", "startDate", "endDate", "itemLimit"},
+        function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    )
+    start_date = _parse_optional_datetime_argument(
+        raw_arguments.get("startDate"),
+        function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+        field_name="startDate",
+    )
+    end_date = _parse_optional_datetime_argument(
+        raw_arguments.get("endDate"),
+        function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+        field_name="endDate",
+    )
+    if start_date is not None and end_date is not None:
+        _validate_date_bounds(
+            start_date,
+            end_date,
+            function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+        )
+    return {
+        "symbol": _parse_required_symbol_argument(
+            raw_arguments.get("symbol"),
+            function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            field_name="symbol",
+        ),
+        "sources": _parse_optional_string_list_argument(
+            raw_arguments.get("sources"),
+            function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            field_name="sources",
+            allowed_values=_SOCIAL_SENTIMENT_SOURCES,
+        )
+        or tuple(sorted(_SOCIAL_SENTIMENT_SOURCES)),
+        "start_date": start_date,
+        "end_date": end_date,
+        "item_limit": _parse_optional_integer_argument(
+            raw_arguments.get("itemLimit"),
+            function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            field_name="itemLimit",
+            minimum=1,
+            maximum=_SOCIAL_SENTIMENT_MAX_ITEM_LIMIT,
+        )
+        or _SOCIAL_SENTIMENT_DEFAULT_ITEM_LIMIT,
+    }
+
+
 def parse_insider_data_lookup_arguments(arguments_json: str) -> dict[str, object]:
     raw_arguments = _parse_json_object(
         arguments_json,
@@ -725,6 +818,25 @@ def execute_news_lookup(
             end_date=cast(datetime | None, arguments["end_date"]),
             item_limit=cast(int, arguments["item_limit"]),
         )
+    return cast(dict[str, object], result.model_dump(mode="json", by_alias=True))
+
+
+def execute_social_sentiment_lookup(
+    context: RuntimeToolContext,
+    arguments: dict[str, object],
+) -> dict[str, object]:
+    from app.services.social_sentiment_service import SocialSentimentService
+
+    service = SocialSentimentService(
+        source_adapters=tuple(context.social_sentiment_adapters or ())
+    )
+    result = service.get_social_sentiment_snapshot(
+        cast(str, arguments["symbol"]),
+        sources=cast(tuple[str, ...], arguments["sources"]),
+        start_date=cast(datetime | None, arguments["start_date"]),
+        end_date=cast(datetime | None, arguments["end_date"]),
+        item_limit=cast(int, arguments["item_limit"]),
+    )
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True))
 
 
@@ -1273,6 +1385,20 @@ NEWS_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     executor=execute_news_lookup,
 )
 
+SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
+    key=SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
+    openai_function_name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    display_name="Social Sentiment Lookup",
+    description=_SOCIAL_SENTIMENT_LOOKUP_DESCRIPTION,
+    parameters_schema=_SOCIAL_SENTIMENT_LOOKUP_PARAMETERS_SCHEMA,
+    guidance=_SOCIAL_SENTIMENT_LOOKUP_GUIDANCE,
+    sort_order=85,
+    denied_code=SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE,
+    denied_message=SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE,
+    parser=parse_social_sentiment_lookup_arguments,
+    executor=execute_social_sentiment_lookup,
+)
+
 INSIDER_DATA_LOOKUP_TOOL_SPEC = RuntimeToolSpec(
     key=INSIDER_DATA_LOOKUP_TOOL_KEY,
     openai_function_name=INSIDER_DATA_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -1312,6 +1438,10 @@ __all__ = [
     "NEWS_LOOKUP_ACCESS_DENIED_MESSAGE",
     "NEWS_LOOKUP_OPENAI_FUNCTION_NAME",
     "NEWS_LOOKUP_TOOL_SPEC",
+    "SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_CODE",
+    "SOCIAL_SENTIMENT_LOOKUP_ACCESS_DENIED_MESSAGE",
+    "SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME",
+    "SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC",
     "execute_fundamentals_lookup",
     "execute_history_lookup",
     "execute_indicators_lookup",
@@ -1319,6 +1449,7 @@ __all__ = [
     "execute_news_lookup",
     "execute_ohlcv_lookup",
     "execute_quote_lookup",
+    "execute_social_sentiment_lookup",
     "parse_fundamentals_lookup_arguments",
     "parse_history_lookup_arguments",
     "parse_indicators_lookup_arguments",
@@ -1326,4 +1457,5 @@ __all__ = [
     "parse_news_lookup_arguments",
     "parse_ohlcv_lookup_arguments",
     "parse_quote_lookup_arguments",
+    "parse_social_sentiment_lookup_arguments",
 ]

@@ -27,6 +27,10 @@ from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.execution_plan import PackageRuntimeAgentSpec
 from app.services.quote_provider import QuoteProvider
+from app.services.social_sentiment_provider import (
+    SocialSentimentSourceAdapter,
+    create_default_social_sentiment_adapters,
+)
 
 
 class RunExecutionError(Exception):
@@ -103,11 +107,19 @@ class AgentExecutionService:
         session_factory: sessionmaker[Session],
         *,
         quote_provider: QuoteProvider | None = None,
+        social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None,
         openai_client_factory: type[Any] = OpenAI,
         mcp_tool_client: McpToolClient | None = None,
     ) -> None:
         self.session_factory: sessionmaker[Session] = session_factory
         self.quote_provider: QuoteProvider | None = quote_provider
+        self.social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = (
+            tuple(social_sentiment_adapters)
+            if social_sentiment_adapters is not None
+            else create_default_social_sentiment_adapters(
+                timeout=get_settings().quote_provider_timeout_seconds
+            )
+        )
         self.openai_client_factory: type[Any] = openai_client_factory
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
 
@@ -352,6 +364,7 @@ class AgentExecutionService:
             session_factory=self.session_factory,
             capability_references=capability_references,
             quote_provider=self.quote_provider,
+            social_sentiment_adapters=self.social_sentiment_adapters,
             run_id=run_id,
             agent_key=agent.key,
             agent_version=self._runtime_agent_version(agent),

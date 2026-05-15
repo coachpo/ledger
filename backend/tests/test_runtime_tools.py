@@ -36,6 +36,8 @@ from app.agents.runtime_tools import (
     REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
     REPORT_MEMORY_WRITE_TOOL_SPEC,
     RUNTIME_TOOL_SPECS,
+    SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
     RuntimeToolContext,
     RuntimeToolError,
     RuntimeToolRegistry,
@@ -50,6 +52,7 @@ from app.agents.runtime_tools.market_data import (
     parse_news_lookup_arguments,
     parse_ohlcv_lookup_arguments,
     parse_quote_lookup_arguments,
+    parse_social_sentiment_lookup_arguments,
 )
 from app.agents.runtime_tools.positions import parse_position_lookup_arguments
 from app.agents.runtime_tools.reports import (
@@ -66,6 +69,7 @@ from app.agents.runtime_tools.types import (
     NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS,
     NEWS_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeFinancialStatement,
     RuntimeFinancialStatementLine,
     RuntimeFundamentalMetric,
@@ -84,6 +88,9 @@ from app.agents.runtime_tools.types import (
     RuntimeOhlcvSeries,
     RuntimeQuoteLookupResult,
     RuntimeReportMemoryWriteResult,
+    RuntimeSocialSentimentLookupResult,
+    RuntimeSocialSentimentMetric,
+    RuntimeSocialSentimentSourceBlock,
     RuntimeToolWarning,
 )
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
@@ -137,6 +144,7 @@ _GENERIC_PLATFORM_RUNTIME_TOOL_KEYS = (
     INDICATORS_LOOKUP_TOOL_KEY,
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     NEWS_LOOKUP_TOOL_KEY,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     INSIDER_DATA_LOOKUP_TOOL_KEY,
 )
 _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
@@ -144,6 +152,7 @@ _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
     INDICATORS_LOOKUP_TOOL_KEY: "ledger_indicators_lookup",
     FUNDAMENTALS_LOOKUP_TOOL_KEY: "ledger_fundamentals_lookup",
     NEWS_LOOKUP_TOOL_KEY: "ledger_news_lookup",
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY: "ledger_social_sentiment_lookup",
     INSIDER_DATA_LOOKUP_TOOL_KEY: "ledger_insider_data_lookup",
 }
 _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
@@ -153,6 +162,7 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     INDICATORS_LOOKUP_TOOL_KEY,
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     NEWS_LOOKUP_TOOL_KEY,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     INSIDER_DATA_LOOKUP_TOOL_KEY,
     POSITION_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
@@ -804,6 +814,7 @@ def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contr
         INDICATORS_LOOKUP_TOOL_KEY,
         FUNDAMENTALS_LOOKUP_TOOL_KEY,
         NEWS_LOOKUP_TOOL_KEY,
+        SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
         INSIDER_DATA_LOOKUP_TOOL_KEY,
         REPORT_MEMORY_WRITE_TOOL_KEY,
     )
@@ -979,6 +990,42 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     assert news_payload["toolKey"] == "ledger.news.lookup"
     assert news_payload["items"][0]["publishedAt"] == "2026-01-02T03:04:05Z"
 
+    social_sentiment_payload = RuntimeSocialSentimentLookupResult(
+        symbol=" nvda ",
+        sources=["reddit", "stocktwits", "reddit"],
+        start_date=datetime(2026, 1, 1, tzinfo=UTC),
+        end_date=_NOW,
+        source_blocks=[
+            RuntimeSocialSentimentSourceBlock(
+                source="Reddit",
+                provider="deterministic_test",
+                title="Retail thread",
+                summary="Mentions increased.",
+                as_of=_NOW,
+                symbols=["nvda", "NVDA"],
+                sentiment="positive",
+                metrics=[
+                    RuntimeSocialSentimentMetric(
+                        name="Mention Count",
+                        value=Decimal("12"),
+                        unit="count",
+                        source="Reddit",
+                        as_of=_NOW,
+                    )
+                ],
+            )
+        ],
+        metrics=[RuntimeSocialSentimentMetric(name="Bullish Ratio", value=Decimal("0.67"))],
+        warnings=[warning],
+    ).model_dump(mode="json", by_alias=True)
+    _assert_native_runtime_payload_is_json_safe_and_camel(social_sentiment_payload)
+    assert social_sentiment_payload["toolKey"] == "ledger.social_sentiment.lookup"
+    assert social_sentiment_payload["symbol"] == "NVDA"
+    assert social_sentiment_payload["sources"] == ["reddit", "stocktwits"]
+    assert social_sentiment_payload["sourceBlocks"][0]["source"] == "reddit"
+    assert social_sentiment_payload["sourceBlocks"][0]["symbols"] == ["NVDA"]
+    assert social_sentiment_payload["metrics"][0]["name"] == "bullish_ratio"
+
     insider_payload = RuntimeInsiderDataLookupResult(
         symbol="NVDA",
         provider="deterministic_test",
@@ -1043,6 +1090,55 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
             }
         ],
     }
+
+
+def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> None:
+    parameters = NEWS_LOOKUP_TOOL_SPEC.parameters_schema
+    properties = cast(dict[str, object], parameters["properties"])
+
+    assert NEWS_LOOKUP_TOOL_SPEC.key == NEWS_LOOKUP_TOOL_KEY
+    assert NEWS_LOOKUP_TOOL_SPEC.openai_function_name == NEWS_LOOKUP_OPENAI_FUNCTION_NAME
+    assert list(properties) == ["symbols", "query", "startDate", "endDate", "itemLimit"]
+    assert parameters["required"] == ["symbols", "query", "startDate", "endDate", "itemLimit"]
+    assert "sources" not in properties
+    assert "sourceBlocks" not in properties
+
+    parsed = parse_news_lookup_arguments(
+        json.dumps(
+            {
+                "symbols": [" nvda ", "NVDA"],
+                "query": " earnings ",
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": None,
+            }
+        )
+    )
+    assert parsed == {
+        "symbols": ["NVDA"],
+        "query": "earnings",
+        "start_date": None,
+        "end_date": None,
+        "item_limit": 25,
+    }
+
+    payload = RuntimeNewsLookupResult(
+        symbols=["NVDA"],
+        query="earnings",
+        items=[RuntimeNewsItem(title="News", source="wire", published_at=_NOW)],
+    ).model_dump(mode="json", by_alias=True)
+    assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
+    assert set(payload) == {
+        "toolKey",
+        "query",
+        "symbols",
+        "startDate",
+        "endDate",
+        "items",
+        "warnings",
+    }
+    assert "sourceBlocks" not in payload
+    assert "metrics" not in payload
 
 
 def test_indicator_contract_requires_warmup_reasons_and_rejects_lookahead() -> None:
@@ -1727,12 +1823,16 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     assert spec_by_key[MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY].openai_function_name == (
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME
     )
+    assert spec_by_key[SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY].openai_function_name == (
+        SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME
+    )
     tools = registry.get_openai_tools(
         {
             REPORT_LOOKUP_TOOL_KEY,
             REPORT_MEMORY_WRITE_TOOL_KEY,
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+            SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
         }
     )
     assert [tool["name"] for tool in tools] == [
@@ -1740,6 +1840,7 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
         REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
+        SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
     for tool in tools:
         _assert_strict_openai_tool_schema(tool)
@@ -1817,9 +1918,11 @@ def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> N
     assert "instead of inventing metrics" in guidance
     assert "call ledger_news_lookup" in guidance
     assert "instead of inventing articles" in guidance
+    assert "call ledger_social_sentiment_lookup" in guidance
+    assert "instead of treating news as social data" in guidance
     assert "call ledger_insider_data_lookup" in guidance
     assert "Disclose warnings or empty results as data quality" in guidance
-    assert guidance.count("data quality or provider limitations") >= 5
+    assert guidance.count("data quality or provider limitations") >= 6
     assert "do not claim unavailable coverage" in guidance
     assert "do not present unsupported provider coverage" in guidance
 
@@ -2478,6 +2581,25 @@ def test_market_data_history_lookup_parser_preserves_validation_messages(
             },
         ),
         (
+            parse_social_sentiment_lookup_arguments,
+            json.dumps(
+                {
+                    "symbol": " nvda ",
+                    "sources": ["Reddit", "stocktwits", "reddit"],
+                    "startDate": "2026-01-01",
+                    "endDate": None,
+                    "itemLimit": None,
+                }
+            ),
+            {
+                "symbol": "NVDA",
+                "sources": ("reddit", "stocktwits"),
+                "start_date": datetime(2026, 1, 1, tzinfo=UTC),
+                "end_date": None,
+                "item_limit": 25,
+            },
+        ),
+        (
             parse_insider_data_lookup_arguments,
             json.dumps(
                 {
@@ -2545,6 +2667,17 @@ def test_generic_platform_market_data_runtime_tool_parsers_normalize_happy_paths
             {
                 "symbols": ["NVDA"],
                 "query": None,
+                "startDate": "2026-01-01",
+                "endDate": "2026-01-03",
+                "itemLimit": 2,
+            },
+        ),
+        (
+            parse_social_sentiment_lookup_arguments,
+            SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            {
+                "symbol": "NVDA",
+                "sources": None,
                 "startDate": "2026-01-01",
                 "endDate": "2026-01-03",
                 "itemLimit": 2,
@@ -2711,6 +2844,28 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
             "ledger_news_lookup itemLimit must be at most 50.",
         ),
         (
+            parse_social_sentiment_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "sources": ["forums"],
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": 2,
+            },
+            "ledger_social_sentiment_lookup sources must use: reddit, stocktwits.",
+        ),
+        (
+            parse_social_sentiment_lookup_arguments,
+            {
+                "symbol": "NVDA",
+                "sources": None,
+                "startDate": None,
+                "endDate": None,
+                "itemLimit": 51,
+            },
+            "ledger_social_sentiment_lookup itemLimit must be at most 50.",
+        ),
+        (
             parse_insider_data_lookup_arguments,
             {
                 "symbol": "NVDA",
@@ -2752,6 +2907,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             POSITION_LOOKUP_TOOL_SPEC,
             MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC,
+            SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
         ]
     )
     context = _runtime_context(fail_on_session=True)
@@ -2794,6 +2950,17 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
         )
     assert history_error.value.message == (
         "ledger_market_data_history_lookup pointLimit must be at most 250."
+    )
+
+    with pytest.raises(RuntimeToolError) as social_error:
+        _ = registry.dispatch(
+            name=SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json='{"symbol":"NVDA","unsupported":true}',
+            granted_tool_keys={SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY},
+            context=context,
+        )
+    assert social_error.value.message == (
+        "ledger_social_sentiment_lookup arguments contained unsupported fields: unsupported"
     )
 
 

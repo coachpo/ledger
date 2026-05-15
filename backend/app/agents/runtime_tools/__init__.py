@@ -17,6 +17,8 @@ from app.agents.runtime_tools.market_data import (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
     NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
     NEWS_LOOKUP_TOOL_SPEC,
+    SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
     execute_fundamentals_lookup,
     execute_history_lookup,
     execute_indicators_lookup,
@@ -24,6 +26,7 @@ from app.agents.runtime_tools.market_data import (
     execute_news_lookup,
     execute_ohlcv_lookup,
     execute_quote_lookup,
+    execute_social_sentiment_lookup,
     parse_fundamentals_lookup_arguments,
     parse_history_lookup_arguments,
     parse_indicators_lookup_arguments,
@@ -31,6 +34,7 @@ from app.agents.runtime_tools.market_data import (
     parse_news_lookup_arguments,
     parse_ohlcv_lookup_arguments,
     parse_quote_lookup_arguments,
+    parse_social_sentiment_lookup_arguments,
 )
 from app.agents.runtime_tools.positions import (
     POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -61,6 +65,7 @@ RUNTIME_TOOL_SPECS = (
     INDICATORS_LOOKUP_TOOL_SPEC,
     FUNDAMENTALS_LOOKUP_TOOL_SPEC,
     NEWS_LOOKUP_TOOL_SPEC,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
     INSIDER_DATA_LOOKUP_TOOL_SPEC,
 )
 
@@ -85,6 +90,8 @@ __all__ = [
     "MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC",
     "NEWS_LOOKUP_OPENAI_FUNCTION_NAME",
     "NEWS_LOOKUP_TOOL_SPEC",
+    "SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME",
+    "SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC",
     "POSITION_LOOKUP_OPENAI_FUNCTION_NAME",
     "POSITION_LOOKUP_TOOL_SPEC",
     "REPORT_LOOKUP_OPENAI_FUNCTION_NAME",
@@ -103,6 +110,7 @@ __all__ = [
     "execute_news_lookup",
     "execute_ohlcv_lookup",
     "execute_position_lookup",
+    "execute_social_sentiment_lookup",
     "execute_quote_lookup",
     "execute_report_lookup",
     "execute_report_memory_write",
@@ -115,6 +123,7 @@ __all__ = [
     "parse_ohlcv_lookup_arguments",
     "parse_position_lookup_arguments",
     "parse_quote_lookup_arguments",
+    "parse_social_sentiment_lookup_arguments",
     "parse_report_lookup_arguments",
     "parse_report_memory_write_arguments",
 ]
