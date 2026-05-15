@@ -1,6 +1,6 @@
 import type { ApiErrorDetail, ApiErrorResponse } from "./types/common";
 
-export type RequestMethod = "DELETE" | "GET" | "PATCH" | "POST";
+export type RequestMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
 export type RequestQueryValue = boolean | number | string | null | undefined;
 
 export interface RequestOptions {

@@ -9,16 +9,19 @@ import {
 import {
   createWorkflowPackage,
   deleteWorkflowPackage,
+  deleteWorkflowPackageSecretBinding,
   createWorkflowPackageLaunch,
   createWorkflowPackageVersion,
   getWorkflowPackage,
   getWorkflowPackageLaunch,
   getWorkflowPackageManifest,
   importWorkflowPackage,
+  listWorkflowPackageSecretBindings,
   listWorkflowPackageVersions,
   listWorkflowPackages,
   preflightWorkflowPackage,
   updateWorkflowPackage,
+  upsertWorkflowPackageSecretBinding,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
 import { listTools } from "@/lib/api/tools";
@@ -33,6 +36,8 @@ import type {
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
+  WorkflowPackageSecretBindingListRead,
+  WorkflowPackageSecretBindingUpdateRequest,
   WorkflowPackageUpdateRequest,
   WorkflowPackageVersionListRead,
 } from "@/lib/types/workflow-package";
@@ -50,6 +55,15 @@ type CreateWorkflowPackageVersionVariables = {
 type WorkflowPackageLaunchVariables = {
   packageId: IdParam;
   payload: WorkflowPackageLaunchCreateRequest;
+};
+
+type WorkflowPackageSecretBindingVariables = {
+  key: IdParam;
+  packageId: IdParam;
+};
+
+type WorkflowPackageSecretBindingUpdateVariables = WorkflowPackageSecretBindingVariables & {
+  payload: WorkflowPackageSecretBindingUpdateRequest;
 };
 
 type WorkflowPackageReadLike = Pick<WorkflowPackageRead, "id" | "latestVersion">;
@@ -185,6 +199,50 @@ export function useDeleteWorkflowPackage() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.workflowPackages.versions(packageId),
       });
+    },
+  });
+}
+
+export function useWorkflowPackageSecretBindings(
+  packageId: IdParam | undefined,
+): UseQueryResult<WorkflowPackageSecretBindingListRead, Error> {
+  const resolvedPackageId = packageId ?? "";
+
+  return useQuery({
+    queryKey: queryKeys.platform.workflowPackages.secretBindings(resolvedPackageId),
+    queryFn: ({ signal }) => listWorkflowPackageSecretBindings(resolvedPackageId, signal),
+    enabled: Boolean(packageId),
+  });
+}
+
+function invalidateWorkflowPackageSecretBindingScope(queryClient: QueryClient, packageId: IdParam) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.secretBindings(packageId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.launch(packageId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.preflight(packageId) }),
+  ]);
+}
+
+export function useUpsertWorkflowPackageSecretBinding() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ key, packageId, payload }: WorkflowPackageSecretBindingUpdateVariables) =>
+      upsertWorkflowPackageSecretBinding(packageId, key, payload),
+    onSuccess: async (_binding, variables) => {
+      await invalidateWorkflowPackageSecretBindingScope(queryClient, variables.packageId);
+    },
+  });
+}
+
+export function useDeleteWorkflowPackageSecretBinding() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ key, packageId }: WorkflowPackageSecretBindingVariables) =>
+      deleteWorkflowPackageSecretBinding(packageId, key),
+    onSuccess: async (_result, variables) => {
+      await invalidateWorkflowPackageSecretBindingScope(queryClient, variables.packageId);
     },
   });
 }

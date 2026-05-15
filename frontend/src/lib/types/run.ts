@@ -7,6 +7,7 @@ export type RunStepOrigin = "planned" | "copied";
 export type RunInvocationInputMode = "passthrough" | "wired";
 export type RunInvocationResolvedInputOrigin = "derived" | "edited" | "copied" | "passthrough";
 export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
+export type RunOperationKind = "http";
 export type RunTargetKind = "agent" | "workflow" | "workflowPackage";
 
 export interface RunTargetIdentityRead {
@@ -29,7 +30,7 @@ export interface RunGraphMetadata {
   loopId?: string;
   loopIteration?: number;
   nodeId?: string;
-  nodeKind?: "step" | "sequence" | "fanout" | "loop";
+  nodeKind?: "step" | "sequence" | "fanout" | "loop" | "http";
   sourceRefs?: unknown;
 }
 
@@ -126,6 +127,42 @@ export interface RunAgentInvocationRead {
   updatedAt: string;
 }
 
+export interface RunOperationInvocationRead {
+  id: number;
+  runStepId: number;
+  runId: number;
+  stepIndex: number;
+  slot: string;
+  position: number;
+  operationKey: string;
+  operationKind: RunOperationKind;
+  outputSchemaId: number;
+  outputSchemaVersion: number;
+  method: string | null;
+  timeoutSeconds: number | null;
+  requestMetadata: UnknownRecord;
+  responseMetadata: UnknownRecord;
+  graphMetadata: RunGraphMetadata | null;
+  optional: boolean;
+  status: RunStepStatus;
+  output: unknown | null;
+  outputOrigin: RunInvocationOutputOrigin | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  errorDetails: UnknownRecord[];
+  durationMs: number | null;
+  traceSpanId: string | null;
+  sourceOperationInvocationId: number | null;
+  sourceRunId: number | null;
+  sourceRunStepId: number | null;
+  sourceStepIndex: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  persistedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RunStepRead {
   id: number;
   runId: number;
@@ -143,6 +180,7 @@ export interface RunStepRead {
   createdAt: string;
   updatedAt: string;
   invocations: RunAgentInvocationRead[];
+  operationInvocations: RunOperationInvocationRead[];
 }
 
 export interface RunCreatedRead extends RunTargetIdentityRead {

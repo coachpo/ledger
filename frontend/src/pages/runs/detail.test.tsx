@@ -81,6 +81,7 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
     index: 1,
     graphMetadata: null,
     invocations: [buildInvocation()],
+    operationInvocations: [],
     origin: "planned",
     persistedAt: "2026-04-20T10:00:03Z",
     runId: 42,

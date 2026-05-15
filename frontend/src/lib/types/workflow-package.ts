@@ -31,6 +31,22 @@ export interface WorkflowPackageUpdateRequest {
   status?: WorkflowPackageStatus | null;
 }
 
+export interface WorkflowPackageSecretBindingRead {
+  packageId: number;
+  key: string;
+  hasValue: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowPackageSecretBindingListRead {
+  items: WorkflowPackageSecretBindingRead[];
+}
+
+export interface WorkflowPackageSecretBindingUpdateRequest {
+  value: string;
+}
+
 export interface WorkflowPackageImportRequest extends WorkflowPackageManifestRequest {
   mode?: WorkflowPackageImportMode;
 }

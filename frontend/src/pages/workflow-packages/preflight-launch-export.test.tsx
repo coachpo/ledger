@@ -58,14 +58,17 @@ vi.mock("@/hooks/use-model-connections", () => ({
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => useCreatePackageMock(),
   useCreateWorkflowPackageLaunch: () => useCreateLaunchMock(),
+  useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useImportWorkflowPackage: () => useImportPackageMock(),
   usePreflightWorkflowPackage: () => usePreflightPackageMock(),
   useTools: () => useToolsMock(),
   useUpdateWorkflowPackage: () => useUpdatePackageMock(),
+  useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useValidateWorkflowPackageManifest: () => useValidatePackageMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
   useWorkflowPackageVersions: (...args: unknown[]) => useWorkflowPackageVersionsMock(...args),
 }));
 

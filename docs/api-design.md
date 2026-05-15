@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Live API reference for branch `main` at `987686e`.
+> Status: Live API reference for branch `main` at `33c2584`.
 
 ## Conventions
 
@@ -32,27 +32,56 @@ Template/report series can be built by creating a template, previewing with `POS
 
 | Resource | Routes |
 |---|---|
-| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET/POST /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
+| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `GET/POST /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
+| Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
-| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, and memory-write tool metadata |
+| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `ledger.social_sentiment.lookup` tool metadata |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
+
+## Workflow Package HTTP Nodes and Secret Bindings
+
+Workflow package manifests use `ledger.workflowPackage/v1`. The shipped non-agent operation node contract is `kind: http`; `kind: step` continues to mean a local package agent. An HTTP node includes `id`, `slot`, `method`, `url`, optional `headers`, optional `query`, optional JSON-compatible `body`, `response.outputSchema`, `timeoutSeconds`, and `optional`.
+
+`method` is normalized to uppercase and preflight accepts only `GET` and `POST`. `timeoutSeconds` defaults to `30` and is capped at `30` by the manifest schema and runtime settings. The request fields may contain literal JSON values, `${{ inputs.path }}` references, `${{ nodes.node_id.outputs.slot.path }}` references, or `${{ secrets.key }}` references. Secret references are valid only inside HTTP request fields (`url`, `headers`, `query`, and `body`); they are rejected in package metadata, agent fields, schemas, workflow outputs, and other manifest locations.
+
+Package secret bindings are package-local API resources, not manifest/export data. Binding keys must start with a lowercase letter and use only lowercase letters, numbers, and underscores. `GET /api/workflow-packages/{packageId}/secret-bindings` returns `{items:[{packageId,key,hasValue,createdAt,updatedAt}]}`. `PUT /api/workflow-packages/{packageId}/secret-bindings/{key}` accepts `{value}` and stores the value encrypted through the package service; reads only return `hasValue`. `DELETE` removes the binding. Exports omit secret binding rows and raw secret values.
+
+Preflight checks HTTP operations against compiled package data and configured package secret bindings. Missing bindings emit blocking diagnostics such as `HTTP secret binding 'body_token' is not configured` at the operation request path. Unsupported methods, malformed step refs, duplicate operation ids, duplicate step slots, and missing response schemas are blocking errors. Diagnostics and compiled plans must never include raw secret values.
+
+## HTTP Operation Runtime Contract
+
+`HttpOperationExecutionService` is the only execution boundary for `kind: http`. It resolves request values from run inputs, previous step outputs, and package secret bindings immediately before dispatch, then stores redacted request metadata and bounded response metadata on a dedicated operation invocation row.
+
+Production defaults are strict: `HTTP_OPERATION_ALLOWED_METHODS=GET,POST`, `HTTP_OPERATION_ALLOW_INSECURE_HTTP=false`, `HTTP_OPERATION_BLOCK_PRIVATE_NETWORKS=true`, `HTTP_OPERATION_TIMEOUT_MAX_SECONDS=30`, `HTTP_OPERATION_REQUEST_MAX_BYTES=131072`, `HTTP_OPERATION_RESPONSE_MAX_BYTES=262144`, and `HTTP_OPERATION_MAX_REDIRECTS=0`. Dev/test overrides are exercised only by targeted tests; default local HTTP and private/loopback targets remain blocked.
+
+Runtime request metadata redacts sensitive URL query names and all secret-backed headers, query fields, and body fields. Secret-backed metadata is represented as `{from:"secret", key:"...", redacted:true}`. The response contract supports JSON and `text/*` content types, captures status code, selected response headers, content type, body preview, body byte count, body SHA-256, redaction-safe URL, and redirect metadata, then validates the parsed body against `response.outputSchema`. Required operation failures fail the run; optional operation failures persist a failed operation result and return `null` for that slot without failing the whole run.
+
+## Run Detail Shape for Operation Invocations
+
+Run detail payloads expose operations separately from agents. Each `steps[]` item has `invocations` for agent invocations and `operationInvocations` for non-agent operations. Operation invocation records use the operation invocation shape: `id`, `runStepId`, `runId`, `stepIndex`, `slot`, `position`, `operationKey`, `operationKind`, `outputSchemaId`, `outputSchemaVersion`, `method`, `timeoutSeconds`, `requestMetadata`, `responseMetadata`, `graphMetadata`, `optional`, `status`, `output`, `outputOrigin`, `errorCode`, `errorMessage`, `errorDetails`, `durationMs`, `traceSpanId`, replay source fields (`sourceOperationInvocationId`, `sourceRunId`, `sourceRunStepId`, `sourceStepIndex`), timestamps, and update timestamps.
+
+Operation invocation rows persist in `run_operation_invocations`, not `run_agent_invocations`. Agent-only steps keep `operationInvocations: []`; HTTP-only steps keep `invocations: []`; mixed execution steps may contain both arrays. Reruns and step replays copy operation rows with source-operation provenance while keeping redacted request metadata and response metadata secret-safe.
+
+## Runtime Tool Contract Notes
+
+`/api/tools` exposes global read-only server-declared metadata. Native runtime tools currently include quote/history/OHLCV, indicators, fundamentals, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, insider data, positions, `ledger.reports.lookup`, and `ledger.reports.write`. `ledger.social_sentiment.lookup` is a separate tool, not an extension of news lookup; it accepts one symbol plus optional `sources` (`reddit`, `stocktwits`), optional date bounds, and `itemLimit` up to `50`, then returns `sourceBlocks`, aggregate `metrics`, and structured `warnings`.
 
 ## Platform Compatibility Notes
 
-- Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside `ledger.workflowPackage/v1` manifests.
+- Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside `ledger.workflowPackage/v1` manifests.
 - `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
-- Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
+- Package exports keep private MCP `env`, `headers`, and `query` values inline, omit database ids and run history, and omit package secret binding rows and values.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
-- Tools are global read-only metadata from `/api/tools`; native tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, reports, and report memory writes, while runtime tool keys and OpenAI function names stay stable.
-- Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, and per-invocation span ids.
+- Tools are global read-only metadata from `/api/tools`; native tool keys cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, reports, and report memory writes, while runtime tool keys and OpenAI function names stay stable.
+- Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
 
 ## HTTP Status Guidelines
 
-- `200` for successful reads, updates, previews, compiles, and test responses.
-- `201` for create responses, including report create/upload and launch creation.
+- `200` for successful reads, updates, previews, compiles, preflight, manifest validation, connection-test responses, and secret binding updates.
+- `201` for create responses, including report create/upload and workflow-package launch creation.
 - `204` for successful delete/archive responses where no body is returned.
 - `400` for malformed file or business-rule violations.
 - `404` for requested resources that do not exist.
 - `409` for uniqueness conflicts such as duplicate slugs/keys/names.
-- `422` for request or manifest validation failures.
+- `422` for request, manifest, package, or launch validation failures.

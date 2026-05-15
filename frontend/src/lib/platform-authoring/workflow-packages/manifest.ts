@@ -81,6 +81,8 @@ export type WorkflowPackageEditorTab =
   | "output-schemas"
   | "capability-profiles"
   | "private-mcp"
+  | "workflow-yaml"
+  | "secret-bindings"
   | "preflight"
   | "launch"
   | "exports";
@@ -253,6 +255,30 @@ function parseMcpServer(value: unknown, index: number): PackageMcpServerDraft {
   });
 }
 
+export function workflowPackageWorkflowsToYaml(workflows: readonly UnknownRecord[]): string {
+  return stringify([...workflows], { lineWidth: 110 });
+}
+
+export function workflowPackageWorkflowsFromYaml(source: string): { errors: string[]; workflows: UnknownRecord[] } {
+  try {
+    const document = parseDocument(source || "[]", { prettyErrors: false, uniqueKeys: false });
+    const value = document.toJS() as unknown;
+    const documentErrors = document.errors.map((error) => error.message);
+    if (documentErrors.length > 0) {
+      return { errors: documentErrors, workflows: [] };
+    }
+    if (!Array.isArray(value)) {
+      return { errors: ["Workflow YAML must be an array of workflow objects."], workflows: [] };
+    }
+    if (!value.every(isRecord)) {
+      return { errors: ["Workflow YAML entries must be objects."], workflows: [] };
+    }
+    return { errors: [], workflows: value };
+  } catch (error) {
+    return { errors: [error instanceof Error ? error.message : "Unable to parse workflow YAML."], workflows: [] };
+  }
+}
+
 export function packageDraftFromManifestSource(source: string): { draft: WorkflowPackageDraft; errors: string[] } {
   try {
     const document = parseDocument(source, { prettyErrors: false, uniqueKeys: false });
@@ -415,7 +441,7 @@ export function diagnosticToEditorTarget(path: string): { field: string; tab: Wo
     return { field: path, tab: "private-mcp" };
   }
   if (path.startsWith("spec.workflows")) {
-    return { field: path, tab: "preflight" };
+    return { field: "spec.workflows", tab: "workflow-yaml" };
   }
   return { field: path, tab: "overview" };
 }

@@ -8,6 +8,7 @@ import type {
   RunAgentInvocationRead,
   RunGraphMetadata,
   RunMemoryArtifactRead,
+  RunOperationInvocationRead,
   RunPackageResolvedModelConnectionRead,
   RunStatus,
   RunStepRead,
@@ -42,6 +43,7 @@ import { RunRerunDialog } from "./rerun-dialog";
 
 type TraceSpanEntry = {
   invocationId: number;
+  invocationKind: "agent" | "operation";
   slot: string;
   spanId: string;
   stepIndex: number;
@@ -68,7 +70,7 @@ function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
 }
 
-function progressForInvocations(invocations: RunAgentInvocationRead[], fallbackStatus?: RunStepStatus | RunStatus): number {
+function progressForInvocations(invocations: Array<{ status: RunStepStatus }>, fallbackStatus?: RunStepStatus | RunStatus): number {
   if (invocations.length === 0) {
     return fallbackStatus && fallbackStatus !== "running" && fallbackStatus !== "pending" ? 100 : 0;
   }
@@ -82,7 +84,7 @@ function progressForRun(status: RunStatus, steps: RunStepRead[]): number {
     return 0;
   }
 
-  const invocations = steps.flatMap((step) => step.invocations);
+  const invocations = steps.flatMap((step) => [...step.invocations, ...step.operationInvocations]);
 
   if (invocations.length === 0) {
     return status === "running" ? 0 : 100;
@@ -101,7 +103,9 @@ function formatUnfinishedRunStatus(status: RunStatus): string {
 
 function formatTracePath(traceId: string | null, traceSpanEntries: TraceSpanEntry[]): string | null {
   const segments = traceSpanEntries.map(
-    (entry) => `step ${entry.stepIndex}/${entry.slot}/${entry.spanId}`,
+    (entry) => entry.invocationKind === "operation"
+      ? `step ${entry.stepIndex}/operation ${entry.slot}/${entry.spanId}`
+      : `step ${entry.stepIndex}/${entry.slot}/${entry.spanId}`,
   );
 
   if (traceId && segments.length === 0) {
@@ -176,6 +180,10 @@ function sortedResolvedModelConnections(connections: RunPackageResolvedModelConn
 }
 
 function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvocationRead[] {
+  return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
+}
+
+function sortedOperationInvocations(invocations: RunOperationInvocationRead[]): RunOperationInvocationRead[] {
   return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
 }
 
@@ -375,9 +383,26 @@ function SourceInvocationLink({ invocation, step }: { invocation: RunAgentInvoca
   );
 }
 
+function SourceOperationInvocationLink({ invocation }: { invocation: RunOperationInvocationRead }) {
+  if (invocation.sourceOperationInvocationId === null) {
+    return "Not recorded";
+  }
+
+  if (!invocation.sourceRunId) {
+    return `Operation invocation #${invocation.sourceOperationInvocationId}`;
+  }
+
+  return (
+    <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${invocation.sourceRunId}#operation-invocation-${invocation.sourceOperationInvocationId}`}>
+      Operation invocation #{invocation.sourceOperationInvocationId}
+    </Link>
+  );
+}
+
 type RunGraphGroup = {
   branchIds: string[];
   invocations: RunAgentInvocationRead[];
+  operationInvocations: RunOperationInvocationRead[];
   key: string;
   label: string;
   loopId: string | null;
@@ -391,7 +416,7 @@ function groupRunGraphSteps(steps: RunStepRead[]): RunGraphGroup[] {
   const ensureGroup = (key: string, label: string, nodeKind: string, loopId: string | null, loopIteration: number | null) => {
     let group = groups.get(key);
     if (!group) {
-      group = { branchIds: [], invocations: [], key, label, loopId, loopIteration, nodeKind, steps: [] };
+      group = { branchIds: [], invocations: [], operationInvocations: [], key, label, loopId, loopIteration, nodeKind, steps: [] };
       groups.set(key, group);
     }
     return group;
@@ -399,7 +424,9 @@ function groupRunGraphSteps(steps: RunStepRead[]): RunGraphGroup[] {
 
   steps.forEach((step) => {
     const metadata = step.graphMetadata;
-    const firstInvocationMetadata = step.invocations.find((invocation) => invocation.graphMetadata)?.graphMetadata ?? null;
+    const firstInvocationMetadata = step.invocations.find((invocation) => invocation.graphMetadata)?.graphMetadata
+      ?? step.operationInvocations.find((invocation) => invocation.graphMetadata)?.graphMetadata
+      ?? null;
     const groupingMetadata = metadata ?? firstInvocationMetadata;
     if (!groupingMetadata) {
       return;
@@ -433,7 +460,8 @@ function groupRunGraphSteps(steps: RunStepRead[]): RunGraphGroup[] {
     );
     group.steps.push(step);
     group.invocations.push(...step.invocations);
-    for (const invocation of step.invocations) {
+    group.operationInvocations.push(...step.operationInvocations);
+    for (const invocation of [...step.invocations, ...step.operationInvocations]) {
       const branchId = invocation.graphMetadata?.branchId;
       if (branchId && !group.branchIds.includes(branchId)) {
         group.branchIds.push(branchId);
@@ -470,7 +498,7 @@ function RunGraphSummary({ groups }: { groups: RunGraphGroup[] }) {
             </div>
             <p className="mt-2 font-medium">{group.label}</p>
             <p className="mt-1 text-muted-foreground">
-              Steps {group.steps.map((step) => step.index).join(", ")} · {group.invocations.length} invocation(s)
+              Steps {group.steps.map((step) => step.index).join(", ")} · {group.operationInvocations.length === 0 ? `${group.invocations.length} invocation(s)` : `${group.invocations.length} agent invocation(s) · ${group.operationInvocations.length} operation invocation(s)`}
             </p>
           </div>
         ))}
@@ -832,9 +860,70 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
   );
 }
 
+function OperationInvocationCard({ invocation }: { invocation: RunOperationInvocationRead }) {
+  const hasError = Boolean(invocation.errorCode || invocation.errorMessage || invocation.errorDetails.length > 0);
+
+  return (
+    <Card id={`operation-invocation-${invocation.id}`} data-testid={`runs-step-${invocation.stepIndex}-operation-${invocation.slot}`}>
+      <CardHeader>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-1">
+            <CardTitle className="text-base">{invocation.slot}</CardTitle>
+            <CardDescription>Position {invocation.position} · {invocation.operationKey} · {invocation.operationKind}</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">Operation</Badge>
+            <Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge>
+            <Badge variant="outline">{invocation.operationKind}</Badge>
+            {invocation.method ? <Badge variant="outline">{invocation.method}</Badge> : null}
+            <Badge variant="outline">output {invocation.outputOrigin ?? "pending"}</Badge>
+            <Badge variant="outline">{invocation.optional ? "optional" : "required"}</Badge>
+            <GraphMetadataBadges metadata={invocation.graphMetadata} />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {hasError ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>{invocation.errorMessage ?? "No error message recorded."}</p>
+              {invocation.errorDetails.length > 0 ? <pre className="overflow-x-auto rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs">{stringifyJson(invocation.errorDetails)}</pre> : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <DetailGrid
+          items={[
+            { label: "Operation id", value: `#${invocation.id}` },
+            { label: "Operation", value: `${invocation.operationKey} · ${invocation.operationKind}` },
+            { label: "Output schema", value: `#${invocation.outputSchemaId}@${invocation.outputSchemaVersion}` },
+            { label: "Method", value: invocation.method ?? "Not recorded" },
+            { label: "Timeout", value: invocation.timeoutSeconds ? `${invocation.timeoutSeconds}s` : "Not recorded" },
+            { label: "Source operation", value: <SourceOperationInvocationLink invocation={invocation} /> },
+            { label: "Graph node", value: graphMetadataLabel(invocation.graphMetadata) },
+            { label: "Duration", value: formatDuration(invocation.durationMs) },
+            { label: "Trace span", value: invocation.traceSpanId ? <Button asChild size="sm" variant="outline"><Link to="#run-trace-linkage">Trace link · {invocation.traceSpanId}</Link></Button> : "Not recorded" },
+            { label: "Started", value: formatTimestamp(invocation.startedAt) },
+            { label: "Finished", value: formatTimestamp(invocation.finishedAt) },
+            { label: "Persisted", value: formatTimestamp(invocation.persistedAt) },
+          ]}
+        />
+        <div className="grid gap-4 xl:grid-cols-3">
+          <JsonBlock label="Redacted request metadata" testId={`runs-operation-${invocation.id}-request-metadata`} value={invocation.requestMetadata} />
+          <JsonBlock label="Response metadata" testId={`runs-operation-${invocation.id}-response-metadata`} value={invocation.responseMetadata} />
+          <JsonBlock label="Output preview" testId={`runs-operation-${invocation.id}-output-preview`} value={invocation.output} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StepCard({ canReplay, onOpenReplay, step }: { canReplay: boolean; onOpenReplay: (stepIndex: number) => void; step: RunStepRead }) {
   const invocations = sortedInvocations(step.invocations);
-  const progress = progressForInvocations(invocations, step.status);
+  const operationInvocations = sortedOperationInvocations(step.operationInvocations);
+  const allInvocations = [...invocations, ...operationInvocations];
+  const progress = progressForInvocations(allInvocations, step.status);
 
   return (
     <Card id={`step-${step.index}`} data-testid={`runs-step-${step.index}`}>
@@ -846,7 +935,7 @@ function StepCard({ canReplay, onOpenReplay, step }: { canReplay: boolean; onOpe
                 <div className="flex flex-col gap-1">
                   <CardTitle className="text-base">Step {step.index}</CardTitle>
                   <CardDescription>
-                    {step.origin} origin · {invocations.length} invocation(s) · {progress}% terminal
+                    {step.origin} origin · {invocations.length} agent invocation(s) · {operationInvocations.length} operation invocation(s) · {progress}% terminal
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -894,15 +983,22 @@ function StepCard({ canReplay, onOpenReplay, step }: { canReplay: boolean; onOpe
               ]}
             />
 
-            {invocations.length === 0 ? (
+            {allInvocations.length === 0 ? (
               <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
                 No invocations have been planned or persisted for this step yet.
               </div>
             ) : (
-              <div className="grid gap-3">
-                {invocations.map((invocation) => (
-                  <InvocationCard invocation={invocation} key={invocation.id} step={step} />
-                ))}
+              <div className="grid gap-4">
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Agent invocations</p>
+                  {invocations.length === 0 ? <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">No agent invocations for this step.</div> : null}
+                  {invocations.map((invocation) => <InvocationCard invocation={invocation} key={invocation.id} step={step} />)}
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Operation invocations</p>
+                  {operationInvocations.length === 0 ? <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">No operation invocations for this step.</div> : null}
+                  {operationInvocations.map((invocation) => <OperationInvocationCard invocation={invocation} key={invocation.id} />)}
+                </div>
               </div>
             )}
           </div>
@@ -921,19 +1017,29 @@ export function RunsDetailPage() {
     () => [...(runQuery.data?.steps ?? [])].sort((left, right) => left.index - right.index),
     [runQuery.data?.steps],
   );
-  const allInvocations = useMemo(() => steps.flatMap((step) => sortedInvocations(step.invocations)), [steps]);
+  const allInvocations = useMemo(() => steps.flatMap((step) => [...sortedInvocations(step.invocations), ...sortedOperationInvocations(step.operationInvocations)]), [steps]);
   const traceSpanEntries = useMemo(
     () =>
-      steps.flatMap((step) =>
-        sortedInvocations(step.invocations)
+      steps.flatMap((step) => [
+        ...sortedInvocations(step.invocations)
           .filter((invocation) => invocation.traceSpanId)
           .map((invocation) => ({
             invocationId: invocation.id,
+            invocationKind: "agent" as const,
             slot: invocation.slot,
             spanId: invocation.traceSpanId as string,
             stepIndex: step.index,
           })),
-      ),
+        ...sortedOperationInvocations(step.operationInvocations)
+          .filter((invocation) => invocation.traceSpanId)
+          .map((invocation) => ({
+            invocationId: invocation.id,
+            invocationKind: "operation" as const,
+            slot: invocation.slot,
+            spanId: invocation.traceSpanId as string,
+            stepIndex: step.index,
+          })),
+      ]),
     [steps],
   );
   const graphGroups = useMemo(() => groupRunGraphSteps(steps), [steps]);
@@ -1005,7 +1111,12 @@ export function RunsDetailPage() {
   const run = runQuery.data;
   const copiedSteps = steps.filter((step) => step.origin === "copied").length;
   const plannedSteps = steps.filter((step) => step.origin === "planned").length;
-  const copiedInvocations = allInvocations.filter((invocation) => invocation.outputOrigin === "copied" || invocation.resolvedInputOrigin === "copied").length;
+  const copiedInvocations = steps.reduce(
+    (count, step) => count
+      + step.invocations.filter((invocation) => invocation.outputOrigin === "copied" || invocation.resolvedInputOrigin === "copied").length
+      + step.operationInvocations.filter((invocation) => invocation.outputOrigin === "copied").length,
+    0,
+  );
   const plannedInvocations = allInvocations.length - copiedInvocations;
   const runProgress = progressForRun(run.status, steps);
   const tracePath = formatTracePath(run.traceId, traceSpanEntries);
@@ -1187,9 +1298,9 @@ export function RunsDetailPage() {
           {traceSpanEntries.map((entry) => (
             <div className="rounded-md border bg-muted/20 p-3" key={`${entry.stepIndex}-${entry.slot}-${entry.spanId}`}>
               <p>
-                {run.traceId ? `Path ${run.traceId} / step ${entry.stepIndex} / ${entry.slot}` : `Path step ${entry.stepIndex} / ${entry.slot}`}
+                {run.traceId ? `Path ${run.traceId} / step ${entry.stepIndex} / ${entry.invocationKind === "operation" ? "operation " : ""}${entry.slot}` : `Path step ${entry.stepIndex} / ${entry.invocationKind === "operation" ? "operation " : ""}${entry.slot}`}
               </p>
-              <p>Invocation #{entry.invocationId}</p>
+              <p>{entry.invocationKind === "operation" ? "Operation invocation" : "Invocation"} #{entry.invocationId}</p>
               <p>Span id: {entry.spanId}</p>
             </div>
           ))}

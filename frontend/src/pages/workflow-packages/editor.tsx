@@ -4,8 +4,10 @@ import {
   Braces,
   Cable,
   CheckCircle2,
+  Code2,
   Download,
   FileCheck2,
+  KeyRound,
   Loader2,
   PlayCircle,
   Plus,
@@ -68,17 +70,21 @@ import { useModelConnections } from "@/hooks/use-model-connections";
 import {
   useCreateWorkflowPackage,
   useCreateWorkflowPackageLaunch,
+  useDeleteWorkflowPackageSecretBinding,
   useImportWorkflowPackage,
   usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
+  useUpsertWorkflowPackageSecretBinding,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
+  useWorkflowPackageSecretBindings,
   useWorkflowPackageVersions,
 } from "@/hooks/use-workflow-packages";
 import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
+import { formatDateTime } from "@/lib/format";
 import {
   createPackageAgentDraft,
   createPackageCapabilityProfileDraft,
@@ -90,6 +96,8 @@ import {
   packageDraftFromManifestSource,
   validateWorkflowPackageDraft,
   workflowPackageDraftToManifestSource,
+  workflowPackageWorkflowsFromYaml,
+  workflowPackageWorkflowsToYaml,
   type PackageAgentDraft,
   type PackageCapabilityProfileDraft,
   type PackageMcpServerDraft,
@@ -106,6 +114,7 @@ import type {
   WorkflowPackageLaunchRead,
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
+  WorkflowPackageSecretBindingRead,
   WorkflowPackageVersionRead,
 } from "@/lib/types/workflow-package";
 import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
@@ -116,6 +125,8 @@ type WorkflowPackageEditorTab =
   | "output-schemas"
   | "capability-profiles"
   | "private-mcp"
+  | "workflow-yaml"
+  | "secret-bindings"
   | "preflight"
   | "launch"
   | "exports";
@@ -196,6 +207,8 @@ const editorTabs: WorkflowPackageEditorTabDefinition[] = [
   { description: "Local output contracts are authored inside the package boundary.", icon: Braces, label: "Output Schemas", value: "output-schemas" },
   { description: "Capability profiles collect server-declared tool keys for local agents.", icon: ShieldCheck, label: "Capability Profiles", value: "capability-profiles" },
   { description: "Private MCP server bindings stay portable and secret-reference driven.", icon: Cable, label: "Private MCP", value: "private-mcp" },
+  { description: "Author workflow graphs as raw YAML, including kind:http operation nodes.", icon: Code2, label: "Workflow YAML", value: "workflow-yaml" },
+  { description: "Bind package-local secret references without exposing stored values.", icon: KeyRound, label: "Secret Bindings", value: "secret-bindings" },
   { description: "Run package readiness checks before launch without mutating runtime state.", icon: FileCheck2, label: "Preflight", value: "preflight" },
   { description: "Launch a selected package workflow after preflight readiness passes.", icon: PlayCircle, label: "Launch", value: "launch" },
   { description: "Import or export clean package YAML without database ids or secret values.", icon: Download, label: "Import / Export", value: "exports" },
@@ -300,6 +313,15 @@ function isUnknownRecord(value: unknown): value is UnknownRecord {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function collectSecretReferenceKeys(value: unknown): string[] {
+  const matches = JSON.stringify(value).matchAll(/\$\{\{\s*secrets\.([a-z][a-z0-9_]*)\s*}}/g);
+  return [...new Set([...matches].map((match) => match[1]).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function sortedSecretBindings(bindings: readonly WorkflowPackageSecretBindingRead[]): WorkflowPackageSecretBindingRead[] {
+  return [...bindings].sort((left, right) => left.key.localeCompare(right.key));
 }
 
 function runtimeInputFields(inputSchema: UnknownRecord | undefined): RuntimeInputField[] {
@@ -1034,6 +1056,113 @@ function StringMapEditor({
   );
 }
 
+function WorkflowYamlTab({ draft, issues, onChange }: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void }) {
+  const [workflowYaml, setWorkflowYaml] = useState(() => workflowPackageWorkflowsToYaml(draft.spec.workflows));
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    setWorkflowYaml(workflowPackageWorkflowsToYaml(draft.spec.workflows));
+    setParseErrors([]);
+  }, [draft.spec.workflows]);
+
+  const updateWorkflowYaml = (value: string) => {
+    setWorkflowYaml(value);
+    const parsed = workflowPackageWorkflowsFromYaml(value);
+    setParseErrors(parsed.errors);
+    if (parsed.errors.length === 0) {
+      onChange({ ...draft, spec: { ...draft.spec, workflows: parsed.workflows } });
+    }
+  };
+
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-workflow-yaml-tab">
+      <CardHeader className="border-b pb-4">
+        <CardTitle>Workflow YAML</CardTitle>
+        <CardDescription>Author workflow graph nodes directly in YAML. HTTP operations stay in kind:http manifest nodes and validate through the backend manifest flow.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        <ResourceChecks issues={issues} tab="workflow-yaml" />
+        {parseErrors.length > 0 ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Workflow YAML could not be parsed</AlertTitle>
+            <AlertDescription><ul className="list-disc pl-5">{parseErrors.map((error) => <li key={error}>{error}</li>)}</ul></AlertDescription>
+          </Alert>
+        ) : null}
+        <div className="space-y-2" data-field="spec.workflows" tabIndex={-1}>
+          <Label htmlFor="workflow-yaml">Workflow YAML</Label>
+          <Textarea id="workflow-yaml" aria-label="Workflow YAML" className="min-h-96 font-mono text-xs" spellCheck={false} value={workflowYaml} onChange={(event) => updateWorkflowYaml(event.target.value)} />
+          <p className="text-xs text-muted-foreground">Use an array of workflow objects. Keep HTTP nodes as YAML with kind: http; there is intentionally no visual node editor.</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SecretBindingsTab(props: {
+  bindings: WorkflowPackageSecretBindingRead[];
+  bindingsError: string | null;
+  bindingsLoading: boolean;
+  deleting: boolean;
+  packageId: string | undefined;
+  referencedSecretKeys: string[];
+  saving: boolean;
+  onDelete: (key: string) => Promise<void>;
+  onSave: (key: string, value: string) => Promise<void>;
+}) {
+  const { bindings, bindingsError, bindingsLoading, deleting, onDelete, onSave, packageId, referencedSecretKeys, saving } = props;
+  const [secretKey, setSecretKey] = useState("");
+  const [secretValue, setSecretValue] = useState("");
+  const sortedBindings = sortedSecretBindings(bindings);
+  const configuredKeys = new Set(sortedBindings.map((binding) => binding.key));
+
+  const submit = async () => {
+    const normalizedKey = secretKey.trim();
+    if (!normalizedKey || !secretValue.trim()) {
+      toast.error("Secret binding key and value are required.");
+      return;
+    }
+    await onSave(normalizedKey, secretValue);
+    setSecretKey("");
+    setSecretValue("");
+  };
+
+  return (
+    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-secret-bindings-tab">
+      <CardHeader className="border-b pb-4">
+        <CardTitle>Secret bindings</CardTitle>
+        <CardDescription>Bind package-local <code className="rounded bg-muted/40 px-1">{"${{ secrets.* }}"}</code> references. Stored secret values are never returned or echoed by the UI.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 p-4">
+        {!packageId ? <Alert><AlertCircle /><AlertTitle>Save the package first</AlertTitle><AlertDescription>Secret bindings are stored against a saved package id, outside the YAML manifest.</AlertDescription></Alert> : null}
+        {bindingsError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Secret bindings unavailable</AlertTitle><AlertDescription>{bindingsError}</AlertDescription></Alert> : null}
+        <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+          <p className="font-medium">Referenced by workflow YAML</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {referencedSecretKeys.length === 0 ? <span className="text-muted-foreground">No {"${{ secrets.* }}"} references found in workflows.</span> : null}
+            {referencedSecretKeys.map((key) => <Badge key={key} variant={configuredKeys.has(key) ? "secondary" : "outline"}>{key}{configuredKeys.has(key) ? " bound" : " missing"}</Badge>)}
+          </div>
+        </div>
+        <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto]">
+          <div className="space-y-2"><Label htmlFor="secret-binding-key">Secret binding key</Label><Input id="secret-binding-key" aria-label="Secret binding key" placeholder="slack_webhook_token" value={secretKey} onChange={(event) => setSecretKey(event.target.value)} /></div>
+          <div className="space-y-2"><Label htmlFor="secret-binding-value">Secret binding value</Label><Input id="secret-binding-value" aria-label="Secret binding value" placeholder="Paste new value; never echoed" type="password" value={secretValue} onChange={(event) => setSecretValue(event.target.value)} /></div>
+          <div className="flex items-end"><Button disabled={!packageId || saving} type="button" onClick={() => void submit()}>{saving ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}Save secret binding</Button></div>
+        </div>
+        <div className="grid gap-2">
+          {bindingsLoading ? <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">Loading secret bindings...</div> : null}
+          {sortedBindings.length === 0 && !bindingsLoading ? <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No package secret bindings configured.</div> : null}
+          {sortedBindings.map((binding) => (
+            <div key={binding.key} className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0"><p className="font-medium">{binding.key}</p><p className="text-xs text-muted-foreground">{binding.hasValue ? "Stored value redacted" : "No value stored"} · updated {formatDateTime(binding.updatedAt)}</p></div>
+              <Button disabled={deleting} size="sm" type="button" variant="outline" aria-label={`Delete secret binding ${binding.key}`} onClick={() => void onDelete(binding.key)}>Delete</Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DiagnosticRows({ diagnostics, onOpenField }: { diagnostics: PackageDiagnostic[]; onOpenField: (diagnostic: PackageDiagnostic) => void }) {
   if (diagnostics.length === 0) {
     return <div className="rounded-xl border border-dashed bg-background/50 p-4 text-sm text-muted-foreground">No diagnostics returned for this package selection.</div>;
@@ -1331,6 +1460,9 @@ export function WorkflowPackageEditorPage() {
   const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, selectedVersion, workflowKey.trim() || undefined);
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
+  const secretBindingsQuery = useWorkflowPackageSecretBindings(isNew ? undefined : packageId);
+  const upsertSecretBinding = useUpsertWorkflowPackageSecretBinding();
+  const deleteSecretBinding = useDeleteWorkflowPackageSecretBinding();
 
   const selectEditorTab = (tab: WorkflowPackageEditorTab) => {
     pendingTabScrollTop.current = editorShellRef.current?.scrollTop ?? null;
@@ -1406,6 +1538,7 @@ export function WorkflowPackageEditorPage() {
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`, label: connection.name, value: connection.key }));
   const versions = versionsQuery.data?.items ?? [];
   const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
+  const referencedSecretKeys = useMemo(() => collectSecretReferenceKeys(draft.spec.workflows), [draft.spec.workflows]);
   const isSaving = createPackage.isPending || updatePackage.isPending;
   const manifestParseErrors = parsedManifest?.errors ?? [];
   const manifestLoadError = manifestQuery.error instanceof Error ? manifestQuery.error.message : "Failed to load package manifest.";
@@ -1479,6 +1612,31 @@ export function WorkflowPackageEditorPage() {
 
   const focusPackageDiagnostic = (diagnostic: PackageDiagnostic) => {
     focusIssue({ field: diagnostic.field, issue: diagnostic.issue, tab: diagnosticToEditorTarget(diagnostic.field).tab });
+  };
+
+  const saveSecretBinding = async (key: string, value: string) => {
+    if (!packageId) {
+      toast.error("Save the package before binding secrets.");
+      return;
+    }
+    try {
+      await upsertSecretBinding.mutateAsync({ key, packageId, payload: { value } });
+      toast.success(`Secret binding ${key} saved`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Secret binding save failed.");
+    }
+  };
+
+  const removeSecretBinding = async (key: string) => {
+    if (!packageId) {
+      return;
+    }
+    try {
+      await deleteSecretBinding.mutateAsync({ key, packageId });
+      toast.success(`Secret binding ${key} deleted`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Secret binding delete failed.");
+    }
   };
 
   const runPackagePreflight = async (): Promise<WorkflowPackageLaunchRead | null> => {
@@ -1575,6 +1733,8 @@ export function WorkflowPackageEditorPage() {
             <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
             <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key, module: tool.module }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
             <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+            <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
             <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
             <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
             <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} selectedVersion={selectedVersion} workflowPackage={workflowPackage} /></TabsContent>

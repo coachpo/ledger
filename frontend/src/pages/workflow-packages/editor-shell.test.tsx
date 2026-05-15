@@ -27,14 +27,17 @@ vi.mock("@/hooks/use-model-connections", () => ({
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateWorkflowPackageLaunch: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useImportWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   usePreflightWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
   useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
   useWorkflowPackageVersions: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
@@ -118,6 +121,8 @@ describe("WorkflowPackageEditorPage", () => {
       "Output Schemas",
       "Capability Profiles",
       "Private MCP",
+      "Workflow YAML",
+      "Secret Bindings",
       "Preflight",
       "Launch",
       "Import / Export",

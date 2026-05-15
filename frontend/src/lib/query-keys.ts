@@ -170,6 +170,8 @@ const workflowPackagesQueryKeys = {
       omitUndefined({ version: normalizedVersion, workflowKey: normalizedWorkflowKey }),
     ] as const;
   },
+  secretBindings: (packageId: IdParam) =>
+    [...workflowPackagesRoot, "secretBindings", normalizeId(packageId)] as const,
   validation: () => [...workflowPackagesRoot, "validation"] as const,
   versions: (packageId: IdParam) =>
     [...workflowPackagesRoot, "versions", normalizeId(packageId)] as const,

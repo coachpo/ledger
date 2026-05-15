@@ -16,6 +16,9 @@ import type {
   WorkflowPackageManifestReadOptions,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
+  WorkflowPackageSecretBindingListRead,
+  WorkflowPackageSecretBindingRead,
+  WorkflowPackageSecretBindingUpdateRequest,
   WorkflowPackageUpdateRequest,
   WorkflowPackageValidationRead,
   WorkflowPackageVersionedRequestOptions,
@@ -24,6 +27,10 @@ import type {
 
 function workflowPackagePath(packageId: IdParam): string {
   return `/workflow-packages/${toPathSegment(packageId)}`;
+}
+
+function workflowPackageSecretBindingPath(packageId: IdParam, key: IdParam): string {
+  return `${workflowPackagePath(packageId)}/secret-bindings/${toPathSegment(key)}`;
 }
 
 function normalizeManifestVersion(version: number | string | null | undefined) {
@@ -114,6 +121,39 @@ export function deleteWorkflowPackage(
   });
 }
 
+export function listWorkflowPackageSecretBindings(
+  packageId: IdParam,
+  signal?: AbortSignal,
+): Promise<WorkflowPackageSecretBindingListRead> {
+  return requestPlatform<WorkflowPackageSecretBindingListRead>(`${workflowPackagePath(packageId)}/secret-bindings`, {
+    signal,
+  });
+}
+
+export function upsertWorkflowPackageSecretBinding(
+  packageId: IdParam,
+  key: IdParam,
+  payload: WorkflowPackageSecretBindingUpdateRequest,
+  signal?: AbortSignal,
+): Promise<WorkflowPackageSecretBindingRead> {
+  return requestPlatform<WorkflowPackageSecretBindingRead>(workflowPackageSecretBindingPath(packageId, key), {
+    body: payload,
+    method: "PUT",
+    signal,
+  });
+}
+
+export function deleteWorkflowPackageSecretBinding(
+  packageId: IdParam,
+  key: IdParam,
+  signal?: AbortSignal,
+): Promise<void> {
+  return requestPlatform<void>(workflowPackageSecretBindingPath(packageId, key), {
+    method: "DELETE",
+    signal,
+  });
+}
+
 export function listWorkflowPackageVersions(
   packageId: IdParam,
   signal?: AbortSignal,
@@ -192,6 +232,7 @@ export function createWorkflowPackageLaunch(
 
 export const workflowPackagesApi = {
   delete: deleteWorkflowPackage,
+  deleteSecretBinding: deleteWorkflowPackageSecretBinding,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
   createVersion: createWorkflowPackageVersion,
@@ -201,8 +242,10 @@ export const workflowPackagesApi = {
   getManifest: getWorkflowPackageManifest,
   import: importWorkflowPackage,
   list: listWorkflowPackages,
+  listSecretBindings: listWorkflowPackageSecretBindings,
   listVersions: listWorkflowPackageVersions,
   preflight: preflightWorkflowPackage,
   update: updateWorkflowPackage,
+  upsertSecretBinding: upsertWorkflowPackageSecretBinding,
   validateManifest: validateWorkflowPackageManifest,
 } as const;
