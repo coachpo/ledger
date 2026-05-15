@@ -479,6 +479,8 @@ class AgentExecutionService:
         started_at: float,
     ) -> RunAgentInvocationResult:
         previous_response_id: str | None = None
+        previous_tool_calls: list[_PendingToolCall] | None = None
+        manual_replay_mode = False
         total_tokens = 0
         for _ in range(_MAX_SERVER_TOOL_CALL_ROUNDS):
             request_kwargs: dict[str, Any] = {
@@ -493,7 +495,14 @@ class AgentExecutionService:
                 request_kwargs["previous_response_id"] = previous_response_id
             if available_tools:
                 request_kwargs["tools"] = available_tools
-            response = client.responses.create(**request_kwargs)
+            response, manual_replay_mode = self._create_response_with_manual_replay_fallback(
+                client=client,
+                request_kwargs=request_kwargs,
+                previous_response_id=previous_response_id,
+                previous_tool_calls=previous_tool_calls,
+                function_call_outputs=response_input,
+                manual_replay_mode=manual_replay_mode,
+            )
             total_tokens += self._extract_total_tokens(response)
             pending_tool_calls = self._extract_pending_tool_calls(response)
             if not pending_tool_calls:
@@ -505,6 +514,7 @@ class AgentExecutionService:
                     duration_ms=duration_ms,
                 )
             previous_response_id = self._extract_response_id(response)
+            previous_tool_calls = pending_tool_calls
             response_input = self._build_function_call_outputs(
                 pending_tool_calls=pending_tool_calls,
                 granted_tool_keys=granted_tool_keys,
@@ -892,6 +902,83 @@ class AgentExecutionService:
                 )
             )
         return pending
+
+    def _create_response_with_manual_replay_fallback(
+        self,
+        *,
+        client: Any,
+        request_kwargs: dict[str, Any],
+        previous_response_id: str | None,
+        previous_tool_calls: list[_PendingToolCall] | None,
+        function_call_outputs: str | list[dict[str, str]],
+        manual_replay_mode: bool,
+    ) -> tuple[Any, bool]:
+        effective_request_kwargs = dict(request_kwargs)
+        if manual_replay_mode:
+            if previous_tool_calls is None or not isinstance(function_call_outputs, list):
+                raise RunExecutionError(
+                    code="agent_tool_call_invalid",
+                    message="Responses manual replay could not reconstruct prior tool call state.",
+                )
+            effective_request_kwargs.pop("previous_response_id", None)
+            effective_request_kwargs["input"] = self._build_manual_replay_input(
+                pending_tool_calls=previous_tool_calls,
+                function_call_outputs=function_call_outputs,
+            )
+        try:
+            return client.responses.create(**effective_request_kwargs), manual_replay_mode
+        except openai.APIStatusError as exc:
+            if (
+                manual_replay_mode
+                or previous_response_id is None
+                or previous_tool_calls is None
+                or not isinstance(function_call_outputs, list)
+                or not self._is_missing_tool_call_for_function_output(exc)
+            ):
+                raise
+            replay_request_kwargs = dict(request_kwargs)
+            replay_request_kwargs.pop("previous_response_id", None)
+            replay_request_kwargs["input"] = self._build_manual_replay_input(
+                pending_tool_calls=previous_tool_calls,
+                function_call_outputs=function_call_outputs,
+            )
+            return client.responses.create(**replay_request_kwargs), True
+
+    @staticmethod
+    def _is_missing_tool_call_for_function_output(exc: openai.APIStatusError) -> bool:
+        status_code = getattr(exc, "status_code", None)
+        if status_code != 400:
+            return False
+        body = getattr(exc, "body", None)
+        if isinstance(body, dict):
+            raw_error = body.get("error")
+            if isinstance(raw_error, dict):
+                raw_message = raw_error.get("message")
+                if isinstance(raw_message, str):
+                    return "no tool call found for function call output" in raw_message.lower()
+            raw_message = body.get("message")
+            if isinstance(raw_message, str):
+                return "no tool call found for function call output" in raw_message.lower()
+        return False
+
+    @staticmethod
+    def _build_manual_replay_input(
+        *,
+        pending_tool_calls: list[_PendingToolCall],
+        function_call_outputs: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        return [
+            *[
+                {
+                    "type": "function_call",
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments_json,
+                    "call_id": tool_call.call_id,
+                }
+                for tool_call in pending_tool_calls
+            ],
+            *function_call_outputs,
+        ]
 
     @staticmethod
     def _extract_response_id(response: Any) -> str:
