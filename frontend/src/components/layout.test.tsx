@@ -43,6 +43,41 @@ function extensionList(enabled: boolean): ExtensionListRead {
   };
 }
 
+const groupedSidebarItems = [
+  {
+    hrefs: ["/workflow-packages", "/model-connections", "/runs"],
+    label: "Agent Platform",
+    testIds: ["nav-workflow-packages", "nav-model-connections", "nav-runs"],
+  },
+  {
+    hrefs: ["/", "/portfolios", "/templates", "/reports"],
+    label: "Finance Workspace",
+    testIds: ["nav-dashboard", "nav-portfolios", "nav-templates", "nav-reports"],
+  },
+  {
+    hrefs: ["/extensions"],
+    label: "System",
+    testIds: ["nav-extensions"],
+  },
+] as const;
+
+function groupLabels(container: HTMLElement): (string | null)[] {
+  return Array.from(container.querySelectorAll('[data-sidebar="group-label"]')).map(
+    (label) => label.textContent,
+  );
+}
+
+function sidebarGroup(label: string): HTMLElement {
+  const labelElement = screen.getByText(label);
+  const group = labelElement.closest<HTMLElement>('[data-sidebar="group"]');
+
+  if (!group) {
+    throw new Error(`Sidebar group not found for ${label}`);
+  }
+
+  return group;
+}
+
 describe("Layout", () => {
   function renderLayout(initialEntry: string, financeEnabled = true) {
     const queryClient = new QueryClient({
@@ -76,32 +111,28 @@ describe("Layout", () => {
     );
   }
 
-  it("shows extension-aware shell navigation when finance is enabled", () => {
-    renderLayout("/");
+  it("shows extension-aware grouped shell navigation when finance is enabled", () => {
+    const { container } = renderLayout("/");
 
+    expect(groupLabels(container)).toEqual(
+      groupedSidebarItems.map((group) => group.label),
+    );
     expect(
       screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-    ).toEqual([
-      "/",
-      "/portfolios",
-      "/templates",
-      "/reports",
-      "/extensions",
-      "/model-connections",
-      "/workflow-packages",
-      "/runs",
-    ]);
-    expect(
-      screen.getByRole("link", { name: /workflow packages/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /model connections/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /runs/i })).toBeInTheDocument();
-    expect(screen.getByTestId("nav-extensions")).toHaveAttribute(
-      "href",
-      "/extensions",
-    );
+    ).toEqual(groupedSidebarItems.flatMap((group) => group.hrefs));
+
+    for (const group of groupedSidebarItems) {
+      const renderedGroup = sidebarGroup(group.label);
+      expect(
+        within(renderedGroup)
+          .getAllByRole("link")
+          .map((link) => link.getAttribute("href")),
+      ).toEqual(group.hrefs);
+
+      for (const testId of group.testIds) {
+        expect(within(renderedGroup).getByTestId(testId)).toBeInTheDocument();
+      }
+    }
 
     expect(
       screen.queryByRole("link", { name: /agents/i }),
@@ -132,54 +163,42 @@ describe("Layout", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides finance navigation while preserving core platform entries when disabled", () => {
-    renderLayout("/workflow-packages/88", false);
+  it("hides finance navigation while preserving grouped core entries when disabled", () => {
+    const { container } = renderLayout("/workflow-packages/88", false);
+    const coreGroups = groupedSidebarItems.filter(
+      (group) => group.label !== "Finance Workspace",
+    );
 
+    expect(groupLabels(container)).toEqual(coreGroups.map((group) => group.label));
+    expect(screen.queryByText("Finance Workspace")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-dashboard")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-portfolios")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-templates")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-reports")).not.toBeInTheDocument();
-    expect(screen.getByTestId("nav-extensions")).toHaveAttribute(
-      "href",
-      "/extensions",
-    );
-    expect(screen.getByTestId("nav-model-connections")).toHaveAttribute(
-      "href",
-      "/model-connections",
-    );
-    expect(screen.getByTestId("nav-workflow-packages")).toHaveAttribute(
-      "href",
-      "/workflow-packages",
-    );
-    expect(screen.getByTestId("nav-runs")).toHaveAttribute("href", "/runs");
+
+    for (const group of coreGroups) {
+      const renderedGroup = sidebarGroup(group.label);
+      expect(
+        within(renderedGroup)
+          .getAllByRole("link")
+          .map((link) => link.getAttribute("href")),
+      ).toEqual(group.hrefs);
+    }
   });
 
-  it("restores the exact finance navigation set after re-enable", () => {
-    const enabledHrefs = [
-      "/",
-      "/portfolios",
-      "/templates",
-      "/reports",
-      "/extensions",
-      "/model-connections",
-      "/workflow-packages",
-      "/runs",
-    ];
+  it("restores the finance group after re-enable", () => {
     const enabled = renderLayout("/");
-    expect(
-      screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-    ).toEqual(enabledHrefs);
+    expect(sidebarGroup("Finance Workspace")).toBeInTheDocument();
     enabled.unmount();
 
     const disabled = renderLayout("/workflow-packages/88", false);
+    expect(screen.queryByText("Finance Workspace")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-dashboard")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-portfolios")).not.toBeInTheDocument();
     disabled.unmount();
 
     renderLayout("/");
-    expect(
-      screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-    ).toEqual(enabledHrefs);
+    expect(sidebarGroup("Finance Workspace")).toBeInTheDocument();
     expect(screen.getByTestId("nav-reports")).toHaveAttribute(
       "href",
       "/reports",

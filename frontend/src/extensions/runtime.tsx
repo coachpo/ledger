@@ -47,6 +47,11 @@ export type NavItem = {
   to: string;
 };
 
+export type NavGroup = {
+  items: readonly NavItem[];
+  label: string;
+};
+
 type ExtensionRouteDefinition = {
   Component: ComponentType;
   index?: boolean;
@@ -72,11 +77,34 @@ const navIconByName: Record<string, LucideIcon> = {
   Workflow,
 };
 
-export const coreNavItems: readonly NavItem[] = [
-  { icon: Puzzle, label: "Extensions", testId: "nav-extensions", to: "/extensions" },
-  { icon: Link2, label: "Model Connections", testId: "nav-model-connections", to: "/model-connections" },
-  { icon: Workflow, label: "Workflow Packages", testId: "nav-workflow-packages", to: "/workflow-packages" },
+export const agentPlatformNavItems: readonly NavItem[] = [
+  {
+    icon: Workflow,
+    label: "Workflow Packages",
+    testId: "nav-workflow-packages",
+    to: "/workflow-packages",
+  },
+  {
+    icon: Link2,
+    label: "Model Connections",
+    testId: "nav-model-connections",
+    to: "/model-connections",
+  },
   { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
+];
+
+export const systemNavItems: readonly NavItem[] = [
+  {
+    icon: Puzzle,
+    label: "Extensions",
+    testId: "nav-extensions",
+    to: "/extensions",
+  },
+];
+
+export const coreNavItems: readonly NavItem[] = [
+  ...agentPlatformNavItems,
+  ...systemNavItems,
 ];
 function extensionStateFromList(
   extensionList: ExtensionListRead | undefined,
@@ -106,15 +134,32 @@ function navItemFromContribution(contribution: FrontendNavContribution): NavItem
     to: contribution.to,
   };
 }
-export function assembleNavItems(extensionList: ExtensionListRead | undefined): NavItem[] {
-  const extensionNavItems = isFrontendExtensionEnabled(
-    extensionList,
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-  )
+function financeNavItems(extensionList: ExtensionListRead | undefined): NavItem[] {
+  return isFrontendExtensionEnabled(extensionList, FINANCE_WORKSPACE_EXTENSION_KEY)
     ? financeWorkspaceFrontendExtension.navContributions.map(navItemFromContribution)
     : [];
+}
 
-  return [...extensionNavItems, ...coreNavItems];
+export function assembleNavGroups(extensionList: ExtensionListRead | undefined): NavGroup[] {
+  const enabledFinanceNavItems = financeNavItems(extensionList);
+  const navGroups: NavGroup[] = [];
+
+  navGroups.push({ label: "Agent Platform", items: agentPlatformNavItems });
+
+  if (enabledFinanceNavItems.length > 0) {
+    navGroups.push({
+      label: FINANCE_WORKSPACE_LABEL,
+      items: enabledFinanceNavItems,
+    });
+  }
+
+  navGroups.push({ label: "System", items: systemNavItems });
+
+  return navGroups;
+}
+
+export function assembleNavItems(extensionList: ExtensionListRead | undefined): NavItem[] {
+  return assembleNavGroups(extensionList).flatMap((group) => group.items);
 }
 
 export function enabledFinanceRoutePaths(extensionList: ExtensionListRead | undefined): string[] {

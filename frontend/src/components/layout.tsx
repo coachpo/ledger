@@ -27,7 +27,7 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-import { assembleNavItems, type NavItem } from "@/extensions/runtime";
+import { assembleNavGroups, type NavItem } from "@/extensions/runtime";
 import { useExtensions } from "@/hooks/use-extensions";
 
 function isNavItemActive(pathname: string, item: NavItem) {
@@ -135,7 +135,7 @@ function getPageMeta(pathname: string) {
 function AppSidebar() {
   const location = useLocation();
   const extensionsQuery = useExtensions();
-  const navItems = assembleNavItems(extensionsQuery.data);
+  const navGroups = assembleNavGroups(extensionsQuery.data);
   const { isMobile, open, setOpenMobile } = useSidebar();
   const showExpandedContent = open || isMobile;
 
@@ -155,35 +155,37 @@ function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          {showExpandedContent ? <SidebarGroupLabel>Workspace</SidebarGroupLabel> : null}
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton
-                    asChild
-                    className={!showExpandedContent ? "justify-center" : undefined}
-                    isActive={isNavItemActive(location.pathname, item)}
-                    tooltip={!showExpandedContent ? item.label : undefined}
-                  >
-                    <NavLink
-                      data-testid={item.testId}
-                      end={item.to === "/"}
-                      onClick={() => setOpenMobile(false)}
-                      to={item.to}
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            {showExpandedContent ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      asChild
+                      className={!showExpandedContent ? "justify-center" : undefined}
+                      isActive={isNavItemActive(location.pathname, item)}
+                      tooltip={!showExpandedContent ? item.label : undefined}
                     >
-                      <item.icon className="size-4 shrink-0" />
-                      <span className={!showExpandedContent ? "sr-only" : undefined}>
-                        {item.label}
-                      </span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                      <NavLink
+                        data-testid={item.testId}
+                        end={item.to === "/"}
+                        onClick={() => setOpenMobile(false)}
+                        to={item.to}
+                      >
+                        <item.icon className="size-4 shrink-0" />
+                        <span className={!showExpandedContent ? "sr-only" : undefined}>
+                          {item.label}
+                        </span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
     </Sidebar>
   );
