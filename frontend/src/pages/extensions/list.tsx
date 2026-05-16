@@ -1,4 +1,3 @@
-import { Puzzle } from "lucide-react";
 import { toast } from "sonner";
 
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
@@ -153,20 +152,6 @@ export function ExtensionsListPage() {
           </p>
         </div>
       </div>
-
-      <Card className="border-dashed bg-card/70">
-        <CardContent className="flex gap-3 p-4">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
-            <Puzzle className="size-5" aria-hidden="true" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">Phase 1 bundled management</p>
-            <p className="text-sm text-muted-foreground">
-              Install and remove actions are not supported in phase 1. Bundled extensions can only be enabled or disabled.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
 
       {extensionsQuery.isPending ? (
         <Card>
