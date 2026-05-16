@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Link2,
   PlayCircle,
+  Puzzle,
   RefreshCw,
   Workflow,
 } from "lucide-react";
@@ -72,6 +73,7 @@ const navIconByName: Record<string, LucideIcon> = {
 };
 
 export const coreNavItems: readonly NavItem[] = [
+  { icon: Puzzle, label: "Extensions", testId: "nav-extensions", to: "/extensions" },
   { icon: Link2, label: "Model Connections", testId: "nav-model-connections", to: "/model-connections" },
   { icon: Workflow, label: "Workflow Packages", testId: "nav-workflow-packages", to: "/workflow-packages" },
   { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },

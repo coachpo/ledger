@@ -86,6 +86,7 @@ describe("Layout", () => {
       "/portfolios",
       "/templates",
       "/reports",
+      "/extensions",
       "/model-connections",
       "/workflow-packages",
       "/runs",
@@ -97,6 +98,10 @@ describe("Layout", () => {
       screen.getByRole("link", { name: /model connections/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /runs/i })).toBeInTheDocument();
+    expect(screen.getByTestId("nav-extensions")).toHaveAttribute(
+      "href",
+      "/extensions",
+    );
 
     expect(
       screen.queryByRole("link", { name: /agents/i }),
@@ -134,6 +139,10 @@ describe("Layout", () => {
     expect(screen.queryByTestId("nav-portfolios")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-templates")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-reports")).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-extensions")).toHaveAttribute(
+      "href",
+      "/extensions",
+    );
     expect(screen.getByTestId("nav-model-connections")).toHaveAttribute(
       "href",
       "/model-connections",
@@ -151,6 +160,7 @@ describe("Layout", () => {
       "/portfolios",
       "/templates",
       "/reports",
+      "/extensions",
       "/model-connections",
       "/workflow-packages",
       "/runs",
