@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Connection, Engine
@@ -95,6 +96,8 @@ _EXTENSION_STATE_CREATE_CANONICAL_TABLE_SQL = f"""
         CONSTRAINT {_EXTENSION_STATE_TEMP_PRIMARY_KEY} PRIMARY KEY (extension_key)
     )
     """
+_PRESET_PACKAGE_SQL_FILE = "".join(("trading", "agents", "_", "advisory", "_", "research", ".sql"))
+_PRESET_MARKER_KEY = "dbUpgradePreset"
 
 
 def _sql_string_literal(value: str) -> str:
@@ -1489,6 +1492,19 @@ def _ensure_workflow_package_tables(engine: Engine, table_names: set[str]) -> No
     )
 
 
+def _preset_package_sql_path() -> Path:
+    return Path(__file__).with_name(_PRESET_PACKAGE_SQL_FILE)
+
+
+def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str]) -> None:
+    if not {"workflow_packages", "workflow_package_versions"} <= table_names:
+        return
+
+    preset_sql = _preset_package_sql_path().read_text(encoding="utf-8")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(preset_sql)
+
+
 def _ensure_platform_reference_tables(engine: Engine, table_names: set[str]) -> None:
     if (
         not {
@@ -1697,20 +1713,28 @@ def _cleanup_package_versions_with_unresolved_model_connections(
         return
     with engine.begin() as connection:
         connection.exec_driver_sql("UPDATE workflow_packages SET latest_version_id = NULL")
-        connection.exec_driver_sql(
-            """
-            DELETE FROM workflow_package_versions AS version
-            WHERE EXISTS (
-                SELECT 1
-                FROM jsonb_array_elements(version.compiled_plan -> 'agents') AS agent(value)
-                WHERE (agent.value ->> 'modelConnection') IS NOT NULL
-                  AND NOT EXISTS (
+        connection.execute(
+            text(
+                """
+                DELETE FROM workflow_package_versions AS version
+                WHERE COALESCE(
+                    version.validation_summary -> :preset_marker_key
+                    ->> 'allowMissingModelConnections',
+                    'false'
+                ) <> 'true'
+                  AND EXISTS (
                     SELECT 1
-                    FROM model_connections AS model_connection
-                    WHERE model_connection.key = agent.value ->> 'modelConnection'
-                  )
-            )
-            """
+                    FROM jsonb_array_elements(version.compiled_plan -> 'agents') AS agent(value)
+                    WHERE (agent.value ->> 'modelConnection') IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM model_connections AS model_connection
+                        WHERE model_connection.key = agent.value ->> 'modelConnection'
+                      )
+                )
+                """
+            ),
+            {"preset_marker_key": _PRESET_MARKER_KEY},
         )
         connection.exec_driver_sql(
             """
@@ -3122,6 +3146,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _flatten_legacy_mcp_server_rows(engine, table_names)
     _ensure_hard_delete_lifecycle_schema(engine, table_names)
     _delete_rows_with_unresolved_dependency_refs(engine, table_names)
+    _ensure_browser_proven_package_preset(engine, table_names)
     _cleanup_package_versions_with_unresolved_model_connections(engine, table_names)
     _ensure_platform_reference_tables(engine, table_names)
     _backfill_platform_reference_tables(engine, table_names)

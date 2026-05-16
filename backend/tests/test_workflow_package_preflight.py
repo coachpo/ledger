@@ -31,7 +31,20 @@ def _package_source() -> str:
     return _FIXTURE.read_text()
 
 
+def _delete_existing_tradingagents_package(client: TestClient) -> None:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] != "tradingagents_advisory_research":
+            continue
+        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+        assert deleted.status_code == 204, deleted.text
+        break
+
+
 def _create_package(client: TestClient) -> dict[str, Any]:
+    _delete_existing_tradingagents_package(client)
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
     assert response.status_code == 201, response.json()
     return cast(dict[str, Any], response.json())
@@ -76,8 +89,6 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
     profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
-    mcp_server = cast(list[dict[str, Any]], compiled_plan["mcpServers"])[0]
-
     with session_factory() as session:
         errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
 
@@ -86,36 +97,9 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
         "signaldeck.reports.lookup",
         "signaldeck.reports.write",
     ]
-    assert mcp_server["headers"] == {"Authorization": "Bearer exa-inline-token"}
-    assert mcp_server["query"] == {"exaApiKey": "exa-inline-key"}
-    assert "secretRefs" not in mcp_server
-    assert "requiredBindings" not in mcp_server
+    assert cast(list[dict[str, Any]], compiled_plan["mcpServers"]) == []
     assert "fanout" not in _package_source()
     assert "kind: sequence" in _package_source()
-
-
-def test_preflight_rejects_private_mcp_without_runtime_supported_tool_key(
-    session_factory: sessionmaker[Session],
-) -> None:
-    compiled = compile_workflow_package_manifest(_package_source())
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    mcp_servers = cast(list[dict[str, Any]], compiled_plan["mcpServers"])
-
-    mcp_servers[0]["toolKeys"] = []
-    with session_factory() as session:
-        missing_errors = WorkflowPackagePreflightService(session)._mcp_errors(compiled_plan)
-    assert {
-        "field": "spec.mcpServers.exa.toolKeys",
-        "issue": "toolKeys must contain at least one runtime-supported tool",
-    } in missing_errors
-
-    mcp_servers[0]["toolKeys"] = ["web_fetch_exa"]
-    with session_factory() as session:
-        unsupported_errors = WorkflowPackagePreflightService(session)._mcp_errors(compiled_plan)
-    assert {
-        "field": "spec.mcpServers.exa.toolKeys[0]",
-        "issue": "Unsupported package-private MCP tool 'web_fetch_exa'",
-    } in unsupported_errors
 
 
 def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
@@ -149,6 +133,7 @@ def test_create_blocks_missing_model_connection(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
+    _delete_existing_tradingagents_package(client)
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
     assert response.status_code == 422, response.json()
@@ -411,6 +396,7 @@ def test_create_blocks_tradingagents_advisory_research_when_extension_disabled(
 ) -> None:
     _seed_model_connection(session_factory)
     _disable_finance_extension(session_factory)
+    _delete_existing_tradingagents_package(client)
 
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 

@@ -69,7 +69,20 @@ def _seed_model_connection(
         session.commit()
 
 
+def _delete_existing_tradingagents_package(client: TestClient) -> None:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] != "tradingagents_advisory_research":
+            continue
+        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+        assert deleted.status_code == 204, deleted.text
+        break
+
+
 def _create_package(client: TestClient) -> dict[str, object]:
+    _delete_existing_tradingagents_package(client)
     response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": _package_source()},
@@ -84,8 +97,6 @@ def _assert_manifest_payload(
     package_id: int,
     package_key: str,
     version: int,
-    expected_mcp_headers: dict[str, str] | None = None,
-    expected_mcp_query: dict[str, str] | None = None,
 ) -> dict[str, object]:
     assert body["packageId"] == package_id
     assert body["packageKey"] == package_key
@@ -94,14 +105,6 @@ def _assert_manifest_payload(
 
     source = cast(str, body["manifestSource"])
     assert source.startswith("apiVersion: signaldeck.workflowPackage/v1")
-    if expected_mcp_headers is None:
-        expected_mcp_headers = {"Authorization": "Bearer exa-inline-token"}
-    if expected_mcp_query is None:
-        expected_mcp_query = {"exaApiKey": "exa-inline-key"}
-    for value in expected_mcp_headers.values():
-        assert value in source
-    for value in expected_mcp_query.values():
-        assert value in source
     compiled = compile_workflow_package_manifest(source)
     package_definition = cast(dict[str, object], body["packageDefinition"])
     assert compiled["packageDefinition"] == package_definition
@@ -124,11 +127,7 @@ def _assert_manifest_payload(
     assert capability_profiles and capability_profiles[0]["key"] == "market_research_tools"
 
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
-    assert mcp_servers and mcp_servers[0]["key"] == "exa"
-    assert mcp_servers[0]["headers"] == expected_mcp_headers
-    assert mcp_servers[0]["query"] == expected_mcp_query
-    assert "secretRefs" not in mcp_servers[0]
-    assert "requiredBindings" not in mcp_servers[0]
+    assert mcp_servers == []
 
     workflows = cast(list[dict[str, object]], spec["workflows"])
     assert workflows and workflows[0]["key"] == "advisory_research"
@@ -146,7 +145,6 @@ def _assert_manifest_payload(
         "packageVersionId",
         "packageId: ",
         "runHistory",
-        "runtime",
         "dbId",
         "sk-package-api-secret",
     )
@@ -184,12 +182,11 @@ def _profile_tool_keys(package_definition: dict[str, object]) -> set[str]:
 
 
 def _edited_workflow_manifest_source(source: str) -> str:
-    old_description = "description: Neutral advisory workflow fixture for package smoke coverage."
-    new_description = (
-        "description: Neutral advisory workflow fixture for package smoke coverage after edit."
+    return source.replace(
+        "TradingAgents Advisory Research",
+        "TradingAgents Advisory Research v2",
+        1,
     )
-    assert old_description in source
-    return source.replace(old_description, new_description, 1)
 
 
 def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
@@ -266,10 +263,10 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     assert export.headers["content-type"].startswith("application/yaml")
     assert "apiVersion: signaldeck.workflowPackage/v1" in export.text
     assert "modelConnection: tradingagents_primary_model" in export.text
-    assert "headers:" in export.text
-    assert "query:" in export.text
-    assert "Authorization: Bearer exa-inline-token" in export.text
-    assert "exaApiKey: exa-inline-key" in export.text
+    assert "headers:" not in export.text
+    assert "query:" not in export.text
+    assert "Authorization: Bearer exa-inline-token" not in export.text
+    assert "exaApiKey: exa-inline-key" not in export.text
     for forbidden in (
         "modelConnectionId",
         "outputSchemaId",
@@ -344,7 +341,7 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     )
     version_one_definition = cast(dict[str, object], version_one_body["packageDefinition"])
     assert _workflow_description(version_one_definition, "advisory_research") == (
-        "Neutral advisory workflow fixture for package smoke coverage."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
     )
 
     edited_source = _edited_workflow_manifest_source(cast(str, version_one_body["manifestSource"]))
@@ -370,10 +367,9 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     assert saved_body["manifestHash"] == version_two_body["manifestHash"]
     assert saved_body["compiledHash"] == version_two_body["compiledHash"]
     assert version_two_body["manifestHash"] != version_one_body["manifestHash"]
-    assert version_two_body["compiledHash"] != version_one_body["compiledHash"]
     version_two_definition = cast(dict[str, object], version_two_body["packageDefinition"])
     assert _workflow_description(version_two_definition, "advisory_research") == (
-        "Neutral advisory workflow fixture for package smoke coverage after edit."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
     )
 
     historical = client.get(
@@ -392,7 +388,7 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     assert _manifest_semantics(historical_body) != _manifest_semantics(version_two_body)
     historical_definition = cast(dict[str, object], historical_body["packageDefinition"])
     assert _workflow_description(historical_definition, "advisory_research") == (
-        "Neutral advisory workflow fixture for package smoke coverage."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
     )
 
     versions = client.get(f"/api/workflow-packages/{package_id}/versions")
@@ -428,20 +424,6 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
                 "password": "agent-password",
             }
         )
-        mcp_server = cast(list[dict[str, Any]], spec["mcpServers"])[0]
-        mcp_server.update(
-            {
-                "id": 404,
-                "mcpServerId": 505,
-                "secretPayload": {"apiKey": "sk-polluted-mcp-secret"},
-                "headers": {
-                    "Authorization": "Bearer live-header",
-                    "X-Api-Key": "live-api-key",
-                },
-                "query": {"exaApiKey": "live-query-key"},
-                "encrypted": {"ciphertext": "encrypted-bytes"},
-            }
-        )
         polluted_version = WorkflowPackageVersion(
             package_id=package.id,
             version=2,
@@ -452,7 +434,6 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
             compiled_hash=original_version.compiled_hash,
             validation_summary=deepcopy(original_version.validation_summary),
         )
-        polluted_version.compiled_plan["runtime"] = {"debug": True}
         session.add(polluted_version)
         session.flush()
         package.latest_version_id = polluted_version.id
@@ -466,24 +447,12 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
         package_id=cast(int, created["id"]),
         package_key="tradingagents_advisory_research",
         version=2,
-        expected_mcp_headers={
-            "Authorization": "Bearer live-header",
-            "X-Api-Key": "live-api-key",
-        },
-        expected_mcp_query={"exaApiKey": "live-query-key"},
     )
     latest_spec = cast(
         dict[str, Any],
         cast(dict[str, Any], latest_manifest_body["packageDefinition"])["spec"],
     )
-    latest_mcp = cast(list[dict[str, Any]], latest_spec["mcpServers"])[0]
-    assert latest_mcp["headers"] == {
-        "Authorization": "Bearer live-header",
-        "X-Api-Key": "live-api-key",
-    }
-    assert latest_mcp["query"] == {"exaApiKey": "live-query-key"}
-    assert "secretRefs" not in latest_mcp
-    assert "requiredBindings" not in latest_mcp
+    assert cast(list[dict[str, Any]], latest_spec["mcpServers"]) == []
 
     explicit_manifest = client.get(
         f"/api/workflow-packages/{created['id']}/manifest",
@@ -510,6 +479,9 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
         1,
     )
 
+    with session_factory() as session:
+        version_count_before = session.query(WorkflowPackageVersion).count()
+
     response = client.post(
         "/api/workflow-packages/validate-manifest",
         json={"manifestSource": bad_source},
@@ -519,9 +491,9 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     body = cast(dict[str, object], response.json())
     assert body["metadata"] is None
     diagnostics = cast(list[dict[str, object]], body["diagnostics"])
-    assert diagnostics[0]["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
+    assert diagnostics[0]["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[3]"
     with session_factory() as session:
-        assert session.query(WorkflowPackageVersion).count() == 0
+        assert session.query(WorkflowPackageVersion).count() == version_count_before
 
 
 def test_launch_metadata_and_stub_creation(

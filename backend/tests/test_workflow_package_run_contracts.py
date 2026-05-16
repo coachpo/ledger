@@ -17,6 +17,9 @@ from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 from app.services.run_service import RunService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
+from tests.test_workflow_package_preflight import (
+    _delete_existing_tradingagents_package,
+)
 from tests.test_workflow_package_preflight import _package_source as _tradingagents_package_source
 from tests.test_workflow_package_preflight import (
     _seed_model_connection as _seed_tradingagents_model_connection,
@@ -256,6 +259,7 @@ def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_repo
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
+    _delete_existing_tradingagents_package(client)
     response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": _tradingagents_package_source()},

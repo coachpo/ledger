@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -24,6 +26,7 @@ from app.reset_seed import (
     STOCK_ANALYSIS_SYNTHESIZER_KEY,
     TRADING_DECISION_SCHEMA_KEY,
 )
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
 AGENT_PLATFORM_TABLE_NAMES = {
     "agents",
@@ -200,6 +203,17 @@ _RUN_COST_CHECKS = tuple(
 )
 _INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
 _INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
+_TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
+_TRADINGAGENTS_FIXTURE_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tradingagents_advisory_research.yaml"
+)
+_TRADINGAGENTS_PRESET_SQL_PATH = (
+    Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
+)
 
 
 def _insert_representable_workflow_package(
@@ -1289,6 +1303,178 @@ def test_init_db_creates_workflow_package_secret_binding_table(database_url: str
         assert "ix_workflow_package_secret_bindings_key" in indexes
         assert "uq_workflow_package_secret_bindings_package_key" in unique_constraints
         assert (("package_id",), "workflow_packages", "CASCADE") in foreign_keys
+    finally:
+        engine.dispose()
+
+
+def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
+    database_url: str,
+) -> None:
+    fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
+    preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
+    assert "INSERT INTO workflow_packages" in preset_sql
+    assert "INSERT INTO workflow_package_versions" in preset_sql
+    assert "INSERT INTO model_connections" not in preset_sql
+    assert "workflow_package_secret_bindings (" not in preset_sql
+    assert "INSERT INTO runs" not in preset_sql
+    compiled = compile_workflow_package_manifest(fixture_source)
+    expected_package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    expected_compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+    expected_agents = cast(
+        list[dict[str, object]],
+        cast(dict[str, object], expected_package_definition["spec"])["agents"],
+    )
+
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.connect() as connection:
+            row = (
+                connection.execute(
+                    text(
+                        """
+                    SELECT
+                        package.id AS package_id,
+                        package.key,
+                        package.name,
+                        package.description,
+                        package.status,
+                        package.latest_version_id,
+                        package.draft_source,
+                        version.id AS version_id,
+                        version.version,
+                        version.manifest_source,
+                        version.manifest_hash,
+                        version.package_definition,
+                        version.compiled_plan,
+                        version.compiled_hash,
+                        version.validation_summary
+                    FROM workflow_packages AS package
+                    JOIN workflow_package_versions AS version
+                      ON version.id = package.latest_version_id
+                    WHERE package.key = :package_key
+                    """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+            package_count = connection.execute(
+                text("SELECT COUNT(*) FROM workflow_packages")
+            ).scalar_one()
+            version_count = connection.execute(
+                text("SELECT COUNT(*) FROM workflow_package_versions")
+            ).scalar_one()
+            model_connection_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections")
+            ).scalar_one()
+            non_empty_model_secret_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections WHERE secret_payload <> '{}'::jsonb")
+            ).scalar_one()
+            preset_model_connection_count = connection.execute(
+                text("SELECT COUNT(*) FROM model_connections WHERE key = :key"),
+                {"key": _TRADINGAGENTS_MODEL_CONNECTION_KEY},
+            ).scalar_one()
+            secret_binding_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_secret_bindings
+                    WHERE package_id = :package_id
+                    """
+                ),
+                {"package_id": row["package_id"]},
+            ).scalar_one()
+            preset_reference_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_version_model_connections
+                    WHERE workflow_package_version_id = :version_id
+                    """
+                ),
+                {"version_id": row["version_id"]},
+            ).scalar_one()
+            run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
+
+        assert package_count == 1
+        assert version_count == 1
+        assert row["key"] == _TRADINGAGENTS_PRESET_KEY
+        assert row["name"] == "TradingAgents Advisory Research"
+        assert (
+            row["description"]
+            == cast(dict[str, object], expected_package_definition["metadata"])["description"]
+        )
+        assert row["status"] == "active"
+        assert row["latest_version_id"] == row["version_id"]
+        assert row["version"] == 1
+        assert row["draft_source"] == fixture_source
+        assert row["manifest_source"] == fixture_source
+        assert row["manifest_hash"] == compiled["manifestHash"]
+        assert row["compiled_hash"] == compiled["compiledHash"]
+        assert row["package_definition"] == expected_package_definition
+        assert row["compiled_plan"] == expected_compiled_plan
+
+        validation_summary = cast(dict[str, object], row["validation_summary"])
+        assert validation_summary["diagnostics"] == []
+        warnings = cast(list[dict[str, object]], validation_summary["warnings"])
+        assert len(warnings) == len(expected_agents)
+        assert all(
+            warning["issue"]
+            == f"Model connection {_TRADINGAGENTS_MODEL_CONNECTION_KEY!r} was not found"
+            for warning in warnings
+        )
+        assert validation_summary["dbUpgradePreset"] == {
+            "allowMissingModelConnections": True,
+            "secretSafe": True,
+            "source": "phase_b_db_upgrade",
+        }
+
+        serialized_preset = (
+            fixture_source
+            + json.dumps(row["package_definition"], sort_keys=True)
+            + json.dumps(row["compiled_plan"], sort_keys=True)
+            + json.dumps(row["validation_summary"], sort_keys=True)
+        )
+        for forbidden_value in (
+            "encrypted",
+            "requiredBindings",
+            "secretPayload",
+            "secretRefs",
+        ):
+            assert forbidden_value not in serialized_preset
+        assert re.search(r"\bsk-[A-Za-z0-9_-]{16,}", serialized_preset) is None
+        assert model_connection_count == 0
+        assert non_empty_model_secret_count == 0
+        assert preset_model_connection_count == 0
+        assert secret_binding_count == 0
+        assert preset_reference_count == 0
+        assert run_count == 0
+
+        package_id = row["package_id"]
+        version_id = row["version_id"]
+        upgrade_legacy_schema(engine)
+        with engine.connect() as connection:
+            idempotent_row = (
+                connection.execute(
+                    text(
+                        """
+                    SELECT package.id AS package_id, version.id AS version_id
+                    FROM workflow_packages AS package
+                    JOIN workflow_package_versions AS version
+                      ON version.id = package.latest_version_id
+                    WHERE package.key = :package_key
+                    """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+        assert idempotent_row["package_id"] == package_id
+        assert idempotent_row["version_id"] == version_id
     finally:
         engine.dispose()
 
