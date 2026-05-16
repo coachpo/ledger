@@ -3,9 +3,11 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live in `e2e/`, `scripts/`, and throughout `src/**/AGENTS.md`.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, and Runs, plus shared forms and UI that keep route logic thin.
+React 19 + Vite frontend with a flat route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, and Runs, plus shared forms and UI that keep route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
 
 ## CHILD DOCS
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions

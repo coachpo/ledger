@@ -3,9 +3,11 @@
 > Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
-FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and the live request path includes the bundled `signaldeck.finance` Finance Workspace extension plus package-first platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the bundled `signaldeck.finance` Finance Workspace extension plus platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
 
 ## CHILD DOCS
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers

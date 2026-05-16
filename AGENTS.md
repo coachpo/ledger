@@ -1,57 +1,27 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-05-16
-**Commit:** 69e809e
+**Commit:** 86596fd
 **Branch:** main
 
 ## OVERVIEW
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-SignalDeck is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans the bundled `signaldeck.finance` Finance Workspace extension for portfolio CRUD, balances, positions, delayed market data, trading operations, templates, reports, and finance-owned tools, plus the package-first platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+
+SignalDeck is a dual-stack universal agents workflow/pipeline platform with a FastAPI backend and a React/Vite frontend tracked directly in this repository. Executable agent workflows are accepted only as Workflow Packages; the bundled `signaldeck.finance` Finance Workspace extension supplies first-party portfolio data, reports, market data, trading tools, and finance-owned runtime tools that packages can use.
 
 ## CHILD DOCS
 
-- `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
-- `backend/app/core/AGENTS.md` — config, error envelope, telemetry, normalization helpers
-- `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
-- `backend/app/api/AGENTS.md` — route handler boundaries, extension-gated `/api/v1` composition, and dependency wiring
-- `backend/app/extensions/AGENTS.md` — bundled extension registry, slim state, private registrar, and ownership boundaries
-- `backend/app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report-memory ownership
-- `backend/app/agents/AGENTS.md` — server tool catalog, native runtime tools, MCP security/runtime boundaries
-- `backend/app/services/AGENTS.md` — service ownership, extension state, workflow package compilers, runtime execution, memory reports, and quote-provider wiring
-- `backend/app/schemas/AGENTS.md` — Pydantic validation, manifest contracts, memory metadata, and camelCase aliasing
-- `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, manifests, and run metadata
-- `backend/app/repositories/AGENTS.md` — query/repository patterns, report metadata filters, and runtime lookups
-- `backend/tests/AGENTS.md` — pytest fixtures, isolated PostgreSQL databases, and regression coverage
+- `backend/AGENTS.md`, `backend/app/*/AGENTS.md`, `backend/tests/AGENTS.md` — backend layer, runtime, persistence, schema, and test rules
+- `backend/app/extensions/signaldeck_finance/AGENTS.md` — first-party Finance Workspace extension ownership
 - `docs/AGENTS.md` — live docs ownership, status metadata, and obsolete-content rules
-- `frontend/AGENTS.md` — frontend architecture, router shell, agent-platform surfaces, and validation workflow
-- `frontend/e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
-- `frontend/scripts/AGENTS.md` — Playwright backend/frontend startup helpers
-- `frontend/src/extensions/AGENTS.md` — frontend extension runtime, route/nav/tool filtering, and Finance Workspace scaffold
-- `frontend/src/styles/AGENTS.md` — Tailwind v4 imports, theme tokens, dark variant, and empty font stub
-- `frontend/src/test/AGENTS.md` — Vitest jsdom setup and browser API mocks
-- `frontend/src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, extension contracts, and shared contracts
-- `frontend/src/lib/api/AGENTS.md` — domain API modules, v1/platform request helpers, upload/download boundaries
-- `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, and the agent-platform domains
-- `frontend/src/lib/platform-authoring/AGENTS.md` — schema/value/ref/manifest authoring helper contracts
-- `frontend/src/hooks/AGENTS.md` — TanStack Query hook patterns and invalidation rules
-- `frontend/src/components/AGENTS.md` — layout shell, theme system, shared components, forms, platform-authoring widgets, and feature UI
-- `frontend/src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
-- `frontend/src/components/forms/AGENTS.md` — cross-route dialog forms for portfolios and report generation
-- `frontend/src/components/templates/AGENTS.md` — template-editor placeholder and runtime-input components
-- `frontend/src/components/ui/AGENTS.md` — shadcn/ui primitives, sidebar context, and shared variant helpers
-- `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
-- `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
-- `frontend/src/pages/AGENTS.md` — dashboard, extension, finance, and agent-platform routes
+- `frontend/AGENTS.md`, `frontend/e2e/AGENTS.md`, `frontend/scripts/AGENTS.md` — frontend shell, E2E, and startup-helper rules
+- `frontend/src/extensions/AGENTS.md`, `frontend/src/styles/AGENTS.md`, `frontend/src/test/AGENTS.md` — extension runtime, theme, and Vitest setup rules
+- `frontend/src/lib/**/AGENTS.md`, `frontend/src/hooks/AGENTS.md` — API, type, platform-authoring, and query-hook contracts
+- `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/**/AGENTS.md` — reusable UI, feature UI, live routes, and page-family rules
 - `frontend/retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
-- `frontend/src/pages/extensions/AGENTS.md` — bundled extension state list/toggle route
-- `frontend/src/pages/workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export routes
-- `frontend/src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret handling, and connection test routes
-- `frontend/src/pages/runs/AGENTS.md` — runs list and detail routes
-- `frontend/src/pages/portfolios/AGENTS.md` — portfolio list/detail orchestration and quote-enriched workspace rules
-- `frontend/src/pages/templates/AGENTS.md` — template list/editor flows, debounce preview, runtime inputs, and placeholder browser rules
-- `frontend/src/pages/reports/AGENTS.md` — report list/detail flows, grouping, markdown render/edit/download behavior
 
 ## STRUCTURE
 
