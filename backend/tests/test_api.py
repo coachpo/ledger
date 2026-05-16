@@ -230,7 +230,7 @@ def test_disabled_finance_workspace_portfolio_template_report_market_data_routes
 ) -> None:
     toggle_response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False, "disabledReason": "test maintenance"},
+        json={"enabled": False},
     )
     assert toggle_response.status_code == 200, toggle_response.json()
 
@@ -264,7 +264,7 @@ def test_disabled_finance_workspace_preserves_template_and_report_rows(
 
     toggle_response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False, "disabledReason": "data safety check"},
+        json={"enabled": False},
     )
     assert toggle_response.status_code == 200, toggle_response.json()
 

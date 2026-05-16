@@ -35,7 +35,7 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
-| Extension state route | `extensions/AGENTS.md` | bundled extension list, contributions, and enable/disable toggle flow |
+| Extension state route | `extensions/AGENTS.md` | bundled extension slim state and enable/disable toggle flow |
 | Agent-platform pages | `workflow-packages/AGENTS.md`, `model-connections/AGENTS.md`, `runs/AGENTS.md` | package authoring, saved connections, and run inspection |
 | Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
 | Template list/editor | `templates/AGENTS.md` | stored-template CRUD, inline compile preview, placeholder browser |

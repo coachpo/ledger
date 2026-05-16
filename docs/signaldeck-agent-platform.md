@@ -1,6 +1,6 @@
 # SignalDeck Agent Platform Reference
 
-> Status: Live package-first platform reference for branch `main` at `33c2584`. This is the canonical platform reference.
+> Status: Live package-first platform reference for branch `main` at `69e809e`. This is the canonical platform reference.
 
 ## Scope
 
@@ -20,6 +20,12 @@ This document describes shipped behavior only. Studio, Tryout, orchestration, ru
 | Runs | `/api/runs*` | `/runs*` |
 
 Preserved finance product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`. They are bundled in `signaldeck.finance`, which is enabled by default and supports enable/disable state only. Generic platform capabilities remain core: Workflow Packages, Model Connections, Runs, HTTP operation nodes, package secret bindings, manifest parsing, and the `/api/tools` discovery host.
+
+## Extensions
+
+`/api/extensions` is a slim operational state API for bundled extensions. `GET /api/extensions` returns entries with only `key`, `label`, and `enabled`. `PATCH /api/extensions/{extensionKey}` accepts only `{enabled}`. It does not expose contribution inventories, categories, phases, versioning policy, disabled reasons, state versions, scaffold data, owner keys, or registrar details.
+
+Backend registry and frontend scaffold data are private wiring. They may hold the extension key, label, initial enabled seed, registrar paths, and private route/nav/tool gate tags needed to assemble the app, but those details are not public API or manifest metadata. Future agents must not rebuild plugin-manifest metadata into `/api/extensions`, run details, frontend state, OpenAPI, or docs.
 
 ## Workflow Packages
 
@@ -78,7 +84,7 @@ Read payloads and errors must mask or omit raw secrets. Blank API-key edits pres
 
 ## Tools
 
-Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are `signaldeck.finance` contributions.
+Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are provided by private `signaldeck.finance` registrars and appear only when that extension is enabled.
 
 Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. They remain visible to smoke and demo Workflow Packages while `signaldeck.finance` is enabled by default. Runtime tool keys and OpenAI function names stay stable. Examples include `signaldeck.market_data.ohlcv_lookup`, `signaldeck.indicators.lookup`, `signaldeck.news.lookup`, `signaldeck.social_sentiment.lookup`, `signaldeck.reports.lookup`, `signaldeck.reports.write`, and OpenAI function names such as `signaldeck_social_sentiment_lookup` and `signaldeck_reports_lookup`.
 
@@ -90,7 +96,9 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{version, workflowKey, parameters}`.
 
-Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, and package provenance. Detail payloads include steps, agent invocations, and operation invocations for review without requiring a separate tracing product or Logfire token.
+Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and package provenance. Detail payloads include steps, agent invocations, and operation invocations for review without requiring a separate tracing product or Logfire token.
+
+Run extension requirements appear as `extensionDependencies`. Each dependency record contains only `extensionKey`, `surfaces`, and `fields`. These records help explain launch-time requirements and are not public extension snapshots or a place to carry labels, enabled state, versioning, phase, categories, disabled reasons, or registrar metadata.
 
 Run detail keeps operation invocation rows separate from agent rows. Each step has `invocations` for agents and `operationInvocations` for `kind: http` operations. Operation invocation detail includes `operationKey`, `operationKind`, `method`, `timeoutSeconds`, redacted `requestMetadata`, bounded `responseMetadata`, `output`, `outputOrigin`, status/error fields, replay source fields, and timestamps. HTTP-only steps have no agent invocations; mixed steps can show both families.
 
@@ -163,6 +171,9 @@ Each milestone has a deterministic targeted command, and the combined command is
 
 # Public contract docs grep check
 rg -n "kind: http|signaldeck.social_sentiment.lookup|operation invocation|secret binding" docs/api-design.md docs/signaldeck-agent-platform.md
+
+# Extension metadata absence guard, live docs and guidance should not match removed public tokens
+rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" docs AGENTS.md backend/AGENTS.md backend/app/**/AGENTS.md frontend/AGENTS.md frontend/src/**/AGENTS.md .sisyphus/plans/ledger-bundled-extension-migration.md
 ```
 
 Security override coverage stays focused and test-only:

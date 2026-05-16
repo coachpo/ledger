@@ -1,6 +1,6 @@
 # API Design
 
-> Status: Live API reference for branch `main` at `33c2584`.
+> Status: Live API reference for branch `main` at `69e809e`.
 
 ## Conventions
 
@@ -38,8 +38,8 @@ Template/report series can be built by creating a template, previewing with `POS
 | Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
-| Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for enable/disable state of bundled extensions |
-| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by enabled extensions |
+| Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for slim bundled extension state. List responses expose only `key`, `label`, and `enabled`; toggle requests accept only `enabled`. |
+| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by currently enabled extensions |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
 
 ## Workflow Package HTTP Nodes and Secret Bindings
@@ -64,6 +64,8 @@ Runtime request metadata redacts sensitive URL query names and all secret-backed
 
 Run detail payloads expose operations separately from agents. Each `steps[]` item has `invocations` for agent invocations and `operationInvocations` for non-agent operations. Operation invocation records use the operation invocation shape: `id`, `runStepId`, `runId`, `stepIndex`, `slot`, `position`, `operationKey`, `operationKind`, `outputSchemaId`, `outputSchemaVersion`, `method`, `timeoutSeconds`, `requestMetadata`, `responseMetadata`, `graphMetadata`, `optional`, `status`, `output`, `outputOrigin`, `errorCode`, `errorMessage`, `errorDetails`, `durationMs`, `traceSpanId`, replay source fields (`sourceOperationInvocationId`, `sourceRunId`, `sourceRunStepId`, `sourceStepIndex`), timestamps, and update timestamps.
 
+Run list and detail payloads include `extensionDependencies`, a dependency-only array used to explain which extension-owned surfaces the run needed at launch. Each record contains only `extensionKey`, `surfaces`, and `fields`. It is not a plugin manifest, state snapshot, audit log, or public extension metadata carrier.
+
 Operation invocation rows persist in `run_operation_invocations`, not `run_agent_invocations`. Agent-only steps keep `operationInvocations: []`; HTTP-only steps keep `invocations: []`; mixed execution steps may contain both arrays. Reruns and step replays copy operation rows with source-operation provenance while keeping redacted request metadata and response metadata secret-safe.
 
 ## Runtime Tool Contract Notes
@@ -77,8 +79,8 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 - Package exports keep private MCP `env`, `headers`, and `query` values inline, omit database ids and run history, and omit package secret binding rows and values.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
 - Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `signaldeck.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
-- `signaldeck.finance` is created enabled by default at startup/reset and supports enable/disable state only.
-- Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
+- `signaldeck.finance` is created enabled by default at startup/reset and supports enable/disable state only. Do not add phase, contribution inventory, versioning, disabled-reason, or state-version fields to public extension responses.
+- Runs persist package provenance including package id, package key, version, hash, workflow key, dependency-only `extensionDependencies`, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
 
 ## HTTP Status Guidelines
 

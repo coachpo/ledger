@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.extensions.registry import (
-    get_bundled_extension_registry,
-    load_extension_contribution_registrar,
-)
+from app.extensions.registry import get_bundled_extension_registry, load_extension_registrar
 
 
 @dataclass(frozen=True)
@@ -20,17 +17,15 @@ class ServerDeclaredToolSpec:
 def _load_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:
     specs: list[ServerDeclaredToolSpec] = []
     for extension in get_bundled_extension_registry().list_extensions():
-        if extension.scaffold is None:
-            continue
-        for registrar in extension.scaffold.tool_specs:
-            for contribution in load_extension_contribution_registrar(registrar.registrar):
-                if not isinstance(contribution, ServerDeclaredToolSpec):
+        for registrar in extension.tool_spec_registrars:
+            for tool_spec in load_extension_registrar(registrar):
+                if not isinstance(tool_spec, ServerDeclaredToolSpec):
                     message = (
-                        f"Tool spec registrar {registrar.registrar!r} returned "
-                        + f"unsupported contribution {type(contribution).__name__!r}"
+                        f"Tool spec registrar {registrar!r} returned "
+                        + f"unsupported item {type(tool_spec).__name__!r}"
                     )
                     raise ValueError(message)
-                specs.append(contribution)
+                specs.append(tool_spec)
     return tuple(specs)
 
 

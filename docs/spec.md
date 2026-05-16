@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `987686e`.
+> Status: Live technical reference for branch `main` at `69e809e`.
 
 ## Overview
 
@@ -19,6 +19,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 - `backend/app/api/router.py` is the `/api/v1` composition host for the bundled finance workspace routes.
 - `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, extensions, tools, and runs.
 - `backend/app/extensions/signaldeck_finance/` contributes the current finance/product/provider surfaces as `signaldeck.finance`, with startup and reset/seed defaults keeping it enabled.
+- Backend extension registry data is private operational wiring: extension key, label, initial enabled seed, registrar paths, and owner keys for route, tool, runtime, provider, and hook gating.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting for persisted run metadata.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; Alembic is not the live migration authority.
@@ -44,9 +45,9 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 - Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
-- Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries come from enabled `signaldeck.finance` contributions.
-- `signaldeck.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup.
-- Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token.
+- Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries appear only while `signaldeck.finance` is enabled.
+- `signaldeck.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup. `/api/extensions` exposes only `key`, `label`, and `enabled`.
+- Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token. Run extension data is dependency-only and stores only extension key, surfaces, and fields.
 
 ## Data Flow Highlights
 

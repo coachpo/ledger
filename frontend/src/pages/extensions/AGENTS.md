@@ -10,16 +10,17 @@ The repo has no users yet, so prefer clean architecture and current best practic
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Extensions page | `list.tsx` | list cards, contribution grouping, enable/disable switch, disabled reason display |
-| Page coverage | `list.test.tsx` | renders extension state, contribution metadata, and toggle flows |
+| Extensions page | `list.tsx` | list cards, enabled/disabled status, key/label display, and enable/disable switch |
+| Page coverage | `list.test.tsx` | renders slim extension state and toggle flows |
 | Hooks | `../../hooks/use-extensions.ts` | list/toggle cache policy and finance cache invalidation |
 | Runtime consumers | `../../extensions/runtime.tsx` | route/nav/tool visibility reacts to extension state |
 
 ## CONVENTIONS
 - Use `useExtensions()` and `useToggleExtension()`; do not call API helpers directly from the page.
 - Keep `/extensions` under the System nav group assembled in `src/extensions/runtime.tsx`.
-- Display backend contribution metadata as read-only; the page only toggles enabled state and optional disabled reasons.
+- Render only the backend state contract: extension `key`, `label`, and `enabled`. The page only toggles enabled state.
 
 ## ANTI-PATTERNS
 - Do not treat `/extensions` as package authoring or external plugin installation.
 - Do not duplicate extension visibility decisions here; route/nav/tool filtering lives in `src/extensions/runtime.tsx` and hooks.
+- Do not reintroduce plugin-manifest fields, reason text, version/state counters, categories, or scaffold details into this page.

@@ -601,29 +601,31 @@ class RunService:
             "workflow_package_version_id": workflow_package_version.id,
         }
 
-    def _extension_snapshots_for_launch(
+    def _extension_dependencies_for_launch(
         self,
         workflow_package_version: WorkflowPackageVersion | None,
     ) -> list[dict[str, Any]]:
         if workflow_package_version is None:
             return []
-        dependency_service = ExtensionDependencyService(ExtensionService(self.session))
-        return dependency_service.snapshot_compiled_plan_dependencies(
+        dependency_service = ExtensionDependencyService()
+        return dependency_service.compiled_plan_dependency_payloads(
             workflow_package_version.compiled_plan
         )
 
     def _assert_run_extension_dependencies_enabled(self, run: Run) -> None:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             return
-        snapshots = run.extension_snapshots or []
-        if not snapshots:
+        dependencies = ExtensionDependencyService.normalize_dependency_payloads(
+            run.extension_dependencies
+        )
+        if not dependencies:
             return
         extension_service = ExtensionService(self.session)
-        for snapshot in snapshots:
-            extension_key = str(snapshot.get("extensionKey") or "")
+        for dependency in dependencies:
+            extension_key = str(dependency.get("extensionKey") or "")
             if not extension_key:
                 continue
-            surfaces = snapshot.get("surfaces")
+            surfaces = dependency.get("surfaces")
             surface = (
                 str(surfaces[0])
                 if isinstance(surfaces, list) and surfaces
@@ -634,8 +636,10 @@ class RunService:
     @staticmethod
     def _run_depends_on_finance_workspace(run: Run) -> bool:
         return any(
-            str(snapshot.get("extensionKey") or "") == FINANCE_WORKSPACE_EXTENSION_KEY
-            for snapshot in (run.extension_snapshots or [])
+            str(dependency.get("extensionKey") or "") == FINANCE_WORKSPACE_EXTENSION_KEY
+            for dependency in ExtensionDependencyService.normalize_dependency_payloads(
+                run.extension_dependencies
+            )
         )
 
     def _create_run_from_plan(
@@ -655,7 +659,7 @@ class RunService:
             plan.package_workflow.key if plan.package_workflow is not None else None
         )
         target_fk_identity = self._run_target_fk_identity(plan, workflow_package_version)
-        extension_snapshots = self._extension_snapshots_for_launch(workflow_package_version)
+        extension_dependencies = self._extension_dependencies_for_launch(workflow_package_version)
         run = Run(
             **target_fk_identity,
             target_kind=self._run_target_kind(plan),
@@ -674,7 +678,7 @@ class RunService:
                 else None
             ),
             workflow_package_workflow_key=package_workflow_key,
-            extension_snapshots=extension_snapshots,
+            extension_dependencies=extension_dependencies,
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -821,7 +825,9 @@ class RunService:
             workflow_package_version=source_run.workflow_package_version,
             workflow_package_hash=source_run.workflow_package_hash,
             workflow_package_workflow_key=source_run.workflow_package_workflow_key,
-            extension_snapshots=deepcopy(source_run.extension_snapshots),
+            extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
+                source_run.extension_dependencies
+            ),
             input=validated_input,
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
@@ -3001,7 +3007,9 @@ class RunService:
                     )
                 ],
                 "memoryArtifacts": self._memory_artifact_links(run.id),
-                "extensionSnapshots": deepcopy(run.extension_snapshots),
+                "extensionDependencies": ExtensionDependencyService.normalize_dependency_payloads(
+                    run.extension_dependencies
+                ),
                 "packageProvenance": self._package_provenance_payload(run),
             }
         )

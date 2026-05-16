@@ -172,7 +172,7 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
             FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+            ExtensionToggleRequest(enabled=False),
         )
 
 
@@ -336,7 +336,7 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
 
     assert detail["status"] == "succeeded"
     assert detail["finalOutput"] == {"summary": "deterministic summary"}
-    assert detail["extensionSnapshots"] == []
+    assert detail["extensionDependencies"] == []
 
 
 def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(

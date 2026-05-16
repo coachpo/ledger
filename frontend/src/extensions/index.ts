@@ -1,9 +1,7 @@
 export {
   financeWorkspaceFrontendExtension,
-  FINANCE_WORKSPACE_DEFAULT_ENABLED,
   FINANCE_WORKSPACE_EXTENSION_KEY,
   FINANCE_WORKSPACE_LABEL,
-  FINANCE_WORKSPACE_PHASE,
   getFinanceWorkspaceFrontendExtension,
 } from "./signaldeck-finance";
 export {
@@ -14,12 +12,9 @@ export {
   type BundledFrontendExtensionKey,
 } from "./registry";
 export type {
-  FrontendApiAvailabilityContribution,
-  FrontendExtensionAvailability,
   FrontendExtensionDefinition,
-  FrontendExtensionStateSource,
+  FrontendExtensionGateTag,
   FrontendNavContribution,
   FrontendRouteContribution,
-  FrontendSettingsPageContribution,
   FrontendToolAuthoringDiscoveryContribution,
 } from "./types";

@@ -129,9 +129,7 @@ def _create_pending_memory(
 def _disable_finance_workspace(session: Session) -> None:
     ExtensionService(session).set_extension_enabled(
         FINANCE_WORKSPACE_EXTENSION_KEY,
-        ExtensionToggleRequest.model_validate(
-            {"enabled": False, "disabledReason": "follow-up data safety check"}
-        ),
+        ExtensionToggleRequest.model_validate({"enabled": False}),
     )
 
 
@@ -479,10 +477,11 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
             workflow_package_version=1,
             workflow_package_hash="hash-follow",
             workflow_package_workflow_key="follow_workflow",
-            extension_snapshots=[
+            extension_dependencies=[
                 {
                     "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
                     "surfaces": ["tool.signaldeck.reports.lookup"],
+                    "fields": [],
                 }
             ],
             input={},

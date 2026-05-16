@@ -38,7 +38,10 @@ import {
   FINANCE_WORKSPACE_EXTENSION_KEY,
   FINANCE_WORKSPACE_LABEL,
 } from "./signaldeck-finance";
-import type { FrontendNavContribution } from "./types";
+import type {
+  FrontendExtensionGateTag,
+  FrontendNavContribution,
+} from "./types";
 
 export type NavItem = {
   icon: LucideIcon;
@@ -110,7 +113,9 @@ function extensionStateFromList(
   extensionList: ExtensionListRead | undefined,
   extensionKey: string,
 ): ExtensionRead | undefined {
-  return extensionList?.items.find((extension) => extension.key === extensionKey);
+  return extensionList?.items.find(
+    (extension) => extension.key === extensionKey,
+  );
 }
 
 export function isFrontendExtensionEnabled(
@@ -120,7 +125,19 @@ export function isFrontendExtensionEnabled(
   return extensionStateFromList(extensionList, extensionKey)?.enabled === true;
 }
 
-function navItemFromContribution(contribution: FrontendNavContribution): NavItem {
+function isGateTagEnabled(
+  extensionList: ExtensionListRead | undefined,
+  gateTag: FrontendExtensionGateTag,
+): boolean {
+  return isFrontendExtensionEnabled(
+    extensionList,
+    gateTag.requiredExtensionKey,
+  );
+}
+
+function navItemFromContribution(
+  contribution: FrontendNavContribution,
+): NavItem {
   const icon = navIconByName[contribution.iconName];
 
   if (!icon) {
@@ -134,13 +151,17 @@ function navItemFromContribution(contribution: FrontendNavContribution): NavItem
     to: contribution.to,
   };
 }
-function financeNavItems(extensionList: ExtensionListRead | undefined): NavItem[] {
-  return isFrontendExtensionEnabled(extensionList, FINANCE_WORKSPACE_EXTENSION_KEY)
-    ? financeWorkspaceFrontendExtension.navContributions.map(navItemFromContribution)
-    : [];
+function financeNavItems(
+  extensionList: ExtensionListRead | undefined,
+): NavItem[] {
+  return financeWorkspaceFrontendExtension.navContributions
+    .filter((contribution) => isGateTagEnabled(extensionList, contribution))
+    .map(navItemFromContribution);
 }
 
-export function assembleNavGroups(extensionList: ExtensionListRead | undefined): NavGroup[] {
+export function assembleNavGroups(
+  extensionList: ExtensionListRead | undefined,
+): NavGroup[] {
   const enabledFinanceNavItems = financeNavItems(extensionList);
   const navGroups: NavGroup[] = [];
 
@@ -158,23 +179,32 @@ export function assembleNavGroups(extensionList: ExtensionListRead | undefined):
   return navGroups;
 }
 
-export function assembleNavItems(extensionList: ExtensionListRead | undefined): NavItem[] {
+export function assembleNavItems(
+  extensionList: ExtensionListRead | undefined,
+): NavItem[] {
   return assembleNavGroups(extensionList).flatMap((group) => group.items);
 }
 
-export function enabledFinanceRoutePaths(extensionList: ExtensionListRead | undefined): string[] {
-  if (!isFrontendExtensionEnabled(extensionList, FINANCE_WORKSPACE_EXTENSION_KEY)) {
-    return [];
-  }
-
-  return financeWorkspaceFrontendExtension.routeContributions.map(
-    (contribution) => contribution.path,
-  );
+export function enabledFinanceRoutePaths(
+  extensionList: ExtensionListRead | undefined,
+): string[] {
+  return financeWorkspaceFrontendExtension.routeContributions
+    .filter((contribution) => isGateTagEnabled(extensionList, contribution))
+    .map((contribution) => contribution.path);
 }
 
-function DisabledShell({ children, testId }: { children: ReactNode; testId: string }) {
+function DisabledShell({
+  children,
+  testId,
+}: {
+  children: ReactNode;
+  testId: string;
+}) {
   return (
-    <div className="flex min-h-full items-center justify-center p-4" data-testid={testId}>
+    <div
+      className="flex min-h-full items-center justify-center p-4"
+      data-testid={testId}
+    >
       <Card className="w-full max-w-2xl border-border/70 bg-card/90 shadow-sm backdrop-blur">
         {children}
       </Card>
@@ -191,7 +221,8 @@ function ExtensionStateUnavailable({ onRetry }: { onRetry: () => void }) {
           Extension state unavailable
         </CardTitle>
         <CardDescription>
-          SignalDeck could not load backend extension state, so extension-owned routes are paused.
+          SignalDeck could not load backend extension state, so extension-owned
+          routes are paused.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -209,15 +240,10 @@ function ExtensionDisabled({ extension }: { extension: ExtensionRead }) {
       <CardHeader>
         <CardTitle>{extension.label} disabled</CardTitle>
         <CardDescription>
-          This route is contributed by {extension.key} and is hidden while the backend marks the extension disabled.
+          This workspace is unavailable while its bundled extension is disabled.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {extension.disabledReason ? (
-          <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-            {extension.disabledReason}
-          </p>
-        ) : null}
         <Button asChild size="sm" variant="outline">
           <Link to="/workflow-packages">Open core workflow packages</Link>
         </Button>
@@ -239,7 +265,11 @@ function ExtensionLoading() {
   );
 }
 
-export function FinanceWorkspaceRouteGate({ children }: { children: ReactNode }) {
+export function FinanceWorkspaceRouteGate({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const extensionQuery = useExtension(FINANCE_WORKSPACE_EXTENSION_KEY);
 
   if (extensionQuery.isPending) {
@@ -247,7 +277,11 @@ export function FinanceWorkspaceRouteGate({ children }: { children: ReactNode })
   }
 
   if (extensionQuery.isError || !extensionQuery.data) {
-    return <ExtensionStateUnavailable onRetry={() => void extensionQuery.refetch()} />;
+    return (
+      <ExtensionStateUnavailable
+        onRetry={() => void extensionQuery.refetch()}
+      />
+    );
   }
 
   if (!extensionQuery.data.enabled) {
@@ -267,32 +301,51 @@ function withFinanceWorkspaceGate(Component: ComponentType): ComponentType {
 }
 
 export function assembleFinanceWorkspaceRoutes(): ExtensionRouteDefinition[] {
-  return financeWorkspaceFrontendExtension.routeContributions.map((contribution) => {
-    const Component = financeRouteComponents[contribution.componentModule];
+  return financeWorkspaceFrontendExtension.routeContributions.map(
+    (contribution) => {
+      if (
+        contribution.requiredExtensionKey !==
+        financeWorkspaceFrontendExtension.key
+      ) {
+        throw new Error(
+          `Finance route gate ${contribution.requiredExtensionKey} does not match ${financeWorkspaceFrontendExtension.key}`,
+        );
+      }
 
-    if (!Component) {
-      throw new Error(`Unknown extension route component: ${contribution.componentModule}`);
-    }
+      const Component = financeRouteComponents[contribution.componentModule];
 
-    const GuardedComponent = withFinanceWorkspaceGate(Component);
+      if (!Component) {
+        throw new Error(
+          `Unknown extension route component: ${contribution.componentModule}`,
+        );
+      }
 
-    return contribution.path === "/"
-      ? { index: true, Component: GuardedComponent }
-      : { path: contribution.path.replace(/^\//, ""), Component: GuardedComponent };
-  });
+      const GuardedComponent = withFinanceWorkspaceGate(Component);
+
+      return contribution.path === "/"
+        ? { index: true, Component: GuardedComponent }
+        : {
+            path: contribution.path.replace(/^\//, ""),
+            Component: GuardedComponent,
+          };
+    },
+  );
 }
 export function filterToolsForExtensionState(
   tools: readonly ToolCatalogItemRead[],
   extensionList: ExtensionListRead | undefined,
 ): ToolCatalogItemRead[] {
-  const financeToolContribution = financeWorkspaceFrontendExtension.toolAuthoringDiscovery[0];
+  const financeToolContribution =
+    financeWorkspaceFrontendExtension.toolAuthoringDiscovery[0];
 
   if (
     !financeToolContribution ||
-    isFrontendExtensionEnabled(extensionList, FINANCE_WORKSPACE_EXTENSION_KEY)
+    isGateTagEnabled(extensionList, financeToolContribution)
   ) {
     return [...tools];
   }
 
-  return tools.filter((tool) => !tool.key.startsWith(financeToolContribution.toolKeyPrefix));
+  return tools.filter(
+    (tool) => !tool.key.startsWith(financeToolContribution.toolKeyPrefix),
+  );
 }

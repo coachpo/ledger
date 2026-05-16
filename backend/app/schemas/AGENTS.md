@@ -18,7 +18,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | CSV import schemas | `csv_import.py` | preview and commit payloads |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
-| Extension schemas | `extension.py` | bundled extension list/read/toggle payloads and contribution metadata |
+| Extension schemas | `extension.py` | bundled extension list/read/toggle payloads with slim public state |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
 | Memory domain schemas | `memory.py`, `memory_report.py` | memory DTO projections plus report-backed agent-memory metadata |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
@@ -32,7 +32,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
-- `extension.py` keeps bundled extension state, disabled reasons, and contribution metadata aligned with `/api/extensions` and frontend route/tool gating.
+- `extension.py` keeps bundled extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
 - Agent-platform schemas keep immutable package versions, typed package-local wiring, secret-safe model bindings, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 
 ## ANTI-PATTERNS
@@ -42,6 +42,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Do not bypass `CamelModel` aliasing; external JSON must stay camelCase.
 - Do not change template placeholder or compile payload shapes without updating the frontend types and editor.
 - Do not change preserved-product, extension, or agent-platform payload shapes without updating the corresponding backend routes, frontend types, and regression tests together.
+- Do not add plugin-manifest metadata to extension reads or run dependency records. Registry and scaffold data stay outside public schemas.
 
 ## VALIDATION
 ```bash
@@ -58,7 +59,7 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
 - `workflow_package.py` and `workflow_package_manifest.py` carry package authoring, validation, import/export, preflight, launch, and immutable package artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
-- `extension.py` exposes bundled extension state, contribution metadata, and enable/disable toggle payloads.
+- `extension.py` exposes bundled extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
 - `memory.py` defines phase 1 projection boundaries. Model-visible payloads expose `memoryId`, status, summary, provenance, and warnings without report identity, raw markdown, URLs, downloads, or `auditLinks`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
 - `memoryId` is opaque outside `ReportBackedMemoryStore`. Do not parse `mem_<report_id>` in schemas, services, runtime tools, routes, or frontend callers.

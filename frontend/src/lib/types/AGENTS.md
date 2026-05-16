@@ -16,7 +16,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
-| Extension state contract | `extension.ts` | bundled extension state, contribution metadata, and toggle payloads |
+| Extension state contract | `extension.ts` | bundled extension `key`, `label`, `enabled`, and toggle payloads |
 | Workflow Package contracts | `workflow-package.ts` | package manifests, versions, diagnostics, preflight, launch, import, and export payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
 | Platform execution contracts | `run.ts` | run list/detail, monitor payloads, and package provenance |
@@ -28,6 +28,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
 - Keep route forms, hook inputs, extension-state consumers, and shared type names aligned with the current backend contract.
+- Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Run memory artifacts are memory-shaped in phase 1: `memoryId` is an opaque string, and optional report actions live only under `auditLinks.report`. Frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.
 - No vector search, embeddings, memory table, or public `signaldeck.memory.*` API shape exists in phase 1 frontend contracts.
 

@@ -1,39 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalog
-from app.agents.runtime_tools import RUNTIME_TOOL_SPECS, RuntimeToolRegistry
+from app.agents.runtime_tools.registry import RuntimeToolRegistry
 from app.core.errors import extension_disabled_error, not_found_error
-from app.core.formatting import utcnow
 from app.extensions.registry import (
     BundledExtensionDefinition,
     BundledExtensionRegistry,
-    ExtensionContribution,
     get_bundled_extension_registry,
 )
 from app.models.extension import ExtensionState
-from app.schemas.extension import (
-    ExtensionContributionRead,
-    ExtensionListRead,
-    ExtensionRead,
-    ExtensionToggleRequest,
-)
+from app.schemas.extension import ExtensionListRead, ExtensionRead, ExtensionToggleRequest
 
 
 @dataclass(frozen=True, slots=True)
 class ExtensionStateSnapshot:
     extension_key: str
     enabled: bool
-    default_enabled: bool
-    state_version: int
-    enabled_at: datetime | None
-    disabled_at: datetime | None
-    disabled_reason: str | None
 
     def require_enabled(self, *, surface: str) -> ExtensionStateSnapshot:
         if not self.enabled:
@@ -78,9 +65,8 @@ class ExtensionService:
             self.session.add(state)
             self.session.flush()
 
-        disabled_reason = None if payload.enabled else payload.disabled_reason
-        if state.enabled != payload.enabled or state.disabled_reason != disabled_reason:
-            self._apply_state_transition(state, enabled=payload.enabled, reason=disabled_reason)
+        if state.enabled != payload.enabled:
+            self._apply_state_transition(state, enabled=payload.enabled)
 
         try:
             self.session.commit()
@@ -102,25 +88,12 @@ class ExtensionService:
     ) -> ExtensionStateSnapshot:
         return self.resolve_state(extension_key).require_enabled(surface=surface)
 
-    def list_all_contributions(self) -> list[ExtensionContributionRead]:
-        return self._contribution_reads(self.registry.list_contributions())
-
-    def list_enabled_discovery_contributions(self) -> list[ExtensionContributionRead]:
-        enabled_keys = self._enabled_extension_keys()
-        return self._contribution_reads(
-            self.registry.list_discovery_contributions(enabled_extension_keys=enabled_keys)
-        )
-
-    def list_enabled_execution_contributions(self) -> list[ExtensionContributionRead]:
-        enabled_keys = self._enabled_extension_keys()
-        return self._contribution_reads(
-            self.registry.list_execution_contributions(enabled_extension_keys=enabled_keys)
-        )
-
     def get_tool_catalog(self) -> ToolCatalog:
         return ToolCatalog(enabled_extension_keys=self._enabled_extension_keys())
 
     def get_runtime_tool_registry(self) -> RuntimeToolRegistry:
+        from app.agents.runtime_tools import RUNTIME_TOOL_SPECS
+
         return RuntimeToolRegistry(
             RUNTIME_TOOL_SPECS,
             enabled_extension_keys=self._enabled_extension_keys(),
@@ -153,14 +126,9 @@ class ExtensionService:
 
     @staticmethod
     def _new_default_state(extension: BundledExtensionDefinition) -> ExtensionState:
-        now = utcnow()
         return ExtensionState(
             extension_key=extension.key,
             enabled=extension.default_enabled,
-            enabled_at=now if extension.default_enabled else None,
-            disabled_at=None if extension.default_enabled else now,
-            disabled_reason=None,
-            state_version=1,
         )
 
     @staticmethod
@@ -168,42 +136,17 @@ class ExtensionService:
         state: ExtensionState,
         *,
         enabled: bool,
-        reason: str | None,
     ) -> None:
-        now = utcnow()
         state.enabled = enabled
-        state.state_version += 1
-        if enabled:
-            state.enabled_at = now
-            state.disabled_at = None
-            state.disabled_reason = None
-            return
-        state.disabled_at = now
-        state.disabled_reason = reason
 
     @staticmethod
     def _snapshot(
         extension: BundledExtensionDefinition,
         state: ExtensionState | None,
     ) -> ExtensionStateSnapshot:
-        if state is None:
-            return ExtensionStateSnapshot(
-                extension_key=extension.key,
-                enabled=extension.default_enabled,
-                default_enabled=extension.default_enabled,
-                state_version=1,
-                enabled_at=None,
-                disabled_at=None,
-                disabled_reason=None,
-            )
         return ExtensionStateSnapshot(
             extension_key=extension.key,
-            enabled=state.enabled,
-            default_enabled=extension.default_enabled,
-            state_version=state.state_version,
-            enabled_at=state.enabled_at,
-            disabled_at=state.disabled_at,
-            disabled_reason=state.disabled_reason,
+            enabled=extension.default_enabled if state is None else state.enabled,
         )
 
     def _to_read_model(
@@ -217,29 +160,8 @@ class ExtensionService:
                 "key": extension.key,
                 "label": extension.label,
                 "enabled": snapshot.enabled,
-                "defaultEnabled": extension.default_enabled,
-                "phase": extension.phase,
-                "versioningRule": extension.versioning_rule,
-                "contributionCategories": list(extension.contribution_categories),
-                "dependencies": list(extension.dependencies),
-                "contributions": self._contribution_reads(extension.contributions),
-                "stateVersion": snapshot.state_version,
-                "enabledAt": snapshot.enabled_at,
-                "disabledAt": snapshot.disabled_at,
-                "disabledReason": snapshot.disabled_reason,
-                "createdAt": state.created_at if state is not None else None,
-                "updatedAt": state.updated_at if state is not None else None,
             }
         )
-
-    @staticmethod
-    def _contribution_reads(
-        contributions: tuple[ExtensionContribution, ...],
-    ) -> list[ExtensionContributionRead]:
-        return [
-            ExtensionContributionRead.model_validate(contribution.as_dict())
-            for contribution in contributions
-        ]
 
 
 __all__ = ["ExtensionService", "ExtensionStateSnapshot"]

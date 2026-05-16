@@ -51,7 +51,7 @@ export function useToggleExtension() {
     }: {
       extensionKey: string;
       payload: ExtensionToggleRequest;
-    }) => toggleExtension(extensionKey, payload),
+    }) => toggleExtension(extensionKey, { enabled: payload.enabled }),
     onSuccess: async (extension) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.platform.extensions.all });
 

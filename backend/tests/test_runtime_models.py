@@ -1627,7 +1627,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
             "error": None,
             "createdAt": queued_at,
             "updatedAt": queued_at,
-            "extensionSnapshots": [],
+            "extensionDependencies": [],
             "steps": [],
             "memoryArtifacts": [],
         }
@@ -1670,7 +1670,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "finishedAt",
         "createdAt",
         "updatedAt",
-        "extensionSnapshots",
+        "extensionDependencies",
         "steps",
         "memoryArtifacts",
         "packageProvenance",

@@ -43,18 +43,6 @@ const financeExtension: ExtensionRead = {
   key: FINANCE_WORKSPACE_EXTENSION_KEY,
   label: "Finance Workspace",
   enabled: false,
-  defaultEnabled: true,
-  phase: "phase_1_bundled_first_party",
-  versioningRule: "follows_backend_application_version",
-  contributionCategories: [],
-  dependencies: [],
-  contributions: [],
-  stateVersion: 2,
-  enabledAt: null,
-  disabledAt: "2026-05-15T11:00:00Z",
-  disabledReason: "Disabled in test",
-  createdAt: "2026-05-15T09:00:00Z",
-  updatedAt: "2026-05-15T11:00:00Z",
 };
 
 describe("useExtensions", () => {
@@ -83,11 +71,10 @@ describe("useExtensions", () => {
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.mutationFn?.({
       extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      payload: { enabled: false, disabledReason: "Disabled in test" },
+      payload: { enabled: false },
     });
     expect(toggleExtension).toHaveBeenCalledWith(FINANCE_WORKSPACE_EXTENSION_KEY, {
       enabled: false,
-      disabledReason: "Disabled in test",
     });
 
     await mutationOptions.onSuccess?.(financeExtension, {});

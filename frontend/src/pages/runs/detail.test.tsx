@@ -108,6 +108,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
     memoryArtifacts: [],
+    extensionDependencies: [],
     packageProvenance: null,
     queuedAt: NOW,
     resumeStepIndex: 1,

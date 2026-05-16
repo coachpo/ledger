@@ -70,6 +70,7 @@ function runDetailWithStatus(status: RunStatus): RunRead {
     input: {},
     lineageRootRunId: null,
     memoryArtifacts: [],
+    extensionDependencies: [],
     packageProvenance: null,
     queuedAt: "2026-05-15T10:00:00Z",
     replayStepIndex: null,

@@ -179,9 +179,7 @@ def _create_pending_report(
 def _disable_finance_workspace(session: Session) -> None:
     ExtensionService(session).set_extension_enabled(
         FINANCE_WORKSPACE_EXTENSION_KEY,
-        ExtensionToggleRequest.model_validate(
-            {"enabled": False, "disabledReason": "memory data safety check"}
-        ),
+        ExtensionToggleRequest.model_validate({"enabled": False}),
     )
 
 

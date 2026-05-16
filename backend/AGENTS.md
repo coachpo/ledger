@@ -11,7 +11,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
 - `app/api/AGENTS.md` — route-handler delegation, extension-gated `/api/v1`, and dependency wiring
-- `app/extensions/AGENTS.md` — bundled extension registry, state, contribution, and ownership boundaries
+- `app/extensions/AGENTS.md` — bundled extension registry, slim state, private registrar, and ownership boundaries
 - `app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report-memory ownership
 - `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries
 - `app/services/AGENTS.md` — service orchestration, extension state, manifests, runtime execution, memory reports, quote-provider wiring
@@ -26,7 +26,7 @@ backend/
 ├── app/core/                   # config, errors, formatting, telemetry, constants
 ├── app/db/                     # engine/session/init + PostgreSQL upgrade helpers
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
-├── app/extensions/             # bundled extension registry and signaldeck.finance contribution ownership
+├── app/extensions/             # bundled extension registry and signaldeck.finance private registrar ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
 ├── app/services/               # CRUD, extension state, manifests, execution, memory, templates, market data, trading rules
 ├── app/repositories/           # persistence queries
@@ -40,7 +40,7 @@ backend/
 |---|---|---|
 | API route handlers | `app/api/AGENTS.md` | route handler rules, service delegation, error translation |
 | Service construction | `app/api/dependencies.py` | constructs extension-aware CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
-| Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | bundled extension metadata, `/api/extensions`, enabled contribution filtering |
+| Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private bundled extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/model_connections.py`, `app/api/extensions.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
 | Runtime tools / MCP / traces | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, native runtime dispatch, MCP snapshots, Logfire trace ids/spans, memory writes |
 | Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
@@ -54,7 +54,7 @@ backend/
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
 - `app/api/dependencies.py` is the composition root for request-scoped `Session` objects, finance-scoped service factories imported from `app.extensions.signaldeck_finance.dependencies`, `ExtensionService`, `ToolCatalog`, MCP connection testing, platform services, `RunService`, and quote providers.
-- `app/extensions/registry.py` declares bundled extension contributions; `ExtensionService` resolves persisted/default state and supplies enabled ToolCatalog/runtime registries.
+- `app/extensions/registry.py` declares bundled extension identity, initial enabled seeding, and private registrar paths; `ExtensionService` resolves persisted/default state and supplies enabled ToolCatalog/runtime registries.
 - Schemas inherit `CamelModel`; external JSON is camelCase, extra fields are forbidden, decimals serialize to strings, and datetimes serialize as UTC `Z` timestamps.
 - Shared normalization and decimal parsing live in `app/core/formatting.py`; use `normalize_symbol`, `normalize_currency`, `parse_decimal_string`, `to_utc`, and `utcnow` instead of ad-hoc helpers.
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.
@@ -63,7 +63,7 @@ backend/
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics; agent-memory report updates route through memory services.
 - Workflow package writes use YAML manifest parser/compiler/decompiler services; legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid.
 - Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Model Connections, Extensions, Tools, and Runs; legacy/unmounted modules are cutover context only.
-- `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tool contributions, and report-backed memory hooks while enabled.
+- `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, and report-backed memory hooks while enabled.
 - Tools are global read-only metadata at `/api/tools`; packages reference tool keys through package-local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. Keep runtime tool keys and OpenAI function names unchanged.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 
@@ -74,7 +74,8 @@ backend/
 - Do not skip normalization or decimal parsing on symbols, currencies, or numeric strings.
 - Do not change template placeholder behavior, symbol lookup behavior, or CSV contracts without updating `tests/test_api.py` and the frontend callers.
 - Do not change report compile/upload/download contracts, report filters, report placeholder behavior, or report slug rules without updating `tests/test_api.py` and the frontend callers.
-- Do not bypass `ExtensionService`, extension gates, or contribution registrars to expose finance routes/tools/providers directly.
+- Do not bypass `ExtensionService`, extension gates, or private registrars to expose finance routes/tools/providers directly.
+- Do not add plugin-manifest metadata to public extension schemas, OpenAPI, run payloads, or docs. `/api/extensions` stays limited to `key`, `label`, and `enabled`.
 - Do not reintroduce retired orchestration, Studio, Tryout, or runtime-v2 surfaces as live backend docs or routes.
 - Do not add raw `httpx`/`requests` model-calling code in backend application paths when the provider offers an official library.
 

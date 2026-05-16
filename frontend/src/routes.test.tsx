@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { ThemeProvider } from "./components/theme-provider";
 import {
-  FINANCE_WORKSPACE_DEFAULT_ENABLED,
   FINANCE_WORKSPACE_EXTENSION_KEY,
   getBundledFrontendExtension,
   listBundledFrontendExtensions,
@@ -68,20 +67,6 @@ function extensionList(enabled: boolean): ExtensionListRead {
         key: FINANCE_WORKSPACE_EXTENSION_KEY,
         label: "Finance Workspace",
         enabled,
-        defaultEnabled: true,
-        phase: "phase_1_bundled_first_party",
-        versioningRule: "follows_backend_application_version",
-        contributionCategories: [],
-        dependencies: [],
-        contributions: [],
-        stateVersion: enabled ? 3 : 4,
-        enabledAt: enabled ? "2026-05-15T10:00:00Z" : null,
-        disabledAt: enabled ? null : "2026-05-15T11:00:00Z",
-        disabledReason: enabled
-          ? null
-          : "Temporarily disabled for maintenance.",
-        createdAt: "2026-05-15T09:00:00Z",
-        updatedAt: "2026-05-15T11:00:00Z",
       },
     ],
   };
@@ -137,26 +122,49 @@ describe("router", () => {
     }
 
     expect(listBundledFrontendExtensions()).toEqual([extension]);
+    expect(Object.keys(extension).sort()).toEqual([
+      "key",
+      "label",
+      "navContributions",
+      "routeContributions",
+      "toolAuthoringDiscovery",
+    ]);
     expect(extension.key).toBe("signaldeck.finance");
-    expect(extension.defaultEnabled).toBe(FINANCE_WORKSPACE_DEFAULT_ENABLED);
-    expect(extension.availability.stateSource).toMatchObject({
-      defaultEnabled: FINANCE_WORKSPACE_DEFAULT_ENABLED,
-      endpoint: "/api/extensions",
-      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      kind: "backend-extension-state",
-    });
-
     expect(
-      extension.routeContributions.map((contribution) => contribution.path),
+      extension.routeContributions.map((contribution) => ({
+        path: contribution.path,
+        requiredExtensionKey: contribution.requiredExtensionKey,
+      })),
     ).toEqual([
-      "/",
-      "/portfolios",
-      "/portfolios/:portfolioId",
-      "/templates",
-      "/templates/new",
-      "/templates/:templateId/edit",
-      "/reports",
-      "/reports/:slug",
+      { path: "/", requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY },
+      {
+        path: "/portfolios",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/portfolios/:portfolioId",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/templates",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/templates/new",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/templates/:templateId/edit",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/reports",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
+      {
+        path: "/reports/:slug",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      },
     ]);
 
     expect(enabledFinanceRoutePaths(extensionList(true))).toEqual(
@@ -171,12 +179,27 @@ describe("router", () => {
     }
 
     expect(
-      extension.navContributions.map((contribution) => contribution.testId),
+      extension.navContributions.map((contribution) => ({
+        requiredExtensionKey: contribution.requiredExtensionKey,
+        testId: contribution.testId,
+      })),
     ).toEqual([
-      "nav-dashboard",
-      "nav-portfolios",
-      "nav-templates",
-      "nav-reports",
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        testId: "nav-dashboard",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        testId: "nav-portfolios",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        testId: "nav-templates",
+      },
+      {
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+        testId: "nav-reports",
+      },
     ]);
     expect(
       extension.routeContributions.some((contribution) =>
@@ -185,16 +208,10 @@ describe("router", () => {
     ).toBe(false);
     expect(extension.toolAuthoringDiscovery).toEqual([
       {
-        catalogEndpoint: "/api/tools",
-        host: "core-workflow-package-authoring",
-        id: "finance.workflow-packages.tool-discovery",
-        queryKeyNamespace: "platform.tools",
-        sourceHook: "@/hooks/use-workflow-packages#useTools",
+        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.",
       },
     ]);
-    expect(extension.settingsPages).toEqual([]);
-    expect(extension.adminPages).toEqual([]);
   });
 
   it("restores finance route and tool discovery contributions after re-enable", () => {
@@ -264,12 +281,15 @@ describe("router", () => {
       </ThemeProvider>,
     );
 
+    const disabledState = await screen.findByTestId("extension-disabled-state");
+    expect(disabledState).toHaveTextContent("Finance Workspace disabled");
+    expect(disabledState).toHaveTextContent(
+      "This workspace is unavailable while its bundled extension is disabled.",
+    );
+    expect(disabledState).not.toHaveTextContent("signaldeck.finance");
     expect(
-      await screen.findByTestId("extension-disabled-state"),
-    ).toHaveTextContent("Finance Workspace disabled");
-    expect(
-      screen.getByText("Temporarily disabled for maintenance."),
-    ).toBeInTheDocument();
+      screen.getByRole("link", { name: "Open core workflow packages" }),
+    ).toHaveAttribute("href", "/workflow-packages");
   });
 
   it("does not render retired page test ids for old authoring URLs", () => {

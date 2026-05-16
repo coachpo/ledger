@@ -21,7 +21,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Memory workflows | `memory_service.py`, `memory_report_service.py`, `memory_context_service.py`, `report_backed_memory_store.py`, `memory_store.py` | memory DTO lifecycle, report-backed persistence, prompt snippets, and audit links |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
-| Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | bundled extension state, enabled contribution lists, ToolCatalog/runtime registry filtering, run extension snapshots |
+| Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | slim bundled extension state, ToolCatalog/runtime registry filtering, dependency-only run extension records |
 | Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `workflow_package_manifest_decompiler.py` | package-first authoring, validation, import/export, preflight, and immutable package artifacts |
 | Run execution service | `run_service.py` | persisted global run lifecycle, package provenance, Logfire trace/span metadata, per-step detail, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
@@ -42,8 +42,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Phase 1 does not have vector search, embeddings, or a memory table. Memory lookup remains metadata-filter based over report-backed rows.
 - Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links. API/UI projections may include nested `auditLinks.report` only for human audit actions.
 - Workflow package services keep package versions immutable, validate typed contracts before save, keep private MCP `env`, `headers`, and `query` values inline through import/export, and keep run persistence detailed enough for package provenance and the run monitor.
-- `ExtensionService` is the service-layer authority for enabled extension keys, contribution reads, extension toggles, and extension-filtered ToolCatalog/runtime registries.
-- `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records extension snapshots, and falls back to trace-free execution when telemetry setup fails.
+- `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, and extension-filtered ToolCatalog/runtime registries.
+- `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records dependency-only extension requirements, and falls back to trace-free execution when telemetry setup fails.
 - Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
 
@@ -55,6 +55,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Do not change template placeholder paths or compile payloads without updating backend tests, frontend types, and the template editor.
 - Do not change report compile/upload/download contracts, slug generation, or `reports.<name>.content` cycle handling without updating backend tests and frontend callers.
 - Do not bypass `ExtensionService` or extension-owned factories to expose finance tools/providers when `signaldeck.finance` is disabled.
+- Do not add public extension metadata fields to service read models or run dependency records. Keep public state limited to `key`, `label`, and `enabled`.
 - Do not reintroduce retired service surfaces or compatibility adapters into this folder.
 - Do not introduce raw `httpx`/`requests` LLM calling paths in service code.
 
@@ -74,4 +75,4 @@ uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extensio
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
 - `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, rerun/step-replay lineage, memory artifact report links, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.
-- `ExtensionService` reads bundled registry metadata, persists toggle state when changed, and keeps tool discovery/runtime dispatch aligned with enabled extensions.
+- `ExtensionService` reads private bundled registry wiring, persists slim toggle state when changed, and keeps tool discovery/runtime dispatch aligned with enabled extensions.

@@ -280,11 +280,11 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
             FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+            ExtensionToggleRequest(enabled=False),
         )
 
 
-def test_tradingagents_advisory_research_launch_persists_extension_snapshots(
+def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -307,11 +307,11 @@ def test_tradingagents_advisory_research_launch_persists_extension_snapshots(
     detail_response = client.get(f"/api/runs/{run_id}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = detail_response.json()
-    snapshots = cast(list[dict[str, object]], detail["extensionSnapshots"])
-    assert snapshots
-    assert snapshots[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert snapshots[0]["enabled"] is True
-    surfaces = cast(list[str], snapshots[0]["surfaces"])
+    dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
+    assert dependencies
+    assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
+    assert dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    surfaces = cast(list[str], dependencies[0]["surfaces"])
     assert "tool.signaldeck.market_data.quote_lookup" in surfaces
 
 
@@ -373,5 +373,5 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     detail = detail_response.json()
     assert detail["status"] == "failed"
     assert detail["error"] == "Extension is disabled"
-    snapshots = cast(list[dict[str, object]], detail["extensionSnapshots"])
-    assert snapshots[0]["enabled"] is True
+    dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
+    assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from importlib import import_module
+from typing import TYPE_CHECKING, Protocol, cast
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
-
-    from app.services.extension_service import ExtensionStateSnapshot
 
 TEMPLATE_COMPILER_SURFACE = "service.template_compiler"
 REPORT_SERVICE_SURFACE = "service.report"
@@ -21,81 +19,31 @@ REFLECTION_SERVICE_SURFACE = "service.reflection"
 MEMORY_FOLLOW_UP_SERVICE_SURFACE = "service.memory_follow_up"
 
 
-@dataclass(frozen=True, slots=True)
-class FinanceWorkspaceTemplateReportMemoryHookRegistration:
-    key: str
-    surface: str
-    summary: str
+class _ExtensionServiceProtocol(Protocol):
+    def require_enabled(self, extension_key: str, *, surface: str) -> object: ...
 
 
-FINANCE_WORKSPACE_TEMPLATE_REPORT_MEMORY_HOOKS = (
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="template_compiler",
-        surface=TEMPLATE_COMPILER_SURFACE,
-        summary="Template placeholders and report embeds are finance workspace behavior.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="report_service",
-        surface=REPORT_SERVICE_SURFACE,
-        summary="Report CRUD, generation, filters, and download lookup are finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="memory_service",
-        surface=MEMORY_SERVICE_SURFACE,
-        summary="Report-backed memory lifecycle access is finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="memory_report_service",
-        surface=MEMORY_REPORT_SERVICE_SURFACE,
-        summary="Agent-memory report compatibility writes are finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="memory_context_service",
-        surface=MEMORY_CONTEXT_SERVICE_SURFACE,
-        summary="Report-backed memory prompt reinjection is finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="report_backed_memory_store",
-        surface=REPORT_BACKED_MEMORY_STORE_SURFACE,
-        summary="The phase-1 report-backed memory store is finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="return_resolution_service",
-        surface=RETURN_RESOLUTION_SERVICE_SURFACE,
-        summary="Outcome return resolution for finance memory is finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="reflection_service",
-        surface=REFLECTION_SERVICE_SURFACE,
-        summary="Resolved-memory reflection automation is finance-owned.",
-    ),
-    FinanceWorkspaceTemplateReportMemoryHookRegistration(
-        key="memory_follow_up_service",
-        surface=MEMORY_FOLLOW_UP_SERVICE_SURFACE,
-        summary="Scheduled memory follow-up automation is finance-owned.",
-    ),
-)
+class _ExtensionServiceFactoryProtocol(Protocol):
+    def __call__(self, session: Session) -> _ExtensionServiceProtocol: ...
 
 
 def require_finance_workspace_enabled(
     session: Session,
     *,
     surface: str,
-) -> ExtensionStateSnapshot:
-    from app.services.extension_service import ExtensionService
-
-    return ExtensionService(session).require_enabled(
+) -> object:
+    service_module = import_module("app.services.extension_service")
+    raw_service_factory = cast(object, getattr(service_module, "ExtensionService", None))
+    if not callable(raw_service_factory):
+        raise RuntimeError("ExtensionService is not available")
+    service_factory = cast(_ExtensionServiceFactoryProtocol, raw_service_factory)
+    return service_factory(session).require_enabled(
         FINANCE_WORKSPACE_EXTENSION_KEY,
         surface=surface,
     )
 
 
-def register() -> tuple[FinanceWorkspaceTemplateReportMemoryHookRegistration, ...]:
-    return FINANCE_WORKSPACE_TEMPLATE_REPORT_MEMORY_HOOKS
-
-
 __all__ = [
-    "FINANCE_WORKSPACE_TEMPLATE_REPORT_MEMORY_HOOKS",
     "MEMORY_CONTEXT_SERVICE_SURFACE",
     "MEMORY_FOLLOW_UP_SERVICE_SURFACE",
     "MEMORY_REPORT_SERVICE_SURFACE",
@@ -105,7 +53,5 @@ __all__ = [
     "REPORT_SERVICE_SURFACE",
     "RETURN_RESOLUTION_SERVICE_SURFACE",
     "TEMPLATE_COMPILER_SURFACE",
-    "FinanceWorkspaceTemplateReportMemoryHookRegistration",
-    "register",
     "require_finance_workspace_enabled",
 ]

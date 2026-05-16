@@ -23,21 +23,9 @@ function extensionList(enabled: boolean): ExtensionListRead {
   return {
     items: [
       {
-        contributionCategories: [],
-        contributions: [],
-        createdAt: "2026-05-15T09:00:00Z",
-        defaultEnabled: true,
-        dependencies: [],
-        disabledAt: enabled ? null : "2026-05-15T11:00:00Z",
-        disabledReason: enabled ? null : "Disabled in test",
-        enabled,
-        enabledAt: enabled ? "2026-05-15T10:00:00Z" : null,
         key: FINANCE_WORKSPACE_EXTENSION_KEY,
         label: "Finance Workspace",
-        phase: "phase_1_bundled_first_party",
-        stateVersion: enabled ? 1 : 2,
-        updatedAt: "2026-05-15T11:00:00Z",
-        versioningRule: "follows_backend_application_version",
+        enabled,
       },
     ],
   };

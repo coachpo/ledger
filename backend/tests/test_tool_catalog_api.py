@@ -11,9 +11,7 @@ from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES,
-    FINANCE_WORKSPACE_OWNERSHIP,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
-    OwnershipSurfaceGroup,
 )
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
@@ -22,52 +20,6 @@ _CANONICAL_TOOL_KEYS = {
     "signaldeck.reports.lookup",
     "signaldeck.reports.write",
 }
-
-
-def _surface_text(groups: tuple[OwnershipSurfaceGroup, ...]) -> str:
-    return "\n".join(surface for group in groups for surface in group.surfaces)
-
-
-def test_signaldeck_finance_ownership_inventory_declares_phase_one_boundary() -> None:
-    artifact = FINANCE_WORKSPACE_OWNERSHIP
-
-    assert artifact.extension_key == "signaldeck.finance"
-    assert artifact.label == "Finance Workspace"
-    assert artifact.default_enabled is True
-    assert artifact.phase == "phase_1_bundled_first_party"
-    assert artifact.as_dict()["defaultEnabled"] is True
-    assert "backend_api_routes" in artifact.contribution_categories
-    assert "native_runtime_tools" in artifact.contribution_categories
-    assert "frontend_tool_discovery_contributions" in artifact.contribution_categories
-
-    owned_surfaces = _surface_text(artifact.extension_owned_public_surfaces)
-    core_surfaces = _surface_text(artifact.core_retained_surfaces)
-    for expected_surface in (
-        "/api/v1/portfolios",
-        'APIRouter(prefix="/templates")',
-        "signaldeck.social_sentiment.lookup",
-        "signaldeck_reports_write",
-        "YahooFinanceQuoteProvider",
-        "RedditSocialSentimentAdapter",
-        "StockTwitsSocialSentimentAdapter",
-        'metadata.analysis.reviewType="agent_memory"',
-        "frontend/src/pages/dashboard.tsx",
-        "frontend/src/lib/api/reports.ts",
-        "frontend/src/hooks/use-workflow-packages.ts: useTools()",
-        "docs/signaldeck-memory-layer-design.md",
-        "backend/tests/fixtures/workflow_packages/*.yaml demo package fixtures",
-    ):
-        assert expected_surface in owned_surfaces
-
-    for expected_surface in (
-        "backend/app/api/platform_router.py",
-        "GET/POST /api/workflow-packages",
-        "backend/app/api/tools.py `GET /api/tools` read-only route host",
-        "frontend/src/App.tsx",
-        "frontend/src/pages/runs/*.tsx",
-        "signaldeck.workflowPackage/v1 manifest shape",
-    ):
-        assert expected_surface in core_surfaces
 
 
 def test_signaldeck_finance_tool_inventory_matches_catalog_and_runtime() -> None:
@@ -141,6 +93,8 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     }
     assert not any(key.startswith("signaldeck.memory.") for key in tools_by_key)
     for tool in (quote_tool, report_lookup_tool, report_write_tool):
+        assert "ownerExtensionKey" not in tool
+        assert "contributionCategories" not in tool
         assert "toolGrants" not in tool
         assert "toolDefinitions" not in tool
 
@@ -160,7 +114,7 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_classifies_t
 ) -> None:
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False, "disabledReason": "maintenance"},
+        json={"enabled": False},
     )
     assert response.status_code == 200, response.json()
 

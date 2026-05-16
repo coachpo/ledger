@@ -78,6 +78,12 @@ export interface RunPackageResolvedModelConnectionRead {
   hasApiKey: boolean;
 }
 
+export interface RunExtensionDependencyRead {
+  extensionKey: string;
+  surfaces: string[];
+  fields: string[];
+}
+
 export interface RunPackageProvenanceRead {
   availability: UnknownRecord;
   launchSnapshot: UnknownRecord | null;
@@ -225,6 +231,7 @@ export interface RunRead extends RunTargetIdentityRead {
   updatedAt: string;
   steps: RunStepRead[];
   memoryArtifacts: RunMemoryArtifactRead[];
+  extensionDependencies: RunExtensionDependencyRead[];
   packageProvenance: RunPackageProvenanceRead | null;
 }
 

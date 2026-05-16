@@ -54,26 +54,21 @@ from app.agents.runtime_tools.reports import (
     parse_report_memory_write_arguments,
 )
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
-from app.extensions.registry import (
-    get_bundled_extension_registry,
-    load_extension_contribution_registrar,
-)
+from app.extensions.registry import get_bundled_extension_registry, load_extension_registrar
 
 
 def _load_runtime_tool_specs() -> tuple[RuntimeToolSpec, ...]:
     specs: list[RuntimeToolSpec] = []
     for extension in get_bundled_extension_registry().list_extensions():
-        if extension.scaffold is None:
-            continue
-        for registrar in extension.scaffold.runtime_executors:
-            for contribution in load_extension_contribution_registrar(registrar.registrar):
-                if not isinstance(contribution, RuntimeToolSpec):
+        for registrar in extension.runtime_tool_registrars:
+            for runtime_tool in load_extension_registrar(registrar):
+                if not isinstance(runtime_tool, RuntimeToolSpec):
                     message = (
-                        f"Runtime tool registrar {registrar.registrar!r} returned "
-                        + f"unsupported contribution {type(contribution).__name__!r}"
+                        f"Runtime tool registrar {registrar!r} returned "
+                        + f"unsupported item {type(runtime_tool).__name__!r}"
                     )
                     raise ValueError(message)
-                specs.append(contribution)
+                specs.append(runtime_tool)
     return tuple(specs)
 
 

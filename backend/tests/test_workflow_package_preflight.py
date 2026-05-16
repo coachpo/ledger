@@ -401,7 +401,7 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
             FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False, disabled_reason="maintenance"),
+            ExtensionToggleRequest(enabled=False),
         )
 
 

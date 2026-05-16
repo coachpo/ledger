@@ -16,8 +16,8 @@ SignalDeck is a dual-stack portfolio workspace with a FastAPI backend and a Reac
 - `backend/app/core/AGENTS.md` — config, error envelope, telemetry, normalization helpers
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
 - `backend/app/api/AGENTS.md` — route handler boundaries, extension-gated `/api/v1` composition, and dependency wiring
-- `backend/app/extensions/AGENTS.md` — bundled extension registry, state, contribution, and ownership boundaries
-- `backend/app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report-memory contribution ownership
+- `backend/app/extensions/AGENTS.md` — bundled extension registry, slim state, private registrar, and ownership boundaries
+- `backend/app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report-memory ownership
 - `backend/app/agents/AGENTS.md` — server tool catalog, native runtime tools, MCP security/runtime boundaries
 - `backend/app/services/AGENTS.md` — service ownership, extension state, workflow package compilers, runtime execution, memory reports, and quote-provider wiring
 - `backend/app/schemas/AGENTS.md` — Pydantic validation, manifest contracts, memory metadata, and camelCase aliasing
@@ -73,7 +73,7 @@ signaldeck/
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
 | Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
 | Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
-| Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/services/extension_service.py` | bundled extension registry/state and `signaldeck.finance` contribution ownership |
+| Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/services/extension_service.py` | bundled extension registry/state and private `signaldeck.finance` registrar ownership |
 | Backend runtime tools, MCP, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, Logfire trace ids/spans, memory writes |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/extensions/runtime.tsx`, `frontend/src/components/layout.tsx` | query client, router provider, extension route/nav assembly, layout shell, theme toggle |
@@ -91,10 +91,10 @@ signaldeck/
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
 | `api_router` | `backend/app/api/router.py` | mounts `signaldeck.finance` route registrations under `/api/v1` |
 | `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, extensions, tools, and runs |
-| `get_bundled_extension_registry` | `backend/app/extensions/registry.py` | declares bundled extension metadata, contribution registrars, and enabled contribution categories |
-| `ExtensionService` | `backend/app/services/extension_service.py` | resolves extension state, toggles `/api/extensions`, and filters ToolCatalog/runtime tool registries |
+| `get_bundled_extension_registry` | `backend/app/extensions/registry.py` | declares bundled extension identity, initial enabled seeding, and private registrar paths |
+| `ExtensionService` | `backend/app/services/extension_service.py` | resolves slim extension state, toggles `/api/extensions`, and filters ToolCatalog/runtime tool registries |
 | `router` | `frontend/src/routes.ts` | flat route table with finance routes assembled from `src/extensions/runtime.tsx` plus platform/system routes |
-| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime.tsx` | converts Finance Workspace route contributions into guarded React Router entries |
+| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime.tsx` | converts Finance Workspace route entries into guarded React Router entries |
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, extension-aware nav groups, template/package editor full-height layout |
 | `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
 
@@ -108,15 +108,16 @@ signaldeck/
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; canonical `source` origins are `compiled`, `uploaded`, `external`, and `agent`. `external` stays limited to true external user/API-created reports. Agent-created memory reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Logfire is configured in `backend/app/core/telemetry.py` with `send_to_logfire="if-token-present"`; run execution stores formatted trace ids and per-invocation span ids but still works without a Logfire token.
 - Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
-- `signaldeck.finance` is the bundled first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state.
+- `signaldeck.finance` is the bundled first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state. Public `/api/extensions` state is only `key`, `label`, and `enabled`; registry and scaffold details stay private wiring.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside immutable package versions.
-- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. Runtime tool keys such as `signaldeck.reports.lookup` and OpenAI function names such as `signaldeck_reports_lookup` stay unchanged.
+- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes, and are filtered by enabled extension state. Runtime tool keys such as `signaldeck.reports.lookup` and OpenAI function names such as `signaldeck_reports_lookup` stay unchanged.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS
 
-- Do not bypass backend services, extension state gates, or extension contribution registries from routes or frontend code.
+- Do not bypass backend services, extension state gates, or private extension registrars from routes or frontend code.
+- Do not reintroduce plugin-manifest metadata into public extension contracts, run dependency payloads, frontend extension state, OpenAPI, or live docs.
 - Do not invent snake_case API fields, ad-hoc query keys, duplicate placeholder/type contracts, or hard-coded extension visibility rules.
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, template compile payloads, or runtime-input flow without updating backend tests and frontend callers together.

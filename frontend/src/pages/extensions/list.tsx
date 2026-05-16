@@ -1,7 +1,6 @@
 import { toast } from "sonner";
 
 import { useExtensions, useToggleExtension } from "@/hooks/use-extensions";
-import { formatDateTime } from "@/lib/format";
 import type { ExtensionRead } from "@/lib/types/extension";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,18 +20,6 @@ function toExtensionTestSegment(extensionKey: string) {
     .replace(/[^a-z0-9]+/gi, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
-}
-
-function formatTokenLabel(value: string) {
-  return value
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatNullableDateTime(value: string | null) {
-  return value ? formatDateTime(value) : "Not recorded";
 }
 
 function ExtensionStatusBadge({ enabled }: { enabled: boolean }) {
@@ -59,8 +46,6 @@ type ExtensionRowProps = {
 
 function ExtensionRow({ extension, onToggle, togglePending }: ExtensionRowProps) {
   const testSegment = toExtensionTestSegment(extension.key);
-  const categories = extension.contributionCategories.map(formatTokenLabel).join(", ");
-  const dependencies = extension.dependencies.length > 0 ? extension.dependencies.join(", ") : "None";
 
   return (
     <PlatformResourceCard
@@ -69,37 +54,7 @@ function ExtensionRow({ extension, onToggle, togglePending }: ExtensionRowProps)
       testId={`extension-row-${testSegment}`}
       title={extension.label}
       subtitle={extension.key}
-      description={`Bundled ${formatTokenLabel(extension.phase)} extension. ${extension.versioningRule}`}
-      metadata={
-        <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Current state:</span>{" "}
-            <span>{extension.enabled ? "Enabled" : "Disabled"}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Contributions:</span>{" "}
-            <span>{extension.contributions.length}</span>
-            <span aria-hidden="true"> · </span>
-            <span className="break-words">{categories || "None"}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Dependencies:</span>{" "}
-            <span className="break-words">{dependencies}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">State version:</span>{" "}
-            <span>{extension.stateVersion}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Last updated:</span>{" "}
-            <span>{formatNullableDateTime(extension.updatedAt)}</span>
-          </div>
-          <div className="min-w-0">
-            <span className="font-medium text-foreground">Disabled reason:</span>{" "}
-            <span className="break-words">{extension.disabledReason ?? "None"}</span>
-          </div>
-        </div>
-      }
+      description="Toggle whether this bundled extension is available in the app."
       actions={
         <div className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
           <div className="text-right">

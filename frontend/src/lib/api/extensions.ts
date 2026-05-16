@@ -14,7 +14,7 @@ export function toggleExtension(
   payload: ExtensionToggleRequest,
 ): Promise<ExtensionRead> {
   return requestPlatform<ExtensionRead>(`/extensions/${toPathSegment(extensionKey)}`, {
-    body: payload,
+    body: { enabled: payload.enabled },
     method: "PATCH",
   });
 }

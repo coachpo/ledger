@@ -41,38 +41,9 @@ function extensionFixture(
   overrides: Partial<ExtensionRead> = {},
 ): ExtensionRead {
   return {
-    contributionCategories: ["backend_api_routes", "frontend_routes"],
-    contributions: [
-      {
-        category: "backend_api_routes",
-        dependencies: [],
-        extensionKey: "signaldeck.finance",
-        ownerExtensionKey: "signaldeck.finance",
-        summary: "Preserved finance API routes",
-        surface: "/api/v1/portfolios",
-      },
-      {
-        category: "frontend_routes",
-        dependencies: [],
-        extensionKey: "signaldeck.finance",
-        ownerExtensionKey: "signaldeck.finance",
-        summary: "Portfolio and report workspace routes",
-        surface: "/portfolios",
-      },
-    ],
-    createdAt: "2026-05-15T12:00:00Z",
-    defaultEnabled: true,
-    dependencies: [],
-    disabledAt: null,
-    disabledReason: null,
     enabled: true,
-    enabledAt: "2026-05-15T12:00:00Z",
     key: "signaldeck.finance",
     label: "Finance Workspace",
-    phase: "phase_1_bundled_first_party",
-    stateVersion: 1,
-    updatedAt: "2026-05-15T12:00:00Z",
-    versioningRule: "Follows the backend package version.",
     ...overrides,
   };
 }
@@ -85,7 +56,7 @@ describe("ExtensionsListPage", () => {
     useExtensionsMock.mockReset();
     useToggleExtensionMock.mockReset();
     toggleExtensionMock.mockResolvedValue(
-      extensionFixture({ enabled: false, stateVersion: 2 }),
+      extensionFixture({ enabled: false }),
     );
     useToggleExtensionMock.mockReturnValue({
       isPending: false,
@@ -107,9 +78,8 @@ describe("ExtensionsListPage", () => {
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
-    expect(row).toHaveTextContent("Current state: Enabled");
-    expect(row).toHaveTextContent("Contributions: 2");
-    expect(row).toHaveTextContent("State version: 1");
+    expect(row).toHaveTextContent("Toggle whether this bundled extension is available in the app.");
+    expect(row).toHaveTextContent("Enabled");
     expect(
       within(row).getByTestId("extension-toggle-signaldeck-finance"),
     ).toHaveAttribute("data-state", "checked");
@@ -142,11 +112,7 @@ describe("ExtensionsListPage", () => {
       data: {
         items: [
           extensionFixture({
-            disabledAt: "2026-05-15T13:00:00Z",
-            disabledReason: "matrix maintenance",
             enabled: false,
-            enabledAt: null,
-            stateVersion: 2,
           }),
         ],
       },
@@ -155,12 +121,12 @@ describe("ExtensionsListPage", () => {
       isPending: false,
     });
     toggleExtensionMock.mockResolvedValue(
-      extensionFixture({ enabled: true, stateVersion: 3 }),
+      extensionFixture({ enabled: true }),
     );
     render(<ExtensionsListPage />);
 
     const row = screen.getByTestId("extension-row-signaldeck-finance");
-    expect(row).toHaveTextContent("Current state: Disabled");
+    expect(row).toHaveTextContent("Disabled");
     fireEvent.click(
       within(row).getByTestId("extension-toggle-signaldeck-finance"),
     );
@@ -189,6 +155,6 @@ describe("ExtensionsListPage", () => {
     );
     expect(
       screen.getByTestId("extension-row-signaldeck-finance"),
-    ).toHaveTextContent("Current state: Enabled");
+    ).toHaveTextContent("Enabled");
   });
 });

@@ -107,12 +107,9 @@ def _create_finance_tool_package(client: TestClient, package_key: str) -> dict[s
 
 
 def _set_finance_extension(client: TestClient, *, enabled: bool) -> dict[str, object]:
-    payload: dict[str, object] = {"enabled": enabled}
-    if not enabled:
-        payload["disabledReason"] = "matrix maintenance"
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json=payload,
+        json={"enabled": enabled},
     )
     assert response.status_code == 200, response.json()
     return cast(dict[str, object], response.json())
@@ -193,14 +190,15 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     run_id = int(launch.json()["id"])
     queued_detail = client.get(f"/api/runs/{run_id}")
     assert queued_detail.status_code == 200, queued_detail.json()
-    enabled_snapshot = cast(list[dict[str, object]], queued_detail.json()["extensionSnapshots"])[0]
-    assert enabled_snapshot["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert enabled_snapshot["enabled"] is True
-    assert enabled_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    enabled_dependency = cast(
+        list[dict[str, object]], queued_detail.json()["extensionDependencies"]
+    )[0]
+    assert set(enabled_dependency) == {"extensionKey", "surfaces", "fields"}
+    assert enabled_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert enabled_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
 
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
-    assert disabled_extension["disabledReason"] == "matrix maintenance"
 
     assert _tool_keys(client) == []
     _assert_extension_disabled(
@@ -264,9 +262,9 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     failed_body = failed_detail.json()
     assert failed_body["status"] == "failed"
     assert failed_body["error"] == "Extension is disabled"
-    failed_snapshot = cast(list[dict[str, object]], failed_body["extensionSnapshots"])[0]
-    assert failed_snapshot["enabled"] is True
-    assert failed_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    failed_dependency = cast(list[dict[str, object]], failed_body["extensionDependencies"])[0]
+    assert set(failed_dependency) == {"extensionKey", "surfaces", "fields"}
+    assert failed_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
 
     with session_factory() as session:
         persisted_template = session.get(TextTemplate, template.json()["id"])
@@ -279,7 +277,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
 
     restored_extension = _set_finance_extension(client, enabled=True)
     assert restored_extension["enabled"] is True
-    assert restored_extension["disabledReason"] is None
     assert _tool_keys(client) == enabled_tool_keys
 
     restored_portfolios = client.get("/api/v1/portfolios")
@@ -314,7 +311,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
 
     assert restored_detail["status"] == "succeeded"
     assert restored_detail["finalOutput"] == {"summary": "restored finance runtime"}
-    restored_snapshot = cast(list[dict[str, object]], restored_detail["extensionSnapshots"])[0]
-    assert restored_snapshot["enabled"] is True
-    assert restored_snapshot["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert restored_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    restored_dependency = cast(list[dict[str, object]], restored_detail["extensionDependencies"])[0]
+    assert set(restored_dependency) == {"extensionKey", "surfaces", "fields"}
+    assert restored_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert restored_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]

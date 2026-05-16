@@ -8,10 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError, extension_disabled_error
-from app.extensions.signaldeck_finance.ownership import (
-    FINANCE_WORKSPACE_EXTENSION_KEY,
-    FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
-)
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 
@@ -25,29 +22,14 @@ def _extension_item(client: TestClient) -> dict[str, object]:
     return items[0]
 
 
-def test_list_extensions_default_enabled_state_and_contributions(client: TestClient) -> None:
+def test_list_extensions_returns_exact_slim_enabled_state(client: TestClient) -> None:
     item = _extension_item(client)
 
-    assert item["key"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert item["label"] == "Finance Workspace"
-    assert item["enabled"] is True
-    assert item["defaultEnabled"] is True
-    assert item["phase"] == "phase_1_bundled_first_party"
-    assert item["stateVersion"] == 1
-    assert item["enabledAt"] is not None
-    assert item["disabledAt"] is None
-    assert item["disabledReason"] is None
-    assert "backend_api_routes" in cast(list[str], item["contributionCategories"])
-
-    contributions = cast(list[dict[str, object]], item["contributions"])
-    surfaces_by_category = {
-        str(contribution["surface"]): contribution for contribution in contributions
+    assert item == {
+        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "label": "Finance Workspace",
+        "enabled": True,
     }
-    quote_tool = surfaces_by_category[FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS[0]]
-    assert quote_tool["category"] == "native_runtime_tools"
-    assert quote_tool["ownerExtensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert quote_tool["dependencies"] == []
-    assert quote_tool["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
 
 
 def test_toggle_extension_state_persistence_and_enabled_views(
@@ -56,23 +38,20 @@ def test_toggle_extension_state_persistence_and_enabled_views(
 ) -> None:
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False, "disabledReason": "maintenance window"},
+        json={"enabled": False},
     )
     assert response.status_code == 200, response.json()
     disabled_body = cast(dict[str, object], response.json())
-    assert disabled_body["enabled"] is False
-    assert disabled_body["stateVersion"] == 2
-    assert disabled_body["disabledReason"] == "maintenance window"
-    assert disabled_body["disabledAt"] is not None
+    assert disabled_body == {
+        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "label": "Finance Workspace",
+        "enabled": False,
+    }
 
     with session_factory() as session:
-        service = ExtensionService(session)
-        snapshot = service.resolve_state(FINANCE_WORKSPACE_EXTENSION_KEY)
+        snapshot = ExtensionService(session).resolve_state(FINANCE_WORKSPACE_EXTENSION_KEY)
+        assert snapshot.extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
         assert snapshot.enabled is False
-        assert snapshot.disabled_reason == "maintenance window"
-        assert service.list_enabled_discovery_contributions() == []
-        assert service.list_enabled_execution_contributions() == []
-        assert service.list_all_contributions()
 
     response = client.patch(
         f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
@@ -80,14 +59,71 @@ def test_toggle_extension_state_persistence_and_enabled_views(
     )
     assert response.status_code == 200, response.json()
     enabled_body = cast(dict[str, object], response.json())
-    assert enabled_body["enabled"] is True
-    assert enabled_body["stateVersion"] == 3
-    assert enabled_body["disabledReason"] is None
-    assert enabled_body["disabledAt"] is None
+    assert enabled_body == {
+        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "label": "Finance Workspace",
+        "enabled": True,
+    }
 
     with session_factory() as session:
         snapshot = ExtensionService(session).resolve_state(FINANCE_WORKSPACE_EXTENSION_KEY)
     assert snapshot.enabled is True
+
+
+@pytest.mark.parametrize(
+    ("removed_field", "value"),
+    [
+        ("disabledReason", "maintenance"),
+        ("defaultEnabled", False),
+        ("stateVersion", 2),
+    ],
+)
+def test_toggle_extension_rejects_removed_metadata_fields(
+    client: TestClient,
+    removed_field: str,
+    value: object,
+) -> None:
+    response = client.patch(
+        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
+        json={"enabled": False, removed_field: value},
+    )
+
+    assert response.status_code == 422, response.json()
+    assert _extension_item(client)["enabled"] is True
+
+
+def test_extensions_openapi_contract_omits_removed_public_fields(client: TestClient) -> None:
+    response = client.get("/openapi.json")
+    assert response.status_code == 200, response.json()
+    openapi = cast(dict[str, object], response.json())
+    components = cast(dict[str, object], openapi["components"])
+    schemas = cast(dict[str, dict[str, object]], components["schemas"])
+
+    extension_read = schemas["ExtensionRead"]
+    read_properties = cast(dict[str, object], extension_read["properties"])
+    assert set(read_properties) == {"key", "label", "enabled"}
+
+    toggle_request = schemas["ExtensionToggleRequest"]
+    toggle_properties = cast(dict[str, object], toggle_request["properties"])
+    assert set(toggle_properties) == {"enabled"}
+
+    removed_fields = {
+        "defaultEnabled",
+        "phase",
+        "versioningRule",
+        "contributionCategories",
+        "dependencies",
+        "contributions",
+        "stateVersion",
+        "enabledAt",
+        "disabledAt",
+        "disabledReason",
+        "createdAt",
+        "updatedAt",
+    }
+    assert removed_fields.isdisjoint(read_properties)
+    assert removed_fields.isdisjoint(toggle_properties)
+    assert "ExtensionContributionRead" not in schemas
 
 
 def test_extension_disabled_error_contract_helper() -> None:

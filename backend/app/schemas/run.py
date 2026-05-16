@@ -305,26 +305,10 @@ class RunPackageAvailabilityRead(CamelModel):
     unavailable_reason: str | None = None
 
 
-class RunExtensionSnapshotRead(CamelModel):
+class RunExtensionDependencyRead(CamelModel):
     extension_key: str
-    label: str
-    enabled: bool
-    default_enabled: bool
-    state_version: int = Field(ge=1)
-    phase: str | None = None
-    versioning_rule: str | None = None
-    enabled_at: datetime | None = None
-    disabled_at: datetime | None = None
-    disabled_reason: str | None = None
     surfaces: list[str] = Field(default_factory=list)
     fields: list[str] = Field(default_factory=list)
-
-    @field_validator("enabled_at", "disabled_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return ensure_timezone(value)
 
 
 class RunPackageProvenanceRead(CamelModel):
@@ -368,7 +352,7 @@ class RunRead(CamelModel):
     updated_at: datetime
     steps: list[RunStepRead] = Field(default_factory=list)
     memory_artifacts: list[RunMemoryArtifactRead] = Field(default_factory=list)
-    extension_snapshots: list[RunExtensionSnapshotRead] = Field(default_factory=list)
+    extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
 
     @model_validator(mode="before")
@@ -418,7 +402,7 @@ __all__ = [
     "RunAgentErrorRead",
     "RunAgentInvocationRead",
     "RunCreatedRead",
-    "RunExtensionSnapshotRead",
+    "RunExtensionDependencyRead",
     "RunInvocationInputMode",
     "RunInvocationOutputOrigin",
     "RunInvocationResolvedInputOrigin",

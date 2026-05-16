@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from app.agents import ToolCatalog
-from app.core.formatting import to_utc
-from app.services.extension_service import ExtensionService
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,11 +17,9 @@ class ExtensionDependency:
 class ExtensionDependencyService:
     def __init__(
         self,
-        extension_service: ExtensionService,
         *,
         tool_catalog: ToolCatalog | None = None,
     ) -> None:
-        self.extension_service = extension_service
         self.tool_catalog = tool_catalog or ToolCatalog()
 
     def infer_compiled_plan_dependencies(
@@ -51,17 +46,17 @@ class ExtensionDependencyService:
                 )
         return self._dependency_tuple(dependencies)
 
-    def snapshot_dependencies(
+    def dependency_payloads(
         self,
         dependencies: tuple[ExtensionDependency, ...],
     ) -> list[dict[str, Any]]:
-        return [self._snapshot_payload(dependency) for dependency in dependencies]
+        return [self._dependency_payload(dependency) for dependency in dependencies]
 
-    def snapshot_compiled_plan_dependencies(
+    def compiled_plan_dependency_payloads(
         self,
         compiled_plan: Mapping[str, Any],
     ) -> list[dict[str, Any]]:
-        return self.snapshot_dependencies(self.infer_compiled_plan_dependencies(compiled_plan))
+        return self.dependency_payloads(self.infer_compiled_plan_dependencies(compiled_plan))
 
     @staticmethod
     def _compiled_section(
@@ -103,29 +98,42 @@ class ExtensionDependencyService:
             for extension_key, values in sorted(dependencies.items())
         )
 
-    def _snapshot_payload(self, dependency: ExtensionDependency) -> dict[str, Any]:
-        snapshot = self.extension_service.resolve_state(dependency.extension_key)
-        definition = self.extension_service.registry.get_extension(dependency.extension_key)
+    @staticmethod
+    def normalize_dependency_payloads(raw_dependencies: object) -> list[dict[str, Any]]:
+        if not isinstance(raw_dependencies, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for raw_dependency in raw_dependencies:
+            if not isinstance(raw_dependency, Mapping):
+                continue
+            extension_key = str(raw_dependency.get("extensionKey") or "").strip()
+            if not extension_key:
+                continue
+            normalized.append(
+                {
+                    "extensionKey": extension_key,
+                    "surfaces": ExtensionDependencyService._string_list(
+                        raw_dependency.get("surfaces")
+                    ),
+                    "fields": ExtensionDependencyService._string_list(raw_dependency.get("fields")),
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _dependency_payload(dependency: ExtensionDependency) -> dict[str, Any]:
         return {
             "extensionKey": dependency.extension_key,
-            "label": definition.label if definition is not None else dependency.extension_key,
-            "enabled": snapshot.enabled,
-            "defaultEnabled": snapshot.default_enabled,
-            "stateVersion": snapshot.state_version,
-            "phase": None if definition is None else definition.phase,
-            "versioningRule": None if definition is None else definition.versioning_rule,
-            "enabledAt": self._datetime_payload(snapshot.enabled_at),
-            "disabledAt": self._datetime_payload(snapshot.disabled_at),
-            "disabledReason": snapshot.disabled_reason,
             "surfaces": list(dependency.surfaces),
             "fields": list(dependency.fields),
         }
 
     @staticmethod
-    def _datetime_payload(value: datetime | None) -> str | None:
-        if value is None:
-            return None
-        return to_utc(value).isoformat().replace("+00:00", "Z")
+    def _string_list(raw_values: object) -> list[str]:
+        if not isinstance(raw_values, list):
+            return []
+        return [str(raw_value) for raw_value in raw_values if isinstance(raw_value, str)]
 
 
 __all__ = ["ExtensionDependency", "ExtensionDependencyService"]

@@ -12,7 +12,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 |---|---|---|
 | Fixture setup | `conftest.py` | isolated PostgreSQL `DATABASE_URL`, `init_db()`, `TestClient`, dependency override cleanup |
 | API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, extension gating, platform validation, and neutral stub workflow coverage |
-| Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | bundled extension metadata, enable/disable state, route/tool filtering, and lifecycle matrix behavior |
+| Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | slim bundled extension state, private registry wiring, route/tool filtering, and lifecycle matrix behavior |
 | Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py` | package execution, run detail/list, model-binding provenance, reruns, and step replay coverage |
 | Runtime artifact coverage | `test_workflow_package_runtime_artifacts.py`, `test_memory_domain_schemas.py` | persisted step outputs, Logfire trace linkage, run-detail artifacts, and memory DTO projections |
 | Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, and version-pinning expectations |
@@ -30,6 +30,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Do not rely on shared DB state across tests.
 - Do not hit real provider APIs or network services from this suite.
 - Do not change preserved product contracts, current agent-platform contracts, or DB-upgrade behavior without updating the corresponding regression files.
+- Keep removed extension metadata references limited to explicit negative-validation tests or legacy-upgrade normalization tests. Live contract tests should assert the slim state and dependency-only run records.
 - Do not leave dependency overrides behind after a test; `conftest.py` clears them for a reason.
 
 ## VALIDATION
@@ -41,6 +42,6 @@ uv run pytest
 ## NOTES
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
-- Extension, tool-catalog, social-sentiment, and lifecycle tests lock bundled `signaldeck.finance` state, contribution filtering, and provider/runtime-tool contracts.
+- Extension, tool-catalog, social-sentiment, and lifecycle tests lock bundled `signaldeck.finance` state, enabled-tool filtering, and provider/runtime-tool contracts.
 - `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_memory_domain_schemas.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, saved model-connection, trace metadata, memory DTO, upgrade, and execution contracts.
 - `test_legacy_backend_cutover.py` proves retired backend routes return `404` and removed modules stay absent.

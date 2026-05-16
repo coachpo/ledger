@@ -204,8 +204,11 @@ def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
     finance_extension = next(
         item for item in extension_items if item["key"] == FINANCE_WORKSPACE_EXTENSION_KEY
     )
-    assert finance_extension["enabled"] is True
-    assert finance_extension["defaultEnabled"] is True
+    assert finance_extension == {
+        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
+        "label": "Finance Workspace",
+        "enabled": True,
+    }
 
     source = _package_source()
     assert FINANCE_WORKSPACE_EXTENSION_KEY not in source
