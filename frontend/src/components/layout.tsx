@@ -1,5 +1,4 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
-import { Briefcase } from "lucide-react";
 
 import {
   Breadcrumb,
@@ -144,7 +143,7 @@ function AppSidebar() {
       <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-4 py-0">
         <div className="flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Briefcase className="size-5 shrink-0" />
+            <img alt="" aria-hidden="true" className="size-5 shrink-0" src="/favicon.svg" />
           </div>
           {showExpandedContent ? (
             <div className="min-w-0">
