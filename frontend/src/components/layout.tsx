@@ -149,7 +149,6 @@ function AppSidebar() {
           {showExpandedContent ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold tracking-tight">Ledger</p>
-              <p className="text-xs text-muted-foreground">Portfolio + agent workspace</p>
             </div>
           ) : null}
         </div>
