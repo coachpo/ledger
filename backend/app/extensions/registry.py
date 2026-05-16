@@ -12,9 +12,7 @@ from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_LABEL,
 )
 
-_FINANCE_WORKSPACE_TOOL_SPEC_REGISTRARS = (
-    "app.extensions.signaldeck_finance.tool_specs:register",
-)
+_FINANCE_WORKSPACE_TOOL_SPEC_REGISTRARS = ("app.extensions.signaldeck_finance.tool_specs:register",)
 _FINANCE_WORKSPACE_RUNTIME_TOOL_REGISTRARS = (
     "app.extensions.signaldeck_finance.runtime_executors:register",
 )
@@ -76,6 +74,7 @@ def get_bundled_extension_registry() -> BundledExtensionRegistry:
             ),
         )
     )
+
 
 __all__ = [
     "BundledExtensionDefinition",
