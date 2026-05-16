@@ -1,6 +1,6 @@
 # SignalDeck Memory Layer Design Note
 
-> Status: Phase 1 memory layer notes for branch `main` at `987686e`.
+> Status: Phase 1 memory layer notes for branch `main` at `69e809e`.
 
 ## Scope
 
@@ -12,7 +12,8 @@ This note covers the shipped phase 1 boundary:
 2. Persistence goes through the `MemoryStore` Protocol.
 3. The concrete adapter is `ReportBackedMemoryStore`.
 4. Prompt context goes through `MemoryContextService`.
-5. Run detail exposes memory artifacts, with report links only as audit actions.
+5. Due follow-ups go through `MemoryFollowUpService`, `ReturnResolutionService`, and `ReflectionService`.
+6. Run detail exposes memory artifacts, with report links only as audit actions.
 
 There is no public `/api/memory` route, no memory table, no vector search, and no embeddings in phase 1.
 
@@ -25,10 +26,11 @@ There is no public `/api/memory` route, no memory table, no vector search, and n
 | Store contract | `backend/app/services/memory_store.py` |
 | Report-backed adapter | `backend/app/services/report_backed_memory_store.py` |
 | Prompt context | `backend/app/services/memory_context_service.py` |
+| Follow-up automation | `backend/app/services/memory_follow_up_service.py`, `backend/app/services/return_resolution_service.py`, `backend/app/services/reflection_service.py` |
 | Runtime tools | `backend/app/agents/runtime_tools/reports.py`, `backend/app/agents/runtime_tools/types.py` |
 | Run API | `backend/app/schemas/run.py`, `backend/app/services/run_service.py` |
 | Frontend run detail | `frontend/src/lib/types/run.ts`, `frontend/src/pages/runs/detail.tsx` |
-| Contract tests | `backend/tests/test_memory_domain_schemas.py`, `backend/tests/test_memory_service.py`, `backend/tests/test_report_backed_memory_store.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_memory_layer_static_contracts.py`, `frontend/src/pages/runs/detail.test.tsx` |
+| Contract tests | `backend/tests/test_memory_domain_schemas.py`, `backend/tests/test_memory_service.py`, `backend/tests/test_memory_follow_up_service.py`, `backend/tests/test_report_backed_memory_store.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_memory_layer_static_contracts.py`, `frontend/src/pages/runs/detail.test.tsx` |
 
 ## Data Model
 
@@ -50,6 +52,8 @@ Report markdown remains a human audit artifact for report detail and download fl
 ## Service Boundaries
 
 `MemoryService` is the command boundary for memory work. It checks memory write grants, creates pending memories, reads one memory entry, resolves outcomes, appends reflections, queries prompt snippets, and lists run artifacts.
+
+`MemoryFollowUpService.run_due(now)` is the automation boundary for matured pending memories. It lists pending report-backed memories, asks `ReturnResolutionService` to resolve outcomes, appends one generated reflection through `ReflectionService` when resolution completes or expires, and commits idempotently before workflow-package run execution.
 
 `MemoryStore` defines the persistence contract:
 
@@ -135,7 +139,7 @@ Frontend run types expose memory artifacts with `memoryId`, `summary`, `status`,
 Use the memory and run contract tests when code changes touch this layer:
 
 ```bash
-(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_report_backed_memory_store.py tests/test_runtime_tools.py tests/test_memory_layer_static_contracts.py)
+(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_report_backed_memory_store.py tests/test_runtime_tools.py tests/test_memory_layer_static_contracts.py)
 (cd frontend && pnpm test:run src/pages/runs/detail.test.tsx)
 ```
 

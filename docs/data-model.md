@@ -30,8 +30,9 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 | `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun/replay metadata, package provenance, launch snapshots, and dependency-only extension requirements |
 | `run_steps` | persisted workflow step status, copied replay context, graph metadata, errors, and timestamps |
 | `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, and copied replay context |
+| `run_operation_invocations` | persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional trace span ids, and copied replay context |
 
-Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are stored inside immutable package version JSON. They are not normalized into global authoring tables.
+Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside immutable package version JSON. They are not normalized into global authoring tables.
 
 ## Integrity Rules
 
@@ -44,7 +45,7 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`.
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
 - Runs store package id, package key, package version, package hash, workflow key, local resource refs, resolved model connection refs, launch snapshots, and `extension_dependencies` records containing only extension key, surfaces, and fields.
-- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `workflow_package_versions`, `extension_states`, `runs`, `run_steps`, and `run_agent_invocations`.
+- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `workflow_package_versions`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, and `run_operation_invocations`.
 
 ## Retired Data
 
