@@ -33,7 +33,66 @@ vi.mock("@/lib/api/runs", () => ({
 }));
 
 import { queryKeys } from "@/lib/query-keys";
+import type { RunListRead, RunRead, RunStatus } from "@/lib/types/run";
 import { useCreateRunRerun, useCreateRunStepReplay, useRun, useRunRerunDraft, useRuns, useRunStepReplayDraft } from "./use-runs";
+
+type RefetchIntervalResolver<TData> = (query: {
+  state: { data: TData | undefined };
+}) => false | number | undefined;
+
+function runListWithStatuses(statuses: RunStatus[]): RunListRead {
+  return {
+    items: statuses.map((status, index) => ({
+      finishedAt: status === "queued" || status === "running" ? null : "2026-05-15T10:02:00Z",
+      id: index + 1,
+      queuedAt: "2026-05-15T10:00:00Z",
+      startedAt: status === "queued" ? null : "2026-05-15T10:01:00Z",
+      status,
+      targetId: 100 + index,
+      targetKey: "market_review",
+      targetKind: "workflowPackage",
+      targetVersion: 1,
+      totalTokens: 0,
+      traceId: null,
+    })),
+  };
+}
+
+function runDetailWithStatus(status: RunStatus): RunRead {
+  return {
+    createdAt: "2026-05-15T10:00:00Z",
+    error: null,
+    executedTokens: 0,
+    finalOutput: null,
+    finishedAt: status === "queued" || status === "running" ? null : "2026-05-15T10:02:00Z",
+    id: 18,
+    inheritedTokens: 0,
+    input: {},
+    lineageRootRunId: null,
+    memoryArtifacts: [],
+    packageProvenance: null,
+    queuedAt: "2026-05-15T10:00:00Z",
+    replayStepIndex: null,
+    resumeStepIndex: 1,
+    sourceRunId: null,
+    startedAt: status === "queued" ? null : "2026-05-15T10:01:00Z",
+    status,
+    steps: [],
+    targetId: 100,
+    targetKey: "market_review",
+    targetKind: "workflowPackage",
+    targetVersion: 1,
+    totalTokens: 0,
+    traceId: null,
+    updatedAt: "2026-05-15T10:00:00Z",
+  };
+}
+
+function lastQueryOptions<TData>() {
+  return reactQueryState.useQueryMock.mock.calls.at(-1)?.[0] as {
+    refetchInterval: RefetchIntervalResolver<TData>;
+  };
+}
 
 describe("useRuns hooks", () => {
   it("uses the API helper's target-aware list query key", () => {
@@ -53,7 +112,7 @@ describe("useRuns hooks", () => {
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         queryKey: ["api", "platform", "runs", "list", params],
-        refetchInterval: 2_000,
+        refetchInterval: expect.any(Function),
       }),
     );
   });
@@ -74,9 +133,62 @@ describe("useRuns hooks", () => {
       expect.objectContaining({
         enabled: true,
         queryKey: queryKeys.platform.runs.detail(18),
-        refetchInterval: 2_000,
+        refetchInterval: expect.any(Function),
       }),
     );
+  });
+
+  it("polls run lists only while queued or running runs are present", () => {
+    reactQueryState.useQueryMock.mockClear();
+
+    useRuns({}, { refetchInterval: 2_000 });
+
+    const queryOptions = lastQueryOptions<RunListRead>();
+    expect(queryOptions.refetchInterval({ state: { data: undefined } })).toBe(false);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runListWithStatuses(["succeeded", "failed"]) },
+      }),
+    ).toBe(false);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runListWithStatuses(["succeeded", "running"]) },
+      }),
+    ).toBe(2_000);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runListWithStatuses(["queued", "failed"]) },
+      }),
+    ).toBe(2_000);
+  });
+
+  it("polls run details only while queued or running", () => {
+    reactQueryState.useQueryMock.mockClear();
+
+    useRun(18, { refetchInterval: 2_000 });
+
+    const queryOptions = lastQueryOptions<RunRead>();
+    expect(queryOptions.refetchInterval({ state: { data: undefined } })).toBe(false);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runDetailWithStatus("succeeded") },
+      }),
+    ).toBe(false);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runDetailWithStatus("failed") },
+      }),
+    ).toBe(false);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runDetailWithStatus("queued") },
+      }),
+    ).toBe(2_000);
+    expect(
+      queryOptions.refetchInterval({
+        state: { data: runDetailWithStatus("running") },
+      }),
+    ).toBe(2_000);
   });
 
   it("keys rerun draft queries by run id", () => {

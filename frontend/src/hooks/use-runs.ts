@@ -29,6 +29,24 @@ type DraftQueryOptions = RunQueryOptions & {
   enabled?: boolean;
 };
 
+const ACTIVE_RUN_STATUSES = new Set<string>(["queued", "running"]);
+
+function isActiveRunStatus(status: string): boolean {
+  return ACTIVE_RUN_STATUSES.has(status);
+}
+
+function activeRefetchInterval(options: RunQueryOptions): false | number {
+  return options.refetchInterval ?? false;
+}
+
+function hasActiveListRun(data: RunListRead | undefined): boolean {
+  return data?.items.some((run) => isActiveRunStatus(run.status)) ?? false;
+}
+
+function hasActiveDetailRun(data: RunRead | undefined): boolean {
+  return data ? isActiveRunStatus(data.status) : false;
+}
+
 export type CreateRunRerunVariables = {
   runId: IdParam;
   payload: RunRerunCreateRequest;
@@ -43,10 +61,13 @@ export function useRuns(
   params: RunListParams = {},
   options: RunQueryOptions = {},
 ): UseQueryResult<RunListRead, Error> {
+  const refetchInterval = activeRefetchInterval(options);
+
   return useQuery({
     queryKey: buildRunsListQueryKey(params),
     queryFn: ({ signal }) => listRuns(params, signal),
-    refetchInterval: options.refetchInterval,
+    refetchInterval: (query) =>
+      hasActiveListRun(query.state.data) ? refetchInterval : false,
   });
 }
 
@@ -55,12 +76,14 @@ export function useRun(
   options: RunQueryOptions = {},
 ): UseQueryResult<RunRead, Error> {
   const resolvedRunId = runId ?? "";
+  const refetchInterval = activeRefetchInterval(options);
 
   return useQuery({
     queryKey: queryKeys.platform.runs.detail(resolvedRunId),
     queryFn: ({ signal }) => getRun(resolvedRunId, signal),
     enabled: Boolean(runId),
-    refetchInterval: options.refetchInterval,
+    refetchInterval: (query) =>
+      hasActiveDetailRun(query.state.data) ? refetchInterval : false,
   });
 }
 
