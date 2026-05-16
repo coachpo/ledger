@@ -21,5 +21,6 @@ src/styles/
 - `tailwind.css` uses Tailwind v4 CSS imports with explicit `@source '../**/*.{js,ts,jsx,tsx}'` scanning.
 - `tailwind.css` imports `tw-animate-css` and registers `@tailwindcss/typography`.
 - `theme.css` owns `@custom-variant dark`, CSS variables, `@theme inline` mapping, and base element styles.
+- Prefer shared theme tokens/CSS variables over scattered arbitrary values; do not reintroduce config-file token management without a clear gap.
 - `fonts.css` is intentionally empty and currently unreferenced.
 - Avoid global CSS for one-off feature layout.

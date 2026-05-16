@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `app/db/`.
 
 ## OVERVIEW
-`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for the preserved product tables plus the current agent-platform tables. The package is split by responsibility across `engine.py`, `validation.py`, `upgrades.py`, and a thin `session.py` composition layer.
+`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, and in-code schema upgrades for the preserved product tables, bundled extension state, and current agent-platform tables. The package is split by responsibility across `engine.py`, `validation.py`, `upgrades.py`, and a thin `session.py` composition layer.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -14,7 +14,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | Request-scoped sessions | `engine.py` | `get_db_session()` generator used by API dependencies |
 | App startup DB init | `session.py` | `init_db()` composes model import, validation, table creation, and upgrade helpers |
 | Engine / id validation | `validation.py` | PostgreSQL requirement and numeric-id guardrails |
-| Schema upgrades | `upgrades.py` | preserved-table backfills, agent-platform table creation, stale-run recovery, and legacy-table cleanup |
+| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` seeding, agent-platform table creation, stale-run recovery, and legacy-table cleanup |
 | Test cache resets | `engine.py` | `reset_db_caches()` for isolated test databases |
 
 ## CONVENTIONS
@@ -42,6 +42,6 @@ uv run pytest tests/test_api.py tests/test_runtime_db_upgrades.py tests/test_leg
 ```
 
 ## NOTES
-- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, creates the current agent-platform tables, backfills placeholder model connections from legacy agent models, recovers stale agent-platform runs, and drops retired backend tables.
+- `upgrades.py` backfills missing portfolio slugs, adds `balances.operation_type`, upgrades `reports` with `slug`/`source`/`metadata`, adds `market_quotes.name`, creates/seeds `extension_states` for bundled extensions, creates the current agent-platform tables, backfills placeholder model connections from legacy agent models, recovers stale agent-platform runs, and drops retired backend tables.
 - `session.py` imports the full model package, validates the engine and numeric-id schema, creates tables, and runs upgrade helpers.
 - `create_app(init_database=False)` lets tests control initialization explicitly through fixtures.

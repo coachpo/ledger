@@ -3,6 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers routed page components in `src/pages/`.
 
 ## CHILD DOCS
+- `extensions/AGENTS.md` — bundled extension state/toggle system route
 - `workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export route family
 - `model-connections/AGENTS.md` — saved model connection list/editor route family
 - `runs/AGENTS.md` — runs list and detail route family
@@ -12,7 +13,7 @@
 - `../../retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 
 ## OVERVIEW
-`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, preserved portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
+`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, bundled extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -20,6 +21,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 ```text
 src/pages/
 ├── dashboard.tsx                # home route summary
+├── extensions/                  # bundled extension state/toggle route
 ├── workflow-packages/           # package list and editor routes
 ├── model-connections/           # saved model connection list and editor routes
 ├── runs/                        # run list and detail routes
@@ -33,6 +35,7 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
+| Extension state route | `extensions/AGENTS.md` | bundled extension list, contributions, and enable/disable toggle flow |
 | Agent-platform pages | `workflow-packages/AGENTS.md`, `model-connections/AGENTS.md`, `runs/AGENTS.md` | package authoring, saved connections, and run inspection |
 | Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
 | Template list/editor | `templates/AGENTS.md` | stored-template CRUD, inline compile preview, placeholder browser |
@@ -41,13 +44,14 @@ src/pages/
 
 ## CONVENTIONS
 - `src/routes.ts` is the route source of truth, and routed screens in this folder back the registered paths, even when one editor component handles both create and edit URLs.
-- `src/components/layout.tsx` owns the shell, breadcrumbs, and sidebar labels.
+- `src/components/layout.tsx` owns the shell, breadcrumbs, and sidebar labels assembled from `src/extensions/runtime.tsx` plus static platform/system routes.
 - Pages compose hooks from `src/hooks/`, shared components from `src/components/shared/`, and route-specific helpers from nearby files.
 - Pages handle top-level data fetching, mutation feedback, and route-level error states, but business rules stay in hooks or shared helpers.
 - List pages use the shared frontend page UI standard below before adding route-specific layout.
 - The template editor page uses `useDebounce()`, `useCompileInline()`, and `usePlaceholders()` to keep preview and placeholder browsing responsive without moving that logic into the component library.
 - Portfolio detail pages compose portfolio, balance, position, trade, and market-data hooks together; quote enrichment and allocation math stay in shared analytics helpers instead of the page body.
-- Workflow package pages keep package-private resources inside package editor tabs and use global Model Connections, read-only Tools, and global Runs through dedicated hooks.
+- Workflow package pages keep package-private resources inside package editor tabs and use global Model Connections, extension-filtered read-only Tools, and global Runs through dedicated hooks.
+- The `/extensions` page is a system state surface only; it should not grow marketplace/install/remove behavior in phase 1.
 
 ## FRONTEND PAGE UI STANDARD
 - Page shells use a simple content stack such as `space-y-4 p-4`; legacy inventory wrappers and dashboard-style summary-card bands are not the default for resource lists.
@@ -67,6 +71,7 @@ src/pages/
 - Do not add nested `Package Inventory`/`Resource Inventory` card shells, route-local summary-card bands, or oversized search/view controls to new list pages unless the product requirement explicitly calls for that hierarchy.
 - Do not duplicate report request logic in page components when `use-reports.ts` and the template editor already own the server-side workflow.
 - Do not add dead routes or stale route docs that are not wired into `src/routes.ts`.
+- Do not bypass extension route gates or duplicate Finance Workspace visibility rules in page components.
 
 ## VALIDATION
 ```bash
@@ -81,4 +86,4 @@ pnpm test:e2e
 ## NOTES
 - Pages are thin route-layer components; the real complexity lives in hooks, shared components, and nearby page helpers.
 - Portfolio detail pages are routable but not exposed separately in the sidebar.
-- The live router exposes dashboard, portfolio list/detail, template list/editor, report list/detail, Workflow Packages, Model Connections, and Runs.
+- The live router exposes dashboard, `/extensions`, extension-gated portfolio/template/report routes, Workflow Packages, Model Connections, and Runs.

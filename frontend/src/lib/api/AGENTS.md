@@ -17,6 +17,7 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
+├── extensions.ts          # bundled extension list/toggle state
 ├── workflow-packages.ts   # package manifest, version, preflight, launch, import, export
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
@@ -28,7 +29,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `workflow-packages.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for package authoring, read-only tool metadata, model bindings, and run inspection |
+| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, read-only tool metadata, model bindings, and run inspection |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
@@ -48,5 +49,5 @@ src/lib/api/
 
 ## NOTES
 - The frontend no longer ships legacy v2, Studio, Tryout, or orchestration API helpers in this folder.
-- Platform resources use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
+- Platform resources, including extension state and global tool discovery, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

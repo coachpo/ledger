@@ -1,23 +1,25 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-13
-**Commit:** 01312c0
+**Generated:** 2026-05-16
+**Commit:** 69e809e
 **Branch:** main
 
 ## OVERVIEW
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans portfolio CRUD, balances, positions, delayed market data, trading operations, template authoring and compile preview, point-in-time reports, and the package-first platform routes for Workflow Packages, Model Connections, Tools, and Runs.
+SignalDeck is a dual-stack portfolio workspace with a FastAPI backend and a React/Vite frontend tracked directly in this repository. The live product surface spans the bundled `signaldeck.finance` Finance Workspace extension for portfolio CRUD, balances, positions, delayed market data, trading operations, templates, reports, and finance-owned tools, plus the package-first platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
 
 ## CHILD DOCS
 
 - `backend/AGENTS.md` — backend architecture, validation flow, and layer routing
 - `backend/app/core/AGENTS.md` — config, error envelope, telemetry, normalization helpers
 - `backend/app/db/AGENTS.md` — session lifecycle and PostgreSQL-only upgrade rules
-- `backend/app/api/AGENTS.md` — route handler boundaries and dependency wiring
+- `backend/app/api/AGENTS.md` — route handler boundaries, extension-gated `/api/v1` composition, and dependency wiring
+- `backend/app/extensions/AGENTS.md` — bundled extension registry, state, contribution, and ownership boundaries
+- `backend/app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report-memory contribution ownership
 - `backend/app/agents/AGENTS.md` — server tool catalog, native runtime tools, MCP security/runtime boundaries
-- `backend/app/services/AGENTS.md` — service ownership, workflow package compilers, runtime execution, memory reports, and quote-provider wiring
+- `backend/app/services/AGENTS.md` — service ownership, extension state, workflow package compilers, runtime execution, memory reports, and quote-provider wiring
 - `backend/app/schemas/AGENTS.md` — Pydantic validation, manifest contracts, memory metadata, and camelCase aliasing
 - `backend/app/models/AGENTS.md` — ORM constraints, indexes, relationships, cache tables, manifests, and run metadata
 - `backend/app/repositories/AGENTS.md` — query/repository patterns, report metadata filters, and runtime lookups
@@ -26,9 +28,10 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/AGENTS.md` — frontend architecture, router shell, agent-platform surfaces, and validation workflow
 - `frontend/e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
 - `frontend/scripts/AGENTS.md` — Playwright backend/frontend startup helpers
+- `frontend/src/extensions/AGENTS.md` — frontend extension runtime, route/nav/tool filtering, and Finance Workspace scaffold
 - `frontend/src/styles/AGENTS.md` — Tailwind v4 imports, theme tokens, dark variant, and empty font stub
 - `frontend/src/test/AGENTS.md` — Vitest jsdom setup and browser API mocks
-- `frontend/src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, and shared contracts
+- `frontend/src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, extension contracts, and shared contracts
 - `frontend/src/lib/api/AGENTS.md` — domain API modules, v1/platform request helpers, upload/download boundaries
 - `frontend/src/lib/types/AGENTS.md` — shared wire types for portfolios, templates, reports, and the agent-platform domains
 - `frontend/src/lib/platform-authoring/AGENTS.md` — schema/value/ref/manifest authoring helper contracts
@@ -40,8 +43,9 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 - `frontend/src/components/ui/AGENTS.md` — shadcn/ui primitives, sidebar context, and shared variant helpers
 - `frontend/src/components/shared/AGENTS.md` — reusable tables, metrics, error boundaries, and shared field schemas
 - `frontend/src/components/portfolios/AGENTS.md` — portfolio workspace sections, dialogs, tables, and trades
-- `frontend/src/pages/AGENTS.md` — dashboard, portfolio, template, report, and agent-platform routes
+- `frontend/src/pages/AGENTS.md` — dashboard, extension, finance, and agent-platform routes
 - `frontend/retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
+- `frontend/src/pages/extensions/AGENTS.md` — bundled extension state list/toggle route
 - `frontend/src/pages/workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export routes
 - `frontend/src/pages/model-connections/AGENTS.md` — saved model connection list, editor, secret handling, and connection test routes
 - `frontend/src/pages/runs/AGENTS.md` — runs list and detail routes
@@ -52,7 +56,7 @@ Ledger is a dual-stack portfolio workspace with a FastAPI backend and a React/Vi
 ## STRUCTURE
 
 ```text
-ledger/
+signaldeck/
 ├── backend/              # FastAPI app, SQLAlchemy models, services, pytest suite
 ├── frontend/             # React/Vite app, TanStack Query, Vitest, Playwright, shadcn/ui
 ├── docs/                 # prd, spec, API, data-model, test, run-input, platform, and memory design docs
@@ -65,13 +69,15 @@ ledger/
 | Task | Location | Notes |
 |---|---|---|
 | Bootstrap a fresh clone | `backend/pyproject.toml`, `frontend/package.json`, `README.md`, `start.sh` | install with `uv sync` and `pnpm install`, then prefer `./start.sh` |
-| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; stops prior Ledger instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
+| Start the full stack locally | `start.sh`, `backend/docker-compose.yml`, `README.md` | defaults to Postgres `25432`, backend `28000`, frontend `25173`; stops prior SignalDeck instances before restart and may fall back to `25433/25434`, `28001/28002`, or `25174` |
 | Cross-app E2E startup | `frontend/e2e/AGENTS.md`, `frontend/playwright.config.ts`, `frontend/scripts/start-playwright-*.mjs` | Playwright uses backend `8001` and frontend `4173` with dedicated startup helpers |
-| Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus preserved `/api/v1` and current `/api/*` composition |
-| Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Tools, and Runs |
+| Backend bootstrap | `backend/app/main.py`, `backend/app/api/router.py`, `backend/app/api/platform_router.py` | app factory plus extension-gated `/api/v1` and current `/api/*` composition |
+| Backend agent-platform flow | `backend/app/api/workflow_packages.py`, `backend/app/api/model_connections.py`, `backend/app/api/extensions.py`, `backend/app/api/tools.py`, `backend/app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
+| Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/services/extension_service.py` | bundled extension registry/state and `signaldeck.finance` contribution ownership |
 | Backend runtime tools, MCP, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, Logfire trace ids/spans, memory writes |
-| Backend preserved v1 flow | `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved portfolio, trading, market-data, template, and report routes |
-| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/components/layout.tsx` | query client, router provider, layout shell, theme toggle, sidebar navigation |
+| Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
+| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/extensions/runtime.tsx`, `frontend/src/components/layout.tsx` | query client, router provider, extension route/nav assembly, layout shell, theme toggle |
+| Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav/tool filtering and bundled extension state UI |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts` | markdown reports, compile preview, runtime input maps |
@@ -83,10 +89,13 @@ ledger/
 | Symbol / Entry | Location | Role |
 |---|---|---|
 | `create_app` | `backend/app/main.py` | FastAPI app factory, exception handlers, CORS, healthcheck |
-| `api_router` | `backend/app/api/router.py` | mounts live `/api/v1` routers for portfolios, balances, positions, trading, market data, templates, and reports |
-| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, tools, and runs |
-| `router` | `frontend/src/routes.ts` | flat route table for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs |
-| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, template/package editor full-height layout |
+| `api_router` | `backend/app/api/router.py` | mounts `signaldeck.finance` route registrations under `/api/v1` |
+| `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, extensions, tools, and runs |
+| `get_bundled_extension_registry` | `backend/app/extensions/registry.py` | declares bundled extension metadata, contribution registrars, and enabled contribution categories |
+| `ExtensionService` | `backend/app/services/extension_service.py` | resolves extension state, toggles `/api/extensions`, and filters ToolCatalog/runtime tool registries |
+| `router` | `frontend/src/routes.ts` | flat route table with finance routes assembled from `src/extensions/runtime.tsx` plus platform/system routes |
+| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime.tsx` | converts Finance Workspace route contributions into guarded React Router entries |
+| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, extension-aware nav groups, template/package editor full-height layout |
 | `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
 
 ## CONVENTIONS
@@ -98,16 +107,17 @@ ledger/
 - Template placeholder paths are a cross-stack contract spanning backend services/schemas and frontend types/editor code; the live roots are `inputs`, `portfolios`, and `reports`.
 - Reports are point-in-time markdown snapshots keyed by unique `slug`; canonical `source` origins are `compiled`, `uploaded`, `external`, and `agent`. `external` stays limited to true external user/API-created reports. Agent-created memory reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - Logfire is configured in `backend/app/core/telemetry.py` with `send_to_logfire="if-token-present"`; run execution stores formatted trace ids and per-invocation span ids but still works without a Logfire token.
-- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Tools, and Runs.
+- Legacy orchestration, Studio, Tryout, runtime-v2 routes, and retired legacy global authoring routes are not mounted live. Keep docs aligned with the package-first routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+- `signaldeck.finance` is the bundled first-party Finance Workspace extension. It is enabled by default, owns the preserved `/api/v1` finance route families, and gates finance route/nav/tool visibility through backend and frontend extension state.
 - Workflow Packages are the canonical platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside immutable package versions.
-- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, insider data, positions, report lookup, and report memory writes. Runtime tool keys such as `ledger.reports.lookup` and OpenAI function names such as `ledger_reports_lookup` stay unchanged.
+- Global Tools are read-only server-declared metadata at `/api/tools`; packages reference tool keys through local capability profiles. Current finance-owned native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. Runtime tool keys such as `signaldeck.reports.lookup` and OpenAI function names such as `signaldeck_reports_lookup` stay unchanged.
 - Workflow package authoring is YAML-manifest based; backend parsers reject legacy `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite numbers, duplicate refs, and raw global ids.
 - Application LLM calls must use official SDKs rather than raw HTTP requests; the current backend path uses the official `OpenAI` Python client.
 
 ## ANTI-PATTERNS
 
-- Do not bypass backend services or call provider adapters directly from routes or frontend code.
-- Do not invent snake_case API fields, ad-hoc query keys, or duplicate placeholder/type contracts.
+- Do not bypass backend services, extension state gates, or extension contribution registries from routes or frontend code.
+- Do not invent snake_case API fields, ad-hoc query keys, duplicate placeholder/type contracts, or hard-coded extension visibility rules.
 - Do not treat quote/history warnings as fatal when the degraded path is already defined.
 - Do not change CSV import, template placeholder, template compile payloads, or runtime-input flow without updating backend tests and frontend callers together.
 - Do not change report slug/name/source/download behavior, report filters, or `reports.*` placeholder output without updating backend tests, frontend callers, and template-editor guidance.
@@ -139,11 +149,11 @@ ledger/
 
 ## NOTES
 
-- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior Ledger instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
+- `start.sh` is the authoritative local orchestrator; it defaults to `25432/28000/25173`, stops prior SignalDeck instances before restart, may start PostgreSQL on `25432`, `25433`, or `25434`, and injects `DATABASE_URL` plus `VITE_API_BASE_URL`.
 - Supported schema repair is code-based in `backend/app/db/`; do not create migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend and frontend startup helpers launch dedicated E2E servers on those fixed ports.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing and cleanup live in separate workflows.
 - Root CI uses `uv sync --frozen` for backend jobs and `pnpm install --frozen-lockfile` for frontend jobs; `version-sync` checks `backend/VERSION` against `backend/pyproject.toml` and `frontend/VERSION` against `frontend/package.json`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR; cleanup keeps at least 3 recent workflow runs and deletes untagged backend/frontend container package versions.
-- `docs/AGENTS.md` governs the surviving docs set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `ledger-agent-platform.md`, and phase-1 `ledger-memory-layer-design.md`. Live code remains source of truth for docs updates.
+- `docs/AGENTS.md` governs the surviving docs set: `prd.md`, `requirements.md`, `spec.md`, `api-design.md`, `data-model.md`, `test-plan.md`, `run-input-schema-helptext.md`, `signaldeck-agent-platform.md`, phase-1 `signaldeck-memory-layer-design.md`, and the research/design note `advisory-research-signaldeck-upgrade-design.md`. Live code remains source of truth for docs updates.

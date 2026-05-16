@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, and the current agent-platform domains.
+`src/lib/` owns the frontend API contract, query-key naming, derived portfolio analytics, formatting helpers, markdown formatting, report grouping helpers, runtime-input row helpers, and shared type definitions for portfolios, market data, templates, reports, extensions, and the current agent-platform domains.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -16,9 +16,9 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | Task | Location | Notes |
 |---|---|---|
 | HTTP wrapper / error mapping | `api-client.ts` | `request()`, `requestPlatform()`, `ApiRequestError`, URL helpers, CSV form-data helpers |
-| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, and agent-platform resources |
-| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product and platform routes |
-| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform cache namespaces |
+| API endpoint functions | `api/*.ts` | domain-specific modules for portfolios, balances, positions, trading operations, market data, templates, reports, extensions, and agent-platform resources |
+| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product, extension state, and platform routes |
+| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform/extension cache namespaces |
 | Portfolio analytics | `portfolio-analytics.ts` | quote enrichment, market value, PnL, allocation |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
 | Markdown formatting | `markdown-format.ts` | Prettier-backed markdown normalization for the template editor |
@@ -32,12 +32,12 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - `api-client.ts` falls back to `http://127.0.0.1:8000/api/v1` only when `VITE_API_BASE_URL` is absent; `start.sh` and Playwright override that value for real runs.
 - Domain-specific API functions live in `api/*.ts` modules, organized by resource type.
 - Wire decimals remain strings until shared format/analytics helpers convert them for display math.
-- `query-keys.ts` normalizes ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
-- `invalidatePortfolioScope()` is the default invalidation path for portfolio-scoped mutations; reports and platform resources use their own namespaces.
+- `query-keys.ts` normalizes ids as strings, extension keys as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
+- `invalidatePortfolioScope()` is the default invalidation path for portfolio-scoped mutations; reports, extension state, and platform resources use their own namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
-- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling or mutation policy in hooks rather than embedding it in pages.
+- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, extension-state filtering, or mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS
@@ -46,7 +46,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Do not create API functions outside the `api/*.ts` domain modules.
 - Do not invent new query-key shapes outside `query-keys.ts`.
 - Do not duplicate backend contract types when `types/*.ts` already exposes them.
-- Do not change template, CSV, error-envelope, report, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
+- Do not change template, CSV, error-envelope, report, extension, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change `api/` helpers or `types/` contracts in isolation; keep request helpers and wire shapes in sync.
 - Do not mix presentation-only formatting into API wrapper code.
 

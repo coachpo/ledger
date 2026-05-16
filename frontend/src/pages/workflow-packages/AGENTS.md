@@ -21,6 +21,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 ## CONVENTIONS
 - `editor.tsx` is the route-family hotspot; keep request policy in hooks and local draft/resource editing in the page.
 - Package-private resources stay tabbed inside the package editor and never call retired global authoring APIs.
+- Capability profile tool pickers use extension-filtered `/api/tools` data from hooks; do not display disabled-extension tools.
 - Backend validation diagnostics should deep-link to package-local editor fields when possible.
 - Launch forms are generated from workflow input schemas and honor supported `title`/`description` metadata.
 - Exports must be previewed and imported through YAML paths that keep private MCP `env`, `headers`, and `query` values inline and still omit database ids.
@@ -40,5 +41,3 @@ pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workfl
 - `editor.tsx` is intentionally large because it composes every package authoring tab and launch/export flow.
 - `list.tsx` shows current packages only; delete actions permanently remove packages and rely on query invalidation for list refresh.
 - `placeholder.tsx` is not routed by `src/routes.ts`; treat it as leftover placeholder code unless a test explicitly imports it.
-rts it.
-nless a test explicitly imports it.

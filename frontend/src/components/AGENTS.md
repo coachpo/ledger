@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including the preserved portfolio/template/report routes and the current agent-platform routes.
+`src/components/` contains the layout shell, theme system, shared component library, cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including extension-aware finance routes, the `/extensions` system route, and the current agent-platform routes.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -27,7 +27,7 @@ src/components/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell for dashboard, preserved product routes, and agent-platform routes |
+| App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell for dashboard, extension-aware finance routes, system routes, and agent-platform routes |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable data tables, metrics, field schemas, and error boundaries |
 | Form components | `forms/AGENTS.md` | shared dialog forms that do not belong in a feature folder |
@@ -53,6 +53,7 @@ src/components/
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
 - Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across package-local agents, output schemas, capability profiles, MCP configs, and workflow graphs.
+- `Layout` consumes extension runtime nav groups and extension state; do not mirror route visibility in sidebar primitives.
 - Shared field schemas in `shared/form-schemas.ts` should stay aligned with the current routed forms that consume them.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
 - `ui/` stays presentational; application state and request logic should stay in pages, shared, forms, or feature folders.
@@ -77,6 +78,6 @@ pnpm build
 
 ## NOTES
 - `Layout` switches between the usual scroll container and a full-height outlet for template editor routes.
-- `Layout` owns the current sidebar entries and breadcrumb labels for dashboard, preserved product routes, and agent-platform routes.
+- `Layout` owns the current sidebar entries and breadcrumb labels for dashboard, extension-gated finance routes, `/extensions`, and agent-platform routes.
 - `layout.tsx` owns route labels and nav composition; `ui/sidebar.tsx` and `ui/sidebar-context.ts` stay generic primitives.
 - Page components stay thin; the real complexity lives in hooks, shared components, forms, and feature folders.

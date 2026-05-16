@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers SQLAlchemy model rules.
 
 ## OVERVIEW
-`app/models/` defines SQLAlchemy ORM entities, table names, constraints, indexes, cache tables, and relationships for the preserved product data model plus the current agent-platform tables. Models stay persistence-focused and should not contain service-layer business rules.
+`app/models/` defines SQLAlchemy ORM entities, table names, constraints, indexes, cache tables, and relationships for the preserved product data model, bundled extension state, and current agent-platform tables. Models stay persistence-focused and should not contain service-layer business rules.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -19,6 +19,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
+| Extension state | `extension.py` | persisted enable/disable state for bundled extension keys |
 | Platform package entities | `workflow_package.py` | package headers plus immutable package version artifacts |
 | Platform global entities | `model_connection.py`, `run.py` | saved model connections plus persisted global run detail and package provenance |
 ## CONVENTIONS
@@ -26,7 +27,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
 - Relationships use `relationship()` only when the code actually needs them.
 - Models should be persistence-oriented: columns, constraints, defaults, and relationships only.
-- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, versioned platform keys, and quote-cache lookup keys.
+- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, extension keys, versioned platform keys, and quote-cache lookup keys.
 - Use mixins from `base.py` instead of repeating `id`, `created_at`, or `updated_at` columns.
 
 ## ANTI-PATTERNS
@@ -48,9 +49,10 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 ```
 
 ## NOTES
-- `app/models/__init__.py` imports the full preserved-product and agent-platform model surface for startup registration.
+- `app/models/__init__.py` imports the full preserved-product, extension-state, and agent-platform model surface for startup registration.
 - `workflow_package.py` stores mutable package headers and immutable package version artifacts without database ids in exported manifests.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists package version identity, package hash, workflow key, per-step outputs, final output, and run totals used by the run monitor.
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Agent-created memory reports use `source="agent"`; their `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe purpose/type, while server-owned `metadata.createdBy.type="agent"` records provenance such as `runId`, `agentKey`, and `agentVersion`.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
+- `extension.py` stores `extension_states` rows keyed by bundled extension key; default enabled state is still declared in `app/extensions/registry.py` and seeded by DB upgrades.
