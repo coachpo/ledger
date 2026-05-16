@@ -217,11 +217,11 @@ def _build_skill(*, key: str, version: int, status: str, tools: list[str]) -> Ca
 
 def _reference_workflow_skill_tools(*, grant_report_lookup: bool) -> list[str]:
     tools = [
-        "ledger.market_data.quote_lookup",
-        "ledger.market_data.history_lookup",
+        "signaldeck.market_data.quote_lookup",
+        "signaldeck.market_data.history_lookup",
     ]
     if grant_report_lookup:
-        tools.append("ledger.reports.lookup")
+        tools.append("signaldeck.reports.lookup")
     return tools
 
 
@@ -241,7 +241,7 @@ def _build_mcp_server(
             "enabled": enabled,
             "transport": "stdio",
             "command": "python",
-            "args": ["-m", "ledger_market_data"],
+            "args": ["-m", "signaldeck_market_data"],
             "env": {},
         }
     else:
@@ -471,9 +471,9 @@ def _seed_backend_report_lookup_workflow(
         version=1,
         status="published",
         tools=(
-            ["ledger.reports.lookup"]
+            ["signaldeck.reports.lookup"]
             if grant_report_lookup
-            else ["ledger.market_data.quote_lookup"]
+            else ["signaldeck.market_data.quote_lookup"]
         ),
     )
     mcp_server = _build_mcp_server(
@@ -559,7 +559,7 @@ def _seed_backend_reports_write_workflow(
         version=1,
         status="published",
         tools=(
-            [REPORT_MEMORY_WRITE_TOOL_KEY] if grant_reports_write else ["ledger.reports.lookup"]
+            [REPORT_MEMORY_WRITE_TOOL_KEY] if grant_reports_write else ["signaldeck.reports.lookup"]
         ),
     )
     mcp_server = _build_mcp_server(
@@ -640,11 +640,11 @@ def _seed_backend_position_lookup_workflow(
     note_schema.json_schema = _reference_note_schema()
     tools: list[str] = []
     if grant_report_lookup:
-        tools.append("ledger.reports.lookup")
+        tools.append("signaldeck.reports.lookup")
     if grant_position_lookup:
-        tools.append("ledger.positions.lookup")
+        tools.append("signaldeck.positions.lookup")
     if not tools:
-        tools.append("ledger.market_data.quote_lookup")
+        tools.append("signaldeck.market_data.quote_lookup")
     skill = _build_skill(
         key=skill_key,
         version=1,
@@ -1344,7 +1344,7 @@ def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
         assert parameters.get("required") == list(properties)
         assert parameters.get("additionalProperties") is False
 
-        if tool.get("name") == "ledger_reports_lookup":
+        if tool.get("name") == "signaldeck_reports_lookup":
             assert properties["ticker"]["type"] == ["string", "null"]
             assert properties["tag"]["type"] == ["string", "null"]
             assert properties["reviewType"]["type"] == ["string", "null"]
@@ -1359,21 +1359,21 @@ def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
             ]
             assert properties["limit"]["type"] == ["integer", "null"]
             assert properties["offset"]["type"] == ["integer", "null"]
-        elif tool.get("name") == "ledger_positions_lookup":
+        elif tool.get("name") == "signaldeck_positions_lookup":
             assert properties["portfolioSlug"]["type"] == "string"
             assert properties["symbol"]["type"] == ["string", "null"]
             assert properties["limit"]["type"] == ["integer", "null"]
             assert properties["offset"]["type"] == ["integer", "null"]
-        elif tool.get("name") == "ledger_market_data_quote_lookup":
+        elif tool.get("name") == "signaldeck_market_data_quote_lookup":
             assert properties["symbols"]["type"] == "array"
             assert properties["symbols"]["maxItems"] == 10
             assert properties["baseCurrency"]["type"] == ["string", "null"]
-        elif tool.get("name") == "ledger_market_data_history_lookup":
+        elif tool.get("name") == "signaldeck_market_data_history_lookup":
             assert properties["symbols"]["type"] == "array"
             assert properties["symbols"]["maxItems"] == 5
             assert properties["range"]["enum"] == ["1mo", "3mo", "ytd", "1y", "max", None]
             assert properties["pointLimit"]["maximum"] == 250
-        elif tool.get("name") == "ledger_reports_write":
+        elif tool.get("name") == "signaldeck_reports_write":
             analysis_schema = properties["analysis"]
             assert analysis_schema["type"] == "object"
             analysis_properties = analysis_schema["properties"]
@@ -1392,7 +1392,7 @@ def _assert_openai_strict_tool_schemas(tools: list[dict[str, Any]]) -> None:
 class _RuntimeToolCallingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
-    expected_tool_names: list[str] | None = ["ledger_reports_lookup"]
+    expected_tool_names: list[str] | None = ["signaldeck_reports_lookup"]
     tool_arguments_json = '{"ticker":"NVDA","limit":1}'
     final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
     captured_lookup_arguments: list[dict[str, Any]] = []
@@ -1425,7 +1425,7 @@ class _RuntimeToolCallingOpenAIClient:
                 output=[
                     {
                         "type": "function_call",
-                        "name": "ledger_reports_lookup",
+                        "name": "signaldeck_reports_lookup",
                         "arguments": type(self).tool_arguments_json,
                         "call_id": "call_report_lookup_1",
                     }
@@ -1446,7 +1446,7 @@ class _RuntimeToolCallingOpenAIClient:
     def reset(cls) -> None:
         cls.init_calls = []
         cls.create_calls = []
-        cls.expected_tool_names = ["ledger_reports_lookup"]
+        cls.expected_tool_names = ["signaldeck_reports_lookup"]
         cls.tool_arguments_json = '{"ticker":"NVDA","limit":1}'
         cls.final_output_text = '{"summary":"tool loop output","signal":"bullish"}'
 
@@ -1454,8 +1454,8 @@ class _RuntimeToolCallingOpenAIClient:
 class _RuntimeReportsWriteToolCallingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
-    expected_tool_names: list[str] | None = ["ledger_reports_write"]
-    tool_call_name: str = "ledger_reports_write"
+    expected_tool_names: list[str] | None = ["signaldeck_reports_write"]
+    tool_call_name: str = "signaldeck_reports_write"
     tool_arguments_json = json.dumps(
         {
             "analysis": {
@@ -1524,8 +1524,8 @@ class _RuntimeReportsWriteToolCallingOpenAIClient:
     def reset(cls) -> None:
         cls.init_calls = []
         cls.create_calls = []
-        cls.expected_tool_names = ["ledger_reports_write"]
-        cls.tool_call_name = "ledger_reports_write"
+        cls.expected_tool_names = ["signaldeck_reports_write"]
+        cls.tool_call_name = "signaldeck_reports_write"
         cls.tool_arguments_json = json.dumps(
             {
                 "analysis": {
@@ -1549,8 +1549,8 @@ class _RuntimeReportsWriteToolCallingOpenAIClient:
 class _RuntimePositionToolCallingOpenAIClient:
     init_calls: list[dict[str, Any]] = []
     create_calls: list[dict[str, Any]] = []
-    expected_tool_names: list[str] | None = ["ledger_positions_lookup"]
-    tool_call_name: str | None = "ledger_positions_lookup"
+    expected_tool_names: list[str] | None = ["signaldeck_positions_lookup"]
+    tool_call_name: str | None = "signaldeck_positions_lookup"
     tool_arguments_json = (
         '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA","limit":1,"offset":0}'
     )
@@ -1612,8 +1612,8 @@ class _RuntimePositionToolCallingOpenAIClient:
     def reset(cls) -> None:
         cls.init_calls = []
         cls.create_calls = []
-        cls.expected_tool_names = ["ledger_positions_lookup"]
-        cls.tool_call_name = "ledger_positions_lookup"
+        cls.expected_tool_names = ["signaldeck_positions_lookup"]
+        cls.tool_call_name = "signaldeck_positions_lookup"
         cls.tool_arguments_json = (
             '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA","limit":1,"offset":0}'
         )
@@ -1649,7 +1649,7 @@ def test_agent_platform_capability_service_resolves_versioned_rows_to_server_dec
                 key="market_research",
                 version=1,
                 status="published",
-                tools=["ledger.market_data.quote_lookup", "ledger.reports.lookup"],
+                tools=["signaldeck.market_data.quote_lookup", "signaldeck.reports.lookup"],
             )
         )
         session.add(
@@ -1657,7 +1657,7 @@ def test_agent_platform_capability_service_resolves_versioned_rows_to_server_dec
                 key="market_research",
                 version=2,
                 status="draft",
-                tools=["ledger.market_data.history_lookup", "ledger.reports.lookup"],
+                tools=["signaldeck.market_data.history_lookup", "signaldeck.reports.lookup"],
             )
         )
         session.commit()
@@ -1668,14 +1668,14 @@ def test_agent_platform_capability_service_resolves_versioned_rows_to_server_dec
 
         assert published.capability_version == 1
         assert [tool.key for tool in published.tools] == [
-            "ledger.market_data.quote_lookup",
-            "ledger.reports.lookup",
+            "signaldeck.market_data.quote_lookup",
+            "signaldeck.reports.lookup",
         ]
         assert published.tools[0].module == "app.agents.tool_catalog.server_declared"
         assert draft.capability_version == 2
         assert [tool.key for tool in draft.tools] == [
-            "ledger.market_data.history_lookup",
-            "ledger.reports.lookup",
+            "signaldeck.market_data.history_lookup",
+            "signaldeck.reports.lookup",
         ]
 
 
@@ -1715,7 +1715,7 @@ def test_agent_platform_mcp_connection_test_builds_deterministic_boundaries(
         assert published_boundary.url == "https://example.com/mcp"
         assert published_boundary.headers == {"Authorization": "Bearer secret-token"}
         assert draft_boundary.transport == "stdio"
-        assert draft_boundary.command == ("python", "-m", "ledger_market_data")
+        assert draft_boundary.command == ("python", "-m", "signaldeck_market_data")
         assert draft_boundary.enabled is False
         assert tested.ok is True
         assert tested.message == "boundary ok"
@@ -2362,7 +2362,7 @@ def test_agent_platform_agent_run_route_uses_requested_agent_version_from_archiv
             key="market_research",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server_v1 = _build_mcp_server(
             key="market_data",
@@ -2502,7 +2502,7 @@ def test_agent_platform_agent_create_rejects_archived_model_connection_selection
             key="archived_agent_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="archived_agent_server",
@@ -2521,7 +2521,7 @@ def test_agent_platform_agent_create_rejects_archived_model_connection_selection
     response = client.post(
         "/api/agents",
         json={
-            "manifestSource": f"""apiVersion: ledger.agent/v1
+            "manifestSource": f"""apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: archived_save_agent
@@ -2793,7 +2793,7 @@ def test_agent_platform_run_chat_completions_tool_call_round_appends_tool_messag
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeChatCompletionsOpenAIClient.reset()
-    _RuntimeChatCompletionsOpenAIClient.tool_call_name = "ledger_reports_lookup"
+    _RuntimeChatCompletionsOpenAIClient.tool_call_name = "signaldeck_reports_lookup"
     _RuntimeChatCompletionsOpenAIClient.tool_arguments_json = (
         '{"ticker":"NVDA","tag":null,"reviewType":null,'
         '"portfolioSlug":null,"source":null,"limit":1,"offset":null}'
@@ -3155,7 +3155,7 @@ def test_agent_platform_workflow_validation_rejects_optional_slots_for_required_
             key="market_research",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="market_data",
@@ -3266,7 +3266,7 @@ def test_agent_platform_workflow_validation_allows_optional_slots_for_optional_f
             key="market_research",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="market_data",
@@ -3394,7 +3394,7 @@ def _create_single_agent_runtime_workflow(
         key=f"{agent_key}_skill",
         version=1,
         status="published",
-        tools=["ledger.market_data.quote_lookup"],
+        tools=["signaldeck.market_data.quote_lookup"],
     )
     mcp_server = _build_mcp_server(
         key=f"{agent_key}_server",
@@ -3622,7 +3622,7 @@ def test_agent_platform_workflow_run_creation_persists_planned_steps_and_invocat
 
 
 def _v2_graph_runtime_manifest_source() -> str:
-    return """apiVersion: ledger.workflow/v2
+    return """apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: v2_graph_runtime_workflow
@@ -3726,7 +3726,7 @@ def test_agent_platform_v2_workflow_run_detail_exposes_graph_metadata(
             key="v2_graph_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="v2_graph_server",
@@ -3851,7 +3851,7 @@ def test_agent_platform_v2_workflow_run_detail_exposes_graph_metadata(
 
 
 def _v2_loop_state_carry_manifest_source() -> str:
-    return """apiVersion: ledger.workflow/v2
+    return """apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: v2_loop_state_carry_runtime
@@ -3939,7 +3939,7 @@ def test_agent_platform_v2_loop_state_carries_between_iterations(
             key="v2_loop_state_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="v2_loop_state_server",
@@ -4001,7 +4001,7 @@ def _v2_post_run_memory_manifest_source(
     workflow_key: str,
     post_run_memory: str = "",
 ) -> str:
-    return f"""apiVersion: ledger.workflow/v2
+    return f"""apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: {workflow_key}
@@ -4534,7 +4534,7 @@ def test_agent_platform_run_http_routes_cover_trigger_detail_and_list_flow(
             key="http_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="http_server",
@@ -4712,7 +4712,7 @@ def test_agent_platform_run_trigger_persists_running_row_and_finishes_in_backgro
             key="market_research",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="market_data",
@@ -4955,7 +4955,7 @@ def test_agent_platform_run_detail_lists_persisted_monitor_fields_after_completi
             key="detail_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="detail_server",
@@ -5076,7 +5076,7 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeToolCallingOpenAIClient.reset()
-    _RuntimeToolCallingOpenAIClient.expected_tool_names = ["ledger_market_data_quote_lookup"]
+    _RuntimeToolCallingOpenAIClient.expected_tool_names = ["signaldeck_market_data_quote_lookup"]
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeToolCallingOpenAIClient)
 
     with session_factory() as session:
@@ -5123,8 +5123,8 @@ def test_agent_platform_report_lookup_run_requires_capability_grant(
     first_tool_names = [
         tool["name"] for tool in _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
-    assert first_tool_names == ["ledger_market_data_quote_lookup"]
-    assert "ledger_reports_lookup" not in first_tool_names
+    assert first_tool_names == ["signaldeck_market_data_quote_lookup"]
+    assert "signaldeck_reports_lookup" not in first_tool_names
 
 
 def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
@@ -5243,7 +5243,7 @@ def test_agent_platform_report_lookup_run_uses_backend_owned_report_boundary(
     assert isinstance(captured_lookup_calls[0]["capability_references"], list)
     assert (
         _RuntimeToolCallingOpenAIClient.create_calls[0]["tools"][0]["name"]
-        == "ledger_reports_lookup"
+        == "signaldeck_reports_lookup"
     )
     assert (
         "nvda_backend_lookup"
@@ -5257,7 +5257,7 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeReportsWriteToolCallingOpenAIClient.reset()
-    _RuntimeReportsWriteToolCallingOpenAIClient.expected_tool_names = ["ledger_reports_lookup"]
+    _RuntimeReportsWriteToolCallingOpenAIClient.expected_tool_names = ["signaldeck_reports_lookup"]
     monkeypatch.setattr(
         "app.services.run_service.OpenAI",
         _RuntimeReportsWriteToolCallingOpenAIClient,
@@ -5295,8 +5295,8 @@ def test_agent_platform_reports_write_run_requires_capability_grant(
         tool["name"]
         for tool in _RuntimeReportsWriteToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
-    assert first_tool_names == ["ledger_reports_lookup"]
-    assert "ledger_reports_write" not in first_tool_names
+    assert first_tool_names == ["signaldeck_reports_lookup"]
+    assert "signaldeck_reports_write" not in first_tool_names
 
 
 def test_post_run_memory_artifacts_use_agent_source(
@@ -5391,7 +5391,7 @@ def test_agent_platform_position_lookup_run_requires_capability_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
-    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = ["ledger_reports_lookup"]
+    _RuntimePositionToolCallingOpenAIClient.expected_tool_names = ["signaldeck_reports_lookup"]
     _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
         '{"portfolioSlug":"position_lookup_reference","symbol":"NVDA"}'
     )
@@ -5429,8 +5429,8 @@ def test_agent_platform_position_lookup_run_requires_capability_grant(
     first_tool_names = [
         tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
-    assert first_tool_names == ["ledger_reports_lookup"]
-    assert "ledger_positions_lookup" not in first_tool_names
+    assert first_tool_names == ["signaldeck_reports_lookup"]
+    assert "signaldeck_positions_lookup" not in first_tool_names
 
 
 def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary(
@@ -5529,7 +5529,7 @@ def test_agent_platform_position_lookup_run_uses_backend_owned_position_boundary
     )
     assert (
         _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"][0]["name"]
-        == "ledger_positions_lookup"
+        == "signaldeck_positions_lookup"
     )
     tool_output = json.loads(
         _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
@@ -5569,8 +5569,8 @@ def test_agent_platform_position_lookup_tool_order_is_deterministic_when_report_
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
     _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
-        "ledger_reports_lookup",
-        "ledger_positions_lookup",
+        "signaldeck_reports_lookup",
+        "signaldeck_positions_lookup",
     ]
     _RuntimePositionToolCallingOpenAIClient.tool_call_name = None
     _RuntimePositionToolCallingOpenAIClient.final_output_text = (
@@ -5604,7 +5604,7 @@ def test_agent_platform_position_lookup_tool_order_is_deterministic_when_report_
     }
     assert [
         tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
-    ] == ["ledger_reports_lookup", "ledger_positions_lookup"]
+    ] == ["signaldeck_reports_lookup", "signaldeck_positions_lookup"]
 
 
 @pytest.mark.parametrize(
@@ -5613,27 +5613,27 @@ def test_agent_platform_position_lookup_tool_order_is_deterministic_when_report_
         (
             "unsupported_field",
             '{"portfolioSlug":"position_lookup_reference","unsupported":true}',
-            "ledger_positions_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_positions_lookup arguments contained unsupported fields: unsupported",
         ),
         (
             "non_string_portfolio_slug",
             '{"portfolioSlug":123}',
-            "ledger_positions_lookup portfolioSlug must be a string.",
+            "signaldeck_positions_lookup portfolioSlug must be a string.",
         ),
         (
             "non_integer_limit",
             '{"portfolioSlug":"position_lookup_reference","limit":"1"}',
-            "ledger_positions_lookup limit must be an integer.",
+            "signaldeck_positions_lookup limit must be an integer.",
         ),
         (
             "limit_too_high",
             '{"portfolioSlug":"position_lookup_reference","limit":201}',
-            "ledger_positions_lookup limit must be at most 200.",
+            "signaldeck_positions_lookup limit must be at most 200.",
         ),
         (
             "negative_offset",
             '{"portfolioSlug":"position_lookup_reference","offset":-1}',
-            "ledger_positions_lookup offset must be at least 0.",
+            "signaldeck_positions_lookup offset must be at least 0.",
         ),
     ],
     ids=[
@@ -5658,7 +5658,7 @@ def test_agent_platform_position_lookup_run_rejects_invalid_tool_arguments(
 
     def fail_lookup_positions(self: PositionService, **kwargs: Any) -> list[PositionRead]:
         del self, kwargs
-        raise AssertionError("invalid ledger_positions_lookup arguments should not hit service")
+        raise AssertionError("invalid signaldeck_positions_lookup arguments should not hit service")
 
     monkeypatch.setattr(PositionService, "lookup_positions", fail_lookup_positions)
 
@@ -5747,9 +5747,9 @@ def test_agent_platform_quote_lookup_run_uses_injected_market_data_provider(
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
     _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
-        "ledger_market_data_quote_lookup"
+        "signaldeck_market_data_quote_lookup"
     ]
-    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_quote_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "signaldeck_market_data_quote_lookup"
     _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
         '{"symbols":[" nvda "],"baseCurrency":null}'
     )
@@ -5764,7 +5764,7 @@ def test_agent_platform_quote_lookup_run_uses_injected_market_data_provider(
     with session_factory() as session:
         workflow = _seed_backend_market_data_lookup_workflow(
             session,
-            tool_key="ledger.market_data.quote_lookup",
+            tool_key="signaldeck.market_data.quote_lookup",
             workflow_key="backend_quote_lookup_runtime",
             skill_key="backend_quote_lookup_runtime_skill",
             agent_key="quote_lookup_reader",
@@ -5792,7 +5792,7 @@ def test_agent_platform_quote_lookup_run_uses_injected_market_data_provider(
     tool_output = json.loads(
         _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
     )
-    assert tool_output["toolKey"] == "ledger.market_data.quote_lookup"
+    assert tool_output["toolKey"] == "signaldeck.market_data.quote_lookup"
     assert tool_output["quotes"][0]["previousClose"] == "119.75000000"
     assert tool_output["quotes"][0]["asOf"] == "2026-01-02T03:04:05Z"
     assert tool_output["quotes"][0]["isStale"] is True
@@ -5805,9 +5805,9 @@ def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
     _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
-        "ledger_market_data_history_lookup"
+        "signaldeck_market_data_history_lookup"
     ]
-    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_history_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "signaldeck_market_data_history_lookup"
     _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = (
         '{"symbols":["NVDA"],"range":"3mo","pointLimit":2}'
     )
@@ -5822,7 +5822,7 @@ def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
     with session_factory() as session:
         workflow = _seed_backend_market_data_lookup_workflow(
             session,
-            tool_key="ledger.market_data.history_lookup",
+            tool_key="signaldeck.market_data.history_lookup",
             workflow_key="backend_history_lookup_runtime",
             skill_key="backend_history_lookup_runtime_skill",
             agent_key="history_lookup_reader",
@@ -5850,7 +5850,7 @@ def test_agent_platform_history_lookup_run_uses_injected_market_data_provider(
     tool_output = json.loads(
         _RuntimePositionToolCallingOpenAIClient.create_calls[1]["input"][0]["output"]
     )
-    assert tool_output["toolKey"] == "ledger.market_data.history_lookup"
+    assert tool_output["toolKey"] == "signaldeck.market_data.history_lookup"
     assert tool_output["endDate"] == "2026-01-02T03:04:05Z"
     assert tool_output["series"][0]["points"] == [
         {"at": "2026-01-02T00:04:05Z", "close": "119.75"},
@@ -5865,9 +5865,9 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
     _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
-        "ledger_market_data_quote_lookup"
+        "signaldeck_market_data_quote_lookup"
     ]
-    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_ohlcv_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "signaldeck_market_data_ohlcv_lookup"
     _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = json.dumps(
         {
             "symbols": ["NVDA"],
@@ -5884,7 +5884,7 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
     with session_factory() as session:
         workflow = _seed_backend_market_data_lookup_workflow(
             session,
-            tool_key="ledger.market_data.quote_lookup",
+            tool_key="signaldeck.market_data.quote_lookup",
             workflow_key="backend_ohlcv_lookup_without_grant",
             skill_key="backend_ohlcv_lookup_without_grant_skill",
             agent_key="ohlcv_lookup_denied_reader",
@@ -5904,7 +5904,7 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
         app.dependency_overrides.pop(get_quote_provider, None)
 
     step_entry = detail["steps"][0]["invocations"][0]
-    expected_message = "Agent is not authorized to use ledger.market_data.ohlcv_lookup."
+    expected_message = "Agent is not authorized to use signaldeck.market_data.ohlcv_lookup."
 
     assert detail["status"] == "failed"
     assert detail["finalOutput"] is None
@@ -5918,8 +5918,8 @@ def test_agent_platform_ohlcv_lookup_run_requires_capability_grant(
     first_tool_names = [
         tool["name"] for tool in _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"]
     ]
-    assert first_tool_names == ["ledger_market_data_quote_lookup"]
-    assert "ledger_market_data_ohlcv_lookup" not in first_tool_names
+    assert first_tool_names == ["signaldeck_market_data_quote_lookup"]
+    assert "signaldeck_market_data_ohlcv_lookup" not in first_tool_names
     assert len(_RuntimePositionToolCallingOpenAIClient.create_calls) == 1
     assert quote_provider.ohlcv_calls == []
 
@@ -5931,9 +5931,9 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
 ) -> None:
     _RuntimePositionToolCallingOpenAIClient.reset()
     _RuntimePositionToolCallingOpenAIClient.expected_tool_names = [
-        "ledger_market_data_ohlcv_lookup"
+        "signaldeck_market_data_ohlcv_lookup"
     ]
-    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "ledger_market_data_ohlcv_lookup"
+    _RuntimePositionToolCallingOpenAIClient.tool_call_name = "signaldeck_market_data_ohlcv_lookup"
     _RuntimePositionToolCallingOpenAIClient.tool_arguments_json = json.dumps(
         {
             "symbols": [" nvda "],
@@ -5953,7 +5953,7 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
     with session_factory() as session:
         workflow = _seed_backend_market_data_lookup_workflow(
             session,
-            tool_key="ledger.market_data.ohlcv_lookup",
+            tool_key="signaldeck.market_data.ohlcv_lookup",
             workflow_key="backend_ohlcv_lookup_runtime",
             skill_key="backend_ohlcv_lookup_runtime_skill",
             agent_key="ohlcv_lookup_reader",
@@ -5986,7 +5986,7 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
         )
     ]
     first_tool = _RuntimePositionToolCallingOpenAIClient.create_calls[0]["tools"][0]
-    assert first_tool["name"] == "ledger_market_data_ohlcv_lookup"
+    assert first_tool["name"] == "signaldeck_market_data_ohlcv_lookup"
     assert first_tool["parameters"]["required"] == [
         "symbols",
         "startDate",
@@ -6000,7 +6000,7 @@ def test_agent_platform_ohlcv_lookup_run_uses_injected_market_data_provider(
     )
     output_json = json.dumps(tool_output)
     assert "adjusted_close" not in output_json
-    assert tool_output["toolKey"] == "ledger.market_data.ohlcv_lookup"
+    assert tool_output["toolKey"] == "signaldeck.market_data.ohlcv_lookup"
     assert tool_output["startDate"] == "2026-01-01T00:00:00Z"
     assert tool_output["endDate"] == "2026-01-03T16:00:00Z"
     assert tool_output["warnings"] == []
@@ -6058,7 +6058,7 @@ def test_agent_platform_budget_metadata_does_not_enforce_agent_runtime_cost(
             key="budget_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="budget_server",
@@ -6159,7 +6159,7 @@ def test_agent_platform_budget_metadata_does_not_enforce_aggregate_runtime_cost(
             key="aggregate_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="aggregate_server",
@@ -6282,7 +6282,7 @@ def test_agent_platform_optional_agent_failure_keeps_optional_downstream_running
             key="optional_skill",
             version=1,
             status="published",
-            tools=["ledger.market_data.quote_lookup"],
+            tools=["signaldeck.market_data.quote_lookup"],
         )
         mcp_server = _build_mcp_server(
             key="optional_server",
@@ -6994,7 +6994,7 @@ def _create_replay_runtime_workflow(
         key=f"{workflow_key}_skill",
         version=1,
         status="published",
-        tools=["ledger.market_data.quote_lookup"],
+        tools=["signaldeck.market_data.quote_lookup"],
     )
     mcp_server = _build_mcp_server(
         key=f"{workflow_key}_server",

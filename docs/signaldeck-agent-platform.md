@@ -1,10 +1,10 @@
-# Ledger Agent Platform Reference
+# SignalDeck Agent Platform Reference
 
 > Status: Live package-first platform reference for branch `main` at `33c2584`. This is the canonical platform reference.
 
 ## Scope
 
-Ledger ships a package-first agent platform beside the preserved portfolio, template, and report product areas. Users author Workflow Packages, bind package agents to global Model Connections, reference read-only global Tools, launch package runs, and inspect persisted Runs from the browser.
+SignalDeck ships a package-first agent platform beside the preserved portfolio, template, and report product areas. Users author Workflow Packages, bind package agents to global Model Connections, reference read-only global Tools, launch package runs, and inspect persisted Runs from the browser.
 
 This document describes shipped behavior only. Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, and retired legacy global authoring routes are not live surfaces.
 
@@ -19,11 +19,11 @@ This document describes shipped behavior only. Studio, Tryout, orchestration, ru
 | Tools | `/api/tools` | surfaced inside package capability-profile editors |
 | Runs | `/api/runs*` | `/runs*` |
 
-Preserved finance product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`. They are bundled in `ledger.finance`, which is enabled by default and supports enable/disable state only. Generic platform capabilities remain core: Workflow Packages, Model Connections, Runs, HTTP operation nodes, package secret bindings, manifest parsing, and the `/api/tools` discovery host.
+Preserved finance product routes remain under `/api/v1` and `/portfolios*`, `/templates*`, and `/reports*`. They are bundled in `signaldeck.finance`, which is enabled by default and supports enable/disable state only. Generic platform capabilities remain core: Workflow Packages, Model Connections, Runs, HTTP operation nodes, package secret bindings, manifest parsing, and the `/api/tools` discovery host.
 
 ## Workflow Packages
 
-Workflow Packages are the only live platform authoring root. Manifests use `ledger.workflowPackage/v1` YAML and store package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes inside immutable package versions.
+Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes inside immutable package versions.
 
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles. Workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
@@ -78,11 +78,11 @@ Read payloads and errors must mask or omit raw secrets. Blank API-key edits pres
 
 ## Tools
 
-Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are `ledger.finance` contributions.
+Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are `signaldeck.finance` contributions.
 
-Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. They remain visible to smoke and demo Workflow Packages while `ledger.finance` is enabled by default. Runtime tool keys and OpenAI function names stay stable. Examples include `ledger.market_data.ohlcv_lookup`, `ledger.indicators.lookup`, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, `ledger.reports.lookup`, `ledger.reports.write`, and OpenAI function names such as `ledger_social_sentiment_lookup` and `ledger_reports_lookup`.
+Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. They remain visible to smoke and demo Workflow Packages while `signaldeck.finance` is enabled by default. Runtime tool keys and OpenAI function names stay stable. Examples include `signaldeck.market_data.ohlcv_lookup`, `signaldeck.indicators.lookup`, `signaldeck.news.lookup`, `signaldeck.social_sentiment.lookup`, `signaldeck.reports.lookup`, `signaldeck.reports.write`, and OpenAI function names such as `signaldeck_social_sentiment_lookup` and `signaldeck_reports_lookup`.
 
-`ledger.news.lookup` remains the company/query/macro news contract. `ledger.social_sentiment.lookup` is separate and additive: it accepts `symbol`, optional `sources` (`reddit`, `stocktwits`), optional `startDate`, optional `endDate`, and optional `itemLimit` capped at `50`; output contains `sourceBlocks`, aggregate `metrics`, and structured `warnings`. Provider outage, timeout, rate-limit, empty-source, partial-result, and truncation paths return deterministic warnings rather than raw provider errors.
+`signaldeck.news.lookup` remains the company/query/macro news contract. `signaldeck.social_sentiment.lookup` is separate and additive: it accepts `symbol`, optional `sources` (`reddit`, `stocktwits`), optional `startDate`, optional `endDate`, and optional `itemLimit` capped at `50`; output contains `sourceBlocks`, aggregate `metrics`, and structured `warnings`. Provider outage, timeout, rate-limit, empty-source, partial-result, and truncation paths return deterministic warnings rather than raw provider errors.
 
 The canonical TradingAgents-style advisory package grants native data/news/social/report tools through package-local capability profiles, uses explicit analyst `sequence` topology, and remains advisory-only. It may propose a portfolio decision but does not execute trades, draft brokerage operations, or add LangGraph-specific checkpoint/runtime semantics.
 
@@ -162,7 +162,7 @@ Each milestone has a deterministic targeted command, and the combined command is
 (cd frontend && pnpm typecheck)
 
 # Public contract docs grep check
-rg -n "kind: http|ledger.social_sentiment.lookup|operation invocation|secret binding" docs/api-design.md docs/ledger-agent-platform.md
+rg -n "kind: http|signaldeck.social_sentiment.lookup|operation invocation|secret binding" docs/api-design.md docs/signaldeck-agent-platform.md
 ```
 
 Security override coverage stays focused and test-only:

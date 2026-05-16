@@ -23,8 +23,8 @@ from tests.test_workflow_package_manifest_parser import _valid_package_manifest_
 
 def test_unknown_tool_key_is_package_diagnostic() -> None:
     source = _valid_package_manifest_source().replace(
-        "ledger.market_data.quote_lookup",
-        "ledger.stock_analysis.report_lookup",
+        "signaldeck.market_data.quote_lookup",
+        "signaldeck.stock_analysis.report_lookup",
         1,
     )
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -32,7 +32,7 @@ def test_unknown_tool_key_is_package_diagnostic() -> None:
 
     assert any(
         diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
-        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'"
+        and "Unknown server-declared tool 'signaldeck.stock_analysis.report_lookup'"
         in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )

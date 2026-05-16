@@ -10,7 +10,7 @@ import {
 
 const WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH = 262_144;
 
-const twoStepManifest = `apiVersion: ledger.workflow/v1
+const twoStepManifest = `apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: market_review
@@ -62,7 +62,7 @@ describe("workflow manifest helpers", () => {
 
     expect(parsed.diagnostics).toEqual([]);
     expect(parsed.value).toMatchObject({
-      apiVersion: "ledger.workflow/v1",
+      apiVersion: "signaldeck.workflow/v1",
       kind: "Workflow",
       metadata: {
         key: "ticker_review",
@@ -102,7 +102,7 @@ describe("workflow manifest helpers", () => {
   });
 
   it("accepts v2 flow locally without requiring v1 steps and warns for unbounded loops", () => {
-    const source = `apiVersion: ledger.workflow/v2
+    const source = `apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: graph_review
@@ -147,7 +147,7 @@ output:
   });
 
   it("returns lightweight local diagnostics for malformed YAML without claiming backend authority", () => {
-    const result = parseWorkflowManifestLocallyForEditor(`apiVersion: ledger.workflow/v1
+    const result = parseWorkflowManifestLocallyForEditor(`apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: [broken
@@ -237,7 +237,7 @@ metadata:
 
   it("formats valid YAML into stable manifest order and returns diagnostics for invalid YAML", () => {
     const result = formatWorkflowManifestYaml(`kind: Workflow
-apiVersion: ledger.workflow/v1
+apiVersion: signaldeck.workflow/v1
 output:
   from: \${{ steps.research.outputs.analysis }}
 steps:
@@ -263,7 +263,7 @@ metadata:
 `);
 
     expect(result.diagnostics).toEqual([]);
-    expect(result.formatted).toBe(`apiVersion: ledger.workflow/v1
+    expect(result.formatted).toBe(`apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: market_review

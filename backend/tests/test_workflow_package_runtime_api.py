@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.models.run import Run
@@ -64,7 +64,7 @@ class _RuntimeRecordingOpenAIClient:
 
 
 def _package_source(*, package_key: str = "runtime_package") -> str:
-    return f"""apiVersion: ledger.workflowPackage/v1
+    return f"""apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: {package_key}
@@ -351,7 +351,7 @@ def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
 
     _seed_model_connection(
         session_factory,
-        base_url="https://ledger-deterministic-model.local/v1",
+        base_url="https://signaldeck-deterministic-model.local/v1",
     )
     created = _create_package(client, package_key="runtime_provider_host_package")
 
@@ -370,7 +370,7 @@ def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
     assert detail["executedTokens"] == 23
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
         "api_key": "sk-package-runtime-v1",
-        "base_url": "https://ledger-deterministic-model.local/v1",
+        "base_url": "https://signaldeck-deterministic-model.local/v1",
         "timeout": 31.0,
     }
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"

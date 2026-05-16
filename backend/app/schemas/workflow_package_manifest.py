@@ -18,7 +18,7 @@ from pydantic import (
 
 from app.schemas.common import CamelModel
 
-WORKFLOW_PACKAGE_MANIFEST_API_VERSION = "ledger.workflowPackage/v1"
+WORKFLOW_PACKAGE_MANIFEST_API_VERSION = "signaldeck.workflowPackage/v1"
 WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS = ("GET", "POST")
 
 _STABLE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
@@ -688,7 +688,7 @@ class WorkflowPackageManifestSpec(CamelModel):
 
 
 class WorkflowPackageManifest(CamelModel):
-    api_version: Literal["ledger.workflowPackage/v1"] = Field(alias="apiVersion")
+    api_version: Literal["signaldeck.workflowPackage/v1"] = Field(alias="apiVersion")
     kind: Literal["WorkflowPackage"]
     metadata: WorkflowPackageManifestMetadata
     spec: WorkflowPackageManifestSpec

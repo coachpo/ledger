@@ -94,7 +94,7 @@ from app.agents.runtime_tools.types import (
     RuntimeToolWarning,
 )
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
@@ -149,12 +149,12 @@ _GENERIC_PLATFORM_RUNTIME_TOOL_KEYS = (
     INSIDER_DATA_LOOKUP_TOOL_KEY,
 )
 _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
-    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY: "ledger_market_data_ohlcv_lookup",
-    INDICATORS_LOOKUP_TOOL_KEY: "ledger_indicators_lookup",
-    FUNDAMENTALS_LOOKUP_TOOL_KEY: "ledger_fundamentals_lookup",
-    NEWS_LOOKUP_TOOL_KEY: "ledger_news_lookup",
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY: "ledger_social_sentiment_lookup",
-    INSIDER_DATA_LOOKUP_TOOL_KEY: "ledger_insider_data_lookup",
+    MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY: "signaldeck_market_data_ohlcv_lookup",
+    INDICATORS_LOOKUP_TOOL_KEY: "signaldeck_indicators_lookup",
+    FUNDAMENTALS_LOOKUP_TOOL_KEY: "signaldeck_fundamentals_lookup",
+    NEWS_LOOKUP_TOOL_KEY: "signaldeck_news_lookup",
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY: "signaldeck_social_sentiment_lookup",
+    INSIDER_DATA_LOOKUP_TOOL_KEY: "signaldeck_insider_data_lookup",
 }
 _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
@@ -279,8 +279,8 @@ def _execute_noop(
 
 def _runtime_tool_spec(
     *,
-    key: str = "ledger.test.lookup",
-    openai_function_name: str = "ledger_test_lookup",
+    key: str = "signaldeck.test.lookup",
+    openai_function_name: str = "signaldeck_test_lookup",
     sort_order: int = 10,
 ) -> RuntimeToolSpec:
     return RuntimeToolSpec(
@@ -807,7 +807,9 @@ def _ohlcv_series() -> RuntimeOhlcvSeries:
     )
 
 
-def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contract_only() -> None:
+def test_native_runtime_financial_tool_result_keys_are_signaldeck_prefixed_and_contract_only() -> (
+    None
+):
     assert NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS == (
         MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
         MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
@@ -819,13 +821,17 @@ def test_native_runtime_financial_tool_result_keys_are_ledger_prefixed_and_contr
         INSIDER_DATA_LOOKUP_TOOL_KEY,
         REPORT_MEMORY_WRITE_TOOL_KEY,
     )
-    assert all(tool_key.startswith("ledger.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
+    assert all(
+        tool_key.startswith("signaldeck.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS
+    )
     assert set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS) <= set(NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS)
 
-    with pytest.raises(ValidationError, match="Native runtime tool keys must start with ledger"):
+    with pytest.raises(
+        ValidationError, match="Native runtime tool keys must start with signaldeck"
+    ):
         _ = RuntimeNativeToolResult.model_validate({"toolKey": "external.market_data.quote_lookup"})
     with pytest.raises(ValidationError, match="not registered as a financial tool result"):
-        _ = RuntimeNativeToolResult.model_validate({"toolKey": "ledger.unregistered.lookup"})
+        _ = RuntimeNativeToolResult.model_validate({"toolKey": "signaldeck.unregistered.lookup"})
 
 
 def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
@@ -836,10 +842,10 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert server_declared_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert runtime_spec_keys == server_declared_keys
-    assert not any(tool_key.startswith("ledger.memory.") for tool_key in runtime_spec_keys)
-    assert not any(tool_key.startswith("ledger.memory.") for tool_key in server_declared_keys)
-    assert "ledger_memory_lookup" not in runtime_function_names
-    assert "ledger_memory_write" not in runtime_function_names
+    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in runtime_spec_keys)
+    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in server_declared_keys)
+    assert "signaldeck_memory_lookup" not in runtime_function_names
+    assert "signaldeck_memory_write" not in runtime_function_names
 
 
 def test_generic_platform_runtime_tool_specs_have_expected_openai_function_names() -> None:
@@ -876,7 +882,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         warnings=[warning],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(quote_payload)
-    assert quote_payload["toolKey"] == "ledger.market_data.quote_lookup"
+    assert quote_payload["toolKey"] == "signaldeck.market_data.quote_lookup"
     assert quote_payload["quotes"][0]["previousClose"] == "119.75000000"
     assert quote_payload["quotes"][0]["asOf"] == "2026-01-02T03:04:05Z"
     assert quote_payload["quotes"][0]["isStale"] is False
@@ -896,7 +902,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         series=[_history_series_read()],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(history_payload)
-    assert history_payload["toolKey"] == "ledger.market_data.history_lookup"
+    assert history_payload["toolKey"] == "signaldeck.market_data.history_lookup"
     assert history_payload["endDate"] == "2026-01-02T03:04:05Z"
     assert history_payload["series"][0]["points"][0] == {
         "at": "2026-01-01T00:00:00Z",
@@ -909,7 +915,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         series=[_ohlcv_series()],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(ohlcv_payload)
-    assert ohlcv_payload["toolKey"] == "ledger.market_data.ohlcv_lookup"
+    assert ohlcv_payload["toolKey"] == "signaldeck.market_data.ohlcv_lookup"
     assert ohlcv_payload["series"][0]["rows"][0]["adjustedClose"] == "119.50"
 
     indicator_payload = RuntimeIndicatorLookupResult(
@@ -930,7 +936,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(indicator_payload)
-    assert indicator_payload["toolKey"] == "ledger.indicators.lookup"
+    assert indicator_payload["toolKey"] == "signaldeck.indicators.lookup"
     assert indicator_payload["currentDate"] == "2026-01-02T03:04:05Z"
     assert indicator_payload["rows"][0]["values"][0] == {
         "name": "sma_20",
@@ -967,7 +973,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(fundamentals_payload)
-    assert fundamentals_payload["toolKey"] == "ledger.fundamentals.lookup"
+    assert fundamentals_payload["toolKey"] == "signaldeck.fundamentals.lookup"
     assert fundamentals_payload["metrics"][0]["asOf"] == "2026-01-02T03:04:05Z"
     assert fundamentals_payload["statements"][0]["statementType"] == "income_statement"
     assert fundamentals_payload["statements"][0]["periodEnd"] == "2026-01-02T03:04:05Z"
@@ -988,7 +994,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(news_payload)
-    assert news_payload["toolKey"] == "ledger.news.lookup"
+    assert news_payload["toolKey"] == "signaldeck.news.lookup"
     assert news_payload["items"][0]["publishedAt"] == "2026-01-02T03:04:05Z"
 
     social_sentiment_payload = RuntimeSocialSentimentLookupResult(
@@ -1020,7 +1026,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         warnings=[warning],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(social_sentiment_payload)
-    assert social_sentiment_payload["toolKey"] == "ledger.social_sentiment.lookup"
+    assert social_sentiment_payload["toolKey"] == "signaldeck.social_sentiment.lookup"
     assert social_sentiment_payload["symbol"] == "NVDA"
     assert social_sentiment_payload["sources"] == ["reddit", "stocktwits"]
     assert social_sentiment_payload["sourceBlocks"][0]["source"] == "reddit"
@@ -1044,7 +1050,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(insider_payload)
-    assert insider_payload["toolKey"] == "ledger.insider_data.lookup"
+    assert insider_payload["toolKey"] == "signaldeck.insider_data.lookup"
     assert insider_payload["transactions"][0]["insiderName"] == "Ada Lovelace"
     assert insider_payload["transactions"][0]["transactionDate"] == "2026-01-02T03:04:05Z"
     assert insider_payload["transactions"][0]["filedAt"] == "2026-01-02T03:04:05Z"
@@ -1066,7 +1072,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
     _assert_native_runtime_payload_is_json_safe_and_camel(memory_payload)
     _assert_reports_write_payload_is_model_visible_memory(memory_payload)
     assert memory_payload == {
-        "toolKey": "ledger.reports.write",
+        "toolKey": "signaldeck.reports.write",
         "memoryId": "mem_7",
         "status": "pending",
         "action": "created",
@@ -1501,7 +1507,7 @@ def test_market_data_indicator_snapshot_uses_bounded_ohlcv_without_lookahead(
     assert provider.ohlcv_calls == [("NVDA", start_date, current_date, "1d")]
     payload = result.model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
-    assert payload["toolKey"] == "ledger.indicators.lookup"
+    assert payload["toolKey"] == "signaldeck.indicators.lookup"
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "fake_runtime_provider"
     assert payload["currentDate"] == "2026-01-03T16:00:00Z"
@@ -1671,8 +1677,8 @@ def test_report_lookup_accepts_agent_source() -> None:
 
 
 def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_execution_fields() -> None:
-    assert REPORT_LOOKUP_TOOL_KEY == "ledger.reports.lookup"
-    assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "ledger_reports_lookup"
+    assert REPORT_LOOKUP_TOOL_KEY == "signaldeck.reports.lookup"
+    assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_reports_lookup"
     assert REPORT_LOOKUP_TOOL_SPEC.key == REPORT_LOOKUP_TOOL_KEY
     assert REPORT_LOOKUP_TOOL_SPEC.openai_function_name == REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     assert REPORT_LOOKUP_TOOL_SPEC.display_name == "Report Lookup"
@@ -1680,8 +1686,8 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.openai_function_name
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.description
 
-    assert REPORT_MEMORY_WRITE_TOOL_KEY == "ledger.reports.write"
-    assert REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME == "ledger_reports_write"
+    assert REPORT_MEMORY_WRITE_TOOL_KEY == "signaldeck.reports.write"
+    assert REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME == "signaldeck_reports_write"
     assert REPORT_MEMORY_WRITE_TOOL_SPEC.key == REPORT_MEMORY_WRITE_TOOL_KEY
     assert (
         REPORT_MEMORY_WRITE_TOOL_SPEC.openai_function_name
@@ -1712,7 +1718,7 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
 
     field_name = "key"
     with pytest.raises(FrozenInstanceError):
-        setattr(REPORT_LOOKUP_TOOL_SPEC, field_name, "ledger.changed")
+        setattr(REPORT_LOOKUP_TOOL_SPEC, field_name, "signaldeck.changed")
 
 
 def test_runtime_tool_context_carries_execution_identity_for_trusted_tools() -> None:
@@ -1753,11 +1759,11 @@ def test_runtime_tool_registry_rejects_duplicate_keys_and_openai_function_names(
 
     with pytest.raises(ValueError, match="Duplicate runtime tool key"):
         _ = RuntimeToolRegistry(
-            [spec, replace(spec, openai_function_name="ledger_test_lookup_alt")]
+            [spec, replace(spec, openai_function_name="signaldeck_test_lookup_alt")]
         )
 
     with pytest.raises(ValueError, match="Duplicate runtime tool OpenAI function name"):
-        _ = RuntimeToolRegistry([spec, replace(spec, key="ledger.test.lookup.alt")])
+        _ = RuntimeToolRegistry([spec, replace(spec, key="signaldeck.test.lookup.alt")])
 
 
 def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order() -> None:
@@ -1771,11 +1777,11 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
     for tool in tools:
         _assert_strict_openai_tool_schema(tool)
     assert tools[0]["description"] == (
-        "Read persisted Ledger reports by ticker, tag, review type, portfolio slug, source, "
+        "Read persisted SignalDeck reports by ticker, tag, review type, portfolio slug, source, "
         "limit, and offset."
     )
     assert tools[1]["description"] == (
-        "Read persisted Ledger positions for a portfolio slug, optionally filtered by symbol, "
+        "Read persisted SignalDeck positions for a portfolio slug, optionally filtered by symbol, "
         "limit, and offset."
     )
 
@@ -1925,10 +1931,10 @@ def test_runtime_tool_registry_aggregates_guidance_in_sort_order() -> None:
     registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
 
     assert registry.get_guidance({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}) == (
-        "When you need persisted Ledger report context, call the ledger_reports_lookup tool "
-        "instead of inventing report content.\n\n"
-        "When you need persisted Ledger position context, call the ledger_positions_lookup tool "
-        "instead of inventing portfolio holdings."
+        "When you need persisted SignalDeck report context, call the "
+        "signaldeck_reports_lookup tool instead of inventing report content.\n\n"
+        "When you need persisted SignalDeck position context, call the "
+        "signaldeck_positions_lookup tool instead of inventing portfolio holdings."
     )
     assert registry.get_guidance(set()) == ""
 
@@ -1938,15 +1944,15 @@ def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> N
 
     guidance = registry.get_guidance(set(_GENERIC_PLATFORM_RUNTIME_TOOL_KEYS))
 
-    assert "call ledger_market_data_ohlcv_lookup" in guidance
-    assert "call ledger_indicators_lookup" in guidance
-    assert "call ledger_fundamentals_lookup" in guidance
+    assert "call signaldeck_market_data_ohlcv_lookup" in guidance
+    assert "call signaldeck_indicators_lookup" in guidance
+    assert "call signaldeck_fundamentals_lookup" in guidance
     assert "instead of inventing metrics" in guidance
-    assert "call ledger_news_lookup" in guidance
+    assert "call signaldeck_news_lookup" in guidance
     assert "instead of inventing articles" in guidance
-    assert "call ledger_social_sentiment_lookup" in guidance
+    assert "call signaldeck_social_sentiment_lookup" in guidance
     assert "instead of treating news as social data" in guidance
-    assert "call ledger_insider_data_lookup" in guidance
+    assert "call signaldeck_insider_data_lookup" in guidance
     assert "Disclose warnings or empty results as data quality" in guidance
     assert guidance.count("data quality or provider limitations") >= 6
     assert "do not claim unavailable coverage" in guidance
@@ -1977,7 +1983,7 @@ def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
 
         capability = session.scalar(select(Capability).where(Capability.key == capability_key))
         assert capability is not None
-        capability.tool_keys = ["ledger.stale.lookup"]
+        capability.tool_keys = ["signaldeck.stale.lookup"]
         session.commit()
 
         with pytest.raises(RuntimeToolGrantError) as exc_info:
@@ -1988,7 +1994,7 @@ def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
     assert exc_info.value.details == [
         {
             "field": "toolKeys.0",
-            "issue": "Unknown server-declared tool 'ledger.stale.lookup'",
+            "issue": "Unknown server-declared tool 'signaldeck.stale.lookup'",
         }
     ]
 
@@ -1999,7 +2005,7 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
 
     with pytest.raises(RuntimeToolError) as unknown_error:
         _ = registry.dispatch(
-            name="ledger_unknown_lookup",
+            name="signaldeck_unknown_lookup",
             arguments_json='{"portfolioSlug":"reference"}',
             granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
             context=context,
@@ -2007,7 +2013,7 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
     assert unknown_error.value.code == "agent_tool_call_unsupported"
     assert (
         unknown_error.value.message
-        == "Agent requested unsupported server tool 'ledger_unknown_lookup'."
+        == "Agent requested unsupported server tool 'signaldeck_unknown_lookup'."
     )
 
     with pytest.raises(RuntimeToolError) as ungranted_error:
@@ -2094,18 +2100,18 @@ def test_reports_write_runtime_tool_parser_rejects_spoofed_trusted_fields(
         )
 
     assert exc_info.value.code == "agent_tool_call_invalid"
-    assert exc_info.value.message == "ledger_reports_write arguments failed validation."
+    assert exc_info.value.message == "signaldeck_reports_write arguments failed validation."
     assert exc_info.value.details[0]["field"] == f"analysis.{field_name}"
 
 
 @pytest.mark.parametrize(
     ("arguments_json", "expected_message"),
     [
-        ("{", "OpenAI response requested ledger_reports_write with invalid JSON arguments."),
-        ("[]", "ledger_reports_write arguments must be a JSON object."),
+        ("{", "OpenAI response requested signaldeck_reports_write with invalid JSON arguments."),
+        ("[]", "signaldeck_reports_write arguments must be a JSON object."),
         (
             '{"runId":42,"analysis":{}}',
-            "ledger_reports_write arguments contained unsupported fields: runId",
+            "signaldeck_reports_write arguments contained unsupported fields: runId",
         ),
     ],
 )
@@ -2138,7 +2144,7 @@ def test_report_memory_write_rejects_created_by_argument() -> None:
     assert exc_info.value.code == "agent_tool_call_invalid"
     assert (
         exc_info.value.message
-        == "ledger_reports_write arguments contained unsupported fields: createdBy"
+        == "signaldeck_reports_write arguments contained unsupported fields: createdBy"
     )
 
 
@@ -2178,7 +2184,7 @@ def test_reports_write_runtime_tool_fails_closed_for_stale_stored_memory_key(
     _seed_runtime_tool_capability(
         session_factory,
         key=capability_key,
-        tools=["ledger.memory.write"],
+        tools=["signaldeck.memory.write"],
     )
     registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
 
@@ -2200,7 +2206,7 @@ def test_reports_write_runtime_tool_fails_closed_for_stale_stored_memory_key(
     assert exc_info.value.details == [
         {
             "field": "toolKeys.0",
-            "issue": "Unknown server-declared tool 'ledger.memory.write'",
+            "issue": "Unknown server-declared tool 'signaldeck.memory.write'",
         }
     ]
     assert reports == []
@@ -2369,24 +2375,27 @@ def test_market_data_history_lookup_service_denies_missing_capability_reference_
     [
         (
             "{",
-            "OpenAI response requested ledger_reports_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_reports_lookup with invalid JSON arguments.",
         ),
-        ("[]", "ledger_reports_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_reports_lookup arguments must be a JSON object."),
         (
             '{"unsupported":true}',
-            "ledger_reports_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_reports_lookup arguments contained unsupported fields: unsupported",
         ),
         (
             '{"source":"manual"}',
-            "ledger_reports_lookup source must be one of compiled, uploaded, external, or agent.",
+            (
+                "signaldeck_reports_lookup source must be one of compiled, uploaded, "
+                "external, or agent."
+            ),
         ),
         (
             '{"source":"agent"}',
             None,
         ),
-        ('{"ticker":123}', "ledger_reports_lookup string arguments must be strings."),
-        ('{"limit":51}', "ledger_reports_lookup limit must be at most 50."),
-        ('{"offset":-1}', "ledger_reports_lookup offset must be at least 0."),
+        ('{"ticker":123}', "signaldeck_reports_lookup string arguments must be strings."),
+        ('{"limit":51}', "signaldeck_reports_lookup limit must be at most 50."),
+        ('{"offset":-1}', "signaldeck_reports_lookup offset must be at least 0."),
     ],
 )
 def test_report_runtime_tool_parser_preserves_validation_messages(
@@ -2410,26 +2419,26 @@ def test_report_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested ledger_positions_lookup with invalid JSON arguments.",
+            "OpenAI response requested signaldeck_positions_lookup with invalid JSON arguments.",
         ),
-        ("[]", "ledger_positions_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_positions_lookup arguments must be a JSON object."),
         (
             '{"portfolioSlug":"reference","unsupported":true}',
-            "ledger_positions_lookup arguments contained unsupported fields: unsupported",
+            "signaldeck_positions_lookup arguments contained unsupported fields: unsupported",
         ),
-        ("{}", "ledger_positions_lookup portfolioSlug is required."),
-        ('{"portfolioSlug":123}', "ledger_positions_lookup portfolioSlug must be a string."),
+        ("{}", "signaldeck_positions_lookup portfolioSlug is required."),
+        ('{"portfolioSlug":123}', "signaldeck_positions_lookup portfolioSlug must be a string."),
         (
             '{"portfolioSlug":"reference","limit":"1"}',
-            "ledger_positions_lookup limit must be an integer.",
+            "signaldeck_positions_lookup limit must be an integer.",
         ),
         (
             '{"portfolioSlug":"reference","limit":201}',
-            "ledger_positions_lookup limit must be at most 200.",
+            "signaldeck_positions_lookup limit must be at most 200.",
         ),
         (
             '{"portfolioSlug":"reference","offset":-1}',
-            "ledger_positions_lookup offset must be at least 0.",
+            "signaldeck_positions_lookup offset must be at least 0.",
         ),
     ],
 )
@@ -2450,30 +2459,33 @@ def test_position_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested ledger_market_data_quote_lookup "
+            "OpenAI response requested signaldeck_market_data_quote_lookup "
             + "with invalid JSON arguments.",
         ),
-        ("[]", "ledger_market_data_quote_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_market_data_quote_lookup arguments must be a JSON object."),
         (
             '{"symbols":["NVDA"],"unsupported":true}',
-            "ledger_market_data_quote_lookup arguments contained unsupported fields: unsupported",
+            (
+                "signaldeck_market_data_quote_lookup arguments contained "
+                "unsupported fields: unsupported"
+            ),
         ),
-        ("{}", "ledger_market_data_quote_lookup symbols is required."),
+        ("{}", "signaldeck_market_data_quote_lookup symbols is required."),
         (
             '{"symbols":"NVDA"}',
-            "ledger_market_data_quote_lookup symbols must be an array of strings.",
+            "signaldeck_market_data_quote_lookup symbols must be an array of strings.",
         ),
         (
             '{"symbols":[123]}',
-            "ledger_market_data_quote_lookup symbols must be an array of strings.",
+            "signaldeck_market_data_quote_lookup symbols must be an array of strings.",
         ),
         (
             '{"symbols":[""]}',
-            "ledger_market_data_quote_lookup symbols must not contain empty values.",
+            "signaldeck_market_data_quote_lookup symbols must not contain empty values.",
         ),
         (
             '{"symbols":["NVDA"],"baseCurrency":"US"}',
-            "ledger_market_data_quote_lookup baseCurrency must be a 3-letter ISO code.",
+            "signaldeck_market_data_quote_lookup baseCurrency must be a 3-letter ISO code.",
         ),
     ],
 )
@@ -2494,26 +2506,29 @@ def test_market_data_quote_lookup_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested ledger_market_data_history_lookup "
+            "OpenAI response requested signaldeck_market_data_history_lookup "
             + "with invalid JSON arguments.",
         ),
-        ("[]", "ledger_market_data_history_lookup arguments must be a JSON object."),
+        ("[]", "signaldeck_market_data_history_lookup arguments must be a JSON object."),
         (
             '{"symbols":["NVDA"],"unsupported":true}',
-            "ledger_market_data_history_lookup arguments contained unsupported fields: unsupported",
+            (
+                "signaldeck_market_data_history_lookup arguments contained "
+                "unsupported fields: unsupported"
+            ),
         ),
-        ("{}", "ledger_market_data_history_lookup symbols is required."),
+        ("{}", "signaldeck_market_data_history_lookup symbols is required."),
         (
             '{"symbols":["NVDA"],"range":"10y"}',
-            "ledger_market_data_history_lookup range must be one of 1mo, 3mo, ytd, 1y, or max.",
+            "signaldeck_market_data_history_lookup range must be one of 1mo, 3mo, ytd, 1y, or max.",
         ),
         (
             '{"symbols":["NVDA"],"pointLimit":"2"}',
-            "ledger_market_data_history_lookup pointLimit must be an integer.",
+            "signaldeck_market_data_history_lookup pointLimit must be an integer.",
         ),
         (
             '{"symbols":["NVDA"],"pointLimit":251}',
-            "ledger_market_data_history_lookup pointLimit must be at most 250.",
+            "signaldeck_market_data_history_lookup pointLimit must be at most 250.",
         ),
     ],
 )
@@ -2758,7 +2773,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 3,
             },
-            "ledger_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
+            "signaldeck_market_data_ohlcv_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_ohlcv_lookup_arguments,
@@ -2768,7 +2783,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 3,
             },
-            "ledger_market_data_ohlcv_lookup symbols must contain at most 5 symbols.",
+            "signaldeck_market_data_ohlcv_lookup symbols must contain at most 5 symbols.",
         ),
         (
             parse_ohlcv_lookup_arguments,
@@ -2778,7 +2793,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "rowLimit": 501,
             },
-            "ledger_market_data_ohlcv_lookup rowLimit must be at most 500.",
+            "signaldeck_market_data_ohlcv_lookup rowLimit must be at most 500.",
         ),
         (
             parse_indicators_lookup_arguments,
@@ -2790,7 +2805,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "smaWindows": [2],
                 "rowLimit": 3,
             },
-            "ledger_indicators_lookup endDate cannot be after currentDate.",
+            "signaldeck_indicators_lookup endDate cannot be after currentDate.",
         ),
         (
             parse_indicators_lookup_arguments,
@@ -2802,7 +2817,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "smaWindows": [2],
                 "rowLimit": 501,
             },
-            "ledger_indicators_lookup rowLimit must be at most 500.",
+            "signaldeck_indicators_lookup rowLimit must be at most 500.",
         ),
         (
             parse_fundamentals_lookup_arguments,
@@ -2812,7 +2827,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": None,
                 "statementLimit": 3,
             },
-            "ledger_fundamentals_lookup statementTypes must use: "
+            "signaldeck_fundamentals_lookup statementTypes must use: "
             + "balance_sheet, cash_flow, income_statement.",
         ),
         (
@@ -2823,7 +2838,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": ["daily"],
                 "statementLimit": 3,
             },
-            "ledger_fundamentals_lookup periods must use: "
+            "signaldeck_fundamentals_lookup periods must use: "
             + "annual, quarterly, trailing_twelve_months.",
         ),
         (
@@ -2834,7 +2849,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "periods": None,
                 "statementLimit": 13,
             },
-            "ledger_fundamentals_lookup statementLimit must be at most 12.",
+            "signaldeck_fundamentals_lookup statementLimit must be at most 12.",
         ),
         (
             parse_news_lookup_arguments,
@@ -2845,7 +2860,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "itemLimit": 2,
             },
-            "ledger_news_lookup startDate must be before or equal to endDate.",
+            "signaldeck_news_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_news_lookup_arguments,
@@ -2856,7 +2871,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "ledger_news_lookup symbols must contain at most 5 symbols.",
+            "signaldeck_news_lookup symbols must contain at most 5 symbols.",
         ),
         (
             parse_news_lookup_arguments,
@@ -2867,7 +2882,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 51,
             },
-            "ledger_news_lookup itemLimit must be at most 50.",
+            "signaldeck_news_lookup itemLimit must be at most 50.",
         ),
         (
             parse_social_sentiment_lookup_arguments,
@@ -2878,7 +2893,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "ledger_social_sentiment_lookup sources must use: reddit, stocktwits.",
+            "signaldeck_social_sentiment_lookup sources must use: reddit, stocktwits.",
         ),
         (
             parse_social_sentiment_lookup_arguments,
@@ -2889,7 +2904,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "itemLimit": 51,
             },
-            "ledger_social_sentiment_lookup itemLimit must be at most 50.",
+            "signaldeck_social_sentiment_lookup itemLimit must be at most 50.",
         ),
         (
             parse_insider_data_lookup_arguments,
@@ -2899,7 +2914,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": "2026-01-03",
                 "transactionLimit": 2,
             },
-            "ledger_insider_data_lookup startDate must be before or equal to endDate.",
+            "signaldeck_insider_data_lookup startDate must be before or equal to endDate.",
         ),
         (
             parse_insider_data_lookup_arguments,
@@ -2909,7 +2924,7 @@ def test_generic_platform_market_data_runtime_tool_parsers_reject_boundary_paylo
                 "endDate": None,
                 "transactionLimit": 101,
             },
-            "ledger_insider_data_lookup transactionLimit must be at most 100.",
+            "signaldeck_insider_data_lookup transactionLimit must be at most 100.",
         ),
     ],
 )
@@ -2945,7 +2960,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
             context=context,
         )
-    assert report_error.value.message == "ledger_reports_lookup limit must be at most 50."
+    assert report_error.value.message == "signaldeck_reports_lookup limit must be at most 50."
 
     with pytest.raises(RuntimeToolError) as position_error:
         _ = registry.dispatch(
@@ -2954,7 +2969,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
             context=context,
         )
-    assert position_error.value.message == "ledger_positions_lookup limit must be at most 200."
+    assert position_error.value.message == "signaldeck_positions_lookup limit must be at most 200."
 
     with pytest.raises(RuntimeToolError) as quote_error:
         _ = registry.dispatch(
@@ -2964,7 +2979,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert quote_error.value.message == (
-        "ledger_market_data_quote_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_market_data_quote_lookup arguments contained unsupported fields: unsupported"
     )
 
     with pytest.raises(RuntimeToolError) as history_error:
@@ -2975,7 +2990,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert history_error.value.message == (
-        "ledger_market_data_history_lookup pointLimit must be at most 250."
+        "signaldeck_market_data_history_lookup pointLimit must be at most 250."
     )
 
     with pytest.raises(RuntimeToolError) as social_error:
@@ -2986,7 +3001,7 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
             context=context,
         )
     assert social_error.value.message == (
-        "ledger_social_sentiment_lookup arguments contained unsupported fields: unsupported"
+        "signaldeck_social_sentiment_lookup arguments contained unsupported fields: unsupported"
     )
 
 

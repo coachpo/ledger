@@ -5,7 +5,7 @@ export {
   FINANCE_WORKSPACE_LABEL,
   FINANCE_WORKSPACE_PHASE,
   getFinanceWorkspaceFrontendExtension,
-} from "./ledger-finance";
+} from "./signaldeck-finance";
 export {
   bundledFrontendExtensions,
   getBundledFrontendExtension,

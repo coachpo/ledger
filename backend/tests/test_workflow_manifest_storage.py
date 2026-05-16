@@ -143,7 +143,7 @@ def _workflow_update_payload() -> dict[str, object]:
 
 
 def _v2_manifest_source() -> str:
-    return """apiVersion: ledger.workflow/v2
+    return """apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: manifest_contract_workflow_v2
@@ -323,4 +323,4 @@ def test_workflow_service_persists_and_decompiles_platform_graph_v1_review_examp
             assert len(compiled_decompiled_steps) == expected_step_count
             assert compiled_decompiled["key"] == expected_key
             assert compiled_decompiled["outputSpec"] == compiled_source["outputSpec"]
-            assert decompiled.source.startswith("apiVersion: ledger.workflow/v1\n")
+            assert decompiled.source.startswith("apiVersion: signaldeck.workflow/v1\n")

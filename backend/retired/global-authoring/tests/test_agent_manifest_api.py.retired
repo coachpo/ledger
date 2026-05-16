@@ -55,7 +55,7 @@ def test_validate_manifest_returns_compiled_preview_for_valid_yaml(
     body = cast(dict[str, object], response.json())
     assert body["diagnostics"] == []
     assert body["metadata"] == {
-        "apiVersion": "ledger.agent/v1",
+        "apiVersion": "signaldeck.agent/v1",
         "key": "research_agent",
         "name": "Research Agent",
         "description": "Produces a structured research summary.",
@@ -105,7 +105,7 @@ def test_create_and_update_manifest_persist_source_and_compiled_projection(
         _refs = _seed_manifest_refs(session)
 
     created = _create_manifest_agent(client, original_source)
-    assert created["manifestApiVersion"] == "ledger.agent/v1"
+    assert created["manifestApiVersion"] == "signaldeck.agent/v1"
     assert created["manifestSource"] == original_source
     assert created["manifestHash"] == _manifest_hash(original_source)
     assert created["name"] == "Research Agent"
@@ -153,7 +153,7 @@ def test_agent_detail_reads_persisted_manifest_fields(
 
     assert response.status_code == 200, response.json()
     detail = cast(dict[str, object], response.json())
-    assert detail["manifestApiVersion"] == "ledger.agent/v1"
+    assert detail["manifestApiVersion"] == "signaldeck.agent/v1"
     assert detail["manifestSource"] == source
     assert detail["manifestHash"] == _manifest_hash(source)
     assert detail["compilerVersion"]

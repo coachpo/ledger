@@ -38,7 +38,7 @@ def _manifest_source(
     *,
     output_reference: str = "${{ steps.synthesize.outputs.decision.recommendation }}",
 ) -> str:
-    return f"""apiVersion: ledger.workflow/v1
+    return f"""apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: analyst_workflow
@@ -436,7 +436,7 @@ def _canonical_json(value: object) -> str:
 
 
 def _v2_manifest_source(*, flow: str, output_reference: str) -> str:
-    return f"""apiVersion: ledger.workflow/v2
+    return f"""apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: market_review_v2
@@ -951,7 +951,7 @@ def test_compile_platform_graph_v2_examples_emit_graph_loops_memory_and_secret_f
     memory = cast(dict[str, object], graph["postRunMemory"])
     source_refs = cast(dict[str, object], memory["sourceRefs"])
 
-    assert graph["apiVersion"] == "ledger.workflow/v2"
+    assert graph["apiVersion"] == "signaldeck.workflow/v2"
     assert [node["nodeId"] for node in loop_nodes] == ["investment_debate_loop", "risk_debate_loop"]
     assert [node["maxIterations"] for node in loop_nodes] == [2, 2]
     assert loop_iterations == [1, 1, 2, 2]

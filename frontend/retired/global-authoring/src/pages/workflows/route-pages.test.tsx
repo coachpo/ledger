@@ -24,8 +24,8 @@ const workflow = {
   description: "Reviews market context.",
   inputSchema: {},
   key: "market_review",
-  manifestApiVersion: "ledger.workflow/v1",
-  manifestSource: "apiVersion: ledger.workflow/v1",
+  manifestApiVersion: "signaldeck.workflow/v1",
+  manifestSource: "apiVersion: signaldeck.workflow/v1",
   name: "Market Review",
   outputSpec: {
     agentId: 1,

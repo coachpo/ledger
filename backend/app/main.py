@@ -27,7 +27,7 @@ def create_app(*, init_database: bool = True) -> FastAPI:
     settings = get_settings()
     configure_logfire()
     app = FastAPI(
-        title="Ledger Backend", version="0.1.0", lifespan=lifespan if init_database else None
+        title="SignalDeck Backend", version="0.1.0", lifespan=lifespan if init_database else None
     )
     app.add_middleware(
         CORSMiddleware,

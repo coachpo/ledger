@@ -62,7 +62,7 @@ class RunQueueService:
         thread = threading.Thread(
             target=self._drain_until_empty,
             daemon=True,
-            name="ledger-agent-platform-run-queue",
+            name="signaldeck-agent-platform-run-queue",
         )
         thread.start()
 

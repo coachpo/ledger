@@ -212,7 +212,7 @@ def _compile_workflow(workflow: WorkflowPackageWorkflow) -> dict[str, object]:
         "steps": context.steps,
         "outputSpec": _compile_output(workflow.output.from_, context),
         "compiledGraph": {
-            "apiVersion": "ledger.workflowPackage/v1",
+            "apiVersion": "signaldeck.workflowPackage/v1",
             "rootNodeId": workflow.flow.id,
             "nodes": context.graph_nodes,
             "output": _compile_graph_ref(workflow.output.from_, context),

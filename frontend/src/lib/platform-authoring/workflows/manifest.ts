@@ -21,8 +21,8 @@ import type {
   WorkflowManifestDiagnosticSeverity,
 } from "@/lib/types/workflow";
 
-const WORKFLOW_MANIFEST_V1_API_VERSION: WorkflowManifestApiVersion = "ledger.workflow/v1";
-const WORKFLOW_MANIFEST_V2_API_VERSION: WorkflowManifestApiVersion = "ledger.workflow/v2";
+const WORKFLOW_MANIFEST_V1_API_VERSION: WorkflowManifestApiVersion = "signaldeck.workflow/v1";
+const WORKFLOW_MANIFEST_V2_API_VERSION: WorkflowManifestApiVersion = "signaldeck.workflow/v2";
 const WORKFLOW_MANIFEST_API_VERSIONS = [WORKFLOW_MANIFEST_V1_API_VERSION, WORKFLOW_MANIFEST_V2_API_VERSION] as const;
 const WORKFLOW_MANIFEST_KIND = "Workflow";
 const WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH = 262_144; // Matches backend WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH.

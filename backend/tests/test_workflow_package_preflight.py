@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -83,8 +83,8 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
 
     assert errors == []
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "ledger.reports.lookup",
-        "ledger.reports.write",
+        "signaldeck.reports.lookup",
+        "signaldeck.reports.write",
     ]
     assert mcp_server["headers"] == {"Authorization": "Bearer exa-inline-token"}
     assert mcp_server["query"] == {"exaApiKey": "exa-inline-key"}
@@ -127,9 +127,9 @@ def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
     for profile in profiles:
         if profile["key"] == "memory_write_tools":
             profile["toolKeys"] = [
-                "ledger.reports.write",
-                "ledger.reports.write",
-                "ledger.memory.write",
+                "signaldeck.reports.write",
+                "signaldeck.reports.write",
+                "signaldeck.memory.write",
             ]
 
     with session_factory() as session:
@@ -137,11 +137,11 @@ def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
 
     assert {
         "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
-        "issue": "Duplicate tool key 'ledger.reports.write' is not allowed",
+        "issue": "Duplicate tool key 'signaldeck.reports.write' is not allowed",
     } in errors
     assert {
         "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[2]",
-        "issue": "Unknown server-declared tool 'ledger.memory.write'",
+        "issue": "Unknown server-declared tool 'signaldeck.memory.write'",
     } in errors
 
 
@@ -184,7 +184,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
         profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
         for profile in profiles:
             if profile["key"] == "market_research_tools":
-                profile["toolKeys"] = ["ledger.unknown.tool"]
+                profile["toolKeys"] = ["signaldeck.unknown.tool"]
         cast(list[dict[str, Any]], compiled_plan["outputSchemas"])[0]["jsonSchema"] = {
             "type": "object",
             "properties": {
@@ -218,7 +218,7 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
     errors = cast(list[dict[str, object]], body["blockingErrors"])
     assert {
         "field": "spec.capabilityProfiles.market_research_tools.toolKeys[0]",
-        "issue": "Unknown server-declared tool 'ledger.unknown.tool'",
+        "issue": "Unknown server-declared tool 'signaldeck.unknown.tool'",
     } in errors
     assert any(
         error["field"] == "spec.outputSchemas[0].jsonSchema.properties.broken.patternProperties"
@@ -419,7 +419,7 @@ def test_create_blocks_tradingagents_advisory_research_when_extension_disabled(
     assert body["code"] == "validation_error"
     details = cast(list[dict[str, object]], body["details"])
     assert any(
-        "extension 'ledger.finance' is disabled" in str(detail.get("issue"))
+        "extension 'signaldeck.finance' is disabled" in str(detail.get("issue"))
         and str(detail.get("path", "")).startswith("spec.capabilityProfiles.")
         for detail in details
     )
@@ -442,6 +442,6 @@ def test_preflight_blocks_tradingagents_advisory_research_when_extension_disable
     assert any(
         error.get("code") == "extension_disabled"
         and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.ledger.market_data.quote_lookup"
+        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
         for error in errors
     )

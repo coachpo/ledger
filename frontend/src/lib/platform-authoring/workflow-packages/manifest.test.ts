@@ -19,7 +19,7 @@ describe("workflow package manifest helpers", () => {
       metadata: { description: "Package", key: "research_package", name: "Research Package" },
     });
     draft.spec.outputSchemas = [createPackageOutputSchemaDraft({ key: "summary_schema", name: "Summary" })];
-    draft.spec.capabilityProfiles = [createPackageCapabilityProfileDraft({ key: "research_tools", name: "Research tools", toolKeys: ["ledger.reports.lookup"] })];
+    draft.spec.capabilityProfiles = [createPackageCapabilityProfileDraft({ key: "research_tools", name: "Research tools", toolKeys: ["signaldeck.reports.lookup"] })];
     draft.spec.mcpServers = [
       createPackageMcpServerDraft({
         argsText: '["--api-key", "${MARKET_DATA_API_KEY}"]',

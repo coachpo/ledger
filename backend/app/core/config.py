@@ -10,14 +10,14 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = Field(
-        default="postgresql+psycopg://ledger:ledger@localhost:25432/ledger",
+        default="postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck",
         alias="DATABASE_URL",
     )
     quote_provider_timeout_seconds: float = Field(default=5.0, alias="QUOTE_PROVIDER_TIMEOUT")
     quote_provider_backend: str = Field(default="yahoo", alias="QUOTE_PROVIDER_BACKEND")
     quote_stale_after_minutes: int = Field(default=15, alias="QUOTE_STALE_AFTER_MINUTES")
     agent_platform_encryption_key: str = Field(
-        default="ledger-agent-platform-dev-key",
+        default="signaldeck-agent-platform-dev-key",
         alias="AGENT_PLATFORM_ENCRYPTION_KEY",
     )
     market_data_cache_dir: str = Field(

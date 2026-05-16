@@ -118,7 +118,7 @@ def reset_and_seed_database(database_url: str | None = None) -> ResetSeedSummary
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Reset the Ledger application database and keep a clean empty workspace."
+        description="Reset the SignalDeck application database and keep a clean empty workspace."
     )
     parser.add_argument("--database-url", default=None, help="Explicit PostgreSQL database URL.")
     parser.add_argument(

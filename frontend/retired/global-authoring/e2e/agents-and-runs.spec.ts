@@ -82,7 +82,7 @@ async function createPublishedCapability(
       description: "Summarizes deterministic E2E inputs.",
       key,
       name: `Capability ${key}`,
-      toolKeys: ["ledger.market_data.quote_lookup"],
+      toolKeys: ["signaldeck.market_data.quote_lookup"],
     },
   });
 
@@ -123,7 +123,7 @@ function agentManifest(options: {
   capabilityRef: string;
   systemPrompt: string;
 }): string {
-  return `apiVersion: ledger.agent/v1
+  return `apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: ${options.key}

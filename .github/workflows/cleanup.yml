@@ -36,7 +36,7 @@ jobs:
         with:
           owner: ${{ github.repository_owner }}
           package-type: container
-          package-name: ${{ format('{0}-{1}', github.event.repository.name, matrix.service) }}
+          package-name: ${{ format('signaldeck-{0}', matrix.service) }}
           delete-only-untagged-versions: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

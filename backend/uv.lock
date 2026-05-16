@@ -490,7 +490,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ledger-backend"
+name = "signaldeck-backend"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

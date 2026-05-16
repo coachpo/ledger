@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.extensions.ledger_finance.api_routers import (
+from app.extensions.signaldeck_finance.api_routers import (
     register as register_finance_workspace_api_routers,
 )
 

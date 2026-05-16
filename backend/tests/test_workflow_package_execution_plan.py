@@ -74,7 +74,7 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
         "market_research_tools"
     ]
     assert [profile.tool_keys for profile in runtime_agent.capability_profiles] == [
-        ("ledger.market_data.quote_lookup",)
+        ("signaldeck.market_data.quote_lookup",)
     ]
     assert [server.key for server in runtime_agent.mcp_servers] == ["research_context"]
     server = runtime_agent.mcp_servers[0]
@@ -121,7 +121,7 @@ def test_package_execution_plan_threads_private_mcp_flat_maps_into_runtime_refs(
 
 
 def _graph_package_manifest_source() -> str:
-    return """apiVersion: ledger.workflowPackage/v1
+    return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: graph_package
@@ -138,7 +138,7 @@ spec:
     - key: graph_tools
       name: Graph Tools
       toolKeys:
-        - ledger.market_data.quote_lookup
+        - signaldeck.market_data.quote_lookup
   outputSchemas:
     - key: graph_note
       name: Graph Note

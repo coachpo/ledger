@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const FINANCE_EXTENSION_KEY = "ledger.finance";
-const FINANCE_EXTENSION_SEGMENT = "ledger-finance";
+const FINANCE_EXTENSION_KEY = "signaldeck.finance";
+const FINANCE_EXTENSION_SEGMENT = "signaldeck-finance";
 
 const timestamps = {
   createdAt: "2026-05-15T09:00:00Z",
@@ -12,10 +12,10 @@ const timestamps = {
 
 const financeTools = [
   {
-    key: "ledger.reports.lookup",
+    key: "signaldeck.reports.lookup",
     displayName: "Report Lookup",
-    description: "Read persisted Ledger reports.",
-    module: "app.extensions.ledger_finance.tool_specs",
+    description: "Read persisted SignalDeck reports.",
+    module: "app.extensions.signaldeck_finance.tool_specs",
   },
 ];
 
@@ -48,7 +48,7 @@ function financeExtension(enabled: boolean, stateVersion: number) {
         extensionKey: FINANCE_EXTENSION_KEY,
         ownerExtensionKey: FINANCE_EXTENSION_KEY,
         summary: "Report lookup tool",
-        surface: "ledger.reports.lookup",
+        surface: "signaldeck.reports.lookup",
       },
     ],
     stateVersion,
@@ -65,7 +65,7 @@ async function installExtensionLifecycleMocks(page: Page) {
   let stateVersion = 1;
 
   await page.route(
-    /\/api\/extensions(?:\/ledger\.finance)?(?:\?.*)?$/,
+    /\/api\/extensions(?:\/signaldeck\.finance)?(?:\?.*)?$/,
     async (route) => {
       const request = route.request();
       if (request.method() === "GET") {

@@ -20,7 +20,7 @@ def _canonical_json(value: object) -> str:
 
 
 def _inline_private_mcp_manifest_source() -> str:
-    return """apiVersion: ledger.workflowPackage/v1
+    return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: tradingagents_inline_private_mcp
@@ -37,10 +37,10 @@ spec:
   capabilityProfiles:
     - key: report_context_tools
       name: Report Context Tools
-      description: Reads persisted Ledger reports for research context.
+      description: Reads persisted SignalDeck reports for research context.
       toolKeys:
-        - ledger.reports.lookup
-        - ledger.reports.write
+        - signaldeck.reports.lookup
+        - signaldeck.reports.write
   outputSchemas:
     - key: decision
       name: Decision
@@ -120,7 +120,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     assert len(cast(str, compiled["compiledHash"])) == 64
     assert _canonical_json(compiled) == _canonical_json(recompiled)
     assert roundtrip.source.startswith(
-        "apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\n"
+        "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
     )
     assert "modelConnection: tradingagents_primary_model" in roundtrip.source
 
@@ -180,8 +180,8 @@ def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_valu
     mcp_server = cast(list[dict[str, object]], spec["mcpServers"])[0]
 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
-        "ledger.reports.lookup",
-        "ledger.reports.write",
+        "signaldeck.reports.lookup",
+        "signaldeck.reports.write",
     ]
     assert mcp_server["headers"] == {"Authorization": "Bearer test-token"}
     assert mcp_server["query"] == {"api_key": "test-api-key"}
@@ -189,15 +189,15 @@ def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_valu
     assert "api_key: test-api-key" in roundtrip.source
     assert "secretRefs" not in roundtrip.source
     assert "requiredBindings" not in roundtrip.source
-    assert "ledger.reports.lookup" in roundtrip.source
-    assert "ledger.reports.write" in roundtrip.source
+    assert "signaldeck.reports.lookup" in roundtrip.source
+    assert "signaldeck.reports.write" in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
-        "        - ledger.market_data.quote_lookup\n",
-        "        - ledger.reports.lookup\n        - ledger.reports.lookup\n",
+        "        - signaldeck.market_data.quote_lookup\n",
+        "        - signaldeck.reports.lookup\n        - signaldeck.reports.lookup\n",
         1,
     )
 
@@ -206,15 +206,15 @@ def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
 
     assert any(
         diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[1]"
-        and "Duplicate tool key 'ledger.reports.lookup' is not allowed" in diagnostic.message
+        and "Duplicate tool key 'signaldeck.reports.lookup' is not allowed" in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )
 
 
 def test_compile_package_manifest_rejects_phase_one_memory_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
-        "        - ledger.market_data.quote_lookup\n",
-        "        - ledger.memory.lookup\n",
+        "        - signaldeck.market_data.quote_lookup\n",
+        "        - signaldeck.memory.lookup\n",
         1,
     )
 
@@ -223,7 +223,7 @@ def test_compile_package_manifest_rejects_phase_one_memory_tool_keys() -> None:
 
     assert any(
         diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
-        and "Unknown server-declared tool 'ledger.memory.lookup'" in diagnostic.message
+        and "Unknown server-declared tool 'signaldeck.memory.lookup'" in diagnostic.message
         for diagnostic in excinfo.value.diagnostics
     )
 

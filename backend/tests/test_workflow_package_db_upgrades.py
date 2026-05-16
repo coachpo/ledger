@@ -20,7 +20,7 @@ _RUN_PROVENANCE_COLUMNS = {
     "workflow_package_hash",
     "workflow_package_workflow_key",
 }
-_DETERMINISTIC_SMOKE_BASE_URL = "https://ledger-deterministic-model.local/v1"
+_DETERMINISTIC_SMOKE_BASE_URL = "https://signaldeck-deterministic-model.local/v1"
 
 
 def _assert_workflow_package_schema(engine: Engine) -> None:

@@ -34,7 +34,7 @@ async function loadWorkflowsApi(baseUrl: string = "") {
   return import("./workflows");
 }
 
-const manifestSource = `apiVersion: ledger.workflow/v1
+const manifestSource = `apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: manifest_api_workflow
@@ -65,11 +65,11 @@ afterEach(() => {
 
 describe("workflows api", () => {
   it("posts manifest validation requests to the platform validation endpoint", async () => {
-    const { validateWorkflowManifest } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { validateWorkflowManifest } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     const validationResult = {
       diagnostics: [],
       metadata: {
-        apiVersion: "ledger.workflow/v1",
+        apiVersion: "signaldeck.workflow/v1",
         key: "manifest_api_workflow",
         name: "Manifest API Workflow",
         description: "",
@@ -89,7 +89,7 @@ describe("workflows api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
     expect(`${url.origin}${url.pathname}`).toBe(
-      "https://ledger.example.com/api/workflows/validate-manifest",
+      "https://signaldeck.example.com/api/workflows/validate-manifest",
     );
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
@@ -97,7 +97,7 @@ describe("workflows api", () => {
   });
 
   it("reads workflow manifests from the platform detail endpoint", async () => {
-    const { getWorkflow } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { getWorkflow } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     const workflowRead = {
       id: 12,
       aggregateBudgetUsd: "0.25000000",
@@ -105,7 +105,7 @@ describe("workflows api", () => {
       description: "Manifest-backed read contract.",
       inputSchema: { type: "object" },
       key: "manifest_api_workflow",
-      manifestApiVersion: "ledger.workflow/v1",
+      manifestApiVersion: "signaldeck.workflow/v1",
       manifestSource,
       name: "Manifest API Workflow",
       outputSpec: {
@@ -128,13 +128,13 @@ describe("workflows api", () => {
     await expect(getWorkflow(12, { version: 2 })).resolves.toEqual(workflowRead);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows/12");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows/12");
     expect(url.searchParams.get("version")).toBe("2");
     expect(init?.method).toBe("GET");
   });
 
   it("reads workflow launch metadata from the launch endpoint", async () => {
-    const { getWorkflowLaunch } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { getWorkflowLaunch } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     const launchRead = {
       workflowId: 12,
       key: "manifest_api_workflow",
@@ -148,24 +148,24 @@ describe("workflows api", () => {
     await expect(getWorkflowLaunch(12, { version: 2 })).resolves.toEqual(launchRead);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows/12/launch");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows/12/launch");
     expect(init?.method).toBe("GET");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({ version: "2" });
   });
 
   it("reads workflow versions from the versions endpoint", async () => {
-    const { listWorkflowVersions } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { listWorkflowVersions } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [{ id: 12, version: 2 }] }, 200));
 
     await expect(listWorkflowVersions(12)).resolves.toEqual({ items: [{ id: 12, version: 2 }] });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows/12/versions");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows/12/versions");
     expect(init?.method).toBe("GET");
   });
 
   it("creates workflow launches with the versioned parameters envelope", async () => {
-    const { createWorkflowLaunch } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { createWorkflowLaunch } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "queued" }, 201));
 
     await expect(createWorkflowLaunch(12, { version: 2, parameters: { ticker: "MSFT" } })).resolves.toEqual({
@@ -174,31 +174,31 @@ describe("workflows api", () => {
     });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows/12/launches");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows/12/launches");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ version: 2, parameters: { ticker: "MSFT" } }));
   });
 
   it("sends manifestSource-only payloads when creating workflows from YAML", async () => {
-    const { createWorkflow } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { createWorkflow } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 11 }, 201));
 
     await createWorkflow({ manifestSource });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });
 
   it("sends manifestSource-only payloads when updating workflows from YAML", async () => {
-    const { updateWorkflow } = await loadWorkflowsApi("https://ledger.example.com/api/v1/");
+    const { updateWorkflow } = await loadWorkflowsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12 }, 200));
 
     await updateWorkflow(12, { manifestSource });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflows/12");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflows/12");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });

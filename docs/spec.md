@@ -4,7 +4,7 @@
 
 ## Overview
 
-Ledger is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1` as the bundled `ledger.finance` extension, enabled by default; platform routes live under `/api/*`.
+SignalDeck is a dual-stack FastAPI and React/Vite application with preserved portfolio/report/template workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved product routes live under `/api/v1` as the bundled `signaldeck.finance` extension, enabled by default; platform routes live under `/api/*`.
 
 ## Runtime Topology
 
@@ -18,7 +18,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` is the `/api/v1` composition host for the bundled finance workspace routes.
 - `backend/app/api/platform_router.py` mounts current `/api/*` routers for workflow packages, model connections, extensions, tools, and runs.
-- `backend/app/extensions/ledger_finance/` contributes the current finance/product/provider surfaces as `ledger.finance`, with startup and reset/seed defaults keeping it enabled.
+- `backend/app/extensions/signaldeck_finance/` contributes the current finance/product/provider surfaces as `signaldeck.finance`, with startup and reset/seed defaults keeping it enabled.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting for persisted run metadata.
 - `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair; Alembic is not the live migration authority.
@@ -40,12 +40,12 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 
 ## Domain Contracts
 
-- Workflow Packages are canonical for platform authoring. Use `/api/workflow-packages`, `/workflow-packages*`, `ledger.workflowPackage/v1`, and package-local agents, output schemas, capability profiles, and workflow graphs. Private MCP configs are flat inline `env`, `headers`, and `query` manifest text, and that export/import contract is intentionally breaking.
+- Workflow Packages are canonical for platform authoring. Use `/api/workflow-packages`, `/workflow-packages*`, `signaldeck.workflowPackage/v1`, and package-local agents, output schemas, capability profiles, and workflow graphs. Private MCP configs are flat inline `env`, `headers`, and `query` manifest text, and that export/import contract is intentionally breaking.
 - Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
-- Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries come from enabled `ledger.finance` contributions.
-- `ledger.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup.
+- Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries come from enabled `signaldeck.finance` contributions.
+- `signaldeck.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup.
 - Runs persist package lineage in `runs`, `run_steps`, and `run_agent_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token.
 
 ## Data Flow Highlights
@@ -55,7 +55,7 @@ Ledger is a dual-stack FastAPI and React/Vite application with preserved portfol
 3. Report generation compiles templates into immutable markdown snapshots with generated slug/name values.
 4. Reusable report-series loops use a stable runtime input such as `inputs.analysis_tag` plus matching report `metadata.tags`; `reports.by_tag(inputs.analysis_tag).latest.*` selects the latest prior report in the same series.
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
-6. Workflow package editors validate `ledger.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
+6. Workflow package editors validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
 7. Package launch reads launch metadata, posts `{version, workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance.
 8. Rerun and step replay flows draft from persisted run state, then create new run/replay records through platform routes.
 

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Ledger uses PostgreSQL for preserved portfolio/report/template data and the package-first agent-platform tables. Startup schema repair lives in `backend/app/db/`; Alembic scaffolding is not the live upgrade authority.
+SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the package-first agent-platform tables. Startup schema repair lives in `backend/app/db/`; Alembic scaffolding is not the live upgrade authority.
 
 ## Preserved Product Tables
 

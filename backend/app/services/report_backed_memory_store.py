@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import decimal_to_string, to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     REPORT_BACKED_MEMORY_STORE_SURFACE,
     require_finance_workspace_enabled,
 )

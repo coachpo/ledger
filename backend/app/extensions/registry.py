@@ -6,7 +6,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import cast
 
-from app.extensions.ledger_finance.ownership import (
+from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_OWNERSHIP,
     ExtensionOwnershipArtifact,
 )
@@ -118,32 +118,32 @@ FINANCE_WORKSPACE_EXTENSIBLE_CONTRIBUTIONS = (
     ExtensionContributionRegistrar(
         category="tool_specs",
         summary="Finance workspace server-declared tool metadata is registered here.",
-        registrar="app.extensions.ledger_finance.tool_specs:register",
+        registrar="app.extensions.signaldeck_finance.tool_specs:register",
     ),
     ExtensionContributionRegistrar(
         category="runtime_executors",
         summary="Finance workspace runtime tool specs and executors are registered here.",
-        registrar="app.extensions.ledger_finance.runtime_executors:register",
+        registrar="app.extensions.signaldeck_finance.runtime_executors:register",
     ),
     ExtensionContributionRegistrar(
         category="provider_factories",
         summary="Finance workspace owns quote and social sentiment provider factories here.",
-        registrar="app.extensions.ledger_finance.provider_factories:register",
+        registrar="app.extensions.signaldeck_finance.provider_factories:register",
     ),
     ExtensionContributionRegistrar(
         category="api_routers",
         summary="Finance workspace owns preserved `/api/v1` router registrations here.",
-        registrar="app.extensions.ledger_finance.api_routers:register",
+        registrar="app.extensions.signaldeck_finance.api_routers:register",
     ),
     ExtensionContributionRegistrar(
         category="template_report_memory_hooks",
         summary="Template, report, memory, return-resolution, and follow-up hooks register here.",
-        registrar="app.extensions.ledger_finance.hooks:register",
+        registrar="app.extensions.signaldeck_finance.hooks:register",
     ),
     ExtensionContributionRegistrar(
         category="docs_metadata",
         summary="Docs metadata is scaffolded here for the bundled extension contract.",
-        registrar="app.extensions.ledger_finance.docs:register",
+        registrar="app.extensions.signaldeck_finance.docs:register",
     ),
 )
 

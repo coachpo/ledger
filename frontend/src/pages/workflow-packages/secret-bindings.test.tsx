@@ -66,7 +66,7 @@ const packageRead: WorkflowPackageRead = {
   warnings: [],
 };
 
-const manifestSource = `apiVersion: ledger.workflowPackage/v1
+const manifestSource = `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: http_callbacks

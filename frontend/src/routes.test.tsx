@@ -137,7 +137,7 @@ describe("router", () => {
     }
 
     expect(listBundledFrontendExtensions()).toEqual([extension]);
-    expect(extension.key).toBe("ledger.finance");
+    expect(extension.key).toBe("signaldeck.finance");
     expect(extension.defaultEnabled).toBe(FINANCE_WORKSPACE_DEFAULT_ENABLED);
     expect(extension.availability.stateSource).toMatchObject({
       defaultEnabled: FINANCE_WORKSPACE_DEFAULT_ENABLED,
@@ -190,7 +190,7 @@ describe("router", () => {
         id: "finance.workflow-packages.tool-discovery",
         queryKeyNamespace: "platform.tools",
         sourceHook: "@/hooks/use-workflow-packages#useTools",
-        toolKeyPrefix: "ledger.",
+        toolKeyPrefix: "signaldeck.",
       },
     ]);
     expect(extension.settingsPages).toEqual([]);
@@ -208,10 +208,10 @@ describe("router", () => {
     }
     const tools = [
       {
-        key: "ledger.reports.lookup",
+        key: "signaldeck.reports.lookup",
         displayName: "Reports",
         description: "Read reports",
-        module: "ledger.reports",
+        module: "signaldeck.reports",
       },
       {
         key: "core.echo",
@@ -229,7 +229,7 @@ describe("router", () => {
     expect(enabledPaths).toEqual(
       extension.routeContributions.map((contribution) => contribution.path),
     );
-    expect(enabledToolKeys).toEqual(["ledger.reports.lookup", "core.echo"]);
+    expect(enabledToolKeys).toEqual(["signaldeck.reports.lookup", "core.echo"]);
     expect(enabledFinanceRoutePaths(extensionList(false))).toEqual([]);
     expect(
       filterToolsForExtensionState(tools, extensionList(false)).map(

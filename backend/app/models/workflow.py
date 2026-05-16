@@ -12,9 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin, TimestampMixin
 
-WORKFLOW_MANIFEST_API_VERSION = "ledger.workflow/v1"
+WORKFLOW_MANIFEST_API_VERSION = "signaldeck.workflow/v1"
 TEMPORARY_WORKFLOW_MANIFEST_SOURCE = (
-    "apiVersion: ledger.workflow/v1\n"
+    "apiVersion: signaldeck.workflow/v1\n"
     "kind: Workflow\n"
     "metadata:\n"
     "  source: legacy-payload-placeholder\n"

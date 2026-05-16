@@ -29,7 +29,7 @@ async function loadWorkflowPackagesApi(baseUrl: string = "") {
   return import("./workflow-packages");
 }
 
-const manifestSource = `apiVersion: ledger.workflowPackage/v1
+const manifestSource = `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: research_package
@@ -52,36 +52,36 @@ afterEach(() => {
 
 describe("workflow packages api", () => {
   it("lists workflow packages from the unversioned platform endpoint", async () => {
-    const { listWorkflowPackages } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    const { listWorkflowPackages } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listWorkflowPackages({ status: "active" })).resolves.toEqual({ items: [] });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({ status: "active" });
     expect(init?.method).toBe("GET");
   });
 
   it("deletes workflow packages without expecting a response body", async () => {
-    const { deleteWorkflowPackage } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    const { deleteWorkflowPackage } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await expect(deleteWorkflowPackage(17)).resolves.toBeUndefined();
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/17");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/17");
     expect(init?.method).toBe("DELETE");
   });
 
   it("posts manifest validation and create requests with manifestSource", async () => {
     const { createWorkflowPackage, validateWorkflowPackageManifest } = await loadWorkflowPackagesApi(
-      "https://ledger.example.com/api/v1/",
+      "https://signaldeck.example.com/api/v1/",
     );
     const validationRead = {
       diagnostics: [],
       warnings: [],
-      metadata: { apiVersion: "ledger.workflowPackage/v1", key: "research_package", name: "Research Package", description: "" },
+      metadata: { apiVersion: "signaldeck.workflowPackage/v1", key: "research_package", name: "Research Package", description: "" },
       packageDefinition: { metadata: { key: "research_package" } },
       compiledPlan: { packageKey: "research_package" },
       manifestHash: "abc",
@@ -95,60 +95,60 @@ describe("workflow packages api", () => {
 
     await expect(createWorkflowPackage({ manifestSource })).resolves.toEqual({ id: 11, key: "research_package" });
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });
 
   it("uses PATCH for package updates and POST for createVersion imports", async () => {
-    const { importWorkflowPackage, updateWorkflowPackage } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    const { importWorkflowPackage, updateWorkflowPackage } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12 }, 200));
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12, latestVersion: 3 }, 201));
 
     await updateWorkflowPackage(12, { manifestSource, status: "active" });
     let lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/12");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12");
     expect(lastCall.init?.method).toBe("PATCH");
     expect(lastCall.init?.body).toBe(JSON.stringify({ manifestSource, status: "active" }));
 
     await importWorkflowPackage({ manifestSource, mode: "createVersion" });
     lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/import");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/import");
     expect(lastCall.init?.method).toBe("POST");
     expect(lastCall.init?.body).toBe(JSON.stringify({ manifestSource, mode: "createVersion" }));
   });
 
   it("builds versioned export URLs without fetching", async () => {
-    const { exportWorkflowPackageUrl } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    const { exportWorkflowPackageUrl } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
 
     expect(exportWorkflowPackageUrl(12, 3)).toBe(
-      "https://ledger.example.com/api/workflow-packages/12/export?version=3",
+      "https://signaldeck.example.com/api/workflow-packages/12/export?version=3",
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("reads preflight and launch metadata with version and workflowKey query params", async () => {
     const { getWorkflowPackageLaunch, preflightWorkflowPackage } = await loadWorkflowPackagesApi(
-      "https://ledger.example.com/api/v1/",
+      "https://signaldeck.example.com/api/v1/",
     );
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
 
     await preflightWorkflowPackage(12, { version: 3, workflowKey: "summarize" });
     let lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/12/preflight");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/preflight");
     expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ version: "3", workflowKey: "summarize" });
     expect(lastCall.init?.method).toBe("POST");
 
     await getWorkflowPackageLaunch(12, { version: 3, workflowKey: "summarize" });
     lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/12/launch");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/launch");
     expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ version: "3", workflowKey: "summarize" });
     expect(lastCall.init?.method).toBe("GET");
   });
 
   it("creates launches with package workflow metadata", async () => {
-    const { createWorkflowPackageLaunch } = await loadWorkflowPackagesApi("https://ledger.example.com/api/v1/");
+    const { createWorkflowPackageLaunch } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "queued" }, 201));
 
     await expect(
@@ -160,7 +160,7 @@ describe("workflow packages api", () => {
     ).resolves.toEqual({ id: 99, status: "queued" });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/workflow-packages/12/launches");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/launches");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ version: 3, workflowKey: "summarize", parameters: { ticker: "MSFT" } }));
   });

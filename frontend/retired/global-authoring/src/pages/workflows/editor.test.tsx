@@ -48,7 +48,7 @@ const savedWorkflow: WorkflowRead = {
   description: "Reviews market context.",
   inputSchema: workflowInputSchema,
   key: "market_review",
-  manifestApiVersion: "ledger.workflow/v1",
+  manifestApiVersion: "signaldeck.workflow/v1",
   manifestSource: savedManifest,
   name: "Market Review",
   outputSpec: {
@@ -120,7 +120,7 @@ describe("WorkflowsEditorPage", () => {
     expect(guide.getByText("Workflow Manifest 101")).toBeVisible();
     expect(guide.getByText("Describe the run input, ordered agent steps, and final output slot.")).toBeVisible();
     expect(guide.getByText("apiVersion + kind")).toBeVisible();
-    expect(guide.getByText("Use ledger.workflow/v1 and kind: Workflow.")).toBeVisible();
+    expect(guide.getByText("Use signaldeck.workflow/v1 and kind: Workflow.")).toBeVisible();
     expect(guide.getByText("steps[].agents[].uses")).toBeVisible();
     expect(guide.getByText(/\$\{\{ inputs\.\* \}\} and \$\{\{ steps\.\*\.outputs\.\* \}\}/i)).toBeVisible();
     expect(guide.getByText("Validate before Save or Run.")).toBeVisible();
@@ -137,7 +137,7 @@ describe("WorkflowsEditorPage", () => {
     render(<WorkflowsEditorPage />);
 
     const editor = screen.getByTestId("workflow-yaml-editor");
-    expect((editor as HTMLTextAreaElement).value).toContain("apiVersion: ledger.workflow/v1");
+    expect((editor as HTMLTextAreaElement).value).toContain("apiVersion: signaldeck.workflow/v1");
     expect((editor as HTMLTextAreaElement).value).toContain("key: new_workflow");
 
     fireEvent.click(screen.getByTestId("workflow-save"));
@@ -170,7 +170,7 @@ describe("WorkflowsEditorPage", () => {
     render(<WorkflowsEditorPage />);
 
     fireEvent.change(screen.getByTestId("workflow-yaml-editor"), {
-      target: { value: "apiVersion: ledger.workflow/v1\nkind: [" },
+      target: { value: "apiVersion: signaldeck.workflow/v1\nkind: [" },
     });
 
     expect(screen.getByTestId("workflow-local-parse-status")).toHaveTextContent(
@@ -189,7 +189,7 @@ describe("WorkflowsEditorPage", () => {
     };
     const runInputSchema = { type: "object", properties: { ticker: { type: "string" } } };
     const compiledGraph = {
-      apiVersion: "ledger.workflow/v2",
+      apiVersion: "signaldeck.workflow/v2",
       rootNodeId: "root_sequence",
       nodes: [
         { id: "root_sequence", nodeId: "root_sequence", kind: "sequence", childNodeIds: ["analyst_fanout", "review_loop", "decision"] },
@@ -220,7 +220,7 @@ describe("WorkflowsEditorPage", () => {
         },
       ],
       metadata: {
-        apiVersion: "ledger.workflow/v1",
+        apiVersion: "signaldeck.workflow/v1",
         description: "Describe what this workflow does.",
         key: "new_workflow",
         name: "New Workflow",

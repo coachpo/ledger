@@ -2,7 +2,7 @@ import type { FrontendExtensionDefinition } from "./types";
 import {
   financeWorkspaceFrontendExtension,
   FINANCE_WORKSPACE_EXTENSION_KEY,
-} from "./ledger-finance";
+} from "./signaldeck-finance";
 
 export const bundledFrontendExtensions = {
   [FINANCE_WORKSPACE_EXTENSION_KEY]: financeWorkspaceFrontendExtension,

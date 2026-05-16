@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.extensions.ledger_finance.dependencies import get_portfolio_service
+from app.extensions.signaldeck_finance.dependencies import get_portfolio_service
 from app.schemas.portfolio import PortfolioCreate, PortfolioRead, PortfolioUpdate
 from app.services.portfolio_service import PortfolioService
 

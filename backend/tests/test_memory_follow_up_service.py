@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.extensions.ledger_finance.hooks import MEMORY_FOLLOW_UP_SERVICE_SURFACE
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.hooks import MEMORY_FOLLOW_UP_SERVICE_SURFACE
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_step import RunStep
@@ -482,7 +482,7 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
             extension_snapshots=[
                 {
                     "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                    "surfaces": ["tool.ledger.reports.lookup"],
+                    "surfaces": ["tool.signaldeck.reports.lookup"],
                 }
             ],
             input={},

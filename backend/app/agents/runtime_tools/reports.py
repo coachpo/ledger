@@ -27,16 +27,16 @@ from app.services.capability_service import (
 from app.services.memory_service import MemoryService
 from app.services.report_service import ReportService
 
-REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_reports_lookup"
+REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_reports_lookup"
 
 _REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
 _REPORT_LOOKUP_DESCRIPTION = (
-    "Read persisted Ledger reports by ticker, tag, review type, portfolio slug, source, "
+    "Read persisted SignalDeck reports by ticker, tag, review type, portfolio slug, source, "
     "limit, and offset."
 )
 _REPORT_LOOKUP_GUIDANCE = (
-    "When you need persisted Ledger report context, call the ledger_reports_lookup tool instead "
-    "of inventing report content."
+    "When you need persisted SignalDeck report context, call the "
+    "signaldeck_reports_lookup tool instead of inventing report content."
 )
 _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -68,13 +68,13 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "additionalProperties": False,
 }
 
-REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "ledger_reports_write"
+REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
 
 _REPORT_MEMORY_WRITE_DISPLAY_NAME = "Report Memory Write"
 _REPORT_MEMORY_WRITE_DESCRIPTION = "Create a pending agent-memory report from decision text."
 _REPORT_MEMORY_WRITE_GUIDANCE = (
     "When you commit a trading decision that should be remembered, call the "
-    "ledger_reports_write tool with only ticker, portfolio/horizon context, confidence, "
+    "signaldeck_reports_write tool with only ticker, portfolio/horizon context, confidence, "
     "summary, and decision text. Do not include run, agent, workflow, outcome, return, "
     "alpha, timestamp, or reflection fields."
 )
@@ -123,12 +123,15 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="OpenAI response requested ledger_reports_lookup with invalid JSON arguments.",
+            message=(
+                "OpenAI response requested signaldeck_reports_lookup "
+                "with invalid JSON arguments."
+            ),
         ) from exc
     if not isinstance(raw_payload, dict):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="ledger_reports_lookup arguments must be a JSON object.",
+            message="signaldeck_reports_lookup arguments must be a JSON object.",
         )
     raw_arguments = cast(dict[str, object], raw_payload)
 
@@ -138,7 +141,7 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "ledger_reports_lookup arguments contained unsupported fields: "
+                "signaldeck_reports_lookup arguments contained unsupported fields: "
                 f"{', '.join(unexpected_keys)}"
             ),
         )
@@ -151,7 +154,7 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "ledger_reports_lookup source must be one of compiled, uploaded, external, "
+                "signaldeck_reports_lookup source must be one of compiled, uploaded, external, "
                 "or agent."
             ),
         )
@@ -216,7 +219,7 @@ def parse_report_memory_write_arguments(arguments_json: str) -> dict[str, object
     except ValidationError as exc:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="ledger_reports_write arguments failed validation.",
+            message="signaldeck_reports_write arguments failed validation.",
             details=_validation_details_from_pydantic_error(exc),
         ) from exc
     return {"payload": payload}
@@ -316,7 +319,7 @@ def _trusted_memory_write_context(
         raise RuntimeToolError(
             code="agent_tool_dependency_missing",
             message=(
-                "ledger_reports_write requires runtime context fields: "
+                "signaldeck_reports_write requires runtime context fields: "
                 f"{', '.join(missing_fields)}."
             ),
         )
@@ -344,7 +347,7 @@ def _parse_optional_string_argument(value: object) -> str | None:
     if not isinstance(value, str):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="ledger_reports_lookup string arguments must be strings.",
+            message="signaldeck_reports_lookup string arguments must be strings.",
         )
     normalized = value.strip()
     return normalized or None
@@ -362,17 +365,17 @@ def _parse_optional_integer_argument(
     if isinstance(value, bool) or not isinstance(value, int):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_reports_lookup {field_name} must be an integer.",
+            message=f"signaldeck_reports_lookup {field_name} must be an integer.",
         )
     if value < minimum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_reports_lookup {field_name} must be at least {minimum}.",
+            message=f"signaldeck_reports_lookup {field_name} must be at least {minimum}.",
         )
     if maximum is not None and value > maximum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_reports_lookup {field_name} must be at most {maximum}.",
+            message=f"signaldeck_reports_lookup {field_name} must be at most {maximum}.",
         )
     return int(value)
 

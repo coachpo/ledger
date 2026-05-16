@@ -14,14 +14,14 @@ from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     MEMORY_CONTEXT_SERVICE_SURFACE,
     MEMORY_REPORT_SERVICE_SURFACE,
     MEMORY_SERVICE_SURFACE,
     REFLECTION_SERVICE_SURFACE,
     RETURN_RESOLUTION_SERVICE_SURFACE,
 )
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.extension import ExtensionToggleRequest

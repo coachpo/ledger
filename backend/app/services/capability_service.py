@@ -26,24 +26,28 @@ from app.schemas.capability import (
     CapabilityToolListRead,
 )
 
-REPORT_LOOKUP_TOOL_KEY = "ledger.reports.lookup"
+REPORT_LOOKUP_TOOL_KEY = "signaldeck.reports.lookup"
 REPORT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.lookup."
-REPORT_MEMORY_WRITE_TOOL_KEY = "ledger.reports.write"
+REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.reports.lookup."
+REPORT_MEMORY_WRITE_TOOL_KEY = "signaldeck.reports.write"
 REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.reports.write."
-POSITION_LOOKUP_TOOL_KEY = "ledger.positions.lookup"
+REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use signaldeck.reports.write."
+)
+POSITION_LOOKUP_TOOL_KEY = "signaldeck.positions.lookup"
 POSITION_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-POSITION_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use ledger.positions.lookup."
-MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "ledger.market_data.quote_lookup"
+POSITION_LOOKUP_ACCESS_DENIED_MESSAGE = (
+    "Agent is not authorized to use signaldeck.positions.lookup."
+)
+MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "signaldeck.market_data.quote_lookup"
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use ledger.market_data.quote_lookup."
+    "Agent is not authorized to use signaldeck.market_data.quote_lookup."
 )
-MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "ledger.market_data.history_lookup"
+MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "signaldeck.market_data.history_lookup"
 MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
 MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use ledger.market_data.history_lookup."
+    "Agent is not authorized to use signaldeck.market_data.history_lookup."
 )
 
 

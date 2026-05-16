@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.extensions.ledger_finance.ownership import (
+from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
@@ -23,7 +23,7 @@ from tests.test_workflow_package_runtime_api import (
 
 
 def _finance_tool_package_source(package_key: str) -> str:
-    return f"""apiVersion: ledger.workflowPackage/v1
+    return f"""apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: {package_key}
@@ -41,7 +41,7 @@ spec:
     - key: quote_tools
       name: Quote Tools
       toolKeys:
-        - ledger.market_data.quote_lookup
+        - signaldeck.market_data.quote_lookup
   outputSchemas:
     - key: summary_output
       name: Summary Output
@@ -196,7 +196,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     enabled_snapshot = cast(list[dict[str, object]], queued_detail.json()["extensionSnapshots"])[0]
     assert enabled_snapshot["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
     assert enabled_snapshot["enabled"] is True
-    assert enabled_snapshot["surfaces"] == ["tool.ledger.market_data.quote_lookup"]
+    assert enabled_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
 
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
@@ -228,12 +228,12 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
         {
             "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
             "issue": (
-                "Server-declared tool 'ledger.market_data.quote_lookup' is disabled because "
-                "extension 'ledger.finance' is disabled"
+                "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
+                "extension 'signaldeck.finance' is disabled"
             ),
             "code": "extension_disabled",
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.ledger.market_data.quote_lookup",
+            "surface": "tool.signaldeck.market_data.quote_lookup",
         }
     ]
 
@@ -252,7 +252,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert any(
         detail.get("code") == "extension_disabled"
         and detail.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and detail.get("surface") == "tool.ledger.market_data.quote_lookup"
+        and detail.get("surface") == "tool.signaldeck.market_data.quote_lookup"
         for detail in launch_details
     )
 
@@ -266,7 +266,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert failed_body["error"] == "Extension is disabled"
     failed_snapshot = cast(list[dict[str, object]], failed_body["extensionSnapshots"])[0]
     assert failed_snapshot["enabled"] is True
-    assert failed_snapshot["surfaces"] == ["tool.ledger.market_data.quote_lookup"]
+    assert failed_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
 
     with session_factory() as session:
         persisted_template = session.get(TextTemplate, template.json()["id"])
@@ -317,4 +317,4 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     restored_snapshot = cast(list[dict[str, object]], restored_detail["extensionSnapshots"])[0]
     assert restored_snapshot["enabled"] is True
     assert restored_snapshot["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert restored_snapshot["surfaces"] == ["tool.ledger.market_data.quote_lookup"]
+    assert restored_snapshot["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]

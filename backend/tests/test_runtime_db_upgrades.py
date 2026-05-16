@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.session import init_db
 from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.mcp_server import McpServer
 from app.reset_seed import (
     MAG7_COMPANIES,
@@ -348,13 +348,13 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
                 "key": _LIVE_CAPABILITY_KEY,
                 "name": "Market Review Tools",
                 "description": "Live capability that must remain after startup sanitation.",
-                "tool_keys": json.dumps(["ledger.reports.lookup"]),
+                "tool_keys": json.dumps(["signaldeck.reports.lookup"]),
             },
             {
                 "key": STOCK_ANALYSIS_CAPABILITY_KEY,
                 "name": "Stock Analysis Tools",
                 "description": "Retired stock-analysis capability persisted before upgrade.",
-                "tool_keys": json.dumps(["ledger.reports.lookup"]),
+                "tool_keys": json.dumps(["signaldeck.reports.lookup"]),
             },
         ],
     )
@@ -1481,7 +1481,7 @@ def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
                     "key": "legacy_report_lookup",
                     "name": "Legacy Report Lookup",
                     "description": "Migrated from legacy Skill storage.",
-                    "tool_definitions": json.dumps([{"tool": "ledger.reports.lookup"}]),
+                    "tool_definitions": json.dumps([{"tool": "signaldeck.reports.lookup"}]),
                 },
             ).scalar_one()
             connection.exec_driver_sql(
@@ -2124,7 +2124,9 @@ def test_workflow_package_clean_break_removes_legacy_authoring_rows_preserves_mo
                     "description": "Custom-key stale tool key deleted during startup.",
                     "key": _CUSTOM_STALE_SKILL_KEY,
                     "name": "Stock Analysis Workspace Verify",
-                    "tool_keys": json.dumps(["ledger.reports.lookup", "ledger.stale.lookup"]),
+                    "tool_keys": json.dumps(
+                        ["signaldeck.reports.lookup", "signaldeck.stale.lookup"]
+                    ),
                 },
             ).scalar_one()
             connection.execute(

@@ -14,7 +14,7 @@ from app.api.positions import router as positions_router
 from app.api.reports import router as reports_router
 from app.api.templates import router as templates_router
 from app.api.trading_operations import router as trading_operations_router
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 
 @dataclass(frozen=True, slots=True)

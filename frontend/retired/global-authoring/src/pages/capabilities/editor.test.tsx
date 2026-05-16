@@ -26,9 +26,9 @@ const catalogTools = [
     description: "Generate a final answer for the user.",
   },
   {
-    key: "ledger.reports.lookup",
+    key: "signaldeck.reports.lookup",
     displayName: "Report Lookup",
-    description: "Lookup saved Ledger reports.",
+    description: "Lookup saved SignalDeck reports.",
   },
 ];
 
@@ -130,8 +130,8 @@ describe("CapabilitiesEditorPage", () => {
 
     const catalog = within(screen.getByTestId("capability-tool-catalog"));
     expect(catalog.getByText("Report Lookup")).toBeVisible();
-    expect(catalog.getByText("ledger.reports.lookup")).toBeVisible();
-    expect(catalog.getByText("Lookup saved Ledger reports.")).toBeVisible();
+    expect(catalog.getByText("signaldeck.reports.lookup")).toBeVisible();
+    expect(catalog.getByText("Lookup saved SignalDeck reports.")).toBeVisible();
     expect(screen.queryByText("Search Docs")).not.toBeInTheDocument();
   });
   it("hydrates edit state, saves toolKeys through the update hook, and navigates to the new version", async () => {

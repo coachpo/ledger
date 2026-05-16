@@ -18,6 +18,6 @@ Use them to make run launch forms clearer for people. Don't use them to pass dat
 
 ## Unsupported Help Text Mechanisms
 
-YAML comments aren't read as help text. A new `comment` field isn't supported. `x-ledger-*` metadata isn't supported.
+YAML comments aren't read as help text. A new `comment` field isn't supported. `x-signaldeck-*` metadata isn't supported.
 
 Unsupported JSON Schema keys remain unsupported, including `patternProperties`, `oneOf`, `allOf`, `if`, `then`, `else`, `not`, and schema-valued `additionalProperties`.

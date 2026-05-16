@@ -1,6 +1,6 @@
 import type { FrontendExtensionDefinition, FrontendExtensionStateSource } from "../types";
 
-export const FINANCE_WORKSPACE_EXTENSION_KEY = "ledger.finance";
+export const FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance";
 export const FINANCE_WORKSPACE_LABEL = "Finance Workspace";
 export const FINANCE_WORKSPACE_DEFAULT_ENABLED = true;
 export const FINANCE_WORKSPACE_PHASE = "phase_1_bundled_first_party";
@@ -146,7 +146,7 @@ export const financeWorkspaceFrontendExtension = {
       id: "finance.workflow-packages.tool-discovery",
       queryKeyNamespace: "platform.tools",
       sourceHook: "@/hooks/use-workflow-packages#useTools",
-      toolKeyPrefix: "ledger.",
+      toolKeyPrefix: "signaldeck.",
     },
   ],
 } as const satisfies FrontendExtensionDefinition;

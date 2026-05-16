@@ -16,8 +16,8 @@ from pydantic import (
 
 from app.schemas.common import CamelModel
 
-WORKFLOW_MANIFEST_V1_API_VERSION = "ledger.workflow/v1"
-WORKFLOW_MANIFEST_V2_API_VERSION = "ledger.workflow/v2"
+WORKFLOW_MANIFEST_V1_API_VERSION = "signaldeck.workflow/v1"
+WORKFLOW_MANIFEST_V2_API_VERSION = "signaldeck.workflow/v2"
 WORKFLOW_MANIFEST_API_VERSION = WORKFLOW_MANIFEST_V1_API_VERSION
 WORKFLOW_MANIFEST_V2_MAX_LOOP_ITERATIONS = 10
 WORKFLOW_MANIFEST_V2_MAX_FANOUT_BRANCHES = 16
@@ -288,7 +288,7 @@ class WorkflowManifestOutput(CamelModel):
 
 
 class WorkflowManifest(CamelModel):
-    api_version: Literal["ledger.workflow/v1"] = Field(alias="apiVersion")
+    api_version: Literal["signaldeck.workflow/v1"] = Field(alias="apiVersion")
     kind: Literal["Workflow"]
     metadata: WorkflowManifestMetadata
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")
@@ -518,7 +518,7 @@ class WorkflowManifestV2PostRunMemory(CamelModel):
 
 
 class WorkflowManifestV2(CamelModel):
-    api_version: Literal["ledger.workflow/v2"] = Field(alias="apiVersion")
+    api_version: Literal["signaldeck.workflow/v2"] = Field(alias="apiVersion")
     kind: Literal["Workflow"]
     metadata: WorkflowManifestMetadata
     input_schema: dict[str, JsonValue] = Field(alias="inputSchema")

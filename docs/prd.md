@@ -4,7 +4,7 @@
 
 ## Product Summary
 
-Ledger is a trusted single-user portfolio workspace with preserved portfolio, template, and report workflows plus the package-first agent-platform surface. The shipped browser surface covers portfolios, templates, reports, Workflow Packages, Model Connections, and Runs.
+SignalDeck is a trusted single-user portfolio workspace with preserved portfolio, template, and report workflows plus the package-first agent-platform surface. The shipped browser surface covers portfolios, templates, reports, Workflow Packages, Model Connections, and Runs.
 
 ## Goals
 
@@ -39,7 +39,7 @@ Ledger is a trusted single-user portfolio workspace with preserved portfolio, te
 - Report-series workflows can reuse stable tags and runtime inputs to reference the latest prior report in a series.
 - Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
 - Agent memory reports keep `source="agent"` for origin, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` for purpose/type, and server-owned `metadata.createdBy.type="agent"` provenance.
-- Workflow Packages can be authored from `ledger.workflowPackage/v1` YAML manifests and validated before save.
+- Workflow Packages can be authored from `signaldeck.workflowPackage/v1` YAML manifests and validated before save.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections remain global live bindings, global Tools remain read-only metadata, and package-private resources stay inside package versions.
 - Package launches create persisted runs with visible package provenance, per-step details, final output, and safe error states.

@@ -16,7 +16,7 @@ from app.agents import get_default_tool_catalog
 from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
 from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolError, RuntimeToolRegistry
 from app.core.config import get_settings
-from app.extensions.ledger_finance.provider_factories import create_social_sentiment_adapters
+from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository

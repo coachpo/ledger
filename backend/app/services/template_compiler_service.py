@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string, portfolio_cash_total, to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     TEMPLATE_COMPILER_SURFACE,
     require_finance_workspace_enabled,
 )

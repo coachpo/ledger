@@ -20,7 +20,7 @@ GENERIC_PLATFORM_MODEL_CONNECTION_SETUP: dict[str, str] = {
 }
 
 GENERIC_PLATFORM_AGENT_MANIFEST_SOURCES: dict[str, str] = {
-    "market_analyst": """apiVersion: ledger.agent/v1
+    "market_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: market_analyst
@@ -29,7 +29,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger market data, quote, history, OHLCV, and indicator tools
+    Call granted SignalDeck market data, quote, history, OHLCV, and indicator tools
     instead of inventing market prices or indicator values. Disclose tool
     warnings, empty payloads, stale data, and missing provider coverage as data
     quality or provider limitations. Return the complete structured market
@@ -53,7 +53,7 @@ spec:
     - platform_graph_market_data@1
   budgetUsd: "0.25"
 """,
-    "social_analyst": """apiVersion: ledger.agent/v1
+    "social_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: social_analyst
@@ -62,7 +62,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger news tools instead of inventing articles, posts, or
+    Call granted SignalDeck news tools instead of inventing articles, posts, or
     sentiment readings, then synthesize social sentiment only from returned news
     and insider-data payloads. Disclose tool warnings, empty payloads, stale or
     missing provider coverage, and that no direct social feed or social sentiment
@@ -86,7 +86,7 @@ spec:
     - platform_graph_news@1
   budgetUsd: "0.25"
 """,
-    "news_analyst": """apiVersion: ledger.agent/v1
+    "news_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: news_analyst
@@ -95,7 +95,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger company, global, query news, and insider-data tools
+    Call granted SignalDeck company, global, query news, and insider-data tools
     instead of inventing articles or events. Disclose warnings, empty payloads,
     stale data, and missing provider coverage as data quality or provider
     limitations. Return the complete structured news analyst report for the
@@ -118,7 +118,7 @@ spec:
     - platform_graph_news@1
   budgetUsd: "0.25"
 """,
-    "fundamentals_analyst": """apiVersion: ledger.agent/v1
+    "fundamentals_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: fundamentals_analyst
@@ -127,7 +127,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger fundamentals and statement-data tools instead of
+    Call granted SignalDeck fundamentals and statement-data tools instead of
     inventing metrics or filings. Treat returned statements and ratios as the
     only source for fundamentals. Disclose warnings, empty payloads, stale data,
     and missing provider coverage as data quality or
@@ -151,7 +151,7 @@ spec:
     - platform_graph_fundamentals@1
   budgetUsd: "0.25"
 """,
-    "bull_researcher": """apiVersion: ledger.agent/v1
+    "bull_researcher": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: bull_researcher
@@ -160,7 +160,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored research context is
+    Call granted SignalDeck report lookup tools when stored research context is
     needed instead of inventing prior reports. Disclose unavailable reports or
     missing provider data. Return JSON with exactly one top-level key, nextState,
     containing the complete updated investment debate state, including
@@ -198,10 +198,10 @@ spec:
     required: [priorState]
   outputSchema: platform_graph_investment_debate_transition@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.30"
 """,
-    "bear_researcher": """apiVersion: ledger.agent/v1
+    "bear_researcher": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: bear_researcher
@@ -210,7 +210,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored research context is
+    Call granted SignalDeck report lookup tools when stored research context is
     needed instead of inventing prior reports. Disclose unavailable reports or
     missing provider data. Return JSON with exactly one top-level key, nextState,
     containing the complete updated investment debate state, including
@@ -228,10 +228,10 @@ spec:
     required: [priorState]
   outputSchema: platform_graph_investment_debate_transition@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.30"
 """,
-    "research_manager": """apiVersion: ledger.agent/v1
+    "research_manager": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: research_manager
@@ -240,7 +240,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored context is needed, and
+    Call granted SignalDeck report lookup tools when stored context is needed, and
     disclose unavailable reports or missing provider data. Produce a complete
     research plan with recommendation, thesis, and debateSummary from the full
     debate state. Do not return debate-state patches, omit required fields, or
@@ -263,10 +263,10 @@ spec:
     required: [debateState, ticker]
   outputSchema: platform_graph_research_plan@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.35"
 """,
-    "trader": """apiVersion: ledger.agent/v1
+    "trader": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: trader
@@ -275,7 +275,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger positions tools to inspect portfolio exposure instead of
+    Call granted SignalDeck positions tools to inspect portfolio exposure instead of
     assuming holdings. Disclose missing portfolio data or unavailable positions
     lookup results. Return a complete trader proposal with action, rationale, and
     sizingNotes from the research plan and portfolio context. Keep the proposal
@@ -296,10 +296,10 @@ spec:
     required: [researchPlan, portfolioId]
   outputSchema: platform_graph_trader_proposal@1
   capabilities:
-    - ledger_positions@1
+    - signaldeck_positions@1
   budgetUsd: "0.30"
 """,
-    "aggressive_risk_analyst": """apiVersion: ledger.agent/v1
+    "aggressive_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: aggressive_risk_analyst
@@ -308,7 +308,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored context is needed, and
+    Call granted SignalDeck report lookup tools when stored context is needed, and
     disclose unavailable reports or missing provider data. Return JSON with
     exactly one top-level key, nextState, containing the complete updated risk
     debate state, including researchPlan, traderProposal, aggressiveCase,
@@ -336,10 +336,10 @@ spec:
     required: [priorState, researchPlan, traderProposal]
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.25"
 """,
-    "neutral_risk_analyst": """apiVersion: ledger.agent/v1
+    "neutral_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: neutral_risk_analyst
@@ -348,7 +348,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored context is needed, and
+    Call granted SignalDeck report lookup tools when stored context is needed, and
     disclose unavailable reports or missing provider data. Return JSON with
     exactly one top-level key, nextState, containing the complete updated risk
     debate state, including researchPlan, traderProposal, aggressiveCase,
@@ -368,10 +368,10 @@ spec:
     required: [priorState]
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.25"
 """,
-    "conservative_risk_analyst": """apiVersion: ledger.agent/v1
+    "conservative_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: conservative_risk_analyst
@@ -380,7 +380,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored context is needed, and
+    Call granted SignalDeck report lookup tools when stored context is needed, and
     disclose unavailable reports or missing provider data. Return JSON with
     exactly one top-level key, nextState, containing the complete updated risk
     debate state, including researchPlan, traderProposal, aggressiveCase,
@@ -398,10 +398,10 @@ spec:
     required: [priorState]
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
   budgetUsd: "0.25"
 """,
-    "portfolio_manager": """apiVersion: ledger.agent/v1
+    "portfolio_manager": """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: portfolio_manager
@@ -410,7 +410,7 @@ metadata:
 spec:
   modelConnection: platform_graph_local_gpt54_mini
   systemPrompt: >
-    Call granted Ledger report lookup tools when stored context is needed, and
+    Call granted SignalDeck report lookup tools when stored context is needed, and
     disclose unavailable reports or missing provider data. Return the complete
     portfolio decision with action, rationale, riskSummary, and executionPlan
     from the final risk debate state. Keep the result research-only; do not
@@ -427,19 +427,19 @@ spec:
     required: [riskState]
   outputSchema: platform_graph_portfolio_decision@1
   capabilities:
-    - ledger_reports@1
+    - signaldeck_reports@1
     - platform_graph_memory@1
   budgetUsd: "0.35"
 """,
 }
 
-GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE = """apiVersion: ledger.workflow/v1
+GENERIC_PLATFORM_FIXED_UNROLLED_WORKFLOW_MANIFEST_SOURCE = """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: platform_graph_fixed_unrolled_review
   name: Platform Graph Demo Fixed Unrolled Review
   description: >
-    Fixed Ledger approximation of the Platform Graph Demo analyst, debate, trader,
+    Fixed SignalDeck approximation of the Platform Graph Demo analyst, debate, trader,
     risk, and portfolio-manager topology.
 inputSchema:
   type: object
@@ -562,13 +562,13 @@ output:
 """
 
 GENERIC_PLATFORM_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
-    "apiVersion: ledger.workflow/v1\n"
+    "apiVersion: signaldeck.workflow/v1\n"
     """kind: Workflow
 metadata:
   key: platform_graph_strict_sequential_review
   name: Platform Graph Demo Strict Sequential Review
   description: >
-    Strict v1 Ledger approximation of the Platform Graph Demo topology with each
+    Strict v1 SignalDeck approximation of the Platform Graph Demo topology with each
     analyst represented as an ordered single-agent step before debate, trader,
     risk, and portfolio-manager stages.
 inputSchema:
@@ -705,12 +705,12 @@ GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
         """key: platform_graph_fixed_unrolled_review
   name: Platform Graph Demo Fixed Unrolled Review
   description: >
-    Fixed Ledger approximation of the Platform Graph Demo analyst, debate, trader,
+    Fixed SignalDeck approximation of the Platform Graph Demo analyst, debate, trader,
     risk, and portfolio-manager topology.""",
         """key: platform_graph_practical_fanout_review
   name: Platform Graph Demo Practical Fanout Review
   description: >
-    Practical v1 Ledger approximation of the Platform Graph Demo topology with
+    Practical v1 SignalDeck approximation of the Platform Graph Demo topology with
     analysts running concurrently inside one multi-agent step before ordered
     debate, trader, risk, and portfolio-manager stages.""",
         1,
@@ -734,7 +734,7 @@ GENERIC_PLATFORM_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
 )
 
 GENERIC_PLATFORM_V2_STRICT_SEQUENTIAL_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
-    "apiVersion: ledger.workflow/v2\n"
+    "apiVersion: signaldeck.workflow/v2\n"
     """kind: Workflow
 metadata:
   key: platform_graph_v2_strict_sequential_review
@@ -906,7 +906,7 @@ postRunMemory:
 )
 
 GENERIC_PLATFORM_V2_PRACTICAL_FANOUT_REVIEW_WORKFLOW_MANIFEST_SOURCE = (
-    "apiVersion: ledger.workflow/v2\n"
+    "apiVersion: signaldeck.workflow/v2\n"
     """kind: Workflow
 metadata:
   key: platform_graph_v2_practical_fanout_review
@@ -1215,7 +1215,7 @@ class _DemoInitialRoundConfig(CamelModel):
 
 
 def _valid_manifest_source(*, uses: str = "research_agent@1") -> str:
-    return f"""apiVersion: ledger.workflow/v1
+    return f"""apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: market_review
@@ -1438,7 +1438,7 @@ def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
     assert result.diagnostics == []
     assert result.manifest is not None
     assert isinstance(result.manifest, WorkflowManifest)
-    assert result.manifest.api_version == "ledger.workflow/v1"
+    assert result.manifest.api_version == "signaldeck.workflow/v1"
     assert result.manifest.kind == "Workflow"
     assert result.manifest.metadata.key == "market_review"
     assert result.manifest.steps[0].id == "research"
@@ -1447,7 +1447,7 @@ def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
     assert result.manifest.steps[1].agents[0].inputs["analysis"].step_id == "research"
 
     dumped = result.manifest.model_dump(mode="json", by_alias=True)
-    assert dumped["apiVersion"] == "ledger.workflow/v1"
+    assert dumped["apiVersion"] == "signaldeck.workflow/v1"
     assert dumped["steps"][0]["agents"][0]["uses"] == "research_agent@1"
     assert dumped["steps"][1]["agents"][0]["with"]["analysis"] == (
         "${{ steps.research.outputs.analysis.summary }}"
@@ -1455,7 +1455,7 @@ def test_parse_valid_workflow_manifest_returns_typed_manifest() -> None:
 
 
 def _valid_v2_manifest_source(*, flow: str, output_reference: str) -> str:
-    return f"""apiVersion: ledger.workflow/v2
+    return f"""apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: market_review_v2
@@ -1559,7 +1559,7 @@ def test_parse_valid_v2_manifest_allows_each_root_node_kind(
     assert result.diagnostics == []
     assert result.manifest is not None
     dumped = result.manifest.model_dump(mode="json", by_alias=True)
-    assert dumped["apiVersion"] == "ledger.workflow/v2"
+    assert dumped["apiVersion"] == "signaldeck.workflow/v2"
     assert dumped["flow"]["kind"] == expected_root_kind
 
 
@@ -1733,7 +1733,7 @@ def test_v2_semantics_preserve_duplicate_diagnostics(
 
 def test_parser_rejects_malformed_yaml_with_location() -> None:
     diagnostic = _single_diagnostic(
-        """apiVersion: ledger.workflow/v1
+        """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: [broken
@@ -1746,8 +1746,8 @@ metadata:
 
 def test_parser_rejects_duplicate_yaml_keys_with_location() -> None:
     diagnostic = _single_diagnostic(
-        """apiVersion: ledger.workflow/v1
-apiVersion: ledger.workflow/v1
+        """apiVersion: signaldeck.workflow/v1
+apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: market_review
@@ -1768,7 +1768,7 @@ output:
     ("source", "expected_message"),
     [
         (
-            """apiVersion: ledger.workflow/v1
+            """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata: &metadata
   key: market_review
@@ -1782,7 +1782,7 @@ output:
             "YAML anchors are not supported",
         ),
         (
-            """apiVersion: ledger.workflow/v1
+            """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata: *metadata
 inputSchema:
@@ -1794,7 +1794,7 @@ output:
             "YAML aliases are not supported",
         ),
         (
-            """apiVersion: ledger.workflow/v1
+            """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   <<: {key: market_review, name: Market Review}
@@ -1824,14 +1824,14 @@ def test_parser_rejects_unsupported_yaml_features(
     ("source", "expected_path", "expected_message"),
     [
         (
-            _valid_manifest_source().replace("apiVersion: ledger.workflow/v1\n", "", 1),
+            _valid_manifest_source().replace("apiVersion: signaldeck.workflow/v1\n", "", 1),
             "apiVersion",
             "Field required",
         ),
         (
-            _valid_manifest_source().replace("ledger.workflow/v1", "ledger.workflow/v2", 1),
+            _valid_manifest_source().replace("signaldeck.workflow/v1", "signaldeck.workflow/v2", 1),
             "apiVersion",
-            "Input should be 'ledger.workflow/v1'",
+            "Input should be 'signaldeck.workflow/v1'",
         ),
         (
             _valid_manifest_source().replace("  name: Market Review\n", "", 1),
@@ -1924,14 +1924,14 @@ def test_platform_graph_example_agent_manifests_parse_with_exact_numeric_pins() 
         "social_analyst": ["platform_graph_news@1"],
         "news_analyst": ["platform_graph_news@1"],
         "fundamentals_analyst": ["platform_graph_fundamentals@1"],
-        "bull_researcher": ["ledger_reports@1"],
-        "bear_researcher": ["ledger_reports@1"],
-        "research_manager": ["ledger_reports@1"],
-        "trader": ["ledger_positions@1"],
-        "aggressive_risk_analyst": ["ledger_reports@1"],
-        "neutral_risk_analyst": ["ledger_reports@1"],
-        "conservative_risk_analyst": ["ledger_reports@1"],
-        "portfolio_manager": ["ledger_reports@1", "platform_graph_memory@1"],
+        "bull_researcher": ["signaldeck_reports@1"],
+        "bear_researcher": ["signaldeck_reports@1"],
+        "research_manager": ["signaldeck_reports@1"],
+        "trader": ["signaldeck_positions@1"],
+        "aggressive_risk_analyst": ["signaldeck_reports@1"],
+        "neutral_risk_analyst": ["signaldeck_reports@1"],
+        "conservative_risk_analyst": ["signaldeck_reports@1"],
+        "portfolio_manager": ["signaldeck_reports@1", "platform_graph_memory@1"],
     }
     expected_prompt_fragments = {
         "market_analyst": [
@@ -2082,7 +2082,7 @@ def test_platform_graph_v1_review_examples_parse_with_workflow_api_version(
 
     assert result.diagnostics == []
     assert result.manifest is not None
-    assert result.manifest.api_version == "ledger.workflow/v1"
+    assert result.manifest.api_version == "signaldeck.workflow/v1"
     assert result.manifest.metadata.key == expected_key
 
 
@@ -2186,7 +2186,7 @@ def test_platform_graph_v2_review_examples_parse_with_bounded_loops_and_memory(
     nodes = cast(list[dict[str, object]], flow["nodes"])
     loop_nodes = [node for node in nodes if node["kind"] == "loop"]
 
-    assert dumped["apiVersion"] == "ledger.workflow/v2"
+    assert dumped["apiVersion"] == "signaldeck.workflow/v2"
     assert dumped["metadata"]["key"] == expected_key
     assert nodes[0]["kind"] == expected_analyst_node_kind
     if expected_analyst_node_kind == "step":

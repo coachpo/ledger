@@ -7,7 +7,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
-from app.extensions.ledger_finance.provider_factories import create_quote_provider
+from app.extensions.signaldeck_finance.provider_factories import create_quote_provider
 from app.services.balance_service import BalanceService
 from app.services.csv_import_service import CsvImportService
 from app.services.market_data_service import MarketDataService

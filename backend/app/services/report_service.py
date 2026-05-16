@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     REPORT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

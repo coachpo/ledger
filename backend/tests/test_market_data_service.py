@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
-from app.extensions.ledger_finance.provider_factories import (
+from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
 )
 from app.services.market_data_service import MarketDataService

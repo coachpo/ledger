@@ -1,4 +1,4 @@
-"""Canonical phase-1 ownership inventory for ``ledger.finance``.
+"""Canonical phase-1 ownership inventory for ``signaldeck.finance``.
 
 This module is declarative only. It does not register routers, enable/disable
 state, runtime tools, or provider factories; later extension-registry work can
@@ -54,12 +54,12 @@ def _join_text(*parts: str) -> str:
     return "".join(parts)
 
 
-FINANCE_WORKSPACE_EXTENSION_KEY = "ledger.finance"
+FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance"
 FINANCE_WORKSPACE_LABEL = "Finance Workspace"
 FINANCE_WORKSPACE_DEFAULT_ENABLED = True
 FINANCE_WORKSPACE_PHASE = "phase_1_bundled_first_party"
 FINANCE_WORKSPACE_VERSIONING_RULE = (
-    "Bundled with the Ledger backend package version in phase 1; no independent "
+    "Bundled with the SignalDeck backend package version in phase 1; no independent "
     "extension semver exists until a registry/state contract introduces one. "
     "Routes, runtime tool keys, OpenAI function names, placeholder roots, report "
     "metadata semantics, and workflow manifest contracts stay stable while enabled."
@@ -80,31 +80,31 @@ FINANCE_WORKSPACE_CONTRIBUTION_CATEGORIES = (
 )
 
 FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS = (
-    "ledger.market_data.quote_lookup",
-    "ledger.market_data.history_lookup",
-    "ledger.market_data.ohlcv_lookup",
-    "ledger.indicators.lookup",
-    "ledger.fundamentals.lookup",
-    "ledger.news.lookup",
-    "ledger.social_sentiment.lookup",
-    "ledger.insider_data.lookup",
-    "ledger.positions.lookup",
-    "ledger.reports.lookup",
-    "ledger.reports.write",
+    "signaldeck.market_data.quote_lookup",
+    "signaldeck.market_data.history_lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.indicators.lookup",
+    "signaldeck.fundamentals.lookup",
+    "signaldeck.news.lookup",
+    "signaldeck.social_sentiment.lookup",
+    "signaldeck.insider_data.lookup",
+    "signaldeck.positions.lookup",
+    "signaldeck.reports.lookup",
+    "signaldeck.reports.write",
 )
 
 FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES = (
-    "ledger_market_data_quote_lookup",
-    "ledger_market_data_history_lookup",
-    "ledger_market_data_ohlcv_lookup",
-    "ledger_indicators_lookup",
-    "ledger_fundamentals_lookup",
-    "ledger_news_lookup",
-    "ledger_social_sentiment_lookup",
-    "ledger_insider_data_lookup",
-    "ledger_positions_lookup",
-    "ledger_reports_lookup",
-    "ledger_reports_write",
+    "signaldeck_market_data_quote_lookup",
+    "signaldeck_market_data_history_lookup",
+    "signaldeck_market_data_ohlcv_lookup",
+    "signaldeck_indicators_lookup",
+    "signaldeck_fundamentals_lookup",
+    "signaldeck_news_lookup",
+    "signaldeck_social_sentiment_lookup",
+    "signaldeck_insider_data_lookup",
+    "signaldeck_positions_lookup",
+    "signaldeck_reports_lookup",
+    "signaldeck_reports_write",
 )
 
 _EXTENSION_OWNED_SURFACES = (
@@ -190,8 +190,8 @@ _EXTENSION_OWNED_SURFACES = (
         category="report_backed_memory_automation",
         summary="Phase-1 memory is report-backed and follows the finance reporting boundary.",
         surfaces=(
-            "backend/app/agents/runtime_tools/reports.py: ledger_reports_lookup",
-            "backend/app/agents/runtime_tools/reports.py: ledger_reports_write",
+            "backend/app/agents/runtime_tools/reports.py: signaldeck_reports_lookup",
+            "backend/app/agents/runtime_tools/reports.py: signaldeck_reports_write",
             "backend/app/services/memory_service.py",
             "backend/app/services/memory_report_service.py",
             "backend/app/services/memory_context_service.py",
@@ -282,8 +282,11 @@ _EXTENSION_OWNED_SURFACES = (
         summary="Live docs sections that describe finance-owned routes/tools/providers/memory.",
         surfaces=(
             "docs/api-design.md preserved product API table and runtime tool contract notes",
-            "docs/ledger-agent-platform.md tools, UI contract, and memory artifact notes",
-            "docs/ledger-memory-layer-design.md report-backed memory tool and metadata contract",
+            "docs/signaldeck-agent-platform.md tools, UI contract, and memory artifact notes",
+            (
+                "docs/signaldeck-memory-layer-design.md report-backed memory tool "
+                "and metadata contract"
+            ),
             "docs/data-model.md portfolio/report/cache/memory-related persistence descriptions",
             "docs/test-plan.md finance route, tool, and memory validation targets",
             "docs/requirements.md finance workspace and report/memory requirements",
@@ -340,7 +343,7 @@ _CORE_RETAINED_SURFACES = (
             "backend/app/services/model_connection_service.py",
             "backend/app/services/run_service.py generic run lifecycle and provenance host",
             "backend/app/services/http_operation_execution_service.py",
-            "ledger.workflowPackage/v1 manifest shape and package-private resources",
+            "signaldeck.workflowPackage/v1 manifest shape and package-private resources",
         ),
     ),
     OwnershipSurfaceGroup(
@@ -398,7 +401,7 @@ _CORE_RETAINED_SURFACES = (
         summary="Docs/test harnesses stay core while finance-specific cases are owned above.",
         surfaces=(
             "docs/AGENTS.md governance for live docs set",
-            "docs/ledger-agent-platform.md package-first platform reference sections",
+            "docs/signaldeck-agent-platform.md package-first platform reference sections",
             "backend/tests/conftest.py isolated PostgreSQL app fixture",
             "backend/tests/test_workflow_package_*.py generic package/runtime behavior",
             "backend/tests/test_legacy_backend_cutover.py removed legacy route guardrails",

@@ -1,6 +1,6 @@
-# Ledger
+# SignalDeck
 
-Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, and the current agent-platform surfaces.
+SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, and the current agent-platform surfaces.
 
 ## Repository Layout
 
@@ -18,7 +18,7 @@ Ledger is a monorepo for a portfolio-tracking stack with a FastAPI backend, a Re
 
 ## Workflow Package Contract
 
-Workflow Packages are the only live platform authoring root. Package manifests use `ledger.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
+Workflow Packages are the only live platform authoring root. Package manifests use `signaldeck.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
 Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable package id/key/version/hash provenance.
 
@@ -65,9 +65,9 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set if you want those stored secrets encryp
 It will:
 
 - prefer PostgreSQL on `25432`, then fall back to `25433` or `25434` if needed
-- prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-Ledger service
+- prefer the backend on `28000`, then fall back to `28001` or `28002` if the requested port is occupied by a non-SignalDeck service
 - prefer the frontend on `25173`, then fall back to `25174` if needed
-- stop previously running Ledger backend, frontend, and local Docker database instances before starting fresh ones
+- stop previously running SignalDeck backend, frontend, and local Docker database instances before starting fresh ones
 - derive `DATABASE_URL` for backend startup when you do not provide one
 - derive `VITE_API_BASE_URL` for frontend startup
 
@@ -92,7 +92,7 @@ Use this path only if you do not want `./start.sh` managing the stack for you.
 (cd backend && docker compose up -d db)
 ```
 
-Backend compose is DB-only and exposes Postgres on `${LEDGER_DB_PORT:-25432}`.
+Backend compose is DB-only and exposes Postgres on `${SIGNALDECK_DB_PORT:-25432}`.
 
 ### 2. Start the backend
 
@@ -100,7 +100,7 @@ Backend compose is DB-only and exposes Postgres on `${LEDGER_DB_PORT:-25432}`.
 (cd backend && uv run uvicorn app.main:app --reload --port 28000)
 ```
 
-The default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`. If you run the frontend on `25173`, keep backend CORS aligned with that origin through `CORS_ALLOWED_ORIGINS` when you need overrides.
+The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`. If you run the frontend on `25173`, keep backend CORS aligned with that origin through `CORS_ALLOWED_ORIGINS` when you need overrides.
 
 ### 3. Start the frontend
 
@@ -115,7 +115,7 @@ Visit `http://127.0.0.1:25173/`.
 ## Runtime Notes
 
 - The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes.
-- Workflow package manifests use `ledger.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
+- Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.
 - `docs/run-input-schema-helptext.md` explains optional `title` and `description` metadata for generated run input form labels and help text.
@@ -154,5 +154,5 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 - `AGENTS.md` maps the repo's live surfaces and nested documentation hierarchy
 - `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/api-design.md`, and `docs/data-model.md` are current product, requirements, API, and data references
 - `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata
-- `docs/ledger-agent-platform.md` is the canonical package-first platform reference
-- `docs/ledger-memory-layer-design.md` records the live phase 1 report-backed memory boundary
+- `docs/signaldeck-agent-platform.md` is the canonical package-first platform reference
+- `docs/signaldeck-memory-layer-design.md` records the live phase 1 report-backed memory boundary

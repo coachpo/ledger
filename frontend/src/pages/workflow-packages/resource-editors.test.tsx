@@ -108,7 +108,7 @@ const packageRead: WorkflowPackageRead = {
 const manifestRead: WorkflowPackageManifestRead = {
   compiledHash: "compiled-hash-123",
   manifestHash: "manifest-hash-123",
-  manifestSource: `apiVersion: ledger.workflowPackage/v1
+  manifestSource: `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: hydrated_market_review
@@ -215,10 +215,10 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       data: {
         items: [
           {
-            key: "ledger.reports.lookup",
+            key: "signaldeck.reports.lookup",
             displayName: "Report Lookup",
             description: "Read reports",
-            module: "ledger.reports",
+            module: "signaldeck.reports",
           },
         ],
       },
@@ -285,10 +285,10 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       data: {
         items: [
           {
-            key: "ledger.reports.lookup",
+            key: "signaldeck.reports.lookup",
             displayName: "Report Lookup",
             description: "Read reports",
-            module: "ledger.reports",
+            module: "signaldeck.reports",
           },
         ],
       },
@@ -350,7 +350,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
       data: {
         ...manifestRead,
-        manifestSource: `apiVersion: ledger.workflowPackage/v1
+        manifestSource: `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: hydrated_market_review

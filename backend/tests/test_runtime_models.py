@@ -1227,7 +1227,7 @@ def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_
             transport="stdio",
             command="python",
             args=["-m", "market_data"],
-            env={"LEDGER_MODE": "test"},
+            env={"SIGNALDECK_MODE": "test"},
             enabled=False,
         )
         session.add(compatibility_server)
@@ -1241,7 +1241,7 @@ def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_
             "transport": "stdio",
             "command": "python",
             "args": ["-m", "market_data"],
-            "env": {"LEDGER_MODE": "test"},
+            "env": {"SIGNALDECK_MODE": "test"},
         }
 
 

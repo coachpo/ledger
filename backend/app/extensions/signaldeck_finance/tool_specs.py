@@ -1,41 +1,41 @@
 from __future__ import annotations
 
 from app.agents.tool_catalog.server_declared import ServerDeclaredToolSpec
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 _SERVER_DECLARED_MODULE = __name__
 
 FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
     ServerDeclaredToolSpec(
-        key="ledger.market_data.quote_lookup",
+        key="signaldeck.market_data.quote_lookup",
         display_name="Market Data Quote Lookup",
         description="Read trusted market quote snapshots from server-owned integrations.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.market_data.history_lookup",
+        key="signaldeck.market_data.history_lookup",
         display_name="Market Data History Lookup",
         description="Read trusted historical market series from server-owned integrations.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.market_data.ohlcv_lookup",
+        key="signaldeck.market_data.ohlcv_lookup",
         display_name="OHLCV Lookup",
         description="Read server-owned OHLCV market data for supported symbols and ranges.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.indicators.lookup",
+        key="signaldeck.indicators.lookup",
         display_name="Indicators Lookup",
         description="Read server-owned market indicators for supported symbols and ranges.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.fundamentals.lookup",
+        key="signaldeck.fundamentals.lookup",
         display_name="Fundamentals Lookup",
         description=(
             "Read server-owned fundamentals data when provider support is "
@@ -45,7 +45,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.news.lookup",
+        key="signaldeck.news.lookup",
         display_name="News Lookup",
         description=(
             "Read server-owned news data when provider support is "
@@ -55,7 +55,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.social_sentiment.lookup",
+        key="signaldeck.social_sentiment.lookup",
         display_name="Social Sentiment Lookup",
         description=(
             "Read server-owned social sentiment data when provider support is "
@@ -65,7 +65,7 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.insider_data.lookup",
+        key="signaldeck.insider_data.lookup",
         display_name="Insider Data Lookup",
         description=(
             "Read server-owned insider data when provider support is "
@@ -75,21 +75,21 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.positions.lookup",
+        key="signaldeck.positions.lookup",
         display_name="Position Lookup",
-        description="Read persisted Ledger positions through server-owned position lookups.",
+        description="Read persisted SignalDeck positions through server-owned position lookups.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.reports.lookup",
+        key="signaldeck.reports.lookup",
         display_name="Report Lookup",
-        description="Read persisted Ledger reports through server-owned report lookups.",
+        description="Read persisted SignalDeck reports through server-owned report lookups.",
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="ledger.reports.write",
+        key="signaldeck.reports.write",
         display_name="Report Memory Write",
         description="Create pending agent-memory reports through server-owned memory writes.",
         module=_SERVER_DECLARED_MODULE,

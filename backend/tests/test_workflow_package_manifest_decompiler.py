@@ -24,7 +24,7 @@ def test_decompile_workflow_package_manifest_round_trips_canonical_package_json(
     recompiled = compile_workflow_package_manifest(result.source)
 
     assert result.source.startswith(
-        "apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\n"
+        "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
     )
     assert "modelConnection: tradingagents_primary_model" in result.source
     assert "modelConnectionId" not in result.source

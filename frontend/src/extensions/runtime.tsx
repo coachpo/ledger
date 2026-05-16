@@ -37,7 +37,7 @@ import {
   financeWorkspaceFrontendExtension,
   FINANCE_WORKSPACE_EXTENSION_KEY,
   FINANCE_WORKSPACE_LABEL,
-} from "./ledger-finance";
+} from "./signaldeck-finance";
 import type { FrontendNavContribution } from "./types";
 
 export type NavItem = {
@@ -191,7 +191,7 @@ function ExtensionStateUnavailable({ onRetry }: { onRetry: () => void }) {
           Extension state unavailable
         </CardTitle>
         <CardDescription>
-          Ledger could not load backend extension state, so extension-owned routes are paused.
+          SignalDeck could not load backend extension state, so extension-owned routes are paused.
         </CardDescription>
       </CardHeader>
       <CardContent>

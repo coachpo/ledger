@@ -7,7 +7,7 @@ from app.services.workflow_package_manifest_parser import parse_workflow_package
 
 
 def http_node_package_source(*, method: str = "POST") -> str:
-    return f"""apiVersion: ledger.workflowPackage/v1
+    return f"""apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: http_callbacks
@@ -108,7 +108,7 @@ def test_http_node_rejects_secret_refs_outside_http_request_fields() -> None:
 
 
 def test_http_node_rejects_duplicate_id_and_slot() -> None:
-    source = """apiVersion: ledger.workflowPackage/v1
+    source = """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: duplicate_http_callbacks

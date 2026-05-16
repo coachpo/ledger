@@ -23,7 +23,7 @@ def configure_logfire() -> None:
 
         logfire = _get_logfire_module()
         logfire.configure(
-            service_name="ledger-backend",
+            service_name="signaldeck-backend",
             send_to_logfire="if-token-present",
             console=False,
             inspect_arguments=False,

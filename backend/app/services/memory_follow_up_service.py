@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     MEMORY_FOLLOW_UP_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

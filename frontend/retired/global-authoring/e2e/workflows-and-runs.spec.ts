@@ -87,7 +87,7 @@ async function createPublishedAgent(
     outputSchemaVersion: number;
   },
 ): Promise<AgentRead> {
-  const manifestSource = `apiVersion: ledger.agent/v1
+  const manifestSource = `apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: ${options.key}
@@ -125,7 +125,7 @@ function workflowManifest(options: {
   key: string;
   name: string;
 }): string {
-  return `apiVersion: ledger.workflow/v1
+  return `apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: ${options.key}
@@ -159,7 +159,7 @@ output:
 
 function workflowV2Manifest(options: { agentKey: string; key: string; loopMaxIterations?: number }): string {
   const loopBound = options.loopMaxIterations ? `      maxIterations: ${options.loopMaxIterations}\n` : "";
-  return `apiVersion: ledger.workflow/v2
+  return `apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: ${options.key}
@@ -387,7 +387,7 @@ test.describe("Workflow YAML editor", () => {
     const v2Manifest = workflowV2Manifest({ agentKey: "graph_agent", key: `workflow_graph_${Date.now()}`, loopMaxIterations: 2 });
     const unboundedLoopManifest = workflowV2Manifest({ agentKey: "graph_agent", key: `workflow_graph_${Date.now()}` });
     const compiledGraph = {
-      apiVersion: "ledger.workflow/v2",
+      apiVersion: "signaldeck.workflow/v2",
       rootNodeId: "root_sequence",
       nodes: [
         { id: "root_sequence", nodeId: "root_sequence", kind: "sequence", childNodeIds: ["analyst_fanout", "review_loop", "decision"] },
@@ -414,7 +414,7 @@ test.describe("Workflow YAML editor", () => {
           },
           diagnostics: [],
           metadata: {
-            apiVersion: "ledger.workflow/v2",
+            apiVersion: "signaldeck.workflow/v2",
             key: "workflow_graph_preview",
             name: "Workflow Graph Preview",
             description: "Validates graph preview without replacing YAML source editing.",
@@ -435,7 +435,7 @@ test.describe("Workflow YAML editor", () => {
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("review_loop");
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("iteration 1");
     await expect(page.getByTestId("workflow-compiled-graph-preview")).toContainText("postRunMemory");
-    await expect(page.getByLabel("Exact raw compiled graph JSON")).toHaveValue(/ledger\.workflow\/v2/);
+    await expect(page.getByLabel("Exact raw compiled graph JSON")).toHaveValue(/signaldeck\.workflow\/v2/);
     await expect(page.locator("body")).not.toContainText(/sk-[A-Za-z0-9_-]+/);
     await expect(page.locator("body")).not.toContainText(/api[_ -]?key/i);
   });

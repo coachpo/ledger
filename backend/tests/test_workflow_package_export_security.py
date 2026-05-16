@@ -45,7 +45,7 @@ def test_export_preserves_inline_http_sse_values_without_synthesizing_secret_met
     )
     exported_bytes = exported.encode("utf-8")
 
-    assert "apiVersion: ledger.workflowPackage/v1" in exported
+    assert "apiVersion: signaldeck.workflowPackage/v1" in exported
     assert "modelConnection: tradingagents_primary_model" in exported
     assert "headers:" in exported
     assert "query:" in exported

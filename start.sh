@@ -149,7 +149,7 @@ kill_listener_on_port() {
 }
 
 stop_local_database() {
-  printf 'Stopping local Ledger database container, if running.\n'
+  printf 'Stopping local SignalDeck database container, if running.\n'
   (
     cd "$BACKEND_DIR"
     docker compose down --remove-orphans >/dev/null 2>&1 || true
@@ -159,7 +159,7 @@ stop_local_database() {
 stop_existing_instances() {
   local port
 
-  printf 'Stopping existing Ledger development instances.\n'
+  printf 'Stopping existing SignalDeck development instances.\n'
   stop_local_database
 
   for port in "$REQUESTED_BACKEND_PORT" 28000 28001 28002 "$REQUESTED_FRONTEND_PORT" 25173 25174; do
@@ -188,7 +188,7 @@ PY
 }
 
 database_url_for_port() {
-  printf 'postgresql+psycopg://ledger:ledger@localhost:%s/ledger' "$1"
+  printf 'postgresql+psycopg://signaldeck:signaldeck@localhost:%s/signaldeck' "$1"
 }
 
 validate_local_requirements
@@ -268,7 +268,7 @@ if [[ "$REUSE_BACKEND" -eq 0 ]]; then
     fi
 
     if [[ "$should_start_local_db" -eq 1 ]]; then
-      LEDGER_DB_PORT="$selected_db_port" docker compose up -d db
+      SIGNALDECK_DB_PORT="$selected_db_port" docker compose up -d db
     fi
 
     for _ in {1..30}; do

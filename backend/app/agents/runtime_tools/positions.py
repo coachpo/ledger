@@ -12,19 +12,19 @@ from app.services.capability_service import (
 )
 from app.services.position_service import PositionService
 
-POSITION_LOOKUP_OPENAI_FUNCTION_NAME = "ledger_positions_lookup"
+POSITION_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_positions_lookup"
 
 _POSITION_LOOKUP_DISPLAY_NAME = "Position Lookup"
 _POSITION_LOOKUP_DESCRIPTION = (
-    "Read persisted Ledger positions for a portfolio slug, optionally filtered by symbol, "
+    "Read persisted SignalDeck positions for a portfolio slug, optionally filtered by symbol, "
     "limit, and offset."
 )
 _POSITION_LOOKUP_GUIDANCE = (
-    "When you need persisted Ledger position context, call the ledger_positions_lookup tool "
-    "instead of inventing portfolio holdings."
+    "When you need persisted SignalDeck position context, call the "
+    "signaldeck_positions_lookup tool instead of inventing portfolio holdings."
 )
 _POSITION_LOOKUP_INVALID_JSON_MESSAGE = (
-    "OpenAI response requested ledger_positions_lookup with invalid JSON arguments."
+    "OpenAI response requested signaldeck_positions_lookup with invalid JSON arguments."
 )
 _POSITION_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -54,7 +54,7 @@ def parse_position_lookup_arguments(arguments_json: str) -> dict[str, object]:
     if not isinstance(raw_payload, dict):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message="ledger_positions_lookup arguments must be a JSON object.",
+            message="signaldeck_positions_lookup arguments must be a JSON object.",
         )
     raw_arguments = cast(dict[str, object], raw_payload)
 
@@ -64,7 +64,7 @@ def parse_position_lookup_arguments(arguments_json: str) -> dict[str, object]:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
             message=(
-                "ledger_positions_lookup arguments contained unsupported fields: "
+                "signaldeck_positions_lookup arguments contained unsupported fields: "
                 f"{', '.join(unexpected_keys)}"
             ),
         )
@@ -125,7 +125,7 @@ def _parse_required_string_argument(value: object, *, field_name: str) -> str:
     if normalized is None:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_positions_lookup {field_name} is required.",
+            message=f"signaldeck_positions_lookup {field_name} is required.",
         )
     return normalized
 
@@ -136,7 +136,7 @@ def _parse_optional_string_argument(value: object, *, field_name: str) -> str | 
     if not isinstance(value, str):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_positions_lookup {field_name} must be a string.",
+            message=f"signaldeck_positions_lookup {field_name} must be a string.",
         )
     normalized = value.strip()
     return normalized or None
@@ -154,17 +154,17 @@ def _parse_optional_integer_argument(
     if isinstance(value, bool) or not isinstance(value, int):
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_positions_lookup {field_name} must be an integer.",
+            message=f"signaldeck_positions_lookup {field_name} must be an integer.",
         )
     if value < minimum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_positions_lookup {field_name} must be at least {minimum}.",
+            message=f"signaldeck_positions_lookup {field_name} must be at least {minimum}.",
         )
     if maximum is not None and value > maximum:
         raise RuntimeToolError(
             code="agent_tool_call_invalid",
-            message=f"ledger_positions_lookup {field_name} must be at most {maximum}.",
+            message=f"signaldeck_positions_lookup {field_name} must be at most {maximum}.",
         )
     return int(value)
 

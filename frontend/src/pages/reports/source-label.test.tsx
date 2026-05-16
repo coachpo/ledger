@@ -65,7 +65,7 @@ function buildReport(overrides: Partial<ReportRead> = {}): ReportRead {
     source: "agent",
     content: "# Memory Snapshot\n\nAgent-created report.",
     metadata: {
-      author: "Ledger Agent",
+      author: "SignalDeck Agent",
       description: "Created by an agent run.",
       tags: ["memory"],
       createdBy: {

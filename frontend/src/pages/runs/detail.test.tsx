@@ -278,11 +278,11 @@ describe("RunsDetailPage", () => {
           },
           {
             apiStyle: "responses",
-            baseUrl: "https://ledger-deterministic-model.local/v1",
+            baseUrl: "https://signaldeck-deterministic-model.local/v1",
             connectionKind: "deterministic_smoke",
             hasApiKey: false,
             key: "smoke_model",
-            modelId: "ledger-smoke",
+            modelId: "signaldeck-smoke",
             name: "Smoke Model",
             reasoningEffort: null,
             timeoutSeconds: 5,

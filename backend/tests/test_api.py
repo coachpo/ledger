@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.dependencies import get_quote_provider
 from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.market_quote import MarketQuote
 from app.models.report import Report
 from app.models.symbol_name_cache import SymbolNameCache

@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Define the shipped Ledger requirements for a trusted single-user portfolio workspace and package-first agent platform. Live code is the source of truth; this document mirrors the browser and API surfaces mounted at the current branch tip.
+Define the shipped SignalDeck requirements for a trusted single-user portfolio workspace and package-first agent platform. Live code is the source of truth; this document mirrors the browser and API surfaces mounted at the current branch tip.
 
 ## Product Scope
 
@@ -13,7 +13,7 @@ Define the shipped Ledger requirements for a trusted single-user portfolio works
 - Portfolio CRUD with balances, positions, CSV import, quote/history context, and trading operations.
 - Template CRUD, placeholder browsing, inline compile, stored-template compile, and runtime inputs.
 - Report generation from templates, external JSON report creation, markdown upload, slug CRUD, filtering, and download.
-- Workflow Package authoring with `ledger.workflowPackage/v1` YAML validation, package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs.
+- Workflow Package authoring with `signaldeck.workflowPackage/v1` YAML validation, package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs.
 - Package import/export with no secrets, no encrypted credential payloads, no database ids, and no run history.
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing as global live bindings.
 - Global read-only Tools metadata from the server-declared catalog.

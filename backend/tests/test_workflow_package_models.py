@@ -14,7 +14,7 @@ _HASH_B = "b" * 64
 
 def _package_definition(agent_key: str = "review_agent") -> dict[str, object]:
     return {
-        "apiVersion": "ledger.workflowPackage/v1",
+        "apiVersion": "signaldeck.workflowPackage/v1",
         "kind": "WorkflowPackage",
         "metadata": {"key": "market_review", "name": "Market Review"},
         "spec": {"agents": [{"key": agent_key}], "workflows": []},

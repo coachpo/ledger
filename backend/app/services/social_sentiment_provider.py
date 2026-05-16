@@ -92,7 +92,7 @@ class RedditSocialSentimentAdapter:
     source: SocialSentimentSource = "reddit"
     provider_name: str = "reddit_public_search"
     _API: str = "https://www.reddit.com/r/{subreddit}/search.json"
-    _USER_AGENT: str = "ledger-backend/0.1"
+    _USER_AGENT: str = "signaldeck-backend/0.1"
 
     def __init__(
         self,
@@ -348,7 +348,7 @@ def _request_json(
     provider: str,
     source: SocialSentimentSource,
 ) -> dict[str, object]:
-    headers = {"User-Agent": "ledger-backend/0.1", "Accept": "application/json"}
+    headers = {"User-Agent": "signaldeck-backend/0.1", "Accept": "application/json"}
     try:
         with httpx.Client(timeout=timeout) as client:
             response = client.get(url, params=params, headers=headers)

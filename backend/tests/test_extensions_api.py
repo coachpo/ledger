@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError, extension_disabled_error
-from app.extensions.ledger_finance.ownership import (
+from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
@@ -119,7 +119,7 @@ def test_extension_state_helper_raises_extension_disabled_error(
         with pytest.raises(ApiError) as exc_info:
             _ = service.require_enabled(
                 FINANCE_WORKSPACE_EXTENSION_KEY,
-                surface="runtime.tool.ledger.reports.write",
+                surface="runtime.tool.signaldeck.reports.write",
             )
 
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
@@ -127,6 +127,6 @@ def test_extension_state_helper_raises_extension_disabled_error(
     assert exc_info.value.details == [
         {
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "runtime.tool.ledger.reports.write",
+            "surface": "runtime.tool.signaldeck.reports.write",
         }
     ]

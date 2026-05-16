@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_template_compiler_service,
     get_text_template_service,
 )

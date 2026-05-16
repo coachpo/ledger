@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.extensions.ledger_finance.dependencies import get_trading_operation_service
+from app.extensions.signaldeck_finance.dependencies import get_trading_operation_service
 from app.schemas.trading_operation import (
     TradingOperationCreate,
     TradingOperationRead,

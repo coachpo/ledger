@@ -65,7 +65,7 @@ _MODEL_CONNECTION_ALLOWED_CONNECTION_KINDS = (
     _MODEL_CONNECTION_DETERMINISTIC_SMOKE_CONNECTION_KIND,
 )
 _MODEL_CONNECTION_DETERMINISTIC_SMOKE_BASE_URL_RE = (
-    r"^https?://ledger-deterministic-model\.local(?::[0-9]+)?(?:/|$)"
+    r"^https?://signaldeck-deterministic-model\.local(?::[0-9]+)?(?:/|$)"
 )
 _MODEL_CONNECTION_KIND_CHECK = "ck_model_connections_connection_kind"
 _MODEL_CONNECTION_REASONING_EFFORT_CHECK = "ck_model_connections_reasoning_effort"
@@ -272,14 +272,14 @@ _AGENT_PLATFORM_TABLE_STATEMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 status VARCHAR(20) NOT NULL DEFAULT 'draft',
                 name VARCHAR(200) NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                manifest_api_version VARCHAR(80) NOT NULL DEFAULT 'ledger.agent/v1',
-                manifest_source TEXT NOT NULL DEFAULT $$apiVersion: ledger.agent/v1
+                manifest_api_version VARCHAR(80) NOT NULL DEFAULT 'signaldeck.agent/v1',
+                manifest_source TEXT NOT NULL DEFAULT $$apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   source: legacy-payload-placeholder
 $$,
                 manifest_hash VARCHAR(64) NOT NULL DEFAULT
-                    '98e17b8a6f1bd584aab673e2ab817f26173a7a1cd19ec5890c5bd2f0099c2f3b',
+                    '1051cbdb8f6e2f18cca4b4d4fbfee4a66406f500ce80662ad736a01868602948',
                 compiler_version VARCHAR(80) NOT NULL DEFAULT 'agent-manifest-compiler/v1',
                 model_connection_id INTEGER,
                 model_connection_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -331,8 +331,8 @@ $$,
                 status VARCHAR(20) NOT NULL DEFAULT 'draft',
                 name VARCHAR(200) NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                manifest_api_version VARCHAR(80) NOT NULL DEFAULT 'ledger.workflow/v1',
-                manifest_source TEXT NOT NULL DEFAULT $$apiVersion: ledger.workflow/v1
+                manifest_api_version VARCHAR(80) NOT NULL DEFAULT 'signaldeck.workflow/v1',
+                manifest_source TEXT NOT NULL DEFAULT $$apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   source: legacy-payload-placeholder

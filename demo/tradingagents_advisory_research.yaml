@@ -1,10 +1,10 @@
-apiVersion: ledger.workflowPackage/v1
+apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: tradingagents_advisory_research
   name: TradingAgents Advisory Research
   description: advisory/research workflow that approximates TradingAgents
-    through Ledger package semantics, not LangGraph runtime parity
+    through SignalDeck package semantics, not LangGraph runtime parity
 spec:
   inputs:
     type: object
@@ -34,7 +34,7 @@ spec:
         type: string
         title: Portfolio ID
         default: ""
-        description: Optional Ledger portfolio identifier used to include
+        description: Optional SignalDeck portfolio identifier used to include
           current positions when available. Leave blank for standalone research.
       outputLanguage:
         type: string
@@ -52,7 +52,7 @@ spec:
         title: Write memory report
         default: false
         description: Optional opt-in for writing an advisory memory report
-          through Ledger report tools.
+          through SignalDeck report tools.
       maxRiskDebateRounds:
         type: integer
         title: Risk debate rounds
@@ -91,47 +91,47 @@ spec:
     - key: market_research_tools
       name: Market Research Tools
       description: Reads market prices, history, OHLCV, and indicators from
-        Ledger native tools.
+        SignalDeck native tools.
       toolKeys:
-        - ledger.indicators.lookup
-        - ledger.market_data.history_lookup
-        - ledger.market_data.ohlcv_lookup
-        - ledger.market_data.quote_lookup
+        - signaldeck.indicators.lookup
+        - signaldeck.market_data.history_lookup
+        - signaldeck.market_data.ohlcv_lookup
+        - signaldeck.market_data.quote_lookup
     - key: fundamentals_tools
       name: Fundamentals Tools
-      description: Reads fundamentals data exposed by the Ledger server catalog.
+      description: Reads fundamentals data exposed by the SignalDeck server catalog.
       toolKeys:
-        - ledger.fundamentals.lookup
+        - signaldeck.fundamentals.lookup
     - key: news_research_tools
       name: News Research Tools
-      description: Reads company news and insider-data context from Ledger
+      description: Reads company news and insider-data context from SignalDeck
         native tools.
       toolKeys:
-        - ledger.insider_data.lookup
-        - ledger.news.lookup
+        - signaldeck.insider_data.lookup
+        - signaldeck.news.lookup
     - key: social_sentiment_tools
       name: Social Sentiment Tools
-      description: Reads normalized social sentiment source blocks from Ledger
+      description: Reads normalized social sentiment source blocks from SignalDeck
         native tools.
       toolKeys:
-        - ledger.social_sentiment.lookup
+        - signaldeck.social_sentiment.lookup
     - key: report_context_tools
       name: Report Context Tools
-      description: Reads persisted Ledger reports for advisory research context.
+      description: Reads persisted SignalDeck reports for advisory research context.
       toolKeys:
-        - ledger.reports.lookup
+        - signaldeck.reports.lookup
     - key: portfolio_context_tools
       name: Portfolio Context Tools
-      description: Reads persisted Ledger positions for portfolio context.
+      description: Reads persisted SignalDeck positions for portfolio context.
       toolKeys:
-        - ledger.positions.lookup
+        - signaldeck.positions.lookup
     - key: memory_write_tools
       name: Memory Write Tools
-      description: Reads and writes advisory memory reports through Ledger
+      description: Reads and writes advisory memory reports through SignalDeck
         report tools.
       toolKeys:
-        - ledger.reports.lookup
-        - ledger.reports.write
+        - signaldeck.reports.lookup
+        - signaldeck.reports.write
   outputSchemas:
     - key: analyst_report
       name: Analyst Report
@@ -286,7 +286,7 @@ spec:
         research.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents market analyst translated into Ledger package semantics. Use only the granted Ledger market research tools and the provided run inputs for ticker, asOfDate, horizonDays, benchmarkSymbol, and outputLanguage.
+        You are the TradingAgents market analyst translated into SignalDeck package semantics. Use only the granted SignalDeck market research tools and the provided run inputs for ticker, asOfDate, horizonDays, benchmarkSymbol, and outputLanguage.
 
         Gather quote, historical price, OHLCV, and indicator evidence before writing conclusions. Select no more than eight indicators, request them by exact supported indicator names when a tool requires names, and explain why each selected signal matters for the requested horizon. Do not invent prices, indicators, liquidity, or benchmark behavior; if a tool returns warnings, stale data, or empty payloads, disclose that limitation.
 
@@ -313,11 +313,11 @@ spec:
       budgetUsd: "0.25"
     - key: sentiment_analyst
       name: Sentiment Analyst
-      description: Single-shot sentiment synthesizer using Ledger social
+      description: Single-shot sentiment synthesizer using SignalDeck social
         sentiment payloads.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the canonical TradingAgents sentiment analyst, replacing the deprecated social-media analyst role. In Ledger, treat social sentiment as pre-normalized source blocks from the granted social sentiment tool and any provided prefetched sentiment context.
+        You are the canonical TradingAgents sentiment analyst, replacing the deprecated social-media analyst role. In SignalDeck, treat social sentiment as pre-normalized source blocks from the granted social sentiment tool and any provided prefetched sentiment context.
 
         Perform a single-shot synthesis rather than fabricating posts, usernames, engagement counts, or community narratives. Use the granted social sentiment capability only for the requested ticker/date context, then explain directional sentiment, intensity, notable disagreements, and coverage gaps. If source coverage is stale, sparse, unavailable, or warning-bearing, say so plainly.
 
@@ -351,7 +351,7 @@ spec:
         research packet.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents news analyst translated into Ledger package semantics. Use only the granted Ledger news research tools for company news and insider-data context around ticker and asOfDate.
+        You are the TradingAgents news analyst translated into SignalDeck package semantics. Use only the granted SignalDeck news research tools for company news and insider-data context around ticker and asOfDate.
 
         Ground every catalyst, event, insider signal, and macro or sector reference in returned tool evidence or provided inputs. Do not invent articles, headlines, dates, filings, sources, or insider activity. Disclose missing provider coverage, stale data, empty payloads, and tool warnings as data-quality limitations.
 
@@ -380,7 +380,7 @@ spec:
         financial context.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents fundamentals analyst translated into Ledger package semantics. Use only the granted Ledger fundamentals tool and provided run inputs; never invent financial statements, ratios, filing facts, margins, growth rates, or valuation multiples.
+        You are the TradingAgents fundamentals analyst translated into SignalDeck package semantics. Use only the granted SignalDeck fundamentals tool and provided run inputs; never invent financial statements, ratios, filing facts, margins, growth rates, or valuation multiples.
 
         Analyze the returned fundamentals for quality, growth, profitability, leverage, valuation, and horizon-relevant risks. When data is incomplete, stale, warning-bearing, or absent, disclose the limitation and avoid overconfidence.
 
@@ -503,7 +503,7 @@ spec:
         plan.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents research manager translated into Ledger package semantics. Review the full analyst packet and bull/bear debate state; you do not have direct tools.
+        You are the TradingAgents research manager translated into SignalDeck package semantics. Review the full analyst packet and bull/bear debate state; you do not have direct tools.
 
         Weigh the competing evidence, identify the decisive uncertainties, and choose a balanced advisory recommendation for the requested horizon. Preserve nuance: a recommendation may be bullish, bearish, neutral, or conditional when evidence is mixed. Do not introduce facts that are absent from the supplied reports and debate.
 
@@ -539,7 +539,7 @@ spec:
         authority.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents trader role translated into Ledger advisory semantics. Use the research plan, supplied context, and granted Ledger portfolio position lookup when portfolioId is present.
+        You are the TradingAgents trader role translated into SignalDeck advisory semantics. Use the research plan, supplied context, and granted SignalDeck portfolio position lookup when portfolioId is present.
 
         Convert the research plan into an advisory exposure posture for the requested horizon, considering current holdings when available. Disclose missing or unavailable portfolio context. Do not place orders, imply live execution, draft trade operations, create order tickets, or instruct an operator to execute immediately.
 
@@ -683,7 +683,7 @@ spec:
       description: Final structured advisory decision maker for the package.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents portfolio manager translated into Ledger advisory semantics. Use the final risk debate state, trader proposal, research plan, and granted Ledger report/portfolio context tools only when needed for final synthesis.
+        You are the TradingAgents portfolio manager translated into SignalDeck advisory semantics. Use the final risk debate state, trader proposal, research plan, and granted SignalDeck report/portfolio context tools only when needed for final synthesis.
 
         Act as the final arbiter. Weigh the aggressive, neutral, and conservative risk arguments; incorporate current position/report context when available; and produce a final advisory posture for the requested horizon. Disclose unavailable context and key limitations. Do not place orders, imply live execution, draft trade operations, or create implementation artifacts.
 
@@ -726,7 +726,7 @@ spec:
     - key: advisory_research
       name: Advisory Research
       description: Canonical TradingAgents advisory research topology using
-        Ledger sequence and bounded loop semantics only.
+        SignalDeck sequence and bounded loop semantics only.
       inputSchema:
         type: object
         title: TradingAgents advisory research inputs
@@ -756,7 +756,7 @@ spec:
             type: string
             title: Portfolio ID
             default: ""
-            description: Optional Ledger portfolio identifier used to include
+            description: Optional SignalDeck portfolio identifier used to include
               current positions when available. Leave blank for standalone
               research.
           outputLanguage:
@@ -775,7 +775,7 @@ spec:
             title: Write memory report
             default: false
             description: Optional opt-in for writing an advisory memory report
-              through Ledger report tools.
+              through SignalDeck report tools.
           maxRiskDebateRounds:
             type: integer
             title: Risk debate rounds

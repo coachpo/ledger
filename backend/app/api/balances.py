@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.extensions.ledger_finance.dependencies import get_balance_service
+from app.extensions.signaldeck_finance.dependencies import get_balance_service
 from app.schemas.balance import BalanceCreate, BalanceRead, BalanceUpdate
 from app.services.balance_service import BalanceService
 

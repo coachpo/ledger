@@ -593,7 +593,7 @@ class AgentService:
                 {
                     "field": "manifestSource",
                     "issue": (
-                        "Agent create/update writes must use ledger.agent/v1 manifest source"
+                        "Agent create/update writes must use signaldeck.agent/v1 manifest source"
                     ),
                 }
             ],

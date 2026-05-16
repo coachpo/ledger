@@ -20,4 +20,4 @@ RUN uv sync --frozen --no-dev --no-editable
 
 EXPOSE 8000
 
-CMD ["ledger-backend"]
+CMD ["signaldeck-backend"]

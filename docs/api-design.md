@@ -5,7 +5,7 @@
 ## Conventions
 
 - Health path: `/health`.
-- Preserved product base path: `/api/v1`, contributed by the bundled `ledger.finance` extension.
+- Preserved product base path: `/api/v1`, contributed by the bundled `signaldeck.finance` extension.
 - Current agent-platform base path: `/api`.
 - Standard format: JSON, except CSV and markdown uploads use `multipart/form-data`.
 - External field names are camelCase.
@@ -15,7 +15,7 @@
 
 ## Preserved Product API
 
-The preserved finance product API is bundled as `ledger.finance`. It is enabled by default during startup and reset/seed initialization, so local development, tests, and demo packages keep today's behavior without manifest edits. Extension state supports enable and disable only. The generic platform routes, manifest contract, run lifecycle, model bindings, and `/api/tools` host stay core.
+The preserved finance product API is bundled as `signaldeck.finance`. It is enabled by default during startup and reset/seed initialization, so local development, tests, and demo packages keep today's behavior without manifest edits. Extension state supports enable and disable only. The generic platform routes, manifest contract, run lifecycle, model bindings, and `/api/tools` host stay core.
 
 | Resource | Routes |
 |---|---|
@@ -39,12 +39,12 @@ Template/report series can be built by creating a template, previewing with `POS
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
 | Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for enable/disable state of bundled extensions |
-| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `ledger.social_sentiment.lookup` tool metadata contributed by enabled extensions |
+| Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by enabled extensions |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
 
 ## Workflow Package HTTP Nodes and Secret Bindings
 
-Workflow package manifests use `ledger.workflowPackage/v1`. The shipped non-agent operation node contract is `kind: http`; `kind: step` continues to mean a local package agent. An HTTP node includes `id`, `slot`, `method`, `url`, optional `headers`, optional `query`, optional JSON-compatible `body`, `response.outputSchema`, `timeoutSeconds`, and `optional`.
+Workflow package manifests use `signaldeck.workflowPackage/v1`. The shipped non-agent operation node contract is `kind: http`; `kind: step` continues to mean a local package agent. An HTTP node includes `id`, `slot`, `method`, `url`, optional `headers`, optional `query`, optional JSON-compatible `body`, `response.outputSchema`, `timeoutSeconds`, and `optional`.
 
 `method` is normalized to uppercase and preflight accepts only `GET` and `POST`. `timeoutSeconds` defaults to `30` and is capped at `30` by the manifest schema and runtime settings. The request fields may contain literal JSON values, `${{ inputs.path }}` references, `${{ nodes.node_id.outputs.slot.path }}` references, or `${{ secrets.key }}` references. Secret references are valid only inside HTTP request fields (`url`, `headers`, `query`, and `body`); they are rejected in package metadata, agent fields, schemas, workflow outputs, and other manifest locations.
 
@@ -68,16 +68,16 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 
 ## Runtime Tool Contract Notes
 
-`/api/tools` is the core global read-only discovery host. Its current finance/product/provider entries come from the bundled `ledger.finance` extension, which is enabled by default. Native runtime tools currently include quote/history/OHLCV, indicators, fundamentals, `ledger.news.lookup`, `ledger.social_sentiment.lookup`, insider data, positions, `ledger.reports.lookup`, and `ledger.reports.write`. `ledger.social_sentiment.lookup` is a separate tool, not an extension of news lookup; it accepts one symbol plus optional `sources` (`reddit`, `stocktwits`), optional date bounds, and `itemLimit` up to `50`, then returns `sourceBlocks`, aggregate `metrics`, and structured `warnings`.
+`/api/tools` is the core global read-only discovery host. Its current finance/product/provider entries come from the bundled `signaldeck.finance` extension, which is enabled by default. Native runtime tools currently include quote/history/OHLCV, indicators, fundamentals, `signaldeck.news.lookup`, `signaldeck.social_sentiment.lookup`, insider data, positions, `signaldeck.reports.lookup`, and `signaldeck.reports.write`. `signaldeck.social_sentiment.lookup` is a separate tool, not an extension of news lookup; it accepts one symbol plus optional `sources` (`reddit`, `stocktwits`), optional date bounds, and `itemLimit` up to `50`, then returns `sourceBlocks`, aggregate `metrics`, and structured `warnings`.
 
 ## Platform Compatibility Notes
 
-- Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside `ledger.workflowPackage/v1` manifests.
+- Workflow Packages are the only live platform authoring root. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside `signaldeck.workflowPackage/v1` manifests.
 - `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, and `/api/workflows` are removed global authoring routes, not aliases or redirects.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline, omit database ids and run history, and omit package secret binding rows and values.
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
-- Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `ledger.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
-- `ledger.finance` is created enabled by default at startup/reset and supports enable/disable state only.
+- Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `signaldeck.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
+- `signaldeck.finance` is created enabled by default at startup/reset and supports enable/disable state only.
 - Runs persist package provenance including package id, package key, version, hash, workflow key, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
 
 ## HTTP Status Guidelines

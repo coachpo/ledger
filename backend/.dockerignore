@@ -8,5 +8,5 @@ __pycache__/
 *.db
 *.egg-info/
 *.pyc
-ledger.db
+signaldeck.db
 tests/

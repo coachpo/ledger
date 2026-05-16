@@ -84,12 +84,12 @@ describe("query keys", () => {
     );
     expect(queryKeys.platform.runs.detail(42)).not.toEqual(queryKeys.reports.detail(42));
     expect(queryKeys.platform.workflowPackages.all).not.toEqual(queryKeys.portfolios.all);
-    expect(queryKeys.platform.extensions.detail("ledger.finance")).toEqual([
+    expect(queryKeys.platform.extensions.detail("signaldeck.finance")).toEqual([
       "api",
       "platform",
       "extensions",
       "detail",
-      "ledger.finance",
+      "signaldeck.finance",
     ]);
 
     expect(Object.keys(queryKeys.platform)).toEqual([

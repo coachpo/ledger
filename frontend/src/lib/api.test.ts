@@ -199,44 +199,44 @@ describe("api client", () => {
   });
 
   it("derives v1 and platform URLs from a configured versioned base", async () => {
-    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule("https://ledger.example.com/api/v2/");
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule("https://signaldeck.example.com/api/v2/");
 
-    expect(buildApiUrl("/portfolios")).toBe("https://ledger.example.com/api/v1/portfolios");
+    expect(buildApiUrl("/portfolios")).toBe("https://signaldeck.example.com/api/v1/portfolios");
     expect(buildPlatformApiUrl("/workflow-packages")).toBe(
-      "https://ledger.example.com/api/workflow-packages",
+      "https://signaldeck.example.com/api/workflow-packages",
     );
   });
 
   it("routes platform modules through the unversioned api base", async () => {
-    const { listModelConnections } = await loadApiModule("https://ledger.example.com/api/v1/");
+    const { listModelConnections } = await loadApiModule("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listModelConnections()).resolves.toEqual({ items: [] });
 
     const { url } = getLastFetchCall(fetchMock);
-    expect(url).toBe("https://ledger.example.com/api/model-connections");
+    expect(url).toBe("https://signaldeck.example.com/api/model-connections");
   });
 
   it("lists and toggles extensions through the unversioned api base", async () => {
-    const { listExtensions, toggleExtension } = await loadApiModule("https://ledger.example.com/api/v1/");
+    const { listExtensions, toggleExtension } = await loadApiModule("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listExtensions()).resolves.toEqual({ items: [] });
-    expect(getLastFetchCall(fetchMock).url).toBe("https://ledger.example.com/api/extensions");
+    expect(getLastFetchCall(fetchMock).url).toBe("https://signaldeck.example.com/api/extensions");
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ key: "ledger.finance", enabled: false }, 200));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ key: "signaldeck.finance", enabled: false }, 200));
     await expect(
-      toggleExtension("ledger.finance", { enabled: false }),
-    ).resolves.toMatchObject({ enabled: false, key: "ledger.finance" });
+      toggleExtension("signaldeck.finance", { enabled: false }),
+    ).resolves.toMatchObject({ enabled: false, key: "signaldeck.finance" });
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe("https://ledger.example.com/api/extensions/ledger.finance");
+    expect(url).toBe("https://signaldeck.example.com/api/extensions/signaldeck.finance");
     expect(init?.method).toBe("PATCH");
     expect(init?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
   it("encodes symbol lookup requests against the derived v1 base URL", async () => {
-    const { getPositionSymbolLookup } = await loadApiModule("https://ledger.example.com/api/");
+    const { getPositionSymbolLookup } = await loadApiModule("https://signaldeck.example.com/api/");
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." }, 200),
     );
@@ -247,7 +247,7 @@ describe("api client", () => {
 
     const { url } = getLastFetchCall(fetchMock);
     expect(url).toBe(
-      "https://ledger.example.com/api/v1/portfolios/portfolio%20with%2Fslash/positions/lookup?symbol=BRK%2FB",
+      "https://signaldeck.example.com/api/v1/portfolios/portfolio%20with%2Fslash/positions/lookup?symbol=BRK%2FB",
     );
   });
 });

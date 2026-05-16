@@ -15,7 +15,7 @@ from app.core.config import reset_settings_cache
 from app.db.session import get_engine, get_session_factory, init_db, reset_db_caches
 from app.main import create_app
 
-DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://ledger:ledger@localhost:25432/ledger"
+DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck"
 
 
 def _get_base_database_url() -> URL:
@@ -38,7 +38,7 @@ def _quote_identifier(identifier: str) -> str:
 def database_url() -> Iterator[str]:
     base_database_url = _get_base_database_url()
     admin_database_url = base_database_url.set(database="postgres")
-    database_name = f"ledger_test_{uuid4().hex}"
+    database_name = f"signaldeck_test_{uuid4().hex}"
     resolved_database_url = base_database_url.set(database=database_name).render_as_string(
         hide_password=False
     )

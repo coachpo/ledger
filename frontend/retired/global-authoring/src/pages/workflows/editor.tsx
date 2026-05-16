@@ -552,7 +552,7 @@ export function WorkflowsEditorPage() {
                   <CardContent className="flex flex-col gap-2 px-3 pb-3">
                     <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
                       <Badge className="w-fit" variant="outline">apiVersion + kind</Badge>
-                      <p className="text-xs text-muted-foreground">Use ledger.workflow/v1 and kind: Workflow.</p>
+                      <p className="text-xs text-muted-foreground">Use signaldeck.workflow/v1 and kind: Workflow.</p>
                     </div>
                     <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
                       <Badge className="w-fit" variant="outline">metadata</Badge>

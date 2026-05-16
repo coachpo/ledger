@@ -15,7 +15,7 @@ from app.agents.runtime_tools.market_data import (
 from app.agents.runtime_tools.positions import POSITION_LOOKUP_TOOL_SPEC
 from app.agents.runtime_tools.reports import REPORT_LOOKUP_TOOL_SPEC, REPORT_MEMORY_WRITE_TOOL_SPEC
 from app.agents.runtime_tools.types import RuntimeToolSpec
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 
 def _owned(spec: RuntimeToolSpec) -> RuntimeToolSpec:

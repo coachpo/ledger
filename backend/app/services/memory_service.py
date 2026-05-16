@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     MEMORY_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

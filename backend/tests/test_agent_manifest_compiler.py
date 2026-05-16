@@ -55,7 +55,7 @@ def _seed_manifest_refs(session: Session) -> dict[str, object]:
         status="published",
         name="SEC Filing Lookup",
         description="Looks up filings.",
-        tool_keys=["ledger.reports.lookup"],
+        tool_keys=["signaldeck.reports.lookup"],
     )
     mcp_server = McpServer(
         key="market_data",
@@ -134,19 +134,19 @@ def _seed_platform_graph_manifest_refs(session: Session) -> None:
     ]
     capability_tool_keys = {
         "platform_graph_market_data": [
-            "ledger.market_data.quote_lookup",
-            "ledger.market_data.history_lookup",
-            "ledger.market_data.ohlcv_lookup",
-            "ledger.indicators.lookup",
+            "signaldeck.market_data.quote_lookup",
+            "signaldeck.market_data.history_lookup",
+            "signaldeck.market_data.ohlcv_lookup",
+            "signaldeck.indicators.lookup",
         ],
-        "platform_graph_fundamentals": ["ledger.fundamentals.lookup"],
+        "platform_graph_fundamentals": ["signaldeck.fundamentals.lookup"],
         "platform_graph_news": [
-            "ledger.news.lookup",
-            "ledger.insider_data.lookup",
+            "signaldeck.news.lookup",
+            "signaldeck.insider_data.lookup",
         ],
-        "ledger_reports": ["ledger.reports.lookup"],
-        "ledger_positions": ["ledger.positions.lookup"],
-        "platform_graph_memory": ["ledger.reports.write"],
+        "signaldeck_reports": ["signaldeck.reports.lookup"],
+        "signaldeck_positions": ["signaldeck.positions.lookup"],
+        "platform_graph_memory": ["signaldeck.reports.write"],
     }
     capabilities = [
         Capability(
@@ -223,14 +223,14 @@ def test_compile_agent_manifest_accepts_validated_manifest(
         ("social_analyst", "platform_graph_news@1"),
         ("news_analyst", "platform_graph_news@1"),
         ("fundamentals_analyst", "platform_graph_fundamentals@1"),
-        ("bull_researcher", "ledger_reports@1"),
-        ("bear_researcher", "ledger_reports@1"),
-        ("research_manager", "ledger_reports@1"),
-        ("trader", "ledger_positions@1"),
-        ("aggressive_risk_analyst", "ledger_reports@1"),
-        ("neutral_risk_analyst", "ledger_reports@1"),
-        ("conservative_risk_analyst", "ledger_reports@1"),
-        ("portfolio_manager", "ledger_reports@1,platform_graph_memory@1"),
+        ("bull_researcher", "signaldeck_reports@1"),
+        ("bear_researcher", "signaldeck_reports@1"),
+        ("research_manager", "signaldeck_reports@1"),
+        ("trader", "signaldeck_positions@1"),
+        ("aggressive_risk_analyst", "signaldeck_reports@1"),
+        ("neutral_risk_analyst", "signaldeck_reports@1"),
+        ("conservative_risk_analyst", "signaldeck_reports@1"),
+        ("portfolio_manager", "signaldeck_reports@1,platform_graph_memory@1"),
     ],
 )
 def test_compile_platform_graph_example_agent_manifest_resolves_expected_capability(
@@ -260,8 +260,8 @@ def test_platform_graph_memory_capability_preserves_report_write_tool_key(
         )
 
     assert capability is not None
-    assert capability.tool_keys == ["ledger.reports.write"]
-    assert not any(tool_key.startswith("ledger.memory.") for tool_key in capability.tool_keys)
+    assert capability.tool_keys == ["signaldeck.reports.write"]
+    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in capability.tool_keys)
 
 
 def test_compile_agent_manifest_preserves_input_schema_metadata(

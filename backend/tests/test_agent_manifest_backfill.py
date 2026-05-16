@@ -32,6 +32,10 @@ def _manifest_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def test_temporary_agent_manifest_hash_matches_source() -> None:
+    assert TEMPORARY_AGENT_MANIFEST_HASH == _manifest_hash(TEMPORARY_AGENT_MANIFEST_SOURCE)
+
+
 def _create_legacy_agent(session: Session, refs: dict[str, object], key: str) -> Agent:
     connection = cast(ModelConnection, refs["connection"])
     output_schema = cast(OutputSchema, refs["output_schema"])
@@ -107,7 +111,7 @@ def test_agent_manifest_backfill_persists_lossless_manifest_source_and_hash(
         assert report.failed == 0
         assert report.persisted == 1
         assert agent.manifest_api_version == AGENT_MANIFEST_API_VERSION
-        assert agent.manifest_source.startswith("apiVersion: ledger.agent/v1\nkind: Agent\n")
+        assert agent.manifest_source.startswith("apiVersion: signaldeck.agent/v1\nkind: Agent\n")
         assert agent.manifest_hash == _manifest_hash(agent.manifest_source)
         assert agent.compiler_version == AGENT_MANIFEST_COMPILER_VERSION
         assert agent.model_connection_snapshot == build_model_connection_runtime_snapshot(
@@ -147,7 +151,7 @@ def test_agent_manifest_backfill_rewrites_lossless_noncanonical_manifest_source(
         agent = _create_legacy_agent(session, refs, "noncanonical_agent")
         noncanonical_source = (
             "kind: Agent\n"
-            "apiVersion: ledger.agent/v1\n"
+            "apiVersion: signaldeck.agent/v1\n"
             "metadata: {name: Noncanonical Agent, key: noncanonical_agent, "
             "description: Backfill converts this legacy compiled payload to YAML.}\n"
             "spec:\n"

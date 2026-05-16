@@ -59,7 +59,7 @@ const packageRead: WorkflowPackageRead = {
 const manifestRead: WorkflowPackageManifestRead = {
   compiledHash: "compiled-hash-123",
   manifestHash: "manifest-hash-123",
-  manifestSource: `apiVersion: ledger.workflowPackage/v1
+  manifestSource: `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: hydrated_market_review
@@ -243,7 +243,7 @@ describe("WorkflowPackageEditorPage", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
       data: {
         ...manifestRead,
-        manifestSource: "apiVersion: ledger.workflowPackage/v1\nmetadata:\n  key: broken\n  name: Broken Package\n  description: [",
+        manifestSource: "apiVersion: signaldeck.workflowPackage/v1\nmetadata:\n  key: broken\n  name: Broken Package\n  description: [",
       },
       error: null,
       isError: false,

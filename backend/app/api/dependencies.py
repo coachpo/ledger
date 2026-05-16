@@ -10,26 +10,30 @@ from sqlalchemy.orm import Session
 from app.agents import ToolCatalog
 from app.agents.mcp import DefaultMcpConnectionTester, McpConnectionTester
 from app.db.session import get_db_session, get_session_factory
-from app.extensions.ledger_finance.dependencies import get_balance_service as get_balance_service
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
+    get_balance_service as get_balance_service,
+)
+from app.extensions.signaldeck_finance.dependencies import (
     get_csv_import_service as get_csv_import_service,
 )
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_market_data_service as get_market_data_service,
 )
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_portfolio_service as get_portfolio_service,
 )
-from app.extensions.ledger_finance.dependencies import get_position_service as get_position_service
-from app.extensions.ledger_finance.dependencies import get_quote_provider as get_quote_provider
-from app.extensions.ledger_finance.dependencies import get_report_service as get_report_service
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
+    get_position_service as get_position_service,
+)
+from app.extensions.signaldeck_finance.dependencies import get_quote_provider as get_quote_provider
+from app.extensions.signaldeck_finance.dependencies import get_report_service as get_report_service
+from app.extensions.signaldeck_finance.dependencies import (
     get_template_compiler_service as get_template_compiler_service,
 )
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_text_template_service as get_text_template_service,
 )
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_trading_operation_service as get_trading_operation_service,
 )
 from app.services.agent_service import AgentService

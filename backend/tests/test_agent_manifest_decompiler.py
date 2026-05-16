@@ -60,7 +60,7 @@ def test_decompile_agent_manifest_round_trips_stored_payload_to_canonical_yaml(
         result = decompile_agent_model(agent, session)
         parsed = parse_agent_manifest(result.source)
 
-        assert result.source.startswith("apiVersion: ledger.agent/v1\nkind: Agent\n")
+        assert result.source.startswith("apiVersion: signaldeck.agent/v1\nkind: Agent\n")
         assert "systemPrompt: |" in result.source
         assert "capabilities:" in result.source
         assert "skills:" not in result.source

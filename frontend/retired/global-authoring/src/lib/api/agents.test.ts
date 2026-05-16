@@ -34,7 +34,7 @@ async function loadAgentsApi(baseUrl: string = "") {
   return import("./agents");
 }
 
-const manifestSource = `apiVersion: ledger.agent/v1
+const manifestSource = `apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: manifest_api_agent
@@ -65,11 +65,11 @@ afterEach(() => {
 
 describe("agents api", () => {
   it("posts manifest validation requests to the platform validation endpoint", async () => {
-    const { validateAgentManifest } = await loadAgentsApi("https://ledger.example.com/api/v1/");
+    const { validateAgentManifest } = await loadAgentsApi("https://signaldeck.example.com/api/v1/");
     const validationResult = {
       diagnostics: [],
       metadata: {
-        apiVersion: "ledger.agent/v1",
+        apiVersion: "signaldeck.agent/v1",
         key: "manifest_api_agent",
         name: "Manifest API Agent",
         description: "",
@@ -94,7 +94,7 @@ describe("agents api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
     expect(`${url.origin}${url.pathname}`).toBe(
-      "https://ledger.example.com/api/agents/validate-manifest",
+      "https://signaldeck.example.com/api/agents/validate-manifest",
     );
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
@@ -102,7 +102,7 @@ describe("agents api", () => {
   });
 
   it("sends manifestSource-only payloads when creating agents from YAML", async () => {
-    const { createAgent } = await loadAgentsApi("https://ledger.example.com/api/v1/");
+    const { createAgent } = await loadAgentsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 11 }, 201));
 
     await createAgent({
@@ -117,13 +117,13 @@ describe("agents api", () => {
     } as never);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/agents");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/agents");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });
 
   it("sends manifestSource-only payloads when updating agents from YAML", async () => {
-    const { updateAgent } = await loadAgentsApi("https://ledger.example.com/api/v1/");
+    const { updateAgent } = await loadAgentsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12 }, 200));
 
     await updateAgent(12, {
@@ -137,7 +137,7 @@ describe("agents api", () => {
     } as never);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/agents/12");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/agents/12");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });

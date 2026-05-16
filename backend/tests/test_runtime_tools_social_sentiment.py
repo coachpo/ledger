@@ -189,7 +189,7 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "ledger_social_sentiment_lookup sources must use: reddit, stocktwits.",
+            "signaldeck_social_sentiment_lookup sources must use: reddit, stocktwits.",
         ),
         (
             {
@@ -199,7 +199,7 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
                 "endDate": "2026-01-03",
                 "itemLimit": 2,
             },
-            "ledger_social_sentiment_lookup startDate must be before or equal to endDate.",
+            "signaldeck_social_sentiment_lookup startDate must be before or equal to endDate.",
         ),
         (
             {
@@ -209,7 +209,7 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
                 "endDate": None,
                 "itemLimit": 2,
             },
-            "ledger_social_sentiment_lookup symbol is required.",
+            "signaldeck_social_sentiment_lookup symbol is required.",
         ),
         (
             {
@@ -219,7 +219,7 @@ def test_social_sentiment_parser_validation_normalizes_inputs_separately_from_ne
                 "endDate": None,
                 "itemLimit": 51,
             },
-            "ledger_social_sentiment_lookup itemLimit must be at most 50.",
+            "signaldeck_social_sentiment_lookup itemLimit must be at most 50.",
         ),
     ],
 )
@@ -288,8 +288,8 @@ def test_tradingagents_fixture_grants_social_sentiment_separately_from_news_look
         SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY
     ]
     assert cast(list[str], profiles_by_key["news_research_tools"]["toolKeys"]) == [
-        "ledger.news.lookup",
-        "ledger.insider_data.lookup",
+        "signaldeck.news.lookup",
+        "signaldeck.insider_data.lookup",
     ]
     assert cast(list[str], agents_by_key["social_analyst"]["capabilityProfiles"]) == [
         "social_sentiment_tools"

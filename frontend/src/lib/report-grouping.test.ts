@@ -11,7 +11,7 @@ function buildReport(overrides: Partial<ReportRead> = {}): ReportRead {
     source: "agent",
     content: "# Snapshot",
     metadata: {
-      author: "Ledger Agent",
+      author: "SignalDeck Agent",
       description: null,
       tags: [],
       createdBy: {

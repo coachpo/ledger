@@ -1,10 +1,10 @@
-# Ledger Memory Layer Design Note
+# SignalDeck Memory Layer Design Note
 
 > Status: Phase 1 memory layer notes for branch `main` at `987686e`.
 
 ## Scope
 
-Ledger's live agent memory layer stores durable memory as reports, but callers work with memory-domain services and DTOs. Reports remain the backing store and audit surface for phase 1. The product model above persistence is memory-first.
+SignalDeck's live agent memory layer stores durable memory as reports, but callers work with memory-domain services and DTOs. Reports remain the backing store and audit surface for phase 1. The product model above persistence is memory-first.
 
 This note covers the shipped phase 1 boundary:
 
@@ -67,7 +67,7 @@ Report markdown remains a human audit artifact for report detail and download fl
 
 ## DTO Contract
 
-Memory DTOs use Ledger's camelCase API convention.
+Memory DTOs use SignalDeck's camelCase API convention.
 
 `MemoryEntryRead` is the full memory read model. It includes `memoryId`, `status`, ticker and portfolio scope, decision text, optional outcome, reflections, provenance, audit links, and timestamps.
 
@@ -86,14 +86,14 @@ The stable runtime tool keys and OpenAI function names stay unchanged:
 
 | Stable surface | Value |
 | --- | --- |
-| Report lookup tool key | `ledger.reports.lookup` |
-| Report memory write tool key | `ledger.reports.write` |
-| Report lookup OpenAI function | `ledger_reports_lookup` |
-| Report memory write OpenAI function | `ledger_reports_write` |
+| Report lookup tool key | `signaldeck.reports.lookup` |
+| Report memory write tool key | `signaldeck.reports.write` |
+| Report lookup OpenAI function | `signaldeck_reports_lookup` |
+| Report memory write OpenAI function | `signaldeck_reports_write` |
 
-The names are report flavored because existing package manifests and tool grants depend on them. The write path now returns memory-shaped results through `MemoryService`. Future `ledger.memory.*` tools would be additive, not a phase 1 rename.
+The names are report flavored because existing package manifests and tool grants depend on them. The write path now returns memory-shaped results through `MemoryService`. Future `signaldeck.memory.*` tools would be additive, not a phase 1 rename.
 
-`ledger.reports.lookup` remains a report lookup tool. Memory prompt context is handled by `MemoryContextService`, not by sending raw report markdown into model prompts.
+`signaldeck.reports.lookup` remains a report lookup tool. Memory prompt context is handled by `MemoryContextService`, not by sending raw report markdown into model prompts.
 
 ## Prompt Context
 
@@ -117,8 +117,8 @@ Frontend run types expose memory artifacts with `memoryId`, `summary`, `status`,
 2. Report slug lookup, filters, upload, download, and markdown behavior stay unchanged.
 3. Report `source` values remain `compiled`, `uploaded`, `external`, and `agent`.
 4. Template `reports.*` placeholders and compile behavior stay unchanged.
-5. Runtime tool keys stay `ledger.reports.lookup` and `ledger.reports.write`.
-6. OpenAI function names stay `ledger_reports_lookup` and `ledger_reports_write`.
+5. Runtime tool keys stay `signaldeck.reports.lookup` and `signaldeck.reports.write`.
+6. OpenAI function names stay `signaldeck_reports_lookup` and `signaldeck_reports_write`.
 7. Memory reports keep `agent_memory` and `agent_memory/v1` metadata markers.
 
 ## Guardrails

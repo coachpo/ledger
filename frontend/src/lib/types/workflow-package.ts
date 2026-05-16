@@ -4,7 +4,7 @@ import type { RunStatus } from "./run";
 
 export type WorkflowPackageStatus = "draft" | "active";
 export type WorkflowPackageImportMode = "create" | "createVersion";
-export type WorkflowPackageManifestApiVersion = "ledger.workflowPackage/v1";
+export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
 export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
 
 export interface WorkflowPackageManifestRequest {

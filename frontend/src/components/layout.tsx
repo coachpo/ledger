@@ -148,7 +148,7 @@ function AppSidebar() {
           </div>
           {showExpandedContent ? (
             <div className="min-w-0">
-              <p className="text-sm font-semibold tracking-tight">Ledger</p>
+              <p className="text-sm font-semibold tracking-tight">SignalDeck</p>
             </div>
           ) : null}
         </div>

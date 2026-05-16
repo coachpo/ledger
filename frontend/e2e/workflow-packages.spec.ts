@@ -1,11 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL = "https://ledger-deterministic-model.local/v1";
+const DETERMINISTIC_MODEL_BASE_URL = "https://signaldeck-deterministic-model.local/v1";
 
 function packageManifest(packageKey: string, modelKey: string, agentName = "Package Analyst") {
   return [
-    "apiVersion: ledger.workflowPackage/v1",
+    "apiVersion: signaldeck.workflowPackage/v1",
     "kind: WorkflowPackage",
     "metadata:",
     `  key: ${packageKey}`,
@@ -23,7 +23,7 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "    - key: quote_tools",
     "      name: Quote Tools",
     "      toolKeys:",
-    "        - ledger.market_data.quote_lookup",
+    "        - signaldeck.market_data.quote_lookup",
     "  outputSchemas:",
     "    - key: advisory_output",
     "      name: Advisory Output",
@@ -84,7 +84,7 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     description: "Deterministic model connection for package-first E2E.",
     connectionKind: "deterministic_smoke",
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    modelId: "ledger-deterministic-json",
+    modelId: "signaldeck-deterministic-json",
     reasoningEffort: "low",
     apiStyle: "responses",
     timeoutSeconds: 5,

@@ -1,6 +1,6 @@
-# Ledger Backend
+# SignalDeck Backend
 
-FastAPI backend for Ledger’s portfolio, report, and current agent-platform surfaces.
+FastAPI backend for SignalDeck’s portfolio, report, and current agent-platform surfaces.
 
 ## Local Development
 
@@ -14,7 +14,7 @@ docker compose up -d db
 uv run uvicorn app.main:app --reload --port 28000
 ```
 
-The backend expects PostgreSQL everywhere. The default local connection is `postgresql+psycopg://ledger:ledger@localhost:25432/ledger`, so manual `uv run uvicorn ...` startup assumes PostgreSQL is already running on that port. Set `LEDGER_DB_PORT` before `docker compose up -d db` if you need a different host port, then align `DATABASE_URL`. CORS is enabled for common local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`.
+The backend expects PostgreSQL everywhere. The default local connection is `postgresql+psycopg://signaldeck:signaldeck@localhost:25432/signaldeck`, so manual `uv run uvicorn ...` startup assumes PostgreSQL is already running on that port. Set `SIGNALDECK_DB_PORT` before `docker compose up -d db` if you need a different host port, then align `DATABASE_URL`. CORS is enabled for common local Vite dev hosts by default and can be overridden through `CORS_ALLOWED_ORIGINS`.
 
 ## Model Connections
 
@@ -45,14 +45,14 @@ uv run pytest
 
 ## Docker Compose
 
-`docker-compose.yml` is DB-only. It starts PostgreSQL for local development and exposes it on `${LEDGER_DB_PORT:-25432}`.
+`docker-compose.yml` is DB-only. It starts PostgreSQL for local development and exposes it on `${SIGNALDECK_DB_PORT:-25432}`.
 
 ```bash
 docker compose up -d db
 ```
 
 No API container is defined in compose. Start FastAPI separately with `uv run uvicorn app.main:app --reload --port 28000`.
-PostgreSQL is exposed on `localhost:${LEDGER_DB_PORT:-25432}`.
+PostgreSQL is exposed on `localhost:${SIGNALDECK_DB_PORT:-25432}`.
 
 To reset the container-managed PostgreSQL data:
 

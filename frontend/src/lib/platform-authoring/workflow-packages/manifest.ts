@@ -51,7 +51,7 @@ export type PackageMcpServerDraft = {
 };
 
 export type WorkflowPackageDraft = {
-  apiVersion: "ledger.workflowPackage/v1";
+  apiVersion: "signaldeck.workflowPackage/v1";
   kind: "WorkflowPackage";
   metadata: {
     description: string;
@@ -105,7 +105,7 @@ export function createPackageAgentDraft(overrides: Partial<PackageAgentDraft> = 
     modelConnection: "",
     name: "New Agent",
     outputSchema: "",
-    systemPrompt: "You are a concise Ledger package agent.",
+    systemPrompt: "You are a concise SignalDeck package agent.",
     timeoutSeconds: "60",
     ...overrides,
   };
@@ -150,7 +150,7 @@ export function createPackageMcpServerDraft(overrides: Partial<PackageMcpServerD
 
 export function createWorkflowPackageDraft(overrides: Partial<WorkflowPackageDraft> = {}): WorkflowPackageDraft {
   return {
-    apiVersion: "ledger.workflowPackage/v1",
+    apiVersion: "signaldeck.workflowPackage/v1",
     kind: "WorkflowPackage",
     metadata: {
       description: "",
@@ -290,7 +290,7 @@ export function packageDraftFromManifestSource(source: string): { draft: Workflo
     const spec = isRecord(value.spec) ? value.spec : {};
     return {
       draft: createWorkflowPackageDraft({
-        apiVersion: "ledger.workflowPackage/v1",
+        apiVersion: "signaldeck.workflowPackage/v1",
         kind: "WorkflowPackage",
         metadata: {
           description: readString(metadata.description),
@@ -324,7 +324,7 @@ function parseMcpArgs(argsText: string): string[] {
 
 export function workflowPackageDraftToManifestObject(draft: WorkflowPackageDraft): UnknownRecord {
   return {
-    apiVersion: "ledger.workflowPackage/v1",
+    apiVersion: "signaldeck.workflowPackage/v1",
     kind: "WorkflowPackage",
     metadata: {
       description: draft.metadata.description.trim(),

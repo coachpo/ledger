@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ThemeContext, type Theme } from "@/components/theme";
 
-const STORAGE_KEY = "ledger-theme";
+const STORAGE_KEY = "signaldeck-theme";
 
 function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

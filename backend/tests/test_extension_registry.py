@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.registry import (
     BundledExtensionDefinition,
     BundledExtensionRegistry,
     get_bundled_extension_registry,
 )
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 
 def test_bundled_extension_registry_discovers_finance_workspace_once() -> None:

@@ -7,7 +7,7 @@ from app.services.agent_manifest_parser import parse_agent_manifest
 
 
 def _valid_manifest_source(*, output_schema: str = "research_summary@3") -> str:
-    return f"""apiVersion: ledger.agent/v1
+    return f"""apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: research_agent
@@ -53,7 +53,7 @@ def test_parse_valid_agent_manifest_returns_typed_manifest() -> None:
 
     assert result.diagnostics == []
     assert result.manifest is not None
-    assert result.manifest.api_version == "ledger.agent/v1"
+    assert result.manifest.api_version == "signaldeck.agent/v1"
     assert result.manifest.kind == "Agent"
     assert result.manifest.metadata.key == "research_agent"
     assert result.manifest.spec.model_connection == "primary_openai"
@@ -91,7 +91,7 @@ def test_parse_rejects_capabilities_and_legacy_skills_together() -> None:
 
 def test_parser_rejects_malformed_yaml_with_location() -> None:
     diagnostic = _single_diagnostic(
-        """apiVersion: ledger.agent/v1
+        """apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: [broken
@@ -104,8 +104,8 @@ metadata:
 
 def test_parser_rejects_duplicate_yaml_keys_with_location() -> None:
     diagnostic = _single_diagnostic(
-        """apiVersion: ledger.agent/v1
-apiVersion: ledger.agent/v1
+        """apiVersion: signaldeck.agent/v1
+apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: research_agent
@@ -169,9 +169,9 @@ def test_parser_rejects_unsupported_yaml_features(
             "Field required",
         ),
         (
-            _valid_manifest_source().replace("ledger.agent/v1", "ledger.agent/v2", 1),
+            _valid_manifest_source().replace("signaldeck.agent/v1", "signaldeck.agent/v2", 1),
             "apiVersion",
-            "Input should be 'ledger.agent/v1'",
+            "Input should be 'signaldeck.agent/v1'",
         ),
         (
             _valid_manifest_source().replace("  modelConnection: primary_openai\n", "", 1),

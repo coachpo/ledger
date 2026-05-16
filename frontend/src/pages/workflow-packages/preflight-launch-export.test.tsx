@@ -90,7 +90,7 @@ const packageRead: WorkflowPackageRead = {
 const manifestRead: WorkflowPackageManifestRead = {
   compiledHash: "compiled-hash-123",
   manifestHash: "manifest-hash-123",
-  manifestSource: `apiVersion: ledger.workflowPackage/v1
+  manifestSource: `apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: hydrated_market_review
@@ -165,7 +165,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     importPackageMock.mockResolvedValue({ ...packageRead, warnings: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }] });
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve("apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
+      text: () => Promise.resolve("apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
     }) as unknown as typeof fetch;
     global.fetch = fetchMock;
     window.fetch = fetchMock;

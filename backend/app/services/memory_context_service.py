@@ -6,7 +6,7 @@ from typing import Final
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     MEMORY_CONTEXT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

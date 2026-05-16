@@ -52,7 +52,7 @@ afterEach(() => {
 
 describe("runs api", () => {
   it("sends target-aware list filters to the platform runs endpoint", async () => {
-    const { listRuns } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { listRuns } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(
@@ -69,7 +69,7 @@ describe("runs api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs");
     expect(init?.method).toBe("GET");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({
       limit: "25",
@@ -83,7 +83,7 @@ describe("runs api", () => {
   });
 
   it("uses the camelCase workflowPackage run target kind for package run filters", async () => {
-    const { listRuns } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { listRuns } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
     const targetKind: RunTargetKind = "workflowPackage";
 
@@ -106,7 +106,7 @@ describe("runs api", () => {
   });
 
   it("reads rerun drafts from the rerun draft endpoint", async () => {
-    const { getRunRerunDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { getRunRerunDraft } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, parameters: { ticker: "MSFT" } }, 200));
 
     await expect(getRunRerunDraft(42)).resolves.toEqual({
@@ -116,12 +116,12 @@ describe("runs api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/rerun-draft");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/rerun-draft");
     expect(init?.method).toBe("GET");
   });
 
   it("creates reruns with parameter payloads", async () => {
-    const { createRunRerun } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { createRunRerun } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 99, status: "queued" }, 201));
 
     await expect(createRunRerun(42, { parameters: { ticker: "MSFT" } })).resolves.toEqual({
@@ -131,13 +131,13 @@ describe("runs api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/reruns");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/reruns");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ parameters: { ticker: "MSFT" } }));
   });
 
   it("reads step replay drafts with the step index query parameter", async () => {
-    const { getRunStepReplayDraft } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { getRunStepReplayDraft } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ sourceRunId: 42, replayStepIndex: 2, parameters: { ticker: "MSFT" } }, 200));
 
     await expect(getRunStepReplayDraft(42, 2)).resolves.toEqual({
@@ -148,13 +148,13 @@ describe("runs api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/step-replay-draft");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/step-replay-draft");
     expect(init?.method).toBe("GET");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({ stepIndex: "2" });
   });
 
   it("creates step replays with replay step and parameters", async () => {
-    const { createRunStepReplay } = await loadRunsApi("https://ledger.example.com/api/v1/");
+    const { createRunStepReplay } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 100, status: "queued" }, 201));
 
     await expect(createRunStepReplay(42, { replayStepIndex: 2, parameters: { ticker: "MSFT" } })).resolves.toEqual({
@@ -164,7 +164,7 @@ describe("runs api", () => {
 
     const { init, url } = getLastFetchCall(fetchMock);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://ledger.example.com/api/runs/42/step-replays");
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/step-replays");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ replayStepIndex: 2, parameters: { ticker: "MSFT" } }));
   });

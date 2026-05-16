@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import decimal_to_string, to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     MEMORY_REPORT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

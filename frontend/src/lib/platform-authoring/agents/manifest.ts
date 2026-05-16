@@ -21,7 +21,7 @@ import type {
   AgentManifestDiagnosticSeverity,
 } from "@/lib/types/agent";
 
-const AGENT_MANIFEST_API_VERSION: AgentManifestApiVersion = "ledger.agent/v1";
+const AGENT_MANIFEST_API_VERSION: AgentManifestApiVersion = "signaldeck.agent/v1";
 const AGENT_MANIFEST_KIND = "Agent";
 const AGENT_MANIFEST_SOURCE_MAX_LENGTH = 262_144;
 

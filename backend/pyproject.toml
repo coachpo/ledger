@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ledger-backend"
+name = "signaldeck-backend"
 version = "0.1.0"
 description = "FastAPI backend for the MVP portfolio tracker"
 readme = "README.md"
@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-ledger-backend = "app.main:main"
+signaldeck-backend = "app.main:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

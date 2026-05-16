@@ -50,11 +50,11 @@ afterEach(() => {
 
 describe("capabilities api", () => {
   it("uses canonical capability endpoints and toolKeys payloads", async () => {
-    const { createCapability, updateCapability, listCapabilityTools } = await loadCapabilitiesApi("https://ledger.example.com/api/v1/");
+    const { createCapability, updateCapability, listCapabilityTools } = await loadCapabilitiesApi("https://signaldeck.example.com/api/v1/");
     const payload = {
       key: "summarize_capability",
       name: "Summarize Capability",
-      toolKeys: ["ledger.reports.lookup"],
+      toolKeys: ["signaldeck.reports.lookup"],
     };
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 3, ...payload, tools: [] }, 201));
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 3, ...payload, tools: [] }, 200));
@@ -63,21 +63,21 @@ describe("capabilities api", () => {
     await createCapability(payload);
 
     let lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/capabilities");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/capabilities");
     expect(lastCall.init?.method).toBe("POST");
     expect(lastCall.init?.body).toBe(JSON.stringify(payload));
 
     await updateCapability(3, { name: "Updated", toolKeys: payload.toolKeys });
 
     lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/capabilities/3");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/capabilities/3");
     expect(lastCall.init?.method).toBe("PATCH");
     expect(lastCall.init?.body).toBe(JSON.stringify({ name: "Updated", toolKeys: payload.toolKeys }));
 
     await listCapabilityTools();
 
     lastCall = getLastFetchCall(fetchMock);
-    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://ledger.example.com/api/capabilities/tools");
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/capabilities/tools");
     expect(lastCall.init?.method).toBe("GET");
   });
 });

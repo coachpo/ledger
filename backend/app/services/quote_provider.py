@@ -413,7 +413,7 @@ class YahooFinanceQuoteProvider:
             "quotesCount": 0,
             "newsCount": limit,
         }
-        headers = {"User-Agent": "ledger-backend/0.1"}
+        headers = {"User-Agent": "signaldeck-backend/0.1"}
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url, params=params, headers=headers)
@@ -506,7 +506,7 @@ class YahooFinanceQuoteProvider:
             params["period2"] = int(to_utc(end_date).timestamp()) + 1
         else:
             raise QuoteProviderError(f"Quote request bounds were incomplete for {symbol}")
-        headers = {"User-Agent": "ledger-backend/0.1"}
+        headers = {"User-Agent": "signaldeck-backend/0.1"}
 
         try:
             with httpx.Client(timeout=self.timeout) as client:

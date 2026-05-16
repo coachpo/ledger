@@ -161,7 +161,7 @@ def test_decompile_workflow_manifest_round_trips_stored_payload_to_canonical_yam
     result = decompile_workflow_manifest(_workflow_row(payload))
     parsed = parse_workflow_manifest(result.source)
 
-    assert result.source.startswith("apiVersion: ledger.workflow/v1\nkind: Workflow\n")
+    assert result.source.startswith("apiVersion: signaldeck.workflow/v1\nkind: Workflow\n")
     assert parsed.diagnostics == []
     assert parsed.manifest is not None
     assert parsed.manifest.steps[0].id == "step_1"

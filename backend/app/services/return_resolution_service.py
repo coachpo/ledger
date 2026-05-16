@@ -8,7 +8,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
-from app.extensions.ledger_finance.hooks import (
+from app.extensions.signaldeck_finance.hooks import (
     RETURN_RESOLUTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )

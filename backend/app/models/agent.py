@@ -12,12 +12,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin, TimestampMixin
 
-AGENT_MANIFEST_API_VERSION = "ledger.agent/v1"
+AGENT_MANIFEST_API_VERSION = "signaldeck.agent/v1"
 AGENT_MANIFEST_COMPILER_VERSION = "agent-manifest-compiler/v1"
 TEMPORARY_AGENT_MANIFEST_SOURCE = (
-    "apiVersion: ledger.agent/v1\nkind: Agent\nmetadata:\n  source: legacy-payload-placeholder\n"
+    "apiVersion: signaldeck.agent/v1\n"
+    "kind: Agent\n"
+    "metadata:\n"
+    "  source: legacy-payload-placeholder\n"
 )
-TEMPORARY_AGENT_MANIFEST_HASH = "98e17b8a6f1bd584aab673e2ab817f26173a7a1cd19ec5890c5bd2f0099c2f3b"
+TEMPORARY_AGENT_MANIFEST_HASH = "1051cbdb8f6e2f18cca4b4d4fbfee4a66406f500ce80662ad736a01868602948"
 
 
 class Agent(IdMixin, TimestampMixin, Base):

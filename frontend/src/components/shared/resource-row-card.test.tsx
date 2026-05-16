@@ -144,7 +144,7 @@ describe("ResourceRowCard", () => {
     renderResourceRowCard(
       <ResourceRowCard
         description="A long description that should remain inside the primary body."
-        metadata="Created by Ledger"
+        metadata="Created by SignalDeck"
         primaryAction={{ kind: "button", label: "Inspect Resource", onClick: vi.fn(), testId: "inspect-resource" }}
         subtitle="Reusable primitive"
         testId="resource-card"
@@ -169,6 +169,6 @@ describe("ResourceRowCard", () => {
       "text-[11px]",
       "text-muted-foreground",
     );
-    expect(screen.getByText("Created by Ledger")).toHaveClass("text-[11px]", "text-muted-foreground");
+    expect(screen.getByText("Created by SignalDeck")).toHaveClass("text-[11px]", "text-muted-foreground");
   });
 });

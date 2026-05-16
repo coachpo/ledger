@@ -47,17 +47,17 @@ EXPECTED_OUTPUT_SCHEMA_KEYS = {
     "portfolio_decision",
 }
 EXPECTED_TOOL_KEYS = {
-    "ledger.market_data.quote_lookup",
-    "ledger.market_data.history_lookup",
-    "ledger.market_data.ohlcv_lookup",
-    "ledger.indicators.lookup",
-    "ledger.fundamentals.lookup",
-    "ledger.news.lookup",
-    "ledger.social_sentiment.lookup",
-    "ledger.insider_data.lookup",
-    "ledger.positions.lookup",
-    "ledger.reports.lookup",
-    "ledger.reports.write",
+    "signaldeck.market_data.quote_lookup",
+    "signaldeck.market_data.history_lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.indicators.lookup",
+    "signaldeck.fundamentals.lookup",
+    "signaldeck.news.lookup",
+    "signaldeck.social_sentiment.lookup",
+    "signaldeck.insider_data.lookup",
+    "signaldeck.positions.lookup",
+    "signaldeck.reports.lookup",
+    "signaldeck.reports.write",
 }
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
@@ -181,11 +181,11 @@ def test_tradingagents_fixture_keeps_report_lookup_and_write_in_memory_profile()
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
-        "ledger.reports.lookup"
+        "signaldeck.reports.lookup"
     ]
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "ledger.reports.lookup",
-        "ledger.reports.write",
+        "signaldeck.reports.lookup",
+        "signaldeck.reports.write",
     ]
 
 

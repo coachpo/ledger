@@ -11,7 +11,7 @@ import {
 
 const AGENT_MANIFEST_SOURCE_MAX_LENGTH = 262_144;
 
-const fullAgentManifest = `apiVersion: ledger.agent/v1
+const fullAgentManifest = `apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: macro_agent
@@ -51,7 +51,7 @@ describe("agent manifest helpers", () => {
 
     expect(parsed.diagnostics).toEqual([]);
     expect(parsed.value).toMatchObject({
-      apiVersion: "ledger.agent/v1",
+      apiVersion: "signaldeck.agent/v1",
       kind: "Agent",
       metadata: {
         key: "ticker_agent",
@@ -140,7 +140,7 @@ describe("agent manifest helpers", () => {
   });
 
   it("returns lightweight local diagnostics for malformed YAML without claiming backend authority", () => {
-    const result = parseAgentManifestLocallyForEditor(`apiVersion: ledger.agent/v1
+    const result = parseAgentManifestLocallyForEditor(`apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: [broken
@@ -160,7 +160,7 @@ metadata:
   });
 
   it("diagnoses unsupported YAML features and raw model connection ids", () => {
-    const result = parseAgentManifestLocallyForEditor(`apiVersion: ledger.agent/v1
+    const result = parseAgentManifestLocallyForEditor(`apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata: &agent_metadata
   key: macro_agent
@@ -304,7 +304,7 @@ spec:
 
   it("formats valid YAML into stable manifest order and returns diagnostics for invalid YAML", () => {
     const result = formatAgentManifestYaml(`kind: Agent
-apiVersion: ledger.agent/v1
+apiVersion: signaldeck.agent/v1
 spec:
   budgetUsd: "2.50"
   mcpServers: [quotes-mcp@2]
@@ -330,7 +330,7 @@ metadata:
 `);
 
     expect(result.diagnostics).toEqual([]);
-    expect(result.formatted).toBe(`apiVersion: ledger.agent/v1
+    expect(result.formatted).toBe(`apiVersion: signaldeck.agent/v1
 kind: Agent
 metadata:
   key: macro_agent

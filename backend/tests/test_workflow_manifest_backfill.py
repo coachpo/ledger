@@ -157,7 +157,7 @@ def test_workflow_manifest_backfill_persists_lossless_manifest_source_and_detail
         assert report.persisted == 1
         assert workflow.manifest_api_version == WORKFLOW_MANIFEST_API_VERSION
         assert workflow.manifest_source.startswith(
-            "apiVersion: ledger.workflow/v1\nkind: Workflow\n"
+            "apiVersion: signaldeck.workflow/v1\nkind: Workflow\n"
         )
         assert detail.manifest_source == workflow.manifest_source
         assert compile_workflow_manifest(workflow.manifest_source)["key"] == "persist_workflow"

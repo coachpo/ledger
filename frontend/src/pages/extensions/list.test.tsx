@@ -46,16 +46,16 @@ function extensionFixture(
       {
         category: "backend_api_routes",
         dependencies: [],
-        extensionKey: "ledger.finance",
-        ownerExtensionKey: "ledger.finance",
+        extensionKey: "signaldeck.finance",
+        ownerExtensionKey: "signaldeck.finance",
         summary: "Preserved finance API routes",
         surface: "/api/v1/portfolios",
       },
       {
         category: "frontend_routes",
         dependencies: [],
-        extensionKey: "ledger.finance",
-        ownerExtensionKey: "ledger.finance",
+        extensionKey: "signaldeck.finance",
+        ownerExtensionKey: "signaldeck.finance",
         summary: "Portfolio and report workspace routes",
         surface: "/portfolios",
       },
@@ -67,7 +67,7 @@ function extensionFixture(
     disabledReason: null,
     enabled: true,
     enabledAt: "2026-05-15T12:00:00Z",
-    key: "ledger.finance",
+    key: "signaldeck.finance",
     label: "Finance Workspace",
     phase: "phase_1_bundled_first_party",
     stateVersion: 1,
@@ -99,25 +99,19 @@ describe("ExtensionsListPage", () => {
     });
   });
 
-  it("renders bundled extension state and phase-1 lifecycle copy", () => {
+  it("renders bundled extension state", () => {
     render(<ExtensionsListPage />);
 
     expect(screen.getByTestId("extensions-list-page")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
-    expect(
-      screen.getByText(
-        /install and remove actions are not supported in phase 1/i,
-      ),
-    ).toBeVisible();
-
-    const row = screen.getByTestId("extension-row-ledger-finance");
+    const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
-    expect(row).toHaveTextContent("ledger.finance");
+    expect(row).toHaveTextContent("signaldeck.finance");
     expect(row).toHaveTextContent("Current state: Enabled");
     expect(row).toHaveTextContent("Contributions: 2");
     expect(row).toHaveTextContent("State version: 1");
     expect(
-      within(row).getByTestId("extension-toggle-ledger-finance"),
+      within(row).getByTestId("extension-toggle-signaldeck-finance"),
     ).toHaveAttribute("data-state", "checked");
     expect(
       within(row).queryByRole("button", { name: /install/i }),
@@ -131,12 +125,12 @@ describe("ExtensionsListPage", () => {
     render(<ExtensionsListPage />);
 
     fireEvent.click(
-      screen.getByTestId("extension-toggle-ledger-finance"),
+      screen.getByTestId("extension-toggle-signaldeck-finance"),
     );
 
     await waitFor(() =>
       expect(toggleExtensionMock).toHaveBeenCalledWith({
-        extensionKey: "ledger.finance",
+        extensionKey: "signaldeck.finance",
         payload: { enabled: false },
       }),
     );
@@ -165,15 +159,15 @@ describe("ExtensionsListPage", () => {
     );
     render(<ExtensionsListPage />);
 
-    const row = screen.getByTestId("extension-row-ledger-finance");
+    const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Current state: Disabled");
     fireEvent.click(
-      within(row).getByTestId("extension-toggle-ledger-finance"),
+      within(row).getByTestId("extension-toggle-signaldeck-finance"),
     );
 
     await waitFor(() =>
       expect(toggleExtensionMock).toHaveBeenCalledWith({
-        extensionKey: "ledger.finance",
+        extensionKey: "signaldeck.finance",
         payload: { enabled: true },
       }),
     );
@@ -187,14 +181,14 @@ describe("ExtensionsListPage", () => {
     render(<ExtensionsListPage />);
 
     fireEvent.click(
-      screen.getByTestId("extension-toggle-ledger-finance"),
+      screen.getByTestId("extension-toggle-signaldeck-finance"),
     );
 
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith("Extension API unavailable"),
     );
     expect(
-      screen.getByTestId("extension-row-ledger-finance"),
+      screen.getByTestId("extension-row-signaldeck-finance"),
     ).toHaveTextContent("Current state: Enabled");
   });
 });

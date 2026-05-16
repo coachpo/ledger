@@ -1,4 +1,4 @@
-apiVersion: ledger.workflowPackage/v1
+apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: tradingagents_advisory_research
@@ -38,42 +38,42 @@ spec:
       name: Market Research Tools
       description: Reads market prices, history, OHLCV, and indicators.
       toolKeys:
-        - ledger.market_data.quote_lookup
-        - ledger.market_data.history_lookup
-        - ledger.market_data.ohlcv_lookup
-        - ledger.indicators.lookup
+        - signaldeck.market_data.quote_lookup
+        - signaldeck.market_data.history_lookup
+        - signaldeck.market_data.ohlcv_lookup
+        - signaldeck.indicators.lookup
     - key: fundamentals_tools
       name: Fundamentals Tools
       description: Reads fundamentals data exposed by the server catalog.
       toolKeys:
-        - ledger.fundamentals.lookup
+        - signaldeck.fundamentals.lookup
     - key: news_research_tools
       name: News Research Tools
       description: Reads company news and insider-data context.
       toolKeys:
-        - ledger.news.lookup
-        - ledger.insider_data.lookup
+        - signaldeck.news.lookup
+        - signaldeck.insider_data.lookup
     - key: social_sentiment_tools
       name: Social Sentiment Tools
       description: Reads normalized social sentiment source blocks.
       toolKeys:
-        - ledger.social_sentiment.lookup
+        - signaldeck.social_sentiment.lookup
     - key: report_context_tools
       name: Report Context Tools
-      description: Reads persisted Ledger reports for research context.
+      description: Reads persisted SignalDeck reports for research context.
       toolKeys:
-        - ledger.reports.lookup
+        - signaldeck.reports.lookup
     - key: portfolio_context_tools
       name: Portfolio Context Tools
-      description: Reads persisted Ledger positions for portfolio context.
+      description: Reads persisted SignalDeck positions for portfolio context.
       toolKeys:
-        - ledger.positions.lookup
+        - signaldeck.positions.lookup
     - key: memory_write_tools
       name: Memory Write Tools
       description: Reads and writes research memory reports through server tools.
       toolKeys:
-        - ledger.reports.lookup
-        - ledger.reports.write
+        - signaldeck.reports.lookup
+        - signaldeck.reports.write
   outputSchemas:
     - key: analyst_report
       name: Analyst Report

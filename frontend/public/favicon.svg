@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ledger">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SignalDeck">
   <rect width="64" height="64" rx="14" fill="#0f172a" />
   <path
-    d="M20 16h8v24h16v8H20V16Z"
+    d="M43 18H27c-5 0-9 4-9 9s4 9 9 9h10c2 0 4 2 4 4s-2 4-4 4H19v8h18c7 0 12-5 12-12s-5-12-12-12H27c-2 0-4-2-4-4s2-4 4-4h16v-8Z"
     fill="#ffffff"
   />
 </svg>

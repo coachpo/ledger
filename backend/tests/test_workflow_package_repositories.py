@@ -23,10 +23,10 @@ class _VersionPayload(TypedDict):
 
 def _version_payload(package_key: str = "market_review") -> _VersionPayload:
     return {
-        "manifest_source": "apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\n",
+        "manifest_source": "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n",
         "manifest_hash": _HASH_A,
         "package_definition": {
-            "apiVersion": "ledger.workflowPackage/v1",
+            "apiVersion": "signaldeck.workflowPackage/v1",
             "kind": "WorkflowPackage",
             "metadata": {"key": package_key, "name": "Market Review"},
             "spec": {"agents": [{"key": "review_agent"}], "workflows": []},
@@ -116,5 +116,5 @@ def test_package_versions_are_immutable(session_factory: sessionmaker[Session]) 
         assert excinfo.value.code == "workflow_package_version_immutable"
         assert (
             version.manifest_source
-            == "apiVersion: ledger.workflowPackage/v1\nkind: WorkflowPackage\n"
+            == "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
         )

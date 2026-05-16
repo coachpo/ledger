@@ -79,15 +79,15 @@ class RuntimeToolSpec:
     owner_extension_key: str | None = None
 
 
-MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "ledger.market_data.quote_lookup"
-MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "ledger.market_data.history_lookup"
-MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY = "ledger.market_data.ohlcv_lookup"
-INDICATORS_LOOKUP_TOOL_KEY = "ledger.indicators.lookup"
-FUNDAMENTALS_LOOKUP_TOOL_KEY = "ledger.fundamentals.lookup"
-NEWS_LOOKUP_TOOL_KEY = "ledger.news.lookup"
-SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "ledger.social_sentiment.lookup"
-INSIDER_DATA_LOOKUP_TOOL_KEY = "ledger.insider_data.lookup"
-REPORT_MEMORY_WRITE_TOOL_KEY = "ledger.reports.write"
+MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "signaldeck.market_data.quote_lookup"
+MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "signaldeck.market_data.history_lookup"
+MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY = "signaldeck.market_data.ohlcv_lookup"
+INDICATORS_LOOKUP_TOOL_KEY = "signaldeck.indicators.lookup"
+FUNDAMENTALS_LOOKUP_TOOL_KEY = "signaldeck.fundamentals.lookup"
+NEWS_LOOKUP_TOOL_KEY = "signaldeck.news.lookup"
+SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.social_sentiment.lookup"
+INSIDER_DATA_LOOKUP_TOOL_KEY = "signaldeck.insider_data.lookup"
+REPORT_MEMORY_WRITE_TOOL_KEY = "signaldeck.reports.write"
 
 NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
@@ -101,7 +101,7 @@ NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
     REPORT_MEMORY_WRITE_TOOL_KEY,
 )
 
-_NATIVE_TOOL_KEY_RE = re.compile(r"^ledger\.[a-z0-9_]+(?:\.[a-z0-9_]+)*$")
+_NATIVE_TOOL_KEY_RE = re.compile(r"^signaldeck\.[a-z0-9_]+(?:\.[a-z0-9_]+)*$")
 _NORMALIZED_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 _WARNING_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
@@ -148,7 +148,7 @@ class RuntimeNativeToolResult(CamelModel):
         normalized = value.strip().lower()
         if _NATIVE_TOOL_KEY_RE.fullmatch(normalized) is None:
             raise ValueError(
-                "Native runtime tool keys must start with ledger. "
+                "Native runtime tool keys must start with signaldeck. "
                 + "and use lowercase dotted identifiers"
             )
         if normalized not in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS:
@@ -179,7 +179,7 @@ class RuntimeToolWarning(CamelModel):
 
 
 class RuntimeQuoteLookupResult(CamelModel):
-    tool_key: Literal["ledger.market_data.quote_lookup"] = "ledger.market_data.quote_lookup"
+    tool_key: Literal["signaldeck.market_data.quote_lookup"] = "signaldeck.market_data.quote_lookup"
     quotes: list[MarketQuoteRead]
     warnings: list[RuntimeToolWarning] = Field(default_factory=list)
 
@@ -214,7 +214,9 @@ class RuntimeOhlcvSeries(CamelModel):
 
 
 class RuntimeHistoryLookupResult(CamelModel):
-    tool_key: Literal["ledger.market_data.history_lookup"] = "ledger.market_data.history_lookup"
+    tool_key: Literal["signaldeck.market_data.history_lookup"] = (
+        "signaldeck.market_data.history_lookup"
+    )
     range: str
     interval: str
     start_date: datetime | None = None
@@ -239,7 +241,7 @@ class RuntimeHistoryLookupResult(CamelModel):
 
 
 class RuntimeOhlcvLookupResult(CamelModel):
-    tool_key: Literal["ledger.market_data.ohlcv_lookup"] = "ledger.market_data.ohlcv_lookup"
+    tool_key: Literal["signaldeck.market_data.ohlcv_lookup"] = "signaldeck.market_data.ohlcv_lookup"
     start_date: datetime
     end_date: datetime
     series: list[RuntimeOhlcvSeries]
@@ -282,7 +284,7 @@ class RuntimeIndicatorRow(CamelModel):
 
 
 class RuntimeIndicatorLookupResult(CamelModel):
-    tool_key: Literal["ledger.indicators.lookup"] = "ledger.indicators.lookup"
+    tool_key: Literal["signaldeck.indicators.lookup"] = "signaldeck.indicators.lookup"
     symbol: str
     provider: str
     current_date: datetime
@@ -341,7 +343,7 @@ class RuntimeFinancialStatement(CamelModel):
 
 
 class RuntimeFundamentalsLookupResult(CamelModel):
-    tool_key: Literal["ledger.fundamentals.lookup"] = "ledger.fundamentals.lookup"
+    tool_key: Literal["signaldeck.fundamentals.lookup"] = "signaldeck.fundamentals.lookup"
     symbol: str
     provider: str
     as_of: datetime
@@ -371,7 +373,7 @@ class RuntimeNewsItem(CamelModel):
 
 
 class RuntimeNewsLookupResult(CamelModel):
-    tool_key: Literal["ledger.news.lookup"] = "ledger.news.lookup"
+    tool_key: Literal["signaldeck.news.lookup"] = "signaldeck.news.lookup"
     query: str | None = None
     symbols: list[str] = Field(default_factory=list)
     start_date: datetime | None = None
@@ -462,7 +464,7 @@ class RuntimeSocialSentimentSourceBlock(CamelModel):
 
 
 class RuntimeSocialSentimentLookupResult(CamelModel):
-    tool_key: Literal["ledger.social_sentiment.lookup"] = "ledger.social_sentiment.lookup"
+    tool_key: Literal["signaldeck.social_sentiment.lookup"] = "signaldeck.social_sentiment.lookup"
     symbol: str
     sources: list[str] = Field(default_factory=list)
     start_date: datetime | None = None
@@ -525,7 +527,7 @@ class RuntimeInsiderTransaction(CamelModel):
 
 
 class RuntimeInsiderDataLookupResult(CamelModel):
-    tool_key: Literal["ledger.insider_data.lookup"] = "ledger.insider_data.lookup"
+    tool_key: Literal["signaldeck.insider_data.lookup"] = "signaldeck.insider_data.lookup"
     symbol: str
     provider: str
     start_date: datetime | None = None
@@ -540,7 +542,7 @@ class RuntimeInsiderDataLookupResult(CamelModel):
 
 
 class RuntimeReportMemoryWriteResult(CamelModel):
-    tool_key: Literal["ledger.reports.write"] = "ledger.reports.write"
+    tool_key: Literal["signaldeck.reports.write"] = "signaldeck.reports.write"
     memory_id: str = Field(min_length=1)
     status: MemoryLifecycleStatus
     action: Literal["created", "existing"]

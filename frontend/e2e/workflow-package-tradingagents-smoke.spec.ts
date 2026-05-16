@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL = "https://ledger-deterministic-model.local/v1";
+const DETERMINISTIC_MODEL_BASE_URL = "https://signaldeck-deterministic-model.local/v1";
 const FIXTURE_PATH = resolve(
   process.cwd(),
   "..",
@@ -42,7 +42,7 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
     description: "Deterministic smoke model binding for workflow-package E2E.",
     connectionKind: "deterministic_smoke",
     baseUrl: DETERMINISTIC_MODEL_BASE_URL,
-    modelId: "ledger-deterministic-json",
+    modelId: "signaldeck-deterministic-json",
     reasoningEffort: "low",
     apiStyle: "responses",
     timeoutSeconds: 5,

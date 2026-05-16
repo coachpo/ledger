@@ -5,7 +5,7 @@ import type { ModelConnectionListItemRead } from "./model-connection";
 import type { OutputSchemaRead } from "./output-schema";
 
 export type AgentStatus = "draft" | "published" | "deprecated";
-export type AgentManifestApiVersion = "ledger.agent/v1";
+export type AgentManifestApiVersion = "signaldeck.agent/v1";
 export type AgentManifestDiagnosticSeverity = "error" | "warning";
 
 export interface AgentCapabilityRefWrite {

@@ -673,7 +673,7 @@ class WorkflowPackageManifestParser:
     def _api_version_message(api_version: object) -> str:
         if api_version is None:
             return "Field required"
-        if isinstance(api_version, str) and api_version.startswith("ledger.workflow/"):
+        if isinstance(api_version, str) and api_version.startswith("signaldeck.workflow/"):
             return (
                 "Workflow roots are not package manifests; use "
                 f"'{WORKFLOW_PACKAGE_MANIFEST_API_VERSION}'"

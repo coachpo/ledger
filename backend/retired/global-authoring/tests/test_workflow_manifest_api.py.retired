@@ -70,7 +70,7 @@ def _manifest_source(
     uses: str = "manifest_api_agent@1",
     output_reference: str = "${{ steps.research.outputs.analysis }}",
 ) -> str:
-    return f"""apiVersion: ledger.workflow/v1
+    return f"""apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: {key}
@@ -103,7 +103,7 @@ def _v2_manifest_source(
     uses: str = "manifest_api_agent@1",
     output_reference: str = "${{ nodes.research.outputs.analysis.summary }}",
 ) -> str:
-    return f"""apiVersion: ledger.workflow/v2
+    return f"""apiVersion: signaldeck.workflow/v2
 kind: Workflow
 metadata:
   key: {key}
@@ -168,7 +168,7 @@ def test_validate_manifest_returns_diagnostics_metadata_compiled_payload_and_inp
     body = cast(dict[str, object], response.json())
     assert body["diagnostics"] == []
     assert body["metadata"] == {
-        "apiVersion": "ledger.workflow/v1",
+        "apiVersion": "signaldeck.workflow/v1",
         "key": "manifest_api_workflow",
         "name": "Manifest API Workflow",
         "description": "Writes from YAML source.",
@@ -197,7 +197,7 @@ def test_validate_v2_manifest_returns_separate_compiled_graph(
     body = cast(dict[str, object], response.json())
     assert body["diagnostics"] == []
     assert body["metadata"] == {
-        "apiVersion": "ledger.workflow/v2",
+        "apiVersion": "signaldeck.workflow/v2",
         "key": "manifest_api_workflow_v2",
         "name": "Manifest API Workflow V2",
         "description": "Writes v2 graph metadata from YAML source.",
@@ -206,7 +206,7 @@ def test_validate_v2_manifest_returns_separate_compiled_graph(
     compiled_graph = cast(dict[str, object], body["compiledGraph"])
     assert compiled_payload["key"] == "manifest_api_workflow_v2"
     assert "compiledGraph" not in compiled_payload
-    assert compiled_graph["apiVersion"] == "ledger.workflow/v2"
+    assert compiled_graph["apiVersion"] == "signaldeck.workflow/v2"
     assert compiled_graph["rootNodeId"] == "research"
     assert cast(dict[str, object], compiled_graph["output"])["path"] == "summary"
     assert "secret" not in _canonical_json(compiled_graph).lower()
@@ -218,7 +218,7 @@ def test_validate_manifest_rejects_unsupported_input_schema_keywords(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_manifest_agent(session_factory)
-    source = """apiVersion: ledger.workflow/v1
+    source = """apiVersion: signaldeck.workflow/v1
 kind: Workflow
 metadata:
   key: manifest_api_workflow
@@ -297,7 +297,7 @@ def test_create_workflow_from_manifest_persists_source_and_compiled_execution_fi
     created_steps = cast(list[dict[str, object]], created["steps"])
     created_agents = cast(list[dict[str, object]], created_steps[0]["agents"])
     output_spec = cast(dict[str, object], created["outputSpec"])
-    assert created["manifestApiVersion"] == "ledger.workflow/v1"
+    assert created["manifestApiVersion"] == "signaldeck.workflow/v1"
     assert created["manifestSource"] == source
     assert cast(dict[str, object], created["inputSchema"])["additionalProperties"] is False
     assert created_agents[0]["agentKey"] == "manifest_api_agent"
@@ -320,7 +320,7 @@ def test_create_v2_workflow_from_manifest_returns_persisted_compiled_graph(
 
     output_spec = cast(dict[str, object], created["outputSpec"])
     compiled_graph = cast(dict[str, object], created["compiledGraph"])
-    assert created["manifestApiVersion"] == "ledger.workflow/v2"
+    assert created["manifestApiVersion"] == "signaldeck.workflow/v2"
     assert created["manifestSource"] == source
     assert "compiledGraph" not in output_spec
     assert compiled_graph["rootNodeId"] == "research"
@@ -330,7 +330,7 @@ def test_create_v2_workflow_from_manifest_returns_persisted_compiled_graph(
 
     assert response.status_code == 200, response.json()
     detail = cast(dict[str, object], response.json())
-    assert detail["manifestApiVersion"] == "ledger.workflow/v2"
+    assert detail["manifestApiVersion"] == "signaldeck.workflow/v2"
     assert detail["manifestSource"] == source
     assert _canonical_json(detail["compiledGraph"]) == _canonical_json(compiled_graph)
     assert "compiledGraph" not in cast(dict[str, object], detail["outputSpec"])
@@ -383,5 +383,5 @@ def test_workflow_detail_reads_persisted_manifest_source(
 
     assert response.status_code == 200, response.json()
     detail = cast(dict[str, object], response.json())
-    assert detail["manifestApiVersion"] == "ledger.workflow/v1"
+    assert detail["manifestApiVersion"] == "signaldeck.workflow/v1"
     assert detail["manifestSource"] == source

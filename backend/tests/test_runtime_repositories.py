@@ -306,7 +306,7 @@ def _seed_workflow_package_target(
         name=f"{key_prefix} package",
         description="Package target fixture",
         status="active",
-        draft_source="apiVersion: ledger.workflowPackage/v1\n",
+        draft_source="apiVersion: signaldeck.workflowPackage/v1\n",
     )
     session.add(package)
     session.flush()
@@ -584,7 +584,7 @@ def test_model_connection_delete_blocked_by_package_version_ref(
         )
         version = WorkflowPackageRepository(session).create_version(
             package,
-            manifest_source="apiVersion: ledger.workflowPackage/v1\n",
+            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
             manifest_hash="package-delete-manifest-hash",
             package_definition={"metadata": {"key": package.key}},
             compiled_plan={"agents": []},
@@ -692,7 +692,7 @@ def test_model_connection_delete_blocked_by_transitional_compiled_plan_ref(
         )
         version = WorkflowPackageRepository(session).create_version(
             package,
-            manifest_source="apiVersion: ledger.workflowPackage/v1\n",
+            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
             manifest_hash="transitional-delete-manifest-hash",
             package_definition={"metadata": {"key": package.key}},
             compiled_plan={

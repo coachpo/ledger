@@ -8,7 +8,7 @@ from app.services.workflow_package_manifest_parser import parse_workflow_package
 
 
 def _valid_package_manifest_source() -> str:
-    return """apiVersion: ledger.workflowPackage/v1
+    return """apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: tradingagents_research
@@ -27,7 +27,7 @@ spec:
       name: Market Research Tools
       description: Uses server-declared market data tools.
       toolKeys:
-        - ledger.market_data.quote_lookup
+        - signaldeck.market_data.quote_lookup
   outputSchemas:
     - key: trading_decision
       name: Trading Decision
@@ -155,7 +155,7 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
 
     assert result.diagnostics == []
     assert result.manifest is not None
-    assert result.manifest.api_version == "ledger.workflowPackage/v1"
+    assert result.manifest.api_version == "signaldeck.workflowPackage/v1"
     assert result.manifest.kind == "WorkflowPackage"
     assert result.manifest.metadata.key == "tradingagents_research"
     assert result.manifest.spec.agents[0].model_connection == "tradingagents_primary_model"
@@ -169,7 +169,7 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
     assert "modelConnectionId" not in agents[0]
-    assert capability_profiles[0]["toolKeys"] == ["ledger.market_data.quote_lookup"]
+    assert capability_profiles[0]["toolKeys"] == ["signaldeck.market_data.quote_lookup"]
     assert "tool_keys" not in capability_profiles[0]
     assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
     assert "secretRefs" not in mcp_servers[0]
@@ -263,8 +263,11 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
         ),
         (
             _valid_package_manifest_source().replace(
-                "apiVersion: ledger.workflowPackage/v1\n",
-                "apiVersion: ledger.workflowPackage/v1\napiVersion: ledger.workflowPackage/v1\n",
+                "apiVersion: signaldeck.workflowPackage/v1\n",
+                (
+                    "apiVersion: signaldeck.workflowPackage/v1\n"
+                    "apiVersion: signaldeck.workflowPackage/v1\n"
+                ),
                 1,
             ),
             "$",
@@ -351,7 +354,7 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
         ),
         (
             _valid_package_manifest_source().replace(
-                "ledger.workflowPackage/v1", "ledger.workflow/v2", 1
+                "signaldeck.workflowPackage/v1", "signaldeck.workflow/v2", 1
             ),
             "apiVersion",
             "Workflow roots are not package manifests",

@@ -126,7 +126,7 @@ def _fixture_source() -> str:
 
 
 def _single_agent_fixture_source(*, package_key: str) -> str:
-    return f"""apiVersion: ledger.workflowPackage/v1
+    return f"""apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
 metadata:
   key: {package_key}

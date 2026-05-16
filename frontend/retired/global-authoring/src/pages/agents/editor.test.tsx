@@ -77,7 +77,7 @@ const existingAgent = {
   id: 12,
   inputSchema: existingInputSchema,
   key: "macro_agent",
-  manifestApiVersion: "ledger.agent/v1",
+  manifestApiVersion: "signaldeck.agent/v1",
   manifestHash: "sha256:macro",
   manifestSource: savedManifest,
   mcpServers: [
@@ -230,7 +230,7 @@ describe("AgentsEditorPage", () => {
     expect(guide.getByText("Agent Manifest 101")).toBeVisible();
     expect(guide.getByText("Describe one runnable agent, then pin the resources it needs.")).toBeVisible();
     expect(guide.getByText("apiVersion + kind")).toBeVisible();
-    expect(guide.getByText("Use ledger.agent/v1 and kind: Agent.")).toBeVisible();
+    expect(guide.getByText("Use signaldeck.agent/v1 and kind: Agent.")).toBeVisible();
     expect(guide.getByText("spec.systemPrompt")).toBeVisible();
     expect(guide.getByText("Pin outputSchema as <key>@<version>, then add capabilities and mcpServers as needed.")).toBeVisible();
     expect(guide.getByText("Validate before Save.")).toBeVisible();
@@ -260,7 +260,7 @@ describe("AgentsEditorPage", () => {
     renderAgentsEditorPage();
 
     const editor = screen.getByTestId("agent-yaml-editor") as HTMLTextAreaElement;
-    expect(editor.value).toContain("apiVersion: ledger.agent/v1");
+    expect(editor.value).toContain("apiVersion: signaldeck.agent/v1");
     expect(editor.value).toContain("key: new_agent");
 
     fireEvent.click(screen.getByTestId("agents-save"));
@@ -316,7 +316,7 @@ describe("AgentsEditorPage", () => {
     renderAgentsEditorPage();
 
     const unformattedManifest = `kind: Agent
-apiVersion: ledger.agent/v1
+apiVersion: signaldeck.agent/v1
 spec:
   budgetUsd: "0"
   mcpServers: []
@@ -341,7 +341,7 @@ metadata:
     fireEvent.change(editor, { target: { value: unformattedManifest } });
     fireEvent.click(screen.getByTestId("agents-format-manifest"));
 
-    await waitFor(() => expect(editor.value).toMatch(/^apiVersion: ledger\.agent\/v1\nkind: Agent\nmetadata:/));
+    await waitFor(() => expect(editor.value).toMatch(/^apiVersion: signaldeck\.agent\/v1\nkind: Agent\nmetadata:/));
     expect(editor.value).toContain("  modelConnection: primary_model_connection\n  systemPrompt: You are concise.");
     expect(editor.value).toContain("  inputSchema:\n    type: object");
     expect(toastSuccessMock).toHaveBeenCalledWith("Agent manifest formatted");
@@ -371,7 +371,7 @@ metadata:
         },
       ],
       metadata: {
-        apiVersion: "ledger.agent/v1",
+        apiVersion: "signaldeck.agent/v1",
         description: "Describe what this agent does.",
         key: "new_agent",
         name: "New Agent",
@@ -390,7 +390,7 @@ metadata:
     );
     expect(within(screen.getByTestId("agent-validation-feedback")).getByText("Capability pin resolves with a warning")).toBeVisible();
     expect(within(screen.getByTestId("agent-validation-feedback")).getByText("spec.capabilities[0]")).toBeVisible();
-    expect(screen.getByTestId("agent-validation-metadata")).toHaveTextContent("ledger.agent/v1");
+    expect(screen.getByTestId("agent-validation-metadata")).toHaveTextContent("signaldeck.agent/v1");
     expect(screen.getByTestId("agent-validation-metadata")).toHaveTextContent("new_agent");
     expect(screen.getByLabelText("Exact raw compiled agent JSON")).toHaveValue(JSON.stringify(compiledPayload, null, 2));
     expect(screen.getByLabelText("Exact raw agent run input schema JSON")).toHaveValue(JSON.stringify(runInputSchema, null, 2));
@@ -407,7 +407,7 @@ metadata:
     renderAgentsEditorPage();
 
     fireEvent.change(screen.getByTestId("agent-yaml-editor"), {
-      target: { value: "apiVersion: ledger.agent/v1\nkind: [" },
+      target: { value: "apiVersion: signaldeck.agent/v1\nkind: [" },
     });
 
     expect(screen.getByTestId("agent-local-parse-status")).toHaveTextContent("Local parse needs attention");
@@ -419,7 +419,7 @@ metadata:
 
     const editor = screen.getByTestId("agent-yaml-editor") as HTMLTextAreaElement;
     fireEvent.change(editor, {
-      target: { value: "apiVersion: ledger.agent/v1\nkind: [" },
+      target: { value: "apiVersion: signaldeck.agent/v1\nkind: [" },
     });
 
     fireEvent.click(within(screen.getByTestId("agent-validation-feedback")).getByText(/malformed yaml/i));

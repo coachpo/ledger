@@ -9,7 +9,7 @@ from pydantic import Field, field_serializer, field_validator
 
 from app.schemas.common import CamelModel
 
-AGENT_MANIFEST_API_VERSION = "ledger.agent/v1"
+AGENT_MANIFEST_API_VERSION = "signaldeck.agent/v1"
 
 _STABLE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 _STABLE_MCP_SERVER_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,119}$")
@@ -190,7 +190,7 @@ def _parse_ref_list(
 
 
 class AgentManifest(CamelModel):
-    api_version: Literal["ledger.agent/v1"] = Field(alias="apiVersion")
+    api_version: Literal["signaldeck.agent/v1"] = Field(alias="apiVersion")
     kind: Literal["Agent"]
     metadata: AgentManifestMetadata
     spec: AgentManifestSpec

@@ -17,8 +17,8 @@ from app.agents.runtime_tools.types import (
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeSocialSentimentLookupResult,
 )
-from app.extensions.ledger_finance.provider_factories import create_social_sentiment_adapters
-from app.extensions.ledger_finance.provider_factories import (
+from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
+from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
 )
 from app.services.social_sentiment_provider import (

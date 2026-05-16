@@ -16,11 +16,11 @@ from tests.test_agent_manifest_compiler import (
 )
 
 GENERIC_PLATFORM_TOOL_KEYS = (
-    "ledger.market_data.ohlcv_lookup",
-    "ledger.indicators.lookup",
-    "ledger.fundamentals.lookup",
-    "ledger.news.lookup",
-    "ledger.insider_data.lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.indicators.lookup",
+    "signaldeck.fundamentals.lookup",
+    "signaldeck.news.lookup",
+    "signaldeck.insider_data.lookup",
 )
 
 
@@ -69,7 +69,7 @@ def test_capability_create_rejects_unknown_tool_key_without_persisting_draft(
             "key": "unknown_trading_tool",
             "name": "Unknown Trading Tool",
             "description": "Unknown tools must still fail catalog validation.",
-            "toolKeys": ["ledger.stock_analysis.report_lookup"],
+            "toolKeys": ["signaldeck.stock_analysis.report_lookup"],
         },
     )
 
@@ -79,7 +79,7 @@ def test_capability_create_rejects_unknown_tool_key_without_persisting_draft(
     assert body["code"] == "validation_error"
     assert any(
         detail["field"] == "toolKeys.0"
-        and "Unknown server-declared tool 'ledger.stock_analysis.report_lookup'"
+        and "Unknown server-declared tool 'signaldeck.stock_analysis.report_lookup'"
         in str(detail["issue"])
         for detail in details
     )
@@ -100,29 +100,29 @@ def test_capability_crud_uses_tool_keys(
             "name": "Market Research",
             "description": "Server-owned research tools.",
             "toolKeys": [
-                "ledger.positions.lookup",
-                "ledger.reports.lookup",
+                "signaldeck.positions.lookup",
+                "signaldeck.reports.lookup",
             ],
         },
     )
 
     assert created["status"] == "draft"
     assert created["toolKeys"] == [
-        "ledger.positions.lookup",
-        "ledger.reports.lookup",
+        "signaldeck.positions.lookup",
+        "signaldeck.reports.lookup",
     ]
     assert "toolGrants" not in created
     assert "toolDefinitions" not in created
 
     update_response = client.patch(
         f"/api/capabilities/{created['id']}",
-        json={"name": "Market Research v2", "toolKeys": ["ledger.reports.lookup"]},
+        json={"name": "Market Research v2", "toolKeys": ["signaldeck.reports.lookup"]},
     )
     assert update_response.status_code == 200, update_response.json()
     updated = cast(dict[str, object], update_response.json())
     assert updated["id"] != created["id"]
     assert updated["version"] == 2
-    assert updated["toolKeys"] == ["ledger.reports.lookup"]
+    assert updated["toolKeys"] == ["signaldeck.reports.lookup"]
     assert "toolGrants" not in updated
     assert "toolDefinitions" not in updated
 
@@ -165,7 +165,7 @@ def test_capability_request_rejects_tool_definitions(
         json={
             "key": "conflicting_tools",
             "name": "Conflicting Tools",
-            "toolDefinitions": [{"tool": "ledger.positions.lookup"}],
+            "toolDefinitions": [{"tool": "signaldeck.positions.lookup"}],
         },
     )
 
@@ -187,14 +187,14 @@ def test_capability_patch_rejects_tool_definitions_without_archiving_existing_dr
         {
             "key": "patch_conflict_tools",
             "name": "Patch Conflict Tools",
-            "toolKeys": ["ledger.reports.lookup"],
+            "toolKeys": ["signaldeck.reports.lookup"],
         },
     )
 
     response = client.patch(
         f"/api/capabilities/{created['id']}",
         json={
-            "toolDefinitions": [{"tool": "ledger.positions.lookup"}],
+            "toolDefinitions": [{"tool": "signaldeck.positions.lookup"}],
         },
     )
 
@@ -248,13 +248,13 @@ def test_persisted_capability_refs_resolve_as_agent_capabilities(
     body = cast(dict[str, object], response.json())
     capabilities = cast(list[dict[str, object]], body["capabilities"])
     assert capabilities[0]["key"] == "sec_filing_lookup"
-    assert capabilities[0]["toolKeys"] == ["ledger.reports.lookup"]
+    assert capabilities[0]["toolKeys"] == ["signaldeck.reports.lookup"]
     tools = cast(list[dict[str, object]], capabilities[0]["tools"])
     assert tools == [
         {
-            "key": "ledger.reports.lookup",
+            "key": "signaldeck.reports.lookup",
             "displayName": "Report Lookup",
-            "description": "Read persisted Ledger reports through server-owned report lookups.",
+            "description": "Read persisted SignalDeck reports through server-owned report lookups.",
         }
     ]
     assert "toolGrants" not in capabilities[0]

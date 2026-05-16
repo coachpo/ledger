@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -312,7 +312,7 @@ def test_tradingagents_advisory_research_launch_persists_extension_snapshots(
     assert snapshots[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
     assert snapshots[0]["enabled"] is True
     surfaces = cast(list[str], snapshots[0]["surfaces"])
-    assert "tool.ledger.market_data.quote_lookup" in surfaces
+    assert "tool.signaldeck.market_data.quote_lookup" in surfaces
 
 
 def test_tradingagents_advisory_research_launch_blocks_extension_disabled(

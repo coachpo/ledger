@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 
 from app.core.errors import ApiError
-from app.extensions.ledger_finance.dependencies import (
+from app.extensions.signaldeck_finance.dependencies import (
     get_report_service,
     get_template_compiler_service,
     get_text_template_service,

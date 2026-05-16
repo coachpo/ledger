@@ -4,7 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
-from app.extensions.ledger_finance.dependencies import get_csv_import_service, get_position_service
+from app.extensions.signaldeck_finance.dependencies import (
+    get_csv_import_service,
+    get_position_service,
+)
 from app.schemas.csv_import import CsvCommitRead, CsvPreviewRead
 from app.schemas.position import (
     PositionCreate,

@@ -691,7 +691,7 @@ export function AgentsEditorPage() {
                   <CardContent className="flex flex-col gap-2 px-3 pb-3">
                     <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
                       <Badge className="w-fit" variant="outline">apiVersion + kind</Badge>
-                      <p className="text-xs text-muted-foreground">Use ledger.agent/v1 and kind: Agent.</p>
+                      <p className="text-xs text-muted-foreground">Use signaldeck.agent/v1 and kind: Agent.</p>
                     </div>
                     <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm">
                       <Badge className="w-fit" variant="outline">metadata</Badge>

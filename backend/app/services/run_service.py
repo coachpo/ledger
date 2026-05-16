@@ -21,8 +21,8 @@ from app.core.telemetry import (
     format_current_trace_id,
 )
 from app.db.engine import get_session_factory
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.extensions.ledger_finance.provider_factories import create_deterministic_quote_provider
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.provider_factories import create_deterministic_quote_provider
 from app.models.agent import Agent
 from app.models.output_schema import OutputSchema
 from app.models.run import Run
@@ -169,7 +169,7 @@ class _PreparedOperationInvocation:
 
 
 _CURRENT_RUNTIME_INVOCATION_CONTEXT: ContextVar[_RuntimeInvocationContext | None] = ContextVar(
-    "ledger_runtime_invocation_context",
+    "signaldeck_runtime_invocation_context",
     default=None,
 )
 

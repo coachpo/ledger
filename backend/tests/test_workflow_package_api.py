@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
-from app.extensions.ledger_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.platform_reference import WorkflowPackageVersionModelConnection
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
@@ -22,17 +22,17 @@ _FIXTURE = (
     / "tradingagents_advisory_research.yaml"
 )
 _EXPECTED_FINANCE_TOOL_KEYS = {
-    "ledger.market_data.quote_lookup",
-    "ledger.market_data.history_lookup",
-    "ledger.market_data.ohlcv_lookup",
-    "ledger.indicators.lookup",
-    "ledger.fundamentals.lookup",
-    "ledger.news.lookup",
-    "ledger.social_sentiment.lookup",
-    "ledger.insider_data.lookup",
-    "ledger.positions.lookup",
-    "ledger.reports.lookup",
-    "ledger.reports.write",
+    "signaldeck.market_data.quote_lookup",
+    "signaldeck.market_data.history_lookup",
+    "signaldeck.market_data.ohlcv_lookup",
+    "signaldeck.indicators.lookup",
+    "signaldeck.fundamentals.lookup",
+    "signaldeck.news.lookup",
+    "signaldeck.social_sentiment.lookup",
+    "signaldeck.insider_data.lookup",
+    "signaldeck.positions.lookup",
+    "signaldeck.reports.lookup",
+    "signaldeck.reports.write",
 }
 
 
@@ -93,7 +93,7 @@ def _assert_manifest_payload(
     assert "compiledPlan" not in body
 
     source = cast(str, body["manifestSource"])
-    assert source.startswith("apiVersion: ledger.workflowPackage/v1")
+    assert source.startswith("apiVersion: signaldeck.workflowPackage/v1")
     if expected_mcp_headers is None:
         expected_mcp_headers = {"Authorization": "Bearer exa-inline-token"}
     if expected_mcp_query is None:
@@ -261,7 +261,7 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     export = client.get(f"/api/workflow-packages/{created['id']}/export", params={"version": 1})
     assert export.status_code == 200, export.text
     assert export.headers["content-type"].startswith("application/yaml")
-    assert "apiVersion: ledger.workflowPackage/v1" in export.text
+    assert "apiVersion: signaldeck.workflowPackage/v1" in export.text
     assert "modelConnection: tradingagents_primary_model" in export.text
     assert "headers:" in export.text
     assert "query:" in export.text
@@ -502,8 +502,8 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     session_factory: sessionmaker[Session],
 ) -> None:
     bad_source = _package_source().replace(
-        "ledger.market_data.quote_lookup",
-        "ledger.unknown.tool",
+        "signaldeck.market_data.quote_lookup",
+        "signaldeck.unknown.tool",
         1,
     )
 
