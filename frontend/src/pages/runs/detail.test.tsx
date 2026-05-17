@@ -33,6 +33,69 @@ vi.mock("@/hooks/use-runs", () => ({
   useRunStepReplayDraft: (...args: unknown[]) => useRunStepReplayDraftMock(...args),
 }));
 
+vi.mock("@xyflow/react", () => ({
+  Background: () => <div data-testid="mock-react-flow-background" />,
+  BackgroundVariant: { Dots: "dots" },
+  Handle: () => <span data-testid="mock-react-flow-handle" />,
+  MarkerType: { ArrowClosed: "arrowclosed" },
+  Position: { Left: "left", Right: "right" },
+  ReactFlow: ({
+    children,
+    edges = [],
+    elementsSelectable,
+    nodes = [],
+    nodesConnectable,
+    nodesDraggable,
+    panOnDrag,
+    zoomOnScroll,
+    ...props
+  }: {
+    "aria-label"?: string;
+    children?: ReactNode;
+    edges?: Array<{ id: string; label?: ReactNode }>;
+    elementsSelectable?: boolean;
+    nodes?: Array<{
+      data: { details: Array<{ label: string; value: ReactNode }>; eyebrow: string; testId: string; title: ReactNode };
+      id: string;
+    }>;
+    nodesConnectable?: boolean;
+    nodesDraggable?: boolean;
+    panOnDrag?: boolean;
+    zoomOnScroll?: boolean;
+  }) => (
+    <div
+      aria-label={props["aria-label"]}
+      data-readonly={String(
+        nodesDraggable === false
+        && nodesConnectable === false
+        && elementsSelectable === false
+        && panOnDrag === false
+        && zoomOnScroll === false,
+      )}
+      data-testid="mock-react-flow"
+    >
+      {nodes.map((node) => (
+        <div data-testid={node.data.testId} key={node.id}>
+          <p>{node.data.eyebrow}</p>
+          <p>{node.data.title}</p>
+          <dl>
+            {node.data.details.map((item) => (
+              <div key={item.label}>
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+      {edges.map((edge) => (
+        <p data-testid={`mock-react-flow-edge-${edge.id}`} key={edge.id}>{edge.label}</p>
+      ))}
+      {children}
+    </div>
+  ),
+}));
+
 const NOW = "2026-04-20T10:00:00Z";
 
 function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAgentInvocationRead {
@@ -395,6 +458,22 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/research_agent/i);
 
     stepSummaryRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1&pane=lineage");
+    const stepLineageRender = render(<RunsDetailPage />);
+    const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
+    const stepLineageDiagram = within(stepLineage).getByTestId("runs-step-1-lineage-diagram");
+    expect(stepLineageDiagram).toBeInTheDocument();
+    expect(within(stepLineageDiagram).getByTestId("mock-react-flow")).toHaveAttribute("data-readonly", "true");
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-source")).toHaveTextContent(/source run/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-source")).toHaveTextContent(/source step row/i);
+    const stepLineageSourceNode = within(stepLineage).getByTestId("runs-step-1-lineage-node-source");
+    expect(within(stepLineageSourceNode).getByRole("link", { name: /^run #41$/i })).toHaveAttribute("href", "/runs/41");
+    expect(within(stepLineageSourceNode).getByRole("link", { name: /run #41 step 1/i })).toHaveAttribute("href", "/runs/41#step-1");
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/origin/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/copied/i);
+    expect(within(stepLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/provenance/i);
+
+    stepLineageRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
     const provenanceRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
@@ -416,15 +495,21 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("pane=lineage");
     const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
+    const runLineageDiagram = within(lineage).getByTestId("runs-lineage-diagram");
+    expect(runLineageDiagram).toBeInTheDocument();
+    expect(within(runLineageDiagram).getByTestId("mock-react-flow")).toHaveAttribute("data-readonly", "true");
+    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveTextContent(/lineage root/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveTextContent(/run #40/i);
     expect(within(lineage).getByRole("link", { name: /run #41/i })).toHaveAttribute("href", "/runs/41");
-    expect(lineage).toHaveTextContent(/lineage root/i);
-    expect(lineage).toHaveTextContent(/run #40/i);
-    expect(lineage).toHaveTextContent(/replay step/i);
-    expect(lineage).toHaveTextContent(/step 1/i);
-    expect(lineage).toHaveTextContent(/resume step/i);
-    expect(lineage).toHaveTextContent(/step 2/i);
-    expect(lineage).toHaveTextContent(/1 copied · 1 planned/i);
-    expect(lineage).toHaveTextContent(/1 copied · 1 planned\/executed/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/source run/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/replay step/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/step 1/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/resume step/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/step 2/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned\/executed/i);
+    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-root-source")).toHaveTextContent(/lineage root/i);
+    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/replay \/ resume/i);
 
     lineageRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=invocation:1002&pane=error");
@@ -572,6 +657,25 @@ describe("RunsDetailPage", () => {
 
     expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
+  });
+
+  it("renders a single-node step lineage diagram when no upstream source exists", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams("inspect=step:1&pane=lineage");
+
+    render(<RunsDetailPage />);
+
+    const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
+    const stepLineageDiagram = within(stepLineage).getByTestId("runs-step-1-lineage-diagram");
+    expect(within(stepLineageDiagram).getByTestId("mock-react-flow")).toHaveAttribute("data-readonly", "true");
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/origin/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/planned/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source run/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source step/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/source step row/i);
+    expect(within(stepLineage).getByTestId("runs-step-1-lineage-node-current")).toHaveTextContent(/not recorded/i);
+    expect(within(stepLineage).queryByTestId("runs-step-1-lineage-node-source")).not.toBeInTheDocument();
+    expect(within(stepLineageDiagram).queryByTestId("mock-react-flow-edge-source-current")).not.toBeInTheDocument();
   });
 
   it("renders standalone agent target identity and span-only outline trace summary", () => {

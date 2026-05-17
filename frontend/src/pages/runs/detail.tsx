@@ -1,3 +1,15 @@
+import {
+  Background,
+  BackgroundVariant,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { Activity, AlertCircle, Database, Download, FileText, GitBranch, Loader2, PlayCircle, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
@@ -76,7 +88,22 @@ type StepReplayAvailability = {
   reason: string | null;
 };
 
+type LineageDiagramNodeData = {
+  [key: string]: unknown;
+  details: DetailItem[];
+  eyebrow: string;
+  testId: string;
+  title: ReactNode;
+  tone?: "current" | "source";
+};
+
+type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
+type LineageDiagramEdge = Edge;
+
 const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step to replay from.";
+const LINEAGE_NODE_WIDTH = 192;
+const LINEAGE_NODE_GAP = 56;
+const LINEAGE_NODE_Y = 24;
 
 function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
@@ -303,6 +330,103 @@ function DetailGrid({ items }: { items: DetailItem[] }) {
   );
 }
 
+function lineageNodePosition(index: number) {
+  return { x: index * (LINEAGE_NODE_WIDTH + LINEAGE_NODE_GAP), y: LINEAGE_NODE_Y };
+}
+
+function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
+  return (
+    <div
+      className={cn(
+        "nodrag nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-sm",
+        data.tone === "current" && "border-primary/30 bg-primary/5",
+        data.tone === "source" && "border-positive/30 bg-positive/5",
+      )}
+      data-testid={data.testId}
+    >
+      <Handle className="size-1.5 border-border bg-muted-foreground" isConnectable={false} position={Position.Left} type="target" />
+      <div className="space-y-2">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{data.eyebrow}</p>
+          <p className="mt-0.5 break-words text-sm font-medium leading-5 text-foreground">{data.title}</p>
+        </div>
+        <dl className="space-y-1.5 text-xs">
+          {data.details.map((item) => (
+            <div className="min-w-0" key={item.label}>
+              <dt className="font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
+              <dd className="mt-0.5 break-words text-foreground">{formatOptional(item.value)}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <Handle className="size-1.5 border-border bg-muted-foreground" isConnectable={false} position={Position.Right} type="source" />
+    </div>
+  );
+}
+
+const lineageNodeTypes = { lineage: LineageNode };
+
+const lineageDefaultEdgeOptions: Partial<LineageDiagramEdge> = {
+  markerEnd: { type: MarkerType.ArrowClosed },
+  style: { stroke: "var(--border)", strokeWidth: 1.5 },
+  type: "smoothstep",
+};
+
+function LineageDiagram({
+  ariaLabel,
+  className,
+  edges,
+  nodes,
+  testId,
+}: {
+  ariaLabel: string;
+  className?: string;
+  edges: LineageDiagramEdge[];
+  nodes: LineageDiagramNode[];
+  testId: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "h-56 overflow-hidden rounded-xl border bg-muted/20 [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
+        className,
+      )}
+      data-testid={testId}
+    >
+      <ReactFlow
+        aria-label={ariaLabel}
+        autoPanOnNodeDrag={false}
+        connectOnClick={false}
+        defaultEdgeOptions={lineageDefaultEdgeOptions}
+        deleteKeyCode={null}
+        edges={edges}
+        edgesFocusable={false}
+        elementsSelectable={false}
+        fitView
+        fitViewOptions={{ padding: 0.22 }}
+        maxZoom={1.3}
+        minZoom={0.55}
+        multiSelectionKeyCode={null}
+        nodeTypes={lineageNodeTypes}
+        nodes={nodes}
+        nodesConnectable={false}
+        nodesDraggable={false}
+        nodesFocusable={false}
+        panOnDrag={false}
+        preventScrolling={false}
+        proOptions={{ hideAttribution: true }}
+        selectNodesOnDrag={false}
+        selectionKeyCode={null}
+        zoomOnDoubleClick={false}
+        zoomOnPinch={false}
+        zoomOnScroll={false}
+      >
+        <Background color="var(--border)" gap={16} size={1} variant={BackgroundVariant.Dots} />
+      </ReactFlow>
+    </div>
+  );
+}
+
 function ResolvedModelConnections({ connections }: { connections: RunPackageResolvedModelConnectionRead[] }) {
   const sortedConnections = sortedResolvedModelConnections(connections);
   if (sortedConnections.length === 0) {
@@ -374,7 +498,7 @@ function SourceRunLink({ children, runId }: { children: ReactNode; runId: number
   }
 
   return (
-    <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${runId}`}>
+    <Link className="nodrag nopan text-primary underline-offset-4 hover:underline" to={`/runs/${runId}`}>
       {children}
     </Link>
   );
@@ -386,7 +510,7 @@ function SourceStepLink({ step }: { step: RunStepRead }) {
   }
 
   return (
-    <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${step.sourceRunId}#step-${step.sourceStepIndex}`}>
+    <Link className="nodrag nopan text-primary underline-offset-4 hover:underline" to={`/runs/${step.sourceRunId}#step-${step.sourceStepIndex}`}>
       Run #{step.sourceRunId} step {step.sourceStepIndex}
     </Link>
   );
@@ -985,23 +1109,66 @@ function EvidencePaneNav({
 }
 
 function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations, plannedSteps, run }: { copiedInvocations: number; copiedSteps: number; plannedInvocations: number; plannedSteps: number; run: RunRead }) {
+  const lineageRootRunId = run.lineageRootRunId ?? run.id;
+  const sourceRunValue = run.sourceRunId ? <SourceRunLink runId={run.sourceRunId}>Run #{run.sourceRunId}</SourceRunLink> : "Original run";
+  const replayStepValue = run.replayStepIndex === null ? "Not replayed" : `Step ${run.replayStepIndex}`;
+  const nodes: LineageDiagramNode[] = [
+    {
+      data: {
+        details: [{ label: "Lineage root", value: `Run #${lineageRootRunId}` }],
+        eyebrow: "Root",
+        testId: "runs-lineage-node-root",
+        title: `Run #${lineageRootRunId}`,
+      },
+      id: "lineage-root",
+      position: lineageNodePosition(0),
+      type: "lineage",
+    },
+    {
+      data: {
+        details: [
+          { label: "Source run", value: sourceRunValue },
+          { label: "Replay step", value: replayStepValue },
+        ],
+        eyebrow: "Replay source",
+        testId: "runs-lineage-node-source",
+        title: run.sourceRunId ? `Run #${run.sourceRunId}` : "Original run",
+        tone: "source",
+      },
+      id: "lineage-source",
+      position: lineageNodePosition(1),
+      type: "lineage",
+    },
+    {
+      data: {
+        details: [
+          { label: "Resume step", value: `Step ${run.resumeStepIndex}` },
+          { label: "Step origins", value: `${copiedSteps} copied · ${plannedSteps} planned` },
+          { label: "Invocation origins", value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed` },
+        ],
+        eyebrow: "Current run",
+        testId: "runs-lineage-node-current",
+        title: `Run #${run.id}`,
+        tone: "current",
+      },
+      id: "lineage-current",
+      position: lineageNodePosition(2),
+      type: "lineage",
+    },
+  ];
+  const edges: LineageDiagramEdge[] = [
+    { id: "root-source", label: "lineage root", source: "lineage-root", target: "lineage-source" },
+    { id: "source-current", label: run.sourceRunId ? "replay / resume" : "original / resume", source: "lineage-source", target: "lineage-current" },
+  ];
+
   return (
     <Card data-testid="runs-lineage-summary">
       <CardHeader>
         <CardTitle className="text-base">Lineage</CardTitle>
-        <CardDescription>Replay and resume metadata for copied and planned execution origins.</CardDescription>
+        <CardDescription>Readonly replay and resume diagram for copied and planned execution origins.</CardDescription>
       </CardHeader>
       <CardContent>
-        <DetailGrid
-          items={[
-            { label: "Source run", value: run.sourceRunId ? <SourceRunLink runId={run.sourceRunId}>Run #{run.sourceRunId}</SourceRunLink> : "Original run" },
-            { label: "Lineage root", value: run.lineageRootRunId ? `Run #${run.lineageRootRunId}` : `Run #${run.id}` },
-            { label: "Replay step", value: run.replayStepIndex === null ? "Not replayed" : `Step ${run.replayStepIndex}` },
-            { label: "Resume step", value: `Step ${run.resumeStepIndex}` },
-            { label: "Step origins", value: `${copiedSteps} copied · ${plannedSteps} planned` },
-            { label: "Invocation origins", value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed` },
-          ]}
-        />
+        <LineageDiagram ariaLabel="Run replay and resume lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
       </CardContent>
     </Card>
   );
@@ -1109,15 +1276,80 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
 }
 
 function StepLineageEvidence({ step }: { step: RunStepRead }) {
+  const sourceRunValue = step.sourceRunId ? <SourceRunLink runId={step.sourceRunId}>Run #{step.sourceRunId}</SourceRunLink> : "Not recorded";
+  const sourceStepValue = <SourceStepLink step={step} />;
+  const sourceStepRowValue = step.sourceRunStepId ? `#${step.sourceRunStepId}` : "Not recorded";
+  const hasUpstreamStep = Boolean(step.sourceRunId && step.sourceStepIndex !== null);
+  const nodes: LineageDiagramNode[] = hasUpstreamStep
+    ? [
+        {
+          data: {
+            details: [
+              { label: "Source run", value: sourceRunValue },
+              { label: "Source step", value: sourceStepValue },
+              { label: "Source step row", value: sourceStepRowValue },
+            ],
+            eyebrow: "Upstream",
+            testId: `runs-step-${step.index}-lineage-node-source`,
+            title: step.sourceStepIndex === null ? "Source step" : `Step ${step.sourceStepIndex}`,
+            tone: "source",
+          },
+          id: "step-source",
+          position: lineageNodePosition(0),
+          type: "lineage",
+        },
+        {
+          data: {
+            details: [{ label: "Origin", value: step.origin }],
+            eyebrow: "Current step",
+            testId: `runs-step-${step.index}-lineage-node-current`,
+            title: `Step ${step.index}`,
+            tone: "current",
+          },
+          id: "step-current",
+          position: lineageNodePosition(1),
+          type: "lineage",
+        },
+      ]
+    : [
+        {
+          data: {
+            details: [
+              { label: "Origin", value: step.origin },
+              { label: "Source run", value: sourceRunValue },
+              { label: "Source step", value: sourceStepValue },
+              { label: "Source step row", value: sourceStepRowValue },
+            ],
+            eyebrow: "Current step",
+            testId: `runs-step-${step.index}-lineage-node-current`,
+            title: `Step ${step.index}`,
+            tone: "current",
+          },
+          id: "step-current",
+          position: lineageNodePosition(0),
+          type: "lineage",
+        },
+      ];
+  const edges: LineageDiagramEdge[] = hasUpstreamStep
+    ? [{ id: "source-current", label: "provenance", source: "step-source", target: "step-current" }]
+    : [];
+
   return (
-    <DetailGrid
-      items={[
-        { label: "Origin", value: step.origin },
-        { label: "Source run", value: step.sourceRunId ? <SourceRunLink runId={step.sourceRunId}>Run #{step.sourceRunId}</SourceRunLink> : "Not recorded" },
-        { label: "Source step", value: <SourceStepLink step={step} /> },
-        { label: "Source step row", value: step.sourceRunStepId ? `#${step.sourceRunStepId}` : "Not recorded" },
-      ]}
-    />
+    <Card data-testid={`runs-step-${step.index}-lineage-summary`}>
+      <CardHeader>
+        <CardTitle className="text-base">Step lineage</CardTitle>
+        <CardDescription>Readonly provenance diagram for this workflow step.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <LineageDiagram
+          ariaLabel={`Step ${step.index} provenance lineage diagram`}
+          className={hasUpstreamStep ? "h-52" : "h-48"}
+          edges={edges}
+          nodes={nodes}
+          testId={`runs-step-${step.index}-lineage-diagram`}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
