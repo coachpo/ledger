@@ -992,10 +992,10 @@ function ExecutionOutline({
 }) {
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col bg-card/40" data-testid="runs-execution-outline">
-      <div className="shrink-0 border-b border-border px-4 py-3">
+      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold tracking-tight">Execution outline</h2>
+          <h2 className="text-base font-semibold tracking-tight">Execution outline</h2>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">Choose one run, step, or memory target to inspect.</p>
       </div>
