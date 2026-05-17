@@ -1,45 +1,44 @@
 from __future__ import annotations
 
-from importlib import import_module
-from typing import TYPE_CHECKING, Protocol, cast
-
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
-TEMPLATE_COMPILER_SURFACE = "service.template_compiler"
-REPORT_SERVICE_SURFACE = "service.report"
-MEMORY_SERVICE_SURFACE = "service.memory"
-MEMORY_REPORT_SERVICE_SURFACE = "service.memory_report"
-MEMORY_CONTEXT_SERVICE_SURFACE = "service.memory_context"
-REPORT_BACKED_MEMORY_STORE_SURFACE = "service.report_backed_memory_store"
-RETURN_RESOLUTION_SERVICE_SURFACE = "service.return_resolution"
-REFLECTION_SERVICE_SURFACE = "service.reflection"
-MEMORY_FOLLOW_UP_SERVICE_SURFACE = "service.memory_follow_up"
-
-
-class _ExtensionServiceProtocol(Protocol):
-    def require_enabled(self, extension_key: str, *, surface: str) -> object: ...
-
-
-class _ExtensionServiceFactoryProtocol(Protocol):
-    def __call__(self, session: Session) -> _ExtensionServiceProtocol: ...
+from app.extensions.signaldeck_finance.provider_factories import create_deterministic_quote_provider
+from app.services.extension_gate import (
+    MEMORY_CONTEXT_SERVICE_SURFACE,
+    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+    MEMORY_REPORT_SERVICE_SURFACE,
+    MEMORY_SERVICE_SURFACE,
+    REFLECTION_SERVICE_SURFACE,
+    REPORT_BACKED_MEMORY_STORE_SURFACE,
+    REPORT_SERVICE_SURFACE,
+    RETURN_RESOLUTION_SERVICE_SURFACE,
+    TEMPLATE_COMPILER_SURFACE,
+    require_finance_workspace_enabled,
+)
+from app.services.market_data_service import MarketDataService
+from app.services.memory_follow_up_service import MemoryFollowUpService
+from app.services.run_lifecycle import ExtensionRunLifecycleHooks, WorkflowPackageStartContext
 
 
-def require_finance_workspace_enabled(
-    session: Session,
-    *,
-    surface: str,
-) -> object:
-    service_module = import_module("app.services.extension_service")
-    raw_service_factory = cast(object, getattr(service_module, "ExtensionService", None))
-    if not callable(raw_service_factory):
-        raise RuntimeError("ExtensionService is not available")
-    service_factory = cast(_ExtensionServiceFactoryProtocol, raw_service_factory)
-    return service_factory(session).require_enabled(
-        FINANCE_WORKSPACE_EXTENSION_KEY,
-        surface=surface,
+def run_memory_follow_up_on_workflow_package_start(
+    context: WorkflowPackageStartContext,
+) -> None:
+    quote_provider = (
+        context.provider_bundle.quote_provider
+        or context.provider_bundle.fallback_quote_provider
+        or create_deterministic_quote_provider()
+    )
+    _ = MemoryFollowUpService(
+        context.session,
+        MarketDataService(session=context.session, quote_provider=quote_provider),
+    ).run_due(context.now)
+
+
+def register_run_lifecycle_hooks() -> tuple[ExtensionRunLifecycleHooks, ...]:
+    return (
+        ExtensionRunLifecycleHooks(
+            extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+            on_workflow_package_start=run_memory_follow_up_on_workflow_package_start,
+        ),
     )
 
 
@@ -53,5 +52,7 @@ __all__ = [
     "REPORT_SERVICE_SURFACE",
     "RETURN_RESOLUTION_SERVICE_SURFACE",
     "TEMPLATE_COMPILER_SURFACE",
+    "register_run_lifecycle_hooks",
     "require_finance_workspace_enabled",
+    "run_memory_follow_up_on_workflow_package_start",
 ]
