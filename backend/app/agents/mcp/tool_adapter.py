@@ -5,6 +5,8 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
+from typing import Literal, cast
 
 from app.schemas.mcp_server import McpToolSnapshot
 
@@ -20,6 +22,37 @@ _RESERVED_SCHEMA_KEYS = {
     "dependentSchemas",
     "unevaluatedProperties",
 }
+PACKAGE_PRIVATE_MCP_VERSION = 1
+_PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Search query for the MCP tool."},
+    },
+}
+_PACKAGE_PRIVATE_MCP_TOOL_INPUT_SCHEMAS: dict[str, Mapping[str, object]] = {
+    "web_search_exa": _PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA,
+}
+SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS = frozenset(_PACKAGE_PRIVATE_MCP_TOOL_INPUT_SCHEMAS)
+
+type ExecutionToolKind = Literal["native_runtime", "mcp"]
+type ExecutionToolRedactionPolicy = Literal["native.runtime.output", "mcp.output.redact_text"]
+NATIVE_RUNTIME_REDACTION_POLICY: ExecutionToolRedactionPolicy = "native.runtime.output"
+MCP_RUNTIME_REDACTION_POLICY: ExecutionToolRedactionPolicy = "mcp.output.redact_text"
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionToolDescriptor:
+    kind: ExecutionToolKind
+    tool_key: str
+    openai_function_name: str
+    description: str
+    strict_schema: dict[str, object]
+    schema_hash: str
+    redaction_policy: ExecutionToolRedactionPolicy
+    owner_extension_key: str | None = None
+    mcp_server_key: str | None = None
+    mcp_server_version: int | None = None
+    original_tool_name: str | None = None
 
 
 class McpToolAdapterError(ValueError):
@@ -85,6 +118,240 @@ def convert_mcp_input_schema(schema: Mapping[str, object]) -> dict[str, object]:
 def hash_strict_schema(schema: Mapping[str, object]) -> str:
     payload = json.dumps(schema, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def package_private_mcp_tool_input_schema(tool_name: str) -> Mapping[str, object]:
+    schema = _PACKAGE_PRIVATE_MCP_TOOL_INPUT_SCHEMAS.get(tool_name.strip().lower())
+    if schema is None:
+        raise McpToolAdapterError(
+            f"Package-private MCP tool {tool_name!r} does not have a runtime input schema."
+        )
+    return deepcopy(dict(schema))
+
+
+def build_native_runtime_tool_descriptor(
+    *,
+    key: str,
+    openai_function_name: str,
+    description: str,
+    parameters_schema: Mapping[str, object],
+    owner_extension_key: str | None,
+) -> ExecutionToolDescriptor:
+    strict_schema = deepcopy(dict(parameters_schema))
+    return ExecutionToolDescriptor(
+        kind="native_runtime",
+        tool_key=key,
+        openai_function_name=openai_function_name,
+        description=description,
+        strict_schema=strict_schema,
+        schema_hash=hash_strict_schema(strict_schema),
+        redaction_policy=NATIVE_RUNTIME_REDACTION_POLICY,
+        owner_extension_key=owner_extension_key,
+    )
+
+
+def build_package_private_mcp_tool_descriptor(
+    *,
+    server_key: str,
+    original_tool_name: str,
+    owner_extension_key: str,
+    reserved_function_names: set[str] | None = None,
+) -> ExecutionToolDescriptor:
+    snapshot = build_mcp_tool_snapshot(
+        server_key=server_key,
+        server_version=PACKAGE_PRIVATE_MCP_VERSION,
+        original_tool_name=original_tool_name,
+        input_schema=package_private_mcp_tool_input_schema(original_tool_name),
+        reserved_function_names=reserved_function_names,
+    )
+    return mcp_snapshot_to_execution_descriptor(
+        snapshot,
+        owner_extension_key=owner_extension_key,
+    )
+
+
+def mcp_snapshot_to_execution_descriptor(
+    snapshot: McpToolSnapshot,
+    *,
+    owner_extension_key: str | None,
+) -> ExecutionToolDescriptor:
+    strict_schema = deepcopy(snapshot.strict_schema)
+    schema_hash = _validated_descriptor_schema_hash(
+        strict_schema,
+        expected_hash=snapshot.schema_hash,
+    )
+    return ExecutionToolDescriptor(
+        kind="mcp",
+        tool_key=snapshot.frozen_tool_key,
+        openai_function_name=snapshot.openai_function_name,
+        description=f"External MCP tool {snapshot.original_tool_name}",
+        strict_schema=strict_schema,
+        schema_hash=schema_hash,
+        redaction_policy=MCP_RUNTIME_REDACTION_POLICY,
+        owner_extension_key=owner_extension_key,
+        mcp_server_key=snapshot.mcp_server_key,
+        mcp_server_version=snapshot.mcp_server_version,
+        original_tool_name=snapshot.original_tool_name,
+    )
+
+
+def execution_tool_descriptor_to_payload(
+    descriptor: ExecutionToolDescriptor,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "kind": descriptor.kind,
+        "toolKey": descriptor.tool_key,
+        "openaiFunctionName": descriptor.openai_function_name,
+        "description": descriptor.description,
+        "strictSchema": deepcopy(descriptor.strict_schema),
+        "schemaHash": descriptor.schema_hash,
+        "redactionPolicy": descriptor.redaction_policy,
+    }
+    if descriptor.owner_extension_key is not None:
+        payload["ownerExtensionKey"] = descriptor.owner_extension_key
+    if descriptor.kind == "mcp":
+        payload.update(
+            {
+                "mcpServerKey": descriptor.mcp_server_key,
+                "mcpServerVersion": descriptor.mcp_server_version,
+                "originalToolName": descriptor.original_tool_name,
+            }
+        )
+    return payload
+
+
+def execution_tool_descriptor_from_payload(
+    payload: Mapping[str, object],
+) -> ExecutionToolDescriptor:
+    kind = _descriptor_kind(payload.get("kind"))
+    strict_schema = _descriptor_schema(payload.get("strictSchema"))
+    schema_hash = _validated_descriptor_schema_hash(
+        strict_schema,
+        expected_hash=_required_descriptor_text(payload.get("schemaHash"), field="schemaHash"),
+    )
+    redaction_policy = _descriptor_redaction_policy(payload.get("redactionPolicy"))
+    descriptor = ExecutionToolDescriptor(
+        kind=kind,
+        tool_key=_required_descriptor_text(payload.get("toolKey"), field="toolKey"),
+        openai_function_name=_required_descriptor_text(
+            payload.get("openaiFunctionName"),
+            field="openaiFunctionName",
+        ),
+        description=_required_descriptor_text(payload.get("description"), field="description"),
+        strict_schema=strict_schema,
+        schema_hash=schema_hash,
+        redaction_policy=redaction_policy,
+        owner_extension_key=_optional_descriptor_text(payload.get("ownerExtensionKey")),
+        mcp_server_key=_optional_descriptor_text(payload.get("mcpServerKey")),
+        mcp_server_version=_optional_descriptor_int(payload.get("mcpServerVersion")),
+        original_tool_name=_optional_descriptor_text(payload.get("originalToolName")),
+    )
+    _validate_descriptor_shape(descriptor)
+    return descriptor
+
+
+def mcp_tool_snapshot_from_descriptor(descriptor: ExecutionToolDescriptor) -> McpToolSnapshot:
+    if descriptor.kind != "mcp":
+        raise McpToolAdapterError("MCP tool descriptor kind is required")
+    if (
+        descriptor.mcp_server_key is None
+        or descriptor.mcp_server_version is None
+        or descriptor.original_tool_name is None
+    ):
+        raise McpToolAdapterError("MCP tool descriptor identity is incomplete")
+    return McpToolSnapshot.model_validate(
+        {
+            "mcpServerKey": descriptor.mcp_server_key,
+            "mcpServerVersion": descriptor.mcp_server_version,
+            "frozenToolKey": descriptor.tool_key,
+            "originalToolName": descriptor.original_tool_name,
+            "openaiFunctionName": descriptor.openai_function_name,
+            "schemaHash": descriptor.schema_hash,
+            "strictSchema": deepcopy(descriptor.strict_schema),
+            "reverseMapping": {descriptor.openai_function_name: descriptor.original_tool_name},
+        }
+    )
+
+
+def execution_tool_descriptor_to_openai_tool(
+    descriptor: ExecutionToolDescriptor,
+) -> dict[str, object]:
+    return {
+        "type": "function",
+        "name": descriptor.openai_function_name,
+        "description": descriptor.description,
+        "strict": True,
+        "parameters": deepcopy(descriptor.strict_schema),
+    }
+
+
+def _descriptor_kind(value: object) -> ExecutionToolKind:
+    if isinstance(value, str) and value in {"native_runtime", "mcp"}:
+        return cast(ExecutionToolKind, value)
+    raise McpToolAdapterError("Tool descriptor kind is invalid")
+
+
+def _descriptor_redaction_policy(value: object) -> ExecutionToolRedactionPolicy:
+    if isinstance(value, str) and value in {
+        NATIVE_RUNTIME_REDACTION_POLICY,
+        MCP_RUNTIME_REDACTION_POLICY,
+    }:
+        return cast(ExecutionToolRedactionPolicy, value)
+    raise McpToolAdapterError("Tool descriptor redactionPolicy is invalid")
+
+
+def _descriptor_schema(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise McpToolAdapterError("Tool descriptor strictSchema must be an object")
+    return deepcopy(dict(value))
+
+
+def _validated_descriptor_schema_hash(
+    strict_schema: Mapping[str, object],
+    *,
+    expected_hash: str,
+) -> str:
+    computed_hash = hash_strict_schema(strict_schema)
+    if computed_hash != expected_hash:
+        raise McpToolAdapterError("Tool descriptor schemaHash does not match strictSchema")
+    return expected_hash
+
+
+def _required_descriptor_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise McpToolAdapterError(f"Tool descriptor {field} is required")
+    return value.strip()
+
+
+def _optional_descriptor_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise McpToolAdapterError("Optional tool descriptor text fields must be non-empty strings")
+    return value.strip()
+
+
+def _optional_descriptor_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise McpToolAdapterError("Optional tool descriptor integer fields must be integers")
+    return value
+
+
+def _validate_descriptor_shape(descriptor: ExecutionToolDescriptor) -> None:
+    if descriptor.kind == "native_runtime":
+        if descriptor.redaction_policy != NATIVE_RUNTIME_REDACTION_POLICY:
+            raise McpToolAdapterError("Native runtime descriptor redactionPolicy is invalid")
+        return
+    if descriptor.redaction_policy != MCP_RUNTIME_REDACTION_POLICY:
+        raise McpToolAdapterError("MCP descriptor redactionPolicy is invalid")
+    if (
+        descriptor.mcp_server_key is None
+        or descriptor.mcp_server_version is None
+        or descriptor.original_tool_name is None
+    ):
+        raise McpToolAdapterError("MCP descriptor identity is incomplete")
 
 
 def _convert_schema_node(
@@ -175,20 +442,28 @@ def _schema_type_values(raw_type: object, *, path: str) -> set[str]:
 
 
 def snapshot_to_openai_tool(snapshot: McpToolSnapshot) -> dict[str, object]:
-    return {
-        "type": "function",
-        "name": snapshot.openai_function_name,
-        "description": f"External MCP tool {snapshot.original_tool_name}",
-        "strict": True,
-        "parameters": deepcopy(snapshot.strict_schema),
-    }
+    descriptor = mcp_snapshot_to_execution_descriptor(snapshot, owner_extension_key=None)
+    return execution_tool_descriptor_to_openai_tool(descriptor)
 
 
 __all__ = [
+    "ExecutionToolDescriptor",
+    "MCP_RUNTIME_REDACTION_POLICY",
     "McpToolAdapterError",
+    "NATIVE_RUNTIME_REDACTION_POLICY",
+    "PACKAGE_PRIVATE_MCP_VERSION",
+    "SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS",
     "build_mcp_tool_snapshot",
+    "build_native_runtime_tool_descriptor",
+    "build_package_private_mcp_tool_descriptor",
     "convert_mcp_input_schema",
+    "execution_tool_descriptor_from_payload",
+    "execution_tool_descriptor_to_openai_tool",
+    "execution_tool_descriptor_to_payload",
     "hash_strict_schema",
+    "mcp_snapshot_to_execution_descriptor",
+    "mcp_tool_snapshot_from_descriptor",
     "normalize_mcp_openai_function_name",
+    "package_private_mcp_tool_input_schema",
     "snapshot_to_openai_tool",
 ]

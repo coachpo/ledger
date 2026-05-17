@@ -14,14 +14,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
+from app.agents.mcp.tool_adapter import execution_tool_descriptor_to_openai_tool
 from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolError, RuntimeToolRegistry
 from app.core.config import get_settings
-from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
+from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageRuntimeAgentSpec
+from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService
 from app.services.quote_provider import QuoteProvider
 from app.services.social_sentiment_provider import SocialSentimentSourceAdapter
@@ -102,18 +104,40 @@ class AgentExecutionService:
         *,
         quote_provider: QuoteProvider | None = None,
         social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None,
+        provider_bundle: ExecutionProviderBundle | None = None,
         openai_client_factory: type[Any] = OpenAI,
         mcp_tool_client: McpToolClient | None = None,
     ) -> None:
         self.session_factory: sessionmaker[Session] = session_factory
-        self.quote_provider: QuoteProvider | None = quote_provider
+        self.provider_bundle: ExecutionProviderBundle = self._provider_bundle(
+            provider_bundle=provider_bundle,
+            quote_provider=quote_provider,
+            social_sentiment_adapters=social_sentiment_adapters,
+        )
+        self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
         self.social_sentiment_adapters: tuple[SocialSentimentSourceAdapter, ...] = (
-            tuple(social_sentiment_adapters)
-            if social_sentiment_adapters is not None
-            else create_social_sentiment_adapters()
+            self.provider_bundle.social_sentiment_adapters
         )
         self.openai_client_factory: type[Any] = openai_client_factory
         self.mcp_tool_client: McpToolClient | None = mcp_tool_client
+
+    @staticmethod
+    def _provider_bundle(
+        *,
+        provider_bundle: ExecutionProviderBundle | None,
+        quote_provider: QuoteProvider | None,
+        social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None,
+    ) -> ExecutionProviderBundle:
+        base_bundle = provider_bundle or ExecutionProviderBundle()
+        return ExecutionProviderBundle(
+            quote_provider=quote_provider or base_bundle.quote_provider,
+            fallback_quote_provider=base_bundle.fallback_quote_provider,
+            social_sentiment_adapters=(
+                tuple(social_sentiment_adapters)
+                if social_sentiment_adapters is not None
+                else base_bundle.social_sentiment_adapters
+            ),
+        )
 
     async def invoke(
         self,
@@ -128,6 +152,7 @@ class AgentExecutionService:
         run_id: int | None = None,
         workflow_key: str | None = None,
         workflow_version: int | None = None,
+        package_ownership: PackageExecutionOwnership | None = None,
     ) -> RunAgentInvocationResult:
         client_factory = openai_client_factory or self.openai_client_factory
         return await asyncio.to_thread(
@@ -142,6 +167,7 @@ class AgentExecutionService:
             run_id,
             workflow_key,
             workflow_version,
+            package_ownership,
         )
 
     def _invoke_sync(
@@ -156,6 +182,7 @@ class AgentExecutionService:
         run_id: int | None,
         workflow_key: str | None,
         workflow_version: int | None,
+        package_ownership: PackageExecutionOwnership | None,
     ) -> RunAgentInvocationResult:
         step_id = f"step_{step_index}"
         with self.session_factory() as session:
@@ -176,6 +203,7 @@ class AgentExecutionService:
                 run_id=run_id,
                 workflow_key=workflow_key,
                 workflow_version=workflow_version,
+                package_ownership=package_ownership,
                 step_id=step_id,
                 slot=slot,
                 trace_id=trace_id,
@@ -289,6 +317,7 @@ class AgentExecutionService:
                     "headers": dict(server.headers),
                     "query": dict(server.query),
                     "toolKeys": list(server.tool_keys),
+                    "toolDescriptors": [dict(descriptor) for descriptor in server.tool_descriptors],
                 }
                 for server in agent.mcp_servers
             ]
@@ -327,6 +356,7 @@ class AgentExecutionService:
         run_id: int | None,
         workflow_key: str | None,
         workflow_version: int | None,
+        package_ownership: PackageExecutionOwnership | None,
         step_id: str | None,
         slot: str,
         trace_id: str | None,
@@ -347,15 +377,28 @@ class AgentExecutionService:
             )
 
         runtime_tool_registry = self._runtime_tool_registry()
+        native_tool_descriptors = runtime_tool_registry.get_execution_descriptors(granted_tool_keys)
         settings = get_settings()
         mcp_dispatcher = McpRuntimeResolver(self.session_factory).build_dispatcher(
             mcp_server_refs=mcp_server_refs,
             client=self.mcp_tool_client,
             timeout_seconds=settings.mcp_runtime_timeout_seconds,
             enabled=settings.mcp_runtime_enabled,
+            reserved_function_names={
+                descriptor.openai_function_name for descriptor in native_tool_descriptors
+            },
         )
-        available_tools = runtime_tool_registry.get_openai_tools(granted_tool_keys)
+        available_tools = [
+            execution_tool_descriptor_to_openai_tool(descriptor)
+            for descriptor in native_tool_descriptors
+        ]
         available_tools.extend(mcp_dispatcher.get_openai_tools())
+        runtime_workflow_key = (
+            package_ownership.workflow_key if package_ownership is not None else workflow_key
+        )
+        runtime_workflow_version = (
+            package_ownership.package_version if package_ownership is not None else workflow_version
+        )
         runtime_tool_context = RuntimeToolContext(
             session_factory=self.session_factory,
             capability_references=capability_references,
@@ -365,8 +408,9 @@ class AgentExecutionService:
             agent_key=agent.key,
             agent_version=self._runtime_agent_version(agent),
             agent_name=agent.name,
-            workflow_key=workflow_key,
-            workflow_version=workflow_version,
+            package_ownership=package_ownership,
+            workflow_key=runtime_workflow_key,
+            workflow_version=runtime_workflow_version,
             step_id=step_id,
             slot=slot,
             trace_id=trace_id,

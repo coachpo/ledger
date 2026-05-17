@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
 
@@ -14,31 +14,32 @@ from app.agents.mcp.boundaries import (
 )
 from app.agents.mcp.security import redact_mcp_text
 from app.agents.mcp.tool_adapter import (
-    build_mcp_tool_snapshot,
-    hash_strict_schema,
-    snapshot_to_openai_tool,
+    PACKAGE_PRIVATE_MCP_VERSION,
+    SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS,
+    ExecutionToolDescriptor,
+    McpToolAdapterError,
+    execution_tool_descriptor_from_payload,
+    execution_tool_descriptor_to_openai_tool,
+    mcp_snapshot_to_execution_descriptor,
+    mcp_tool_snapshot_from_descriptor,
+    package_private_mcp_tool_input_schema,
 )
 from app.agents.runtime_tools.types import RuntimeToolError
+from app.core.errors import ApiError
 from app.models.mcp_server import McpServer
 from app.repositories.mcp_server import McpServerRepository
 from app.schemas.mcp_server import McpToolSnapshot
+from app.services.extension_service import ExtensionService
 
 _ALLOWED_RUNTIME_STATUSES = {"published", "deprecated"}
 _MAX_MCP_OUTPUT_LENGTH = 16_384
-_PACKAGE_PRIVATE_MCP_VERSION = 1
-SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS = frozenset({"web_search_exa"})
-_PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "query": {"type": "string", "description": "Search query for the MCP tool."},
-    },
-}
 
 
 @dataclass(frozen=True)
 class McpRuntimeTool:
     boundary: McpClientBoundary
     snapshot: McpToolSnapshot
+    descriptor: ExecutionToolDescriptor
 
 
 class McpToolClient(Protocol):
@@ -87,7 +88,8 @@ class McpRuntimeDispatcher:
 
     def get_openai_tools(self) -> list[dict[str, object]]:
         return [
-            snapshot_to_openai_tool(tool.snapshot) for tool in self._tools_by_function_name.values()
+            execution_tool_descriptor_to_openai_tool(tool.descriptor)
+            for tool in self._tools_by_function_name.values()
         ]
 
     def dispatch(self, *, name: str, arguments_json: str) -> dict[str, object]:
@@ -115,7 +117,7 @@ class McpRuntimeDispatcher:
             arguments=cast(dict[str, object], arguments),
             timeout_seconds=self._timeout_seconds,
         )
-        return _safe_mcp_tool_output(tool.snapshot, result)
+        return _safe_mcp_tool_output(tool, result)
 
 
 class McpRuntimeResolver:
@@ -129,24 +131,37 @@ class McpRuntimeResolver:
         client: McpToolClient | None = None,
         timeout_seconds: float = 5.0,
         enabled: bool,
+        reserved_function_names: Collection[str] | None = None,
     ) -> McpRuntimeDispatcher:
         if not enabled or not mcp_server_refs:
             return McpRuntimeDispatcher(tools=[], client=client, timeout_seconds=timeout_seconds)
         with self.session_factory() as session:
             repository = McpServerRepository(session)
+            extension_service = ExtensionService(session)
             tools: list[McpRuntimeTool] = []
-            seen_functions: set[str] = set()
+            seen_functions: set[str] = set(reserved_function_names or ())
             for ref in mcp_server_refs:
                 if _is_package_private_ref(ref):
                     tools.extend(
-                        _package_private_tools_from_ref(ref, seen_functions=seen_functions)
+                        _package_private_tools_from_ref(
+                            ref,
+                            seen_functions=seen_functions,
+                            extension_service=extension_service,
+                        )
                     )
                     continue
                 server = _resolve_exact_runtime_server(repository, ref)
                 boundary = build_mcp_client_boundary(server)
                 for snapshot in _snapshots_from_server(server):
-                    _remember_openai_function(snapshot.openai_function_name, seen_functions)
-                    tools.append(McpRuntimeTool(boundary=boundary, snapshot=snapshot))
+                    descriptor = _descriptor_from_saved_snapshot(snapshot)
+                    _remember_openai_function(descriptor.openai_function_name, seen_functions)
+                    tools.append(
+                        McpRuntimeTool(
+                            boundary=boundary,
+                            snapshot=snapshot,
+                            descriptor=descriptor,
+                        )
+                    )
         return McpRuntimeDispatcher(tools=tools, client=client, timeout_seconds=timeout_seconds)
 
 
@@ -158,6 +173,7 @@ def _package_private_tools_from_ref(
     ref: Mapping[str, object],
     *,
     seen_functions: set[str],
+    extension_service: ExtensionService,
 ) -> list[McpRuntimeTool]:
     key = str(ref.get("key") or "").strip().lower()
     if not key:
@@ -171,6 +187,7 @@ def _package_private_tools_from_ref(
             code="mcp_tool_snapshots_missing",
             message="Package-private MCP runtime requires declared tool keys.",
         )
+    descriptors = _package_private_descriptors_from_ref(ref, server_key=key)
     config: dict[str, object] = {"transport": ref.get("transport")}
     if ref.get("command") is not None:
         config["command"] = ref.get("command")
@@ -189,32 +206,138 @@ def _package_private_tools_from_ref(
         config,
         server_id=None,
         key=key,
-        version=_PACKAGE_PRIVATE_MCP_VERSION,
+        version=PACKAGE_PRIVATE_MCP_VERSION,
         name=str(ref.get("name") or key),
         enabled=True,
         allow_secret_query_names=True,
     )
     tools: list[McpRuntimeTool] = []
     for tool_name in tool_names:
-        snapshot = build_mcp_tool_snapshot(
-            server_key=key,
-            server_version=_PACKAGE_PRIVATE_MCP_VERSION,
-            original_tool_name=tool_name,
-            input_schema=_package_private_tool_input_schema(tool_name),
-            reserved_function_names=seen_functions,
+        descriptor = _package_private_descriptor_for_tool(
+            tool_name,
+            descriptors=descriptors,
+            extension_service=extension_service,
         )
-        _remember_openai_function(snapshot.openai_function_name, seen_functions)
-        tools.append(McpRuntimeTool(boundary=boundary, snapshot=snapshot))
+        _remember_openai_function(descriptor.openai_function_name, seen_functions)
+        snapshot = _snapshot_from_descriptor(descriptor)
+        tools.append(
+            McpRuntimeTool(
+                boundary=boundary,
+                snapshot=snapshot,
+                descriptor=descriptor,
+            )
+        )
     return tools
 
 
-def _package_private_tool_input_schema(tool_name: str) -> Mapping[str, object]:
-    if tool_name in SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS:
-        return _PACKAGE_PRIVATE_SEARCH_TOOL_INPUT_SCHEMA
-    raise RuntimeToolError(
-        code="mcp_tool_schema_missing",
-        message=f"Package-private MCP tool {tool_name!r} does not have a runtime input schema.",
+def _package_private_descriptors_from_ref(
+    ref: Mapping[str, object],
+    *,
+    server_key: str,
+) -> dict[str, ExecutionToolDescriptor]:
+    raw_descriptors = ref.get("toolDescriptors")
+    if not isinstance(raw_descriptors, Sequence) or isinstance(
+        raw_descriptors,
+        (str, bytes, bytearray),
+    ):
+        return {}
+    descriptors: dict[str, ExecutionToolDescriptor] = {}
+    for index, raw_descriptor in enumerate(raw_descriptors):
+        if not isinstance(raw_descriptor, Mapping):
+            raise RuntimeToolError(
+                code="mcp_tool_descriptor_invalid",
+                message=f"Package-private MCP tool descriptor {index} must be an object.",
+            )
+        try:
+            descriptor = execution_tool_descriptor_from_payload(raw_descriptor)
+        except McpToolAdapterError as exc:
+            raise RuntimeToolError(
+                code="mcp_tool_descriptor_invalid",
+                message=str(exc),
+            ) from exc
+        _validate_package_private_descriptor(descriptor, server_key=server_key)
+        original_tool_name = descriptor.original_tool_name or ""
+        if original_tool_name in descriptors:
+            raise RuntimeToolError(
+                code="mcp_tool_name_collision",
+                message="MCP tool snapshots contain duplicate OpenAI function names.",
+            )
+        descriptors[original_tool_name] = descriptor
+    return descriptors
+
+
+def _validate_package_private_descriptor(
+    descriptor: ExecutionToolDescriptor,
+    *,
+    server_key: str,
+) -> None:
+    if descriptor.kind != "mcp" or descriptor.mcp_server_key != server_key:
+        raise RuntimeToolError(
+            code="mcp_tool_descriptor_invalid",
+            message="Package-private MCP tool descriptor server identity is invalid.",
+        )
+    if descriptor.mcp_server_version != PACKAGE_PRIVATE_MCP_VERSION:
+        raise RuntimeToolError(
+            code="mcp_tool_descriptor_invalid",
+            message="Package-private MCP tool descriptor version is invalid.",
+        )
+
+
+def _package_private_descriptor_for_tool(
+    tool_name: str,
+    *,
+    descriptors: Mapping[str, ExecutionToolDescriptor],
+    extension_service: ExtensionService,
+) -> ExecutionToolDescriptor:
+    normalized_tool_name = tool_name.strip().lower()
+    try:
+        _ = package_private_mcp_tool_input_schema(normalized_tool_name)
+    except McpToolAdapterError as exc:
+        raise RuntimeToolError(code="mcp_tool_schema_missing", message=str(exc)) from exc
+    descriptor = descriptors.get(normalized_tool_name)
+    if descriptor is None:
+        raise RuntimeToolError(
+            code="mcp_tool_descriptor_missing",
+            message=f"Package-private MCP tool {normalized_tool_name!r} is missing its descriptor.",
+        )
+    _require_package_private_descriptor_owner(
+        descriptor,
+        extension_service=extension_service,
+        tool_name=normalized_tool_name,
     )
+    return descriptor
+
+
+def _require_package_private_descriptor_owner(
+    descriptor: ExecutionToolDescriptor,
+    *,
+    extension_service: ExtensionService,
+    tool_name: str,
+) -> None:
+    owner_extension_key = descriptor.owner_extension_key
+    if owner_extension_key is None:
+        raise RuntimeToolError(
+            code="mcp_tool_owner_missing",
+            message=f"Package-private MCP tool {tool_name!r} is missing extension ownership.",
+        )
+    try:
+        _ = extension_service.require_enabled(
+            owner_extension_key,
+            surface=f"mcp.packagePrivate.{tool_name}",
+        )
+    except ApiError as exc:
+        raise RuntimeToolError(
+            code=exc.code,
+            message=exc.message,
+            details=[dict(detail) for detail in exc.details],
+        ) from exc
+
+
+def _snapshot_from_descriptor(descriptor: ExecutionToolDescriptor) -> McpToolSnapshot:
+    try:
+        return mcp_tool_snapshot_from_descriptor(descriptor)
+    except McpToolAdapterError as exc:
+        raise RuntimeToolError(code="mcp_tool_descriptor_invalid", message=str(exc)) from exc
 
 
 def _string_list(value: object) -> list[str]:
@@ -281,15 +404,21 @@ def _snapshots_from_server(server: McpServer) -> tuple[McpToolSnapshot, ...]:
                 code="mcp_tool_snapshot_drift",
                 message="MCP tool snapshot identity does not match the pinned server version.",
             )
-        if hash_strict_schema(snapshot.strict_schema) != snapshot.schema_hash:
-            raise RuntimeToolError(
-                code="mcp_tool_snapshot_drift",
-                message="MCP tool snapshot schema hash does not match the frozen schema.",
-            )
+        _ = _descriptor_from_saved_snapshot(snapshot)
     return snapshots
 
 
-def _safe_mcp_tool_output(snapshot: McpToolSnapshot, result: object) -> dict[str, object]:
+def _descriptor_from_saved_snapshot(snapshot: McpToolSnapshot) -> ExecutionToolDescriptor:
+    try:
+        return mcp_snapshot_to_execution_descriptor(snapshot, owner_extension_key=None)
+    except McpToolAdapterError as exc:
+        raise RuntimeToolError(
+            code="mcp_tool_snapshot_drift",
+            message=str(exc),
+        ) from exc
+
+
+def _safe_mcp_tool_output(tool: McpRuntimeTool, result: object) -> dict[str, object]:
     if isinstance(result, Mapping):
         payload: object = dict(result)
     else:
@@ -297,10 +426,10 @@ def _safe_mcp_tool_output(snapshot: McpToolSnapshot, result: object) -> dict[str
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     redacted = redact_mcp_text(serialized, max_length=_MAX_MCP_OUTPUT_LENGTH)
     return {
-        "toolKey": snapshot.frozen_tool_key,
-        "mcpServerKey": snapshot.mcp_server_key,
-        "mcpServerVersion": snapshot.mcp_server_version,
-        "originalToolName": snapshot.original_tool_name,
+        "toolKey": tool.descriptor.tool_key,
+        "mcpServerKey": tool.snapshot.mcp_server_key,
+        "mcpServerVersion": tool.snapshot.mcp_server_version,
+        "originalToolName": tool.snapshot.original_tool_name,
         "output": json.loads(redacted),
     }
 

@@ -37,6 +37,7 @@ from app.schemas.workflow_package import (
     normalize_workflow_package_secret_binding_key,
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
+from app.services.execution_providers import ExecutionProviderBundle
 from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
@@ -46,8 +47,10 @@ from app.services.workflow_package_export import (
     export_workflow_package_yaml,
 )
 from app.services.workflow_package_manifest_compiler import (
+    MCP_SECRET_PROJECTION_REDACTED,
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
+    project_package_private_mcp_secrets,
 )
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
@@ -65,15 +68,35 @@ class WorkflowPackageService:
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
         quote_provider: QuoteProvider | None = None,
+        provider_bundle: ExecutionProviderBundle | None = None,
         tool_catalog: ToolCatalog | None = None,
     ) -> None:
         self.session = session
         self.session_factory = session_factory
-        self.quote_provider = quote_provider
+        self.provider_bundle = self._provider_bundle(
+            provider_bundle=provider_bundle,
+            quote_provider=quote_provider,
+        )
+        self.quote_provider = self.provider_bundle.quote_provider
         self.tool_catalog = tool_catalog or ExtensionService(session).get_tool_catalog()
         self.repository = WorkflowPackageRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
         self.model_connection_service = ModelConnectionService(session)
+
+    @staticmethod
+    def _provider_bundle(
+        *,
+        provider_bundle: ExecutionProviderBundle | None,
+        quote_provider: QuoteProvider | None,
+    ) -> ExecutionProviderBundle:
+        base_bundle = provider_bundle or ExecutionProviderBundle()
+        if quote_provider is None:
+            return base_bundle
+        return ExecutionProviderBundle(
+            quote_provider=quote_provider,
+            fallback_quote_provider=base_bundle.fallback_quote_provider,
+            social_sentiment_adapters=base_bundle.social_sentiment_adapters,
+        )
 
     def list_packages(
         self,
@@ -204,7 +227,7 @@ class WorkflowPackageService:
         RunService(
             self.session,
             self.session_factory,
-            quote_provider=self.quote_provider,
+            provider_bundle=self.provider_bundle,
         ).delete_runs_for_target(
             target_kind="workflowPackage",
             target_id=package.id,
@@ -378,7 +401,7 @@ class WorkflowPackageService:
         return RunService(
             self.session,
             self.session_factory,
-            quote_provider=self.quote_provider,
+            provider_bundle=self.provider_bundle,
         ).get_workflow_package_launch(
             package_id,
             version=version,
@@ -393,7 +416,7 @@ class WorkflowPackageService:
         return RunService(
             self.session,
             self.session_factory,
-            quote_provider=self.quote_provider,
+            provider_bundle=self.provider_bundle,
         ).create_workflow_package_launch(package_id, payload)
 
     def _prepare_manifest_or_raise(self, manifest_source: str) -> dict[str, object]:
@@ -430,6 +453,10 @@ class WorkflowPackageService:
             package_definition=cast(dict[str, Any], prepared["packageDefinition"]),
             compiled_plan=cast(dict[str, Any], prepared["compiledPlan"]),
             compiled_hash=str(prepared["compiledHash"]),
+            extension_dependencies=cast(
+                list[dict[str, Any]],
+                prepared.get("extensionDependencies") or [],
+            ),
             validation_summary={
                 "diagnostics": [],
                 "warnings": WorkflowPackagePreflightService(self.session).save_warnings(
@@ -583,6 +610,14 @@ class WorkflowPackageService:
     def _validation_read(self, prepared: dict[str, object]) -> WorkflowPackageValidationRead:
         package_definition = cast(dict[str, Any], prepared["packageDefinition"])
         metadata = cast(dict[str, Any], package_definition["metadata"])
+        redacted_package_definition = project_package_private_mcp_secrets(
+            prepared["packageDefinition"],
+            mode=MCP_SECRET_PROJECTION_REDACTED,
+        )
+        redacted_compiled_plan = project_package_private_mcp_secrets(
+            prepared["compiledPlan"],
+            mode=MCP_SECRET_PROJECTION_REDACTED,
+        )
         return WorkflowPackageValidationRead.model_validate(
             {
                 "diagnostics": [],
@@ -595,8 +630,8 @@ class WorkflowPackageService:
                     "name": metadata["name"],
                     "description": metadata.get("description") or "",
                 },
-                "packageDefinition": prepared["packageDefinition"],
-                "compiledPlan": prepared["compiledPlan"],
+                "packageDefinition": redacted_package_definition,
+                "compiledPlan": redacted_compiled_plan,
                 "manifestHash": prepared["manifestHash"],
                 "compiledHash": prepared["compiledHash"],
             }

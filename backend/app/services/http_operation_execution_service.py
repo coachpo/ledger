@@ -21,6 +21,7 @@ from app.models.output_schema import OutputSchema
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run_operation_invocation import redact_operation_request_metadata
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
+from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import ExecutionPlanOperation, PackageLocalOutputSchemaSpec
 from app.services.output_schema_compiler import OutputSchemaCompiler, OutputSchemaCompilerError
 
@@ -133,7 +134,7 @@ class HttpOperationExecutionService:
         operation: ExecutionPlanOperation,
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any] | None = None,
-        workflow_package_id: int | None = None,
+        package_ownership: PackageExecutionOwnership | None = None,
         secret_values: Mapping[str, Any] | None = None,
         output_model: type[BaseModel] | None = None,
     ) -> HttpOperationExecutionResult:
@@ -142,7 +143,7 @@ class HttpOperationExecutionService:
             operation=operation,
             initial_input=initial_input,
             slot_outputs=slot_outputs,
-            workflow_package_id=workflow_package_id,
+            package_ownership=package_ownership,
             secret_values=secret_values,
             output_model=output_model,
         )
@@ -153,7 +154,7 @@ class HttpOperationExecutionService:
         operation: ExecutionPlanOperation,
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any] | None = None,
-        workflow_package_id: int | None = None,
+        package_ownership: PackageExecutionOwnership | None = None,
         secret_values: Mapping[str, Any] | None = None,
         output_model: type[BaseModel] | None = None,
     ) -> HttpOperationExecutionResult:
@@ -163,7 +164,7 @@ class HttpOperationExecutionService:
                 operation=operation,
                 initial_input=initial_input,
                 slot_outputs=slot_outputs or {},
-                workflow_package_id=workflow_package_id,
+                package_ownership=package_ownership,
                 secret_values=secret_values or {},
                 output_model=output_model,
                 started_at=started,
@@ -186,7 +187,7 @@ class HttpOperationExecutionService:
         operation: ExecutionPlanOperation,
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any],
-        workflow_package_id: int | None,
+        package_ownership: PackageExecutionOwnership | None,
         secret_values: Mapping[str, Any],
         output_model: type[BaseModel] | None,
         started_at: float,
@@ -233,7 +234,7 @@ class HttpOperationExecutionService:
             initial_input=initial_input,
             slot_outputs=slot_outputs,
             secret_values=secret_values,
-            workflow_package_id=workflow_package_id,
+            package_ownership=package_ownership,
             started_at=started_at,
         )
         request_body_bytes = request_context.body_bytes
@@ -519,7 +520,7 @@ class HttpOperationExecutionService:
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any],
         secret_values: Mapping[str, Any],
-        workflow_package_id: int | None,
+        package_ownership: PackageExecutionOwnership | None,
         started_at: float,
     ) -> _ResolvedRequestContext:
         resolved_url = self._coerce_text_value(
@@ -528,7 +529,7 @@ class HttpOperationExecutionService:
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
                 secret_values=secret_values,
-                workflow_package_id=workflow_package_id,
+                package_ownership=package_ownership,
             ).value,
             field="url",
         )
@@ -543,7 +544,7 @@ class HttpOperationExecutionService:
             initial_input=initial_input,
             slot_outputs=slot_outputs,
             secret_values=secret_values,
-            workflow_package_id=workflow_package_id,
+            package_ownership=package_ownership,
             field_name="headers",
         )
         resolved_query, query_metadata = self._resolve_string_mapping(
@@ -551,7 +552,7 @@ class HttpOperationExecutionService:
             initial_input=initial_input,
             slot_outputs=slot_outputs,
             secret_values=secret_values,
-            workflow_package_id=workflow_package_id,
+            package_ownership=package_ownership,
             field_name="query",
         )
         resolved_body = self._resolve_request_value(
@@ -559,7 +560,7 @@ class HttpOperationExecutionService:
             initial_input=initial_input,
             slot_outputs=slot_outputs,
             secret_values=secret_values,
-            workflow_package_id=workflow_package_id,
+            package_ownership=package_ownership,
         )
 
         final_url = self._merge_query_params(resolved_url, resolved_query)
@@ -615,7 +616,7 @@ class HttpOperationExecutionService:
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any],
         secret_values: Mapping[str, Any],
-        workflow_package_id: int | None,
+        package_ownership: PackageExecutionOwnership | None,
         field_name: str,
     ) -> tuple[dict[str, str], dict[str, Any]]:
         if value is None:
@@ -641,7 +642,7 @@ class HttpOperationExecutionService:
                 initial_input=initial_input,
                 slot_outputs=slot_outputs,
                 secret_values=secret_values,
-                workflow_package_id=workflow_package_id,
+                package_ownership=package_ownership,
             )
             resolved[key] = self._coerce_text_value(
                 resolved_value.value, field=f"{field_name}.{key}"
@@ -656,7 +657,7 @@ class HttpOperationExecutionService:
         initial_input: Mapping[str, Any],
         slot_outputs: Mapping[tuple[int, str], Any],
         secret_values: Mapping[str, Any],
-        workflow_package_id: int | None,
+        package_ownership: PackageExecutionOwnership | None,
     ) -> _ResolvedValue:
         source_kind = self._source_kind(value)
         if source_kind is not None:
@@ -677,7 +678,7 @@ class HttpOperationExecutionService:
                 secret_value = self._resolve_secret_value(
                     key,
                     secret_values=secret_values,
-                    workflow_package_id=workflow_package_id,
+                    package_ownership=package_ownership,
                 )
                 return _ResolvedValue(
                     value=secret_value,
@@ -700,7 +701,7 @@ class HttpOperationExecutionService:
                     initial_input=initial_input,
                     slot_outputs=slot_outputs,
                     secret_values=secret_values,
-                    workflow_package_id=workflow_package_id,
+                    package_ownership=package_ownership,
                 )
                 resolved[str(key)] = child.value
                 resolved_metadata[str(key)] = child.metadata
@@ -715,7 +716,7 @@ class HttpOperationExecutionService:
                     initial_input=initial_input,
                     slot_outputs=slot_outputs,
                     secret_values=secret_values,
-                    workflow_package_id=workflow_package_id,
+                    package_ownership=package_ownership,
                 )
                 resolved_items.append(child.value)
                 metadata_items.append(child.metadata)
@@ -833,12 +834,12 @@ class HttpOperationExecutionService:
         key: str,
         *,
         secret_values: Mapping[str, Any],
-        workflow_package_id: int | None,
+        package_ownership: PackageExecutionOwnership | None,
     ) -> str:
         if key in secret_values:
             value = self._required_text(secret_values[key], key_name=key, field_name="secret value")
             return value
-        if self._secret_binding_repository is None or workflow_package_id is None:
+        if self._secret_binding_repository is None or package_ownership is None:
             self._raise_error(
                 code="http_operation_secret_session_missing",
                 message=(
@@ -846,7 +847,7 @@ class HttpOperationExecutionService:
                 ),
                 details=[{"field": "secrets", "issue": "Secret binding session is required"}],
             )
-        binding = self._secret_binding_repository.get_by_key(workflow_package_id, key)
+        binding = self._secret_binding_repository.get_by_key(package_ownership.package_id, key)
         if binding is None:
             self._raise_error(
                 code="http_operation_secret_missing",

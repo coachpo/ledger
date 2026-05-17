@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, cast
 
@@ -13,7 +14,7 @@ from app.models.model_connection import ModelConnection
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.workflow import Workflow
-from app.models.workflow_package import WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
@@ -126,6 +127,29 @@ spec:
 """
 
 
+def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
+    return (
+        _package_source(package_key=package_key)
+        .replace(
+            "  agents:\n",
+            """  mcpServers:
+    - key: exa
+      name: Exa Web Search
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp?tools=web_search_exa
+      headers:
+        Authorization: Bearer inline-header-secret
+      query:
+        exaApiKey: inline-query-secret
+      toolKeys: [web_search_exa]
+  agents:
+""",
+            1,
+        )
+        .replace('      budgetUsd: "0.10"', '      mcpServers: [exa]\n      budgetUsd: "0.10"', 1)
+    )
+
+
 def _create_package(
     client: TestClient,
     *,
@@ -232,6 +256,21 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     assert detail["targetKind"] == "workflowPackage"
     assert detail["targetId"] == created["id"]
     assert detail["targetKey"] == "runtime_package"
+    invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
+    assert invocation["agentRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "key": "package_analyst",
+        "version": 1,
+    }
+    assert invocation["outputSchemaRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "key": "summary_output",
+        "version": 1,
+    }
+    assert invocation["agentId"] == 1
+    assert invocation["outputSchemaId"] == 1
     assert detail["finalOutput"] == {"summary": "package live runtime output"}
     assert detail["executedTokens"] == 23
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
@@ -245,10 +284,19 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     with session_factory() as session:
         run = session.get(Run, run_id)
         assert run is not None
+        package_version = (
+            session.query(WorkflowPackageVersion)
+            .filter_by(package_id=created["id"], version=1)
+            .one()
+        )
         assert run.workflow_package_key == "runtime_package"
         assert run.workflow_package_version == 1
-        assert run.workflow_package_hash is not None
+        assert run.workflow_package_manifest_hash == package_version.manifest_hash
+        assert run.workflow_package_compiled_hash == package_version.compiled_hash
         assert run.workflow_package_workflow_key == "runtime_workflow"
+        assert run.launch_snapshot is not None
+        assert run.launch_snapshot["workflowKey"] == "runtime_workflow"
+        assert run.launch_snapshot["parameters"] == {"ticker": "MSFT"}
         assert session.query(Agent).count() == 0
         assert session.query(Workflow).count() == 0
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
@@ -339,6 +387,53 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
     assert detail["extensionDependencies"] == []
 
 
+def test_workflow_package_validation_redacts_inline_private_mcp_values_but_authoring_preserves_them(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    manifest_source = _package_source_with_inline_private_mcp(
+        package_key="runtime_private_mcp_projection_package"
+    )
+
+    validation = client.post(
+        "/api/workflow-packages/validate-manifest",
+        json={"manifestSource": manifest_source},
+    )
+    assert validation.status_code == 200, validation.json()
+    validation_body = cast(dict[str, Any], validation.json())
+    validation_payload = json.dumps(validation_body, sort_keys=True)
+    assert "inline-header-secret" not in validation_payload
+    assert "inline-query-secret" not in validation_payload
+    assert "[REDACTED]" in validation_payload
+    validation_spec = cast(dict[str, Any], validation_body["packageDefinition"])["spec"]
+    validation_mcp = cast(list[dict[str, Any]], validation_spec["mcpServers"])[0]
+    assert validation_mcp["headers"] == {"Authorization": "[REDACTED]"}
+    assert validation_mcp["query"] == {"exaApiKey": "[REDACTED]"}
+    compiled_mcp = cast(list[dict[str, Any]], validation_body["compiledPlan"]["mcpServers"])[0]
+    assert compiled_mcp["headers"] == {"Authorization": "[REDACTED]"}
+    assert compiled_mcp["query"] == {"exaApiKey": "[REDACTED]"}
+    descriptor = cast(list[dict[str, Any]], compiled_mcp["toolDescriptors"])[0]
+    assert descriptor["ownerExtensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert descriptor["schemaHash"].startswith("sha256:")
+    assert descriptor["redactionPolicy"] == "mcp.output.redact_text"
+
+    _seed_model_connection(session_factory)
+    created = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": manifest_source},
+    )
+    assert created.status_code == 201, created.json()
+    package_id = int(created.json()["id"])
+    manifest = client.get(f"/api/workflow-packages/{package_id}/manifest")
+    assert manifest.status_code == 200, manifest.json()
+    assert "inline-header-secret" in json.dumps(manifest.json(), sort_keys=True)
+    assert "inline-query-secret" in json.dumps(manifest.json(), sort_keys=True)
+    exported = client.get(f"/api/workflow-packages/{package_id}/export")
+    assert exported.status_code == 200, exported.text
+    assert "Authorization: Bearer inline-header-secret" in exported.text
+    assert "exaApiKey: inline-query-secret" in exported.text
+
+
 def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -397,4 +492,17 @@ def test_workflow_package_create_rejects_missing_model_connection(
     ]
     with session_factory() as session:
         assert session.query(Run).count() == 0
-        assert session.query(WorkflowPackageVersion).count() == 0
+        assert (
+            session.query(WorkflowPackage).filter_by(key="runtime_missing_model_package").count()
+            == 0
+        )
+        assert (
+            session.query(WorkflowPackageVersion)
+            .join(
+                WorkflowPackage,
+                WorkflowPackageVersion.package_id == WorkflowPackage.id,
+            )
+            .filter(WorkflowPackage.key == "runtime_missing_model_package")
+            .count()
+            == 0
+        )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -15,6 +16,8 @@ from app.extensions.registry import (
 )
 from app.models.extension import ExtensionState
 from app.schemas.extension import ExtensionListRead, ExtensionRead, ExtensionToggleRequest
+from app.services.execution_providers import ExecutionProviderBundle
+from app.services.run_lifecycle import ExtensionRunLifecycleHooks
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +101,16 @@ class ExtensionService:
             RUNTIME_TOOL_SPECS,
             enabled_extension_keys=self._enabled_extension_keys(),
         )
+
+    def get_execution_provider_bundle(self) -> ExecutionProviderBundle:
+        return self.registry.build_execution_provider_bundle(self._enabled_extension_keys())
+
+    def get_run_lifecycle_hooks(
+        self,
+        extension_keys: Iterable[str],
+    ) -> tuple[ExtensionRunLifecycleHooks, ...]:
+        selected_keys = set(extension_keys) & self._enabled_extension_keys()
+        return self.registry.list_run_lifecycle_hooks(selected_keys)
 
     def _enabled_extension_keys(self) -> set[str]:
         states_by_key = self._states_by_key()

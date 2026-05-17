@@ -7,7 +7,7 @@ from typing import Any, cast
 from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalogValidationError
-from app.agents.mcp.runtime import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
+from app.agents.mcp.tool_adapter import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
 from app.models.output_schema import OutputSchema
 from app.models.workflow_package import WorkflowPackageVersion
@@ -16,6 +16,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.workflow_package_manifest import WORKFLOW_PACKAGE_HTTP_ALLOWED_METHODS
 from app.services.execution_plan import PackageResolvedModelBinding
+from app.services.extension_dependency_service import ExtensionDependencyService
 from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
@@ -75,6 +76,12 @@ class WorkflowPackagePreflightService:
         blocking_errors.extend(self._schema_errors(compiled_plan))
         blocking_errors.extend(self._tool_errors(compiled_plan))
         blocking_errors.extend(self._mcp_errors(compiled_plan))
+        blocking_errors.extend(
+            self._extension_dependency_errors(
+                package_version,
+                existing_errors=blocking_errors,
+            )
+        )
         blocking_errors.extend(self._http_errors(package_version, compiled_plan))
         model_bindings, model_warnings, model_errors = self._model_bindings(
             compiled_plan,
@@ -246,6 +253,46 @@ class WorkflowPackagePreflightService:
             index = field.removeprefix("toolKeys.")
             return f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
         return f"spec.capabilityProfiles.{profile_key}.toolKeys"
+
+    def _extension_dependency_errors(
+        self,
+        package_version: WorkflowPackageVersion,
+        *,
+        existing_errors: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        dependencies = ExtensionDependencyService.normalize_dependency_payloads(
+            getattr(package_version, "extension_dependencies", [])
+        )
+        if not dependencies:
+            return []
+        existing_disabled_keys = {
+            str(error.get("extensionKey") or "")
+            for error in existing_errors
+            if error.get("code") == "extension_disabled"
+        }
+        extension_service = ExtensionService(self.session)
+        errors: list[dict[str, Any]] = []
+        for dependency in dependencies:
+            extension_key = str(dependency.get("extensionKey") or "")
+            if not extension_key or extension_key in existing_disabled_keys:
+                continue
+            surface = self._preferred_dependency_surface(dependency)
+            try:
+                _ = extension_service.require_enabled(extension_key, surface=surface)
+            except ApiError as exc:
+                errors.extend(dict(detail) for detail in exc.details)
+        return errors
+
+    @staticmethod
+    def _preferred_dependency_surface(dependency: dict[str, Any]) -> str:
+        surfaces = dependency.get("surfaces")
+        if not isinstance(surfaces, list):
+            return "workflowPackage.extensionDependency"
+        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider.", "hook."):
+            for surface in surfaces:
+                if isinstance(surface, str) and surface.startswith(prefix):
+                    return surface
+        return str(surfaces[0]) if surfaces else "workflowPackage.extensionDependency"
 
     def _mcp_errors(self, compiled_plan: dict[str, Any]) -> list[dict[str, Any]]:
         errors: list[dict[str, Any]] = []

@@ -9,7 +9,12 @@ from typing import Any, cast
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_manifest_compiler import (
+    MCP_SECRET_PROJECTION_AUTHORING,
+    McpSecretProjectionMode,
+    compile_workflow_package_manifest,
+    project_package_private_mcp_secrets,
+)
 
 # Private MCP env, headers, and query maps are manifest data and must survive round-trips.
 _FORBIDDEN_EXPORT_KEYS = {
@@ -41,12 +46,20 @@ def decompile_workflow_package_manifest(
     package_payload: dict[str, Any],
     *,
     verify_lossless: bool = True,
+    secret_projection_mode: McpSecretProjectionMode = MCP_SECRET_PROJECTION_AUTHORING,
 ) -> WorkflowPackageManifestDecompileResult:
     package_definition = _extract_package_definition(package_payload)
     package_definition = cast(dict[str, object], _strip_forbidden_fields(package_definition))
+    package_definition = cast(
+        dict[str, object],
+        project_package_private_mcp_secrets(
+            package_definition,
+            mode=secret_projection_mode,
+        ),
+    )
     _literalize_system_prompts(package_definition)
     source = _dump_manifest_yaml(package_definition)
-    if verify_lossless:
+    if verify_lossless and secret_projection_mode == MCP_SECRET_PROJECTION_AUTHORING:
         compiled = compile_workflow_package_manifest(source)
         if compiled["packageDefinition"] != _strip_literal_scalars(package_definition):
             raise WorkflowPackageManifestDecompilerError(
@@ -62,10 +75,12 @@ def decompile_workflow_package_definition(
     package_definition: dict[str, object],
     *,
     verify_lossless: bool = True,
+    secret_projection_mode: McpSecretProjectionMode = MCP_SECRET_PROJECTION_AUTHORING,
 ) -> WorkflowPackageManifestDecompileResult:
     return decompile_workflow_package_manifest(
         {"packageDefinition": package_definition},
         verify_lossless=verify_lossless,
+        secret_projection_mode=secret_projection_mode,
     )
 
 

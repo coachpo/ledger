@@ -462,7 +462,7 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
         final_output=ExecutionPlanFinalOutput(step_index=1, slot="missing"),
     )
     monkeypatch.setattr(
-        "app.services.run_service.MemoryFollowUpService",
+        "app.extensions.signaldeck_finance.hooks.MemoryFollowUpService",
         _FakeMemoryFollowUpService,
     )
     monkeypatch.setattr(RunService, "_build_plan_for_run", lambda self, run: plan)
@@ -475,8 +475,16 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
             target_version=1,
             workflow_package_key="follow_pkg",
             workflow_package_version=1,
-            workflow_package_hash="hash-follow",
+            workflow_package_manifest_hash="manifest-follow",
+            workflow_package_compiled_hash="compiled-follow",
             workflow_package_workflow_key="follow_workflow",
+            launch_snapshot={
+                "workflowKey": "follow_workflow",
+                "workflowName": "Follow Workflow",
+                "workflowDescription": "",
+                "inputSchema": {"type": "object", "additionalProperties": True},
+                "parameters": {},
+            },
             extension_dependencies=[
                 {
                     "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,

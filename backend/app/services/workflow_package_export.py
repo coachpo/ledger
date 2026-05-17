@@ -5,7 +5,10 @@ from copy import deepcopy
 from typing import Any, cast
 
 from app.schemas.workflow_package_manifest import WorkflowPackageManifest
-from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_manifest_compiler import (
+    MCP_SECRET_PROJECTION_AUTHORING,
+    compile_workflow_package_manifest,
+)
 from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_definition
 
 _FORBIDDEN_EXPORT_KEYS = {
@@ -48,7 +51,11 @@ def build_workflow_package_manifest_hydration_payload(
     package_payload: dict[str, Any],
 ) -> dict[str, object]:
     safe_definition = build_safe_package_definition(package_payload)
-    result = decompile_workflow_package_definition(safe_definition, verify_lossless=True)
+    result = decompile_workflow_package_definition(
+        safe_definition,
+        verify_lossless=True,
+        secret_projection_mode=MCP_SECRET_PROJECTION_AUTHORING,
+    )
     compiled = compile_workflow_package_manifest(result.source)
     return {
         "manifestSource": result.source,

@@ -24,11 +24,16 @@ from app.agents.mcp.security import (
 from app.agents.mcp.tool_adapter import (
     McpToolAdapterError,
     build_mcp_tool_snapshot,
+    build_package_private_mcp_tool_descriptor,
     convert_mcp_input_schema,
+    execution_tool_descriptor_to_payload,
     normalize_mcp_openai_function_name,
 )
 from app.agents.runtime_tools.types import RuntimeToolError
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.mcp_server import McpServer
+from app.schemas.extension import ExtensionToggleRequest
+from app.services.extension_service import ExtensionService
 
 
 def _input_schema() -> dict[str, object]:
@@ -51,6 +56,11 @@ def _snapshot(*, server_key: str = "external_data", version: int = 1) -> dict[st
 
 
 def _package_private_exa_ref(**overrides: object) -> dict[str, object]:
+    descriptor = build_package_private_mcp_tool_descriptor(
+        server_key="exa",
+        original_tool_name="web_search_exa",
+        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
+    )
     ref: dict[str, object] = {
         "packagePrivate": True,
         "key": "exa",
@@ -58,6 +68,7 @@ def _package_private_exa_ref(**overrides: object) -> dict[str, object]:
         "transport": "http-sse",
         "url": "https://example.com/mcp?tools=web_search_exa",
         "toolKeys": ["web_search_exa"],
+        "toolDescriptors": [execution_tool_descriptor_to_payload(descriptor)],
     }
     ref.update(overrides)
     return ref
@@ -198,6 +209,58 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     assert call["arguments"] == {"query": "AAPL latest company news"}
     assert call["timeout_seconds"] == 2.5
     assert "json-secret-value" not in json.dumps(output)
+
+
+def test_mcp_runtime_rejects_package_private_exa_without_descriptor(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[_package_private_exa_ref(toolDescriptors=[])],
+            enabled=True,
+        )
+
+    assert exc_info.value.code == "mcp_tool_descriptor_missing"
+
+
+def test_mcp_runtime_rejects_package_private_exa_with_drifted_descriptor_hash(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ref = _package_private_exa_ref()
+    descriptors = cast(list[dict[str, object]], ref["toolDescriptors"])
+    descriptors[0] = {**descriptors[0], "schemaHash": "sha256:" + "a" * 64}
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[ref],
+            enabled=True,
+        )
+
+    assert exc_info.value.code == "mcp_tool_descriptor_invalid"
+
+
+def test_mcp_runtime_blocks_package_private_exa_when_owner_extension_disabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _ = ExtensionService(session).set_extension_enabled(
+            FINANCE_WORKSPACE_EXTENSION_KEY,
+            ExtensionToggleRequest(enabled=False),
+        )
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        McpRuntimeResolver(session_factory).build_dispatcher(
+            mcp_server_refs=[_package_private_exa_ref()],
+            enabled=True,
+        )
+
+    assert exc_info.value.code == "extension_disabled"
+    assert exc_info.value.details == [
+        {
+            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+            "surface": "mcp.packagePrivate.web_search_exa",
+        }
+    ]
 
 
 def test_mcp_boundary_scopes_secret_query_names_to_package_private_query_map() -> None:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.engine import get_session_factory
 from app.repositories.run import RunRepository
+from app.services.execution_providers import ExecutionProviderBundle
 from app.services.quote_provider import QuoteProvider
 
 logger = logging.getLogger(__name__)
@@ -24,17 +25,37 @@ class RunQueueService:
         session: Session,
         session_factory: sessionmaker[Session] | None = None,
         quote_provider: QuoteProvider | None = None,
+        provider_bundle: ExecutionProviderBundle | None = None,
         executor_factory: (
-            Callable[[Session, sessionmaker[Session], QuoteProvider | None], RunExecutor] | None
+            Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
         ) = None,
     ) -> None:
         self.session: Session = session
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()
-        self.quote_provider: QuoteProvider | None = quote_provider
+        self.provider_bundle: ExecutionProviderBundle = self._provider_bundle(
+            provider_bundle=provider_bundle,
+            quote_provider=quote_provider,
+        )
+        self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
         self.executor_factory: (
-            Callable[[Session, sessionmaker[Session], QuoteProvider | None], RunExecutor] | None
+            Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
         ) = executor_factory
         self.run_repository: RunRepository = RunRepository(session)
+
+    @staticmethod
+    def _provider_bundle(
+        *,
+        provider_bundle: ExecutionProviderBundle | None,
+        quote_provider: QuoteProvider | None,
+    ) -> ExecutionProviderBundle:
+        base_bundle = provider_bundle or ExecutionProviderBundle()
+        if quote_provider is None:
+            return base_bundle
+        return ExecutionProviderBundle(
+            quote_provider=quote_provider,
+            fallback_quote_provider=base_bundle.fallback_quote_provider,
+            social_sentiment_adapters=base_bundle.social_sentiment_adapters,
+        )
 
     def claim_next_run(self, run_id: int | None = None) -> int | None:
         try:
@@ -68,7 +89,7 @@ class RunQueueService:
 
     def _build_executor(self, session: Session) -> RunExecutor:
         if self.executor_factory is not None:
-            return self.executor_factory(session, self.session_factory, self.quote_provider)
+            return self.executor_factory(session, self.session_factory, self.provider_bundle)
 
         from app.services.run_service import RunService
 
@@ -77,7 +98,7 @@ class RunQueueService:
             RunService(
                 session,
                 self.session_factory,
-                quote_provider=self.quote_provider,
+                provider_bundle=self.provider_bundle,
             ),
         )
 
@@ -88,7 +109,7 @@ class RunQueueService:
                     run_id = RunQueueService(
                         session,
                         self.session_factory,
-                        quote_provider=self.quote_provider,
+                        provider_bundle=self.provider_bundle,
                         executor_factory=self.executor_factory,
                     ).claim_next_run()
                 if run_id is None:
