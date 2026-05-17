@@ -7,6 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import type {
   RunAgentInvocationRead,
   RunGraphMetadata,
+  RunInvocationScopedRef,
   RunMemoryArtifactRead,
   RunOperationInvocationRead,
   RunPackageResolvedModelConnectionRead,
@@ -149,6 +150,18 @@ function formatTimestamp(value: string | null): string {
 
 function formatDuration(durationMs: number | null): string {
   return durationMs === null ? "Not recorded" : `${durationMs} ms`;
+}
+
+function formatInvocationScopedRef(ref: RunInvocationScopedRef): string {
+  const scopeLabel = ref.scope === "packageLocal" ? "Package-local" : "Global";
+  const identifier = ref.scope === "packageLocal" ? ref.localId : ref.id;
+  const identifierLabel = identifier === undefined ? "unresolved" : `#${identifier}`;
+  const keyLabel = ref.key
+    ? `${ref.key}${ref.version ? `@${ref.version}` : ""}`
+    : null;
+  return keyLabel
+    ? `${scopeLabel} ${keyLabel} (${identifierLabel})`
+    : `${scopeLabel} ${identifierLabel}`;
 }
 
 function statusVariant(status: RunStatus | RunStepStatus): "secondary" | "destructive" | "outline" {
@@ -828,8 +841,8 @@ function InvocationCard({ invocation, step }: { invocation: RunAgentInvocationRe
           items={[
             { label: "Invocation id", value: `#${invocation.id}` },
             { label: "Agent", value: `${invocation.agentKey}@${invocation.agentVersion}` },
-            { label: "Agent id", value: `#${invocation.agentId}` },
-            { label: "Output schema", value: `#${invocation.outputSchemaId}@${invocation.outputSchemaVersion}` },
+            { label: "Agent ref", value: formatInvocationScopedRef(invocation.agentRef) },
+            { label: "Output schema", value: formatInvocationScopedRef(invocation.outputSchemaRef) },
             { label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> },
             { label: "Graph node", value: graphMetadataLabel(invocation.graphMetadata) },
             { label: "Tokens", value: invocation.tokens },
@@ -897,7 +910,7 @@ function OperationInvocationCard({ invocation }: { invocation: RunOperationInvoc
           items={[
             { label: "Operation id", value: `#${invocation.id}` },
             { label: "Operation", value: `${invocation.operationKey} · ${invocation.operationKind}` },
-            { label: "Output schema", value: `#${invocation.outputSchemaId}@${invocation.outputSchemaVersion}` },
+            { label: "Output schema", value: formatInvocationScopedRef(invocation.outputSchemaRef) },
             { label: "Method", value: invocation.method ?? "Not recorded" },
             { label: "Timeout", value: invocation.timeoutSeconds ? `${invocation.timeoutSeconds}s` : "Not recorded" },
             { label: "Source operation", value: <SourceOperationInvocationLink invocation={invocation} /> },
@@ -1213,7 +1226,8 @@ export function RunsDetailPage() {
                 items={[
                   { label: "Package", value: <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>{run.packageProvenance.workflowPackageKey}@{run.packageProvenance.workflowPackageVersion}</Link> },
                   { label: "Workflow key", value: run.packageProvenance.workflowKey },
-                  { label: "Manifest hash", value: run.packageProvenance.workflowPackageHash },
+                  { label: "Manifest hash", value: run.packageProvenance.workflowPackageManifestHash },
+                  { label: "Compiled hash", value: run.packageProvenance.workflowPackageCompiledHash },
                   { label: "Package id", value: `#${run.packageProvenance.workflowPackageId}` },
                 ]}
               />

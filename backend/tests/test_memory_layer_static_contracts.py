@@ -107,7 +107,7 @@ def _interface_body(source: str, name: str) -> str:
 
 def test_model_visible_runtime_write_contracts_do_not_leak_report_identity() -> None:
     result_contract = _python_node_source(
-        "backend/app/agents/runtime_tools/types.py",
+        "backend/app/extensions/signaldeck_finance/runtime_types.py",
         "RuntimeReportMemoryWriteResult",
     )
     _assert_fragments_absent(

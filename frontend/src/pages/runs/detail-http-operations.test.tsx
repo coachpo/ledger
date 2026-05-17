@@ -41,6 +41,7 @@ function buildOperation(overrides: Partial<RunOperationInvocationRead> = {}): Ru
     optional: false,
     output: { ok: true, message: "queued" },
     outputOrigin: "executed",
+    outputSchemaRef: { scope: "packageLocal", localId: 31, version: 1 },
     outputSchemaId: 31,
     outputSchemaVersion: 1,
     persistedAt: "2026-05-15T08:31:00Z",

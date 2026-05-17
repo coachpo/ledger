@@ -9,6 +9,15 @@ export type RunInvocationResolvedInputOrigin = "derived" | "edited" | "copied" |
 export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
 export type RunOperationKind = "http";
 export type RunTargetKind = "agent" | "workflow" | "workflowPackage";
+export type RunInvocationResourceScope = "global" | "packageLocal";
+
+export interface RunInvocationScopedRef {
+  scope: RunInvocationResourceScope;
+  id?: number;
+  localId?: number;
+  key?: string;
+  version?: number;
+}
 
 export interface RunTargetIdentityRead {
   targetKind: RunTargetKind;
@@ -91,9 +100,10 @@ export interface RunPackageProvenanceRead {
   preflightSummary: UnknownRecord | null;
   resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
   workflowKey: string;
-  workflowPackageHash: string;
+  workflowPackageCompiledHash: string;
   workflowPackageId: number;
   workflowPackageKey: string;
+  workflowPackageManifestHash: string;
   workflowPackageVersion: number;
   workflowPackageVersionId: number | null;
 }
@@ -105,6 +115,8 @@ export interface RunAgentInvocationRead {
   stepIndex: number;
   slot: string;
   position: number;
+  agentRef: RunInvocationScopedRef;
+  outputSchemaRef: RunInvocationScopedRef;
   agentId: number;
   agentKey: string;
   agentVersion: number;
@@ -142,6 +154,7 @@ export interface RunOperationInvocationRead {
   position: number;
   operationKey: string;
   operationKind: RunOperationKind;
+  outputSchemaRef: RunInvocationScopedRef;
   outputSchemaId: number;
   outputSchemaVersion: number;
   method: string | null;

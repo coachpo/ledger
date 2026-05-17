@@ -228,13 +228,11 @@ describe("router", () => {
         key: "signaldeck.reports.lookup",
         displayName: "Reports",
         description: "Read reports",
-        module: "signaldeck.reports",
       },
       {
         key: "core.echo",
         displayName: "Echo",
         description: "Core smoke tool",
-        module: "core",
       },
     ];
     const enabledPaths = enabledFinanceRoutePaths(extensionList(true));

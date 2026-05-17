@@ -69,6 +69,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     items = cast(list[dict[str, object]], body["items"])
     tools_by_key = {str(item["key"]): item for item in items}
 
+    assert not any("module" in item for item in items)
     assert _CANONICAL_TOOL_KEYS <= set(tools_by_key)
     quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
     report_lookup_tool = tools_by_key["signaldeck.reports.lookup"]
@@ -77,22 +78,20 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "key": "signaldeck.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
         "description": "Read trusted market quote snapshots from server-owned integrations.",
-        "module": "app.extensions.signaldeck_finance.tool_specs",
     }
     assert report_lookup_tool == {
         "key": "signaldeck.reports.lookup",
         "displayName": "Report Lookup",
         "description": "Read persisted SignalDeck reports through server-owned report lookups.",
-        "module": "app.extensions.signaldeck_finance.tool_specs",
     }
     assert report_write_tool == {
         "key": "signaldeck.reports.write",
         "displayName": "Report Memory Write",
         "description": "Create pending agent-memory reports through server-owned memory writes.",
-        "module": "app.extensions.signaldeck_finance.tool_specs",
     }
     assert not any(key.startswith("signaldeck.memory.") for key in tools_by_key)
     for tool in (quote_tool, report_lookup_tool, report_write_tool):
+        assert "module" not in tool
         assert "ownerExtensionKey" not in tool
         assert "contributionCategories" not in tool
         assert "toolGrants" not in tool

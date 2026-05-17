@@ -36,6 +36,7 @@ const NOW = "2026-04-20T10:00:00Z";
 
 function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAgentInvocationRead {
   return {
+    agentRef: { scope: "global", id: 11, key: "research_agent", version: 3 },
     agentId: 11,
     agentKey: "research_agent",
     agentVersion: 3,
@@ -51,6 +52,7 @@ function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAg
     optional: false,
     output: { summary: "analysis" },
     outputOrigin: "executed",
+    outputSchemaRef: { scope: "global", id: 21, version: 4 },
     outputSchemaId: 21,
     outputSchemaVersion: 4,
     persistedAt: "2026-04-20T10:00:03Z",
@@ -290,9 +292,10 @@ describe("RunsDetailPage", () => {
           },
         ],
         workflowKey: "market_review",
-        workflowPackageHash: "hash-abc",
+        workflowPackageCompiledHash: "compiled-hash-abc",
         workflowPackageId: 7,
         workflowPackageKey: "market_review_package",
+        workflowPackageManifestHash: "manifest-hash-abc",
         workflowPackageVersion: 2,
         workflowPackageVersionId: 70,
       },
@@ -324,6 +327,8 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/manifest-hash-abc/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/compiled-hash-abc/i);
     expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
     expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
     expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);

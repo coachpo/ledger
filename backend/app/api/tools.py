@@ -13,7 +13,6 @@ class ToolCatalogItemRead(CamelModel):
     key: str
     display_name: str
     description: str
-    module: str
 
 
 class ToolCatalogListRead(CamelModel):
@@ -33,7 +32,6 @@ def list_tools(
                 key=tool.key,
                 display_name=tool.display_name,
                 description=tool.description,
-                module=tool.module,
             )
             for tool in tool_catalog.list_registered_tools()
         ]

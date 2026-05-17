@@ -844,7 +844,7 @@ function OutputSchemasTab({ draft, issues, onChange }: { draft: WorkflowPackageD
   );
 }
 
-function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void; tools: { description: string; displayName: string; key: string; module: string }[]; toolsError: string | null; toolsLoading: boolean }) {
+function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: readonly WorkflowPackageEditorIssue[]; onChange: (draft: WorkflowPackageDraft) => void; tools: { description: string; displayName: string; key: string }[]; toolsError: string | null; toolsLoading: boolean }) {
   const { draft, issues, onChange, tools, toolsError, toolsLoading } = props;
   const updateProfiles = (capabilityProfiles: PackageCapabilityProfileDraft[]) => onChange({ ...draft, spec: { ...draft.spec, capabilityProfiles } });
   return (
@@ -876,7 +876,7 @@ function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: rea
                     <CommandEmpty>{toolsLoading ? "Loading tools..." : "No catalog tools match."}</CommandEmpty>
                     <CommandGroup>
                       {tools.map((tool) => (
-                        <CommandItem className="data-[selected=true]:bg-transparent data-[selected=true]:text-foreground data-[selected=true]:hover:bg-accent data-[selected=true]:hover:text-accent-foreground" key={tool.key} value={`${tool.displayName} ${tool.key} ${tool.description} ${tool.module}`} onSelect={() => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, !item.toolKeys.includes(tool.key)) })))}>
+                        <CommandItem className="data-[selected=true]:bg-transparent data-[selected=true]:text-foreground data-[selected=true]:hover:bg-accent data-[selected=true]:hover:text-accent-foreground" key={tool.key} value={`${tool.displayName} ${tool.key} ${tool.description}`} onSelect={() => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, !item.toolKeys.includes(tool.key)) })))}>
                           <Checkbox aria-label={`Select tool ${tool.displayName}`} checked={profile.toolKeys.includes(tool.key)} onCheckedChange={(checked) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, toolKeys: toggleString(item.toolKeys, tool.key, checked === true) })))} />
                           <div className="min-w-0"><p className="truncate text-sm">{tool.displayName}</p><p className="break-all text-xs text-muted-foreground">{tool.key}</p></div>
                         </CommandItem>
@@ -1780,7 +1780,7 @@ export function WorkflowPackageEditorPage() {
             <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
             <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
             <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key, module: tool.module }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
+            <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
             <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
             <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
             <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
