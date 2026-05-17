@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.agents.tool_catalog.server_declared import ServerDeclaredToolSpec
+from app.extensions import BundledServerDeclaredToolContribution as ServerDeclaredToolSpec
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 
 _SERVER_DECLARED_MODULE = __name__

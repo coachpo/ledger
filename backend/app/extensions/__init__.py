@@ -1,13 +1,30 @@
-"""Bundled extension registry."""
+"""Bundled extension contribution contracts."""
 
-from app.extensions.registry import (
-    BundledExtensionDefinition,
-    BundledExtensionRegistry,
-    get_bundled_extension_registry,
-)
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from fastapi import APIRouter
+from fastapi.params import Depends as DependsMarker
+
+
+@dataclass(frozen=True, slots=True)
+class BundledApiRouterContribution:
+    router: APIRouter
+    surface: str
+    dependencies: tuple[DependsMarker, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BundledServerDeclaredToolContribution:
+    key: str
+    display_name: str
+    description: str
+    module: str
+    owner_extension_key: str | None = None
+
 
 __all__ = [
-    "BundledExtensionDefinition",
-    "BundledExtensionRegistry",
-    "get_bundled_extension_registry",
+    "BundledApiRouterContribution",
+    "BundledServerDeclaredToolContribution",
 ]

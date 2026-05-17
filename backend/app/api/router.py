@@ -1,12 +1,10 @@
 from fastapi import APIRouter
 
-from app.extensions.signaldeck_finance.api_routers import (
-    register as register_finance_workspace_api_routers,
-)
+from app.extensions.registry import get_bundled_extension_registry
 
 api_router = APIRouter(prefix="/api/v1")
-for registration in register_finance_workspace_api_routers():
+for contribution in get_bundled_extension_registry().list_api_router_contributions():
     api_router.include_router(
-        registration.router,
-        dependencies=list(registration.dependencies),
+        contribution.router,
+        dependencies=list(contribution.dependencies),
     )

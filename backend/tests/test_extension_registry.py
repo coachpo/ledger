@@ -20,12 +20,17 @@ def test_bundled_extension_registry_discovers_finance_workspace_once() -> None:
     assert extension.label == "Finance Workspace"
     assert extension.default_enabled is True
     assert registry.get_extension(FINANCE_WORKSPACE_EXTENSION_KEY) is extension
-    assert extension.tool_spec_registrars == (
-        "app.extensions.signaldeck_finance.tool_specs:register",
-    )
-    assert extension.runtime_tool_registrars == (
-        "app.extensions.signaldeck_finance.runtime_executors:register",
-    )
+    assert {contribution.surface for contribution in registry.list_api_router_contributions()} == {
+        "/api/v1/portfolios",
+        "/api/v1/portfolios/{portfolio_id}/balances",
+        "/api/v1/portfolios/{portfolio_id}/positions",
+        "/api/v1/portfolios/{portfolio_id}/trading-operations",
+        "/api/v1/portfolios/{portfolio_id}/market-data",
+        "/api/v1/templates",
+        "/api/v1/reports",
+    }
+    assert len(registry.list_server_declared_tool_contributions()) == 11
+    assert len(registry.list_runtime_tool_contributions()) == 11
 
 
 def test_bundled_extension_registry_rejects_duplicate_keys() -> None:
@@ -43,12 +48,12 @@ def test_bundled_extension_definition_keeps_only_operational_fields() -> None:
         "key",
         "label",
         "default_enabled",
-        "tool_spec_registrars",
-        "runtime_tool_registrars",
     }
     for removed_attribute in (
         "phase",
         "versioning_rule",
+        "tool_spec_registrars",
+        "runtime_tool_registrars",
         "contribution_categories",
         "contributions",
         "scaffold",
