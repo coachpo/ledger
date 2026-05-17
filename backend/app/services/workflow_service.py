@@ -763,12 +763,6 @@ class WorkflowService:
             return False
         if not isinstance(resolved_source, SchemaObject):
             return False
-        if (
-            resolved_source.allow_additional_properties
-            and not resolved_target.allow_additional_properties
-        ):
-            return False
-
         source_fields = {item.name: item for item in resolved_source.fields}
         target_fields = {item.name: item for item in resolved_target.fields}
         for target_name, target_field in target_fields.items():
@@ -781,10 +775,9 @@ class WorkflowService:
                 target_field.schema,
             ):
                 return False
-        if not resolved_target.allow_additional_properties:
-            for source_name in source_fields:
-                if source_name not in target_fields:
-                    return False
+        for source_name in source_fields:
+            if source_name not in target_fields:
+                return False
         return True
 
     def _possible_values(self, node: SchemaNode) -> tuple[Any, ...] | None:

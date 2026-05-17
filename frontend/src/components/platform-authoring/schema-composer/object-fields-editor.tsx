@@ -22,16 +22,6 @@ export function ObjectFieldsEditor({ depth, node, onChange, renderNode }: Object
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between rounded-md border p-4">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="allow-additional-properties">Allow additional properties</Label>
-          <p className="text-sm text-muted-foreground">
-            Objects default to closed contracts, matching the backend compiler.
-          </p>
-        </div>
-        <Switch id="allow-additional-properties" checked={Boolean(node.allowAdditionalProperties)} onCheckedChange={(checked) => onChange({ ...node, allowAdditionalProperties: checked })} />
-      </div>
-
       {fields.length === 0 ? (
         <div className="rounded-md border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
           Add at least one field to build an object schema.

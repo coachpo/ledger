@@ -78,7 +78,6 @@ spec:
       name: Webhook Response
       jsonSchema:
         type: object
-        additionalProperties: true
   workflows:
     - key: notify
       name: Notify

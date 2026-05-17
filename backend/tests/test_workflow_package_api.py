@@ -526,8 +526,6 @@ def test_launch_metadata_and_stub_creation(
                 "portfolioId": "tradingagents_demo",
                 "horizonDays": 30,
                 "benchmarkSymbol": "SPY",
-                "initialInvestmentDebateState": {},
-                "initialRiskDebateState": {},
             },
         },
     )
@@ -592,8 +590,6 @@ def test_launch_blocks_failed_model_connection(
                 "portfolioId": "tradingagents_demo",
                 "horizonDays": 30,
                 "benchmarkSymbol": "SPY",
-                "initialInvestmentDebateState": {},
-                "initialRiskDebateState": {},
             },
         },
     )

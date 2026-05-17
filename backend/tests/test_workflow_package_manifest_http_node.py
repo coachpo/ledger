@@ -16,7 +16,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       webhookUrl:
         type: string
@@ -29,7 +28,6 @@ spec:
       description: Response from the callback target.
       jsonSchema:
         type: object
-        additionalProperties: true
   workflows:
     - key: notify
       name: Notify

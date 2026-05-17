@@ -19,6 +19,7 @@ let searchParamsMock = new URLSearchParams();
 
 vi.mock("react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  useLocation: () => ({ hash: "", pathname: "/runs/42", search: searchParamsMock.toString() }),
   useNavigate: () => navigateMock,
   useParams: () => ({ runId: "42" }),
   useSearchParams: () => [searchParamsMock, setSearchParamsMock],
@@ -318,25 +319,18 @@ describe("RunsDetailPage", () => {
     });
     useRunMock.mockReturnValue(queryResult(run));
 
-    render(<RunsDetailPage />);
+    const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-evidence-viewer")).toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/succeeded/i);
     expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/market_review_package@2/i);
     expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/manifest-hash-abc/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/compiled-hash-abc/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
-    expect(screen.getByTestId("runs-trace-linkage")).toHaveTextContent(/trace-42/i);
     expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(
       /trace-42 -> step 1\/analysis\/span-1 -> step 2\/decision\/span-2/i,
     );
@@ -346,7 +340,25 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/copied origin/i);
+    expect(screen.getByTestId("runs-step-1-slot-analysis")).toHaveTextContent(/output copied/i);
+    expect(screen.getByTestId("runs-step-2-slot-decision")).toHaveTextContent(/output pending/i);
 
+    defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("pane=provenance");
+    const provenanceRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/manifest-hash-abc/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/compiled-hash-abc/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);
+    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
+
+    provenanceRender.unmount();
+    searchParamsMock = new URLSearchParams("pane=lineage");
+    const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
     expect(within(lineage).getByRole("link", { name: /run #41/i })).toHaveAttribute("href", "/runs/41");
     expect(lineage).toHaveTextContent(/lineage root/i);
@@ -358,21 +370,12 @@ describe("RunsDetailPage", () => {
     expect(lineage).toHaveTextContent(/1 copied · 1 planned/i);
     expect(lineage).toHaveTextContent(/1 copied · 1 planned\/executed/i);
 
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/copied origin/i);
-    expect(screen.getByRole("link", { name: /run #41 step 1/i })).toHaveAttribute("href", "/runs/41#step-1");
-    expect(screen.getByTestId("runs-step-1-slot-analysis")).toHaveTextContent(/output copied/i);
-    expect(screen.getByRole("link", { name: /invocation #501/i })).toHaveAttribute("href", "/runs/41#invocation-501");
-
-    const failedInvocationCard = screen.getByTestId("runs-step-2-slot-decision");
-    expect(failedInvocationCard).toHaveTextContent(/input derived/i);
-    expect(failedInvocationCard).toHaveTextContent(/output pending/i);
-    expect(failedInvocationCard).toHaveTextContent(/tokens/i);
-    expect(failedInvocationCard).toHaveTextContent(/30/i);
-    expect(within(failedInvocationCard).queryByText(/^Cost$/i)).not.toBeInTheDocument();
+    lineageRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=invocation:1002&pane=error");
+    render(<RunsDetailPage />);
     expect(screen.getByText("model_error")).toBeVisible();
     expect(screen.getByText("Provider failed")).toBeVisible();
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: /trace link · span-2/i })).toBeVisible();
   });
 
   it("groups graph metadata and renders memory artifact audit report links", () => {
@@ -443,12 +446,17 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    render(<RunsDetailPage />);
+    searchParamsMock = new URLSearchParams("pane=trace");
+    const traceRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Fanout analyst_fanout");
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("branch market");
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Loop review_loop iteration 1");
-    expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("node market_analysis");
+    expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("market");
+
+    traceRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=memory:mem_701");
+    render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-memory-artifacts")).toBeInTheDocument();
     const artifact = screen.getByTestId("runs-memory-artifact-mem_701");
     expect(artifact).toHaveTextContent("AAPL decision memory");
@@ -490,6 +498,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("inspect=memory:mem_702");
     render(<RunsDetailPage />);
 
     const artifact = screen.getByTestId("runs-memory-artifact-mem_702");
@@ -535,6 +544,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("pane=trace");
     render(<RunsDetailPage />);
 
     const firstIterationGroup = screen.getByTestId("runs-graph-group-1");
@@ -603,7 +613,7 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText(/target id: 12/i)).toBeVisible();
     expect(screen.getByText(/standalone agent execution/i)).toBeVisible();
     expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(/step 1\/result\/span-agent-1/i);
-    expect(screen.getAllByText(/captured through invocation spans/i)).toHaveLength(2);
+    expect(screen.getAllByText(/captured through invocation spans/i)).toHaveLength(1);
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-detail-rerun")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /replay step/i })).not.toBeInTheDocument();
@@ -649,6 +659,7 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    searchParamsMock = new URLSearchParams("pane=trace");
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();

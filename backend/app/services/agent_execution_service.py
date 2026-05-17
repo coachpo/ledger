@@ -684,10 +684,7 @@ class AgentExecutionService:
             return 1
         if schema_type == "boolean":
             return True
-        if (
-            isinstance(schema.get("properties"), Mapping)
-            or schema.get("additionalProperties") is True
-        ):
+        if isinstance(schema.get("properties"), Mapping):
             return {}
         return f"deterministic {name}"
 

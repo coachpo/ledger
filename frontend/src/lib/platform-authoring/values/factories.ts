@@ -273,7 +273,6 @@ function createValueEntryFromDefaultValue(schema: SchemaIRNode, value: JsonValue
 
   if (schema.kind === "object" && isRecord(value)) {
     const fields = schema.fields ?? [];
-    const knownFieldNames = new Set(fields.map((field) => field.name));
     const defaultedFields = fields
       .filter((field) => Object.prototype.hasOwnProperty.call(value, field.name) || field.required !== false || hasSchemaDefault(field.schema))
       .map((field) => {
@@ -283,16 +282,7 @@ function createValueEntryFromDefaultValue(schema: SchemaIRNode, value: JsonValue
           : createValueEntryForSchema(field.schema, fieldPath);
         return createValueEntryObjectField(field.name, fieldValue, fieldPath);
       });
-    const extraFields = schema.allowAdditionalProperties
-      ? Object.entries(value)
-          .filter(([key]) => !knownFieldNames.has(key))
-          .map(([key, entryValue]) => {
-            const fieldPath = extendPath(pathTokens, key);
-            return createValueEntryObjectField(key, createValueEntryFromJsonValue(entryValue, fieldPath), fieldPath);
-          })
-      : [];
-
-    return createObjectValueEntry([...defaultedFields, ...extraFields], pathTokens);
+    return createObjectValueEntry(defaultedFields, pathTokens);
   }
 
   if (schema.kind === "discriminated_union") {

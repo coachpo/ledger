@@ -39,7 +39,6 @@ export function createDefaultSchemaNode(kind: SchemaIRNode["kind"] = "object"): 
     default:
       return {
         kind: "object",
-        allowAdditionalProperties: false,
         fields: [],
       } satisfies SchemaIRObject;
   }
@@ -52,7 +51,6 @@ export function createDefaultSchemaField(name = "field"): SchemaIRField {
 function createDefaultVariantObject(tag: string): SchemaIRObject {
   return {
     kind: "object",
-    allowAdditionalProperties: false,
     fields: [
       { name: "kind", required: true, schema: { kind: "literal", value: tag } },
       { name: "value", required: true, schema: { kind: "string" } },

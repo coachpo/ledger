@@ -21,7 +21,6 @@ function primitiveKindForValue(value: JsonPrimitive): PrimitiveKind {
 function createDefaultVariantObject(tag: string): SchemaIRObject {
   return {
     kind: "object",
-    allowAdditionalProperties: false,
     fields: [
       { name: "kind", required: true, schema: { kind: "literal", value: tag } },
       { name: "value", required: true, schema: { kind: "string" } },

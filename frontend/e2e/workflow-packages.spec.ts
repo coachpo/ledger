@@ -14,7 +14,6 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "spec:",
     "  inputs:",
     "    type: object",
-    "    additionalProperties: false",
     "    properties:",
     "      ticker:",
     "        type: string",
@@ -29,7 +28,6 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "      name: Advisory Output",
     "      jsonSchema:",
     "        type: object",
-    "        additionalProperties: false",
     "        properties:",
     "          summary:",
     "            type: string",
@@ -41,7 +39,6 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "      systemPrompt: Return deterministic JSON.",
     "      inputSchema:",
     "        type: object",
-    "        additionalProperties: false",
     "        properties:",
     "          ticker:",
     "            type: string",
@@ -54,7 +51,6 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "      name: Advisory Flow",
     "      inputSchema:",
     "        type: object",
-    "        additionalProperties: false",
     "        properties:",
     "          ticker:",
     "            type: string",
@@ -189,8 +185,22 @@ test.describe("Workflow packages", () => {
 
     await page.reload();
     await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText("deterministic summary");
+    await page.getByRole("button", { name: "Provenance" }).click();
     await expect(page.getByTestId("runs-package-provenance")).toContainText(`${packageKey}@3`);
     await expect(page.getByTestId("runs-package-provenance")).toContainText("advisory_flow");
     await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute("href", `/workflow-packages/${created.id}`);
+
+    await page.getByTestId("runs-detail-rerun").click();
+    await expect(page.getByRole("dialog", { name: /rerun draft/i })).toBeVisible();
+    await page.getByTestId("run-rerun-submit").click();
+    await expect(page).toHaveURL(/\/runs\/\d+$/);
+
+    await page.goto(`/runs/${runId}`);
+    await expect(page.getByTestId("runs-step-1-replay-entry")).toBeVisible();
+    await page.getByTestId("runs-step-1-replay-entry").getByRole("button", { name: /replay step/i }).click();
+    await expect(page.getByRole("dialog", { name: /step replay draft/i })).toBeVisible();
+    await page.getByTestId("run-step-replay-submit").click();
+    await expect(page).toHaveURL(/\/runs\/\d+$/);
   });
 });

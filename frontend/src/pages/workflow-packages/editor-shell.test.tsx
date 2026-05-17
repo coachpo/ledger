@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +137,16 @@ describe("WorkflowPackageEditorPage", () => {
     const overviewTab = screen.getByRole("tab", { name: "Overview tab" });
     expect(overviewTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
+  });
+
+  it("keeps one visible Workflow YAML field label while preserving the textarea accessible name", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Workflow YAML tab" }));
+    const tabpanel = screen.getByRole("tabpanel");
+
+    expect(within(tabpanel).getAllByText("Workflow YAML")).toHaveLength(1);
+    expect(screen.getByRole("textbox", { name: "Workflow YAML" })).toBeVisible();
   });
 
   it("keeps the package editor tab strip on one scrollable row", () => {

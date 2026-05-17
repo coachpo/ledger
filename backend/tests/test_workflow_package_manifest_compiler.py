@@ -29,7 +29,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -47,7 +46,6 @@ spec:
       description: Structured decision.
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           summary:
             type: string

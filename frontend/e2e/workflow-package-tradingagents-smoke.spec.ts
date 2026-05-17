@@ -20,8 +20,6 @@ const LAUNCH_PARAMETERS = {
   portfolioId: "tradingagents_demo",
   horizonDays: 30,
   benchmarkSymbol: "SPY",
-  initialInvestmentDebateState: {},
-  initialRiskDebateState: {},
 };
 
 function fixtureSource() {

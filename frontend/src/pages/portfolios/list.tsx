@@ -74,7 +74,7 @@ export function PortfolioListPage() {
         ) : null}
         {!portfoliosQuery.isPending && !portfoliosQuery.isError && portfolios.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">No portfolios yet.</CardContent>
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">No portfolios yet.</CardContent>
           </Card>
         ) : null}
         {portfolios.map((portfolio) => (

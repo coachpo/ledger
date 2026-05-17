@@ -130,7 +130,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -145,7 +144,6 @@ spec:
       name: Graph Note
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           summary:
             type: string
@@ -163,7 +161,6 @@ spec:
       systemPrompt: Return market output.
       inputSchema:
         type: object
-        additionalProperties: true
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
@@ -174,7 +171,6 @@ spec:
       systemPrompt: Return news output.
       inputSchema:
         type: object
-        additionalProperties: true
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
@@ -185,7 +181,6 @@ spec:
       systemPrompt: Return risk output.
       inputSchema:
         type: object
-        additionalProperties: true
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
@@ -196,7 +191,6 @@ spec:
       systemPrompt: Return final output.
       inputSchema:
         type: object
-        additionalProperties: true
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
@@ -206,7 +200,6 @@ spec:
       name: Advisory Research
       inputSchema:
         type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string

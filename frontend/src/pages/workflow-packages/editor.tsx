@@ -23,7 +23,6 @@ import { z } from "zod";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-import { SchemaValueEntryForm } from "@/components/platform-authoring/generated-form/schema-form";
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -84,6 +83,7 @@ import {
   useWorkflowPackageSecretBindings,
   useWorkflowPackageVersions,
 } from "@/hooks/use-workflow-packages";
+import { ApiRequestError } from "@/lib/api-client";
 import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -106,13 +106,13 @@ import {
   type WorkflowPackageDraft,
   type WorkflowPackageEditorIssue,
 } from "@/lib/platform-authoring/workflow-packages/manifest";
-import { parseJsonValue, stringifyJson } from "@/lib/platform-authoring/common/serialization";
-import { parseSchemaJsonObject, type SchemaCodecIssue } from "@/lib/platform-authoring/schema/codec";
-import type { SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
-import { decodeValueEntry } from "@/lib/platform-authoring/values/codec";
-import { coerceValueEntryForSchema, createValueEntryForSchema } from "@/lib/platform-authoring/values/factories";
-import type { ValueEntry } from "@/lib/platform-authoring/values/types";
-import type { UnknownRecord } from "@/lib/types/common";
+import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
+import {
+  createLaunchParametersTemplate,
+  parseLaunchParametersJson,
+  resetLaunchParametersTemplate,
+} from "@/lib/platform-authoring/schema/schema-template";
+import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
   WorkflowPackageImportMode,
@@ -1036,7 +1036,7 @@ function WorkflowYamlTab({ draft, issues, onChange }: { draft: WorkflowPackageDr
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-workflow-yaml-tab">
       <CardHeader className="border-b pb-4">
-        <CardTitle>Workflow YAML</CardTitle>
+        <CardTitle id="workflow-yaml-title">Workflow YAML</CardTitle>
         <CardDescription>Author workflow graph nodes directly in YAML. HTTP operations stay in kind:http manifest nodes and validate through the backend manifest flow.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
@@ -1049,8 +1049,7 @@ function WorkflowYamlTab({ draft, issues, onChange }: { draft: WorkflowPackageDr
           </Alert>
         ) : null}
         <div className="space-y-2" data-field="spec.workflows" tabIndex={-1}>
-          <Label htmlFor="workflow-yaml">Workflow YAML</Label>
-          <Textarea id="workflow-yaml" aria-label="Workflow YAML" className="min-h-96 font-mono text-xs" spellCheck={false} value={workflowYaml} onChange={(event) => updateWorkflowYaml(event.target.value)} />
+          <Textarea id="workflow-yaml" aria-labelledby="workflow-yaml-title" className="min-h-96 font-mono text-xs" spellCheck={false} value={workflowYaml} onChange={(event) => updateWorkflowYaml(event.target.value)} />
           <p className="text-xs text-muted-foreground">Use an array of workflow objects. Keep HTTP nodes as YAML with kind: http; there is intentionally no visual node editor.</p>
         </div>
       </CardContent>
@@ -1172,69 +1171,26 @@ function ModelConnectionModeSummary({ diagnostics, read }: { diagnostics: Packag
   );
 }
 
-type LaunchSchemaState =
-  | { mode: "typed"; schema: SchemaIRObject }
-  | { issues: SchemaCodecIssue[]; mode: "raw"; reason: string };
-
-function schemaAllowsAdditionalProperties(schema: SchemaIRNode): boolean {
-  if (schema.kind === "object") {
-    return Boolean(schema.allowAdditionalProperties) || (schema.fields ?? []).some((field) => schemaAllowsAdditionalProperties(field.schema));
+function RuntimeInputValidationAlert({ errors }: { errors: readonly ApiErrorDetail[] }) {
+  if (errors.length === 0) {
+    return null;
   }
 
-  if (schema.kind === "array") {
-    return schemaAllowsAdditionalProperties(schema.items);
-  }
-
-  if (schema.kind === "discriminated_union") {
-    return schema.variants.some(schemaAllowsAdditionalProperties);
-  }
-
-  return false;
-}
-
-function launchSchemaState(inputSchema: unknown): LaunchSchemaState {
-  const parsed = parseSchemaJsonObject(inputSchema);
-  if (!parsed.builder) {
-    return {
-      issues: parsed.issues,
-      mode: "raw",
-      reason: "The workflow input schema uses unsupported JSON Schema features, so edit the full parameters payload as raw JSON.",
-    };
-  }
-
-  if (parsed.builder.kind !== "object") {
-    return {
-      issues: [],
-      mode: "raw",
-      reason: "Workflow launch parameters require an object input schema, so edit the full parameters payload as raw JSON.",
-    };
-  }
-
-  if (schemaAllowsAdditionalProperties(parsed.builder)) {
-    return {
-      issues: [],
-      mode: "raw",
-      reason: "This workflow input schema allows additional properties. The typed form cannot safely represent free-form keys yet, so edit the whole parameters object as raw JSON.",
-    };
-  }
-
-  return { mode: "typed", schema: parsed.builder };
-}
-
-function parseRawLaunchParameters(parametersText: string): UnknownRecord {
-  const parsed = parseJsonValue<unknown>("Runtime inputs JSON", parametersText, {});
-  if (!isUnknownRecord(parsed)) {
-    throw new Error("Runtime inputs JSON must be a valid object.");
-  }
-  return parsed;
-}
-
-function decodeLaunchValueEntry(schema: SchemaIRObject, value: ValueEntry | null | undefined): UnknownRecord {
-  const decoded = decodeValueEntry(coerceValueEntryForSchema(schema, value));
-  if (!isUnknownRecord(decoded)) {
-    return {};
-  }
-  return decoded;
+  return (
+    <Alert data-testid="runtime-input-validation-feedback" variant="destructive">
+      <AlertCircle />
+      <AlertTitle>Runtime inputs need attention</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc space-y-1 pl-5">
+          {errors.map((error) => (
+            <li key={`${error.field}-${error.issue}`}>
+              <code className="rounded bg-muted/40 px-1 py-0.5 text-xs">{error.field}</code>: {error.issue}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 function PreflightTab(props: {
@@ -1295,30 +1251,37 @@ function LaunchTab(props: {
 }) {
   const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, selectedVersion, setSelectedVersion, setWorkflowKey, versions, workflowKey, workflowPackage } = props;
   const navigate = useNavigate();
-  const [launchValueEntry, setLaunchValueEntry] = useState<ValueEntry | null | undefined>(undefined);
   const [parametersText, setParametersText] = useState(() => stringifyJson({}));
+  const [runtimeInputErrors, setRuntimeInputErrors] = useState<ApiErrorDetail[]>([]);
   const inputSchemaFingerprint = useMemo(() => stringifyJson(launchRead?.inputSchema), [launchRead?.inputSchema]);
   const inputSchemaSnapshot = useMemo(() => inputSchemaFingerprint ? JSON.parse(inputSchemaFingerprint) as unknown : undefined, [inputSchemaFingerprint]);
-  const inputSchemaState = useMemo(() => launchSchemaState(inputSchemaSnapshot), [inputSchemaSnapshot]);
+  const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchemaSnapshot), [inputSchemaSnapshot]);
   const launchDiagnostics = useMemo(() => diagnosticsFromLaunch(launchRead), [launchRead]);
   const resolvedVersion = selectedVersion ?? launchRead?.packageVersion ?? workflowPackage?.latestVersion ?? null;
   const launchFormIdentity = `${packageId ?? ""}:${resolvedVersion ?? ""}:${workflowKey}:${inputSchemaFingerprint}`;
 
   useEffect(() => {
-    if (inputSchemaState.mode === "typed") {
-      setLaunchValueEntry(createValueEntryForSchema(inputSchemaState.schema));
-    } else {
-      setLaunchValueEntry(null);
-    }
-    setParametersText(stringifyJson({}));
-  }, [inputSchemaState, launchFormIdentity]);
+    setParametersText(resetLaunchParametersTemplate(inputTemplate));
+    setRuntimeInputErrors([]);
+  }, [inputTemplate, launchFormIdentity]);
 
-  const buildParameters = () => inputSchemaState.mode === "typed"
-    ? decodeLaunchValueEntry(inputSchemaState.schema, launchValueEntry)
-    : parseRawLaunchParameters(parametersText);
+  const resetParameters = () => {
+    setParametersText(resetLaunchParametersTemplate(inputTemplate));
+    setRuntimeInputErrors([]);
+  };
 
   const launchPackage = async () => {
     if (!packageId) {
+      return;
+    }
+    setRuntimeInputErrors([]);
+    let parameters: UnknownRecord;
+    try {
+      parameters = parseLaunchParametersJson(parametersText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime inputs JSON must be a valid object.";
+      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
+      toast.error(message);
       return;
     }
     try {
@@ -1329,11 +1292,14 @@ function LaunchTab(props: {
       }
       const run = await createLaunch.mutateAsync({
         packageId,
-        payload: { parameters: buildParameters(), version: selectedVersion ?? null, workflowKey: workflowKey || null },
+        payload: { parameters, version: selectedVersion ?? null, workflowKey: workflowKey || null },
       });
       toast.success("Package run queued");
       navigate(`/runs/${run.id}`);
     } catch (error) {
+      if (error instanceof ApiRequestError && error.details.length > 0) {
+        setRuntimeInputErrors(error.details);
+      }
       toast.error(error instanceof Error ? error.message : "Failed to launch workflow package.");
     }
   };
@@ -1353,35 +1319,35 @@ function LaunchTab(props: {
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
         <ModelConnectionModeSummary diagnostics={launchDiagnostics} read={launchRead} />
         <Card className="bg-background/60">
-          <CardHeader><CardTitle className="text-base">Runtime inputs</CardTitle><CardDescription>Values are derived from backend launch metadata and submitted as typed JSON parameters.</CardDescription></CardHeader>
-          <CardContent className="space-y-4">
-            {inputSchemaState.mode === "typed" ? (
-              <SchemaValueEntryForm
-                label="Runtime inputs"
-                schema={inputSchemaState.schema}
-                value={launchValueEntry}
-                onChange={setLaunchValueEntry}
-              />
-            ) : (
-              <div className="space-y-4">
-                <Alert className="border-chart-3/30 bg-chart-3/10">
-                  <AlertCircle />
-                  <AlertTitle>Raw JSON parameters required</AlertTitle>
-                  <AlertDescription>
-                    <p>{inputSchemaState.reason}</p>
-                    {inputSchemaState.issues.length > 0 ? (
-                      <ul className="list-disc pl-5">
-                        {inputSchemaState.issues.map((issue) => <li key={`${issue.field}-${issue.issue}`}>{issue.field}: {issue.issue}</li>)}
-                      </ul>
-                    ) : null}
-                  </AlertDescription>
-                </Alert>
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-                  <Textarea id="runtime-json" aria-label="Runtime inputs JSON" rows={8} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
-                </div>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-base">Runtime inputs</CardTitle>
+                <CardDescription>Edit the schema-derived template as raw JSON. Launch parameters must remain a JSON object.</CardDescription>
               </div>
-            )}
+              <Button size="sm" type="button" variant="outline" onClick={resetParameters}>Reset to template</Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!inputTemplate.schemaSupported ? (
+              <Alert className="border-chart-3/30 bg-chart-3/10">
+                <AlertCircle />
+                <AlertTitle>Schema template started empty</AlertTitle>
+                <AlertDescription>
+                  <p>{inputTemplate.reason}</p>
+                  {inputTemplate.issues.length > 0 ? (
+                    <ul className="list-disc pl-5">
+                      {inputTemplate.issues.map((issue) => <li key={`${issue.field}-${issue.issue}`}>{issue.field}: {issue.issue}</li>)}
+                    </ul>
+                  ) : null}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <RuntimeInputValidationAlert errors={runtimeInputErrors} />
+            <div className="space-y-2">
+              <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+              <Textarea id="runtime-json" aria-label="Runtime inputs JSON" className="font-mono text-xs" rows={10} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
+            </div>
           </CardContent>
         </Card>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

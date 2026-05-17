@@ -1,5 +1,5 @@
 import { type ComponentProps, type ReactNode } from "react";
-import { AlertCircle, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import type { SchemaIRNode, SchemaIRObject } from "@/lib/platform-authoring/schema/types";
 import { valueEntryPathToString } from "@/lib/platform-authoring/values/codec";
@@ -16,7 +16,6 @@ import type {
   ValueEntryObjectField,
   ValueEntryPath,
 } from "@/lib/platform-authoring/values/types";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,7 +75,7 @@ function updateObjectFields(
   });
 
   return createObjectValueEntry(
-    nextFields.filter((field) => definedFieldNames.has(field.key) || schema.allowAdditionalProperties),
+    nextFields.filter((field) => definedFieldNames.has(field.key)),
     value.pathTokens,
   );
 }
@@ -97,7 +96,6 @@ export function ObjectFieldset({
   const resolvedValue = normalizeObjectValue(schema, value);
   const definedFields = schema.fields ?? [];
   const renderedFieldNames = new Set(resolvedValue.fields.map((field) => field.key));
-  const extraFields = resolvedValue.fields.filter((field) => !definedFields.some((item) => item.name === field.key));
 
   return (
     <Card className={cn(className)} {...props}>
@@ -111,11 +109,6 @@ export function ObjectFieldset({
         <CardDescription>
           {description ?? schema.description ?? "Capture object fields without dropping the shared value-entry structure."}
         </CardDescription>
-        {schema.allowAdditionalProperties ? (
-          <Badge className="w-fit" variant="outline">
-            Allows additional properties
-          </Badge>
-        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {definedFields.length === 0 ? (
@@ -221,20 +214,6 @@ export function ObjectFieldset({
             </div>
           );
         })}
-
-        {extraFields.length > 0 ? (
-          <Alert>
-            <AlertCircle />
-            <AlertTitle>Additional properties preserved</AlertTitle>
-            <AlertDescription className="flex flex-wrap gap-2">
-              {extraFields.map((field) => (
-                <Badge key={field.key} variant="secondary">
-                  {field.key}
-                </Badge>
-              ))}
-            </AlertDescription>
-          </Alert>
-        ) : null}
       </CardContent>
     </Card>
   );

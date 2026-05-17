@@ -74,7 +74,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -85,7 +84,6 @@ spec:
       name: Summary Output
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           summary:
             type: string
@@ -97,7 +95,6 @@ spec:
       systemPrompt: Return a short JSON summary.
       inputSchema:
         type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string
@@ -110,7 +107,6 @@ spec:
       name: Runtime Workflow
       inputSchema:
         type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string
@@ -218,6 +214,92 @@ def _wait_for_run(client: TestClient, run_id: int) -> dict[str, Any]:
             return last_body
         time.sleep(0.02)
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
+
+
+def test_workflow_package_launch_rejects_unknown_root_parameter_key(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="runtime_unknown_root_package")
+
+    response = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "runtime_workflow",
+            "parameters": {"ticker": "MSFT", "unexpected": True},
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    body = response.json()
+    assert body["code"] == "run_invalid_input"
+    assert body["details"] == [{"field": "unexpected", "issue": "Extra inputs are not permitted"}]
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
+
+
+def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    original_input_schema = (
+        "      inputSchema:\n"
+        "        type: object\n"
+        "        properties:\n"
+        "          ticker:\n"
+        "            type: string\n"
+        "        required: [ticker]\n"
+        "      flow:\n"
+    )
+    nested_input_schema = (
+        "      inputSchema:\n"
+        "        type: object\n"
+        "        properties:\n"
+        "          ticker:\n"
+        "            type: string\n"
+        "          context:\n"
+        "            type: object\n"
+        "            properties:\n"
+        "              sector:\n"
+        "                type: string\n"
+        "        required: [ticker]\n"
+        "      flow:\n"
+    )
+    manifest_source = _package_source(package_key="runtime_unknown_nested_package").replace(
+        original_input_schema,
+        nested_input_schema,
+        1,
+    )
+    created_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": manifest_source},
+    )
+    assert created_response.status_code == 201, created_response.json()
+    created = cast(dict[str, object], created_response.json())
+
+    response = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "runtime_workflow",
+            "parameters": {
+                "ticker": "MSFT",
+                "context": {"sector": "semiconductors", "unexpected": True},
+            },
+        },
+    )
+
+    assert response.status_code == 400, response.json()
+    body = response.json()
+    assert body["code"] == "run_invalid_input"
+    assert body["details"] == [
+        {"field": "context.unexpected", "issue": "Extra inputs are not permitted"}
+    ]
+    with session_factory() as session:
+        assert session.query(Run).count() == 0
 
 
 def test_workflow_package_launch_executes_with_live_model_connection(

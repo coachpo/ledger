@@ -343,15 +343,6 @@ class WorkflowPackagePreflightService:
                                 ),
                             }
                         )
-            required_bindings = server.get("requiredBindings") or []
-            if isinstance(required_bindings, list):
-                for index, binding in enumerate(required_bindings):
-                    errors.append(
-                        {
-                            "field": f"spec.mcpServers.{key}.requiredBindings[{index}]",
-                            "issue": f"MCP secret binding {str(binding)!r} is not configured",
-                        }
-                    )
         return errors
 
     def _http_errors(

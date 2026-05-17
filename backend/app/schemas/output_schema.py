@@ -143,7 +143,6 @@ class OutputSchemaBuilderField(CamelModel):
 class OutputSchemaBuilderObject(OutputSchemaBuilderBase):
     kind: Literal["object"] = "object"
     fields: list[OutputSchemaBuilderField] = Field(default_factory=list)
-    allow_additional_properties: bool = False
 
     @field_validator("fields")
     @classmethod

@@ -6,7 +6,6 @@ import { buildPreviewValue, buildRunInputDefaultValue } from "./preview";
 describe("schema preview values", () => {
   const metadataRichSchema: SchemaIRNode = {
     kind: "object",
-    allowAdditionalProperties: false,
     fields: [
       {
         name: "ticker",

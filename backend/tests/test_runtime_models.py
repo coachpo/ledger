@@ -681,7 +681,6 @@ def test_agent_platform_schema_compiler_preserves_metadata_without_changing_vali
                             },
                         },
                         "required": ["ticker"],
-                        "additionalProperties": False,
                     },
                 }
             )
@@ -732,7 +731,6 @@ def test_agent_platform_schema_compiler_imports_and_renders_json_schema_defaults
                             },
                         },
                         "required": ["ticker"],
-                        "additionalProperties": False,
                     },
                 }
             )
@@ -778,7 +776,6 @@ def test_agent_platform_schema_compiler_exports_builder_default_value_as_json_sc
                     "name": "Builder Defaulted Runtime Input",
                     "builder": {
                         "kind": "object",
-                        "allowAdditionalProperties": False,
                         "fields": [
                             {
                                 "name": "ticker",
@@ -887,7 +884,6 @@ def test_agent_platform_schema_compiler_rejects_invalid_json_schema_defaults(
                         "jsonSchema": {
                             "type": "object",
                             "properties": property_schema,
-                            "additionalProperties": False,
                         },
                     }
                 )
@@ -939,7 +935,6 @@ def test_agent_platform_schema_compiler_validates_ref_defaults_against_resolved_
                                 "default": "buy",
                             }
                         },
-                        "additionalProperties": False,
                     },
                 }
             )
@@ -965,7 +960,6 @@ def test_agent_platform_schema_compiler_validates_ref_defaults_against_resolved_
                                     "default": default_value,
                                 }
                             },
-                            "additionalProperties": False,
                         },
                     }
                 )
@@ -996,7 +990,6 @@ def test_agent_platform_runtime_model_keeps_defaulted_required_fields_required(
                             "horizonDays": {"type": "integer", "default": 30},
                         },
                         "required": ["ticker"],
-                        "additionalProperties": False,
                     },
                 }
             )
@@ -1142,7 +1135,7 @@ def test_agent_platform_schema_compiler_supports_discriminated_union_models(
             "schema_additional_properties",
             {"additionalProperties": {"type": "string"}},
             "jsonSchema.additionalProperties",
-            "Schema-valued additionalProperties is not supported",
+            "Keyword 'additionalProperties' is not supported",
         ),
     ],
 )

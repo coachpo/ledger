@@ -37,8 +37,6 @@ _MCP_EXPORT_KEYS = {
     "headers",
     "query",
     "toolKeys",
-    "secretRefs",
-    "requiredBindings",
 }
 
 
@@ -114,69 +112,6 @@ def _sanitize_mcp_server(server: dict[Any, Any]) -> dict[str, object]:
             continue
         sanitized[raw_key] = _sanitize_package_definition(item)
     return sanitized
-
-
-def _secret_metadata_from_raw_mcp(server: dict[Any, Any]) -> tuple[dict[str, list[str]], list[str]]:
-    refs: dict[str, list[str]] = {}
-    required: list[str] = []
-    for section in ("env", "headers"):
-        raw_mapping = server.get(section)
-        if not isinstance(raw_mapping, dict):
-            continue
-        names = sorted(str(key) for key, value in raw_mapping.items() if str(key).strip() and value)
-        if names:
-            refs[section] = names
-            prefix = "env" if section == "env" else "header"
-            required.extend(f"{prefix}.{name}" for name in names)
-    raw_auth = server.get("auth")
-    if isinstance(raw_auth, dict):
-        header = raw_auth.get("header")
-        if isinstance(header, str) and header.strip():
-            refs.setdefault("headers", [])
-            if header.strip() not in refs["headers"]:
-                refs["headers"].append(header.strip())
-            required.append(f"header.{header.strip()}")
-    return {key: sorted(set(values)) for key, values in refs.items()}, sorted(set(required))
-
-
-def _sanitize_secret_metadata(value: object) -> object:
-    if isinstance(value, dict):
-        return {
-            str(key): sorted(set(_string_list(item)))
-            for key, item in value.items()
-            if isinstance(key, str)
-        }
-    if isinstance(value, list):
-        return sorted(set(_string_list(value)))
-    return None
-
-
-def _merge_secret_refs(
-    left: dict[str, object], right: dict[str, list[str]]
-) -> dict[str, list[str]]:
-    merged: dict[str, list[str]] = {}
-    for key, value in left.items():
-        if isinstance(key, str):
-            merged[key] = _string_list(value)
-    for key, values in right.items():
-        merged[key] = sorted(set(merged.get(key, [])) | set(values))
-    return {key: values for key, values in merged.items() if values}
-
-
-def _string_list(value: object) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        normalized = value.strip()
-        return [normalized] if normalized else []
-    if not isinstance(value, list):
-        return []
-    result: list[str] = []
-    for item in value:
-        normalized = str(item).strip()
-        if normalized:
-            result.append(normalized)
-    return result
 
 
 __all__ = [

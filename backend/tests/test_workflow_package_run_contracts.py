@@ -187,7 +187,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         "workflowDescription": "",
         "inputSchema": {
             "type": "object",
-            "additionalProperties": False,
             "properties": {"ticker": {"type": "string"}},
             "required": ["ticker"],
         },
@@ -295,8 +294,6 @@ def _tradingagents_parameters() -> dict[str, object]:
         "portfolioId": "portfolio-1",
         "horizonDays": 30,
         "benchmarkSymbol": "SPY",
-        "initialInvestmentDebateState": {},
-        "initialRiskDebateState": {},
     }
 
 
@@ -309,14 +306,12 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: true
   capabilityProfiles: []
   outputSchemas:
     - key: mcp_output
       name: MCP Output
       jsonSchema:
         type: object
-        additionalProperties: true
   mcpServers:
     - key: exa
       name: Exa Web Search
@@ -330,7 +325,6 @@ spec:
       systemPrompt: Use package-private MCP search and return JSON.
       inputSchema:
         type: object
-        additionalProperties: true
       outputSchema: mcp_output
       capabilityProfiles: []
       mcpServers: [exa]
@@ -339,7 +333,6 @@ spec:
       name: MCP Flow
       inputSchema:
         type: object
-        additionalProperties: true
       flow:
         kind: step
         id: mcp_step

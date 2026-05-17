@@ -198,6 +198,7 @@ export function Layout() {
   const isWorkflowPackageEditorRoute =
     location.pathname === "/workflow-packages/new" ||
     location.pathname.startsWith("/workflow-packages/");
+  const isRunDetailWorkspaceRoute = /^\/runs\/[^/]+$/.test(location.pathname);
 
   return (
     <SidebarProvider>
@@ -232,7 +233,7 @@ export function Layout() {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {isTemplateEditorRoute || isWorkflowPackageEditorRoute ? (
+          {isTemplateEditorRoute || isWorkflowPackageEditorRoute || isRunDetailWorkspaceRoute ? (
             <div className="h-full [&>*]:h-full [&>*]:w-full">
               <Outlet />
             </div>

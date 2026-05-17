@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,12 +7,14 @@ import type { RunOperationInvocationRead, RunRead, RunStepRead } from "@/lib/typ
 import { RunsDetailPage } from "./detail";
 
 const useRunMock = vi.fn();
+let searchParamsMock = new URLSearchParams();
 
 vi.mock("react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  useLocation: () => ({ hash: "", pathname: "/runs/42", search: searchParamsMock.toString() }),
   useNavigate: () => vi.fn(),
   useParams: () => ({ runId: "42" }),
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  useSearchParams: () => [searchParamsMock, vi.fn()],
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
@@ -126,6 +128,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
 
 describe("RunsDetailPage HTTP operation invocations", () => {
   beforeEach(() => {
+    searchParamsMock = new URLSearchParams();
     useRunMock.mockReset();
   });
 
@@ -150,28 +153,45 @@ describe("RunsDetailPage HTTP operation invocations", () => {
       isPending: false,
     });
 
-    render(<RunsDetailPage />);
+    const outlineRender = render(<RunsDetailPage />);
 
     expect(screen.getByText(/2 of 2 invocation\(s\) terminal/i)).toBeVisible();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/0 agent invocation/i);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 operation invocation/i);
 
     const operationCard = screen.getByTestId("runs-step-1-operation-webhook_result");
-    expect(operationCard).toHaveTextContent(/operation/i);
-    expect(operationCard).toHaveTextContent(/http/i);
+    expect(operationCard).toHaveTextContent(/webhook_result/i);
     expect(operationCard).toHaveTextContent(/POST/i);
     expect(operationCard).toHaveTextContent(/output executed/i);
-    expect(within(operationCard).getByTestId("runs-operation-2001-request-metadata")).toHaveTextContent(/redacted/i);
-    expect(within(operationCard).getByTestId("runs-operation-2001-response-metadata")).toHaveTextContent(/statusCode/i);
-    expect(within(operationCard).getByTestId("runs-operation-2001-output-preview")).toHaveTextContent(/queued/i);
     expect(operationCard).not.toHaveTextContent("slack-secret-value");
     expect(operationCard).not.toHaveTextContent("body-secret-value");
-
-    const failedCard = screen.getByTestId("runs-step-1-operation-webhook_retry");
-    expect(failedCard).toHaveTextContent("http_status_error");
-    expect(failedCard).toHaveTextContent("Webhook returned 500.");
-    expect(failedCard).toHaveTextContent("statusCode");
     expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(/operation webhook_result\/span-operation/i);
+
+    outlineRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=request");
+    const requestRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-operation-2001-request-metadata")).toHaveTextContent(/redacted/i);
+    requestRender.unmount();
+
+    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=response");
+    const responseRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-operation-2001-response-metadata")).toHaveTextContent(/statusCode/i);
+    responseRender.unmount();
+
+    searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=output");
+    const outputRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-operation-2001-output-preview")).toHaveTextContent(/queued/i);
+    outputRender.unmount();
+
+    searchParamsMock = new URLSearchParams("inspect=operation:2002&pane=error");
+    const failedRender = render(<RunsDetailPage />);
+    expect(screen.getByText("http_status_error")).toBeVisible();
+    expect(screen.getByText("Webhook returned 500.")).toBeVisible();
+    expect(screen.getByText(/statusCode/)).toBeVisible();
+    failedRender.unmount();
+
+    searchParamsMock = new URLSearchParams("pane=trace");
+    render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-trace-linkage")).toHaveTextContent(/Operation invocation #2001/i);
   });
 });

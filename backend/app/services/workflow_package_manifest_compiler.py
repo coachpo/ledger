@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Literal, cast
@@ -40,6 +40,7 @@ from app.services.workflow_package_manifest_parser import (
 _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _MCP_INLINE_SECRET_FIELDS = {"env", "headers", "query"}
 _MCP_SECRET_REDACTION_VALUE = "[REDACTED]"
+_REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
 
 type McpSecretProjectionMode = Literal["authoring", "redacted"]
 MCP_SECRET_PROJECTION_AUTHORING: McpSecretProjectionMode = "authoring"
@@ -94,6 +95,12 @@ def compile_workflow_package_manifest(
         raise WorkflowPackageManifestCompilerError(diagnostics)
 
     package_definition = _canonical_manifest_definition(manifest)
+    schema_keyword_diagnostics = _closed_object_keyword_diagnostics(
+        package_definition,
+        source_text=source_text,
+    )
+    if schema_keyword_diagnostics:
+        raise WorkflowPackageManifestCompilerError(schema_keyword_diagnostics)
     # Private MCP env, headers, and query values stay as ordinary manifest data internally;
     # public projections choose an explicit MCP secret projection mode.
     compiled_plan = _compile_plan(
@@ -132,6 +139,104 @@ def _canonical_manifest_definition(manifest: WorkflowPackageManifest) -> dict[st
             manifest.model_dump(mode="json", by_alias=True, exclude_none=True)
         ),
     )
+
+
+def _closed_object_keyword_diagnostics(
+    package_definition: Mapping[str, object],
+    *,
+    source_text: str | None,
+) -> list[WorkflowPackageManifestDiagnostic]:
+    diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+    for path, schema in _schema_root_items(package_definition):
+        diagnostics.extend(
+            _closed_object_keyword_diagnostics_at(
+                schema,
+                path=path,
+                source_text=source_text,
+            )
+        )
+    return diagnostics
+
+
+def _schema_root_items(package_definition: Mapping[str, object]) -> list[tuple[str, object]]:
+    spec = package_definition.get("spec")
+    if not isinstance(spec, Mapping):
+        return []
+    roots: list[tuple[str, object]] = [("spec.inputs", spec.get("inputs"))]
+    output_schemas = spec.get("outputSchemas")
+    if isinstance(output_schemas, Sequence) and not isinstance(output_schemas, str | bytes):
+        roots.extend(
+            (f"spec.outputSchemas[{index}].jsonSchema", item.get("jsonSchema"))
+            for index, item in enumerate(output_schemas)
+            if isinstance(item, Mapping)
+        )
+    agents = spec.get("agents")
+    if isinstance(agents, Sequence) and not isinstance(agents, str | bytes):
+        roots.extend(
+            (f"spec.agents[{index}].inputSchema", item.get("inputSchema"))
+            for index, item in enumerate(agents)
+            if isinstance(item, Mapping)
+        )
+    workflows = spec.get("workflows")
+    if isinstance(workflows, Sequence) and not isinstance(workflows, str | bytes):
+        roots.extend(
+            (f"spec.workflows[{index}].inputSchema", item.get("inputSchema"))
+            for index, item in enumerate(workflows)
+            if isinstance(item, Mapping)
+        )
+    return roots
+
+
+def _closed_object_keyword_diagnostics_at(
+    value: object,
+    *,
+    path: str,
+    source_text: str | None,
+) -> list[WorkflowPackageManifestDiagnostic]:
+    diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+    if isinstance(value, Mapping):
+        property_name_context = path.endswith(".properties")
+        for key, item in cast(Mapping[object, object], value).items():
+            if not isinstance(key, str):
+                continue
+            child_path = f"{path}.{key}"
+            if not property_name_context and key in _REMOVED_SCHEMA_KEYWORDS:
+                line, column = (
+                    locate_workflow_package_manifest_path(source_text, child_path)
+                    if source_text is not None
+                    else (None, None)
+                )
+                diagnostics.append(
+                    WorkflowPackageManifestDiagnostic(
+                        severity=WorkflowPackageManifestDiagnosticSeverity.ERROR,
+                        message=(
+                            f"{key} is not supported in package schemas; "
+                            + "objects are closed by default"
+                        ),
+                        path=child_path,
+                        line=line,
+                        column=column,
+                    )
+                )
+                continue
+            diagnostics.extend(
+                _closed_object_keyword_diagnostics_at(
+                    item,
+                    path=child_path,
+                    source_text=source_text,
+                )
+            )
+        return diagnostics
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for index, item in enumerate(value):
+            diagnostics.extend(
+                _closed_object_keyword_diagnostics_at(
+                    item,
+                    path=f"{path}[{index}]",
+                    source_text=source_text,
+                )
+            )
+    return diagnostics
 
 
 def _strip_empty_private_mcp_fields(value: object) -> object:

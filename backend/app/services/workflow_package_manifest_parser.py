@@ -53,6 +53,7 @@ _FORBIDDEN_MANIFEST_KEYS = {
 }
 _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _HTTP_REQUEST_REF_FIELDS = {"url", "headers", "query", "body"}
+_REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
 
 _ALIAS_LOC = {
     "api_version": "apiVersion",
@@ -123,6 +124,10 @@ class WorkflowPackageManifestParser:
         forbidden_diagnostics = self._validate_forbidden_keys(data, ())
         if forbidden_diagnostics:
             return WorkflowPackageManifestParseResult(diagnostics=forbidden_diagnostics)
+
+        closed_object_diagnostics = self._validate_closed_object_schema_keywords(data)
+        if closed_object_diagnostics:
+            return WorkflowPackageManifestParseResult(diagnostics=closed_object_diagnostics)
 
         secret_ref_diagnostics = self._validate_secret_reference_locations(data, data, (), False)
         if secret_ref_diagnostics:
@@ -257,6 +262,97 @@ class WorkflowPackageManifestParser:
                 location=self._location_for(value, tokens),
             )
         )
+        return diagnostics
+
+    def _validate_closed_object_schema_keywords(
+        self, data: Mapping[object, object]
+    ) -> list[WorkflowPackageManifestDiagnostic]:
+        diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+        for tokens in self._schema_root_tokens(data):
+            schema = self._value_at_path(data, tokens)
+            diagnostics.extend(
+                self._validate_closed_object_schema_keywords_at(data, schema, tokens)
+            )
+        return diagnostics
+
+    def _schema_root_tokens(self, data: Mapping[object, object]) -> list[tuple[_PathToken, ...]]:
+        spec = data.get("spec")
+        if not isinstance(spec, Mapping):
+            return []
+        roots: list[tuple[_PathToken, ...]] = [("spec", "inputs")]
+        output_schemas = spec.get("outputSchemas")
+        if isinstance(output_schemas, Sequence) and not isinstance(output_schemas, str | bytes):
+            roots.extend(
+                ("spec", "outputSchemas", index, "jsonSchema")
+                for index, item in enumerate(output_schemas)
+                if isinstance(item, Mapping)
+            )
+        agents = spec.get("agents")
+        if isinstance(agents, Sequence) and not isinstance(agents, str | bytes):
+            roots.extend(
+                ("spec", "agents", index, "inputSchema")
+                for index, item in enumerate(agents)
+                if isinstance(item, Mapping)
+            )
+        workflows = spec.get("workflows")
+        if isinstance(workflows, Sequence) and not isinstance(workflows, str | bytes):
+            roots.extend(
+                ("spec", "workflows", index, "inputSchema")
+                for index, item in enumerate(workflows)
+                if isinstance(item, Mapping)
+            )
+        return roots
+
+    def _value_at_path(self, data: object, tokens: tuple[_PathToken, ...]) -> object:
+        current = data
+        for token in tokens:
+            if isinstance(current, Mapping) and isinstance(token, str):
+                current = cast(Mapping[object, object], current).get(token)
+                continue
+            if (
+                isinstance(current, Sequence)
+                and not isinstance(current, str | bytes)
+                and isinstance(token, int)
+            ):
+                sequence = cast(Sequence[object], current)
+                current = sequence[token] if 0 <= token < len(sequence) else None
+                continue
+            return None
+        return current
+
+    def _validate_closed_object_schema_keywords_at(
+        self,
+        data: object,
+        value: object,
+        tokens: tuple[_PathToken, ...],
+    ) -> list[WorkflowPackageManifestDiagnostic]:
+        diagnostics: list[WorkflowPackageManifestDiagnostic] = []
+        if isinstance(value, Mapping):
+            source = cast(Mapping[object, object], value)
+            property_name_context = bool(tokens and tokens[-1] == "properties")
+            for key, item in source.items():
+                if not isinstance(key, str):
+                    continue
+                child_tokens = (*tokens, key)
+                if not property_name_context and key in _REMOVED_SCHEMA_KEYWORDS:
+                    diagnostics.append(
+                        self._diagnostic(
+                            f"{key} is not supported in package schemas; "
+                            "objects are closed by default",
+                            path=self._manifest_path(child_tokens),
+                            location=self._location_for(data, child_tokens),
+                        )
+                    )
+                    continue
+                diagnostics.extend(
+                    self._validate_closed_object_schema_keywords_at(data, item, child_tokens)
+                )
+            return diagnostics
+        if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            for index, item in enumerate(value):
+                diagnostics.extend(
+                    self._validate_closed_object_schema_keywords_at(data, item, (*tokens, index))
+                )
         return diagnostics
 
     def _validate_forbidden_keys(

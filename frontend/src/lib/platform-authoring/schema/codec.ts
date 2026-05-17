@@ -218,7 +218,6 @@ export function schemaBuilderToJsonSchema(node: SchemaIRNode): UnknownRecord {
       const fields = node.fields ?? [];
       return withJsonMetadata(
         {
-          additionalProperties: Boolean(node.allowAdditionalProperties),
           properties: Object.fromEntries(fields.map((field) => [field.name, schemaBuilderToJsonSchema(field.schema)])),
           required: fields.filter((field) => field.required !== false).map((field) => field.name),
           type: "object",
@@ -371,33 +370,11 @@ function validateObjectDefaultValue(node: Extract<SchemaIRNode, { kind: "object"
   for (const [key, entryValue] of Object.entries(value)) {
     const field = fieldMap.get(key);
     if (!field) {
-      if (node.allowAdditionalProperties) {
-        validateDefaultJsonValue(entryValue, joinSchemaPath(path as never, key), issues);
-      } else {
-        addIssue(issues, joinSchemaPath(path as never, key), "Default object contains an unsupported field");
-      }
+      addIssue(issues, joinSchemaPath(path as never, key), "Default object contains an unsupported field");
       continue;
     }
 
     validateDefaultValue(field.schema, entryValue, joinSchemaPath(path as never, key), issues);
-  }
-}
-
-function validateDefaultJsonValue(value: JsonValue, path: string, issues: SchemaCodecIssue[]) {
-  if (value === null) {
-    addIssue(issues, path, "Default values cannot be null");
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => validateDefaultJsonValue(item, joinSchemaPath(path as never, `[${index}]`), issues));
-    return;
-  }
-
-  if (isRecord(value)) {
-    Object.entries(value).forEach(([key, entryValue]) => {
-      validateDefaultJsonValue(entryValue, joinSchemaPath(path as never, key), issues);
-    });
   }
 }
 
@@ -564,7 +541,7 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
   if (schema.type === "object") {
     validateAllowedKeys(
       schema,
-      new Set(["default", "type", "properties", "required", "additionalProperties", "title", "description"]),
+      new Set(["default", "type", "properties", "required", "title", "description"]),
       context,
     );
 
@@ -593,23 +570,6 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
       requiredSet.add(entry);
     });
 
-    let allowAdditionalProperties = false;
-    if (isRecord(schema.additionalProperties)) {
-      addIssue(
-        context.issues,
-        joinSchemaPath(context.path as never, "additionalProperties"),
-        "Schema-valued additionalProperties is not supported",
-      );
-    } else if (typeof schema.additionalProperties === "boolean") {
-      allowAdditionalProperties = schema.additionalProperties;
-    } else if (schema.additionalProperties !== undefined) {
-      addIssue(
-        context.issues,
-        joinSchemaPath(context.path as never, "additionalProperties"),
-        "additionalProperties must be a boolean",
-      );
-    }
-
     const fields = Object.entries(properties).map(([name, childSchema]) => ({
       name,
       required: requiredSet.has(name),
@@ -630,7 +590,6 @@ function jsonSchemaToSchemaBuilder(schema: unknown, context: SchemaNodeContext):
     return withMetadata(
       {
         kind: "object",
-        allowAdditionalProperties,
         fields,
       },
       title,

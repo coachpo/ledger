@@ -18,7 +18,6 @@ const metadataRichBuilder = {
   kind: "object",
   title: "Run Input",
   description: "Fields collected before launching the run.",
-  allowAdditionalProperties: false,
   fields: [
     {
       name: "summary",
@@ -84,8 +83,7 @@ const metadataRichBuilder = {
             kind: "object",
             title: "Buy Event",
             description: "Branch for buy orders.",
-            allowAdditionalProperties: false,
-            fields: [
+                      fields: [
               {
                 name: "kind",
                 required: true,
@@ -102,8 +100,7 @@ const metadataRichBuilder = {
             kind: "object",
             title: "Sell Event",
             description: "Branch for sell orders.",
-            allowAdditionalProperties: false,
-            fields: [
+                      fields: [
               {
                 name: "kind",
                 required: true,
@@ -123,7 +120,6 @@ const metadataRichBuilder = {
 } satisfies SchemaBuilderInput;
 
 const metadataRichJsonSchema = {
-  additionalProperties: false,
   properties: {
     summary: { type: "string", title: "Summary", description: "Short text entered by the operator." },
     approved: { type: "boolean", title: "Approved", description: "Whether the run may proceed." },
@@ -145,8 +141,7 @@ const metadataRichJsonSchema = {
     event: {
       anyOf: [
         {
-          additionalProperties: false,
-          properties: {
+                  properties: {
             kind: { const: "buy", type: "string", title: "Event Kind", description: "Discriminator value." },
             confidence: { type: "number", title: "Confidence", description: "Branch confidence value." },
           },
@@ -156,8 +151,7 @@ const metadataRichJsonSchema = {
           description: "Branch for buy orders.",
         },
         {
-          additionalProperties: false,
-          properties: {
+                  properties: {
             kind: { const: "sell", type: "string", title: "Event Kind", description: "Discriminator value." },
             reason: { type: "string", title: "Reason", description: "Branch reason text." },
           },
@@ -208,7 +202,7 @@ describe("schema codec", () => {
       issues: [
         {
           field: "jsonSchema.additionalProperties",
-          issue: "Schema-valued additionalProperties is not supported",
+          issue: "additionalProperties is not supported; objects are closed by default",
         },
       ],
       jsonSchema: null,
@@ -237,14 +231,12 @@ describe("schema codec", () => {
   it("round-trips nested object and array defaultValue entries through JSON Schema defaults", () => {
     const defaultedBuilder = builderWithDefault(
       {
-        allowAdditionalProperties: false,
         fields: [
           {
             name: "filters",
             required: false,
             schema: builderWithDefault(
               {
-                allowAdditionalProperties: false,
                 fields: [{ name: "sector", required: false, schema: { kind: "string" } }],
                 kind: "object",
               },
@@ -267,11 +259,9 @@ describe("schema codec", () => {
       { ticker: "MSFT", lots: [5], filters: {} },
     );
     const defaultedJsonSchema = {
-      additionalProperties: false,
       default: { ticker: "MSFT", lots: [5], filters: {} },
       properties: {
         filters: {
-          additionalProperties: false,
           default: { sector: "technology" },
           properties: { sector: { type: "string" } },
           required: [],
@@ -312,20 +302,19 @@ describe("schema codec", () => {
     expect(result.builder).toEqual(builderWithDefault({ kind: "string", title: null, description: null }, "AAPL"));
   });
 
-  it("rejects nulls recursively in allowed additional-property defaults", () => {
-    const openObjectBuilder = {
-      allowAdditionalProperties: true,
+  it("rejects undeclared fields in closed object defaults", () => {
+    const objectBuilder = {
       fields: [{ name: "ticker", required: false, schema: { kind: "string" } }],
       kind: "object",
     } satisfies SchemaBuilderInput;
 
     expect(
-      validateSchemaDefaultValue(openObjectBuilder, {
-        extra: { nested: null },
+      validateSchemaDefaultValue(objectBuilder, {
+        extra: { nested: ["ok"] },
         ticker: "AAPL",
       }),
-    ).toEqual([{ field: "defaultValue.extra.nested", issue: "Default values cannot be null" }]);
-    expect(validateSchemaDefaultValue(openObjectBuilder, { extra: { nested: ["ok"] } })).toEqual([]);
+    ).toEqual([{ field: "defaultValue.extra", issue: "Default object contains an unsupported field" }]);
+    expect(validateSchemaDefaultValue(objectBuilder, { ticker: "AAPL" })).toEqual([]);
   });
 
   it("reports unsupported keywords with the current parser wording", () => {

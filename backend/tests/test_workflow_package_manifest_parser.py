@@ -17,7 +17,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -34,7 +33,6 @@ spec:
       description: Final research-only portfolio decision.
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           action:
             type: string
@@ -174,6 +172,49 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     assert mcp_servers[0]["env"] == {"RESEARCH_CONTEXT_TOKEN": "local-token"}
     assert "secretRefs" not in mcp_servers[0]
     assert "requiredBindings" not in mcp_servers[0]
+
+
+def test_parse_rejects_package_schema_additional_properties_keyword() -> None:
+    source = _valid_package_manifest_source().replace(
+        "  inputs:\n    type: object\n    properties:\n",
+        "  inputs:\n    type: object\n    additionalProperties: false\n    properties:\n",
+        1,
+    )
+
+    result = parse_workflow_package_manifest(source)
+
+    assert result.manifest is None
+    assert [diagnostic.model_dump(mode="json") for diagnostic in result.diagnostics] == [
+        {
+            "severity": "error",
+            "message": (
+                "additionalProperties is not supported in package schemas; "
+                "objects are closed by default"
+            ),
+            "path": "spec.inputs.additionalProperties",
+            "line": 10,
+            "column": 27,
+        }
+    ]
+
+
+def test_parse_rejects_package_schema_allow_additional_properties_keyword() -> None:
+    source = _valid_package_manifest_source().replace(
+        "        properties:\n          action:\n",
+        "        allowAdditionalProperties: true\n        properties:\n          action:\n",
+        1,
+    )
+
+    result = parse_workflow_package_manifest(source)
+
+    assert result.manifest is None
+    assert [diagnostic.path for diagnostic in result.diagnostics] == [
+        "spec.outputSchemas[0].jsonSchema.allowAdditionalProperties"
+    ]
+    assert result.diagnostics[0].message == (
+        "allowAdditionalProperties is not supported in package schemas; "
+        "objects are closed by default"
+    )
 
 
 def test_parse_http_sse_mcp_server_accepts_headers_and_query() -> None:
@@ -336,20 +377,20 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
                 + "      toolKeys:\n",
                 1,
             ),
-            "spec.mcpServers[0]",
-            "secretRefs is no longer supported",
+            "spec.mcpServers[0].secretRefs",
+            "Extra inputs are not permitted",
             True,
         ),
         (
             _valid_package_manifest_source().replace(
                 "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
                 "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
-                + "      requiredBindings: [env.RESEARCH_CONTEXT_TOKEN]\n"
+                + "      requiredBindings:\n        - env.RESEARCH_CONTEXT_TOKEN\n"
                 + "      toolKeys:\n",
                 1,
             ),
-            "spec.mcpServers[0]",
-            "requiredBindings is no longer supported",
+            "spec.mcpServers[0].requiredBindings",
+            "Extra inputs are not permitted",
             True,
         ),
         (

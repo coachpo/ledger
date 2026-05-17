@@ -17,6 +17,7 @@ from app.services.workflow_package_manifest_compiler import (
 )
 
 # Private MCP env, headers, and query maps are manifest data and must survive round-trips.
+_REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
 _FORBIDDEN_EXPORT_KEYS = {
     "agentId",
     "modelConnectionId",
@@ -91,7 +92,10 @@ def _extract_package_definition(package_payload: dict[str, Any]) -> dict[str, ob
     return cast(dict[str, object], raw_definition)
 
 
-def _strip_forbidden_fields(value: object) -> object:
+def _strip_forbidden_fields(
+    value: object,
+    tokens: tuple[str | int, ...] = (),
+) -> object:
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
         allow_local_id = (
@@ -103,6 +107,7 @@ def _strip_forbidden_fields(value: object) -> object:
             and "key" in source
             and ("command" in source or "url" in source or "toolKeys" in source)
         )
+        property_name_context = bool(tokens and tokens[-1] == "properties")
         for key, item in source.items():
             if not isinstance(key, str):
                 continue
@@ -110,7 +115,13 @@ def _strip_forbidden_fields(value: object) -> object:
                 continue
             if key in _FORBIDDEN_EXPORT_KEYS:
                 continue
-            stripped_item = _strip_forbidden_fields(item)
+            if (
+                key in _REMOVED_SCHEMA_KEYWORDS
+                and _is_package_schema_path(tokens)
+                and not property_name_context
+            ):
+                continue
+            stripped_item = _strip_forbidden_fields(item, (*tokens, key))
             if is_mcp_server and key in {"args", "env", "headers", "query"}:
                 if key == "args" and stripped_item == []:
                     continue
@@ -119,8 +130,23 @@ def _strip_forbidden_fields(value: object) -> object:
             sanitized[key] = stripped_item
         return sanitized
     if isinstance(value, list):
-        return [_strip_forbidden_fields(item) for item in value]
+        return [_strip_forbidden_fields(item, (*tokens, index)) for index, item in enumerate(value)]
     return value
+
+
+def _is_package_schema_path(tokens: tuple[str | int, ...]) -> bool:
+    if len(tokens) >= 2 and tokens[:2] == ("spec", "inputs"):
+        return True
+    if len(tokens) >= 4 and tokens[0] == "spec" and isinstance(tokens[2], int):
+        section = tokens[1]
+        schema_field = tokens[3]
+        return (
+            section == "outputSchemas"
+            and schema_field == "jsonSchema"
+            or section in {"agents", "workflows"}
+            and schema_field == "inputSchema"
+        )
+    return False
 
 
 def _literalize_system_prompts(package_definition: dict[str, object]) -> None:

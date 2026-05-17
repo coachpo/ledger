@@ -12,6 +12,8 @@ export function joinSchemaPath(path: FieldPath, segment: string): FieldPath {
 }
 
 const UNSUPPORTED_SCHEMA_KEYWORD_MESSAGES: Record<string, string> = {
+  additionalProperties: "additionalProperties is not supported; objects are closed by default",
+  allowAdditionalProperties: "allowAdditionalProperties is not supported; objects are closed by default",
   allOf: "allOf is not supported",
   else: "if/then/else is not supported",
   if: "if/then/else is not supported",

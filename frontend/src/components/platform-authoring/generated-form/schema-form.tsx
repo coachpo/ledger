@@ -176,7 +176,7 @@ function updateObjectFields(schema: SchemaIRObject, value: ValueEntryObject, fie
   });
 
   return createObjectValueEntry(
-    nextFields.filter((field) => knownFieldNames.has(field.key) || schema.allowAdditionalProperties),
+    nextFields.filter((field) => knownFieldNames.has(field.key)),
     value.pathTokens,
   );
 }
@@ -234,7 +234,6 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
     const objectValue = value.kind === "object" ? value : createObjectValueEntry([], value.pathTokens);
     const definedFields = schema.fields ?? [];
     const renderedFieldNames = new Set(objectValue.fields.map((field) => field.key));
-    const extraFields = objectValue.fields.filter((field) => !definedFields.some((item) => item.name === field.key));
 
     return (
       <Card className={cn(depth > 0 && "border-dashed")}>
@@ -243,9 +242,6 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
           <CardDescription>
             {schema.description ?? "Capture object fields without dropping the shared value-entry structure."}
           </CardDescription>
-          {schema.allowAdditionalProperties ? (
-            <Badge className="w-fit" variant="outline">Allows additional properties</Badge>
-          ) : null}
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {definedFields.length === 0 ? (
@@ -316,18 +312,6 @@ function SchemaNodeEditor({ depth, disabled, label, onChange, required, schema, 
               </div>
             );
           })}
-
-          {extraFields.length > 0 ? (
-            <Alert>
-              <AlertCircle />
-              <AlertTitle>Additional properties preserved</AlertTitle>
-              <AlertDescription className="flex flex-wrap gap-2">
-                {extraFields.map((field) => (
-                  <Badge key={field.key} variant="secondary">{field.key}</Badge>
-                ))}
-              </AlertDescription>
-            </Alert>
-          ) : null}
         </CardContent>
       </Card>
     );

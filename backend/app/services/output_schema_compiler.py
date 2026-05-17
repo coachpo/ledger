@@ -107,7 +107,6 @@ class SchemaField:
 @dataclass
 class SchemaObject(SchemaNodeBase):
     fields: tuple[SchemaField, ...]
-    allow_additional_properties: bool = False
 
 
 @dataclass
@@ -405,7 +404,6 @@ class OutputSchemaCompiler:
             )
             node = SchemaObject(
                 fields=fields,
-                allow_additional_properties=builder.allow_additional_properties,
                 **metadata,
             )
         elif isinstance(builder, OutputSchemaBuilderArray):
@@ -680,7 +678,6 @@ class OutputSchemaCompiler:
                     "type",
                     "properties",
                     "required",
-                    "additionalProperties",
                     "title",
                     "description",
                     "default",
@@ -714,23 +711,6 @@ class OutputSchemaCompiler:
                     )
                     continue
                 required_names.add(item)
-            raw_additional_properties = schema.get("additionalProperties", False)
-            if isinstance(raw_additional_properties, dict):
-                self._add_issue(
-                    issues,
-                    _join_path(path, "additionalProperties"),
-                    "Schema-valued additionalProperties is not supported",
-                )
-                allow_additional_properties = False
-            elif isinstance(raw_additional_properties, bool):
-                allow_additional_properties = raw_additional_properties
-            else:
-                self._add_issue(
-                    issues,
-                    _join_path(path, "additionalProperties"),
-                    "additionalProperties must be a boolean",
-                )
-                allow_additional_properties = False
             fields = tuple(
                 SchemaField(
                     name=name,
@@ -754,7 +734,6 @@ class OutputSchemaCompiler:
             return with_default(
                 SchemaObject(
                     fields=fields,
-                    allow_additional_properties=allow_additional_properties,
                     **metadata,
                 )
             )
@@ -962,14 +941,11 @@ class OutputSchemaCompiler:
             schema_field = fields_by_name.get(key)
             item_path = _join_path(path, key)
             if schema_field is None:
-                if node.allow_additional_properties:
-                    self._validate_default_json_value(item, path=item_path, issues=issues)
-                else:
-                    self._add_issue(
-                        issues,
-                        item_path,
-                        f"Default object field {key!r} is not defined",
-                    )
+                self._add_issue(
+                    issues,
+                    item_path,
+                    f"Default object field {key!r} is not defined",
+                )
                 continue
             self._validate_default_value(
                 item,
@@ -1029,32 +1005,6 @@ class OutputSchemaCompiler:
             seen_refs=seen_refs,
             issues=issues,
         )
-
-    def _validate_default_json_value(
-        self,
-        value: JsonValue,
-        *,
-        path: str,
-        issues: list[dict[str, str]],
-    ) -> None:
-        if value is None:
-            self._add_issue(issues, path, "Null defaults are not supported")
-            return
-        if isinstance(value, list):
-            for index, item in enumerate(value):
-                self._validate_default_json_value(
-                    item,
-                    path=_join_path(path, f"[{index}]"),
-                    issues=issues,
-                )
-            return
-        if isinstance(value, dict):
-            for key, item in value.items():
-                self._validate_default_json_value(
-                    item,
-                    path=_join_path(path, key),
-                    issues=issues,
-                )
 
     @staticmethod
     def _is_finite_json_number(value: JsonValue) -> bool:
@@ -1320,7 +1270,6 @@ class OutputSchemaCompiler:
                     )
                     for field in node.fields
                 ],
-                allow_additional_properties=node.allow_additional_properties,
                 **metadata,
             )
         if isinstance(node, SchemaArray):
@@ -1357,7 +1306,6 @@ class OutputSchemaCompiler:
                     field.name: self._node_to_json_schema(field.schema) for field in node.fields
                 },
                 "required": [field.name for field in node.fields if field.required],
-                "additionalProperties": node.allow_additional_properties,
             }
             return self._with_metadata(payload, node)
         if isinstance(node, SchemaArray):
@@ -1483,9 +1431,7 @@ class OutputSchemaCompiler:
             type[BaseModel],
             create_model_fn(
                 model_name,
-                __config__=ConfigDict(
-                    extra="allow" if node.allow_additional_properties else "forbid"
-                ),
+                __config__=ConfigDict(extra="forbid"),
                 __module__=__name__,
                 **field_definitions,
             ),

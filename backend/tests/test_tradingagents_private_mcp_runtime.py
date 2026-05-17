@@ -30,8 +30,6 @@ _LAUNCH_PARAMETERS = {
     "portfolioId": "tradingagents_demo",
     "horizonDays": 30,
     "benchmarkSymbol": "SPY",
-    "initialInvestmentDebateState": {},
-    "initialRiskDebateState": {},
 }
 _MCP_FUNCTION_NAME = "mcp_exa_web_search_exa"
 _MCP_QUERY = "AAPL latest company news"
@@ -135,7 +133,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -147,20 +144,12 @@ spec:
         type: integer
       benchmarkSymbol:
         type: string
-      initialInvestmentDebateState:
-        type: object
-        additionalProperties: true
-      initialRiskDebateState:
-        type: object
-        additionalProperties: true
     required:
       - ticker
       - asOfDate
       - portfolioId
       - horizonDays
       - benchmarkSymbol
-      - initialInvestmentDebateState
-      - initialRiskDebateState
   capabilityProfiles: []
   outputSchemas:
     - key: trader_proposal
@@ -168,7 +157,6 @@ spec:
       description: Advisory portfolio proposal used for rejection coverage.
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           posture:
             type: string
@@ -199,17 +187,6 @@ spec:
         then return a short JSON summary.
       inputSchema:
         type: object
-        additionalProperties: true
-      outputSchema: trader_proposal
-      capabilityProfiles: []
-      mcpServers: [exa]
-      budgetUsd: "0.20"
-  workflows:
-    - key: news_research
-      name: News Research
-      inputSchema:
-        type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string
@@ -221,20 +198,32 @@ spec:
             type: integer
           benchmarkSymbol:
             type: string
-          initialInvestmentDebateState:
-            type: object
-            additionalProperties: true
-          initialRiskDebateState:
-            type: object
-            additionalProperties: true
+      outputSchema: trader_proposal
+      capabilityProfiles: []
+      mcpServers: [exa]
+      budgetUsd: "0.20"
+  workflows:
+    - key: news_research
+      name: News Research
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+          asOfDate:
+            type: string
+          portfolioId:
+            type: string
+          horizonDays:
+            type: integer
+          benchmarkSymbol:
+            type: string
         required:
           - ticker
           - asOfDate
           - portfolioId
           - horizonDays
           - benchmarkSymbol
-          - initialInvestmentDebateState
-          - initialRiskDebateState
       flow:
         kind: step
         id: news_analysis
@@ -246,8 +235,6 @@ spec:
           portfolioId: ${{{{ inputs.portfolioId }}}}
           horizonDays: ${{{{ inputs.horizonDays }}}}
           benchmarkSymbol: ${{{{ inputs.benchmarkSymbol }}}}
-          initialInvestmentDebateState: ${{{{ inputs.initialInvestmentDebateState }}}}
-          initialRiskDebateState: ${{{{ inputs.initialRiskDebateState }}}}
       output:
         from: ${{{{ nodes.news_analysis.outputs.analysis }}}}
 """

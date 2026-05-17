@@ -210,26 +210,6 @@ class WorkflowPackageMcpServer(CamelModel):
     query: dict[str, str] = Field(default_factory=dict)
     tool_keys: list[str] = Field(default_factory=list, alias="toolKeys")
 
-    @model_validator(mode="before")
-    @classmethod
-    def reject_legacy_secret_bindings(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-
-        legacy_fields = [field for field in ("secretRefs", "requiredBindings") if field in value]
-        if not legacy_fields:
-            return value
-
-        if len(legacy_fields) == 1:
-            raise ValueError(
-                f"{legacy_fields[0]} is no longer supported on package MCP servers; "
-                + "use transport-specific inline env, headers, or query maps instead"
-            )
-        raise ValueError(
-            "secretRefs and requiredBindings are no longer supported on package MCP servers; "
-            + "use transport-specific inline env, headers, or query maps instead"
-        )
-
     @field_validator("key", mode="before")
     @classmethod
     def validate_key(cls, value: object) -> str:

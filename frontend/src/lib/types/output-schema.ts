@@ -46,7 +46,6 @@ export interface OutputSchemaBuilderField {
 export interface OutputSchemaBuilderObject extends OutputSchemaBuilderBase {
   kind: "object";
   fields?: OutputSchemaBuilderField[];
-  allowAdditionalProperties?: boolean;
 }
 
 export interface OutputSchemaBuilderArray extends OutputSchemaBuilderBase {

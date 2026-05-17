@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiRequestError } from "@/lib/api-client";
 import type { WorkflowPackageLaunchRead, WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
@@ -218,7 +219,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(within(launchTab).queryByText("Workflow")).not.toBeInTheDocument();
     expect(within(launchTab).getByText("Provider-backed")).toBeVisible();
     expect(within(launchTab).getByText(/saved model connections are provider-backed/i)).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "AAPL" } });
+    expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL"}' } });
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 
     await waitFor(() => expect(preflightPackageMock).toHaveBeenCalledWith({
@@ -232,16 +234,14 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
   });
 
-  it("submits typed launch parameters while preserving optional omission, defaults, and explicit empty strings", async () => {
+  it("submits raw launch parameters from the schema-derived template", async () => {
     const typedLaunchRead: WorkflowPackageLaunchRead = {
       ...launchRead,
       inputSchema: {
-        additionalProperties: false,
         properties: {
           includeNews: { title: "Include News", type: "boolean" },
           horizonDays: { title: "Horizon Days", type: "integer" },
           filters: {
-            additionalProperties: false,
             properties: {
               sector: { title: "Sector", type: "string" },
             },
@@ -260,15 +260,23 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     useWorkflowPackageLaunchMock.mockReturnValue({ data: typedLaunchRead, error: null, isError: false, isPending: false });
     renderEditor("/workflow-packages/42/run");
 
-    fireEvent.click(await screen.findByRole("switch", { name: "Include News" }));
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Horizon Days" }), { target: { value: "14" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Sector" }), { target: { value: "technology" } });
-    const emptyOverride = screen.getByRole("textbox", { name: "Empty Override" });
+    const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
+    expect(runtimeJson.value).toBe(JSON.stringify({
+      defaultLimit: 10,
+      emptyOverride: "preset",
+      filters: { sector: "" },
+      horizonDays: 0,
+      includeNews: false,
+    }, null, 2));
     expect(screen.queryByRole("textbox", { name: "Comment" })).not.toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Default Limit" })).toHaveValue(10);
-    expect(emptyOverride).toHaveValue("preset");
-    fireEvent.change(emptyOverride, { target: { value: "temporary" } });
-    fireEvent.change(emptyOverride, { target: { value: "" } });
+
+    fireEvent.change(runtimeJson, { target: { value: JSON.stringify({
+      defaultLimit: 10,
+      emptyOverride: "",
+      filters: { sector: "technology" },
+      horizonDays: 14,
+      includeNews: true,
+    }) } });
     fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
 
     await waitFor(() => expect(createLaunchMock).toHaveBeenCalledWith({
@@ -287,11 +295,10 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     }));
   });
 
-  it("resets typed launch state when workflow key, selected version, or schema identity changes", async () => {
+  it("resets raw JSON launch state when workflow key, selected version, or schema identity changes", async () => {
     const resetLaunchRead: WorkflowPackageLaunchRead = {
       ...launchRead,
       inputSchema: {
-        additionalProperties: false,
         properties: {
           ticker: { title: "Ticker", type: "string" },
         },
@@ -314,23 +321,27 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     });
     const view = renderEditor("/workflow-packages/42/run");
 
-    const ticker = await screen.findByRole("textbox", { name: "Ticker" });
-    fireEvent.change(ticker, { target: { value: "AAPL" } });
-    expect(ticker).toHaveValue("AAPL");
+    const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2));
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
+    expect(runtimeJson.value).toBe('{"ticker":"AAPL"}');
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to template" }));
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2));
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"MSFT"}' } });
 
     fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "alternate_workflow" } });
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ticker" })).toHaveValue(""));
-    fireEvent.change(screen.getByRole("textbox", { name: "Ticker" }), { target: { value: "MSFT" } });
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"NVDA"}' } });
 
     await choosePackageVersion(/^v6$/);
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ticker" })).toHaveValue(""));
-    fireEvent.change(screen.getByRole("textbox", { name: "Ticker" }), { target: { value: "NVDA" } });
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"META"}' } });
 
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
         ...resetLaunchRead,
         inputSchema: {
-          additionalProperties: false,
           properties: {
             symbol: { title: "Symbol", type: "string" },
           },
@@ -344,23 +355,50 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     });
     view.rerender(editorElement("/workflow-packages/42/run"));
 
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument());
-    expect(screen.getByRole("textbox", { name: "Symbol" })).toHaveValue("");
+    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ symbol: "" }, null, 2)));
+  });
+
+  it("rejects non-object raw JSON locally", async () => {
+    renderEditor("/workflow-packages/42/run");
+
+    fireEvent.change(await screen.findByLabelText("Runtime inputs JSON"), { target: { value: "[]" } });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    expect(await screen.findByTestId("runtime-input-validation-feedback")).toHaveTextContent("Runtime inputs JSON must be a valid object.");
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+    expect(createLaunchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows backend path-specific launch validation details inline", async () => {
+    createLaunchMock.mockRejectedValueOnce(new ApiRequestError({
+      code: "validation_error",
+      details: [{ field: "parameters.extra", issue: "Unknown field" }],
+      message: "Validation failed",
+      status: 422,
+    }));
+    renderEditor("/workflow-packages/42/run");
+
+    fireEvent.change(await screen.findByLabelText("Runtime inputs JSON"), { target: { value: '{"ticker":"AAPL","extra":true}' } });
+    fireEvent.click(screen.getByRole("button", { name: /launch run/i }));
+
+    const feedback = await screen.findByTestId("runtime-input-validation-feedback");
+    expect(feedback).toHaveTextContent("parameters.extra");
+    expect(feedback).toHaveTextContent("Unknown field");
   });
 
   it.each([
     {
-      expectedReason: /allows additional properties/i,
+      expectedKeyword: /additionalProperties/i,
       inputSchema: {
         additionalProperties: true,
         properties: { ticker: { title: "Ticker", type: "string" } },
         required: ["ticker"],
         type: "object",
       },
-      name: "additional-properties",
+      name: "removed-additional-properties-keyword",
     },
     {
-      expectedReason: /unsupported JSON Schema features/i,
+      expectedKeyword: /patternProperties/i,
       inputSchema: {
         patternProperties: { "^x-": { type: "string" } },
         properties: {},
@@ -368,7 +406,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       },
       name: "unsupported",
     },
-  ])("uses raw JSON fallback for $name launch schemas", async ({ expectedReason, inputSchema }) => {
+  ])("keeps one raw JSON editor when $name templates start empty", async ({ expectedKeyword, inputSchema }) => {
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: { ...launchRead, inputSchema },
       error: null,
@@ -377,8 +415,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     });
     renderEditor("/workflow-packages/42/run");
 
-    expect(await screen.findByText("Raw JSON parameters required")).toBeVisible();
-    expect(screen.getByText(expectedReason)).toBeVisible();
+    expect(await screen.findByText("Schema template started empty")).toBeVisible();
+    expect(screen.getByText(expectedKeyword)).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Ticker" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Runtime inputs JSON"), {
       target: { value: '{"enabled":true,"limit":3,"filters":{"sector":"energy"}}' },

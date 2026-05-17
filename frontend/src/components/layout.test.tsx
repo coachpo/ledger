@@ -91,6 +91,10 @@ describe("Layout", () => {
                   path="workflow-packages/:packageId/run"
                   element={<div>Package launch content</div>}
                 />
+                <Route
+                  path="runs/:runId"
+                  element={<div data-testid="run-detail-content">Run detail workspace</div>}
+                />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -205,5 +209,13 @@ describe("Layout", () => {
         "Launch Workflow Package",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("gives run detail routes full-height workspace treatment", () => {
+    renderLayout("/runs/42");
+
+    const workspace = screen.getByTestId("run-detail-content");
+    expect(within(screen.getByRole("banner")).getByText("Run Detail")).toBeInTheDocument();
+    expect(workspace.parentElement).toHaveClass("h-full");
   });
 });

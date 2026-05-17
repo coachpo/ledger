@@ -182,7 +182,8 @@ function readStringArray(value: unknown): string[] {
 }
 
 function parseSchema(value: unknown): SchemaIRNode {
-  const parsed = parseSchemaJsonText(JSON.stringify(isRecord(value) ? value : { additionalProperties: false, properties: {}, type: "object" }, null, 2));
+  const fallbackSchema = { properties: {}, type: "object" };
+  const parsed = parseSchemaJsonText(JSON.stringify(isRecord(value) ? value : fallbackSchema, null, 2));
   return parsed.builder ?? createDefaultSchemaNode("object");
 }
 

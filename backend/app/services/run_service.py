@@ -2186,7 +2186,7 @@ class RunService:
         wiring = dict(plan_agent.wiring)
         agent_field_prefix = f"steps[{step_index - 1}].agents.{plan_agent.slot}.wiring"
         for target_name in wiring:
-            if target_name not in target_fields and not input_object.allow_additional_properties:
+            if target_name not in target_fields:
                 raise RunExecutionError(
                     code="agent_input_unknown_field",
                     message=f"Input field {target_name!r} is not defined on the agent schema",
@@ -2236,18 +2236,6 @@ class RunService:
                     )
                 continue
             payload[target_name] = value
-
-        if input_object.allow_additional_properties:
-            for target_name, source in wiring.items():
-                if target_name in target_fields:
-                    continue
-                value, optional_null = self._resolve_source_value(
-                    self._plan_source_payload(source),
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                )
-                if not optional_null:
-                    payload[target_name] = value
 
         try:
             validated = input_model.model_validate(payload)
