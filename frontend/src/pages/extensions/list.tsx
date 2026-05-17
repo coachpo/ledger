@@ -54,23 +54,14 @@ function ExtensionRow({ extension, onToggle, togglePending }: ExtensionRowProps)
       testId={`extension-row-${testSegment}`}
       title={extension.label}
       subtitle={extension.key}
-      description="Toggle whether this bundled extension is available in the app."
       actions={
-        <div className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
-          <div className="text-right">
-            <p className="text-sm font-medium text-foreground">
-              {extension.enabled ? "Enabled" : "Disabled"}
-            </p>
-            <p className="text-xs text-muted-foreground">Enable or disable</p>
-          </div>
-          <Switch
-            aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.label} extension`}
-            checked={extension.enabled}
-            data-testid={`extension-toggle-${testSegment}`}
-            disabled={togglePending}
-            onCheckedChange={(checked) => onToggle(extension, checked)}
-          />
-        </div>
+        <Switch
+          aria-label={`${extension.enabled ? "Disable" : "Enable"} ${extension.label} extension`}
+          checked={extension.enabled}
+          data-testid={`extension-toggle-${testSegment}`}
+          disabled={togglePending}
+          onCheckedChange={(checked) => onToggle(extension, checked)}
+        />
       }
     />
   );
@@ -102,9 +93,6 @@ export function ExtensionsListPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Manage bundled extension availability from the backend state registry.
-          </p>
         </div>
       </div>
 

@@ -75,11 +75,20 @@ describe("ExtensionsListPage", () => {
 
     expect(screen.getByTestId("extensions-list-page")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
+    expect(
+      screen.queryByText("Manage bundled extension availability from the backend state registry."),
+    ).not.toBeInTheDocument();
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
-    expect(row).toHaveTextContent("Toggle whether this bundled extension is available in the app.");
     expect(row).toHaveTextContent("Enabled");
+    expect(
+      screen.queryByText("Toggle whether this bundled extension is available in the app."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Enable or disable")).not.toBeInTheDocument();
+    expect(
+      within(row).getByRole("switch", { name: "Disable Finance Workspace extension" }),
+    ).toHaveAttribute("data-state", "checked");
     expect(
       within(row).getByTestId("extension-toggle-signaldeck-finance"),
     ).toHaveAttribute("data-state", "checked");
