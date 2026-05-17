@@ -161,13 +161,11 @@ describe("RunsDetailPage HTTP operation invocations", () => {
 
     expect(screen.queryByTestId("runs-step-1-operation-webhook_result")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-step-1-operation-webhook_retry")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/operation webhook_result\/span-operation/i);
 
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
-    expect(screen.queryByTestId("runs-step-1-trace-linkage")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
     expect(aggregatedOutput).toHaveTextContent(/webhook_result/i);
@@ -199,8 +197,9 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByText(/statusCode/)).toBeVisible();
     failedRender.unmount();
 
-    searchParamsMock = new URLSearchParams("pane=trace");
+    searchParamsMock = new URLSearchParams("pane=request");
     render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-trace-linkage")).toHaveTextContent(/Operation invocation #2001/i);
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/webhook_result/i);
+    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
   });
 });

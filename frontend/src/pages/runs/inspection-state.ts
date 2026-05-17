@@ -18,7 +18,6 @@ export type RunInspectionPane =
   | "provenance"
   | "request"
   | "response"
-  | "trace"
   | "wiring";
 
 export type RunInspectionState = {
@@ -33,10 +32,10 @@ type RunInspectionIndex = {
   stepIndexes: Set<number>;
 };
 
-const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "trace", "lineage", "provenance", "memory"];
+const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "lineage", "provenance", "memory"];
 const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
-const AGENT_INVOCATION_PANES: RunInspectionPane[] = ["output", "input", "wiring", "trace", "lineage", "error"];
-const OPERATION_INVOCATION_PANES: RunInspectionPane[] = ["output", "request", "response", "trace", "lineage", "error"];
+const AGENT_INVOCATION_PANES: RunInspectionPane[] = ["output", "input", "wiring", "lineage", "error"];
+const OPERATION_INVOCATION_PANES: RunInspectionPane[] = ["output", "request", "response", "lineage", "error"];
 const MEMORY_ARTIFACT_PANES: RunInspectionPane[] = ["details", "provenance", "lineage"];
 
 function buildInspectionIndex(run: RunRead, steps: RunStepRead[]): RunInspectionIndex {
@@ -120,10 +119,6 @@ function parseAnchorTarget(hash: string): RunInspectionTarget | null {
   if (operationMatch) {
     return { type: "operationInvocation", invocationId: Number(operationMatch[1]) };
   }
-  if (normalizedHash === "run-trace-linkage") {
-    return { type: "run" };
-  }
-
   return null;
 }
 
@@ -223,7 +218,6 @@ export function inspectionPaneLabel(pane: RunInspectionPane): string {
     provenance: "Provenance",
     request: "Request",
     response: "Response",
-    trace: "Trace",
     wiring: "Wiring",
   };
 

@@ -223,7 +223,7 @@ describe("RunsDetailPage", () => {
     useRunMock.mockReset();
   });
 
-  it("renders normalized lineage, step origins, invocation origins, and trace linkage", () => {
+  it("renders normalized lineage, step origins, invocation origins, and trace summaries", () => {
     const copiedInvocation = buildInvocation({
       id: 1001,
       outputOrigin: "copied",
@@ -335,7 +335,7 @@ describe("RunsDetailPage", () => {
     expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(screen.getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
-    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
     expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(/decision\/span-2/i);
     expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
@@ -407,13 +407,12 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
 
     provenanceRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=step:1&pane=trace");
-    const invalidStepTraceRender = render(<RunsDetailPage />);
+    searchParamsMock = new URLSearchParams("inspect=step:1&pane=request");
+    const invalidStepPaneRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-1-summary")).toBeInTheDocument();
-    expect(screen.queryByTestId("runs-step-1-trace-linkage")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
 
-    invalidStepTraceRender.unmount();
+    invalidStepPaneRender.unmount();
     searchParamsMock = new URLSearchParams("pane=lineage");
     const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
@@ -503,16 +502,13 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("pane=trace");
-    const traceRender = render(<RunsDetailPage />);
+    const defaultRender = render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Fanout analyst_fanout");
-    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("branch market");
-    expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Loop review_loop iteration 1");
+    expect(screen.queryByTestId("runs-graph-summary")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 agent invocation/i);
     expect(screen.queryByTestId("runs-step-1-slot-market")).not.toBeInTheDocument();
 
-    traceRender.unmount();
+    defaultRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=memory:mem_701");
     render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-memory-artifacts")).toBeInTheDocument();
@@ -569,51 +565,6 @@ describe("RunsDetailPage", () => {
     expect(within(artifact).queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
   });
 
-  it("keeps repeated fanouts separate across loop iterations", () => {
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          steps: [
-            buildStep({
-              graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", loopId: "review_loop", loopIteration: 1 },
-              invocations: [
-                buildInvocation({
-                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market", loopId: "review_loop", loopIteration: 1 },
-                  slot: "market",
-                }),
-              ],
-            }),
-            buildStep({
-              id: 102,
-              index: 2,
-              graphMetadata: { nodeKind: "fanout", fanoutId: "analyst_fanout", loopId: "review_loop", loopIteration: 2 },
-              invocations: [
-                buildInvocation({
-                  graphMetadata: { nodeId: "market_analysis", nodeKind: "step", fanoutId: "analyst_fanout", branchId: "market", loopId: "review_loop", loopIteration: 2 },
-                  id: 1002,
-                  runStepId: 102,
-                  slot: "market",
-                  stepIndex: 2,
-                }),
-              ],
-            }),
-          ],
-        }),
-      ),
-    );
-
-    searchParamsMock = new URLSearchParams("pane=trace");
-    render(<RunsDetailPage />);
-
-    const firstIterationGroup = screen.getByTestId("runs-graph-group-1");
-    const secondIterationGroup = screen.getByTestId("runs-graph-group-2");
-    expect(firstIterationGroup).toHaveTextContent("Fanout analyst_fanout · loop review_loop iteration 1");
-    expect(firstIterationGroup).toHaveTextContent("Steps 1 · 1 invocation");
-    expect(secondIterationGroup).toHaveTextContent("Fanout analyst_fanout · loop review_loop iteration 2");
-    expect(secondIterationGroup).toHaveTextContent("Steps 2 · 1 invocation");
-    expect(screen.queryByText(/Steps 1, 2 · 2 invocation/)).not.toBeInTheDocument();
-  });
-
   it("omits graph grouping and memory artifact cards when metadata is absent", () => {
     useRunMock.mockReturnValue(queryResult(buildRun()));
 
@@ -623,7 +574,7 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
   });
 
-  it("renders standalone agent target identity and span-only trace linkage", () => {
+  it("renders standalone agent target identity and span-only outline trace summary", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -670,7 +621,6 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/macro_agent@9/i);
     expect(screen.getByText(/target id: 12/i)).toBeVisible();
     expect(screen.getByText(/standalone agent execution/i)).toBeVisible();
-    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/result\/span-agent-1/i);
     expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
     expect(screen.queryByText(/captured through invocation spans/i)).not.toBeInTheDocument();
@@ -690,7 +640,7 @@ describe("RunsDetailPage", () => {
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
   });
 
-  it("handles empty, running, skipped, and trace-less normalized state", () => {
+  it("handles empty, running, skipped, and invalid pane URL state", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -719,11 +669,14 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("pane=trace");
+    searchParamsMock = new URLSearchParams("pane=request");
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
-    expect(screen.getByText(/no invocation trace spans captured/i)).toBeVisible();
+    expect(screen.getByTestId("runs-detail-final-output")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /final output/i })).toBeVisible();
+    expect(screen.queryByText(/no invocation trace spans captured/i)).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/no invocations have been planned or persisted/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
     expect(screen.getByTestId("runs-step-1-executing-indicator")).toBeInTheDocument();
@@ -737,7 +690,6 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-empty-steps")).toHaveTextContent(/no steps have been planned/i);
-    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
   });
 
   it("shows queued runs as awaiting execution with zero progress", () => {
@@ -806,8 +758,8 @@ describe("RunsDetailPage", () => {
 
     expect(setSearchParamsMock).toHaveBeenCalledTimes(1);
     const updater = setSearchParamsMock.mock.calls[0][0] as (current: URLSearchParams) => URLSearchParams;
-    const nextParams = updater(new URLSearchParams("panel=trace"));
-    expect(nextParams.get("panel")).toBe("trace");
+    const nextParams = updater(new URLSearchParams("panel=legacy"));
+    expect(nextParams.get("panel")).toBe("legacy");
     expect(nextParams.get("stepReplay")).toBe("1");
     expect(nextParams.get("stepIndex")).toBe("1");
   });

@@ -113,24 +113,6 @@ function formatUnfinishedRunStatus(status: RunStatus): string {
   return status === "queued" ? " · Awaiting execution" : " · Still running";
 }
 
-function formatTracePath(traceId: string | null, traceSpanEntries: TraceSpanEntry[]): string | null {
-  const segments = traceSpanEntries.map(
-    (entry) => entry.invocationKind === "operation"
-      ? `step ${entry.stepIndex}/operation ${entry.slot}/${entry.spanId}`
-      : `step ${entry.stepIndex}/${entry.slot}/${entry.spanId}`,
-  );
-
-  if (traceId && segments.length === 0) {
-    return traceId;
-  }
-
-  if (!traceId && segments.length === 0) {
-    return null;
-  }
-
-  return [traceId, ...segments].filter(Boolean).join(" -> ");
-}
-
 function formatTargetKindLabel(targetKind: RunTargetKind): string {
   if (targetKind === "workflowPackage") {
     return "Workflow Package";
@@ -439,114 +421,6 @@ function SourceOperationInvocationLink({ invocation }: { invocation: RunOperatio
     <Link className="text-primary underline-offset-4 hover:underline" to={`/runs/${invocation.sourceRunId}#operation-invocation-${invocation.sourceOperationInvocationId}`}>
       Operation invocation #{invocation.sourceOperationInvocationId}
     </Link>
-  );
-}
-
-type RunGraphGroup = {
-  branchIds: string[];
-  invocations: RunAgentInvocationRead[];
-  operationInvocations: RunOperationInvocationRead[];
-  key: string;
-  label: string;
-  loopId: string | null;
-  loopIteration: number | null;
-  nodeKind: string;
-  steps: RunStepRead[];
-};
-
-function groupRunGraphSteps(steps: RunStepRead[]): RunGraphGroup[] {
-  const groups = new Map<string, RunGraphGroup>();
-  const ensureGroup = (key: string, label: string, nodeKind: string, loopId: string | null, loopIteration: number | null) => {
-    let group = groups.get(key);
-    if (!group) {
-      group = { branchIds: [], invocations: [], operationInvocations: [], key, label, loopId, loopIteration, nodeKind, steps: [] };
-      groups.set(key, group);
-    }
-    return group;
-  };
-
-  steps.forEach((step) => {
-    const metadata = step.graphMetadata;
-    const firstInvocationMetadata = step.invocations.find((invocation) => invocation.graphMetadata)?.graphMetadata
-      ?? step.operationInvocations.find((invocation) => invocation.graphMetadata)?.graphMetadata
-      ?? null;
-    const groupingMetadata = metadata ?? firstInvocationMetadata;
-    if (!groupingMetadata) {
-      return;
-    }
-    const loopKey = groupingMetadata.loopId
-      ? `:loop:${groupingMetadata.loopId}:iteration:${groupingMetadata.loopIteration ?? "all"}`
-      : "";
-    const key = groupingMetadata.fanoutId
-      ? `fanout:${groupingMetadata.fanoutId}${loopKey}`
-      : groupingMetadata.loopId
-        ? `loop:${groupingMetadata.loopId}:iteration:${groupingMetadata.loopIteration ?? "all"}`
-        : groupingMetadata.nodeId
-          ? `node:${groupingMetadata.nodeId}`
-          : `step:${step.index}`;
-    const loopContext = groupingMetadata.loopId
-      ? ` · loop ${groupingMetadata.loopId}${groupingMetadata.loopIteration ? ` iteration ${groupingMetadata.loopIteration}` : ""}`
-      : "";
-    const label = groupingMetadata.fanoutId
-      ? `Fanout ${groupingMetadata.fanoutId}${loopContext}`
-      : groupingMetadata.loopId
-        ? `Loop ${groupingMetadata.loopId}${groupingMetadata.loopIteration ? ` iteration ${groupingMetadata.loopIteration}` : ""}`
-        : groupingMetadata.nodeId
-          ? `Node ${groupingMetadata.nodeId}`
-          : `Step ${step.index}`;
-    const group = ensureGroup(
-      key,
-      label,
-      groupingMetadata.nodeKind ?? metadata?.nodeKind ?? "step",
-      groupingMetadata.loopId ?? null,
-      groupingMetadata.loopIteration ?? null,
-    );
-    group.steps.push(step);
-    group.invocations.push(...step.invocations);
-    group.operationInvocations.push(...step.operationInvocations);
-    for (const invocation of [...step.invocations, ...step.operationInvocations]) {
-      const branchId = invocation.graphMetadata?.branchId;
-      if (branchId && !group.branchIds.includes(branchId)) {
-        group.branchIds.push(branchId);
-      }
-    }
-  });
-
-  return [...groups.values()].sort((left, right) => {
-    const leftIndex = Math.min(...left.steps.map((step) => step.index));
-    const rightIndex = Math.min(...right.steps.map((step) => step.index));
-    return leftIndex - rightIndex || left.key.localeCompare(right.key);
-  });
-}
-
-function RunGraphSummary({ groups }: { groups: RunGraphGroup[] }) {
-  if (groups.length === 0) {
-    return null;
-  }
-
-  return (
-    <Card data-testid="runs-graph-summary">
-      <CardHeader>
-        <CardTitle className="text-base">Graph execution summary</CardTitle>
-        <CardDescription>Sequence, fanout, and loop grouping derived from runtime graph metadata.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {groups.map((group, index) => (
-          <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-graph-group-${index + 1}`} key={group.key}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{group.nodeKind}</Badge>
-              {group.loopId ? <Badge variant="outline">loop {group.loopId}</Badge> : null}
-              {group.loopIteration ? <Badge variant="outline">iteration {group.loopIteration}</Badge> : null}
-              {group.branchIds.map((branchId) => <Badge key={branchId} variant="outline">branch {branchId}</Badge>)}
-            </div>
-            <p className="mt-2 font-medium">{group.label}</p>
-            <p className="mt-1 text-muted-foreground">
-              Steps {group.steps.map((step) => step.index).join(", ")} · {group.operationInvocations.length === 0 ? `${group.invocations.length} invocation(s)` : `${group.invocations.length} agent invocation(s) · ${group.operationInvocations.length} operation invocation(s)`}
-            </p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1005,7 +879,7 @@ function ExecutionOutline({
             <InspectionSelectorButton activeInspection={activeInspection} onSelect={onSelect} pane="finalOutput" target={{ type: "run" }}>
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium">Run result</span>
-                <span className="text-xs text-muted-foreground">Final output, input, trace, lineage, provenance, and memory</span>
+                <span className="text-xs text-muted-foreground">Final output, input, lineage, provenance, and memory</span>
               </span>
             </InspectionSelectorButton>
           </div>
@@ -1107,31 +981,6 @@ function EvidencePaneNav({
         </Button>
       ))}
     </div>
-  );
-}
-
-function TraceEvidence({ traceIdLabel, tracePath, traceSpanEntries, runTraceId }: { traceIdLabel: string; tracePath: string | null; traceSpanEntries: TraceSpanEntry[]; runTraceId: string | null }) {
-  return (
-    <Card data-testid="runs-trace-linkage">
-      <CardHeader id="run-trace-linkage">
-        <CardTitle className="text-base">Trace linkage</CardTitle>
-        <CardDescription>Run trace id plus per-invocation span references.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-muted-foreground">
-        <p>Run trace id: {traceIdLabel}</p>
-        {tracePath ? <p>Trace path: {tracePath}</p> : null}
-        {traceSpanEntries.length === 0 ? <p>No invocation trace spans captured.</p> : null}
-        {traceSpanEntries.map((entry) => (
-          <div className="rounded-md border bg-muted/20 p-3" key={`${entry.stepIndex}-${entry.slot}-${entry.spanId}`}>
-            <p>
-              {runTraceId ? `Path ${runTraceId} / step ${entry.stepIndex} / ${entry.invocationKind === "operation" ? "operation " : ""}${entry.slot}` : `Path step ${entry.stepIndex} / ${entry.invocationKind === "operation" ? "operation " : ""}${entry.slot}`}
-            </p>
-            <p>{entry.invocationKind === "operation" ? "Operation invocation" : "Invocation"} #{entry.invocationId}</p>
-            <p>Span id: {entry.spanId}</p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1301,9 +1150,6 @@ function InvocationEvidence({ invocation, pane, step }: { invocation: RunAgentIn
   if (pane === "wiring") {
     return <JsonBlock label="Wiring" value={invocation.wiring} />;
   }
-  if (pane === "trace") {
-    return <JsonBlock label="Trace span" value={{ traceSpanId: invocation.traceSpanId, stepIndex: invocation.stepIndex, slot: invocation.slot }} />;
-  }
   if (pane === "lineage") {
     return <DetailGrid items={[{ label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> }, { label: "Input origin", value: invocation.resolvedInputOrigin }, { label: "Output origin", value: invocation.outputOrigin ?? "pending" }]} />;
   }
@@ -1321,9 +1167,6 @@ function OperationEvidence({ invocation, pane }: { invocation: RunOperationInvoc
   if (pane === "response") {
     return <JsonBlock label="Response metadata" testId={`runs-operation-${invocation.id}-response-metadata`} value={invocation.responseMetadata} />;
   }
-  if (pane === "trace") {
-    return <JsonBlock label="Trace span" value={{ traceSpanId: invocation.traceSpanId, stepIndex: invocation.stepIndex, slot: invocation.slot }} />;
-  }
   if (pane === "lineage") {
     return <DetailGrid items={[{ label: "Source operation", value: <SourceOperationInvocationLink invocation={invocation} /> }, { label: "Source run", value: invocation.sourceRunId ? `Run #${invocation.sourceRunId}` : "Not recorded" }, { label: "Source step", value: invocation.sourceStepIndex === null ? "Not recorded" : `Step ${invocation.sourceStepIndex}` }]} />;
   }
@@ -1337,28 +1180,20 @@ function EvidenceViewer({
   activeInspection,
   copiedInvocations,
   copiedSteps,
-  graphGroups,
   onSelect,
   plannedInvocations,
   plannedSteps,
   run,
   steps,
-  traceIdLabel,
-  tracePath,
-  traceSpanEntries,
 }: {
   activeInspection: RunInspectionState;
   copiedInvocations: number;
   copiedSteps: number;
-  graphGroups: RunGraphGroup[];
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   plannedInvocations: number;
   plannedSteps: number;
   run: RunRead;
   steps: RunStepRead[];
-  traceIdLabel: string;
-  tracePath: string | null;
-  traceSpanEntries: TraceSpanEntry[];
 }) {
   const target = activeInspection.target;
   const title = selectedTargetLabel(target, steps, run);
@@ -1378,8 +1213,6 @@ function EvidenceViewer({
     content = artifact ? <MemoryArtifactEvidence artifact={artifact} /> : null;
   } else if (activeInspection.pane === "input") {
     content = <RunPayloadPane headingId="runs-input-heading" label="Run input" testId="runs-detail-input" value={run.input} />;
-  } else if (activeInspection.pane === "trace") {
-    content = <div className="space-y-4"><TraceEvidence runTraceId={run.traceId} traceIdLabel={traceIdLabel} tracePath={tracePath} traceSpanEntries={traceSpanEntries} /><RunGraphSummary groups={graphGroups} /></div>;
   } else if (activeInspection.pane === "lineage") {
     content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
   } else if (activeInspection.pane === "provenance") {
@@ -1448,7 +1281,6 @@ export function RunsDetailPage() {
       ]),
     [steps],
   );
-  const graphGroups = useMemo(() => groupRunGraphSteps(steps), [steps]);
   const stepReplayDialogOpen = searchParams.get("stepReplay") === "1";
   const replayStepIndexParam = searchParams.get("stepIndex");
   const rerunDialogOpen = searchParams.get("rerun") === "1";
@@ -1525,8 +1357,6 @@ export function RunsDetailPage() {
   );
   const plannedInvocations = allInvocations.length - copiedInvocations;
   const runProgress = progressForRun(run.status, steps);
-  const tracePath = formatTracePath(run.traceId, traceSpanEntries);
-  const traceIdLabel = run.traceId ?? (traceSpanEntries.length > 0 ? "Captured through invocation spans" : "No trace id recorded");
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
   const replayAvailability = getStepReplayAvailability(run.targetKind, steps, replayStepIndex);
   const activeInspection = resolveRunInspectionState({
@@ -1624,15 +1454,11 @@ export function RunsDetailPage() {
             activeInspection={activeInspection}
             copiedInvocations={copiedInvocations}
             copiedSteps={copiedSteps}
-            graphGroups={graphGroups}
             onSelect={selectInspection}
             plannedInvocations={plannedInvocations}
             plannedSteps={plannedSteps}
             run={run}
             steps={steps}
-            traceIdLabel={traceIdLabel}
-            tracePath={tracePath}
-            traceSpanEntries={traceSpanEntries}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
