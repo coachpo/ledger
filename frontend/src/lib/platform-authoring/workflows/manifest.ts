@@ -781,7 +781,6 @@ export function createWorkflowManifestScaffold(options: WorkflowManifestScaffold
           },
         },
         required: ["ticker"],
-        additionalProperties: false,
       },
       steps: [
         {

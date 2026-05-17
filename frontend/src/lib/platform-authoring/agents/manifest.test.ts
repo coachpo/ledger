@@ -50,6 +50,7 @@ describe("agent manifest helpers", () => {
     const outline = extractAgentManifestOutline(source);
 
     expect(parsed.diagnostics).toEqual([]);
+    expect(source).not.toContain("additionalProperties");
     expect(parsed.value).toMatchObject({
       apiVersion: "signaldeck.agent/v1",
       kind: "Agent",
@@ -62,6 +63,7 @@ describe("agent manifest helpers", () => {
         outputSchema: "summary_schema@1",
       },
     });
+    expect(parsed.value).not.toHaveProperty("spec.inputSchema.additionalProperties");
     expect(outline.diagnostics).toEqual([]);
     expect(outline.outline.refs.map((ref) => [ref.kind, ref.ref])).toEqual([
       ["modelConnection", "primary_openai"],

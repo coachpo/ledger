@@ -61,6 +61,7 @@ describe("workflow manifest helpers", () => {
     const outline = extractWorkflowManifestOutline(source);
 
     expect(parsed.diagnostics).toEqual([]);
+    expect(source).not.toContain("additionalProperties");
     expect(parsed.value).toMatchObject({
       apiVersion: "signaldeck.workflow/v1",
       kind: "Workflow",
@@ -69,6 +70,7 @@ describe("workflow manifest helpers", () => {
         name: "Ticker Review",
       },
     });
+    expect(parsed.value).not.toHaveProperty("inputSchema.additionalProperties");
     expect(outline.diagnostics).toEqual([]);
     expect(outline.outline.steps).toHaveLength(1);
     expect(outline.outline.steps[0]).toMatchObject({
