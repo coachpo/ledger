@@ -15,9 +15,9 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.dependencies import get_quote_provider
 from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
+from app.extensions.signaldeck_finance.dependencies import get_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.market_quote import MarketQuote
 from app.models.report import Report

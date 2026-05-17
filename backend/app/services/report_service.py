@@ -11,16 +11,13 @@ from sqlalchemy.orm import Session
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import utcnow
-from app.extensions.signaldeck_finance.hooks import (
-    REPORT_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
 from app.schemas.report import ReportMetadata, ReportRead, ReportUpdate
-from app.services.capability_service import CapabilityService
+from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.extension_gate import REPORT_SERVICE_SURFACE, require_finance_workspace_enabled
 
 _MAX_NAME_LENGTH = 200
 _DATETIME_SUFFIX_LENGTH = 16
@@ -64,6 +61,7 @@ class ReportService:
         self,
         *,
         capability_references: Sequence[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
@@ -73,8 +71,9 @@ class ReportService:
         offset: int = 0,
     ) -> list[ReportRead]:
         self._require_enabled()
-        CapabilityService(self.session, get_default_tool_catalog()).require_report_lookup_grant(
-            capability_references=capability_references
+        CapabilityService(self.session, get_default_tool_catalog()).require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=grant_policy,
         )
         return self._list_report_reads(
             ticker=ticker,

@@ -8,11 +8,11 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
-from app.extensions.signaldeck_finance.hooks import (
+from app.schemas.memory import MemoryEntryRead, MemoryOutcome
+from app.services.extension_gate import (
     RETURN_RESOLUTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
-from app.schemas.memory import MemoryEntryRead, MemoryOutcome
 from app.services.market_data_service import MarketClosePoint, MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.quote_provider import QuoteProviderError

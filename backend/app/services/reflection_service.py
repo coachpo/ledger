@@ -6,11 +6,11 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string
-from app.extensions.signaldeck_finance.hooks import (
+from app.schemas.memory import MemoryEntryRead, MemoryReflection
+from app.services.extension_gate import (
     REFLECTION_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
-from app.schemas.memory import MemoryEntryRead, MemoryReflection
 from app.services.memory_service import MemoryService
 
 

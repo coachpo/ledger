@@ -14,7 +14,8 @@ from app.schemas.position import (
     PositionSymbolLookupRead,
     PositionUpdate,
 )
-from app.services.capability_service import CapabilityService
+from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.extension_gate import POSITION_SERVICE_SURFACE, require_finance_workspace_enabled
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
 
@@ -27,17 +28,23 @@ class PositionService:
         self.symbol_name_cache_repository = SymbolNameCacheRepository(session)
         self.portfolio_service = PortfolioService(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=POSITION_SERVICE_SURFACE)
+
     def lookup_positions(
         self,
         *,
         capability_references: list[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         portfolio_slug: str,
         symbol: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[PositionRead]:
-        CapabilityService(self.session, get_default_tool_catalog()).require_position_lookup_grant(
-            capability_references=capability_references
+        self._require_enabled()
+        CapabilityService(self.session, get_default_tool_catalog()).require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=grant_policy,
         )
         portfolio = self.portfolio_service.get_portfolio_model_by_slug_or_none(portfolio_slug)
         if portfolio is None:
@@ -56,11 +63,13 @@ class PositionService:
         return [PositionRead.model_validate(position) for position in positions]
 
     def list_positions(self, portfolio_id: int) -> list[PositionRead]:
+        self._require_enabled()
         self.portfolio_service.get_portfolio_model(portfolio_id)
         positions = self.repository.list_for_portfolio(portfolio_id)
         return [PositionRead.model_validate(position) for position in positions]
 
     def create_position(self, portfolio_id: int, payload: PositionCreate) -> PositionRead:
+        self._require_enabled()
         portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
         if self.repository.get_by_symbol(portfolio_id, payload.symbol) is not None:
             raise business_rule_error(
@@ -86,6 +95,7 @@ class PositionService:
         return PositionRead.model_validate(position)
 
     def lookup_symbol(self, portfolio_id: int, symbol: str) -> PositionSymbolLookupRead:
+        self._require_enabled()
         self.portfolio_service.get_portfolio_model(portfolio_id)
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
@@ -100,6 +110,7 @@ class PositionService:
     def update_position(
         self, portfolio_id: int, position_id: int, payload: PositionUpdate
     ) -> PositionRead:
+        self._require_enabled()
         position = self.repository.get_for_portfolio(portfolio_id, position_id)
         if position is None:
             raise not_found_error("Position")
@@ -117,6 +128,7 @@ class PositionService:
         return PositionRead.model_validate(position)
 
     def delete_position(self, portfolio_id: int, position_id: int) -> None:
+        self._require_enabled()
         position = self.repository.get_for_portfolio(portfolio_id, position_id)
         if position is None:
             raise not_found_error("Position")

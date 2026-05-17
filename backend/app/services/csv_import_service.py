@@ -14,6 +14,10 @@ from app.core.formatting import normalize_symbol, parse_decimal_string
 from app.models.position import Position
 from app.repositories.position import PositionRepository
 from app.schemas.csv_import import CsvAcceptedRow, CsvCommitRead, CsvPreviewRead, CsvRowError
+from app.services.extension_gate import (
+    CSV_IMPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.services.portfolio_service import PortfolioService
 
 REQUIRED_HEADERS = {"symbol", "quantity", "average_cost"}
@@ -36,9 +40,13 @@ class CsvImportService:
         self.position_repository = PositionRepository(session)
         self.portfolio_service = PortfolioService(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=CSV_IMPORT_SERVICE_SURFACE)
+
     def preview(
         self, portfolio_id: int, file_name: str, content_type: str | None, content: bytes
     ) -> CsvPreviewRead:
+        self._require_enabled()
         self.portfolio_service.get_portfolio_model(portfolio_id)
         parsed_rows, errors = self._parse_file(
             file_name=file_name, content_type=content_type, content=content
@@ -53,6 +61,7 @@ class CsvImportService:
     def commit(
         self, portfolio_id: int, file_name: str, content_type: str | None, content: bytes
     ) -> CsvCommitRead:
+        self._require_enabled()
         portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
         parsed_rows, errors = self._parse_file(
             file_name=file_name, content_type=content_type, content=content

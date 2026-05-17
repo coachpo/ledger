@@ -14,10 +14,6 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError, not_found_error
 from app.core.formatting import decimal_to_string, to_utc
-from app.extensions.signaldeck_finance.hooks import (
-    MEMORY_REPORT_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 from app.schemas.memory_report import (
@@ -32,6 +28,11 @@ from app.schemas.memory_report import (
     AgentMemoryTrustedCreateContext,
 )
 from app.schemas.report import ReportRead
+from app.services.capability_service import RuntimeToolGrantPolicy
+from app.services.extension_gate import (
+    MEMORY_REPORT_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.services.memory_service import MemoryService
 
 _MAX_NAME_LENGTH = 200
@@ -53,6 +54,7 @@ class MemoryReportService:
         self,
         *,
         capability_references: Sequence[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         payload: AgentMemoryReportCreateMetadata,
         trusted_context: AgentMemoryTrustedCreateContext,
     ) -> ReportRead:
@@ -65,6 +67,7 @@ class MemoryReportService:
                 payload=payload,
                 trusted_context=trusted_context,
             ),
+            grant_policy=grant_policy,
         )
         report = self.repository.get_by_slug(slug)
         if report is None:

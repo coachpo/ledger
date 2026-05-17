@@ -5,10 +5,6 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
-from app.extensions.signaldeck_finance.hooks import (
-    MEMORY_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.schemas.memory import (
     MemoryArtifactRead,
     MemoryAuditLinks,
@@ -29,7 +25,8 @@ from app.schemas.memory_report import (
     AgentMemoryServiceUpdate,
     AgentMemoryTrustedCreateContext,
 )
-from app.services.capability_service import CapabilityService
+from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.extension_gate import MEMORY_SERVICE_SURFACE, require_finance_workspace_enabled
 from app.services.memory_store import MemoryStore
 from app.services.report_backed_memory_store import ReportBackedMemoryStore
 
@@ -51,12 +48,15 @@ class MemoryService:
         *,
         capability_references: Sequence[dict[str, object]],
         payload: MemoryWriteRequest,
+        grant_policy: RuntimeToolGrantPolicy | None = None,
         commit: bool = True,
     ) -> MemoryWriteResult:
         self._require_enabled()
-        self.capability_service.require_report_memory_write_grant(
-            capability_references=capability_references
-        )
+        if grant_policy is not None:
+            self.capability_service.require_runtime_tool_grant(
+                capability_references=capability_references,
+                grant_policy=grant_policy,
+            )
         try:
             result = self.store.create_pending(payload)
             if commit:

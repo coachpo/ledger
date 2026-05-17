@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -7,13 +9,38 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.errors import ApiError
+from app.extensions.signaldeck_finance.dependencies import FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
 from app.models.report import Report
 from app.models.text_template import TextTemplate
+from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.portfolio import PortfolioCreate
+from app.schemas.position import PositionCreate
+from app.schemas.text_template import TextTemplateCreate
+from app.services.extension_gate import (
+    MARKET_DATA_SERVICE_SURFACE,
+    PORTFOLIO_SERVICE_SURFACE,
+    POSITION_SERVICE_SURFACE,
+    TEXT_TEMPLATE_SERVICE_SURFACE,
+)
+from app.services.extension_service import ExtensionService
+from app.services.market_data_service import MarketDataService
+from app.services.portfolio_service import PortfolioService
+from app.services.position_service import PositionService
+from app.services.quote_provider import (
+    ProviderFundamentals,
+    ProviderHistorySeries,
+    ProviderInsiderData,
+    ProviderNewsResult,
+    ProviderOhlcvSeries,
+    ProviderQuote,
+)
 from app.services.run_service import RunService
+from app.services.text_template_service import TextTemplateService
 from tests.test_workflow_package_runtime_api import (
     _drain_run_queue,
     _RuntimeRecordingOpenAIClient,
@@ -134,6 +161,91 @@ def _blocking_extension_errors(body: dict[str, object]) -> list[dict[str, object
     ]
 
 
+class _LifecycleQuoteProvider:
+    provider_name: str = "lifecycle_matrix"
+
+    def __init__(self) -> None:
+        self.quote_calls: list[str] = []
+
+    def fetch_symbol_name(self, symbol: str) -> str | None:
+        return f"{symbol.upper()} Incorporated"
+
+    def fetch_quote(self, symbol: str) -> ProviderQuote:
+        normalized_symbol = symbol.upper()
+        self.quote_calls.append(normalized_symbol)
+        return ProviderQuote(
+            symbol=normalized_symbol,
+            name=f"{normalized_symbol} Incorporated",
+            price=Decimal("101.25"),
+            previous_close=Decimal("100.00"),
+            currency="USD",
+            provider=self.provider_name,
+            as_of=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+        )
+
+    def fetch_history(
+        self,
+        symbol: str,
+        *,
+        range_value: str,
+        interval: str,
+    ) -> ProviderHistorySeries:
+        del symbol, range_value, interval
+        raise NotImplementedError
+
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime,
+        end_date: datetime,
+        interval: str,
+    ) -> ProviderOhlcvSeries:
+        del symbol, start_date, end_date, interval
+        raise NotImplementedError
+
+    def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals:
+        del symbol
+        raise NotImplementedError
+
+    def fetch_news(
+        self,
+        *,
+        symbols: list[str],
+        query: str | None,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderNewsResult:
+        del symbols, query, start_date, end_date, limit
+        raise NotImplementedError
+
+    def fetch_insider_transactions(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime | None,
+        end_date: datetime | None,
+        limit: int,
+    ) -> ProviderInsiderData:
+        del symbol, start_date, end_date, limit
+        raise NotImplementedError
+
+
+def _disable_finance_workspace(session: Session) -> None:
+    _ = ExtensionService(session).set_extension_enabled(
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        ExtensionToggleRequest(enabled=False),
+    )
+
+
+def _assert_direct_extension_disabled(exc: ApiError, *, surface: str) -> None:
+    assert exc.status_code == 403
+    assert exc.code == "extension_disabled"
+    assert exc.message == "Extension is disabled"
+    assert exc.details == [{"extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY, "surface": surface}]
+
+
 def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -195,7 +307,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     )[0]
     assert set(enabled_dependency) == {"extensionKey", "surfaces", "fields"}
     assert enabled_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert enabled_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    assert "tool.signaldeck.market_data.quote_lookup" in cast(
+        list[str],
+        enabled_dependency["surfaces"],
+    )
 
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
@@ -264,7 +379,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert failed_body["error"] == "Extension is disabled"
     failed_dependency = cast(list[dict[str, object]], failed_body["extensionDependencies"])[0]
     assert set(failed_dependency) == {"extensionKey", "surfaces", "fields"}
-    assert failed_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    assert "tool.signaldeck.market_data.quote_lookup" in cast(
+        list[str],
+        failed_dependency["surfaces"],
+    )
 
     with session_factory() as session:
         persisted_template = session.get(TextTemplate, template.json()["id"])
@@ -314,4 +432,131 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     restored_dependency = cast(list[dict[str, object]], restored_detail["extensionDependencies"])[0]
     assert set(restored_dependency) == {"extensionKey", "surfaces", "fields"}
     assert restored_dependency["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert restored_dependency["surfaces"] == ["tool.signaldeck.market_data.quote_lookup"]
+    assert "tool.signaldeck.market_data.quote_lookup" in cast(
+        list[str],
+        restored_dependency["surfaces"],
+    )
+
+
+def test_finance_shared_service_ownership_map_classifies_task_5_services() -> None:
+    expected_services = {
+        "MarketDataService",
+        "PositionService",
+        "PortfolioService",
+        "BalanceService",
+        "TradingOperationService",
+        "CsvImportService",
+        "TextTemplateService",
+        "ReportService",
+        "TemplateCompilerService",
+        "MemoryService",
+        "MemoryReportService",
+        "MemoryContextService",
+        "MemoryFollowUpService",
+        "ReflectionService",
+        "ReturnResolutionService",
+        "ReportBackedMemoryStore",
+    }
+    ownership_by_service = {
+        entry.service_name: entry for entry in FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
+    }
+
+    assert set(ownership_by_service) == expected_services
+    assert {entry.classification for entry in ownership_by_service.values()} == {
+        "keep-shared-behind-neutral-seam"
+    }
+    assert ownership_by_service["MarketDataService"].surface == MARKET_DATA_SERVICE_SURFACE
+    assert ownership_by_service["PositionService"].surface == POSITION_SERVICE_SURFACE
+    assert ownership_by_service["PortfolioService"].surface == PORTFOLIO_SERVICE_SURFACE
+    assert ownership_by_service["TextTemplateService"].surface == TEXT_TEMPLATE_SERVICE_SURFACE
+
+
+def test_direct_market_data_positions_portfolio_template_services_block_when_disabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    quote_provider = _LifecycleQuoteProvider()
+    with session_factory() as session:
+        portfolio = PortfolioService(session).create_portfolio(
+            PortfolioCreate(
+                name="Direct Service Matrix",
+                slug="direct_service_matrix",
+                description="Direct service disabled-state fixture",
+                base_currency="USD",
+            )
+        )
+        _ = PositionService(session).create_position(
+            portfolio.id,
+            PositionCreate(
+                symbol="NVDA",
+                name="NVIDIA Corporation",
+                quantity=Decimal("2"),
+                average_cost=Decimal("100.00"),
+            ),
+        )
+        _ = TextTemplateService(session).create_template(
+            TextTemplateCreate(name="Direct Service Template", content="{{inputs.ticker}}")
+        )
+        _disable_finance_workspace(session)
+
+        with pytest.raises(ApiError) as market_data_error:
+            _ = MarketDataService(
+                session=session,
+                quote_provider=quote_provider,
+            ).get_quote_snapshot(" nvda ")
+        with pytest.raises(ApiError) as positions_error:
+            _ = PositionService(session).list_positions(portfolio.id)
+        with pytest.raises(ApiError) as portfolio_error:
+            _ = PortfolioService(session).list_portfolios()
+        with pytest.raises(ApiError) as template_error:
+            _ = TextTemplateService(session).list_templates()
+
+    _assert_direct_extension_disabled(
+        market_data_error.value,
+        surface=MARKET_DATA_SERVICE_SURFACE,
+    )
+    _assert_direct_extension_disabled(positions_error.value, surface=POSITION_SERVICE_SURFACE)
+    _assert_direct_extension_disabled(portfolio_error.value, surface=PORTFOLIO_SERVICE_SURFACE)
+    _assert_direct_extension_disabled(template_error.value, surface=TEXT_TEMPLATE_SERVICE_SURFACE)
+    assert quote_provider.quote_calls == []
+
+
+def test_direct_market_data_positions_portfolio_template_services_work_when_enabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    quote_provider = _LifecycleQuoteProvider()
+    with session_factory() as session:
+        portfolio = PortfolioService(session).create_portfolio(
+            PortfolioCreate(
+                name="Enabled Direct Service Matrix",
+                slug="enabled_direct_service_matrix",
+                description="Direct service enabled-state fixture",
+                base_currency="USD",
+            )
+        )
+        _ = PositionService(session).create_position(
+            portfolio.id,
+            PositionCreate(
+                symbol="NVDA",
+                name="NVIDIA Corporation",
+                quantity=Decimal("2"),
+                average_cost=Decimal("100.00"),
+            ),
+        )
+        _ = TextTemplateService(session).create_template(
+            TextTemplateCreate(name="Enabled Direct Service Template", content="{{inputs.ticker}}")
+        )
+        quote, warnings = MarketDataService(
+            session=session,
+            quote_provider=quote_provider,
+        ).get_quote_snapshot(" nvda ")
+        positions = PositionService(session).list_positions(portfolio.id)
+        portfolios = PortfolioService(session).list_portfolios()
+        templates = TextTemplateService(session).list_templates()
+
+    assert quote is not None
+    assert quote.symbol == "NVDA"
+    assert warnings == []
+    assert quote_provider.quote_calls == ["NVDA"]
+    assert [position.symbol for position in positions] == ["NVDA"]
+    assert [item.slug for item in portfolios] == ["enabled_direct_service_matrix"]
+    assert [item.name for item in templates] == ["Enabled Direct Service Template"]

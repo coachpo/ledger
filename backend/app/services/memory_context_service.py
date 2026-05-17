@@ -6,11 +6,11 @@ from typing import Final
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
-from app.extensions.signaldeck_finance.hooks import (
+from app.schemas.memory import MemoryLifecycleStatus, MemoryPromptSnippet, MemoryQuery
+from app.services.extension_gate import (
     MEMORY_CONTEXT_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
-from app.schemas.memory import MemoryLifecycleStatus, MemoryPromptSnippet, MemoryQuery
 from app.services.memory_service import MemoryService
 
 _DATETIME_MAX_UTC: Final = datetime.max.replace(tzinfo=UTC)

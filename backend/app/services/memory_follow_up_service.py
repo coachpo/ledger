@@ -7,13 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import to_utc
-from app.extensions.signaldeck_finance.hooks import (
-    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.repositories.report import ReportRepository
 from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus
 from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE
+from app.services.extension_gate import (
+    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.services.market_data_service import MarketDataService
 from app.services.memory_service import MemoryService
 from app.services.reflection_service import ReflectionService

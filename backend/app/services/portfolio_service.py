@@ -6,6 +6,7 @@ from app.core.errors import business_rule_error, not_found_error
 from app.models.portfolio import Portfolio
 from app.repositories.portfolio import PortfolioRepository
 from app.schemas.portfolio import PortfolioCreate, PortfolioRead, PortfolioUpdate
+from app.services.extension_gate import PORTFOLIO_SERVICE_SURFACE, require_finance_workspace_enabled
 
 
 class PortfolioService:
@@ -13,24 +14,32 @@ class PortfolioService:
         self.session = session
         self.repository = PortfolioRepository(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=PORTFOLIO_SERVICE_SURFACE)
+
     def list_portfolios(self) -> list[PortfolioRead]:
+        self._require_enabled()
         portfolios = self.repository.list_all()
         return [self._to_read_model(portfolio) for portfolio in portfolios]
 
     def get_portfolio(self, portfolio_id: int) -> PortfolioRead:
+        self._require_enabled()
         portfolio = self.get_portfolio_model(portfolio_id)
         return self._to_read_model(portfolio)
 
     def get_portfolio_model(self, portfolio_id: int) -> Portfolio:
+        self._require_enabled()
         portfolio = self.repository.get(portfolio_id)
         if portfolio is None:
             raise not_found_error("Portfolio")
         return portfolio
 
     def get_portfolio_model_by_slug_or_none(self, slug: str) -> Portfolio | None:
+        self._require_enabled()
         return self.repository.get_by_slug(slug)
 
     def create_portfolio(self, payload: PortfolioCreate) -> PortfolioRead:
+        self._require_enabled()
         if self.repository.get_by_slug(payload.slug) is not None:
             raise business_rule_error(
                 "duplicate_portfolio_slug",
@@ -48,6 +57,7 @@ class PortfolioService:
         return self._to_read_model(portfolio)
 
     def update_portfolio(self, portfolio_id: int, payload: PortfolioUpdate) -> PortfolioRead:
+        self._require_enabled()
         portfolio = self.get_portfolio_model(portfolio_id)
         if "name" in payload.model_fields_set and payload.name is not None:
             portfolio.name = payload.name
@@ -58,6 +68,7 @@ class PortfolioService:
         return self._to_read_model(portfolio)
 
     def delete_portfolio(self, portfolio_id: int) -> None:
+        self._require_enabled()
         portfolio = self.get_portfolio_model(portfolio_id)
         self.repository.delete(portfolio)
         self.session.commit()

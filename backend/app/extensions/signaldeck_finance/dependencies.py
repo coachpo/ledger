@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Annotated
+from dataclasses import dataclass
+from typing import Annotated, Literal
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -10,6 +11,24 @@ from app.db.session import get_db_session
 from app.extensions.signaldeck_finance.provider_factories import create_quote_provider
 from app.services.balance_service import BalanceService
 from app.services.csv_import_service import CsvImportService
+from app.services.extension_gate import (
+    BALANCE_SERVICE_SURFACE,
+    CSV_IMPORT_SERVICE_SURFACE,
+    MARKET_DATA_SERVICE_SURFACE,
+    MEMORY_CONTEXT_SERVICE_SURFACE,
+    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+    MEMORY_REPORT_SERVICE_SURFACE,
+    MEMORY_SERVICE_SURFACE,
+    PORTFOLIO_SERVICE_SURFACE,
+    POSITION_SERVICE_SURFACE,
+    REFLECTION_SERVICE_SURFACE,
+    REPORT_BACKED_MEMORY_STORE_SURFACE,
+    REPORT_SERVICE_SURFACE,
+    RETURN_RESOLUTION_SERVICE_SURFACE,
+    TEMPLATE_COMPILER_SURFACE,
+    TEXT_TEMPLATE_SERVICE_SURFACE,
+    TRADING_OPERATION_SERVICE_SURFACE,
+)
 from app.services.market_data_service import MarketDataService
 from app.services.portfolio_service import PortfolioService
 from app.services.position_service import PositionService
@@ -18,6 +37,143 @@ from app.services.report_service import ReportService
 from app.services.template_compiler_service import TemplateCompilerService
 from app.services.text_template_service import TextTemplateService
 from app.services.trading_operation_service import TradingOperationService
+
+FinanceSharedServiceClassification = Literal[
+    "move-now",
+    "keep-shared-behind-neutral-seam",
+    "wrapped-by-finance-factory",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class FinanceSharedServiceOwnership:
+    service_name: str
+    module_path: str
+    classification: FinanceSharedServiceClassification
+    surface: str
+    rationale: str
+
+
+_SHARED_NEUTRAL_GATE_RATIONALE = (
+    "Finance behavior uses shared service implementations behind neutral extension gates; "
+    "construction is supplied through finance-owned factories and every direct entrypoint "
+    "blocks when the extension is disabled."
+)
+
+FINANCE_SHARED_SERVICE_OWNERSHIP_MAP: tuple[FinanceSharedServiceOwnership, ...] = (
+    FinanceSharedServiceOwnership(
+        "MarketDataService",
+        "app.services.market_data_service",
+        "keep-shared-behind-neutral-seam",
+        MARKET_DATA_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "PositionService",
+        "app.services.position_service",
+        "keep-shared-behind-neutral-seam",
+        POSITION_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "PortfolioService",
+        "app.services.portfolio_service",
+        "keep-shared-behind-neutral-seam",
+        PORTFOLIO_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "BalanceService",
+        "app.services.balance_service",
+        "keep-shared-behind-neutral-seam",
+        BALANCE_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "TradingOperationService",
+        "app.services.trading_operation_service",
+        "keep-shared-behind-neutral-seam",
+        TRADING_OPERATION_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "CsvImportService",
+        "app.services.csv_import_service",
+        "keep-shared-behind-neutral-seam",
+        CSV_IMPORT_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "TextTemplateService",
+        "app.services.text_template_service",
+        "keep-shared-behind-neutral-seam",
+        TEXT_TEMPLATE_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "ReportService",
+        "app.services.report_service",
+        "keep-shared-behind-neutral-seam",
+        REPORT_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "TemplateCompilerService",
+        "app.services.template_compiler_service",
+        "keep-shared-behind-neutral-seam",
+        TEMPLATE_COMPILER_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "MemoryService",
+        "app.services.memory_service",
+        "keep-shared-behind-neutral-seam",
+        MEMORY_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "MemoryReportService",
+        "app.services.memory_report_service",
+        "keep-shared-behind-neutral-seam",
+        MEMORY_REPORT_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "MemoryContextService",
+        "app.services.memory_context_service",
+        "keep-shared-behind-neutral-seam",
+        MEMORY_CONTEXT_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "MemoryFollowUpService",
+        "app.services.memory_follow_up_service",
+        "keep-shared-behind-neutral-seam",
+        MEMORY_FOLLOW_UP_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "ReflectionService",
+        "app.services.reflection_service",
+        "keep-shared-behind-neutral-seam",
+        REFLECTION_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "ReturnResolutionService",
+        "app.services.return_resolution_service",
+        "keep-shared-behind-neutral-seam",
+        RETURN_RESOLUTION_SERVICE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+    FinanceSharedServiceOwnership(
+        "ReportBackedMemoryStore",
+        "app.services.report_backed_memory_store",
+        "keep-shared-behind-neutral-seam",
+        REPORT_BACKED_MEMORY_STORE_SURFACE,
+        _SHARED_NEUTRAL_GATE_RATIONALE,
+    ),
+)
 
 
 def get_finance_workspace_session() -> Iterator[Session]:
@@ -87,6 +243,9 @@ def get_template_compiler_service(
 
 
 __all__ = [
+    "FINANCE_SHARED_SERVICE_OWNERSHIP_MAP",
+    "FinanceSharedServiceClassification",
+    "FinanceSharedServiceOwnership",
     "get_balance_service",
     "get_csv_import_service",
     "get_finance_workspace_session",

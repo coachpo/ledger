@@ -15,10 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import decimal_to_string, to_utc
-from app.extensions.signaldeck_finance.hooks import (
-    REPORT_BACKED_MEMORY_STORE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 from app.schemas.memory import (
@@ -45,6 +41,10 @@ from app.schemas.memory_report import (
     AgentMemoryReflection,
     AgentMemoryReportAnalysis,
     AgentMemoryReportMetadata,
+)
+from app.services.extension_gate import (
+    REPORT_BACKED_MEMORY_STORE_SURFACE,
+    require_finance_workspace_enabled,
 )
 
 _MAX_NAME_LENGTH = 200

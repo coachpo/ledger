@@ -25,6 +25,10 @@ from app.schemas.trading_operation import (
     TradingOperationRead,
     TradingOperationResult,
 )
+from app.services.extension_gate import (
+    TRADING_OPERATION_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import QuoteProvider, QuoteProviderError
 
@@ -39,7 +43,14 @@ class TradingOperationService:
         self.quote_provider = quote_provider
         self.symbol_name_cache_repository = SymbolNameCacheRepository(session)
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(
+            self.session,
+            surface=TRADING_OPERATION_SERVICE_SURFACE,
+        )
+
     def list_operations(self, portfolio_id: int) -> list[TradingOperationRead]:
+        self._require_enabled()
         self.portfolio_service.get_portfolio_model(portfolio_id)
         operations = self.repository.list_for_portfolio(portfolio_id)
         return [TradingOperationRead.model_validate(operation) for operation in operations]
@@ -49,6 +60,7 @@ class TradingOperationService:
         portfolio_id: int,
         payload: TradingOperationCreate,
     ) -> TradingOperationResult:
+        self._require_enabled()
         portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
         portfolio_cash_total = self._portfolio_cash_total(portfolio_id)
         position = self.position_repository.get_by_symbol(portfolio_id, payload.symbol)
