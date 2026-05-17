@@ -365,9 +365,19 @@ describe("RunsDetailPage", () => {
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
     const stepSummary = screen.getByTestId("runs-step-1-summary");
-    expect(within(stepSummary).getByRole("heading", { name: /step metadata/i })).toBeVisible();
-    expect(within(stepSummary).getByRole("heading", { name: /aggregated output/i })).toBeVisible();
+    const metadataHeading = within(stepSummary).getByRole("heading", { name: /step metadata/i });
+    const outputHeading = within(stepSummary).getByRole("heading", { name: /aggregated output/i });
+    expect(metadataHeading).toBeVisible();
+    expect(metadataHeading).toHaveClass("text-base");
+    expect(outputHeading).toBeVisible();
+    expect(outputHeading).toHaveClass("text-base");
+    expect(within(stepSummary).queryByRole("heading", { name: /step summary/i })).not.toBeInTheDocument();
+    expect(within(stepSummary).queryByText(/step metadata and readonly aggregated output/i)).not.toBeInTheDocument();
+    expect(within(stepSummary).queryByText(/readonly step output/i)).not.toBeInTheDocument();
     expect(stepSummary.querySelectorAll("[data-slot='card-content'] > section")).toHaveLength(2);
+    const metadata = screen.getByTestId("runs-step-1-metadata");
+    expect(metadata.tagName).toBe("DL");
+    expect(metadata.querySelectorAll("dt")).toHaveLength(9);
     expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/analysis/i);
     expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/research_agent/i);
 

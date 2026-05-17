@@ -1235,33 +1235,35 @@ function StepTraceEvidence({ step, traceSpanEntries }: { step: RunStepRead; trac
 }
 
 function StepSummaryEvidence({ step }: { step: RunStepRead }) {
+  const metadataItems: DetailItem[] = [
+    { label: "Step row", value: `#${step.id}` },
+    { label: "Status", value: step.status },
+    { label: "Origin", value: step.origin },
+    { label: "Source step", value: <SourceStepLink step={step} /> },
+    { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
+    { label: "Started", value: formatTimestamp(step.startedAt) },
+    { label: "Finished", value: formatTimestamp(step.finishedAt) },
+    { label: "Persisted", value: formatTimestamp(step.persistedAt) },
+    { label: "Updated", value: formatDateTime(step.updatedAt) },
+  ];
+
   return (
     <Card data-testid={`runs-step-${step.index}-summary`}>
-      <CardHeader>
-        <CardTitle className="text-base">Step summary</CardTitle>
-        <CardDescription>Step metadata and readonly aggregated output for step {step.index}.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-5 pt-6">
         <section aria-labelledby={`runs-step-${step.index}-metadata-heading`} className="space-y-3">
-          <h3 className="text-sm font-medium" id={`runs-step-${step.index}-metadata-heading`}>Step metadata</h3>
-          <DetailGrid
-            items={[
-              { label: "Step row", value: `#${step.id}` },
-              { label: "Status", value: step.status },
-              { label: "Origin", value: step.origin },
-              { label: "Source step", value: <SourceStepLink step={step} /> },
-              { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
-              { label: "Started", value: formatTimestamp(step.startedAt) },
-              { label: "Finished", value: formatTimestamp(step.finishedAt) },
-              { label: "Persisted", value: formatTimestamp(step.persistedAt) },
-              { label: "Updated", value: formatDateTime(step.updatedAt) },
-            ]}
-          />
+          <h3 className="text-base font-medium leading-none" id={`runs-step-${step.index}-metadata-heading`}>Step metadata</h3>
+          <dl className="grid gap-x-5 gap-y-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-3" data-testid={`runs-step-${step.index}-metadata`}>
+            {metadataItems.map((item) => (
+              <div className="min-w-0" key={item.label}>
+                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
+                <dd className="mt-0.5 break-words text-foreground">{formatOptional(item.value)}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
         <section aria-labelledby={`runs-step-${step.index}-output-heading`} className="space-y-3">
-          <h3 className="text-sm font-medium" id={`runs-step-${step.index}-output-heading`}>Aggregated output</h3>
+          <h3 className="text-base font-medium leading-none" id={`runs-step-${step.index}-output-heading`}>Aggregated output</h3>
           <JsonBlock
-            label="Readonly step output"
             testId={`runs-step-${step.index}-aggregated-output`}
             value={aggregatedStepOutput(step)}
           />
