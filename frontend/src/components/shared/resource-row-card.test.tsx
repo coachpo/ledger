@@ -86,6 +86,27 @@ describe("ResourceRowCard", () => {
     expect(primaryClick).not.toHaveBeenCalled();
   });
 
+  it("keeps nested body links above the primary button overlay", () => {
+    renderResourceRowCard(
+      <ResourceRowCard
+        metadata={<a href="/workflow-packages/7">Package link</a>}
+        primaryAction={{ kind: "button", label: "Open Run", onClick: vi.fn() }}
+        title="Workflow"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Package link" })).toHaveAttribute(
+      "href",
+      "/workflow-packages/7",
+    );
+    expect(screen.getByRole("button", { name: "Open Run" }).previousElementSibling).toHaveClass(
+      "[&_a]:relative",
+      "[&_a]:z-10",
+      "[&_button]:relative",
+      "[&_button]:z-10",
+    );
+  });
+
   it("applies compact density classes", () => {
     renderResourceRowCard(
       <ResourceRowCard

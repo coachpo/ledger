@@ -233,6 +233,12 @@ export function RunsListPage() {
                   </div>
                 </div>
               }
+              primaryAction={{
+                kind: "button",
+                label: `Open Run #${run.id}`,
+                onClick: () => navigate(`/runs/${run.id}`),
+                testId: `runs-row-action-${run.id}`,
+              }}
               actions={
                 <Button
                   className="w-full cursor-pointer sm:w-auto"

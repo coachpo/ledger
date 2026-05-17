@@ -108,7 +108,13 @@ describe("RunsListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
     expect(refetchMock).toHaveBeenCalled();
 
-    fireEvent.click(within(screen.getByTestId("runs-row-15")).getByRole("button", { name: /open run/i }));
+    const runsRow = screen.getByTestId("runs-row-15");
+
+    fireEvent.click(within(runsRow).getByTestId("runs-row-action-15"));
+    expect(navigateMock).toHaveBeenCalledWith("/runs/15");
+
+    navigateMock.mockClear();
+    fireEvent.click(within(runsRow).getByRole("button", { name: "Open Run" }));
     expect(navigateMock).toHaveBeenCalledWith("/runs/15");
   });
 });

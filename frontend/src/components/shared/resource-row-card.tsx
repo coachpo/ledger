@@ -96,7 +96,9 @@ function renderPrimaryBody(props: ResourceRowCardProps) {
   if (props.primaryAction?.kind === "button") {
     return (
       <div className={cn("relative", bodyClassName)}>
-        <ResourceRowCardBody {...props} />
+        <div className="[&_a]:relative [&_a]:z-10 [&_button]:relative [&_button]:z-10">
+          <ResourceRowCardBody {...props} />
+        </div>
         <button
           aria-label={props.primaryAction.label}
           className="absolute inset-0 cursor-pointer text-left"
