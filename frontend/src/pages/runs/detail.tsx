@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, Braces, Database, Download, FileText, GitBranch, Loader2, Network, PlayCircle, RotateCcw } from "lucide-react";
+import { Activity, AlertCircle, Database, Download, FileText, GitBranch, Loader2, PlayCircle, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 
@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
@@ -44,7 +45,6 @@ import { stringifyJson } from "../platform-resource-helpers";
 import {
   inspectionPaneLabel,
   inspectionPanesForTarget,
-  inspectionTargetHash,
   resolveRunInspectionState,
   serializeInspectionTarget,
   type RunInspectionPane,
@@ -171,6 +171,20 @@ function statusVariant(status: RunStatus | RunStepStatus): "secondary" | "destru
   return "secondary";
 }
 
+type StepIndicatorState = "completed" | "executing" | "neutral";
+
+function stepIndicatorState(status: RunStepStatus): StepIndicatorState {
+  if (status === "running") {
+    return "executing";
+  }
+
+  if (status === "succeeded") {
+    return "completed";
+  }
+
+  return "neutral";
+}
+
 function modelConnectionKindLabel(connection: RunPackageResolvedModelConnectionRead): string {
   return connection.connectionKind === "deterministic_smoke" ? "Deterministic smoke" : "Provider-backed";
 }
@@ -193,6 +207,33 @@ function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvoc
 
 function sortedOperationInvocations(invocations: RunOperationInvocationRead[]): RunOperationInvocationRead[] {
   return [...invocations].sort((left, right) => left.position - right.position || left.slot.localeCompare(right.slot));
+}
+
+function aggregatedStepOutput(step: RunStepRead) {
+  return {
+    stepIndex: step.index,
+    agentInvocations: sortedInvocations(step.invocations).map((invocation) => ({
+      id: invocation.id,
+      position: invocation.position,
+      slot: invocation.slot,
+      status: invocation.status,
+      agentKey: invocation.agentKey,
+      agentVersion: invocation.agentVersion,
+      outputOrigin: invocation.outputOrigin,
+      output: invocation.output,
+    })),
+    operationInvocations: sortedOperationInvocations(step.operationInvocations).map((invocation) => ({
+      id: invocation.id,
+      position: invocation.position,
+      slot: invocation.slot,
+      status: invocation.status,
+      operationKey: invocation.operationKey,
+      operationKind: invocation.operationKind,
+      method: invocation.method,
+      outputOrigin: invocation.outputOrigin,
+      output: invocation.output,
+    })),
+  };
 }
 
 function getStepReplayAvailability(
@@ -308,11 +349,11 @@ function ResolvedModelConnections({ connections }: { connections: RunPackageReso
   );
 }
 
-function JsonBlock({ label, testId, value }: { label: string; testId?: string; value: unknown }) {
+function JsonBlock({ label, testId, value }: { label?: string; testId?: string; value: unknown }) {
   return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">{label}</p>
-      <pre className="overflow-x-auto rounded-md border bg-muted/30 p-3 text-xs" data-testid={testId}>
+    <div className="min-w-0 space-y-2">
+      {label ? <p className="text-sm font-medium">{label}</p> : null}
+      <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-xs leading-relaxed" data-testid={testId}>
         {stringifyJson(value)}
       </pre>
     </div>
@@ -809,15 +850,14 @@ function InspectionSelectorButton({
 
   return (
     <Button
-      asChild
-      className={cn("h-auto w-full justify-start px-3 py-2 text-left", className)}
+      className={cn("h-auto w-full cursor-pointer justify-start px-3 py-2 text-left", className)}
       data-testid={testId}
+      onClick={() => onSelect(target, pane)}
       size="sm"
+      type="button"
       variant={isActive ? "secondary" : "ghost"}
     >
-      <a href={inspectionTargetHash(target)} onClick={() => onSelect(target, pane)}>
-        {children}
-      </a>
+      {children}
     </Button>
   );
 }
@@ -828,49 +868,97 @@ function RunContextStrip({
   runProgress,
   targetKindLabel,
   terminalInvocationsCount,
-  traceIdLabel,
-  tracePath,
 }: {
   allInvocationsCount: number;
   run: RunRead;
   runProgress: number;
   targetKindLabel: string;
   terminalInvocationsCount: number;
-  traceIdLabel: string;
-  tracePath: string | null;
 }) {
   return (
-    <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4" data-testid="runs-workspace-context">
-      <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Execution</p>
-        <div className="mt-2 flex items-center gap-2">
+    <Card className="overflow-hidden bg-muted/20" data-testid="runs-workspace-context">
+      <CardContent className="grid gap-3 p-3 text-sm">
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2"
+          data-testid="runs-summary-execution-row"
+        >
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Execution</span>
           <Badge data-testid="runs-detail-status" variant={statusVariant(run.status)}>{run.status}</Badge>
           <Badge data-testid="runs-detail-target-kind" variant="outline">{targetKindLabel}</Badge>
+          <span className="text-muted-foreground">{terminalInvocationsCount} of {allInvocationsCount} invocation(s) terminal.</span>
         </div>
-        <p className="mt-2 text-muted-foreground">{terminalInvocationsCount} of {allInvocationsCount} invocation(s) terminal.</p>
-      </div>
-      <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Progress</p>
-        <div className="mt-2 flex items-center justify-between text-muted-foreground">
-          <span>Run progress</span>
-          <span>{runProgress}%</span>
+
+        <dl
+          className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground"
+          data-testid="runs-summary-usage-row"
+        >
+          <div className="flex items-center gap-2">
+            <dt>Total tokens</dt>
+            <dd className="font-medium text-foreground">{run.totalTokens}</dd>
+          </div>
+          <div className="flex items-center gap-2">
+            <dt>Inherited tokens</dt>
+            <dd className="font-medium text-foreground">{run.inheritedTokens}</dd>
+          </div>
+          <div className="flex items-center gap-2">
+            <dt>Executed tokens</dt>
+            <dd className="font-medium text-foreground">{run.executedTokens}</dd>
+          </div>
+        </dl>
+
+        <div
+          className="flex flex-col gap-2 sm:flex-row sm:items-center"
+          data-testid="runs-summary-progress-row"
+        >
+          <div className="flex items-center justify-between gap-3 text-muted-foreground sm:w-44 sm:justify-start">
+            <span>Run progress</span>
+            <span className="font-medium text-foreground">{runProgress}%</span>
+          </div>
+          <Progress className="min-w-0 flex-1" value={runProgress} />
         </div>
-        <Progress className="mt-2" value={runProgress} />
-      </div>
-      <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usage</p>
-        <p className="mt-2 text-muted-foreground">Total tokens: {run.totalTokens}</p>
-        <p className="text-muted-foreground">Inherited tokens: {run.inheritedTokens}</p>
-        <p className="text-muted-foreground">Executed tokens: {run.executedTokens}</p>
-      </div>
-      <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trace</p>
-        <p className="mt-2 break-all text-muted-foreground">Run trace id: {traceIdLabel}</p>
-        <p className="break-all text-muted-foreground" data-testid="runs-trace-path">
-          {tracePath ? `Linkage path: ${tracePath}` : "Span links: 0"}
-        </p>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StepStatusIndicator({ state, stepIndex }: { state: StepIndicatorState; stepIndex: number }) {
+  if (state === "neutral") {
+    return null;
+  }
+
+  const isExecuting = state === "executing";
+  const label = isExecuting ? `Step ${stepIndex} currently executing` : `Step ${stepIndex} completed`;
+
+  return (
+    <span
+      aria-label={label}
+      className={cn(
+        "inline-flex size-3 shrink-0 rounded-full border",
+        isExecuting
+          ? "border-primary bg-primary/70 ring-4 ring-primary/10 motion-safe:animate-pulse"
+          : "border-positive bg-positive",
+      )}
+      data-testid={`runs-step-${stepIndex}-${isExecuting ? "executing" : "completed"}-indicator`}
+      title={label}
+    />
+  );
+}
+
+function StepTraceSummary({ entries, stepIndex }: { entries: TraceSpanEntry[]; stepIndex: number }) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground" data-testid={`runs-step-${stepIndex}-trace-summary`}>
+      <Badge variant="outline">{entries.length} trace span{entries.length === 1 ? "" : "s"}</Badge>
+      {entries.slice(0, 2).map((entry) => (
+        <span className="break-all" key={`${entry.invocationId}-${entry.spanId}`}>
+          {entry.invocationKind === "operation" ? "operation " : ""}{entry.slot}/{entry.spanId}
+        </span>
+      ))}
+      {entries.length > 2 ? <span>+{entries.length - 2} more</span> : null}
+    </span>
   );
 }
 
@@ -881,6 +969,7 @@ function ExecutionOutline({
   onSelect,
   run,
   steps,
+  traceSpanEntries,
 }: {
   activeInspection: RunInspectionState;
   canReplayRun: boolean;
@@ -888,15 +977,16 @@ function ExecutionOutline({
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   run: RunRead;
   steps: RunStepRead[];
+  traceSpanEntries: TraceSpanEntry[];
 }) {
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col border-r border-border bg-card/40" data-testid="runs-execution-outline">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col bg-card/40" data-testid="runs-execution-outline">
       <div className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold tracking-tight">Execution outline</h2>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Choose one run, step, invocation, operation, or memory target to inspect.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Choose one run, step, or memory target to inspect.</p>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-3">
@@ -920,18 +1010,31 @@ function ExecutionOutline({
             const stepProgress = progressForInvocations(allInvocations, step.status);
             const stepTarget: RunInspectionTarget = { type: "step", stepIndex: step.index };
             const canReplay = canReplayRun && getStepReplayAvailability(run.targetKind, steps, step.index).isAvailable;
+            const indicatorState = stepIndicatorState(step.status);
+            const stepTraceEntries = traceSpanEntries.filter((entry) => entry.stepIndex === step.index);
 
             return (
-              <div className="rounded-xl border bg-background p-2" data-testid={`runs-step-${step.index}`} id={`step-${step.index}`} key={step.id}>
+              <div
+                className={cn(
+                  "rounded-xl border bg-background p-2 transition-colors",
+                  indicatorState === "executing" && "border-primary/50 bg-primary/5",
+                  indicatorState === "completed" && "border-positive/40 bg-positive/5",
+                )}
+                data-testid={`runs-step-${step.index}`}
+                id={`step-${step.index}`}
+                key={step.id}
+              >
                 <InspectionSelectorButton activeInspection={activeInspection} onSelect={onSelect} target={stepTarget}>
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
+                      <StepStatusIndicator state={indicatorState} stepIndex={step.index} />
                       <span className="font-medium">Step {step.index}</span>
                       <Badge variant={statusVariant(step.status)}>{step.status}</Badge>
                       <Badge variant="outline">{step.origin} origin</Badge>
                       <Badge variant="secondary">{stepProgress}%</Badge>
                     </span>
                     <span className="text-xs text-muted-foreground">{invocations.length} agent invocation(s) · {operationInvocations.length} operation invocation(s)</span>
+                    <StepTraceSummary entries={stepTraceEntries} stepIndex={step.index} />
                   </span>
                 </InspectionSelectorButton>
                 {canReplay ? (
@@ -941,43 +1044,6 @@ function ExecutionOutline({
                     </Button>
                   </div>
                 ) : null}
-                <div className="mt-2 space-y-1 border-t border-border pt-2">
-                  {invocations.map((invocation) => (
-                    <InspectionSelectorButton
-                      activeInspection={activeInspection}
-                      className="pl-5"
-                      key={invocation.id}
-                      onSelect={onSelect}
-                      target={{ type: "agentInvocation", invocationId: invocation.id }}
-                      testId={`runs-step-${step.index}-slot-${invocation.slot}`}
-                    >
-                      <span className="flex min-w-0 flex-col gap-1" id={`invocation-${invocation.id}`}>
-                        <span className="flex flex-wrap items-center gap-2"><Braces className="size-3.5" />{invocation.slot}<Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge></span>
-                        <span className="text-xs text-muted-foreground">{invocation.agentKey}@{invocation.agentVersion} · input {invocation.resolvedInputOrigin} · output {invocation.outputOrigin ?? "pending"}</span>
-                      </span>
-                    </InspectionSelectorButton>
-                  ))}
-                  {operationInvocations.map((invocation) => (
-                    <InspectionSelectorButton
-                      activeInspection={activeInspection}
-                      className="pl-5"
-                      key={invocation.id}
-                      onSelect={onSelect}
-                      target={{ type: "operationInvocation", invocationId: invocation.id }}
-                      testId={`runs-step-${step.index}-operation-${invocation.slot}`}
-                    >
-                      <span className="flex min-w-0 flex-col gap-1" id={`operation-invocation-${invocation.id}`}>
-                        <span className="flex flex-wrap items-center gap-2"><Network className="size-3.5" />{invocation.slot}<Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge></span>
-                        <span className="text-xs text-muted-foreground">{invocation.operationKey} · {invocation.method ?? invocation.operationKind} · output {invocation.outputOrigin ?? "pending"}</span>
-                      </span>
-                    </InspectionSelectorButton>
-                  ))}
-                  {allInvocations.length === 0 ? (
-                    <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                      No invocations have been planned or persisted for this step yet.
-                    </div>
-                  ) : null}
-                </div>
               </div>
             );
           })}
@@ -1143,29 +1209,103 @@ function MemoryArtifactEvidence({ artifact }: { artifact: RunMemoryArtifactRead 
   );
 }
 
-function StepEvidence({ step }: { step: RunStepRead }) {
+function StepTraceEvidence({ step, traceSpanEntries }: { step: RunStepRead; traceSpanEntries: TraceSpanEntry[] }) {
   return (
-    <Card>
+    <Card data-testid={`runs-step-${step.index}-trace-linkage`}>
       <CardHeader>
-        <CardTitle className="text-base">Step {step.index}</CardTitle>
-        <CardDescription>{step.origin} origin · {graphMetadataLabel(step.graphMetadata)}</CardDescription>
+        <CardTitle className="text-base">Step {step.index} trace</CardTitle>
+        <CardDescription>Trace spans captured for this workflow step.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {step.error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Step failed</AlertTitle><AlertDescription>{step.error}</AlertDescription></Alert> : null}
-        <DetailGrid
-          items={[
-            { label: "Step row", value: `#${step.id}` },
-            { label: "Source step", value: <SourceStepLink step={step} /> },
-            { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
-            { label: "Started", value: formatTimestamp(step.startedAt) },
-            { label: "Finished", value: formatTimestamp(step.finishedAt) },
-            { label: "Persisted", value: formatTimestamp(step.persistedAt) },
-            { label: "Updated", value: formatDateTime(step.updatedAt) },
-          ]}
-        />
+      <CardContent className="space-y-3 text-sm text-muted-foreground">
+        {traceSpanEntries.length === 0 ? <p>No trace spans were captured for this step.</p> : null}
+        {traceSpanEntries.map((entry) => (
+          <div className="rounded-md border bg-muted/20 p-3" key={`${entry.stepIndex}-${entry.slot}-${entry.spanId}`}>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline">Step {entry.stepIndex}</Badge>
+              <Badge variant="secondary">{entry.invocationKind === "operation" ? "Operation" : "Invocation"}</Badge>
+            </div>
+            <p className="mt-2 text-foreground">{entry.slot}</p>
+            <p>{entry.invocationKind === "operation" ? "Operation invocation" : "Invocation"} #{entry.invocationId}</p>
+            <p className="break-all">Span id: {entry.spanId}</p>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
+}
+
+function StepSummaryEvidence({ step }: { step: RunStepRead }) {
+  return (
+    <Card data-testid={`runs-step-${step.index}-summary`}>
+      <CardHeader>
+        <CardTitle className="text-base">Step summary</CardTitle>
+        <CardDescription>Step metadata and readonly aggregated output for step {step.index}.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <section aria-labelledby={`runs-step-${step.index}-metadata-heading`} className="space-y-3">
+          <h3 className="text-sm font-medium" id={`runs-step-${step.index}-metadata-heading`}>Step metadata</h3>
+          <DetailGrid
+            items={[
+              { label: "Step row", value: `#${step.id}` },
+              { label: "Status", value: step.status },
+              { label: "Origin", value: step.origin },
+              { label: "Source step", value: <SourceStepLink step={step} /> },
+              { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
+              { label: "Started", value: formatTimestamp(step.startedAt) },
+              { label: "Finished", value: formatTimestamp(step.finishedAt) },
+              { label: "Persisted", value: formatTimestamp(step.persistedAt) },
+              { label: "Updated", value: formatDateTime(step.updatedAt) },
+            ]}
+          />
+        </section>
+        <section aria-labelledby={`runs-step-${step.index}-output-heading`} className="space-y-3">
+          <h3 className="text-sm font-medium" id={`runs-step-${step.index}-output-heading`}>Aggregated output</h3>
+          <JsonBlock
+            label="Readonly step output"
+            testId={`runs-step-${step.index}-aggregated-output`}
+            value={aggregatedStepOutput(step)}
+          />
+        </section>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StepLineageEvidence({ step }: { step: RunStepRead }) {
+  return (
+    <DetailGrid
+      items={[
+        { label: "Origin", value: step.origin },
+        { label: "Source run", value: step.sourceRunId ? <SourceRunLink runId={step.sourceRunId}>Run #{step.sourceRunId}</SourceRunLink> : "Not recorded" },
+        { label: "Source step", value: <SourceStepLink step={step} /> },
+        { label: "Source step row", value: step.sourceRunStepId ? `#${step.sourceRunStepId}` : "Not recorded" },
+      ]}
+    />
+  );
+}
+
+function StepErrorEvidence({ step }: { step: RunStepRead }) {
+  return step.error ? (
+    <Alert variant="destructive">
+      <AlertCircle />
+      <AlertTitle>Step failed</AlertTitle>
+      <AlertDescription>{step.error}</AlertDescription>
+    </Alert>
+  ) : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No step error recorded.</div>;
+}
+
+function StepEvidence({ pane, step, traceSpanEntries }: { pane: RunInspectionPane; step: RunStepRead; traceSpanEntries: TraceSpanEntry[] }) {
+  if (pane === "trace") {
+    return <StepTraceEvidence step={step} traceSpanEntries={traceSpanEntries} />;
+  }
+  if (pane === "lineage") {
+    return <StepLineageEvidence step={step} />;
+  }
+  if (pane === "error") {
+    return <StepErrorEvidence step={step} />;
+  }
+
+  return <StepSummaryEvidence step={step} />;
 }
 
 function InvocationEvidence({ invocation, pane, step }: { invocation: RunAgentInvocationRead; pane: RunInspectionPane; step: RunStepRead }) {
@@ -1241,7 +1381,8 @@ function EvidenceViewer({
 
   if (target.type === "step") {
     const step = steps.find((item) => item.index === target.stepIndex);
-    content = step ? <StepEvidence step={step} /> : null;
+    const stepTraceEntries = traceSpanEntries.filter((entry) => entry.stepIndex === target.stepIndex);
+    content = step ? <StepEvidence pane={activeInspection.pane} step={step} traceSpanEntries={stepTraceEntries} /> : null;
   } else if (target.type === "agentInvocation") {
     const match = findAgentInvocation(steps, target.invocationId);
     content = match ? <InvocationEvidence invocation={match.invocation} pane={activeInspection.pane} step={match.step} /> : null;
@@ -1266,7 +1407,7 @@ function EvidenceViewer({
   }
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col" data-testid="runs-evidence-viewer">
+    <section className="flex h-full min-h-0 min-w-0 flex-col" data-testid="runs-evidence-viewer">
       <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
@@ -1279,8 +1420,8 @@ function EvidenceViewer({
           <EvidencePaneNav activeInspection={activeInspection} onSelect={onSelect} />
         </div>
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="min-h-full p-4" data-testid="runs-active-evidence-viewer">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
+        <div className="min-h-full min-w-0 overflow-hidden p-4" data-testid="runs-active-evidence-viewer">
           {content ?? <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Selected evidence is no longer available.</div>}
         </div>
       </ScrollArea>
@@ -1473,36 +1614,44 @@ export function RunsDetailPage() {
             runProgress={runProgress}
             targetKindLabel={targetKindLabel}
             terminalInvocationsCount={terminalInvocationsCount}
-            traceIdLabel={traceIdLabel}
-            tracePath={tracePath}
           />
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.65fr)]" data-testid="runs-inspection-workspace">
-        <ExecutionOutline
-          activeInspection={activeInspection}
-          canReplayRun={canReplayRun}
-          onOpenReplay={openStepReplayDialog}
-          onSelect={selectInspection}
-          run={run}
-          steps={steps}
-        />
-        <EvidenceViewer
-          activeInspection={activeInspection}
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          graphGroups={graphGroups}
-          onSelect={selectInspection}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
-          steps={steps}
-          traceIdLabel={traceIdLabel}
-          tracePath={tracePath}
-          traceSpanEntries={traceSpanEntries}
-        />
-      </div>
+      <ResizablePanelGroup
+        className="min-h-0 flex-1"
+        data-testid="runs-inspection-workspace"
+        direction="horizontal"
+      >
+        <ResizablePanel className="min-w-0" defaultSize={28} maxSize={45} minSize={18}>
+          <ExecutionOutline
+            activeInspection={activeInspection}
+            canReplayRun={canReplayRun}
+            onOpenReplay={openStepReplayDialog}
+            onSelect={selectInspection}
+            run={run}
+            steps={steps}
+            traceSpanEntries={traceSpanEntries}
+          />
+        </ResizablePanel>
+        <ResizableHandle className="bg-border/80" data-testid="runs-inspection-resize-handle" withHandle />
+        <ResizablePanel className="min-w-0" defaultSize={72} minSize={45}>
+          <EvidenceViewer
+            activeInspection={activeInspection}
+            copiedInvocations={copiedInvocations}
+            copiedSteps={copiedSteps}
+            graphGroups={graphGroups}
+            onSelect={selectInspection}
+            plannedInvocations={plannedInvocations}
+            plannedSteps={plannedSteps}
+            run={run}
+            steps={steps}
+            traceIdLabel={traceIdLabel}
+            tracePath={tracePath}
+            traceSpanEntries={traceSpanEntries}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && canReplayRun} runId={runId} />
 

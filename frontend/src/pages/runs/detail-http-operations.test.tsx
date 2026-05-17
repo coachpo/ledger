@@ -132,7 +132,7 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     useRunMock.mockReset();
   });
 
-  it("renders operation invocations separately with redacted metadata and failure state", () => {
+  it("preserves operation outputs in step summary and keeps direct operation panes accessible", () => {
     const failedOperation = buildOperation({
       durationMs: 9,
       errorCode: "http_status_error",
@@ -159,15 +159,22 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/0 agent invocation/i);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 operation invocation/i);
 
-    const operationCard = screen.getByTestId("runs-step-1-operation-webhook_result");
-    expect(operationCard).toHaveTextContent(/webhook_result/i);
-    expect(operationCard).toHaveTextContent(/POST/i);
-    expect(operationCard).toHaveTextContent(/output executed/i);
-    expect(operationCard).not.toHaveTextContent("slack-secret-value");
-    expect(operationCard).not.toHaveTextContent("body-secret-value");
-    expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(/operation webhook_result\/span-operation/i);
+    expect(screen.queryByTestId("runs-step-1-operation-webhook_result")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-1-operation-webhook_retry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/operation webhook_result\/span-operation/i);
 
     outlineRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1");
+    const stepSummaryRender = render(<RunsDetailPage />);
+    const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
+    expect(aggregatedOutput).toHaveTextContent(/webhook_result/i);
+    expect(aggregatedOutput).toHaveTextContent(/webhook_retry/i);
+    expect(aggregatedOutput).toHaveTextContent(/queued/i);
+    expect(aggregatedOutput).toHaveTextContent(/failed/i);
+    expect(aggregatedOutput).not.toHaveTextContent("slack-secret-value");
+    expect(aggregatedOutput).not.toHaveTextContent("body-secret-value");
+    stepSummaryRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=request");
     const requestRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-operation-2001-request-metadata")).toHaveTextContent(/redacted/i);

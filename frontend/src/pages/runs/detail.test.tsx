@@ -331,20 +331,47 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
-    expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(
-      /trace-42 -> step 1\/analysis\/span-1 -> step 2\/decision\/span-2/i,
-    );
-    expect(screen.getByText(/total tokens: 51/i)).toBeVisible();
-    expect(screen.getByText(/inherited tokens: 21/i)).toBeVisible();
-    expect(screen.getByText(/executed tokens: 30/i)).toBeVisible();
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveClass("whitespace-pre-wrap", "break-words", "overflow-hidden");
+    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
+    expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(/decision\/span-2/i);
+    expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-2-completed-indicator")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-workspace-context")).toHaveAttribute("data-slot", "card");
+    expect(within(screen.getByTestId("runs-workspace-context")).getAllByTestId(/runs-summary-.*-row/)).toHaveLength(3);
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute("data-slot", "resizable-panel-group");
+    expect(screen.getByTestId("runs-inspection-resize-handle")).toBeInTheDocument();
+    expect(screen.getByText(/^Total tokens$/i).parentElement).toHaveTextContent(/51/i);
+    expect(screen.getByText(/^Inherited tokens$/i).parentElement).toHaveTextContent(/21/i);
+    expect(screen.getByText(/^Executed tokens$/i).parentElement).toHaveTextContent(/30/i);
     expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/inherited cost/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/executed cost/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/copied origin/i);
-    expect(screen.getByTestId("runs-step-1-slot-analysis")).toHaveTextContent(/output copied/i);
-    expect(screen.getByTestId("runs-step-2-slot-decision")).toHaveTextContent(/output pending/i);
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/1 agent invocation/i);
+    expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/1 agent invocation/i);
+    expect(screen.queryByTestId("runs-step-1-slot-analysis")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-2-slot-decision")).not.toBeInTheDocument();
+
+    const stepOneButton = within(screen.getByTestId("runs-step-1")).getByRole("button", { name: /step 1/i });
+    fireEvent.click(stepOneButton);
+    expect(within(screen.getByTestId("runs-step-1")).queryByRole("link", { name: /step 1/i })).not.toBeInTheDocument();
+    const stepSelectUpdater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (current: URLSearchParams) => URLSearchParams;
+    const selectedStepParams = stepSelectUpdater(new URLSearchParams());
+    expect(selectedStepParams.get("inspect")).toBe("step:1");
+    expect(selectedStepParams.has("pane")).toBe(false);
 
     defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1");
+    const stepSummaryRender = render(<RunsDetailPage />);
+    const stepSummary = screen.getByTestId("runs-step-1-summary");
+    expect(within(stepSummary).getByRole("heading", { name: /step metadata/i })).toBeVisible();
+    expect(within(stepSummary).getByRole("heading", { name: /aggregated output/i })).toBeVisible();
+    expect(stepSummary.querySelectorAll("[data-slot='card-content'] > section")).toHaveLength(2);
+    expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/analysis/i);
+    expect(screen.getByTestId("runs-step-1-aggregated-output")).toHaveTextContent(/research_agent/i);
+
+    stepSummaryRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
     const provenanceRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
@@ -357,6 +384,12 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
 
     provenanceRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1&pane=trace");
+    const stepTraceRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-step-1-trace-linkage")).toHaveTextContent(/analysis/i);
+    expect(screen.getByTestId("runs-step-1-trace-linkage")).toHaveTextContent(/span-1/i);
+
+    stepTraceRender.unmount();
     searchParamsMock = new URLSearchParams("pane=lineage");
     const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
@@ -452,7 +485,8 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Fanout analyst_fanout");
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("branch market");
     expect(screen.getByTestId("runs-graph-summary")).toHaveTextContent("Loop review_loop iteration 1");
-    expect(screen.getByTestId("runs-step-1-slot-market")).toHaveTextContent("market");
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/2 agent invocation/i);
+    expect(screen.queryByTestId("runs-step-1-slot-market")).not.toBeInTheDocument();
 
     traceRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=memory:mem_701");
@@ -612,8 +646,10 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/macro_agent@9/i);
     expect(screen.getByText(/target id: 12/i)).toBeVisible();
     expect(screen.getByText(/standalone agent execution/i)).toBeVisible();
-    expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(/step 1\/result\/span-agent-1/i);
-    expect(screen.getAllByText(/captured through invocation spans/i)).toHaveLength(1);
+    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/result\/span-agent-1/i);
+    expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
+    expect(screen.queryByText(/captured through invocation spans/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-detail-rerun")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /replay step/i })).not.toBeInTheDocument();
@@ -630,7 +666,7 @@ describe("RunsDetailPage", () => {
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
   });
 
-  it("handles empty, pending, skipped, and trace-less normalized state", () => {
+  it("handles empty, running, skipped, and trace-less normalized state", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -641,7 +677,7 @@ describe("RunsDetailPage", () => {
               finishedAt: null,
               invocations: [],
               persistedAt: null,
-              status: "pending",
+              status: "running",
             }),
             buildStep({
               id: 102,
@@ -664,9 +700,11 @@ describe("RunsDetailPage", () => {
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
     expect(screen.getByText(/no invocation trace spans captured/i)).toBeVisible();
-    expect(screen.getAllByText(/no invocations have been planned or persisted/i)).toHaveLength(2);
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/pending/i);
+    expect(screen.queryByText(/no invocations have been planned or persisted/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/running/i);
+    expect(screen.getByTestId("runs-step-1-executing-indicator")).toBeInTheDocument();
     expect(screen.getByTestId("runs-step-2")).toHaveTextContent(/skipped/i);
+    expect(screen.queryByTestId("runs-step-2-completed-indicator")).not.toBeInTheDocument();
   });
 
   it("renders an explicit empty state when no steps exist", () => {
@@ -675,7 +713,7 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-empty-steps")).toHaveTextContent(/no steps have been planned/i);
-    expect(screen.getByTestId("runs-trace-path")).toHaveTextContent(/span links: 0/i);
+    expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
   });
 
   it("shows queued runs as awaiting execution with zero progress", () => {
