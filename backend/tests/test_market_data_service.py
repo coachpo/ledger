@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
@@ -26,9 +26,9 @@ def _quote_provider(provider: object) -> QuoteProvider:
     return cast(QuoteProvider, provider)
 
 
-def _service(provider: object) -> MarketDataService:
+def _service(session: Session, provider: object) -> MarketDataService:
     return MarketDataService(
-        session=cast(Session, object()),
+        session=session,
         quote_provider=_quote_provider(provider),
     )
 
@@ -141,16 +141,18 @@ def test_news_adapter_yahoo_normalizes_company_and_macro_news(
     assert macro_result.items[0].symbols == []
 
 
-def test_news_adapter_rate_limit_degrades_with_structured_warning() -> None:
+def test_news_adapter_rate_limit_degrades_with_structured_warning(
+    session_factory: sessionmaker[Session],
+) -> None:
     provider = _NewsProvider(
         failure=QuoteProviderRateLimitError(
             "provider rate limited api_key=sk-secret",
             details={"status": "429", "api_key": "sk-secret"},
         )
     )
-    service = _service(provider)
-
-    result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    with session_factory() as session:
+        service = _service(session, provider)
+        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -163,11 +165,13 @@ def test_news_adapter_rate_limit_degrades_with_structured_warning() -> None:
     assert "apiKey" not in warning_json
 
 
-def test_news_adapter_timeout_degrades_with_structured_warning() -> None:
+def test_news_adapter_timeout_degrades_with_structured_warning(
+    session_factory: sessionmaker[Session],
+) -> None:
     provider = _NewsProvider(failure=QuoteProviderTimeoutError("news provider timed out"))
-    service = _service(provider)
-
-    result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    with session_factory() as session:
+        service = _service(session, provider)
+        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -177,11 +181,13 @@ def test_news_adapter_timeout_degrades_with_structured_warning() -> None:
     ]
 
 
-def test_news_adapter_empty_result_returns_structured_warning() -> None:
+def test_news_adapter_empty_result_returns_structured_warning(
+    session_factory: sessionmaker[Session],
+) -> None:
     provider = _NewsProvider()
-    service = _service(provider)
-
-    result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
+    with session_factory() as session:
+        service = _service(session, provider)
+        result = service.get_news_snapshot(symbols=["nvda"], providers=[_quote_provider(provider)])
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert payload["items"] == []
@@ -194,7 +200,9 @@ def test_news_adapter_empty_result_returns_structured_warning() -> None:
     ]
 
 
-def test_news_adapter_partial_result_falls_back_after_provider_outage() -> None:
+def test_news_adapter_partial_result_falls_back_after_provider_outage(
+    session_factory: sessionmaker[Session],
+) -> None:
     first_provider = _NewsProvider(
         provider_name="primary_news",
         failure=QuoteProviderError("primary outage", code="provider_unavailable"),
@@ -210,12 +218,12 @@ def test_news_adapter_partial_result_falls_back_after_provider_outage() -> None:
             )
         ],
     )
-    service = _service(first_provider)
-
-    result = service.get_news_snapshot(
-        symbols=["nvda"],
-        providers=[_quote_provider(first_provider), _quote_provider(second_provider)],
-    )
+    with session_factory() as session:
+        service = _service(session, first_provider)
+        result = service.get_news_snapshot(
+            symbols=["nvda"],
+            providers=[_quote_provider(first_provider), _quote_provider(second_provider)],
+        )
     payload = result.model_dump(mode="json", by_alias=True)
 
     assert [item["title"] for item in cast(list[dict[str, object]], payload["items"])] == [

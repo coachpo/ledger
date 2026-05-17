@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
-from copy import deepcopy
 
+from app.agents.mcp.tool_adapter import (
+    ExecutionToolDescriptor,
+    build_native_runtime_tool_descriptor,
+    execution_tool_descriptor_to_openai_tool,
+)
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
 
@@ -20,9 +24,13 @@ class RuntimeToolRegistry:
             None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
         )
         self._specs_by_openai_function_name: dict[str, RuntimeToolSpec] = {}
+        self._descriptors_by_openai_function_name: dict[str, ExecutionToolDescriptor] = {}
         self._validate_unique_specs(self._specs)
         for spec in self._specs:
             self._specs_by_openai_function_name[spec.openai_function_name] = spec
+            self._descriptors_by_openai_function_name[spec.openai_function_name] = (
+                self._descriptor_for_spec(spec)
+            )
 
     def list_specs(self) -> tuple[RuntimeToolSpec, ...]:
         return self._specs
@@ -30,14 +38,29 @@ class RuntimeToolRegistry:
     def list_enabled_specs(self) -> tuple[RuntimeToolSpec, ...]:
         return tuple(spec for spec in self._specs if self._is_enabled_spec(spec))
 
+    def list_execution_descriptors(self) -> tuple[ExecutionToolDescriptor, ...]:
+        return tuple(
+            self._descriptors_by_openai_function_name[spec.openai_function_name]
+            for spec in self._specs
+        )
+
+    def get_execution_descriptors(
+        self,
+        granted_tool_keys: Collection[str],
+    ) -> tuple[ExecutionToolDescriptor, ...]:
+        return tuple(
+            self._descriptors_by_openai_function_name[spec.openai_function_name]
+            for spec in self._specs
+            if spec.key in granted_tool_keys and self._is_enabled_spec(spec)
+        )
+
     def get_openai_tools(
         self,
         granted_tool_keys: Collection[str],
     ) -> list[dict[str, object]]:
         return [
-            self._build_openai_tool_definition(spec)
-            for spec in self._specs
-            if spec.key in granted_tool_keys and self._is_enabled_spec(spec)
+            execution_tool_descriptor_to_openai_tool(descriptor)
+            for descriptor in self.get_execution_descriptors(granted_tool_keys)
         ]
 
     def get_guidance(self, granted_tool_keys: Collection[str]) -> str:
@@ -88,14 +111,14 @@ class RuntimeToolRegistry:
         )
 
     @staticmethod
-    def _build_openai_tool_definition(spec: RuntimeToolSpec) -> dict[str, object]:
-        return {
-            "type": "function",
-            "name": spec.openai_function_name,
-            "description": spec.description,
-            "strict": True,
-            "parameters": deepcopy(spec.parameters_schema),
-        }
+    def _descriptor_for_spec(spec: RuntimeToolSpec) -> ExecutionToolDescriptor:
+        return build_native_runtime_tool_descriptor(
+            key=spec.key,
+            openai_function_name=spec.openai_function_name,
+            description=spec.description,
+            parameters_schema=spec.parameters_schema,
+            owner_extension_key=spec.owner_extension_key,
+        )
 
     @staticmethod
     def _validate_unique_specs(specs: Sequence[RuntimeToolSpec]) -> None:

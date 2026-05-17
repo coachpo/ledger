@@ -4,12 +4,7 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from app.agents.runtime_tools.types import (
-    RuntimeSocialSentimentLookupResult,
-    RuntimeSocialSentimentMetric,
-    RuntimeSocialSentimentSourceBlock,
-    RuntimeToolWarning,
-)
+from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.formatting import normalize_symbol, to_utc
 from app.schemas.common import to_camel
 from app.services.social_sentiment_provider import (
@@ -19,6 +14,15 @@ from app.services.social_sentiment_provider import (
     SocialSentimentProviderError,
     SocialSentimentSource,
     SocialSentimentSourceAdapter,
+)
+from app.services.social_sentiment_snapshots import (
+    SocialSentimentLookupSnapshot as RuntimeSocialSentimentLookupResult,
+)
+from app.services.social_sentiment_snapshots import (
+    SocialSentimentMetric as RuntimeSocialSentimentMetric,
+)
+from app.services.social_sentiment_snapshots import (
+    SocialSentimentSourceBlock as RuntimeSocialSentimentSourceBlock,
 )
 
 _SECRET_ASSIGNMENT_RE = re.compile(

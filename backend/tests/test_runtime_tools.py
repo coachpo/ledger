@@ -15,6 +15,29 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools import (
+    RUNTIME_TOOL_SPECS,
+    RuntimeToolContext,
+    RuntimeToolError,
+    RuntimeToolRegistry,
+    RuntimeToolSpec,
+    get_default_runtime_tool_registry,
+)
+from app.agents.runtime_tools.types import RuntimeToolWarning
+from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
+from app.extensions.signaldeck_finance.grant_policy import (
+    MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE,
+    MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
+    MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE,
+    MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE,
+    POSITION_LOOKUP_ACCESS_DENIED_CODE,
+    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
+    POSITION_LOOKUP_GRANT_POLICY,
+    REPORT_LOOKUP_GRANT_POLICY,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+)
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.runtime_market_data import (
     FUNDAMENTALS_LOOKUP_OPENAI_FUNCTION_NAME,
     FUNDAMENTALS_LOOKUP_TOOL_SPEC,
     INDICATORS_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -29,22 +52,8 @@ from app.agents.runtime_tools import (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
     NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
     NEWS_LOOKUP_TOOL_SPEC,
-    POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
-    POSITION_LOOKUP_TOOL_SPEC,
-    REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
-    REPORT_LOOKUP_TOOL_SPEC,
-    REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-    REPORT_MEMORY_WRITE_TOOL_SPEC,
-    RUNTIME_TOOL_SPECS,
     SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
-    RuntimeToolContext,
-    RuntimeToolError,
-    RuntimeToolRegistry,
-    RuntimeToolSpec,
-    get_default_runtime_tool_registry,
-)
-from app.agents.runtime_tools.market_data import (
     parse_fundamentals_lookup_arguments,
     parse_history_lookup_arguments,
     parse_indicators_lookup_arguments,
@@ -54,12 +63,20 @@ from app.agents.runtime_tools.market_data import (
     parse_quote_lookup_arguments,
     parse_social_sentiment_lookup_arguments,
 )
-from app.agents.runtime_tools.positions import parse_position_lookup_arguments
-from app.agents.runtime_tools.reports import (
+from app.extensions.signaldeck_finance.runtime_positions import (
+    POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+    POSITION_LOOKUP_TOOL_SPEC,
+    parse_position_lookup_arguments,
+)
+from app.extensions.signaldeck_finance.runtime_reports import (
+    REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
+    REPORT_LOOKUP_TOOL_SPEC,
+    REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+    REPORT_MEMORY_WRITE_TOOL_SPEC,
     parse_report_lookup_arguments,
     parse_report_memory_write_arguments,
 )
-from app.agents.runtime_tools.types import (
+from app.extensions.signaldeck_finance.runtime_types import (
     FUNDAMENTALS_LOOKUP_TOOL_KEY,
     INDICATORS_LOOKUP_TOOL_KEY,
     INSIDER_DATA_LOOKUP_TOOL_KEY,
@@ -68,6 +85,8 @@ from app.agents.runtime_tools.types import (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS,
     NEWS_LOOKUP_TOOL_KEY,
+    POSITION_LOOKUP_TOOL_KEY,
+    REPORT_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeFinancialStatement,
@@ -91,10 +110,7 @@ from app.agents.runtime_tools.types import (
     RuntimeSocialSentimentLookupResult,
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
-    RuntimeToolWarning,
 )
-from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
@@ -102,18 +118,9 @@ from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.capability_service import (
-    MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE,
-    MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
-    MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE,
-    MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE,
-    POSITION_LOOKUP_ACCESS_DENIED_CODE,
-    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
-    POSITION_LOOKUP_TOOL_KEY,
-    REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
     CapabilityService,
     RuntimeToolGrantError,
+    RuntimeToolGrantPolicy,
 )
 from app.services.market_data_service import MarketDataService
 from app.services.position_service import PositionService
@@ -1294,7 +1301,6 @@ def test_market_data_fundamentals_snapshot_uses_first_provider_success_and_utc_d
     payload = result.model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
     assert provider.fundamental_calls == ["NVDA"]
-    assert payload["toolKey"] == FUNDAMENTALS_LOOKUP_TOOL_KEY
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "fundamentals_primary"
     assert payload["asOf"] == "2026-01-02T17:00:00Z"
@@ -1403,7 +1409,6 @@ def test_market_data_news_snapshot_truncates_results_and_normalizes_dates(
     assert provider.news_calls == [
         (["NVDA"], "earnings", start_date.astimezone(UTC), end_date.astimezone(UTC), 3)
     ]
-    assert payload["toolKey"] == NEWS_LOOKUP_TOOL_KEY
     assert payload["query"] == "earnings"
     assert payload["symbols"] == ["NVDA"]
     assert payload["startDate"] == "2026-01-02T00:00:00Z"
@@ -1467,7 +1472,6 @@ def test_market_data_insider_snapshot_truncates_and_utc_serializes(
     assert provider.insider_calls == [
         ("NVDA", datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 3, tzinfo=UTC), 3)
     ]
-    assert payload["toolKey"] == INSIDER_DATA_LOOKUP_TOOL_KEY
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "insider_primary"
     transaction_payload = cast(list[dict[str, object]], payload["transactions"])
@@ -1507,7 +1511,6 @@ def test_market_data_indicator_snapshot_uses_bounded_ohlcv_without_lookahead(
     assert provider.ohlcv_calls == [("NVDA", start_date, current_date, "1d")]
     payload = result.model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(payload)
-    assert payload["toolKey"] == "signaldeck.indicators.lookup"
     assert payload["symbol"] == "NVDA"
     assert payload["provider"] == "fake_runtime_provider"
     assert payload["currentDate"] == "2026-01-03T16:00:00Z"
@@ -1978,8 +1981,14 @@ def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
             REPORT_LOOKUP_TOOL_KEY,
             POSITION_LOOKUP_TOOL_KEY,
         }
-        service.require_report_lookup_grant(capability_references=capability_references)
-        service.require_position_lookup_grant(capability_references=capability_references)
+        service.require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=REPORT_LOOKUP_GRANT_POLICY,
+        )
+        service.require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=POSITION_LOOKUP_GRANT_POLICY,
+        )
 
         capability = session.scalar(select(Capability).where(Capability.key == capability_key))
         assert capability is not None
@@ -1987,7 +1996,10 @@ def test_runtime_capability_service_resolves_stored_tool_keys_and_fails_closed(
         session.commit()
 
         with pytest.raises(RuntimeToolGrantError) as exc_info:
-            service.require_report_lookup_grant(capability_references=capability_references)
+            service.require_runtime_tool_grant(
+                capability_references=capability_references,
+                grant_policy=REPORT_LOOKUP_GRANT_POLICY,
+            )
 
     assert exc_info.value.code == "capability_tool_keys_invalid"
     assert "stale or invalid tool keys" in exc_info.value.message
@@ -3015,6 +3027,7 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
         self: ReportService,
         *,
         capability_references: Sequence[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
@@ -3027,6 +3040,7 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
         captured_calls.append(
             {
                 "capability_references": capability_references,
+                "grant_policy": grant_policy,
                 "ticker": ticker,
                 "tag": tag,
                 "review_type": review_type,
@@ -3055,6 +3069,7 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
                     "capabilityVersion": 1,
                 }
             ],
+            "grant_policy": REPORT_LOOKUP_GRANT_POLICY,
             "ticker": "NVDA",
             "tag": None,
             "review_type": None,
@@ -3102,6 +3117,7 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
         self: PositionService,
         *,
         capability_references: list[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         portfolio_slug: str,
         symbol: str | None = None,
         limit: int | None = None,
@@ -3110,6 +3126,7 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
         captured_calls.append(
             {
                 "capability_references": capability_references,
+                "grant_policy": grant_policy,
                 "portfolio_slug": portfolio_slug,
                 "symbol": symbol,
                 "limit": limit,
@@ -3134,6 +3151,7 @@ def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_
         "capability_references": [
             {"capabilityKey": "runtime_tool_test_capability", "capabilityVersion": 1}
         ],
+        "grant_policy": POSITION_LOOKUP_GRANT_POLICY,
         "portfolio_slug": "position_lookup_reference",
         "symbol": "NVDA",
         "limit": 50,

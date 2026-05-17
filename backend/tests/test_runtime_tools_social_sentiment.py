@@ -10,23 +10,19 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.runtime_tools import (
+from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolError, RuntimeToolRegistry
+from app.agents.runtime_tools.types import RuntimeToolWarning
+from app.extensions.signaldeck_finance.runtime_market_data import (
     SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
-    RuntimeToolContext,
-    RuntimeToolError,
-    RuntimeToolRegistry,
-)
-from app.agents.runtime_tools.market_data import (
     parse_news_lookup_arguments,
     parse_social_sentiment_lookup_arguments,
 )
-from app.agents.runtime_tools.types import (
+from app.extensions.signaldeck_finance.runtime_types import (
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeSocialSentimentLookupResult,
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
-    RuntimeToolWarning,
 )
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
@@ -287,11 +283,11 @@ def test_tradingagents_fixture_grants_social_sentiment_separately_from_news_look
     assert cast(list[str], profiles_by_key["social_sentiment_tools"]["toolKeys"]) == [
         SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY
     ]
-    assert cast(list[str], profiles_by_key["news_research_tools"]["toolKeys"]) == [
+    assert set(cast(list[str], profiles_by_key["news_research_tools"]["toolKeys"])) == {
         "signaldeck.news.lookup",
         "signaldeck.insider_data.lookup",
-    ]
-    assert cast(list[str], agents_by_key["social_analyst"]["capabilityProfiles"]) == [
+    }
+    assert cast(list[str], agents_by_key["sentiment_analyst"]["capabilityProfiles"]) == [
         "social_sentiment_tools"
     ]
     assert cast(list[str], agents_by_key["news_analyst"]["capabilityProfiles"]) == [

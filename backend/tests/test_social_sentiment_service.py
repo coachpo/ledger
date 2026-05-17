@@ -7,19 +7,18 @@ from typing import cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.runtime_tools import (
-    SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
-    RuntimeToolContext,
-    RuntimeToolRegistry,
-)
-from app.agents.runtime_tools.types import (
-    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
-    RuntimeSocialSentimentLookupResult,
-)
+from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolRegistry
 from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
 from app.extensions.signaldeck_finance.provider_factories import (
     register as register_finance_workspace_provider_factories,
+)
+from app.extensions.signaldeck_finance.runtime_market_data import (
+    SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
+)
+from app.extensions.signaldeck_finance.runtime_types import (
+    SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
+    RuntimeSocialSentimentLookupResult,
 )
 from app.services.social_sentiment_provider import (
     ProviderSocialSentimentMetric,
@@ -32,6 +31,7 @@ from app.services.social_sentiment_provider import (
     SocialSentimentSource,
 )
 from app.services.social_sentiment_service import SocialSentimentService
+from app.services.social_sentiment_snapshots import SocialSentimentLookupSnapshot
 
 
 class _SocialAdapter:
@@ -77,7 +77,9 @@ def _failing_session_factory() -> object:
     raise AssertionError("social sentiment lookup should not open a database session")
 
 
-def _payload(result: RuntimeSocialSentimentLookupResult) -> dict[str, object]:
+def _payload(
+    result: RuntimeSocialSentimentLookupResult | SocialSentimentLookupSnapshot,
+) -> dict[str, object]:
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True))
 
 
@@ -171,7 +173,6 @@ def test_social_adapter_aggregates_reddit_stocktwits_source_blocks_and_metrics()
     )
     payload = _payload(result)
 
-    assert payload["toolKey"] == SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY
     assert payload["symbol"] == "NVDA"
     assert payload["sources"] == ["stocktwits", "reddit"]
     assert stocktwits.calls == [

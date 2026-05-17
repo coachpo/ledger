@@ -5,11 +5,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 from sqlalchemy.orm import Session
 
 from app.agents import get_default_tool_catalog
+from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.config import Settings, get_settings
 from app.core.formatting import normalize_symbol, to_utc, utcnow
 from app.models.market_quote import MarketQuote
@@ -22,7 +23,43 @@ from app.schemas.market_data import (
     MarketQuoteListRead,
     MarketQuoteRead,
 )
-from app.services.capability_service import CapabilityService
+from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
+from app.services.extension_gate import (
+    MARKET_DATA_SERVICE_SURFACE,
+    require_finance_workspace_enabled,
+)
+from app.services.market_data_snapshots import (
+    MarketDataFinancialStatement as RuntimeFinancialStatement,
+)
+from app.services.market_data_snapshots import (
+    MarketDataFinancialStatementLine as RuntimeFinancialStatementLine,
+)
+from app.services.market_data_snapshots import (
+    MarketDataFundamentalMetric as RuntimeFundamentalMetric,
+)
+from app.services.market_data_snapshots import (
+    MarketDataFundamentalsLookupSnapshot as RuntimeFundamentalsLookupResult,
+)
+from app.services.market_data_snapshots import (
+    MarketDataIndicatorLookupSnapshot as RuntimeIndicatorLookupResult,
+)
+from app.services.market_data_snapshots import MarketDataIndicatorRow as RuntimeIndicatorRow
+from app.services.market_data_snapshots import MarketDataIndicatorValue as RuntimeIndicatorValue
+from app.services.market_data_snapshots import (
+    MarketDataInsiderDataLookupSnapshot as RuntimeInsiderDataLookupResult,
+)
+from app.services.market_data_snapshots import (
+    MarketDataInsiderTransaction as RuntimeInsiderTransaction,
+)
+from app.services.market_data_snapshots import MarketDataNewsItem as RuntimeNewsItem
+from app.services.market_data_snapshots import (
+    MarketDataNewsLookupSnapshot as RuntimeNewsLookupResult,
+)
+from app.services.market_data_snapshots import (
+    MarketDataOhlcvLookupSnapshot as RuntimeOhlcvLookupResult,
+)
+from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlcvRow
+from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries
 from app.services.portfolio_service import PortfolioService
 from app.services.quote_provider import (
     ProviderFinancialStatement,
@@ -41,22 +78,6 @@ from app.services.quote_provider import (
     QuoteProviderError,
     QuoteProviderRateLimitError,
 )
-
-if TYPE_CHECKING:
-    from app.agents.runtime_tools.types import (
-        RuntimeFundamentalMetric,
-        RuntimeFundamentalsLookupResult,
-        RuntimeIndicatorLookupResult,
-        RuntimeIndicatorRow,
-        RuntimeInsiderDataLookupResult,
-        RuntimeInsiderTransaction,
-        RuntimeNewsItem,
-        RuntimeNewsLookupResult,
-        RuntimeOhlcvLookupResult,
-        RuntimeOhlcvRow,
-        RuntimeOhlcvSeries,
-        RuntimeToolWarning,
-    )
 
 _ProviderResultT = TypeVar("_ProviderResultT")
 
@@ -124,7 +145,11 @@ class MarketDataService:
         self.repository: MarketQuoteRepository = MarketQuoteRepository(session)
         self.settings: Settings = get_settings()
 
+    def _require_enabled(self) -> None:
+        _ = require_finance_workspace_enabled(self.session, surface=MARKET_DATA_SERVICE_SURFACE)
+
     def get_quotes(self, portfolio_id: int, symbols: list[str]) -> MarketQuoteListRead:
+        self._require_enabled()
         portfolio = self.portfolio_service.get_portfolio_model(portfolio_id)
         quotes: list[MarketQuoteRead] = []
         warnings: list[str] = []
@@ -152,6 +177,7 @@ class MarketDataService:
     def get_history(
         self, portfolio_id: int, symbols: list[str], range_value: str
     ) -> MarketHistoryRead:
+        self._require_enabled()
         _ = self.portfolio_service.get_portfolio_model(portfolio_id)
         return self._build_history_read(symbols, range_value)
 
@@ -159,31 +185,42 @@ class MarketDataService:
         self,
         *,
         capability_references: Sequence[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         symbol: str,
         base_currency: str = "USD",
     ) -> tuple[MarketQuoteRead | None, list[str]]:
+        self._require_enabled()
         CapabilityService(
             self.session,
             get_default_tool_catalog(),
-        ).require_market_data_quote_lookup_grant(capability_references=capability_references)
+        ).require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=grant_policy,
+        )
         return self.get_quote_snapshot(symbol, base_currency=base_currency)
 
     def lookup_history_snapshot(
         self,
         *,
         capability_references: Sequence[dict[str, object]],
+        grant_policy: RuntimeToolGrantPolicy,
         symbol: str,
         range_value: str,
     ) -> MarketHistoryRead:
+        self._require_enabled()
         CapabilityService(
             self.session,
             get_default_tool_catalog(),
-        ).require_market_data_history_lookup_grant(capability_references=capability_references)
+        ).require_runtime_tool_grant(
+            capability_references=capability_references,
+            grant_policy=grant_policy,
+        )
         return self.get_history_snapshot(symbol, range_value)
 
     def get_quote_snapshot(
         self, symbol: str, *, base_currency: str = "USD"
     ) -> tuple[MarketQuoteRead | None, list[str]]:
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             return None, ["Symbol is required"]
@@ -193,6 +230,7 @@ class MarketDataService:
         return quote, ([warning] if warning is not None else [])
 
     def get_history_snapshot(self, symbol: str, range_value: str) -> MarketHistoryRead:
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -205,6 +243,7 @@ class MarketDataService:
         start_date: datetime,
         end_date: datetime,
     ) -> list[MarketClosePoint]:
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -234,12 +273,7 @@ class MarketDataService:
         end_date: datetime,
         row_limit: int | None = None,
     ) -> RuntimeOhlcvLookupResult:
-        from app.agents.runtime_tools.types import (
-            RuntimeOhlcvLookupResult,
-            RuntimeOhlcvSeries,
-            RuntimeToolWarning,
-        )
-
+        self._require_enabled()
         normalized_start = to_utc(start_date)
         normalized_end = to_utc(end_date)
         if normalized_start > normalized_end:
@@ -316,8 +350,7 @@ class MarketDataService:
         sma_windows: Sequence[int] | None = None,
         row_limit: int | None = None,
     ) -> RuntimeIndicatorLookupResult:
-        from app.agents.runtime_tools.types import RuntimeIndicatorLookupResult
-
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -369,12 +402,7 @@ class MarketDataService:
         *,
         providers: Sequence[QuoteProvider] | None = None,
     ) -> RuntimeFundamentalsLookupResult:
-        from app.agents.runtime_tools.types import (
-            RuntimeFinancialStatement,
-            RuntimeFinancialStatementLine,
-            RuntimeFundamentalsLookupResult,
-        )
-
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -438,8 +466,7 @@ class MarketDataService:
         item_limit: int | None = None,
         providers: Sequence[QuoteProvider] | None = None,
     ) -> RuntimeNewsLookupResult:
-        from app.agents.runtime_tools.types import RuntimeNewsLookupResult
-
+        self._require_enabled()
         normalized_symbols = self._normalize_optional_symbols(symbols or [])
         normalized_start = to_utc(start_date) if start_date is not None else None
         normalized_end = to_utc(end_date) if end_date is not None else None
@@ -503,8 +530,7 @@ class MarketDataService:
         transaction_limit: int | None = None,
         providers: Sequence[QuoteProvider] | None = None,
     ) -> RuntimeInsiderDataLookupResult:
-        from app.agents.runtime_tools.types import RuntimeInsiderDataLookupResult
-
+        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -633,8 +659,6 @@ class MarketDataService:
         end_date: datetime,
         row_limit: int,
     ) -> list[RuntimeOhlcvRow]:
-        from app.agents.runtime_tools.types import RuntimeOhlcvRow
-
         normalized_rows: list[tuple[datetime, ProviderOhlcvRow]] = []
         for row in rows:
             row_time = to_utc(row.at)
@@ -663,8 +687,6 @@ class MarketDataService:
         current_date: datetime,
         sma_windows: tuple[int, ...],
     ) -> list[RuntimeIndicatorRow]:
-        from app.agents.runtime_tools.types import RuntimeIndicatorRow, RuntimeIndicatorValue
-
         closes = [row.close for row in rows]
         has_enough_history = {window: len(closes) >= window for window in sma_windows}
         indicator_rows: list[RuntimeIndicatorRow] = []
@@ -753,8 +775,6 @@ class MarketDataService:
     def _build_fundamental_metrics(
         self, metrics: list[ProviderFundamentalMetric]
     ) -> list[RuntimeFundamentalMetric]:
-        from app.agents.runtime_tools.types import RuntimeFundamentalMetric
-
         return [
             RuntimeFundamentalMetric(
                 name=metric.name,
@@ -767,8 +787,6 @@ class MarketDataService:
         ]
 
     def _build_news_items(self, items: list[ProviderNewsItem]) -> list[RuntimeNewsItem]:
-        from app.agents.runtime_tools.types import RuntimeNewsItem
-
         sorted_items = sorted(items, key=lambda item: to_utc(item.published_at), reverse=True)
         return [
             RuntimeNewsItem(
@@ -786,8 +804,6 @@ class MarketDataService:
     def _build_insider_transactions(
         self, transactions: list[ProviderInsiderTransaction]
     ) -> list[RuntimeInsiderTransaction]:
-        from app.agents.runtime_tools.types import RuntimeInsiderTransaction
-
         sorted_transactions = sorted(
             transactions,
             key=lambda transaction: to_utc(transaction.transaction_date),
@@ -857,8 +873,6 @@ class MarketDataService:
         message: str,
         details: dict[str, str],
     ) -> RuntimeToolWarning:
-        from app.agents.runtime_tools.types import RuntimeToolWarning
-
         return RuntimeToolWarning(
             code=code,
             message=self._public_warning_message(message),
