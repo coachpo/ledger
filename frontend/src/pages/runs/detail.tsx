@@ -360,11 +360,11 @@ function JsonBlock({ label, testId, value }: { label?: string; testId?: string; 
   );
 }
 
-function RunFinalOutputPane({ value }: { value: unknown }) {
+function RunPayloadPane({ headingId, label, testId, value }: { headingId: string; label: string; testId: string; value: unknown }) {
   return (
-    <section aria-labelledby="runs-final-output-heading" className="space-y-3">
-      <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
-      <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid="runs-detail-final-output">
+    <section aria-labelledby={headingId} className="space-y-3">
+      <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
+      <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId}>
         <div className="whitespace-pre-wrap break-words text-foreground">{stringifyJson(value)}</div>
       </div>
     </section>
@@ -1377,7 +1377,7 @@ function EvidenceViewer({
     const artifact = run.memoryArtifacts.find((item) => item.memoryId === target.memoryId);
     content = artifact ? <MemoryArtifactEvidence artifact={artifact} /> : null;
   } else if (activeInspection.pane === "input") {
-    content = <JsonBlock label="Input" value={run.input} />;
+    content = <RunPayloadPane headingId="runs-input-heading" label="Run input" testId="runs-detail-input" value={run.input} />;
   } else if (activeInspection.pane === "trace") {
     content = <div className="space-y-4"><TraceEvidence runTraceId={run.traceId} traceIdLabel={traceIdLabel} tracePath={tracePath} traceSpanEntries={traceSpanEntries} /><RunGraphSummary groups={graphGroups} /></div>;
   } else if (activeInspection.pane === "lineage") {
@@ -1387,7 +1387,7 @@ function EvidenceViewer({
   } else if (activeInspection.pane === "memory") {
     content = run.memoryArtifacts[0] ? <MemoryArtifactEvidence artifact={run.memoryArtifacts[0]} /> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No memory artifacts were created by this run.</div>;
   } else {
-    content = <RunFinalOutputPane value={run.finalOutput} />;
+    content = <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />;
   }
 
   return (

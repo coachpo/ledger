@@ -365,6 +365,16 @@ describe("RunsDetailPage", () => {
     expect(selectedStepParams.has("pane")).toBe(false);
 
     defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=run&pane=input");
+    const runInputRender = render(<RunsDetailPage />);
+    const runInput = screen.getByTestId("runs-detail-input");
+    expect(runInput).toHaveTextContent(/AAPL/i);
+    expect(runInput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
+    expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
+    expect(screen.getByRole("heading", { name: /^run input$/i })).toHaveClass("text-base", "font-medium", "leading-none");
+    expect(screen.queryByTestId("runs-detail-final-output")).not.toBeInTheDocument();
+
+    runInputRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
     const stepSummary = screen.getByTestId("runs-step-1-summary");
