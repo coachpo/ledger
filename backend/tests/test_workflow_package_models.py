@@ -58,6 +58,7 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "package_definition",
         "compiled_plan",
         "compiled_hash",
+        "extension_dependencies",
         "validation_summary",
         "created_at",
         "launched_at",

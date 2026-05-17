@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any, cast
 
 import pytest
@@ -13,13 +14,12 @@ from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
+from app.models.workflow_package import WorkflowPackageVersion
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 from app.services.run_service import RunService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
-from tests.test_workflow_package_preflight import (
-    _delete_existing_tradingagents_package,
-)
+from tests.test_workflow_package_preflight import _delete_existing_tradingagents_package
 from tests.test_workflow_package_preflight import _package_source as _tradingagents_package_source
 from tests.test_workflow_package_preflight import (
     _seed_model_connection as _seed_tradingagents_model_connection,
@@ -96,6 +96,13 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
     assert len(operation_invocations) == 1
     assert operation_invocations[0]["operationKey"] == "notify_slack"
     assert operation_invocations[0]["operationKind"] == "http"
+    assert operation_invocations[0]["outputSchemaRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "key": "webhook_response",
+        "version": 1,
+    }
+    assert operation_invocations[0]["outputSchemaId"] == 1
     assert operation_invocations[0]["status"] == "pending"
     assert request_metadata["headers"]["Authorization"] == {
         "from": "secret",
@@ -170,9 +177,22 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert provenance["workflowPackageKey"] == "provenance_filter_package"
     assert provenance["workflowPackageVersion"] == 1
     assert provenance["workflowPackageVersionId"] is not None
-    assert provenance["workflowPackageHash"]
+    assert provenance["workflowPackageManifestHash"]
+    assert provenance["workflowPackageCompiledHash"]
+    assert provenance["workflowPackageManifestHash"] != provenance["workflowPackageCompiledHash"]
     assert provenance["workflowKey"] == "runtime_workflow"
-    assert provenance["launchSnapshot"]["parameters"] == {"ticker": "MSFT"}
+    assert provenance["launchSnapshot"] == {
+        "workflowKey": "runtime_workflow",
+        "workflowName": "Runtime Workflow",
+        "workflowDescription": "",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+        },
+        "parameters": {"ticker": "MSFT"},
+    }
     assert provenance["localResourceRefs"] == {
         "agents": ["package_analyst"],
         "outputSchemas": ["summary_output"],
@@ -280,6 +300,57 @@ def _tradingagents_parameters() -> dict[str, object]:
     }
 
 
+def _mcp_only_package_source(package_key: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: MCP Dependency Snapshot Fixture
+spec:
+  inputs:
+    type: object
+    additionalProperties: true
+  capabilityProfiles: []
+  outputSchemas:
+    - key: mcp_output
+      name: MCP Output
+      jsonSchema:
+        type: object
+        additionalProperties: true
+  mcpServers:
+    - key: exa
+      name: Exa Web Search
+      transport: http-sse
+      url: https://mcp.exa.ai/mcp?tools=web_search_exa
+      toolKeys: [web_search_exa]
+  agents:
+    - key: mcp_agent
+      name: MCP Agent
+      modelConnection: tradingagents_primary_model
+      systemPrompt: Use package-private MCP search and return JSON.
+      inputSchema:
+        type: object
+        additionalProperties: true
+      outputSchema: mcp_output
+      capabilityProfiles: []
+      mcpServers: [exa]
+  workflows:
+    - key: mcp_flow
+      name: MCP Flow
+      inputSchema:
+        type: object
+        additionalProperties: true
+      flow:
+        kind: step
+        id: mcp_step
+        slot: result
+        uses: mcp_agent
+        with: {{}}
+      output:
+        from: ${{{{ nodes.mcp_step.outputs.result }}}}
+"""
+
+
 def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         _ = ExtensionService(session).set_extension_enabled(
@@ -315,8 +386,106 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
     assert dependencies
     assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
     assert dependencies[0]["extensionKey"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    surfaces = cast(list[str], dependencies[0]["surfaces"])
-    assert "tool.signaldeck.market_data.quote_lookup" in surfaces
+    surfaces = set(cast(list[str], dependencies[0]["surfaces"]))
+    assert {
+        "hook.workflowPackageStart",
+        "provider.quote",
+        "provider.socialSentiment",
+        "runtime.tool.signaldeck.market_data.quote_lookup",
+        "tool.signaldeck.market_data.quote_lookup",
+    } <= surfaces
+    with session_factory() as session:
+        package_version = (
+            session.query(WorkflowPackageVersion)
+            .filter_by(package_id=int(package["id"]), version=1)
+            .one()
+        )
+        assert package_version.extension_dependencies == dependencies
+
+
+def test_run_dependency_snapshot_is_copied_from_package_version(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_tradingagents_model_connection(session_factory)
+    package = _create_tradingagents_package(client)
+    with session_factory() as session:
+        package_version = (
+            session.query(WorkflowPackageVersion)
+            .filter_by(package_id=int(package["id"]), version=1)
+            .one()
+        )
+        frozen_dependencies = deepcopy(package_version.extension_dependencies)
+        compiled_plan = deepcopy(package_version.compiled_plan)
+        for profile in cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"]):
+            profile["toolKeys"] = []
+        package_version.compiled_plan = compiled_plan
+        session.commit()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "version": 1,
+            "workflowKey": "advisory_research",
+            "parameters": _tradingagents_parameters(),
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    assert detail_response.json()["extensionDependencies"] == frozen_dependencies
+
+    with session_factory() as session:
+        package_version = (
+            session.query(WorkflowPackageVersion)
+            .filter_by(package_id=int(package["id"]), version=1)
+            .one()
+        )
+        package_version.extension_dependencies = []
+        session.commit()
+
+    stable_detail_response = client.get(f"/api/runs/{run_id}")
+    assert stable_detail_response.status_code == 200, stable_detail_response.json()
+    assert stable_detail_response.json()["extensionDependencies"] == frozen_dependencies
+
+
+def test_package_private_mcp_dependency_snapshot_blocks_disabled_extension_runtime(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_tradingagents_model_connection(session_factory)
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _mcp_only_package_source("mcp_dependency_package")},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={"version": 1, "workflowKey": "mcp_flow", "parameters": {}},
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    queued_detail = client.get(f"/api/runs/{run_id}")
+    assert queued_detail.status_code == 200, queued_detail.json()
+    dependency = cast(list[dict[str, object]], queued_detail.json()["extensionDependencies"])[0]
+    surfaces = set(cast(list[str], dependency["surfaces"]))
+    assert "mcp.packagePrivate.web_search_exa" in surfaces
+    assert "tool.signaldeck.market_data.quote_lookup" not in surfaces
+
+    _disable_finance_extension(session_factory)
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(run_id)
+
+    failed_detail = client.get(f"/api/runs/{run_id}")
+    assert failed_detail.status_code == 200, failed_detail.json()
+    assert failed_detail.json()["status"] == "failed"
+    assert failed_detail.json()["error"] == "Extension is disabled"
 
 
 def test_tradingagents_advisory_research_launch_blocks_extension_disabled(

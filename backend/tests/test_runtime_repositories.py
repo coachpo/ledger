@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
 from app.core.errors import ApiError
+from app.extensions.signaldeck_finance.runtime_types import REPORT_MEMORY_WRITE_TOOL_KEY
 from app.models.agent import Agent
 from app.models.capability import Capability
 from app.models.mcp_server import McpServer
@@ -42,7 +43,7 @@ from app.schemas.run import (
     RunStepReplayCreateRequest,
 )
 from app.services.agent_service import AgentService
-from app.services.capability_service import REPORT_MEMORY_WRITE_TOOL_KEY, CapabilityService
+from app.services.capability_service import CapabilityService
 from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_service import OutputSchemaService
@@ -985,8 +986,16 @@ def test_delete_target_with_queued_running_runs_cascades_target_fk_runs(
             package_run.workflow_package_key = package.key
             package_run.workflow_package_version_id = package_version.id
             package_run.workflow_package_version = package_version.version
-            package_run.workflow_package_hash = package_version.manifest_hash
+            package_run.workflow_package_manifest_hash = package_version.manifest_hash
+            package_run.workflow_package_compiled_hash = package_version.compiled_hash
             package_run.workflow_package_workflow_key = "runtime_workflow"
+            package_run.launch_snapshot = {
+                "workflowKey": "runtime_workflow",
+                "workflowName": "Runtime Workflow",
+                "workflowDescription": "",
+                "inputSchema": {},
+                "parameters": {},
+            }
             target_runs.extend([agent_run, workflow_run, package_run])
         session.add_all(target_runs)
         session.commit()
@@ -1235,6 +1244,8 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "stepIndex",
             "slot",
             "position",
+            "agentRef",
+            "outputSchemaRef",
             "agentId",
             "agentKey",
             "agentVersion",
@@ -1261,6 +1272,17 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "persistedAt",
             "createdAt",
             "updatedAt",
+        }
+        assert serialized_invocation["agentRef"] == {
+            "scope": "global",
+            "id": published_agent.id,
+            "key": published_agent.key,
+            "version": 1,
+        }
+        assert serialized_invocation["outputSchemaRef"] == {
+            "scope": "global",
+            "id": published_agent.output_schema_id,
+            "version": 1,
         }
         assert serialized_invocation["traceSpanId"] == "span-latest"
         assert run_detail.total_tokens == 321

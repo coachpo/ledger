@@ -134,6 +134,12 @@ class WorkflowPackageVersion(IdMixin, Base):
     package_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     compiled_plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     compiled_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
+    )
     validation_summary: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,

@@ -39,6 +39,8 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_lineage_root", "lineage_root_run_id"),
         Index("ix_runs_workflow_package", "workflow_package_id", "workflow_package_version"),
         Index("ix_runs_workflow_package_key", "workflow_package_key", "workflow_package_version"),
+        Index("ix_runs_workflow_package_manifest_hash", "workflow_package_manifest_hash"),
+        Index("ix_runs_workflow_package_compiled_hash", "workflow_package_compiled_hash"),
         Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
     )
 
@@ -65,8 +67,10 @@ class Run(IdMixin, TimestampMixin, Base):
         nullable=True,
     )
     workflow_package_version: Mapped[int | None] = mapped_column(nullable=True)
-    workflow_package_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workflow_package_manifest_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workflow_package_compiled_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    launch_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,

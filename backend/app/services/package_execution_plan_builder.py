@@ -8,6 +8,7 @@ from dataclasses import field as dataclass_field
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
+from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
@@ -67,9 +68,11 @@ class PackageExecutionPlanBuilder:
         *,
         model_bindings: Mapping[str, PackageResolvedModelBinding | Any] | None = None,
         package_version: int = _PACKAGE_TARGET_VERSION,
+        ownership: PackageExecutionOwnership | None = None,
     ) -> None:
         self.compiled_plan = dict(compiled_plan)
         self.package_version = package_version
+        self.ownership = ownership
         self.model_bindings = {
             key: self._coerce_model_binding(key, binding)
             for key, binding in (model_bindings or {}).items()
@@ -99,11 +102,13 @@ class PackageExecutionPlanBuilder:
         *,
         model_bindings: Mapping[str, PackageResolvedModelBinding | Any] | None = None,
         package_version: int = _PACKAGE_TARGET_VERSION,
+        ownership: PackageExecutionOwnership | None = None,
     ) -> ExecutionPlan:
         return cls(
             compiled_plan,
             model_bindings=model_bindings,
             package_version=package_version,
+            ownership=ownership,
         ).build_workflow_plan(workflow_key)
 
     def _build_plan_for_workflow(self, workflow: dict[str, Any]) -> ExecutionPlan:
@@ -168,12 +173,17 @@ class PackageExecutionPlanBuilder:
             final_output=final_output,
             compiled_graph=deepcopy(compiled_graph),
         )
+        target_id = self.ownership.package_id if self.ownership is not None else _PACKAGE_TARGET_ID
+        target_key = self.ownership.package_key if self.ownership is not None else workflow_key
+        target_version = (
+            self.ownership.package_version if self.ownership is not None else self.package_version
+        )
         return ExecutionPlan(
             target=ExecutionPlanTarget(
                 kind="workflow_package",
-                id=_PACKAGE_TARGET_ID,
-                key=workflow_key,
-                version=self.package_version,
+                id=target_id,
+                key=target_key,
+                version=target_version,
             ),
             input_schema=deepcopy(cast(dict[str, Any], workflow.get("inputSchema") or {})),
             aggregate_budget_usd=sum(
@@ -188,6 +198,7 @@ class PackageExecutionPlanBuilder:
             steps=tuple(steps),
             final_output=final_output,
             package_workflow=package_workflow,
+            package_ownership=self.ownership,
         )
 
     def _build_runtime_agent_specs(self) -> dict[str, PackageRuntimeAgentSpec]:
@@ -269,7 +280,16 @@ class PackageExecutionPlanBuilder:
                 env=deepcopy(cast(dict[str, Any], raw_server.get("env") or {})),
                 headers=deepcopy(cast(dict[str, Any], raw_server.get("headers") or {})),
                 query=deepcopy(cast(dict[str, Any], raw_server.get("query") or {})),
-                tool_keys=tuple(str(key) for key in raw_server.get("toolKeys") or []),
+                tool_keys=tuple(
+                    normalized_key
+                    for key in raw_server.get("toolKeys") or []
+                    if (normalized_key := str(key).strip().lower())
+                ),
+                tool_descriptors=tuple(
+                    deepcopy(cast(dict[str, Any], descriptor))
+                    for descriptor in raw_server.get("toolDescriptors") or []
+                    if isinstance(descriptor, dict)
+                ),
             )
             for raw_server in self._iter_section("mcpServers")
         }

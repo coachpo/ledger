@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -47,6 +47,30 @@ class RunInvocationOutputOrigin(str, Enum):  # noqa: UP042
     EXECUTED = "executed"
     EDITED = "edited"
     COPIED = "copied"
+
+
+class RunInvocationResourceScope(str, Enum):  # noqa: UP042
+    GLOBAL = "global"
+    PACKAGE_LOCAL = "packageLocal"
+
+
+def _scoped_resource_ref(
+    *,
+    scope: RunInvocationResourceScope,
+    identifier: int,
+    key: str | None = None,
+    version: int | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {"scope": scope.value}
+    if scope == RunInvocationResourceScope.PACKAGE_LOCAL:
+        payload["localId"] = identifier
+    else:
+        payload["id"] = identifier
+    if key:
+        payload["key"] = key
+    if version is not None:
+        payload["version"] = version
+    return payload
 
 
 class RunOperationKind(str, Enum):  # noqa: UP042
@@ -105,11 +129,24 @@ class RunAgentInvocationRead(CamelModel):
     step_index: int = Field(ge=1)
     slot: str
     position: int = Field(ge=0)
-    agent_id: int
+    agent_ref: dict[str, object] = Field(default_factory=dict)
+    output_schema_ref: dict[str, object] = Field(default_factory=dict)
+    agent_id: int = Field(
+        description="Transitional compatibility field; prefer agentRef for scoped identity.",
+        json_schema_extra={"deprecated": True},
+    )
     agent_key: str
     agent_version: int = Field(ge=1)
-    output_schema_id: int
+    output_schema_id: int = Field(
+        description="Transitional compatibility field; prefer outputSchemaRef for scoped identity.",
+        json_schema_extra={"deprecated": True},
+    )
     output_schema_version: int = Field(ge=1)
+    identity_scope: RunInvocationResourceScope = Field(
+        default=RunInvocationResourceScope.GLOBAL,
+        exclude=True,
+    )
+    output_schema_key: str | None = Field(default=None, exclude=True)
     input_mode: RunInvocationInputMode
     wiring: dict[str, Any] = Field(default_factory=dict)
     graph_metadata: dict[str, Any] | None = None
@@ -132,6 +169,24 @@ class RunAgentInvocationRead(CamelModel):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="after")
+    def populate_scoped_refs(self) -> Self:
+        if not self.agent_ref:
+            self.agent_ref = _scoped_resource_ref(
+                scope=self.identity_scope,
+                identifier=self.agent_id,
+                key=self.agent_key,
+                version=self.agent_version,
+            )
+        if not self.output_schema_ref:
+            self.output_schema_ref = _scoped_resource_ref(
+                scope=self.identity_scope,
+                identifier=self.output_schema_id,
+                key=self.output_schema_key,
+                version=self.output_schema_version,
+            )
+        return self
+
     @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
@@ -149,8 +204,18 @@ class RunOperationInvocationRead(CamelModel):
     position: int = Field(ge=0)
     operation_key: str
     operation_kind: RunOperationKind
-    output_schema_id: int = Field(ge=1)
+    output_schema_ref: dict[str, object] = Field(default_factory=dict)
+    output_schema_id: int = Field(
+        ge=1,
+        description="Transitional compatibility field; prefer outputSchemaRef for scoped identity.",
+        json_schema_extra={"deprecated": True},
+    )
     output_schema_version: int = Field(ge=1)
+    identity_scope: RunInvocationResourceScope = Field(
+        default=RunInvocationResourceScope.GLOBAL,
+        exclude=True,
+    )
+    output_schema_key: str | None = Field(default=None, exclude=True)
     method: str | None = None
     timeout_seconds: int | None = Field(default=None, ge=1)
     request_metadata: dict[str, Any] = Field(default_factory=dict)
@@ -174,6 +239,17 @@ class RunOperationInvocationRead(CamelModel):
     persisted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def populate_scoped_refs(self) -> Self:
+        if not self.output_schema_ref:
+            self.output_schema_ref = _scoped_resource_ref(
+                scope=self.identity_scope,
+                identifier=self.output_schema_id,
+                key=self.output_schema_key,
+                version=self.output_schema_version,
+            )
+        return self
 
     @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
     @classmethod
@@ -316,7 +392,8 @@ class RunPackageProvenanceRead(CamelModel):
     workflow_package_key: str
     workflow_package_version_id: int | None = None
     workflow_package_version: int = Field(ge=1)
-    workflow_package_hash: str
+    workflow_package_manifest_hash: str
+    workflow_package_compiled_hash: str
     workflow_key: str
     launch_snapshot: RunPackageLaunchSnapshotRead | None = None
     local_resource_refs: RunPackageLocalResourceRefsRead
@@ -406,6 +483,7 @@ __all__ = [
     "RunInvocationInputMode",
     "RunInvocationOutputOrigin",
     "RunInvocationResolvedInputOrigin",
+    "RunInvocationResourceScope",
     "RunListItemRead",
     "RunOperationInvocationRead",
     "RunOperationKind",

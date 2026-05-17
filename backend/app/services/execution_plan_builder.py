@@ -22,6 +22,12 @@ from app.services.execution_plan import (
     ExecutionPlanStep,
     ExecutionPlanTarget,
 )
+from app.services.legacy_authoring import (
+    LEGACY_AUTHORING_RUNTIME_BLOCKED,
+    raise_legacy_global_authoring_runtime_blocked,
+)
+
+LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_RUNTIME_BLOCKED
 
 
 @dataclass(frozen=True)
@@ -46,43 +52,11 @@ class ExecutionPlanBuilder:
         *,
         version: int | None = None,
     ) -> ExecutionPlan:
-        if target_kind == "workflow":
-            workflow = self._resolve_workflow_target(target_id, version=version)
-            return self._build_workflow_plan(workflow)
-        if target_kind == "agent":
-            agent = self._resolve_agent_target(target_id, version=version)
-            return self._build_agent_plan(agent)
-        raise ValueError(f"Unsupported run target kind {target_kind!r}")
+        del target_id, version
+        raise_legacy_global_authoring_runtime_blocked(target_kind)
 
     def build_plan_for_run(self, run: Run) -> ExecutionPlan:
-        if run.target_kind == "workflow":
-            workflow = self.workflow_repository.get_by_key_version(
-                run.target_key, run.target_version
-            )
-            if workflow is None:
-                raise ExecutionPlanBuilderError(
-                    code="run_workflow_missing",
-                    message=(
-                        f"Workflow {run.target_key!r} version {run.target_version} "
-                        "is no longer available"
-                    ),
-                )
-            return self._build_workflow_plan(workflow)
-        if run.target_kind == "agent":
-            agent = self.agent_repository.get_by_key_version(run.target_key, run.target_version)
-            if agent is None:
-                raise ExecutionPlanBuilderError(
-                    code="run_agent_missing",
-                    message=(
-                        f"Agent {run.target_key!r} version {run.target_version} "
-                        "is no longer available"
-                    ),
-                )
-            return self._build_agent_plan(agent)
-        raise ExecutionPlanBuilderError(
-            code="run_target_kind_invalid",
-            message=f"Unsupported run target kind {run.target_kind!r}",
-        )
+        raise_legacy_global_authoring_runtime_blocked(run.target_kind)
 
     def _resolve_workflow_target(self, workflow_id: int, *, version: int | None) -> Workflow:
         anchor = self.workflow_repository.get(workflow_id)
@@ -348,4 +322,8 @@ class ExecutionPlanBuilder:
         return None
 
 
-__all__ = ["ExecutionPlanBuilder", "ExecutionPlanBuilderError"]
+__all__ = [
+    "ExecutionPlanBuilder",
+    "ExecutionPlanBuilderError",
+    "LEGACY_AUTHORING_CLASSIFICATION",
+]

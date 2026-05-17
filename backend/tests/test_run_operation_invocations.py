@@ -144,6 +144,11 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
         }
         assert operation_payload["output"] == {"ok": True, "message": "queued"}
         assert operation_payload["operationKind"] == "http"
+        assert operation_payload["outputSchemaRef"] == {
+            "scope": "global",
+            "id": 1,
+            "version": 1,
+        }
         assert operation_payload["status"] == "succeeded"
 
         detail_payload = cast(
@@ -161,6 +166,11 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
 
     assert detail_step["invocations"] == []
     assert len(detail_operations) == 1
+    assert detail_operations[0]["outputSchemaRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "version": 1,
+    }
     assert detail_operations[0]["requestMetadata"] == request_metadata
     assert "slack-secret-value" not in serialized_detail
     assert "body-secret-value" not in serialized_detail

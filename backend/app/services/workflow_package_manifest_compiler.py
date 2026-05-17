@@ -3,10 +3,18 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Literal, cast
 
 from app.agents import ToolCatalog, ToolCatalogValidationError, get_default_tool_catalog
+from app.agents.mcp.tool_adapter import (
+    McpToolAdapterError,
+    build_package_private_mcp_tool_descriptor,
+    execution_tool_descriptor_to_payload,
+)
+from app.extensions.registry import BundledExtensionRegistry, get_bundled_extension_registry
 from app.schemas.workflow_package_manifest import (
     WorkflowPackageAgent,
     WorkflowPackageCapabilityProfile,
@@ -23,12 +31,19 @@ from app.schemas.workflow_package_manifest import (
     WorkflowPackageStepNode,
     WorkflowPackageWorkflow,
 )
+from app.services.extension_dependency_service import ExtensionDependencyService
 from app.services.workflow_package_manifest_parser import (
     locate_workflow_package_manifest_path,
     parse_workflow_package_manifest,
 )
 
 _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
+_MCP_INLINE_SECRET_FIELDS = {"env", "headers", "query"}
+_MCP_SECRET_REDACTION_VALUE = "[REDACTED]"
+
+type McpSecretProjectionMode = Literal["authoring", "redacted"]
+MCP_SECRET_PROJECTION_AUTHORING: McpSecretProjectionMode = "authoring"
+MCP_SECRET_PROJECTION_REDACTED: McpSecretProjectionMode = "redacted"
 
 
 class WorkflowPackageManifestCompilerError(ValueError):
@@ -57,6 +72,12 @@ class _WorkflowCompileContext:
         self.node_outputs[node_id] = dict(outputs)
 
 
+@dataclass
+class _PackagePrivateMcpDescriptorContext:
+    tool_owners: dict[str, str]
+    reserved_function_names: set[str] = field(default_factory=set)
+
+
 def compile_workflow_package_manifest(
     source: str | WorkflowPackageManifest,
     *,
@@ -73,13 +94,22 @@ def compile_workflow_package_manifest(
         raise WorkflowPackageManifestCompilerError(diagnostics)
 
     package_definition = _canonical_manifest_definition(manifest)
-    # Private MCP env, headers, and query values stay as ordinary manifest data.
-    compiled_plan = _compile_plan(manifest, tool_catalog=resolved_tool_catalog)
+    # Private MCP env, headers, and query values stay as ordinary manifest data internally;
+    # public projections choose an explicit MCP secret projection mode.
+    compiled_plan = _compile_plan(
+        manifest,
+        tool_catalog=resolved_tool_catalog,
+        registry=get_bundled_extension_registry(),
+    )
+    extension_dependencies = ExtensionDependencyService(
+        tool_catalog=resolved_tool_catalog
+    ).compiled_plan_dependency_payloads(compiled_plan)
     return {
         "packageDefinition": package_definition,
         "compiledPlan": compiled_plan,
         "manifestHash": _sha256_json(package_definition),
         "compiledHash": _sha256_json(compiled_plan),
+        "extensionDependencies": extension_dependencies,
         "diagnostics": [],
     }
 
@@ -107,11 +137,7 @@ def _canonical_manifest_definition(manifest: WorkflowPackageManifest) -> dict[st
 def _strip_empty_private_mcp_fields(value: object) -> object:
     if isinstance(value, dict):
         source = cast(dict[object, object], value)
-        is_mcp_server = (
-            "transport" in source
-            and "key" in source
-            and ("command" in source or "url" in source or "toolKeys" in source)
-        )
+        is_mcp_server = _looks_like_package_private_mcp_server(source)
         sanitized: dict[str, object] = {}
         for raw_key, item in source.items():
             if not isinstance(raw_key, str):
@@ -129,11 +155,66 @@ def _strip_empty_private_mcp_fields(value: object) -> object:
     return value
 
 
+def project_package_private_mcp_secrets(
+    value: object,
+    *,
+    mode: McpSecretProjectionMode,
+) -> object:
+    if mode not in {MCP_SECRET_PROJECTION_AUTHORING, MCP_SECRET_PROJECTION_REDACTED}:
+        raise ValueError(f"Unsupported MCP secret projection mode {mode!r}")
+    return _project_package_private_mcp_secrets(value, mode=mode)
+
+
+def _project_package_private_mcp_secrets(
+    value: object,
+    *,
+    mode: McpSecretProjectionMode,
+) -> object:
+    if isinstance(value, dict):
+        source = cast(dict[object, object], value)
+        is_mcp_server = _looks_like_package_private_mcp_server(source)
+        projected: dict[str, object] = {}
+        for raw_key, item in source.items():
+            if not isinstance(raw_key, str):
+                continue
+            if (
+                mode == MCP_SECRET_PROJECTION_REDACTED
+                and is_mcp_server
+                and raw_key in _MCP_INLINE_SECRET_FIELDS
+            ):
+                projected[raw_key] = _redacted_inline_mcp_map(item)
+                continue
+            projected[raw_key] = _project_package_private_mcp_secrets(item, mode=mode)
+        return projected
+    if isinstance(value, list):
+        return [_project_package_private_mcp_secrets(item, mode=mode) for item in value]
+    return deepcopy(value)
+
+
+def _redacted_inline_mcp_map(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    keys = sorted(str(key) for key in value if isinstance(key, str) and str(key).strip())
+    return {key: _MCP_SECRET_REDACTION_VALUE for key in keys}
+
+
+def _looks_like_package_private_mcp_server(source: Mapping[object, object]) -> bool:
+    return (
+        "transport" in source
+        and "key" in source
+        and ("command" in source or "url" in source or "toolKeys" in source)
+    )
+
+
 def _compile_plan(
     manifest: WorkflowPackageManifest,
     *,
     tool_catalog: ToolCatalog,
+    registry: BundledExtensionRegistry,
 ) -> dict[str, object]:
+    mcp_descriptor_context = _PackagePrivateMcpDescriptorContext(
+        tool_owners=registry.package_private_mcp_tool_owners()
+    )
     return {
         "packageKey": manifest.metadata.key,
         "inputs": manifest.spec.inputs,
@@ -156,7 +237,7 @@ def _compile_plan(
             for schema in sorted(manifest.spec.output_schemas, key=lambda item: item.key)
         ],
         "mcpServers": [
-            _compile_mcp_server(server)
+            _compile_mcp_server(server, descriptor_context=mcp_descriptor_context)
             for server in sorted(manifest.spec.mcp_servers, key=lambda item: item.key)
         ],
         "agents": [
@@ -177,13 +258,47 @@ def _resolved_profile_tool_keys(
     return sorted(tool.key for tool in tool_catalog.resolve_tool_keys(profile.tool_keys))
 
 
-def _compile_mcp_server(server: WorkflowPackageMcpServer) -> dict[str, object]:
+def _compile_mcp_server(
+    server: WorkflowPackageMcpServer,
+    *,
+    descriptor_context: _PackagePrivateMcpDescriptorContext,
+) -> dict[str, object]:
     payload = cast(
         dict[str, object], server.model_dump(mode="json", by_alias=True, exclude_none=True)
     )
     if "toolKeys" in payload:
         payload["toolKeys"] = sorted(cast(list[str], payload["toolKeys"]))
+    tool_descriptors = _compile_package_private_mcp_tool_descriptors(
+        server,
+        descriptor_context=descriptor_context,
+    )
+    if tool_descriptors:
+        payload["toolDescriptors"] = tool_descriptors
     return payload
+
+
+def _compile_package_private_mcp_tool_descriptors(
+    server: WorkflowPackageMcpServer,
+    *,
+    descriptor_context: _PackagePrivateMcpDescriptorContext,
+) -> list[dict[str, object]]:
+    descriptors: list[dict[str, object]] = []
+    for tool_name in sorted({tool_key.strip().lower() for tool_key in server.tool_keys}):
+        owner_extension_key = descriptor_context.tool_owners.get(tool_name)
+        if owner_extension_key is None:
+            continue
+        try:
+            descriptor = build_package_private_mcp_tool_descriptor(
+                server_key=server.key,
+                original_tool_name=tool_name,
+                owner_extension_key=owner_extension_key,
+                reserved_function_names=descriptor_context.reserved_function_names,
+            )
+        except McpToolAdapterError:
+            continue
+        descriptor_context.reserved_function_names.add(descriptor.openai_function_name)
+        descriptors.append(execution_tool_descriptor_to_payload(descriptor))
+    return descriptors
 
 
 def _compile_agent(agent: WorkflowPackageAgent) -> dict[str, object]:
@@ -626,6 +741,10 @@ def _diagnostic(
 
 
 __all__ = [
+    "MCP_SECRET_PROJECTION_AUTHORING",
+    "MCP_SECRET_PROJECTION_REDACTED",
+    "McpSecretProjectionMode",
     "WorkflowPackageManifestCompilerError",
     "compile_workflow_package_manifest",
+    "project_package_private_mcp_secrets",
 ]

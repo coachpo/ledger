@@ -18,6 +18,10 @@ from app.models.agent import (
 )
 from app.models.mcp_server import flatten_mcp_server_storage_payload
 from app.models.workflow import TEMPORARY_WORKFLOW_MANIFEST_SOURCE, WORKFLOW_MANIFEST_API_VERSION
+from app.services.extension_dependency_service import ExtensionDependencyService
+from app.services.legacy_authoring import LEGACY_AUTHORING_UPGRADE_ONLY
+
+LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_UPGRADE_ONLY
 
 _OBSOLETE_TABLES = (
     "stock_analysis_versions",
@@ -377,8 +381,10 @@ $$,
                 workflow_package_key VARCHAR(120),
                 workflow_package_version_id INTEGER,
                 workflow_package_version INTEGER,
-                workflow_package_hash VARCHAR(64),
+                workflow_package_manifest_hash VARCHAR(64),
+                workflow_package_compiled_hash VARCHAR(64),
                 workflow_package_workflow_key VARCHAR(120),
+                launch_snapshot JSONB,
                 extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb,
                 input JSONB NOT NULL,
                 status VARCHAR(20) NOT NULL DEFAULT 'queued',
@@ -431,6 +437,14 @@ $$,
             (
                 "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_key "
                 "ON runs (workflow_package_key, workflow_package_version)"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_manifest_hash "
+                "ON runs (workflow_package_manifest_hash)"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_compiled_hash "
+                "ON runs (workflow_package_compiled_hash)"
             ),
             (
                 "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_workflow_key "
@@ -688,6 +702,7 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
         package_definition JSONB NOT NULL,
         compiled_plan JSONB NOT NULL,
         compiled_hash VARCHAR(64) NOT NULL,
+        extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb,
         validation_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         launched_at TIMESTAMPTZ,
@@ -759,8 +774,10 @@ _RUN_WORKFLOW_PACKAGE_PROVENANCE_COLUMNS: dict[str, str] = {
     "workflow_package_key": "VARCHAR(120)",
     "workflow_package_version_id": "INTEGER",
     "workflow_package_version": "INTEGER",
-    "workflow_package_hash": "VARCHAR(64)",
+    "workflow_package_manifest_hash": "VARCHAR(64)",
+    "workflow_package_compiled_hash": "VARCHAR(64)",
     "workflow_package_workflow_key": "VARCHAR(120)",
+    "launch_snapshot": "JSONB",
     "extension_dependencies": "JSONB NOT NULL DEFAULT '[]'::jsonb",
 }
 _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES: tuple[str, ...] = (
@@ -771,6 +788,14 @@ _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_key "
         "ON runs (workflow_package_key, workflow_package_version)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_manifest_hash "
+        "ON runs (workflow_package_manifest_hash)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_compiled_hash "
+        "ON runs (workflow_package_compiled_hash)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_workflow_key "
@@ -883,8 +908,10 @@ AND run.workflow_package_id IS NOT NULL
 AND run.workflow_package_key IS NOT NULL
 AND run.workflow_package_version_id IS NOT NULL
 AND run.workflow_package_version IS NOT NULL
-AND run.workflow_package_hash IS NOT NULL
+AND run.workflow_package_manifest_hash IS NOT NULL
+AND run.workflow_package_compiled_hash IS NOT NULL
 AND run.workflow_package_workflow_key IS NOT NULL
+AND run.launch_snapshot IS NOT NULL
 AND EXISTS (
     SELECT 1
     FROM workflow_packages AS package
@@ -894,9 +921,26 @@ AND EXISTS (
     WHERE package.id = run.workflow_package_id
       AND package.key = run.workflow_package_key
       AND version.version = run.workflow_package_version
-      AND version.manifest_hash = run.workflow_package_hash
+      AND version.manifest_hash = run.workflow_package_manifest_hash
+      AND version.compiled_hash = run.workflow_package_compiled_hash
 )
 """
+_GLOBAL_AUTHORING_CLEANUP_REQUIRED_PACKAGE_TABLES = frozenset(
+    {"workflow_packages", "workflow_package_versions"}
+)
+_GLOBAL_AUTHORING_CLEANUP_REQUIRED_RUN_COLUMNS = frozenset(
+    {
+        "target_kind",
+        "workflow_package_id",
+        "workflow_package_key",
+        "workflow_package_version_id",
+        "workflow_package_version",
+        "workflow_package_manifest_hash",
+        "workflow_package_compiled_hash",
+        "workflow_package_workflow_key",
+        "launch_snapshot",
+    }
+)
 _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     "output_schemas": frozenset(
         {
@@ -966,6 +1010,14 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "target_id",
             "target_key",
             "target_version",
+            "workflow_package_id",
+            "workflow_package_key",
+            "workflow_package_version_id",
+            "workflow_package_version",
+            "workflow_package_manifest_hash",
+            "workflow_package_compiled_hash",
+            "workflow_package_workflow_key",
+            "launch_snapshot",
             "extension_dependencies",
             "input",
             "status",
@@ -1492,6 +1544,60 @@ def _ensure_workflow_package_tables(engine: Engine, table_names: set[str]) -> No
     )
 
 
+def _ensure_workflow_package_version_dependency_snapshots(
+    engine: Engine,
+    table_names: set[str],
+) -> None:
+    if "workflow_package_versions" not in table_names:
+        return
+    inspector = inspect(engine)
+    version_columns = {
+        column["name"] for column in inspector.get_columns("workflow_package_versions")
+    }
+    dependency_service = ExtensionDependencyService()
+    with engine.begin() as connection:
+        if "extension_dependencies" not in version_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_package_versions "
+                "ADD COLUMN extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
+        rows = connection.execute(
+            text(
+                "SELECT id, compiled_plan, extension_dependencies "
+                "FROM workflow_package_versions ORDER BY id"
+            )
+        ).mappings()
+        for row in rows:
+            existing_dependencies = ExtensionDependencyService.normalize_dependency_payloads(
+                row["extension_dependencies"]
+            )
+            dependencies = (
+                existing_dependencies
+                or dependency_service.compiled_plan_dependency_payloads(
+                    row["compiled_plan"] if isinstance(row["compiled_plan"], dict) else {}
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE workflow_package_versions "
+                    "SET extension_dependencies = CAST(:dependencies AS JSONB) "
+                    "WHERE id = :version_id"
+                ),
+                {
+                    "dependencies": json.dumps(dependencies),
+                    "version_id": row["id"],
+                },
+            )
+        connection.exec_driver_sql(
+            "ALTER TABLE workflow_package_versions "
+            "ALTER COLUMN extension_dependencies SET DEFAULT '[]'::jsonb"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE workflow_package_versions "
+            "ALTER COLUMN extension_dependencies SET NOT NULL"
+        )
+
+
 def _preset_package_sql_path() -> Path:
     return Path(__file__).with_name(_PRESET_PACKAGE_SQL_FILE)
 
@@ -1576,6 +1682,138 @@ def _delete_rows_with_unresolved_dependency_refs(engine: Engine, table_names: se
                 )
                 """
             )
+
+
+def _backfill_run_package_hashes_and_launch_snapshots(
+    connection: Connection,
+    run_columns: set[str],
+) -> None:
+    if "workflow_package_hash" in run_columns:
+        connection.exec_driver_sql(
+            """
+            UPDATE runs
+            SET workflow_package_manifest_hash = workflow_package_hash
+            WHERE workflow_package_manifest_hash IS NULL
+              AND workflow_package_hash IS NOT NULL
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        UPDATE runs AS run
+        SET workflow_package_compiled_hash = version.compiled_hash
+        FROM workflow_package_versions AS version
+        WHERE run.workflow_package_compiled_hash IS NULL
+          AND run.workflow_package_version_id = version.id
+          AND run.workflow_package_id = version.package_id
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        UPDATE runs AS run
+        SET workflow_package_manifest_hash = version.manifest_hash
+        FROM workflow_package_versions AS version
+        WHERE run.workflow_package_manifest_hash IS NULL
+          AND run.workflow_package_version_id = version.id
+          AND run.workflow_package_id = version.package_id
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        UPDATE runs AS run
+        SET launch_snapshot = jsonb_build_object(
+            'workflowPackageId', run.workflow_package_id,
+            'workflowPackageKey', run.workflow_package_key,
+            'workflowPackageVersionId', run.workflow_package_version_id,
+            'workflowPackageVersion', run.workflow_package_version,
+            'workflowPackageManifestHash', run.workflow_package_manifest_hash,
+            'workflowPackageCompiledHash', run.workflow_package_compiled_hash,
+            'workflowKey', run.workflow_package_workflow_key,
+            'workflowName', COALESCE(
+                (
+                    SELECT workflow.value ->> 'name'
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'workflows', '[]'::jsonb)
+                    ) AS workflow(value)
+                    WHERE workflow.value ->> 'key' = run.workflow_package_workflow_key
+                    LIMIT 1
+                ),
+                run.workflow_package_workflow_key
+            ),
+            'workflowDescription', COALESCE(
+                (
+                    SELECT workflow.value ->> 'description'
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'workflows', '[]'::jsonb)
+                    ) AS workflow(value)
+                    WHERE workflow.value ->> 'key' = run.workflow_package_workflow_key
+                    LIMIT 1
+                ),
+                ''
+            ),
+            'inputSchema', COALESCE(
+                (
+                    SELECT workflow.value -> 'inputSchema'
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'workflows', '[]'::jsonb)
+                    ) AS workflow(value)
+                    WHERE workflow.value ->> 'key' = run.workflow_package_workflow_key
+                    LIMIT 1
+                ),
+                '{}'::jsonb
+            ),
+            'parameters', run.input,
+            'localResourceRefs', jsonb_build_object(
+                'agents', COALESCE((
+                    SELECT jsonb_agg(to_jsonb(item.value ->> 'key') ORDER BY item.value ->> 'key')
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'agents', '[]'::jsonb)
+                    ) AS item(value)
+                    WHERE item.value ? 'key'
+                ), '[]'::jsonb),
+                'outputSchemas', COALESCE((
+                    SELECT jsonb_agg(
+                        to_jsonb(item.value ->> 'key') ORDER BY item.value ->> 'key'
+                    )
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'outputSchemas', '[]'::jsonb)
+                    ) AS item(value)
+                    WHERE item.value ? 'key'
+                ), '[]'::jsonb),
+                'capabilityProfiles', COALESCE((
+                    SELECT jsonb_agg(
+                        to_jsonb(item.value ->> 'key') ORDER BY item.value ->> 'key'
+                    )
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'capabilityProfiles', '[]'::jsonb)
+                    ) AS item(value)
+                    WHERE item.value ? 'key'
+                ), '[]'::jsonb),
+                'mcpServers', COALESCE((
+                    SELECT jsonb_agg(to_jsonb(item.value ->> 'key') ORDER BY item.value ->> 'key')
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'mcpServers', '[]'::jsonb)
+                    ) AS item(value)
+                    WHERE item.value ? 'key'
+                ), '[]'::jsonb),
+                'workflows', COALESCE((
+                    SELECT jsonb_agg(to_jsonb(item.value ->> 'key') ORDER BY item.value ->> 'key')
+                    FROM jsonb_array_elements(
+                        COALESCE(version.compiled_plan -> 'workflows', '[]'::jsonb)
+                    ) AS item(value)
+                    WHERE item.value ? 'key'
+                ), '[]'::jsonb)
+            ),
+            'resolvedModelConnections', '[]'::jsonb,
+            'preflightSummary', NULL
+        )
+        FROM workflow_package_versions AS version
+        WHERE run.launch_snapshot IS NULL
+          AND run.target_kind = 'workflowPackage'
+          AND run.workflow_package_version_id = version.id
+          AND run.workflow_package_id = version.package_id
+          AND run.workflow_package_workflow_key IS NOT NULL
+        """
+    )
 
 
 def _normalize_run_extension_dependencies(connection: Connection) -> None:
@@ -1688,6 +1926,7 @@ def _ensure_run_workflow_package_provenance_support(
             )
             connection.exec_driver_sql("ALTER TABLE runs DROP COLUMN extension_snapshots")
             run_columns.discard("extension_snapshots")
+        _backfill_run_package_hashes_and_launch_snapshots(connection, run_columns)
         _normalize_run_extension_dependencies(connection)
         connection.exec_driver_sql(
             "ALTER TABLE runs ALTER COLUMN extension_dependencies SET DEFAULT '[]'::jsonb"
@@ -1965,7 +2204,18 @@ def _reset_agent_platform_runtime_tables(engine: Engine, table_names: set[str]) 
             table_names.add(table_name)
 
 
+def _global_authoring_cleanup_is_representable(engine: Engine, table_names: set[str]) -> bool:
+    if "runs" not in table_names:
+        return True
+    if not _GLOBAL_AUTHORING_CLEANUP_REQUIRED_PACKAGE_TABLES <= table_names:
+        return False
+    run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
+    return _GLOBAL_AUTHORING_CLEANUP_REQUIRED_RUN_COLUMNS <= run_columns
+
+
 def _delete_clean_break_global_authoring_rows(engine: Engine, table_names: set[str]) -> None:
+    if not _global_authoring_cleanup_is_representable(engine, table_names):
+        return
     with engine.begin() as connection:
         if "runs" in table_names:
             stale_run_subquery = "SELECT run.id FROM runs AS run " + (
@@ -3119,6 +3369,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
         _reset_agent_platform_runtime_tables(engine, table_names)
     _ensure_hard_delete_lifecycle_schema(engine, table_names)
     _ensure_workflow_package_tables(engine, table_names)
+    _ensure_workflow_package_version_dependency_snapshots(engine, table_names)
     _ensure_agent_platform_tables(engine, table_names)
     _ensure_run_workflow_package_provenance_support(engine, table_names)
     _remove_run_cost_columns(engine, table_names)
@@ -3147,6 +3398,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_hard_delete_lifecycle_schema(engine, table_names)
     _delete_rows_with_unresolved_dependency_refs(engine, table_names)
     _ensure_browser_proven_package_preset(engine, table_names)
+    _ensure_workflow_package_version_dependency_snapshots(engine, table_names)
     _cleanup_package_versions_with_unresolved_model_connections(engine, table_names)
     _ensure_platform_reference_tables(engine, table_names)
     _backfill_platform_reference_tables(engine, table_names)

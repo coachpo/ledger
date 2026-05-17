@@ -52,9 +52,21 @@ def test_workflow_package_runtime_persists_target_fk_step_and_invocation_artifac
     invocations = cast(list[dict[str, object]], step["invocations"])
     assert len(invocations) == 1
     invocation = invocations[0]
+    assert invocation["agentRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "key": "package_analyst",
+        "version": 1,
+    }
     assert invocation["agentId"] == 1
     assert invocation["agentKey"] == "package_analyst"
     assert invocation["agentVersion"] == 1
+    assert invocation["outputSchemaRef"] == {
+        "scope": "packageLocal",
+        "localId": 1,
+        "key": "summary_output",
+        "version": 1,
+    }
     assert invocation["outputSchemaId"] == 1
     assert invocation["outputSchemaVersion"] == 1
     assert invocation["resolvedInput"] == {"ticker": "AAPL"}
@@ -63,6 +75,11 @@ def test_workflow_package_runtime_persists_target_fk_step_and_invocation_artifac
     assert invocation["sourceInvocationId"] is None
 
     provenance = cast(dict[str, object], detail["packageProvenance"])
+    assert provenance["workflowPackageManifestHash"]
+    assert provenance["workflowPackageCompiledHash"]
+    launch_snapshot = cast(dict[str, object], provenance["launchSnapshot"])
+    assert launch_snapshot["workflowKey"] == "runtime_workflow"
+    assert launch_snapshot["parameters"] == {"ticker": "AAPL"}
     availability = cast(dict[str, object], provenance["availability"])
     assert availability["packageStatus"] == "active"
     assert availability["packageVersionAvailable"] is True

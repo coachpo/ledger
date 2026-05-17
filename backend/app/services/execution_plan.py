@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
 
+from app.services.execution_ownership import PackageExecutionOwnership
+
 ExecutionPlanInputMode = Literal["passthrough", "wired"]
 ExecutionPlanOperationKind = Literal["http"]
 ExecutionPlanTargetKind = Literal["agent", "workflow", "workflow_package"]
@@ -73,6 +75,7 @@ class PackagePrivateMcpConfig:
     headers: dict[str, str]
     query: dict[str, str]
     tool_keys: tuple[str, ...]
+    tool_descriptors: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -185,6 +188,7 @@ class ExecutionPlan:
     steps: tuple[ExecutionPlanStep, ...]
     final_output: ExecutionPlanFinalOutput
     package_workflow: PackageExecutionWorkflow | None = None
+    package_ownership: PackageExecutionOwnership | None = None
 
 
 __all__ = [
@@ -200,6 +204,7 @@ __all__ = [
     "ExecutionPlanStep",
     "ExecutionPlanTarget",
     "ExecutionPlanTargetKind",
+    "PackageExecutionOwnership",
     "PackageCapabilityProfileGrant",
     "PackageExecutionStep",
     "PackageExecutionWorkflow",

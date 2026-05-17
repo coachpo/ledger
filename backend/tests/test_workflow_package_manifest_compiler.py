@@ -111,6 +111,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
         "compiledPlan",
         "manifestHash",
         "compiledHash",
+        "extensionDependencies",
         "diagnostics",
     }
     assert compiled["diagnostics"] == []

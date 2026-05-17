@@ -116,6 +116,7 @@ def test_package_execution_plan_threads_private_mcp_flat_maps_into_runtime_refs(
             "headers": {"Authorization": "Bearer test-token"},
             "query": {"api_key": "test-api-key"},
             "toolKeys": ["research_context.search"],
+            "toolDescriptors": [],
         }
     ]
 

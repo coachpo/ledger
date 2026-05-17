@@ -17,8 +17,10 @@ _RUN_PROVENANCE_COLUMNS = {
     "workflow_package_key",
     "workflow_package_version_id",
     "workflow_package_version",
-    "workflow_package_hash",
+    "workflow_package_manifest_hash",
+    "workflow_package_compiled_hash",
     "workflow_package_workflow_key",
+    "launch_snapshot",
 }
 _DETERMINISTIC_SMOKE_BASE_URL = "https://signaldeck-deterministic-model.local/v1"
 
@@ -87,6 +89,7 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "package_definition",
         "compiled_plan",
         "compiled_hash",
+        "extension_dependencies",
         "validation_summary",
         "created_at",
         "launched_at",
@@ -110,12 +113,15 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     assert package_columns["key"]["nullable"] is False
     assert version_columns["package_definition"]["nullable"] is False
     assert version_columns["compiled_plan"]["nullable"] is False
+    assert version_columns["extension_dependencies"]["nullable"] is False
     assert "uq_workflow_packages_active_key" in package_indexes
     assert "uq_workflow_package_versions_package_version" in version_unique_constraints
     assert "ix_workflow_package_versions_compiled_hash" in version_indexes
     assert {
         "ix_runs_workflow_package",
         "ix_runs_workflow_package_key",
+        "ix_runs_workflow_package_manifest_hash",
+        "ix_runs_workflow_package_compiled_hash",
         "ix_runs_workflow_package_workflow_key",
     } <= run_indexes
     assert {
