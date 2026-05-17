@@ -330,8 +330,11 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveClass("whitespace-pre-wrap", "break-words", "overflow-hidden");
+    const finalOutput = screen.getByTestId("runs-detail-final-output");
+    expect(finalOutput).toHaveTextContent(/normalized/i);
+    expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
+    expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
+    expect(screen.getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
     expect(screen.queryByTestId("runs-trace-path")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
     expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(/decision\/span-2/i);

@@ -360,6 +360,17 @@ function JsonBlock({ label, testId, value }: { label?: string; testId?: string; 
   );
 }
 
+function RunFinalOutputPane({ value }: { value: unknown }) {
+  return (
+    <section aria-labelledby="runs-final-output-heading" className="space-y-3">
+      <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
+      <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid="runs-detail-final-output">
+        <div className="whitespace-pre-wrap break-words text-foreground">{stringifyJson(value)}</div>
+      </div>
+    </section>
+  );
+}
+
 function graphMetadataLabel(metadata: RunGraphMetadata | null | undefined): string {
   if (!metadata) {
     return "Not recorded";
@@ -1376,7 +1387,7 @@ function EvidenceViewer({
   } else if (activeInspection.pane === "memory") {
     content = run.memoryArtifacts[0] ? <MemoryArtifactEvidence artifact={run.memoryArtifacts[0]} /> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No memory artifacts were created by this run.</div>;
   } else {
-    content = <JsonBlock label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />;
+    content = <RunFinalOutputPane value={run.finalOutput} />;
   }
 
   return (
