@@ -3,14 +3,9 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers routed page components in `src/pages/`.
 
 ## CHILD DOCS
-- `extensions/AGENTS.md` — bundled extension state/toggle system route
 - `workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export route family
-- `model-connections/AGENTS.md` — saved model connection list/editor route family
 - `runs/AGENTS.md` — runs list and detail route family
-- `portfolios/AGENTS.md` — portfolio list/detail workspace routes
-- `templates/AGENTS.md` — template list/editor routes and preview rules
-- `reports/AGENTS.md` — report list/detail routes and markdown workflows
-- `../../retired/global-authoring/src/pages/*/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
+- `../../retired/global-authoring/src/pages/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 
 ## OVERVIEW
 `src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, bundled extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
@@ -18,6 +13,8 @@
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+
+This parent guide intentionally covers the smaller live route folders directly. Split out a new child AGENTS.md only when a route family gains its own deep contract surface or independently owned conventions.
 
 ## STRUCTURE
 ```text
@@ -37,12 +34,15 @@ src/pages/
 | Task | Location | Notes |
 |---|---|---|
 | Dashboard landing | `dashboard.tsx` | home route summary and retry state |
-| Extension state route | `extensions/AGENTS.md` | bundled extension slim state and enable/disable toggle flow |
-| Agent-platform pages | `workflow-packages/AGENTS.md`, `model-connections/AGENTS.md`, `runs/AGENTS.md` | package authoring, saved connections, and run inspection |
-| Portfolio workspace | `portfolios/AGENTS.md` | portfolio list and detail workspace |
-| Template list/editor | `templates/AGENTS.md` | stored-template CRUD, inline compile preview, placeholder browser |
-| Report routes | `reports/AGENTS.md` | list/detail, upload/generate, markdown view/edit/download |
+| Extension state route | `extensions/list.tsx`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts` | bundled extension slim state and enable/disable toggle flow |
+| Workflow Package pages | `workflow-packages/AGENTS.md` | package authoring, validation, preflight, launch, import, and export |
+| Model connection pages | `model-connections/list.tsx`, `model-connections/editor.tsx`, `../hooks/use-model-connections.ts` | saved connection inventory, write-only secrets, delete flow, and connection-test UI |
+| Run pages | `runs/AGENTS.md` | run list, detail, rerun, step replay, and trace views |
+| Portfolio workspace | `portfolios/list.tsx`, `portfolios/detail.tsx`, `../components/portfolios/AGENTS.md` | portfolio list/detail workspace |
+| Template list/editor | `templates/list.tsx`, `templates/editor.tsx`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser |
+| Report routes | `reports/list.tsx`, `reports/detail.tsx`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts` | list/detail, upload/generate, markdown view/edit/download |
 | Shared platform page helpers | `platform-resource-shared.tsx` | common badges, JSON helpers, and small route-level utilities |
+| Archive-only cutover context | `../../retired/global-authoring/src/pages/AGENTS.md` | removed standalone authoring route families |
 
 ## CONVENTIONS
 - `src/routes.ts` is the route source of truth, and routed screens in this folder back the registered paths, even when one editor component handles both create and edit URLs.
@@ -54,6 +54,8 @@ src/pages/
 - Portfolio detail pages compose portfolio, balance, position, trade, and market-data hooks together; quote enrichment and allocation math stay in shared analytics helpers instead of the page body.
 - Workflow package pages keep package-private resources inside package editor tabs and use global Model Connections, extension-filtered read-only Tools, and global Runs through dedicated hooks.
 - The `/extensions` page is a system state surface only; it should not grow marketplace/install/remove behavior in phase 1.
+- Model connection create/edit flows share one editor page; blank edit submissions preserve the stored key, and connection tests run only against a saved backend connection.
+- Report routes stay slug-addressed; pages own search/group/view state and local edit mode, while hooks own request policy.
 
 ## FRONTEND PAGE UI STANDARD
 - Page shells use a simple content stack such as `space-y-4 p-4`; legacy inventory wrappers and dashboard-style summary-card bands are not the default for resource lists.
@@ -74,6 +76,7 @@ src/pages/
 - Do not duplicate report request logic in page components when `use-reports.ts` and the template editor already own the server-side workflow.
 - Do not add dead routes or stale route docs that are not wired into `src/routes.ts`.
 - Do not bypass extension route gates or duplicate Finance Workspace visibility rules in page components.
+- Do not recreate tiny route-family AGENTS files when the parent already owns the rules and the folder has no independent contract surface.
 
 ## VALIDATION
 ```bash

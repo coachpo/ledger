@@ -9,6 +9,8 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
 
+Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote finance-owned routes, providers, runtime tools, or hooks into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
+
 ## CHILD DOCS
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
@@ -78,6 +80,7 @@ backend/
 - Do not change report compile/upload/download contracts, report filters, report placeholder behavior, or report slug rules without updating `tests/test_api.py` and the frontend callers.
 - Do not bypass `ExtensionService`, extension gates, or private registrars to expose finance routes/tools/providers directly.
 - Do not add plugin-manifest metadata to public extension schemas, OpenAPI, run payloads, or docs. `/api/extensions` stays limited to `key`, `label`, and `enabled`.
+- Do not migrate finance-owned behavior into generic core services or backend docs without first defining the shared platform contract and updating ownership/tests together.
 - Do not reintroduce retired orchestration, Studio, Tryout, or runtime-v2 surfaces as live backend docs or routes.
 - Do not add raw `httpx`/`requests` model-calling code in backend application paths when the provider offers an official library.
 

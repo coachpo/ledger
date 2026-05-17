@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/extensions/` owns frontend extension registration, route assembly, sidebar grouping, extension-gated route shells, and tool-catalog filtering. The current bundled frontend extension is `signaldeck.finance`, enabled by backend state from `/api/extensions`.
 
+Future upgrade work must keep this folder focused on generic extension-runtime wiring. Finance-specific route/nav/tool behavior should stay in the bundled finance scaffold until a shared platform contract is explicit.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
@@ -36,3 +38,4 @@ src/extensions/
 - Do not hard-code Finance Workspace visibility in `routes.ts`, `layout.tsx`, or page components.
 - Do not add marketplace/install/remove behavior to frontend extension scaffolds in phase 1.
 - Do not add plugin-manifest fields to frontend extension state, run types, route gates, or docs.
+- Do not migrate finance-specific route/nav/tool assumptions into generic runtime wiring without first defining the shared platform contract.

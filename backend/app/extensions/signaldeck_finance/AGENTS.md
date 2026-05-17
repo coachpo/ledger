@@ -5,6 +5,8 @@
 ## OVERVIEW
 `signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, and report-backed memory hooks.
 
+Treat this folder as extension-owned product logic, not as a staging area for generic platform behavior. If a finance-specific feature becomes a shared platform contract, move that ownership intentionally and update registries, gates, docs, and tests together.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
@@ -27,4 +29,5 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 
 ## ANTI-PATTERNS
 - Do not move finance service factories back into generic API dependencies without preserving extension ownership and gating.
+- Do not promote finance-owned route, provider, tool, or report-memory behavior into shared platform docs or core layers without an explicit shared-contract migration.
 - Do not expose quote, social sentiment, report-memory, or finance route behavior when `signaldeck.finance` is disabled.

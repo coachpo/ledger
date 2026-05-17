@@ -29,6 +29,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Do not present Studio, Tryout, orchestration, runtime-v2, simulations, backtests, `/api/skills`, `/skills*`, or retired global authoring routes as live.
 - `api-design.md` owns preserved API route tables and platform endpoint summaries.
 - `signaldeck-agent-platform.md` owns package-first platform contracts and retired-platform boundaries.
+- When documenting upgrades, keep platform-core behavior separate from extension-owned behavior; finance-specific examples must not silently rewrite shared platform contracts.
 - `data-model.md` documents current persistence intent, not migration steps; `backend/app/db/` remains the schema-repair authority.
 - `test-plan.md` records expected validation scope, not implementation history.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
