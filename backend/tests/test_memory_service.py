@@ -8,16 +8,19 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.extensions.signaldeck_finance.grant_policy import (
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    REPORT_MEMORY_WRITE_GRANT_POLICY,
+)
+from app.extensions.signaldeck_finance.runtime_types import (
+    REPORT_LOOKUP_TOOL_KEY,
+    REPORT_MEMORY_WRITE_TOOL_KEY,
+)
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.memory import MemoryDecision, MemoryProvenance, MemoryWriteRequest
-from app.services.capability_service import (
-    REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-    REPORT_MEMORY_WRITE_TOOL_KEY,
-    RuntimeToolGrantError,
-)
+from app.services.capability_service import RuntimeToolGrantError
 from app.services.memory_service import MemoryService
 
 _MEMORY_WRITE_CAPABILITY_KEY = "memory_service_test_writer"
@@ -102,6 +105,7 @@ def test_memory_report_service_boundary_write_memory_requires_grant_and_creates_
             _ = MemoryService(session).write_memory(
                 capability_references=_capability_references(capability_key),
                 payload=_write_request(),
+                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
             )
         reports = _reports(session)
 
@@ -119,6 +123,7 @@ def test_memory_report_service_boundary_write_memory_returns_memory_projections(
         result = service.write_memory(
             capability_references=_capability_references(),
             payload=_write_request(),
+            grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
         )
         entry = service.get_memory(result.memory_id)
         artifacts = service.list_run_artifacts(42)
@@ -165,6 +170,7 @@ def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(
             _ = MemoryService(session).write_memory(
                 capability_references=_capability_references(),
                 payload=_write_request(run_id=43),
+                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
             )
 
     with session_factory() as session:

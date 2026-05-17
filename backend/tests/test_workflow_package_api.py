@@ -341,7 +341,8 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     )
     version_one_definition = cast(dict[str, object], version_one_body["packageDefinition"])
     assert _workflow_description(version_one_definition, "advisory_research") == (
-        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
+        "bounded loop semantics only."
     )
 
     edited_source = _edited_workflow_manifest_source(cast(str, version_one_body["manifestSource"]))
@@ -369,7 +370,8 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     assert version_two_body["manifestHash"] != version_one_body["manifestHash"]
     version_two_definition = cast(dict[str, object], version_two_body["packageDefinition"])
     assert _workflow_description(version_two_definition, "advisory_research") == (
-        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
+        "bounded loop semantics only."
     )
 
     historical = client.get(
@@ -388,7 +390,8 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     assert _manifest_semantics(historical_body) != _manifest_semantics(version_two_body)
     historical_definition = cast(dict[str, object], historical_body["packageDefinition"])
     assert _workflow_description(historical_definition, "advisory_research") == (
-        "Canonical TradingAgents advisory research topology using SignalDeck sequence and bounded loop semantics only."
+        "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
+        "bounded loop semantics only."
     )
 
     versions = client.get(f"/api/workflow-packages/{package_id}/versions")

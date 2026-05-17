@@ -14,6 +14,11 @@ from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
+from app.extensions.signaldeck_finance.grant_policy import (
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
+    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    REPORT_MEMORY_WRITE_GRANT_POLICY,
+)
 from app.extensions.signaldeck_finance.hooks import (
     MEMORY_CONTEXT_SERVICE_SURFACE,
     MEMORY_REPORT_SERVICE_SURFACE,
@@ -22,6 +27,10 @@ from app.extensions.signaldeck_finance.hooks import (
     RETURN_RESOLUTION_SERVICE_SURFACE,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.runtime_types import (
+    REPORT_LOOKUP_TOOL_KEY,
+    REPORT_MEMORY_WRITE_TOOL_KEY,
+)
 from app.models.capability import Capability
 from app.models.report import Report
 from app.schemas.extension import ExtensionToggleRequest
@@ -43,13 +52,7 @@ from app.schemas.memory_report import (
     AgentMemoryTrustedCreateContext,
 )
 from app.schemas.report import ReportRead, ReportUpdate
-from app.services.capability_service import (
-    REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-    REPORT_MEMORY_WRITE_TOOL_KEY,
-    RuntimeToolGrantError,
-)
+from app.services.capability_service import RuntimeToolGrantError
 from app.services.extension_service import ExtensionService
 from app.services.market_data_service import MarketDataService
 from app.services.memory_context_service import MemoryContextService, MemoryPromptSnippet
@@ -171,6 +174,7 @@ def _create_pending_report(
     _ensure_memory_write_capability(session)
     return MemoryReportService(session).create_pending_report(
         capability_references=_memory_write_capability_references(),
+        grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
         payload=_pending_create_metadata(),
         trusted_context=_trusted_context({"runId": run_id}),
     )
@@ -286,6 +290,7 @@ def _create_resolution_report(
     decision["action"] = action
     report = MemoryReportService(session).create_pending_report(
         capability_references=_memory_write_capability_references(),
+        grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
         payload=_pending_create_metadata(
             {"ticker": ticker, "horizonDays": horizon_days, "decision": decision}
         ),
@@ -792,6 +797,7 @@ def test_report_memory_service_create_pending_report_requires_write_grant(
         with pytest.raises(RuntimeToolGrantError) as exc_info:
             _ = MemoryReportService(session).create_pending_report(
                 capability_references=_memory_write_capability_references(key=capability_key),
+                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
                 payload=_pending_create_metadata(),
                 trusted_context=_trusted_context(),
             )
@@ -821,6 +827,7 @@ def test_memory_report_service_derives_trusted_metadata_from_context(
         _ensure_memory_write_capability(session)
         report = MemoryReportService(session).create_pending_report(
             capability_references=_memory_write_capability_references(),
+            grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
             payload=payload,
             trusted_context=trusted_context,
         )
@@ -1307,6 +1314,7 @@ def _resolved_context_report(
     service = MemoryReportService(session)
     report = service.create_pending_report(
         capability_references=_memory_write_capability_references(),
+        grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
         payload=_pending_create_metadata(
             {
                 "ticker": ticker,

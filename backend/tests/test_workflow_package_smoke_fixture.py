@@ -140,9 +140,7 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert cast(list[dict[str, object]], spec["mcpServers"]) == []
     assert "Authorization: Bearer exa-inline-token" not in roundtrip.source
     assert "exaApiKey: exa-inline-key" not in roundtrip.source
-    agents_by_key = {
-        str(agent["key"]): agent for agent in cast(list[dict[str, object]], spec["agents"])
-    }
+    assert {str(agent["key"]): agent for agent in cast(list[dict[str, object]], spec["agents"])}
     profile_tool_keys = {
         tool_key
         for profile in cast(list[dict[str, object]], spec["capabilityProfiles"])
@@ -155,7 +153,7 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert {agent["modelConnection"] for agent in compiled_agents} == {
         "tradingagents_primary_model"
     }
-    compiled_agents_by_key = {str(agent["key"]): agent for agent in compiled_agents}
+    assert {str(agent["key"]): agent for agent in compiled_agents}
     assert any(cast(list[str], agent["capabilityProfiles"]) for agent in compiled_agents)
 
 

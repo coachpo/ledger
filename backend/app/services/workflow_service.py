@@ -38,6 +38,7 @@ from app.schemas.workflow_manifest import (
     WorkflowManifestDiagnostic,
     WorkflowManifestDiagnosticSeverity,
 )
+from app.services.legacy_authoring import LEGACY_AUTHORING_RUNTIME_BLOCKED
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -63,6 +64,7 @@ from app.services.workflow_manifest_parser import (
 )
 
 _COMPILED_GRAPH_STORAGE_KEY = "compiledGraph"
+LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_RUNTIME_BLOCKED
 
 
 @dataclass
@@ -975,4 +977,4 @@ class WorkflowService:
         )
 
 
-__all__ = ["WorkflowService"]
+__all__ = ["WorkflowService", "LEGACY_AUTHORING_CLASSIFICATION"]

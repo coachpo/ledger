@@ -27,6 +27,9 @@ from app.schemas.mcp_server import (
     McpServerTransport,
     McpServerUpdate,
 )
+from app.services.legacy_authoring import LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
+
+LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 
 
 class McpServerService:
@@ -317,4 +320,4 @@ class McpServerService:
         )
 
 
-__all__ = ["McpServerService"]
+__all__ = ["McpServerService", "LEGACY_AUTHORING_CLASSIFICATION"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from fastapi import status
 from sqlalchemy import select
@@ -25,30 +26,16 @@ from app.schemas.capability import (
     CapabilityStatus,
     CapabilityToolListRead,
 )
+from app.services.legacy_authoring import LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 
-REPORT_LOOKUP_TOOL_KEY = "signaldeck.reports.lookup"
-REPORT_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = "Agent is not authorized to use signaldeck.reports.lookup."
-REPORT_MEMORY_WRITE_TOOL_KEY = "signaldeck.reports.write"
-REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use signaldeck.reports.write."
-)
-POSITION_LOOKUP_TOOL_KEY = "signaldeck.positions.lookup"
-POSITION_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-POSITION_LOOKUP_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use signaldeck.positions.lookup."
-)
-MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY = "signaldeck.market_data.quote_lookup"
-MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use signaldeck.market_data.quote_lookup."
-)
-MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY = "signaldeck.market_data.history_lookup"
-MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE = "agent_execution_access_denied"
-MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE = (
-    "Agent is not authorized to use signaldeck.market_data.history_lookup."
-)
+LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolGrantPolicy:
+    tool_key: str
+    denied_code: str
+    denied_message: str
 
 
 class RuntimeToolGrantError(Exception):
@@ -279,73 +266,14 @@ class CapabilityService:
         self,
         *,
         capability_references: Sequence[dict[str, object]],
-        tool_key: str,
-        denied_code: str,
-        denied_message: str,
+        grant_policy: RuntimeToolGrantPolicy,
     ) -> None:
         granted_tool_keys = self.resolve_granted_tool_keys(capability_references)
-        if tool_key not in granted_tool_keys:
-            raise RuntimeToolGrantError(code=denied_code, message=denied_message)
-
-    def require_report_lookup_grant(
-        self,
-        *,
-        capability_references: Sequence[dict[str, object]],
-    ) -> None:
-        self.require_runtime_tool_grant(
-            capability_references=capability_references,
-            tool_key=REPORT_LOOKUP_TOOL_KEY,
-            denied_code=REPORT_LOOKUP_ACCESS_DENIED_CODE,
-            denied_message=REPORT_LOOKUP_ACCESS_DENIED_MESSAGE,
-        )
-
-    def require_report_memory_write_grant(
-        self,
-        *,
-        capability_references: Sequence[dict[str, object]],
-    ) -> None:
-        self.require_runtime_tool_grant(
-            capability_references=capability_references,
-            tool_key=REPORT_MEMORY_WRITE_TOOL_KEY,
-            denied_code=REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-            denied_message=REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-        )
-
-    def require_position_lookup_grant(
-        self,
-        *,
-        capability_references: Sequence[dict[str, object]],
-    ) -> None:
-        self.require_runtime_tool_grant(
-            capability_references=capability_references,
-            tool_key=POSITION_LOOKUP_TOOL_KEY,
-            denied_code=POSITION_LOOKUP_ACCESS_DENIED_CODE,
-            denied_message=POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
-        )
-
-    def require_market_data_quote_lookup_grant(
-        self,
-        *,
-        capability_references: Sequence[dict[str, object]],
-    ) -> None:
-        self.require_runtime_tool_grant(
-            capability_references=capability_references,
-            tool_key=MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
-            denied_code=MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE,
-            denied_message=MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE,
-        )
-
-    def require_market_data_history_lookup_grant(
-        self,
-        *,
-        capability_references: Sequence[dict[str, object]],
-    ) -> None:
-        self.require_runtime_tool_grant(
-            capability_references=capability_references,
-            tool_key=MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
-            denied_code=MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE,
-            denied_message=MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
-        )
+        if grant_policy.tool_key not in granted_tool_keys:
+            raise RuntimeToolGrantError(
+                code=grant_policy.denied_code,
+                message=grant_policy.denied_message,
+            )
 
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)
@@ -418,20 +346,7 @@ class CapabilityService:
 
 __all__ = [
     "CapabilityService",
-    "MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE",
-    "MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE",
-    "MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY",
-    "MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE",
-    "MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE",
-    "MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY",
-    "POSITION_LOOKUP_ACCESS_DENIED_CODE",
-    "POSITION_LOOKUP_ACCESS_DENIED_MESSAGE",
-    "POSITION_LOOKUP_TOOL_KEY",
-    "REPORT_LOOKUP_ACCESS_DENIED_CODE",
-    "REPORT_LOOKUP_ACCESS_DENIED_MESSAGE",
-    "REPORT_LOOKUP_TOOL_KEY",
-    "REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE",
-    "REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE",
-    "REPORT_MEMORY_WRITE_TOOL_KEY",
+    "LEGACY_AUTHORING_CLASSIFICATION",
     "RuntimeToolGrantError",
+    "RuntimeToolGrantPolicy",
 ]

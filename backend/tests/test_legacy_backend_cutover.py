@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.core.errors import ApiError
+from app.services.legacy_authoring import (
+    LEGACY_AUTHORING_MODULE_CLASSIFICATIONS,
+    LEGACY_AUTHORING_RUNTIME_BLOCKED,
+    LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY,
+    LEGACY_AUTHORING_UPGRADE_ONLY,
+)
+from app.services.run_service import RunService
 
 REMOVED_GLOBAL_AUTHORING_ROUTE_PATHS = (
     "/api/agents",
@@ -59,6 +70,22 @@ DOCUMENTED_PLATFORM_ROUTE_PREFIXES = (
     "/api/tools",
     "/api/runs",
 )
+FORBIDDEN_GLOBAL_AUTHORING_DEPENDENCY_FACTORIES = (
+    "get_agent_service",
+    "get_workflow_service",
+    "get_mcp_server_service",
+    "get_capability_service",
+    "get_output_schema_service",
+)
+EXPECTED_LEGACY_AUTHORING_CLASSIFICATIONS = {
+    "app.services.agent_service": LEGACY_AUTHORING_RUNTIME_BLOCKED,
+    "app.services.workflow_service": LEGACY_AUTHORING_RUNTIME_BLOCKED,
+    "app.services.execution_plan_builder": LEGACY_AUTHORING_RUNTIME_BLOCKED,
+    "app.services.capability_service": LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY,
+    "app.services.mcp_server_service": LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY,
+    "app.services.output_schema_service": LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY,
+    "app.db.upgrades": LEGACY_AUTHORING_UPGRADE_ONLY,
+}
 
 
 @pytest.mark.parametrize("path", LEGACY_ROUTE_PATHS)
@@ -102,3 +129,36 @@ def test_legacy_backend_modules_are_absent() -> None:
         if not (backend_root / relative_path).exists()
     ]
     assert len(missing_files) == len(LEGACY_BACKEND_FILES)
+
+
+def test_live_composition_root_excludes_global_authoring_factories() -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    dependency_root = backend_root / "app" / "api" / "dependencies.py"
+    source = dependency_root.read_text(encoding="utf-8")
+
+    for factory_name in FORBIDDEN_GLOBAL_AUTHORING_DEPENDENCY_FACTORIES:
+        assert factory_name not in source
+
+
+def test_remaining_legacy_authoring_modules_are_classified() -> None:
+    assert LEGACY_AUTHORING_MODULE_CLASSIFICATIONS == EXPECTED_LEGACY_AUTHORING_CLASSIFICATIONS
+    for module_name, expected_classification in EXPECTED_LEGACY_AUTHORING_CLASSIFICATIONS.items():
+        module = importlib.import_module(module_name)
+        assert module.LEGACY_AUTHORING_CLASSIFICATION == expected_classification
+
+
+def test_legacy_global_authoring_runtime_is_blocked(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        service = RunService(session, session_factory)
+        with pytest.raises(ApiError) as exc_info:
+            service.create_target_run("agent", 1, {})
+
+    assert exc_info.value.code == "legacy_global_authoring_runtime_blocked"
+    assert exc_info.value.details == [
+        {
+            "field": "targetKind",
+            "issue": "agent is runtime-blocked after the Workflow Package cutover.",
+        }
+    ]
