@@ -1209,31 +1209,6 @@ function MemoryArtifactEvidence({ artifact }: { artifact: RunMemoryArtifactRead 
   );
 }
 
-function StepTraceEvidence({ step, traceSpanEntries }: { step: RunStepRead; traceSpanEntries: TraceSpanEntry[] }) {
-  return (
-    <Card data-testid={`runs-step-${step.index}-trace-linkage`}>
-      <CardHeader>
-        <CardTitle className="text-base">Step {step.index} trace</CardTitle>
-        <CardDescription>Trace spans captured for this workflow step.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-muted-foreground">
-        {traceSpanEntries.length === 0 ? <p>No trace spans were captured for this step.</p> : null}
-        {traceSpanEntries.map((entry) => (
-          <div className="rounded-md border bg-muted/20 p-3" key={`${entry.stepIndex}-${entry.slot}-${entry.spanId}`}>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline">Step {entry.stepIndex}</Badge>
-              <Badge variant="secondary">{entry.invocationKind === "operation" ? "Operation" : "Invocation"}</Badge>
-            </div>
-            <p className="mt-2 text-foreground">{entry.slot}</p>
-            <p>{entry.invocationKind === "operation" ? "Operation invocation" : "Invocation"} #{entry.invocationId}</p>
-            <p className="break-all">Span id: {entry.spanId}</p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   const metadataItems: DetailItem[] = [
     { label: "Step row", value: `#${step.id}` },
@@ -1296,10 +1271,7 @@ function StepErrorEvidence({ step }: { step: RunStepRead }) {
   ) : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No step error recorded.</div>;
 }
 
-function StepEvidence({ pane, step, traceSpanEntries }: { pane: RunInspectionPane; step: RunStepRead; traceSpanEntries: TraceSpanEntry[] }) {
-  if (pane === "trace") {
-    return <StepTraceEvidence step={step} traceSpanEntries={traceSpanEntries} />;
-  }
+function StepEvidence({ pane, step }: { pane: RunInspectionPane; step: RunStepRead }) {
   if (pane === "lineage") {
     return <StepLineageEvidence step={step} />;
   }
@@ -1383,8 +1355,7 @@ function EvidenceViewer({
 
   if (target.type === "step") {
     const step = steps.find((item) => item.index === target.stepIndex);
-    const stepTraceEntries = traceSpanEntries.filter((entry) => entry.stepIndex === target.stepIndex);
-    content = step ? <StepEvidence pane={activeInspection.pane} step={step} traceSpanEntries={stepTraceEntries} /> : null;
+    content = step ? <StepEvidence pane={activeInspection.pane} step={step} /> : null;
   } else if (target.type === "agentInvocation") {
     const match = findAgentInvocation(steps, target.invocationId);
     content = match ? <InvocationEvidence invocation={match.invocation} pane={activeInspection.pane} step={match.step} /> : null;

@@ -34,7 +34,7 @@ type RunInspectionIndex = {
 };
 
 const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "trace", "lineage", "provenance", "memory"];
-const STEP_PANES: RunInspectionPane[] = ["details", "trace", "lineage", "error"];
+const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
 const AGENT_INVOCATION_PANES: RunInspectionPane[] = ["output", "input", "wiring", "trace", "lineage", "error"];
 const OPERATION_INVOCATION_PANES: RunInspectionPane[] = ["output", "request", "response", "trace", "lineage", "error"];
 const MEMORY_ARTIFACT_PANES: RunInspectionPane[] = ["details", "provenance", "lineage"];

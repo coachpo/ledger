@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -167,6 +167,8 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     outlineRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1");
     const stepSummaryRender = render(<RunsDetailPage />);
+    expect(screen.queryByTestId("runs-step-1-trace-linkage")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
     expect(aggregatedOutput).toHaveTextContent(/webhook_result/i);
     expect(aggregatedOutput).toHaveTextContent(/webhook_retry/i);

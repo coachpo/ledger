@@ -395,11 +395,12 @@ describe("RunsDetailPage", () => {
 
     provenanceRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1&pane=trace");
-    const stepTraceRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-step-1-trace-linkage")).toHaveTextContent(/analysis/i);
-    expect(screen.getByTestId("runs-step-1-trace-linkage")).toHaveTextContent(/span-1/i);
+    const invalidStepTraceRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-step-1-summary")).toBeInTheDocument();
+    expect(screen.queryByTestId("runs-step-1-trace-linkage")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
 
-    stepTraceRender.unmount();
+    invalidStepTraceRender.unmount();
     searchParamsMock = new URLSearchParams("pane=lineage");
     const lineageRender = render(<RunsDetailPage />);
     const lineage = screen.getByTestId("runs-lineage-summary");
