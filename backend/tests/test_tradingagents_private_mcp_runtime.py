@@ -349,7 +349,7 @@ def test_tradingagents_package_smoke_calls_private_exa_mcp(
     )
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "news_research", "parameters": _LAUNCH_PARAMETERS},
+        json={"workflowKey": "news_research", "parameters": _LAUNCH_PARAMETERS},
     )
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
@@ -416,7 +416,7 @@ def test_tradingagents_package_rejected_continuation_does_not_retry_statelessly(
     )
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "news_research", "parameters": _LAUNCH_PARAMETERS},
+        json={"workflowKey": "news_research", "parameters": _LAUNCH_PARAMETERS},
     )
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])

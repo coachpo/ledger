@@ -4,9 +4,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_step import RunStep
-from app.models.workflow_package import WorkflowPackageVersion
 from app.repositories.base import BaseRepository
 
 
@@ -56,11 +55,16 @@ class RunRepository(BaseRepository[Run]):
             )
         if model_connection_key is not None:
             statement = statement.join(
-                WorkflowPackageVersion,
-                self.model.workflow_package_version_id == WorkflowPackageVersion.id,
+                RunWorkflowPackageSnapshot,
+                self.model.id == RunWorkflowPackageSnapshot.run_id,
             ).where(
-                WorkflowPackageVersion.compiled_plan["agents"].contains(
-                    [{"modelConnection": model_connection_key}]
+                or_(
+                    RunWorkflowPackageSnapshot.compiled_plan["agents"].contains(
+                        [{"modelConnection": model_connection_key}]
+                    ),
+                    RunWorkflowPackageSnapshot.resolved_model_connections.contains(
+                        [{"key": model_connection_key}]
+                    ),
                 )
             )
 

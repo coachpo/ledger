@@ -6,10 +6,9 @@ from typing import ClassVar, TypeGuard, cast
 
 from sqlalchemy import select
 
-from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
-from app.models.platform_reference import WorkflowPackageVersionModelConnection
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.run import Run, RunWorkflowPackageSnapshot
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.base import BaseRepository
 
 
@@ -38,80 +37,64 @@ class ModelConnectionRepository(BaseRepository[ModelConnection]):
         statement = select(self.model).where(self.model.key == key)
         return self._get_by_statement(statement)
 
-    def list_workflow_package_version_refs(
+    def list_current_package_refs(self, connection_key: str) -> list[ModelConnectionReference]:
+        statement = select(WorkflowPackage).order_by(
+            WorkflowPackage.key.asc(),
+            WorkflowPackage.id.asc(),
+        )
+        return [
+            ModelConnectionReference(
+                ref_type="workflowPackage",
+                ref_id=package.id,
+                ref_key=package.key,
+            )
+            for package in self.session.scalars(statement)
+            if self._compiled_plan_references_key(package.compiled_plan, connection_key)
+        ]
+
+    def list_rerunnable_run_snapshot_refs(
         self,
-        connection_id: int,
+        connection_key: str,
     ) -> list[ModelConnectionReference]:
         statement = (
-            select(WorkflowPackageVersionModelConnection, WorkflowPackageVersion, WorkflowPackage)
-            .join(
-                WorkflowPackageVersion,
-                WorkflowPackageVersion.id
-                == WorkflowPackageVersionModelConnection.workflow_package_version_id,
-            )
-            .join(WorkflowPackage, WorkflowPackage.id == WorkflowPackageVersion.package_id)
-            .where(WorkflowPackageVersionModelConnection.model_connection_id == connection_id)
+            select(RunWorkflowPackageSnapshot)
+            .join(Run, Run.id == RunWorkflowPackageSnapshot.run_id)
+            .where(Run.target_kind == "workflowPackage")
             .order_by(
-                WorkflowPackage.key.asc(),
-                WorkflowPackageVersion.version.asc(),
-                WorkflowPackageVersion.id.asc(),
+                RunWorkflowPackageSnapshot.workflow_package_key.asc(),
+                RunWorkflowPackageSnapshot.workflow_key.asc(),
+                RunWorkflowPackageSnapshot.run_id.asc(),
             )
-        )
-        rows = cast(
-            list[
-                tuple[
-                    WorkflowPackageVersionModelConnection, WorkflowPackageVersion, WorkflowPackage
-                ]
-            ],
-            self.session.execute(statement).all(),
         )
         return [
             ModelConnectionReference(
-                ref_type="workflowPackageVersion",
-                ref_id=version.id,
-                ref_key=f"{package.key}@{version.version}",
+                ref_type="workflowPackageRunSnapshot",
+                ref_id=snapshot.run_id,
+                ref_key=self._run_snapshot_ref_key(snapshot),
             )
-            for _, version, package in rows
+            for snapshot in self.session.scalars(statement)
+            if self._run_snapshot_references_key(snapshot, connection_key)
         ]
 
-    def list_agent_refs(self, connection_id: int) -> list[ModelConnectionReference]:
-        statement = (
-            select(Agent)
-            .where(Agent.model_connection_id == connection_id)
-            .order_by(Agent.key.asc(), Agent.version.asc(), Agent.id.asc())
+    @classmethod
+    def _run_snapshot_references_key(
+        cls,
+        snapshot: RunWorkflowPackageSnapshot,
+        connection_key: str,
+    ) -> bool:
+        return cls._compiled_plan_references_key(
+            snapshot.compiled_plan,
+            connection_key,
+        ) or cls._resolved_model_connections_reference_key(
+            snapshot.resolved_model_connections,
+            connection_key,
         )
-        return [
-            ModelConnectionReference(
-                ref_type="agent",
-                ref_id=agent.id,
-                ref_key=f"{agent.key}@{agent.version}",
-            )
-            for agent in self.session.scalars(statement)
-        ]
 
-    def list_compiled_plan_refs(self, connection_key: str) -> list[ModelConnectionReference]:
-        statement = (
-            select(WorkflowPackageVersion, WorkflowPackage)
-            .join(WorkflowPackage, WorkflowPackage.id == WorkflowPackageVersion.package_id)
-            .order_by(
-                WorkflowPackage.key.asc(),
-                WorkflowPackageVersion.version.asc(),
-                WorkflowPackageVersion.id.asc(),
-            )
-        )
-        rows = cast(
-            list[tuple[WorkflowPackageVersion, WorkflowPackage]],
-            self.session.execute(statement).all(),
-        )
-        return [
-            ModelConnectionReference(
-                ref_type="workflowPackageVersion",
-                ref_id=version.id,
-                ref_key=f"{package.key}@{version.version}",
-            )
-            for version, package in rows
-            if self._compiled_plan_references_key(version.compiled_plan, connection_key)
-        ]
+    @staticmethod
+    def _run_snapshot_ref_key(snapshot: RunWorkflowPackageSnapshot) -> str:
+        if snapshot.workflow_key:
+            return f"{snapshot.workflow_package_key}:{snapshot.workflow_key}"
+        return snapshot.workflow_package_key
 
     @staticmethod
     def _compiled_plan_references_key(compiled_plan: object, connection_key: str) -> bool:
@@ -124,6 +107,20 @@ class ModelConnectionRepository(BaseRepository[ModelConnection]):
             if not _is_string_mapping(agent):
                 continue
             if agent.get("modelConnection") == connection_key:
+                return True
+        return False
+
+    @staticmethod
+    def _resolved_model_connections_reference_key(
+        resolved_model_connections: object,
+        connection_key: str,
+    ) -> bool:
+        if not isinstance(resolved_model_connections, list):
+            return False
+        for resolved_connection in cast(list[object], resolved_model_connections):
+            if not _is_string_mapping(resolved_connection):
+                continue
+            if resolved_connection.get("key") == connection_key:
                 return True
         return False
 

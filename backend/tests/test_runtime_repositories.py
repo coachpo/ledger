@@ -19,11 +19,11 @@ from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.platform_reference import AgentCapabilityRef, AgentMcpServerRef, WorkflowAgentRef
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.agent import AgentRepository
 from app.repositories.capability import CapabilityRepository
 from app.repositories.mcp_server import McpServerRepository
@@ -300,31 +300,24 @@ def _seed_workflow_package_target(
     session: Session,
     *,
     key_prefix: str,
-) -> tuple[WorkflowPackage, WorkflowPackageVersion]:
+) -> WorkflowPackage:
     package_key = f"{key_prefix}_package"
     package = WorkflowPackage(
         key=package_key,
         name=f"{key_prefix} package",
         description="Package target fixture",
         status="active",
-        draft_source="apiVersion: signaldeck.workflowPackage/v1\n",
+        manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+        manifest_hash="a" * 64,
+        package_definition={"metadata": {"key": package_key, "name": f"{key_prefix} package"}},
+        compiled_plan={"workflows": []},
+        compiled_hash="b" * 64,
+        extension_dependencies=[],
+        validation_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     session.add(package)
     session.flush()
-    package_version = WorkflowPackageVersion(
-        package_id=package.id,
-        version=1,
-        manifest_source=package.draft_source,
-        manifest_hash="a" * 64,
-        package_definition={"metadata": {"key": package_key, "name": package.name}},
-        compiled_plan={"workflows": []},
-        compiled_hash="b" * 64,
-    )
-    session.add(package_version)
-    session.flush()
-    package.latest_version_id = package_version.id
-    session.flush()
-    return package, package_version
+    return package
 
 
 def _assert_executable_target_fk_identity(
@@ -333,12 +326,10 @@ def _assert_executable_target_fk_identity(
     agent_id: int | None = None,
     workflow_id: int | None = None,
     workflow_package_id: int | None = None,
-    workflow_package_version_id: int | None = None,
 ) -> None:
     assert run.agent_id == agent_id
     assert run.target_workflow_id == workflow_id
     assert run.workflow_package_id == workflow_package_id
-    assert run.workflow_package_version_id == workflow_package_version_id
 
 
 def _seed_agent_platform_versioned_rows(session: Session) -> None:
@@ -565,7 +556,7 @@ def test_model_connection_delete_unused_hard_deletes_row(
         assert session.get(ModelConnection, connection_id) is None
 
 
-def test_model_connection_delete_blocked_by_package_version_ref(
+def test_model_connection_delete_blocked_by_current_package_ref(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -582,19 +573,16 @@ def test_model_connection_delete_blocked_by_package_version_ref(
         package = WorkflowPackageRepository(session).create_package(
             key="package_delete_blocker",
             name="Package Delete Blocker",
-        )
-        version = WorkflowPackageRepository(session).create_version(
-            package,
+            status="active",
             manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
-            manifest_hash="package-delete-manifest-hash",
-            package_definition={"metadata": {"key": package.key}},
-            compiled_plan={"agents": []},
-            compiled_hash="package-delete-compiled-hash",
-            model_connection_refs=[(connection.id, connection.key)],
+            manifest_hash="p" * 64,
+            package_definition={"metadata": {"key": "package_delete_blocker"}},
+            compiled_plan={"agents": [{"key": "local_agent", "modelConnection": connection.key}]},
+            compiled_hash="c" * 64,
         )
         session.commit()
         connection_id = connection.id
-        version_id = version.id
+        package_id = package.id
 
     response = client.delete(f"/api/model-connections/{connection_id}")
     body = cast(dict[str, object], response.json())
@@ -606,9 +594,9 @@ def test_model_connection_delete_blocked_by_package_version_ref(
         {
             "field": "modelConnection",
             "issue": "Model connection is referenced",
-            "refType": "workflowPackageVersion",
-            "refId": version_id,
-            "refKey": "package_delete_blocker@1",
+            "refType": "workflowPackage",
+            "refId": package_id,
+            "refKey": "package_delete_blocker",
         }
     ]
     assert secret_value not in str(body)
@@ -618,97 +606,69 @@ def test_model_connection_delete_blocked_by_package_version_ref(
         assert session.get(ModelConnection, connection_id) is not None
 
 
-def test_model_connection_delete_blocked_by_agent_ref(
+def test_model_connection_delete_blocked_by_rerunnable_run_snapshot_ref(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    secret_value = "sk-agent-blocker-3333"
+    secret_value = "sk-snapshot-blocker-4444"
+    package_key = "snapshot_delete_blocker"
+    workflow_key = "runtime_workflow"
     with session_factory() as session:
         connection = _build_model_connection(
-            name="Agent Referenced Model",
-            key="agent_referenced_model",
-            status="active",
-            api_key=secret_value,
-        )
-        output_schema = _build_output_schema(
-            key="agent_delete_blocker_schema",
-            version=1,
-            status="published",
-        )
-        session.add_all([connection, output_schema])
-        session.flush()
-        agent = _build_agent(
-            key="agent_delete_blocker",
-            version=1,
-            status="published",
-            output_schema=output_schema,
-            capabilities=[],
-            mcp_servers=[],
-            budget_usd=Decimal("1.00000000"),
-            model_connection_id=connection.id,
-        )
-        session.add(agent)
-        session.commit()
-        connection_id = connection.id
-        agent_id = agent.id
-
-    response = client.delete(f"/api/model-connections/{connection_id}")
-    body = cast(dict[str, object], response.json())
-
-    assert response.status_code == 409, body
-    assert body["code"] == "model_connection_in_use"
-    assert body["details"] == [
-        {
-            "field": "modelConnection",
-            "issue": "Model connection is referenced",
-            "refType": "agent",
-            "refId": agent_id,
-            "refKey": "agent_delete_blocker@1",
-        }
-    ]
-    assert secret_value not in str(body)
-    assert "secretPayload" not in str(body)
-
-    with session_factory() as session:
-        assert session.get(ModelConnection, connection_id) is not None
-
-
-def test_model_connection_delete_blocked_by_transitional_compiled_plan_ref(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    secret_value = "sk-transitional-blocker-4444"
-    with session_factory() as session:
-        connection = _build_model_connection(
-            name="Transitional Referenced Model",
-            key="transitional_referenced_model",
+            name="Snapshot Referenced Model",
+            key="snapshot_referenced_model",
             status="active",
             api_key=secret_value,
         )
         session.add(connection)
         session.flush()
-        package = WorkflowPackageRepository(session).create_package(
-            key="transitional_delete_blocker",
-            name="Transitional Delete Blocker",
+        run = Run(
+            target_kind="workflowPackage",
+            target_id=9001,
+            target_key=package_key,
+            target_version=1,
+            workflow_package_key=package_key,
+            workflow_package_workflow_key=workflow_key,
+            input={"ticker": "MSFT"},
+            status="succeeded",
+            total_tokens=0,
+            inherited_tokens=0,
+            executed_tokens=0,
         )
-        version = WorkflowPackageRepository(session).create_version(
-            package,
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=9001,
+            workflow_package_key=package_key,
+            workflow_package_name="Snapshot Delete Blocker",
+            workflow_package_description="",
+            workflow_package_status="active",
+            workflow_key=workflow_key,
+            workflow_name="Runtime Workflow",
+            workflow_description="",
+            manifest_hash="s" * 64,
+            compiled_hash="r" * 64,
             manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
-            manifest_hash="transitional-delete-manifest-hash",
-            package_definition={"metadata": {"key": package.key}},
+            package_definition={"metadata": {"key": package_key}},
             compiled_plan={
-                "agents": [
-                    {
-                        "key": "local_agent",
-                        "modelConnection": connection.key,
-                    }
-                ]
+                "agents": [{"key": "local_agent", "modelConnection": connection.key}],
+                "workflows": [{"key": workflow_key}],
             },
-            compiled_hash="transitional-delete-compiled-hash",
+            extension_dependencies=[],
+            local_resource_refs={
+                "agents": ["local_agent"],
+                "outputSchemas": [],
+                "capabilityProfiles": [],
+                "mcpServers": [],
+                "workflows": [workflow_key],
+            },
+            input_schema={},
+            launch_parameters={"ticker": "MSFT"},
+            resolved_model_connections=[{"key": connection.key, "name": connection.name}],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
+        session.add(run)
         session.commit()
         connection_id = connection.id
-        version_id = version.id
+        run_id = run.id
 
     response = client.delete(f"/api/model-connections/{connection_id}")
     body = cast(dict[str, object], response.json())
@@ -719,9 +679,9 @@ def test_model_connection_delete_blocked_by_transitional_compiled_plan_ref(
         {
             "field": "modelConnection",
             "issue": "Model connection is referenced",
-            "refType": "workflowPackageVersion",
-            "refId": version_id,
-            "refKey": "transitional_delete_blocker@1",
+            "refType": "workflowPackageRunSnapshot",
+            "refId": run_id,
+            "refKey": "snapshot_delete_blocker:runtime_workflow",
         }
     ]
     assert secret_value not in str(body)
@@ -891,7 +851,7 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
         ]
 
 
-def test_target_fk_population_for_agent_workflow_rerun_and_replay(
+def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -902,61 +862,65 @@ def test_target_fk_population_for_agent_workflow_rerun_and_replay(
         workflow_id = workflow.id
         service = RunService(session, session_factory)
 
-        agent_created = service.create_target_run("agent", agent_id, {"ticker": "NVDA"})
-        workflow_created = service.create_target_run("workflow", workflow_id, {"ticker": "MSFT"})
+        with pytest.raises(ApiError) as agent_create_error:
+            service.create_target_run("agent", agent_id, {"ticker": "NVDA"})
+        with pytest.raises(ApiError) as workflow_create_error:
+            service.create_target_run("workflow", workflow_id, {"ticker": "MSFT"})
 
-        agent_run = session.get(Run, agent_created.id)
-        workflow_run = session.get(Run, workflow_created.id)
-        assert agent_run is not None
-        assert workflow_run is not None
+        agent_run = _build_deletable_run(
+            target_kind="agent",
+            target_id=agent_id,
+            target_key=agent.key,
+        )
+        agent_run.agent_id = agent_id
+        workflow_run = _build_deletable_run(
+            target_kind="workflow",
+            target_id=workflow_id,
+            target_key=workflow.key,
+        )
+        workflow_run.target_workflow_id = workflow_id
+        workflow_run.status = "succeeded"
+        session.add_all([agent_run, workflow_run])
+        session.commit()
+
+        with pytest.raises(ApiError) as agent_rerun_error:
+            service.create_rerun(
+                agent_run.id,
+                RunRerunCreateRequest(parameters={"ticker": "AAPL"}),
+            )
+        with pytest.raises(ApiError) as workflow_rerun_error:
+            service.create_rerun(
+                workflow_run.id,
+                RunRerunCreateRequest(parameters={"ticker": "IBM"}),
+            )
+        with pytest.raises(ApiError) as workflow_replay_error:
+            service.create_step_replay(
+                workflow_run.id,
+                RunStepReplayCreateRequest(
+                    replay_step_index=1,
+                    parameters={"ticker": "AMD"},
+                ),
+            )
+
+        errors = [
+            agent_create_error.value,
+            workflow_create_error.value,
+            agent_rerun_error.value,
+            workflow_rerun_error.value,
+            workflow_replay_error.value,
+        ]
+        assert {error.code for error in errors} == {"legacy_global_authoring_runtime_blocked"}
         _assert_executable_target_fk_identity(agent_run, agent_id=agent_id)
         _assert_executable_target_fk_identity(workflow_run, workflow_id=workflow_id)
 
-        agent_rerun = service.create_rerun(
-            agent_run.id,
-            RunRerunCreateRequest(parameters={"ticker": "AAPL"}),
-        )
-        agent_rerun_run = session.get(Run, agent_rerun.id)
-        assert agent_rerun_run is not None
-        _assert_executable_target_fk_identity(agent_rerun_run, agent_id=agent_id)
 
-        persisted_at = datetime(2026, 5, 9, 12, 0, tzinfo=UTC_TZ)
-        workflow_run.status = "succeeded"
-        workflow_run.started_at = persisted_at
-        workflow_run.finished_at = persisted_at
-        for step in cast(list[RunStep], workflow_run.steps):
-            step.status = "succeeded"
-            step.started_at = persisted_at
-            step.finished_at = persisted_at
-            step.persisted_at = persisted_at
-        session.commit()
-
-        workflow_rerun = service.create_rerun(
-            workflow_run.id,
-            RunRerunCreateRequest(parameters={"ticker": "IBM"}),
-        )
-        workflow_replay = service.create_step_replay(
-            workflow_run.id,
-            RunStepReplayCreateRequest(
-                replay_step_index=1,
-                parameters={"ticker": "AMD"},
-            ),
-        )
-        workflow_rerun_run = session.get(Run, workflow_rerun.id)
-        workflow_replay_run = session.get(Run, workflow_replay.id)
-        assert workflow_rerun_run is not None
-        assert workflow_replay_run is not None
-        _assert_executable_target_fk_identity(workflow_rerun_run, workflow_id=workflow_id)
-        _assert_executable_target_fk_identity(workflow_replay_run, workflow_id=workflow_id)
-
-
-def test_delete_target_with_queued_running_runs_cascades_target_fk_runs(
+def test_delete_target_with_queued_running_runs_preserves_package_snapshot_runs(
     session_factory: sessionmaker[Session],
 ) -> None:
     statuses = ("queued", "running", "succeeded", "failed")
     with session_factory() as session:
         agent, workflow = _seed_run_target_fk_targets(session, key_prefix="cascade_fk")
-        package, package_version = _seed_workflow_package_target(
+        package = _seed_workflow_package_target(
             session,
             key_prefix="cascade_fk",
         )
@@ -984,25 +948,38 @@ def test_delete_target_with_queued_running_runs_cascades_target_fk_runs(
             package_run.status = status_value
             package_run.workflow_package_id = package.id
             package_run.workflow_package_key = package.key
-            package_run.workflow_package_version_id = package_version.id
-            package_run.workflow_package_version = package_version.version
-            package_run.workflow_package_manifest_hash = package_version.manifest_hash
-            package_run.workflow_package_compiled_hash = package_version.compiled_hash
             package_run.workflow_package_workflow_key = "runtime_workflow"
-            package_run.launch_snapshot = {
-                "workflowKey": "runtime_workflow",
-                "workflowName": "Runtime Workflow",
-                "workflowDescription": "",
-                "inputSchema": {},
-                "parameters": {},
-            }
+            package_run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+                workflow_package_id=package.id,
+                workflow_package_key=package.key,
+                workflow_package_name=package.name,
+                workflow_package_description=package.description,
+                workflow_package_status=package.status,
+                workflow_key="runtime_workflow",
+                workflow_name="Runtime Workflow",
+                workflow_description="",
+                manifest_hash=package.manifest_hash,
+                compiled_hash=package.compiled_hash,
+                manifest_source=package.manifest_source,
+                package_definition=package.package_definition,
+                compiled_plan=package.compiled_plan,
+                extension_dependencies=package.extension_dependencies,
+                local_resource_refs={"workflows": ["runtime_workflow"]},
+                input_schema={},
+                launch_parameters={},
+                resolved_model_connections=[],
+                preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+            )
             target_runs.extend([agent_run, workflow_run, package_run])
         session.add_all(target_runs)
         session.commit()
-        run_ids = [run.id for run in target_runs]
+        agent_run_ids = [target_runs[index].id for index in range(0, len(target_runs), 3)]
+        workflow_run_ids = [target_runs[index].id for index in range(1, len(target_runs), 3)]
+        package_run_ids = [target_runs[index].id for index in range(2, len(target_runs), 3)]
         agent_id = agent.id
         workflow_id = workflow.id
         package_id = package.id
+        package_key = package.key
 
         session.expunge_all()
         for target_model, target_id in (
@@ -1016,7 +993,15 @@ def test_delete_target_with_queued_running_runs_cascades_target_fk_runs(
         session.commit()
         session.expunge_all()
 
-        assert all(session.get(Run, run_id) is None for run_id in run_ids)
+        assert all(session.get(Run, run_id) is None for run_id in agent_run_ids)
+        assert all(session.get(Run, run_id) is None for run_id in workflow_run_ids)
+        for run_id in package_run_ids:
+            package_run = session.get(Run, run_id)
+            assert package_run is not None
+            assert package_run.workflow_package_id is None
+            assert package_run.workflow_package_key == package_key
+            assert package_run.workflow_package_snapshot is not None
+            assert package_run.workflow_package_snapshot.workflow_package_id == package_id
 
 
 def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
@@ -1174,7 +1159,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "targetKind": run_detail.target_kind,
                     "targetId": run_detail.target_id,
                     "targetKey": run_detail.target_key,
-                    "targetVersion": run_detail.target_version,
                     "input": run_detail.input,
                     "sourceRunId": run_detail.source_run_id,
                     "lineageRootRunId": run_detail.lineage_root_run_id,
@@ -1212,7 +1196,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "targetKind",
             "targetId",
             "targetKey",
-            "targetVersion",
             "input",
             "sourceRunId",
             "lineageRootRunId",

@@ -24,9 +24,9 @@ def _create_run_with_step(
 ) -> tuple[Run, RunStep]:
     timestamp = datetime(2026, 5, 15, 8, 30, tzinfo=UTC_TZ)
     run = Run(
-        target_kind="workflowPackage",
+        target_kind="workflow",
         target_id=1,
-        target_key="operation_package",
+        target_key="operation_workflow",
         target_version=1,
         input={"ticker": "NVDA", "webhookUrl": "https://example.test/hook"},
         status=run_status,
@@ -167,8 +167,8 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
     assert detail_step["invocations"] == []
     assert len(detail_operations) == 1
     assert detail_operations[0]["outputSchemaRef"] == {
-        "scope": "packageLocal",
-        "localId": 1,
+        "scope": "global",
+        "id": 1,
         "version": 1,
     }
     assert detail_operations[0]["requestMetadata"] == request_metadata

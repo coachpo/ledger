@@ -13,8 +13,9 @@ from app.core.errors import ApiError
 from app.extensions.signaldeck_finance.hooks import MEMORY_FOLLOW_UP_SERVICE_SURFACE
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_step import RunStep
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
@@ -430,7 +431,7 @@ def test_duplicate_resolution_returns_existing_outcome_without_overwrite(
     assert memory.outcome.raw_return == Decimal("0.25")
 
 
-def test_run_start_follow_up_runs_once_for_workflow_package_start(
+def test_run_start_follow_up_runs_once_for_deleted_workflow_package_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -468,35 +469,63 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
     monkeypatch.setattr(RunService, "_build_plan_for_run", lambda self, run: plan)
 
     with session_factory() as session:
+        package = WorkflowPackage(
+            key="follow_pkg",
+            name="Follow Package",
+            description="Follow-up package fixture.",
+            status="active",
+            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+            manifest_hash="f" * 64,
+            package_definition={"metadata": {"key": "follow_pkg", "name": "Follow Package"}},
+            compiled_plan={"packageKey": "follow_pkg", "workflows": [{"key": "follow_workflow"}]},
+            compiled_hash="e" * 64,
+            extension_dependencies=[],
+            validation_summary={"ready": True, "blockingErrors": [], "warnings": []},
+        )
+        session.add(package)
+        session.flush()
+        extension_dependencies = [
+            {
+                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
+                "surfaces": ["tool.signaldeck.reports.lookup"],
+                "fields": [],
+            }
+        ]
         run = Run(
             target_kind="workflowPackage",
-            target_id=1,
-            target_key="follow_pkg",
+            target_id=package.id,
+            target_key=package.key,
             target_version=1,
-            workflow_package_key="follow_pkg",
-            workflow_package_version=1,
-            workflow_package_manifest_hash="manifest-follow",
-            workflow_package_compiled_hash="compiled-follow",
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
             workflow_package_workflow_key="follow_workflow",
-            launch_snapshot={
-                "workflowKey": "follow_workflow",
-                "workflowName": "Follow Workflow",
-                "workflowDescription": "",
-                "inputSchema": {"type": "object", "additionalProperties": True},
-                "parameters": {},
-            },
-            extension_dependencies=[
-                {
-                    "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                    "surfaces": ["tool.signaldeck.reports.lookup"],
-                    "fields": [],
-                }
-            ],
+            extension_dependencies=extension_dependencies,
             input={},
             status="queued",
             total_tokens=0,
             inherited_tokens=0,
             executed_tokens=0,
+        )
+        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+            workflow_package_id=package.id,
+            workflow_package_key=package.key,
+            workflow_package_name=package.name,
+            workflow_package_description=package.description,
+            workflow_package_status=package.status,
+            workflow_key="follow_workflow",
+            workflow_name="Follow Workflow",
+            workflow_description="",
+            manifest_hash=package.manifest_hash,
+            compiled_hash=package.compiled_hash,
+            manifest_source=package.manifest_source,
+            package_definition=package.package_definition,
+            compiled_plan=package.compiled_plan,
+            extension_dependencies=extension_dependencies,
+            local_resource_refs={"workflows": ["follow_workflow"]},
+            input_schema={"type": "object", "additionalProperties": True},
+            launch_parameters={},
+            resolved_model_connections=[],
+            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
         session.add(run)
         session.flush()
@@ -509,6 +538,12 @@ def test_run_start_follow_up_runs_once_for_workflow_package_start(
         step = session.query(RunStep).filter_by(run_id=run.id, step_index=1).one()
         step_id = step.id
         run_id = run.id
+        session.delete(package)
+        session.commit()
+        session.expire_all()
+        deleted_package_run = session.get(Run, run_id)
+        assert deleted_package_run is not None
+        assert deleted_package_run.workflow_package_id is None
 
     with session_factory() as session:
         claimed = RunRepository(session).claim_next_queued(run_id=run_id)

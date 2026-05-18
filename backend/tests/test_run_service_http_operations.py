@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.repositories.run import RunRepository
@@ -97,9 +97,16 @@ def _execute_claimed_run_with_http_service(
 
 
 def _package_source(package_key: str) -> str:
-    return http_node_package_source().replace(
+    source = http_node_package_source().replace(
         "key: http_callbacks",
         f"key: {package_key}",
+        1,
+    )
+    return source.replace(
+        "      jsonSchema:\n        type: object\n  workflows:",
+        "      jsonSchema:\n        type: object\n        properties:\n"
+        "          ok:\n            type: boolean\n"
+        "          message:\n            type: string\n  workflows:",
         1,
     )
 
@@ -129,7 +136,6 @@ def test_final_output_resolves_from_http_operation_slot(
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "notify",
             "parameters": {
                 "webhookUrl": "https://api.example.test/hooks?api_key=visible-secret",
@@ -173,6 +179,119 @@ def test_final_output_resolves_from_http_operation_slot(
         assert persisted_operation.output == {"ok": True, "message": "queued"}
 
 
+def test_deleted_package_rerun_does_not_fallback_to_replacement_secret_bindings(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    package_key = "deleted_secret_http_callbacks"
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _package_source(package_key)},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    package_id = int(package["id"])
+    for key, value in {
+        "slack_webhook_token": "original-slack-secret",
+        "body_token": "original-body-secret",
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package_id}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "notify",
+            "parameters": {
+                "webhookUrl": "https://api.example.test/hooks",
+                "ticker": "MSFT",
+            },
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    source_run_id = int(launch_response.json()["id"])
+    original_transport = _CapturingTransport(
+        httpx.Response(200, json={"ok": True}, headers={"content-type": "application/json"})
+    )
+    _claim_run(session_factory, source_run_id)
+    _execute_claimed_run_with_http_service(
+        session_factory,
+        run_id=source_run_id,
+        transport=original_transport,
+    )
+    source_detail = client.get(f"/api/runs/{source_run_id}")
+    assert source_detail.status_code == 200, source_detail.json()
+    assert source_detail.json()["status"] == "succeeded"
+
+    delete_response = client.delete(f"/api/workflow-packages/{package_id}")
+    assert delete_response.status_code == 204, delete_response.text
+    replacement_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _package_source(package_key)},
+    )
+    assert replacement_response.status_code == 201, replacement_response.json()
+    replacement = cast(dict[str, Any], replacement_response.json())
+    for key, value in {
+        "slack_webhook_token": "replacement-slack-secret",
+        "body_token": "replacement-body-secret",
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{replacement['id']}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    with session_factory() as session:
+        source_run = session.get(Run, source_run_id)
+        snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
+        assert source_run is not None
+        assert snapshot is not None
+        assert source_run.workflow_package_id is None
+        assert snapshot.workflow_package_id == package_id
+        serialized_snapshot = str(snapshot.package_definition) + str(snapshot.compiled_plan)
+        assert "original-slack-secret" not in serialized_snapshot
+        assert "replacement-slack-secret" not in serialized_snapshot
+
+    rerun_response = client.post(
+        f"/api/runs/{source_run_id}/reruns",
+        json={
+            "parameters": {
+                "webhookUrl": "https://api.example.test/hooks",
+                "ticker": "AAPL",
+            }
+        },
+    )
+    assert rerun_response.status_code == 201, rerun_response.json()
+    rerun_id = int(rerun_response.json()["id"])
+    rerun_transport = _CapturingTransport(
+        httpx.Response(200, json={"ok": True}, headers={"content-type": "application/json"})
+    )
+    _claim_run(session_factory, rerun_id)
+    _execute_claimed_run_with_http_service(
+        session_factory,
+        run_id=rerun_id,
+        transport=rerun_transport,
+    )
+    rerun_detail_response = client.get(f"/api/runs/{rerun_id}")
+    assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
+    rerun_detail = cast(dict[str, Any], rerun_detail_response.json())
+    operation = cast(dict[str, Any], rerun_detail["steps"][0]["operationInvocations"][0])
+    provenance = cast(dict[str, Any], rerun_detail["packageProvenance"])
+
+    assert rerun_detail["status"] == "failed"
+    assert rerun_detail["error"] == "HTTP secret binding 'slack_webhook_token' was not found"
+    assert operation["status"] == "failed"
+    assert operation["errorCode"] == "http_operation_secret_missing"
+    assert provenance["workflowPackageId"] == package_id
+    assert provenance["currentPackage"]["available"] is False
+    assert rerun_transport.requests == []
+
+
 def _schema(local_id: int, key: str, properties: dict[str, Any]) -> PackageLocalOutputSchemaSpec:
     return PackageLocalOutputSchemaSpec(
         local_id=local_id,
@@ -181,7 +300,6 @@ def _schema(local_id: int, key: str, properties: dict[str, Any]) -> PackageLocal
         description=f"{key} schema",
         json_schema={
             "type": "object",
-            "additionalProperties": False,
             "properties": properties,
             "required": sorted(properties),
         },
@@ -212,7 +330,14 @@ def _mixed_plan() -> ExecutionPlan:
         description="Agent branch of a mixed step.",
         model_binding=_model_binding(),
         system_prompt="Return a summary.",
-        input_schema={"type": "object", "additionalProperties": True},
+        input_schema={
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "webhookUrl": {"type": "string"},
+            },
+            "required": ["ticker", "webhookUrl"],
+        },
         output_schema=agent_output,
         capability_profiles=(),
         mcp_servers=(),
@@ -279,24 +404,15 @@ def _mixed_plan() -> ExecutionPlan:
 
 def _running_run(session: Session) -> Run:
     timestamp = datetime(2026, 5, 15, 9, 0, tzinfo=UTC_TZ)
+    run_input = {"ticker": "MSFT", "webhookUrl": "https://api.example.test/mixed"}
     run = Run(
         target_kind="workflowPackage",
         target_id=123,
         target_key="mixed_package",
         target_version=1,
         workflow_package_key="mixed_package",
-        workflow_package_version=1,
-        workflow_package_manifest_hash="manifest-mixed",
-        workflow_package_compiled_hash="compiled-mixed",
         workflow_package_workflow_key="mixed_workflow",
-        launch_snapshot={
-            "workflowKey": "mixed_workflow",
-            "workflowName": "Mixed Workflow",
-            "workflowDescription": "",
-            "inputSchema": {},
-            "parameters": {"ticker": "MSFT", "webhookUrl": "https://api.example.test/mixed"},
-        },
-        input={"ticker": "MSFT", "webhookUrl": "https://api.example.test/mixed"},
+        input=run_input,
         status="running",
         queued_at=timestamp,
         started_at=timestamp,
@@ -304,6 +420,33 @@ def _running_run(session: Session) -> Run:
         total_tokens=0,
         inherited_tokens=0,
         executed_tokens=0,
+    )
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=123,
+        workflow_package_key="mixed_package",
+        workflow_package_name="Mixed Package",
+        workflow_package_description="",
+        workflow_package_status="active",
+        workflow_key="mixed_workflow",
+        workflow_name="Mixed Workflow",
+        workflow_description="",
+        manifest_hash="manifest-mixed",
+        compiled_hash="compiled-mixed",
+        manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+        package_definition={"metadata": {"key": "mixed_package", "name": "Mixed Package"}},
+        compiled_plan={"packageKey": "mixed_package", "workflows": [{"key": "mixed_workflow"}]},
+        extension_dependencies=[],
+        local_resource_refs={
+            "agents": ["mixed_agent"],
+            "outputSchemas": ["agent_output", "operation_output"],
+            "capabilityProfiles": [],
+            "mcpServers": [],
+            "workflows": ["mixed_workflow"],
+        },
+        input_schema={"type": "object", "additionalProperties": True},
+        launch_parameters=run_input,
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     session.add(run)
     session.flush()
@@ -345,7 +488,14 @@ def test_mixed_execution_runs_agent_and_http_operation_families(
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run.id).one()
         operation = session.query(RunOperationInvocation).filter_by(run_id=run.id).one()
 
-        assert run.status == "succeeded"
+        assert run.status == "succeeded", (
+            run.error,
+            invocation.error_code,
+            invocation.error_message,
+            invocation.error_details,
+            operation.error_code,
+            operation.error_message,
+        )
         assert run.final_output == {"summary": "analysis for MSFT"}
         assert run.executed_tokens == 7
         assert invocation.status == "succeeded"

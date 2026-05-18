@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -9,28 +11,233 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.models.model_connection import ModelConnection
 from app.models.report import Report
 from app.models.run import Run
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
-from app.models.workflow_package import WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.schemas.extension import ExtensionToggleRequest
+from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
+from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
-from tests.test_workflow_package_preflight import _delete_existing_tradingagents_package
-from tests.test_workflow_package_preflight import _package_source as _tradingagents_package_source
-from tests.test_workflow_package_preflight import (
-    _seed_model_connection as _seed_tradingagents_model_connection,
+
+
+class _RuntimeOpenAIUsage:
+    def __init__(self, total_tokens: int) -> None:
+        self.total_tokens = total_tokens
+
+
+class _RuntimeOpenAIResponse:
+    def __init__(self, *, output_text: str, total_tokens: int) -> None:
+        self.output_text = output_text
+        self.usage = _RuntimeOpenAIUsage(total_tokens)
+
+
+class _RuntimeRecordingOpenAIClient:
+    init_calls: list[dict[str, Any]] = []
+    create_calls: list[dict[str, Any]] = []
+    output_text = '{"summary": "package runtime output"}'
+    total_tokens = 23
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_calls.append(kwargs)
+        self.responses = self
+
+    def __enter__(self) -> _RuntimeRecordingOpenAIClient:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+        del exc_type, exc, tb
+        return False
+
+    def create(self, **kwargs: Any) -> _RuntimeOpenAIResponse:
+        type(self).create_calls.append(kwargs)
+        return _RuntimeOpenAIResponse(
+            output_text=type(self).output_text,
+            total_tokens=type(self).total_tokens,
+        )
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.init_calls = []
+        cls.create_calls = []
+        cls.output_text = '{"summary": "package runtime output"}'
+        cls.total_tokens = 23
+
+
+_TRADINGAGENTS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tradingagents_advisory_research.yaml"
 )
-from tests.test_workflow_package_runtime_api import (
-    _create_package,
-    _drain_run_queue,
-    _RuntimeRecordingOpenAIClient,
-    _seed_model_connection,
-    _wait_for_run,
-)
+
+
+def _tradingagents_package_source() -> str:
+    return _TRADINGAGENTS_FIXTURE.read_text()
+
+
+def _delete_existing_tradingagents_package(client: TestClient) -> None:
+    packages_response = client.get("/api/workflow-packages")
+    assert packages_response.status_code == 200, packages_response.json()
+    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    for package in package_items:
+        if package["key"] != "tradingagents_advisory_research":
+            continue
+        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+        assert deleted.status_code == 204, deleted.text
+        break
+
+
+def _seed_tradingagents_model_connection(
+    session_factory: sessionmaker[Session],
+    *,
+    api_key: str | None = "sk-preflight",
+) -> None:
+    with session_factory() as session:
+        session.add(
+            ModelConnection(
+                key="tradingagents_primary_model",
+                status="active",
+                connection_kind="provider",
+                name="TradingAgents Primary Model",
+                description="Preflight model binding.",
+                base_url="https://api.openai.com/v1",
+                model_id="gpt-5.5-mini",
+                api_style="responses",
+                timeout_seconds=60,
+                secret_payload={} if api_key is None else {"apiKey": api_key},
+                last_tested_at=None,
+                last_test_ok=None,
+                last_test_message=None,
+            )
+        )
+        session.commit()
+
+
+def _package_source(*, package_key: str = "runtime_package") -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Runtime Package
+  description: Runtime package fixture.
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required: [ticker]
+  capabilityProfiles: []
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: package_analyst
+      name: Package Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+        required: [ticker]
+      outputSchema: summary_output
+      capabilityProfiles: []
+      budgetUsd: "0.10"
+  workflows:
+    - key: runtime_workflow
+      name: Runtime Workflow
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+        required: [ticker]
+      flow:
+        kind: step
+        id: package_analysis
+        slot: analysis
+        uses: package_analyst
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+      output:
+        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
+"""
+
+
+def _create_package(
+    client: TestClient,
+    *,
+    package_key: str = "runtime_package",
+) -> dict[str, object]:
+    response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _package_source(package_key=package_key)},
+    )
+    assert response.status_code == 201, response.json()
+    return cast(dict[str, object], response.json())
+
+
+def _seed_model_connection(
+    session_factory: sessionmaker[Session],
+    *,
+    api_key: str | None = "sk-package-runtime-v1",
+    connection_kind: str = "provider",
+    base_url: str = "https://runtime-v1.example.com/v1",
+    model_id: str = "gpt-package-v1",
+    api_style: str = "responses",
+) -> None:
+    with session_factory() as session:
+        payload = {} if api_key is None else {"apiKey": api_key}
+        session.add(
+            ModelConnection(
+                key="package_runtime_model",
+                status="active",
+                connection_kind=connection_kind,
+                name="Package Runtime Model",
+                description="Package runtime model binding.",
+                base_url=base_url,
+                model_id=model_id,
+                reasoning_effort="high",
+                api_style=api_style,
+                timeout_seconds=31,
+                secret_payload=payload,
+            )
+        )
+        session.commit()
+
+
+def _drain_run_queue(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as session:
+        drained = RunQueueService(session, session_factory).drain_once()
+        assert drained is True
+
+
+def _wait_for_run(client: TestClient, run_id: int) -> dict[str, Any]:
+    deadline = time.monotonic() + 3.0
+    last_body: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        last_body = cast(dict[str, Any], body)
+        if body["status"] not in {"queued", "running"}:
+            return last_body
+        time.sleep(0.02)
+    raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
 
 
 def _launch_package_run(
@@ -42,7 +249,6 @@ def _launch_package_run(
     response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "runtime_workflow",
             "parameters": {"ticker": ticker},
         },
@@ -76,7 +282,6 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "notify",
             "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "MSFT"},
         },
@@ -175,8 +380,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     provenance = cast(dict[str, Any], detail["packageProvenance"])
     assert provenance["workflowPackageId"] == first_package["id"]
     assert provenance["workflowPackageKey"] == "provenance_filter_package"
-    assert provenance["workflowPackageVersion"] == 1
-    assert provenance["workflowPackageVersionId"] is not None
     assert provenance["workflowPackageManifestHash"]
     assert provenance["workflowPackageCompiledHash"]
     assert provenance["workflowPackageManifestHash"] != provenance["workflowPackageCompiledHash"]
@@ -217,8 +420,10 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         "blockingErrors": [],
         "warnings": [],
     }
-    assert provenance["availability"]["packageStatus"] == "active"
-    assert provenance["availability"]["packageVersionAvailable"] is True
+    assert provenance["currentPackage"]["available"] is True
+    assert provenance["currentPackage"]["status"] == "active"
+    assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
+    assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
     serialized = json.dumps(detail, sort_keys=True)
     assert "sk-package-provenance-secret" not in serialized
     assert "secretPayload" not in serialized
@@ -230,20 +435,119 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert rerun_provenance["resolvedModelConnections"][0]["connectionKind"] == "provider"
 
 
-def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_reports(
+_recording_package_agent_calls: list[dict[str, Any]] = []
+
+
+async def _recording_package_agent_invoke(
+    self: AgentExecutionService,
+    **kwargs: Any,
+) -> RunAgentInvocationResult:
+    del self
+    _recording_package_agent_calls.append(dict(kwargs))
+    return RunAgentInvocationResult(output={"summary": "versionless package context"}, tokens=1)
+
+
+def test_workflow_package_runtime_context_does_not_emit_fake_workflow_version(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    monkeypatch.setattr(AgentExecutionService, "invoke", _recording_package_agent_invoke)
+    _recording_package_agent_calls.clear()
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="versionless_context_package")
+    launched = _launch_package_run(client, package, ticker="MSFT")
+    run_id = int(launched["id"])
+
+    _drain_run_queue(session_factory)
+    detail = _wait_for_run(client, run_id)
+
+    assert detail["status"] == "succeeded"
+    assert len(_recording_package_agent_calls) == 1
+    assert _recording_package_agent_calls[0]["workflow_key"] == "runtime_workflow"
+    assert _recording_package_agent_calls[0]["workflow_version"] is None
+    assert _recording_package_agent_calls[0]["package_ownership"] is not None
+
+
+def test_rerun_uses_run_snapshot_after_current_package_mutation(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="mutated_snapshot_package")
+    package_id = cast(int, package["id"])
+    launched = _launch_package_run(client, package, ticker="MSFT")
+    source_run_id = int(launched["id"])
+    source_detail_response = client.get(f"/api/runs/{source_run_id}")
+    assert source_detail_response.status_code == 200, source_detail_response.json()
+    source_provenance = cast(dict[str, Any], source_detail_response.json()["packageProvenance"])
+    snapshot_compiled_plan = deepcopy(source_provenance["compiledPlan"])
+    snapshot_compiled_hash = str(source_provenance["workflowPackageCompiledHash"])
+
+    with session_factory() as session:
+        package_row = session.get(WorkflowPackage, package_id)
+        assert package_row is not None
+        package_row.manifest_hash = "c" * 64
+        package_row.compiled_hash = "d" * 64
+        package_row.compiled_plan = {"packageKey": "mutated_snapshot_package", "workflows": []}
+        session.commit()
+
+    rerun_response = client.post(
+        f"/api/runs/{source_run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    assert rerun_response.status_code == 201, rerun_response.json()
+    rerun_id = int(rerun_response.json()["id"])
+    rerun_detail_response = client.get(f"/api/runs/{rerun_id}")
+    assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
+    rerun_provenance = cast(dict[str, Any], rerun_detail_response.json()["packageProvenance"])
+
+    removed_target_version_field = "target" + "Version"
+    assert removed_target_version_field not in rerun_response.json()
+    assert removed_target_version_field not in rerun_detail_response.json()
+    by_snapshot_model = client.get(
+        "/api/runs",
+        params={"modelConnectionKey": "package_runtime_model"},
+    )
+    assert by_snapshot_model.status_code == 200, by_snapshot_model.json()
+    assert [item["id"] for item in by_snapshot_model.json()["items"]] == [
+        rerun_id,
+        source_run_id,
+    ]
+
+    assert rerun_provenance["compiledPlan"] == snapshot_compiled_plan
+    assert rerun_provenance["workflowPackageCompiledHash"] == snapshot_compiled_hash
+    assert rerun_provenance["launchSnapshot"]["parameters"] == {"ticker": "AAPL"}
+    assert rerun_provenance["currentPackage"]["available"] is True
+    assert rerun_provenance["currentPackage"]["manifestHashMatchesSnapshot"] is False
+    assert rerun_provenance["currentPackage"]["compiledHashMatchesSnapshot"] is False
+
+    with session_factory() as session:
+        rerun = session.get(Run, rerun_id)
+        assert rerun is not None
+        assert rerun.workflow_package_snapshot is not None
+        assert rerun.workflow_package_snapshot.compiled_plan == snapshot_compiled_plan
+        assert rerun.workflow_package_snapshot.launch_parameters == {"ticker": "AAPL"}
+
+
+def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "cascade package output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot replay output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="cascade_run_package")
+    package = _create_package(client, package_key="deleted_snapshot_package")
+    package_id = cast(int, package["id"])
     launched = _launch_package_run(client, package, ticker="NVDA")
     run_id = int(launched["id"])
-    memory_slug = f"agent_memory_cascade_run_{run_id}"
+    memory_slug = f"agent_memory_deleted_snapshot_run_{run_id}"
 
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
@@ -254,7 +558,7 @@ def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_repo
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
         session.add(
             Report(
-                name=f"Agent Memory Cascade Run {run_id}",
+                name=f"Agent Memory Deleted Snapshot Run {run_id}",
                 slug=memory_slug,
                 source="agent",
                 content="# Agent memory",
@@ -265,16 +569,62 @@ def test_delete_package_cascades_launched_runs_steps_invocations_and_memory_repo
         )
         session.commit()
 
-    deleted = client.delete(f"/api/workflow-packages/{package['id']}")
+    deleted = client.delete(f"/api/workflow-packages/{package_id}")
     assert deleted.status_code == 204, deleted.text
     assert deleted.content == b""
-    assert client.get(f"/api/runs/{run_id}").status_code == 404
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    provenance = cast(dict[str, Any], detail_response.json()["packageProvenance"])
+    assert provenance["workflowPackageId"] == package_id
+    assert provenance["currentPackage"] == {
+        "available": False,
+        "status": None,
+        "manifestHash": None,
+        "compiledHash": None,
+        "manifestHashMatchesSnapshot": None,
+        "compiledHashMatchesSnapshot": None,
+        "unavailableReason": "missingPackage",
+    }
+
+    replay_response = client.post(
+        f"/api/runs/{run_id}/step-replays",
+        json={"replayStepIndex": 1, "parameters": {"ticker": "TSLA"}},
+    )
+    assert replay_response.status_code == 201, replay_response.json()
+    replay_id = int(replay_response.json()["id"])
+    replay_detail_response = client.get(f"/api/runs/{replay_id}")
+    assert replay_detail_response.status_code == 200, replay_detail_response.json()
+    replay_provenance = cast(dict[str, Any], replay_detail_response.json()["packageProvenance"])
+    assert replay_provenance["workflowPackageId"] == package_id
+    assert replay_provenance["launchSnapshot"]["parameters"] == {"ticker": "TSLA"}
+    assert replay_provenance["currentPackage"]["available"] is False
+    by_deleted_snapshot_model = client.get(
+        "/api/runs",
+        params={"modelConnectionKey": "package_runtime_model"},
+    )
+    assert by_deleted_snapshot_model.status_code == 200, by_deleted_snapshot_model.json()
+    assert [item["id"] for item in by_deleted_snapshot_model.json()["items"]] == [
+        replay_id,
+        run_id,
+    ]
 
     with session_factory() as session:
-        assert session.get(Run, run_id) is None
-        assert session.query(RunStep).filter_by(run_id=run_id).count() == 0
-        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() == 0
-        assert session.query(Report).filter_by(slug=memory_slug).count() == 0
+        run = session.get(Run, run_id)
+        replay_run = session.get(Run, replay_id)
+        assert run is not None
+        assert replay_run is not None
+        assert run.workflow_package_id is None
+        assert replay_run.workflow_package_id is None
+        assert run.workflow_package_snapshot is not None
+        assert replay_run.workflow_package_snapshot is not None
+        assert run.workflow_package_snapshot.workflow_package_id == package_id
+        assert replay_run.workflow_package_snapshot.compiled_hash == (
+            run.workflow_package_snapshot.compiled_hash
+        )
+        assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
+        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
+        assert session.query(Report).filter_by(slug=memory_slug).count() == 1
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
@@ -364,7 +714,6 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "advisory_research",
             "parameters": _tradingagents_parameters(),
         },
@@ -388,15 +737,11 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
         "tool.signaldeck.market_data.quote_lookup",
     } <= surfaces
     with session_factory() as session:
-        package_version = (
-            session.query(WorkflowPackageVersion)
-            .filter_by(package_id=int(package["id"]), version=1)
-            .one()
-        )
-        assert package_version.extension_dependencies == dependencies
+        package_row = session.query(WorkflowPackage).filter_by(id=int(package["id"])).one()
+        assert package_row.extension_dependencies == dependencies
 
 
-def test_run_dependency_snapshot_is_copied_from_package_version(
+def test_run_dependency_snapshot_is_copied_from_current_package(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -405,22 +750,17 @@ def test_run_dependency_snapshot_is_copied_from_package_version(
     _seed_tradingagents_model_connection(session_factory)
     package = _create_tradingagents_package(client)
     with session_factory() as session:
-        package_version = (
-            session.query(WorkflowPackageVersion)
-            .filter_by(package_id=int(package["id"]), version=1)
-            .one()
-        )
-        frozen_dependencies = deepcopy(package_version.extension_dependencies)
-        compiled_plan = deepcopy(package_version.compiled_plan)
+        package_row = session.query(WorkflowPackage).filter_by(id=int(package["id"])).one()
+        frozen_dependencies = deepcopy(package_row.extension_dependencies)
+        compiled_plan = deepcopy(package_row.compiled_plan)
         for profile in cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"]):
             profile["toolKeys"] = []
-        package_version.compiled_plan = compiled_plan
+        package_row.compiled_plan = compiled_plan
         session.commit()
 
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "advisory_research",
             "parameters": _tradingagents_parameters(),
         },
@@ -432,12 +772,8 @@ def test_run_dependency_snapshot_is_copied_from_package_version(
     assert detail_response.json()["extensionDependencies"] == frozen_dependencies
 
     with session_factory() as session:
-        package_version = (
-            session.query(WorkflowPackageVersion)
-            .filter_by(package_id=int(package["id"]), version=1)
-            .one()
-        )
-        package_version.extension_dependencies = []
+        package_row = session.query(WorkflowPackage).filter_by(id=int(package["id"])).one()
+        package_row.extension_dependencies = []
         session.commit()
 
     stable_detail_response = client.get(f"/api/runs/{run_id}")
@@ -460,7 +796,7 @@ def test_package_private_mcp_dependency_snapshot_blocks_disabled_extension_runti
     package = cast(dict[str, Any], create_response.json())
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
-        json={"version": 1, "workflowKey": "mcp_flow", "parameters": {}},
+        json={"workflowKey": "mcp_flow", "parameters": {}},
     )
     assert launch_response.status_code == 201, launch_response.json()
     run_id = int(launch_response.json()["id"])
@@ -494,7 +830,6 @@ def test_tradingagents_advisory_research_launch_blocks_extension_disabled(
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "advisory_research",
             "parameters": _tradingagents_parameters(),
         },
@@ -522,7 +857,6 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     launch_response = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "advisory_research",
             "parameters": _tradingagents_parameters(),
         },
