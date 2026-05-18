@@ -3,7 +3,6 @@ import type { ModelConnectionKind } from "./model-connection";
 import type { RunStatus } from "./run";
 
 export type WorkflowPackageStatus = "draft" | "active";
-export type WorkflowPackageImportMode = "create" | "createVersion";
 export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
 export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
 
@@ -11,15 +10,9 @@ export interface WorkflowPackageManifestRequest {
   manifestSource: string;
 }
 
-export interface WorkflowPackageManifestReadOptions {
-  signal?: AbortSignal;
-  version?: number | string | null;
-}
-
 export interface WorkflowPackageManifestRead {
   packageId: number;
   packageKey: string;
-  version: number;
   manifestSource: string;
   packageDefinition: UnknownRecord;
   manifestHash: string;
@@ -47,9 +40,7 @@ export interface WorkflowPackageSecretBindingUpdateRequest {
   value: string;
 }
 
-export interface WorkflowPackageImportRequest extends WorkflowPackageManifestRequest {
-  mode?: WorkflowPackageImportMode;
-}
+export type WorkflowPackageImportRequest = WorkflowPackageManifestRequest;
 
 export interface WorkflowPackageMetadataRead {
   apiVersion: WorkflowPackageManifestApiVersion | string;
@@ -82,33 +73,16 @@ export interface WorkflowPackageRead {
   name: string;
   description: string;
   status: WorkflowPackageStatus;
-  latestVersion: number | null;
-  latestVersionId: number | null;
   manifestHash: string | null;
   compiledHash: string | null;
   warnings: UnknownRecord[];
   createdAt: string;
   updatedAt: string;
+  lastLaunchedAt: string | null;
 }
 
 export interface WorkflowPackageListRead {
   items: WorkflowPackageRead[];
-}
-
-export interface WorkflowPackageVersionRead {
-  id: number;
-  packageId: number;
-  version: number;
-  manifestHash: string;
-  compiledHash: string;
-  validationSummary: UnknownRecord;
-  warnings: UnknownRecord[];
-  createdAt: string;
-  launchedAt: string | null;
-}
-
-export interface WorkflowPackageVersionListRead {
-  items: WorkflowPackageVersionRead[];
 }
 
 export interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
@@ -123,7 +97,6 @@ export interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
 export interface WorkflowPackageLaunchRead {
   packageId: number;
   packageKey: string;
-  packageVersion: number;
   manifestHash: string;
   workflowKey: string;
   name: string;
@@ -135,7 +108,6 @@ export interface WorkflowPackageLaunchRead {
 }
 
 export interface WorkflowPackageLaunchCreateRequest {
-  version?: number | null;
   workflowKey?: string | null;
   parameters?: UnknownRecord;
 }
@@ -145,17 +117,10 @@ export interface WorkflowPackageLaunchCreateResponse {
   status: RunStatus;
   workflowPackageId: number;
   workflowPackageKey: string;
-  workflowPackageVersion: number;
   workflowKey: string;
   createdAt: string;
 }
 
 export interface WorkflowPackageListParams {
   status?: WorkflowPackageStatus;
-}
-
-export interface WorkflowPackageVersionedRequestOptions {
-  signal?: AbortSignal;
-  version?: number;
-  workflowKey?: string;
 }

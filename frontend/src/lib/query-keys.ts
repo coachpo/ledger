@@ -28,14 +28,6 @@ function normalizeOptionalText(value: string | null | undefined) {
   return normalized ? normalized : undefined;
 }
 
-function normalizeOptionalVersion(value: number | string | null | undefined) {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-
-  return Number(value);
-}
-
 function omitUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
@@ -67,7 +59,6 @@ function normalizeRunListParams(params: RunListParams = {}) {
     targetId: params.targetId,
     targetKey: normalizeOptionalText(params.targetKey),
     targetKind: params.targetKind,
-    targetVersion: params.targetVersion,
     workflowKey: normalizeOptionalText(params.workflowKey),
     workflowPackageId: params.workflowPackageId,
     workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),
@@ -134,47 +125,39 @@ const workflowPackagesQueryKeys = {
   all: workflowPackagesRoot,
   detail: (packageId: IdParam) =>
     [...workflowPackagesRoot, "detail", normalizeId(packageId)] as const,
-  manifest: (packageId: IdParam, version?: number | string | null) => {
-    const normalizedVersion = normalizeOptionalVersion(version);
-    if (normalizedVersion === undefined) {
-      return [...workflowPackagesRoot, "manifest", normalizeId(packageId)] as const;
-    }
-    return [...workflowPackagesRoot, "manifest", normalizeId(packageId), { version: normalizedVersion }] as const;
-  },
-  export: (packageId: IdParam, version?: number | string) => {
-    const normalizedVersion = normalizeOptionalVersion(version);
-    if (normalizedVersion === undefined) {
-      return [...workflowPackagesRoot, "export", normalizeId(packageId)] as const;
-    }
-    return [...workflowPackagesRoot, "export", normalizeId(packageId), { version: normalizedVersion }] as const;
-  },
-  launch: (packageId: IdParam, version?: number | string, workflowKey?: string | null) => {
-    const normalizedVersion = normalizeOptionalVersion(version);
+  manifest: (packageId: IdParam) =>
+    [...workflowPackagesRoot, "manifest", normalizeId(packageId)] as const,
+  export: (packageId: IdParam) =>
+    [...workflowPackagesRoot, "export", normalizeId(packageId)] as const,
+  launch: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
+    if (normalizedWorkflowKey === undefined) {
+      return [...workflowPackagesRoot, "launch", normalizeId(packageId)] as const;
+    }
     return [
       ...workflowPackagesRoot,
       "launch",
       normalizeId(packageId),
-      omitUndefined({ version: normalizedVersion, workflowKey: normalizedWorkflowKey }),
+      { workflowKey: normalizedWorkflowKey },
     ] as const;
   },
   list: (params: WorkflowPackageListParams = {}) =>
     [...workflowPackagesRoot, "list", normalizeWorkflowPackageListParams(params)] as const,
-  preflight: (packageId: IdParam, version?: number | string, workflowKey?: string | null) => {
-    const normalizedVersion = normalizeOptionalVersion(version);
+  preflight: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
+    if (normalizedWorkflowKey === undefined) {
+      return [...workflowPackagesRoot, "preflight", normalizeId(packageId)] as const;
+    }
     return [
       ...workflowPackagesRoot,
       "preflight",
       normalizeId(packageId),
-      omitUndefined({ version: normalizedVersion, workflowKey: normalizedWorkflowKey }),
+      { workflowKey: normalizedWorkflowKey },
     ] as const;
   },
   secretBindings: (packageId: IdParam) =>
     [...workflowPackagesRoot, "secretBindings", normalizeId(packageId)] as const,
   validation: () => [...workflowPackagesRoot, "validation"] as const,
-  versions: (packageId: IdParam) =>
-    [...workflowPackagesRoot, "versions", normalizeId(packageId)] as const,
 } as const;
 const platformQueryKeys = {
   all: [...platformApiRoot] as const,

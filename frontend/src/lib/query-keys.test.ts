@@ -47,34 +47,26 @@ describe("query keys", () => {
       "list",
       { status: "active" },
     ]);
-    expect(queryKeys.platform.workflowPackages.versions("9")).toEqual(
-      queryKeys.platform.workflowPackages.versions(9),
+    expect(queryKeys.platform.workflowPackages.manifest("9")).toEqual(
+      queryKeys.platform.workflowPackages.manifest(9),
     );
-    expect(queryKeys.platform.workflowPackages.versions(9)).toEqual([
-      "api",
-      "platform",
-      "workflowPackages",
-      "versions",
-      "9",
-    ]);
-    expect(queryKeys.platform.workflowPackages.launch("9", "2", " review ")).toEqual(
-      queryKeys.platform.workflowPackages.launch(9, 2, "review"),
+    expect(queryKeys.platform.workflowPackages.launch("9", " review ")).toEqual(
+      queryKeys.platform.workflowPackages.launch(9, "review"),
     );
-    expect(queryKeys.platform.workflowPackages.launch(9, 2, "review")).toEqual([
+    expect(queryKeys.platform.workflowPackages.launch(9, "review")).toEqual([
       "api",
       "platform",
       "workflowPackages",
       "launch",
       "9",
-      { version: 2, workflowKey: "review" },
+      { workflowKey: "review" },
     ]);
-    expect(queryKeys.platform.workflowPackages.preflight(9, 2)).toEqual([
+    expect(queryKeys.platform.workflowPackages.preflight(9)).toEqual([
       "api",
       "platform",
       "workflowPackages",
       "preflight",
       "9",
-      { version: 2 },
     ]);
   });
 
@@ -105,6 +97,7 @@ describe("query keys", () => {
     expect(Reflect.has(queryKeys.platform, "mcpServers")).toBe(false);
     expect(Reflect.has(queryKeys.platform, "outputSchemas")).toBe(false);
     expect(Reflect.has(queryKeys.platform, "workflows")).toBe(false);
+    expect(Reflect.has(queryKeys.platform.workflowPackages, "versions")).toBe(false);
   });
 
   it("normalizes package run filters", () => {

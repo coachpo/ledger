@@ -100,10 +100,10 @@ describe("workflow packages api", () => {
     expect(init?.body).toBe(JSON.stringify({ manifestSource }));
   });
 
-  it("uses PATCH for package updates and POST for createVersion imports", async () => {
+  it("uses PATCH for package updates and POST for current package imports", async () => {
     const { importWorkflowPackage, updateWorkflowPackage } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12 }, 200));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12, latestVersion: 3 }, 201));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 12 }, 201));
 
     await updateWorkflowPackage(12, { manifestSource, status: "active" });
     let lastCall = getLastFetchCall(fetchMock);
@@ -111,39 +111,37 @@ describe("workflow packages api", () => {
     expect(lastCall.init?.method).toBe("PATCH");
     expect(lastCall.init?.body).toBe(JSON.stringify({ manifestSource, status: "active" }));
 
-    await importWorkflowPackage({ manifestSource, mode: "createVersion" });
+    await importWorkflowPackage({ manifestSource });
     lastCall = getLastFetchCall(fetchMock);
     expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/import");
     expect(lastCall.init?.method).toBe("POST");
-    expect(lastCall.init?.body).toBe(JSON.stringify({ manifestSource, mode: "createVersion" }));
+    expect(lastCall.init?.body).toBe(JSON.stringify({ manifestSource }));
   });
 
-  it("builds versioned export URLs without fetching", async () => {
+  it("builds current export URLs without fetching", async () => {
     const { exportWorkflowPackageUrl } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
 
-    expect(exportWorkflowPackageUrl(12, 3)).toBe(
-      "https://signaldeck.example.com/api/workflow-packages/12/export?version=3",
-    );
+    expect(exportWorkflowPackageUrl(12)).toBe("https://signaldeck.example.com/api/workflow-packages/12/export");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reads preflight and launch metadata with version and workflowKey query params", async () => {
+  it("reads current preflight and launch metadata with only workflowKey query params", async () => {
     const { getWorkflowPackageLaunch, preflightWorkflowPackage } = await loadWorkflowPackagesApi(
       "https://signaldeck.example.com/api/v1/",
     );
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
     fetchMock.mockResolvedValueOnce(jsonResponse({ packageId: 12, ready: true }, 200));
 
-    await preflightWorkflowPackage(12, { version: 3, workflowKey: "summarize" });
+    await preflightWorkflowPackage(12, { workflowKey: "summarize" });
     let lastCall = getLastFetchCall(fetchMock);
     expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/preflight");
-    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ version: "3", workflowKey: "summarize" });
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
     expect(lastCall.init?.method).toBe("POST");
 
-    await getWorkflowPackageLaunch(12, { version: 3, workflowKey: "summarize" });
+    await getWorkflowPackageLaunch(12, { workflowKey: "summarize" });
     lastCall = getLastFetchCall(fetchMock);
     expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/launch");
-    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ version: "3", workflowKey: "summarize" });
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
     expect(lastCall.init?.method).toBe("GET");
   });
 
@@ -153,7 +151,6 @@ describe("workflow packages api", () => {
 
     await expect(
       createWorkflowPackageLaunch(12, {
-        version: 3,
         workflowKey: "summarize",
         parameters: { ticker: "MSFT" },
       }),
@@ -162,7 +159,7 @@ describe("workflow packages api", () => {
     const { init, url } = getLastFetchCall(fetchMock);
     expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/workflow-packages/12/launches");
     expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify({ version: 3, workflowKey: "summarize", parameters: { ticker: "MSFT" } }));
+    expect(init?.body).toBe(JSON.stringify({ workflowKey: "summarize", parameters: { ticker: "MSFT" } }));
   });
 });
 ;

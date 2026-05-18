@@ -26,15 +26,17 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/api/workflow-packages", () => ({
   createWorkflowPackage: vi.fn(),
   createWorkflowPackageLaunch: vi.fn(),
-  createWorkflowPackageVersion: vi.fn(),
   deleteWorkflowPackage: vi.fn(),
+  deleteWorkflowPackageSecretBinding: vi.fn(),
   getWorkflowPackage: vi.fn(),
   getWorkflowPackageLaunch: vi.fn(),
+  getWorkflowPackageManifest: vi.fn(),
   importWorkflowPackage: vi.fn(),
-  listWorkflowPackageVersions: vi.fn(),
+  listWorkflowPackageSecretBindings: vi.fn(),
   listWorkflowPackages: vi.fn(),
   preflightWorkflowPackage: vi.fn(),
   updateWorkflowPackage: vi.fn(),
+  upsertWorkflowPackageSecretBinding: vi.fn(),
   validateWorkflowPackageManifest: vi.fn(),
 }));
 
@@ -112,7 +114,7 @@ describe("useWorkflowPackages", () => {
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.onSuccess?.(
       { id: 23 },
-      { packageId: 15, payload: { version: 2, workflowKey: "summarize", parameters: { ticker: "AVGO" } } },
+      { packageId: 15, payload: { workflowKey: "summarize", parameters: { ticker: "AVGO" } } },
     );
 
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
@@ -122,7 +124,7 @@ describe("useWorkflowPackages", () => {
       queryKey: queryKeys.platform.runs.detail(23),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.launch(15, 2, "summarize"),
+      queryKey: queryKeys.platform.workflowPackages.launch(15, "summarize"),
     });
   });
 

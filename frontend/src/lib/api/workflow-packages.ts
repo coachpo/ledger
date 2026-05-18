@@ -13,7 +13,6 @@ import type {
   WorkflowPackageListParams,
   WorkflowPackageListRead,
   WorkflowPackageManifestRead,
-  WorkflowPackageManifestReadOptions,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
   WorkflowPackageSecretBindingListRead,
@@ -21,8 +20,6 @@ import type {
   WorkflowPackageSecretBindingUpdateRequest,
   WorkflowPackageUpdateRequest,
   WorkflowPackageValidationRead,
-  WorkflowPackageVersionedRequestOptions,
-  WorkflowPackageVersionListRead,
 } from "../types/workflow-package";
 
 function workflowPackagePath(packageId: IdParam): string {
@@ -33,19 +30,13 @@ function workflowPackageSecretBindingPath(packageId: IdParam, key: IdParam): str
   return `${workflowPackagePath(packageId)}/secret-bindings/${toPathSegment(key)}`;
 }
 
-function normalizeManifestVersion(version: number | string | null | undefined) {
-  return version === undefined || version === null || version === "" ? undefined : version;
-}
+type WorkflowPackageWorkflowOptions = {
+  signal?: AbortSignal;
+  workflowKey?: string | null;
+};
 
-function manifestReadQuery(options: WorkflowPackageManifestReadOptions = {}) {
+function workflowKeyQuery(options: WorkflowPackageWorkflowOptions = {}) {
   return toQueryRecord({
-    version: normalizeManifestVersion(options.version),
-  });
-}
-
-function versionedWorkflowQuery(options: WorkflowPackageVersionedRequestOptions = {}) {
-  return toQueryRecord({
-    version: options.version,
     workflowKey: options.workflowKey,
   });
 }
@@ -69,11 +60,10 @@ export function getWorkflowPackage(
 
 export function getWorkflowPackageManifest(
   packageId: IdParam,
-  options: WorkflowPackageManifestReadOptions = {},
+  signal?: AbortSignal,
 ): Promise<WorkflowPackageManifestRead> {
   return requestPlatform<WorkflowPackageManifestRead>(`${workflowPackagePath(packageId)}/manifest`, {
-    query: manifestReadQuery(options),
-    signal: options.signal,
+    signal,
   });
 }
 
@@ -154,27 +144,6 @@ export function deleteWorkflowPackageSecretBinding(
   });
 }
 
-export function listWorkflowPackageVersions(
-  packageId: IdParam,
-  signal?: AbortSignal,
-): Promise<WorkflowPackageVersionListRead> {
-  return requestPlatform<WorkflowPackageVersionListRead>(`${workflowPackagePath(packageId)}/versions`, {
-    signal,
-  });
-}
-
-export function createWorkflowPackageVersion(
-  packageId: IdParam,
-  payload: WorkflowPackageManifestRequest,
-  signal?: AbortSignal,
-): Promise<WorkflowPackageRead> {
-  return requestPlatform<WorkflowPackageRead>(`${workflowPackagePath(packageId)}/versions`, {
-    body: payload,
-    method: "POST",
-    signal,
-  });
-}
-
 export function importWorkflowPackage(
   payload: WorkflowPackageImportRequest,
   signal?: AbortSignal,
@@ -186,34 +155,27 @@ export function importWorkflowPackage(
   });
 }
 
-export function exportWorkflowPackageUrl(
-  packageId: IdParam,
-  version?: number,
-): string {
-  const url = new URL(buildPlatformApiUrl(`${workflowPackagePath(packageId)}/export`));
-  if (version !== undefined) {
-    url.searchParams.set("version", String(version));
-  }
-  return url.toString();
+export function exportWorkflowPackageUrl(packageId: IdParam): string {
+  return buildPlatformApiUrl(`${workflowPackagePath(packageId)}/export`);
 }
 
 export function preflightWorkflowPackage(
   packageId: IdParam,
-  options: WorkflowPackageVersionedRequestOptions = {},
+  options: WorkflowPackageWorkflowOptions = {},
 ): Promise<WorkflowPackageLaunchRead> {
   return requestPlatform<WorkflowPackageLaunchRead>(`${workflowPackagePath(packageId)}/preflight`, {
     method: "POST",
-    query: versionedWorkflowQuery(options),
+    query: workflowKeyQuery(options),
     signal: options.signal,
   });
 }
 
 export function getWorkflowPackageLaunch(
   packageId: IdParam,
-  options: WorkflowPackageVersionedRequestOptions = {},
+  options: WorkflowPackageWorkflowOptions = {},
 ): Promise<WorkflowPackageLaunchRead> {
   return requestPlatform<WorkflowPackageLaunchRead>(`${workflowPackagePath(packageId)}/launch`, {
-    query: versionedWorkflowQuery(options),
+    query: workflowKeyQuery(options),
     signal: options.signal,
   });
 }
@@ -235,7 +197,6 @@ export const workflowPackagesApi = {
   deleteSecretBinding: deleteWorkflowPackageSecretBinding,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
-  createVersion: createWorkflowPackageVersion,
   exportUrl: exportWorkflowPackageUrl,
   get: getWorkflowPackage,
   getLaunch: getWorkflowPackageLaunch,
@@ -243,7 +204,6 @@ export const workflowPackagesApi = {
   import: importWorkflowPackage,
   list: listWorkflowPackages,
   listSecretBindings: listWorkflowPackageSecretBindings,
-  listVersions: listWorkflowPackageVersions,
   preflight: preflightWorkflowPackage,
   update: updateWorkflowPackage,
   upsertSecretBinding: upsertWorkflowPackageSecretBinding,
