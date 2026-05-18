@@ -6,32 +6,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, IdMixin
 
 
-class WorkflowPackageVersionModelConnection(IdMixin, Base):
-    __tablename__ = "workflow_package_version_model_connections"
-    __table_args__ = (
-        UniqueConstraint(
-            "workflow_package_version_id",
-            "model_connection_id",
-            name="uq_wpv_model_connections_version_connection",
-        ),
-        Index(
-            "ix_wpv_model_connections_version",
-            "workflow_package_version_id",
-        ),
-        Index("ix_wpv_model_connections_connection", "model_connection_id"),
-    )
-
-    workflow_package_version_id: Mapped[int] = mapped_column(
-        ForeignKey("workflow_package_versions.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    model_connection_id: Mapped[int] = mapped_column(
-        ForeignKey("model_connections.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    model_connection_key: Mapped[str] = mapped_column(String(120), nullable=False)
-
-
 class WorkflowAgentRef(IdMixin, Base):
     __tablename__ = "workflow_agent_refs"
     __table_args__ = (

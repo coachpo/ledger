@@ -23,7 +23,9 @@ class WorkflowPackage(IdMixin, Base):
         Index("ix_workflow_packages_key", "key"),
         Index("ix_workflow_packages_status", "status"),
         Index("uq_workflow_packages_active_key", "key", unique=True),
-        Index("ix_workflow_packages_latest_version", "latest_version_id"),
+        Index("ix_workflow_packages_manifest_hash", "manifest_hash"),
+        Index("ix_workflow_packages_compiled_hash", "compiled_hash"),
+        Index("ix_workflow_packages_last_launched_at", "last_launched_at"),
     )
 
     key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -35,16 +37,23 @@ class WorkflowPackage(IdMixin, Base):
         default="draft",
         server_default="draft",
     )
-    latest_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey(
-            "workflow_package_versions.id",
-            name="fk_workflow_packages_latest_version_id",
-            ondelete="SET NULL",
-            use_alter=True,
-        ),
-        nullable=True,
+    manifest_source: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    package_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    compiled_plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    compiled_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
     )
-    draft_source: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    validation_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -58,20 +67,11 @@ class WorkflowPackage(IdMixin, Base):
         server_default=sql_text("now()"),
         onupdate=utcnow,
     )
+    last_launched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
-    versions: Mapped[list[WorkflowPackageVersion]] = relationship(
-        "WorkflowPackageVersion",
-        back_populates="package",
-        cascade="all, delete-orphan",
-        foreign_keys="WorkflowPackageVersion.package_id",
-        passive_deletes=True,
-        order_by="WorkflowPackageVersion.version.desc()",
-    )
-    latest_version: Mapped[WorkflowPackageVersion | None] = relationship(
-        "WorkflowPackageVersion",
-        foreign_keys=lambda: [WorkflowPackage.latest_version_id],
-        post_update=True,
-    )
     secret_bindings: Mapped[list[WorkflowPackageSecretBinding]] = relationship(
         "WorkflowPackageSecretBinding",
         back_populates="package",
@@ -108,54 +108,4 @@ class WorkflowPackageSecretBinding(IdMixin, TimestampMixin, Base):
     package: Mapped[WorkflowPackage] = relationship(
         "WorkflowPackage",
         back_populates="secret_bindings",
-    )
-
-
-class WorkflowPackageVersion(IdMixin, Base):
-    __tablename__ = "workflow_package_versions"
-    __table_args__ = (
-        CheckConstraint("version > 0", name="ck_workflow_package_versions_version_positive"),
-        UniqueConstraint(
-            "package_id", "version", name="uq_workflow_package_versions_package_version"
-        ),
-        Index("ix_workflow_package_versions_package", "package_id"),
-        Index("ix_workflow_package_versions_manifest_hash", "manifest_hash"),
-        Index("ix_workflow_package_versions_compiled_hash", "compiled_hash"),
-        Index("ix_workflow_package_versions_launched_at", "launched_at"),
-    )
-
-    package_id: Mapped[int] = mapped_column(
-        ForeignKey("workflow_packages.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    version: Mapped[int] = mapped_column(nullable=False)
-    manifest_source: Mapped[str] = mapped_column(Text, nullable=False)
-    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    package_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    compiled_plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    compiled_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=list,
-        server_default=sql_text("'[]'::jsonb"),
-    )
-    validation_summary: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        server_default=sql_text("now()"),
-    )
-    launched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    package: Mapped[WorkflowPackage] = relationship(
-        "WorkflowPackage",
-        back_populates="versions",
-        foreign_keys=[package_id],
     )

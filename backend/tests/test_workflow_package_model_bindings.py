@@ -60,16 +60,13 @@ def test_package_export_contains_model_key_not_secret_or_id(
         )
         session.add(connection)
         repository = WorkflowPackageRepository(session)
+        package_definition = cast(dict[str, object], compiled["packageDefinition"])
+        compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
+        session.flush()
         package = repository.create_package(
             key="tradingagents_research",
             name="TradingAgents Research Package",
             description="Portable package for the representative research workflow.",
-            draft_source=source,
-        )
-        package_definition = cast(dict[str, object], compiled["packageDefinition"])
-        compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
-        version = repository.create_version(
-            package,
             manifest_source=source,
             manifest_hash=cast(str, compiled["manifestHash"]),
             package_definition=package_definition,
@@ -84,8 +81,8 @@ def test_package_export_contains_model_key_not_secret_or_id(
         )
         session.commit()
         package_payload = {
-            "packageDefinition": version.package_definition,
-            "compiledPlan": version.compiled_plan,
+            "packageDefinition": package.package_definition,
+            "compiledPlan": package.compiled_plan,
         }
 
     roundtrip = decompile_workflow_package_manifest(package_payload)
