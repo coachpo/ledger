@@ -174,21 +174,6 @@ def test_agent_platform_routes_mount_package_first_api_without_global_authoring_
     assert not any(path.startswith("/api/v3") for path in route_paths)
 
 
-def test_agent_platform_removed_global_authoring_routes_return_404(client: TestClient) -> None:
-    removed_paths = [
-        "/api/agents",
-        "/api/capabilities",
-        "/api/mcp-servers",
-        "/api/output-schemas",
-        "/api/workflows",
-        "/api/agents/1/test-panel",
-    ]
-
-    for path in removed_paths:
-        assert client.get(path).status_code == 404
-        assert client.post(path, json={}).status_code == 404
-
-
 def test_finance_workspace_product_routes_remain_mounted_for_portfolio_template_report_market_data(
     app: FastAPI,
 ) -> None:

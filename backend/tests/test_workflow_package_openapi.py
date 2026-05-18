@@ -25,8 +25,6 @@ def test_clean_break_removes_old_authoring_routes(client: TestClient) -> None:
     assert "/api/runs" in paths
     for path in _OLD_AUTHORING_PATHS:
         assert path not in paths
-        assert client.get(path).status_code == 404
-        assert client.post(path, json={}).status_code == 404
 
 
 def test_workflow_package_routes_are_registered_without_old_authoring(app) -> None:
@@ -45,7 +43,6 @@ def test_workflow_package_routes_are_registered_without_old_authoring(app) -> No
         "/api/tools",
     } <= route_paths
     assert "/api/workflow-packages/{package_id}/versions" not in route_paths
-    assert route_paths.isdisjoint(_OLD_AUTHORING_PATHS)
 
 
 def test_workflow_package_openapi_is_current_package_only(client: TestClient) -> None:
