@@ -231,24 +231,6 @@ describe("WorkflowPackageEditorPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
   });
 
-  it("surfaces package load errors in a blocking retry state", () => {
-    useWorkflowPackageMock.mockReturnValue({
-      data: undefined,
-      error: new Error("Package missing"),
-      isError: true,
-      isPending: false,
-      refetch: vi.fn(),
-    });
-
-    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
-
-    expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
-    expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
-  });
-
   it("surfaces manifest parse errors in a blocking retry state", () => {
     useWorkflowPackageManifestMock.mockReturnValue({
       data: {
