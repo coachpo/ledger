@@ -185,7 +185,6 @@ def _expected_payload(connection_id: int) -> dict[str, object]:
         "outputSchemaVersion": 3,
         "capabilities": [{"capabilityKey": "sec_filing_lookup", "capabilityVersion": 2}],
         "mcpServers": [{"mcpServerKey": "market_data", "mcpServerVersion": 1}],
-        "budgetUsd": "1.25",
     }
 
 

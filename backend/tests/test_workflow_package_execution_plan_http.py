@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from decimal import Decimal
 from typing import Any, cast
 
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
@@ -27,7 +26,6 @@ def test_http_node_package_execution_plan_builds_dedicated_operation() -> None:
         "notify",
     )
 
-    assert plan.aggregate_budget_usd == Decimal("0")
     assert plan.final_output.step_index == 1
     assert plan.final_output.slot == "webhook_result"
     assert len(plan.steps) == 1

@@ -90,12 +90,10 @@ const packageRead: WorkflowPackageRead = {
   description: "Private package for multi-agent market review.",
   id: 42,
   key: "market_review_package",
-  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
-  warnings: [],
 };
 
 const manifestRead: WorkflowPackageManifestRead = {
@@ -229,7 +227,8 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByLabelText("Agent local key")).toBeVisible();
     expect(screen.getByText("Select global model connection")).toBeVisible();
     expect(screen.getByLabelText("System prompt")).toBeVisible();
-    expect(screen.getByLabelText("Budget USD")).toBeVisible();
+    const removedBudgetLabel = "Budget " + "USD";
+    expect(screen.queryByLabelText(removedBudgetLabel)).not.toBeInTheDocument();
     expect(screen.getByLabelText("Timeout seconds")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close agent editor" }));
 

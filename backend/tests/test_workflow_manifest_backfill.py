@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -86,7 +84,6 @@ def _seed_agent(session: Session) -> None:
             output_schema_version=output_schema.version,
             capabilities=[],
             mcp_servers=[],
-            budget_usd=Decimal("0.05000000"),
         )
     )
     session.commit()

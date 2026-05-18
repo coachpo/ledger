@@ -19,6 +19,7 @@ from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
+from tests.test_workflow_package_manifest_http_node import assert_removed_contract_tokens_absent
 
 
 class _RuntimeOpenAIUsage:
@@ -101,7 +102,6 @@ spec:
         required: [ticker]
       outputSchema: summary_output
       capabilityProfiles: []
-      budgetUsd: "0.10"
   workflows:
     - key: runtime_workflow
       name: Runtime Workflow
@@ -142,8 +142,29 @@ def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
 """,
             1,
         )
-        .replace('      budgetUsd: "0.10"', '      mcpServers: [exa]\n      budgetUsd: "0.10"', 1)
+        .replace(
+            "      capabilityProfiles: []",
+            "      capabilityProfiles: []\n      mcpServers: [exa]",
+            1,
+        )
     )
+
+
+_PACKAGE_READ_OPERATION_FIELDS = {
+    "blockingErrors",
+    "canRun",
+    "health",
+    "last" + "LaunchedAt",
+    "lastPreflightAt",
+    "preflightSummary",
+    "ready",
+    "validation" + "Summary",
+    "warnings",
+}
+
+
+def _assert_package_read_is_artifact_inventory(body: dict[str, object]) -> None:
+    assert _PACKAGE_READ_OPERATION_FIELDS.isdisjoint(body)
 
 
 def _create_package(
@@ -156,7 +177,9 @@ def _create_package(
         json={"manifestSource": _package_source(package_key=package_key)},
     )
     assert response.status_code == 201, response.json()
-    return cast(dict[str, object], response.json())
+    body = cast(dict[str, object], response.json())
+    _assert_package_read_is_artifact_inventory(body)
+    return body
 
 
 def _seed_model_connection(
@@ -214,6 +237,47 @@ def _wait_for_run(client: TestClient, run_id: int) -> dict[str, Any]:
             return last_body
         time.sleep(0.02)
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
+
+
+def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_live_readiness(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="runtime_read_contract_package")
+    package_id = cast(int, created["id"])
+
+    detail = client.get(f"/api/workflow-packages/{package_id}")
+    assert detail.status_code == 200, detail.json()
+    detail_body = cast(dict[str, object], detail.json())
+    _assert_package_read_is_artifact_inventory(detail_body)
+    assert_removed_contract_tokens_absent(detail_body, context="package detail")
+
+    package_list = client.get("/api/workflow-packages")
+    assert package_list.status_code == 200, package_list.json()
+    list_body = cast(dict[str, object], package_list.json())
+    items = cast(list[dict[str, object]], list_body["items"])
+    [listed] = [item for item in items if item["id"] == package_id]
+    _assert_package_read_is_artifact_inventory(listed)
+    assert_removed_contract_tokens_absent(listed, context="package list item")
+
+    launch = client.get(
+        f"/api/workflow-packages/{package_id}/launch",
+        params={"workflowKey": "runtime_workflow"},
+    )
+    assert launch.status_code == 200, launch.json()
+    launch_body = cast(dict[str, object], launch.json())
+    assert {"ready", "blockingErrors", "warnings"} <= set(launch_body)
+    assert_removed_contract_tokens_absent(launch_body, context="launch readiness")
+
+    preflight = client.post(
+        f"/api/workflow-packages/{package_id}/preflight",
+        params={"workflowKey": "runtime_workflow"},
+    )
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert {"ready", "blockingErrors", "warnings"} <= set(preflight_body)
+    assert_removed_contract_tokens_absent(preflight_body, context="preflight readiness")
 
 
 def test_workflow_package_launch_rejects_unknown_root_parameter_key(
@@ -312,8 +376,14 @@ def test_workflow_package_launch_executes_with_live_model_connection(
 
     _seed_model_connection(session_factory)
     created = _create_package(client)
+    package_id = cast(int, created["id"])
 
     with session_factory() as session:
+        package_before_launch = session.get(WorkflowPackage, package_id)
+        assert package_before_launch is not None
+        package_updated_at_before_launch = package_before_launch.updated_at
+        removed_launch_column = "_".join(("last", "launched", "at"))
+        assert not hasattr(package_before_launch, removed_launch_column)
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
         connection.base_url = "https://runtime-v2.example.com/v1"
         connection.model_id = "gpt-package-v2"
@@ -323,12 +393,17 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         session.commit()
 
     launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
+        f"/api/workflow-packages/{package_id}/launches",
         json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
     assert launch.status_code == 201, launch.json()
+    assert_removed_contract_tokens_absent(launch.json(), context="launch response")
     run_id = int(launch.json()["id"])
     with session_factory() as session:
+        package_after_launch = session.get(WorkflowPackage, package_id)
+        assert package_after_launch is not None
+        assert package_after_launch.updated_at == package_updated_at_before_launch
+        assert not hasattr(package_after_launch, removed_launch_column)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
         assert snapshot is not None
         assert snapshot.workflow_package_key == "runtime_package"
@@ -337,12 +412,14 @@ def test_workflow_package_launch_executes_with_live_model_connection(
 
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
+    assert_removed_contract_tokens_absent(detail, context="run detail")
 
     assert detail["status"] == "succeeded"
     assert detail["targetKind"] == "workflowPackage"
     assert detail["targetId"] == created["id"]
     assert detail["targetKey"] == "runtime_package"
     provenance = cast(dict[str, Any], detail["packageProvenance"])
+    assert_removed_contract_tokens_absent(provenance, context="package provenance")
     assert provenance["workflowPackageKey"] == "runtime_package"
     assert provenance["workflowKey"] == "runtime_workflow"
     assert "workflowPackageVersion" not in provenance
@@ -375,7 +452,7 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     with session_factory() as session:
         run = session.get(Run, run_id)
         assert run is not None
-        package = session.get(WorkflowPackage, created["id"])
+        package = session.get(WorkflowPackage, package_id)
         assert package is not None
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
         assert snapshot is not None
@@ -490,6 +567,7 @@ def test_workflow_package_validation_redacts_inline_private_mcp_values_but_autho
     assert validation.status_code == 200, validation.json()
     validation_body = cast(dict[str, Any], validation.json())
     validation_payload = json.dumps(validation_body, sort_keys=True)
+    assert_removed_contract_tokens_absent(validation_body, context="validation payload")
     assert "inline-header-secret" not in validation_payload
     assert "inline-query-secret" not in validation_payload
     assert "[REDACTED]" in validation_payload
@@ -514,10 +592,12 @@ def test_workflow_package_validation_redacts_inline_private_mcp_values_but_autho
     package_id = int(created.json()["id"])
     manifest = client.get(f"/api/workflow-packages/{package_id}/manifest")
     assert manifest.status_code == 200, manifest.json()
+    assert_removed_contract_tokens_absent(manifest.json(), context="manifest hydration")
     assert "inline-header-secret" in json.dumps(manifest.json(), sort_keys=True)
     assert "inline-query-secret" in json.dumps(manifest.json(), sort_keys=True)
     exported = client.get(f"/api/workflow-packages/{package_id}/export")
     assert exported.status_code == 200, exported.text
+    assert_removed_contract_tokens_absent(exported.text, context="manifest export")
     assert "Authorization: Bearer inline-header-secret" in exported.text
     assert "exaApiKey: inline-query-secret" in exported.text
 

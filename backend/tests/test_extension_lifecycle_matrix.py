@@ -90,7 +90,6 @@ spec:
         required: [ticker]
       outputSchema: summary_output
       capabilityProfiles: [quote_tools]
-      budgetUsd: "0.10"
   workflows:
     - key: finance_matrix_flow
       name: Finance Matrix Flow

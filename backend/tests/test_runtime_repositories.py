@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -137,7 +136,6 @@ def _build_agent(
     output_schema: OutputSchema,
     capabilities: list[Capability],
     mcp_servers: list[McpServer],
-    budget_usd: Decimal,
     model_connection_id: int = 1,
     model: str = "openai:gpt-5.4-mini",
 ) -> Agent:
@@ -169,7 +167,6 @@ def _build_agent(
             }
             for server in mcp_servers
         ],
-        budget_usd=budget_usd,
     )
 
 
@@ -179,7 +176,6 @@ def _build_workflow(
     version: int,
     status: str,
     agent: Agent,
-    aggregate_budget_usd: Decimal,
 ) -> Workflow:
     return Workflow(
         key=key,
@@ -201,7 +197,6 @@ def _build_workflow(
                         "outputSchemaVersion": agent.output_schema_version,
                         "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                         "optional": False,
-                        "budgetUsd": str(agent.budget_usd),
                     }
                 ],
             }
@@ -216,7 +211,6 @@ def _build_workflow(
             "outputSchemaId": agent.output_schema_id,
             "outputSchemaVersion": agent.output_schema_version,
         },
-        aggregate_budget_usd=aggregate_budget_usd,
     )
 
 
@@ -277,7 +271,6 @@ def _seed_run_target_fk_targets(
         output_schema=output_schema,
         capabilities=[capability],
         mcp_servers=[],
-        budget_usd=Decimal("1.00000000"),
         model_connection_id=model_connection.id,
     )
     agent.input_schema = run_input_schema
@@ -288,7 +281,6 @@ def _seed_run_target_fk_targets(
         version=1,
         status="published",
         agent=agent,
-        aggregate_budget_usd=Decimal("1.00000000"),
     )
     workflow.input_schema = run_input_schema
     session.add(workflow)
@@ -313,7 +305,6 @@ def _seed_workflow_package_target(
         compiled_plan={"workflows": []},
         compiled_hash="b" * 64,
         extension_dependencies=[],
-        validation_summary={"ready": True, "blockingErrors": [], "warnings": []},
     )
     session.add(package)
     session.flush()
@@ -723,7 +714,6 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             output_schema=published_schema,
             capabilities=[published_skill],
             mcp_servers=[published_server],
-            budget_usd=Decimal("1.50000000"),
             model_connection_id=model_connection.id,
         )
         session.add(published_agent)
@@ -733,7 +723,6 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             version=1,
             status="published",
             agent=published_agent,
-            aggregate_budget_usd=Decimal("1.50000000"),
         )
         session.add(published_workflow)
         session.flush()
@@ -752,7 +741,6 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             output_schema=draft_schema,
             capabilities=[published_skill],
             mcp_servers=[published_server],
-            budget_usd=Decimal("2.75000000"),
             model_connection_id=model_connection.id,
         )
         session.add(draft_agent)
@@ -762,7 +750,6 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
             version=2,
             status="draft",
             agent=draft_agent,
-            aggregate_budget_usd=Decimal("2.75000000"),
         )
         session.add(draft_workflow)
         session.commit()
@@ -783,7 +770,6 @@ def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_ver
         assert published_workflow_row.steps[0]["agents"][0]["agentVersion"] == 1
         assert published_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 1
         assert published_workflow_row.output_spec["agentVersion"] == 1
-        assert published_workflow_row.aggregate_budget_usd == Decimal("1.50000000")
         assert draft_workflow_row is not None
         assert draft_workflow_row.steps[0]["agents"][0]["agentVersion"] == 2
         assert draft_workflow_row.steps[0]["agents"][0]["outputSchemaVersion"] == 2
@@ -825,7 +811,6 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
                     output_schema=published_schema,
                     capabilities=[published_skill],
                     mcp_servers=[published_server],
-                    budget_usd=Decimal("1.00000000"),
                     model_connection_id=model_connection.id,
                     model="gpt-snapshot-v1",
                 ),
@@ -836,7 +821,6 @@ def test_agent_repository_model_filter_uses_saved_agent_model_value(
                     output_schema=published_schema,
                     capabilities=[published_skill],
                     mcp_servers=[published_server],
-                    budget_usd=Decimal("1.00000000"),
                     model_connection_id=model_connection.id,
                     model="gpt-live-v2",
                 ),
@@ -1036,7 +1020,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             output_schema=published_schema,
             capabilities=[published_skill],
             mcp_servers=[published_server],
-            budget_usd=Decimal("1.25000000"),
             model_connection_id=model_connection.id,
         )
         session.add(published_agent)
@@ -1046,7 +1029,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             version=1,
             status="published",
             agent=published_agent,
-            aggregate_budget_usd=Decimal("1.25000000"),
         )
         session.add(workflow)
         session.flush()
@@ -1311,7 +1293,6 @@ def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
             output_schema=output_schema,
             capabilities=[capability],
             mcp_servers=[],
-            budget_usd=Decimal("1.25000000"),
             model_connection_id=model_connection.id,
         )
         session.add(agent)
@@ -1321,7 +1302,6 @@ def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
             version=1,
             status="published",
             agent=agent,
-            aggregate_budget_usd=Decimal("1.25000000"),
         )
         source_refs = {
             "ticker": {"source": "inputs", "path": "ticker"},
@@ -1638,7 +1618,6 @@ def _seed_delete_graph(session: Session) -> dict[str, int]:
         output_schema=output_schema,
         capabilities=[capability],
         mcp_servers=[mcp_server],
-        budget_usd=Decimal("1.00"),
         model_connection_id=connection.id,
     )
     session.add(agent)
@@ -1648,7 +1627,6 @@ def _seed_delete_graph(session: Session) -> dict[str, int]:
         version=1,
         status="published",
         agent=agent,
-        aggregate_budget_usd=Decimal("1.00"),
     )
     session.add(workflow)
     session.flush()

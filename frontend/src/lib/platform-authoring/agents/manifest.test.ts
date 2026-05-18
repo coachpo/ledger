@@ -34,7 +34,6 @@ spec:
     - filings_capability@2
   mcpServers:
     - quotes-mcp@2
-  budgetUsd: "2.50"
 `;
 
 describe("agent manifest helpers", () => {
@@ -308,7 +307,6 @@ spec:
     const result = formatAgentManifestYaml(`kind: Agent
 apiVersion: signaldeck.agent/v1
 spec:
-  budgetUsd: "2.50"
   mcpServers: [quotes-mcp@2]
   capabilities: [summarize_capability@3]
   outputSchema: summary_schema@5
@@ -358,7 +356,6 @@ spec:
     - summarize_capability@3
   mcpServers:
     - quotes-mcp@2
-  budgetUsd: "2.50"
 `);
 
     const invalid = formatAgentManifestYaml("apiVersion: [broken");

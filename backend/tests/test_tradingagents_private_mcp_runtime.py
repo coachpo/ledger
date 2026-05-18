@@ -201,7 +201,6 @@ spec:
       outputSchema: trader_proposal
       capabilityProfiles: []
       mcpServers: [exa]
-      budgetUsd: "0.20"
   workflows:
     - key: news_research
       name: News Research

@@ -46,12 +46,10 @@ const packageRead: WorkflowPackageRead = {
   description: "Private package for multi-agent market review.",
   id: 42,
   key: "market_review_package",
-  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
-  warnings: [],
 };
 
 const manifestRead: WorkflowPackageManifestRead = {

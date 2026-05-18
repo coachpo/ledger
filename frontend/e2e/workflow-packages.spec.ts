@@ -45,7 +45,6 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
     "        required: [ticker]",
     "      outputSchema: advisory_output",
     "      capabilityProfiles: [quote_tools]",
-    "      budgetUsd: \"0.10\"",
     "  workflows:",
     "    - key: advisory_flow",
     "      name: Advisory Flow",
@@ -176,15 +175,21 @@ test.describe("Workflow packages", () => {
     expect(detail.status).toBe("succeeded");
     expect(detail.targetKind).toBe("workflowPackage");
     expect(detail.finalOutput).toMatchObject({ summary: "deterministic summary" });
+    const packageProvenance = detail.packageProvenance as Record<string, unknown>;
+    expect(packageProvenance).toMatchObject({
+      currentPackage: { available: true, status: "active" },
+      launchSnapshot: { parameters: { ticker: "AAPL" }, workflowKey: "advisory_flow" },
+      workflowKey: "advisory_flow",
+      workflowPackageKey: packageKey,
+    });
+    expect(packageProvenance.workflowPackageManifestHash).toEqual(expect.any(String));
+    expect(packageProvenance.workflowPackageCompiledHash).toEqual(expect.any(String));
 
     await page.reload();
     await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
     await expect(page.getByTestId("runs-detail-final-output")).toContainText("deterministic summary");
-    await page.getByTestId("runs-evidence-pane-nav").getByRole("button", { name: "Provenance" }).click();
-    await expect(page.getByTestId("runs-package-provenance")).toContainText("Executable snapshot");
-    await expect(page.getByTestId("runs-package-provenance")).toContainText("Captured workflow package snapshot");
-    await expect(page.getByTestId("runs-package-provenance")).toContainText(packageKey);
-    await expect(page.getByTestId("runs-package-provenance")).toContainText("advisory_flow");
+    await expect(page.getByTestId("runs-detail-target-identity")).toContainText(packageKey);
+    await expect(page.getByText(`Captured package id: ${created.id}`)).toBeVisible();
     await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute("href", `/workflow-packages/${created.id}`);
 
     await page.getByTestId("runs-detail-rerun").click();

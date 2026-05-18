@@ -62,12 +62,10 @@ function packageFixture(
     description: "Reusable package",
     id: 1,
     key: "alpha_package",
-    lastLaunchedAt: "2026-05-03T11:00:00Z",
     manifestHash: "manifest-hash",
     name: "Alpha Package",
     status: "active",
     updatedAt: "2026-05-03T10:00:00Z",
-    warnings: [],
     ...overrides,
   };
 }
@@ -158,7 +156,6 @@ describe("WorkflowPackagesListPage", () => {
             description: "Risk review workflow bundle",
             id: 9,
             key: "risk_review",
-            lastLaunchedAt: "2026-05-04T11:00:00Z",
             name: "Risk Review",
             status: "active",
             updatedAt: "2026-05-04T10:00:00Z",
@@ -167,11 +164,9 @@ describe("WorkflowPackagesListPage", () => {
             description: "Draft allocation bundle",
             id: 4,
             key: "allocation_draft",
-            lastLaunchedAt: null,
             name: "Allocation Draft",
             status: "draft",
             updatedAt: "2026-05-02T10:00:00Z",
-            warnings: [{ path: "spec.modelConnections", severity: "warning" }],
           }),
         ],
       },
@@ -210,7 +205,6 @@ describe("WorkflowPackagesListPage", () => {
     expect(riskRow).toHaveTextContent("risk_review");
     expect(riskRow).toHaveTextContent("manifest-has");
     expect(riskRow).toHaveTextContent("Active");
-    expect(riskRow).toHaveTextContent("Passed");
     expect(riskRow).toHaveTextContent("May 4, 2026");
     expect(
       within(riskRow).getByRole("button", { name: "Open package Risk Review" }),
@@ -230,8 +224,6 @@ describe("WorkflowPackagesListPage", () => {
       "workflow-packages-row-allocation_draft",
     );
     expect(draftRow).toHaveTextContent("Draft");
-    expect(draftRow).toHaveTextContent("1 warning");
-    expect(draftRow).toHaveTextContent("Not recorded");
 
     fireEvent.click(screen.getByLabelText("Table view"));
     expect(screen.getByLabelText("Table view")).toHaveAttribute(
@@ -244,8 +236,6 @@ describe("WorkflowPackagesListPage", () => {
       "Key",
       "Manifest Hash",
       "Status",
-      "Last Preflight",
-      "Last Run",
       "Updated",
       "Actions",
     ]) {

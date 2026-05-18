@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
-from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -51,7 +50,6 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
     assert plan.target.id == 1
     assert plan.target.key == "daily_research"
     assert plan.target.version is None
-    assert plan.aggregate_budget_usd == Decimal("0.25")
     assert plan.input_schema["properties"]["ticker"] == {"type": "string"}
     assert len(plan.steps) == 1
     invocation = plan.steps[0].agents[0]
@@ -163,7 +161,6 @@ spec:
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
-      budgetUsd: "0.10"
     - key: news_agent
       name: News Agent
       modelConnection: graph_model
@@ -173,7 +170,6 @@ spec:
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
-      budgetUsd: "0.10"
     - key: risk_agent
       name: Risk Agent
       modelConnection: graph_model
@@ -183,7 +179,6 @@ spec:
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
-      budgetUsd: "0.10"
     - key: decision_agent
       name: Decision Agent
       modelConnection: graph_model
@@ -193,7 +188,6 @@ spec:
       outputSchema: graph_note
       capabilityProfiles: [graph_tools]
       mcpServers: [graph_context]
-      budgetUsd: "0.10"
   workflows:
     - key: advisory_research
       name: Advisory Research

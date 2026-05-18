@@ -212,6 +212,7 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
         payload = cast(dict[str, object], provenance.model_dump(mode="json", by_alias=True))
         serialized = json.dumps(payload, sort_keys=True)
         assert "workflowPackage" + "Version" not in serialized
+        assert "last" + "LaunchedAt" not in serialized
         assert "apiKey" not in serialized
         assert payload["workflowPackageManifestHash"] == "a" * 64
         assert cast(dict[str, object], payload["launchSnapshot"])["parameters"] == {

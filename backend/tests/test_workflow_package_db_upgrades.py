@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Connection, Engine, RowMapping
 
 from app.db.session import init_db
 
@@ -36,6 +36,8 @@ _REMOVED_RUN_PROVENANCE_COLUMNS = {
     "launch_snapshot",
 }
 _DETERMINISTIC_SMOKE_BASE_URL = "https://signaldeck-deterministic-model.local/v1"
+_TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
+_DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
 
 
 def _workflow_package_payload(
@@ -65,7 +67,6 @@ def _workflow_package_payload(
         "compiled_plan": json.dumps(compiled_plan, sort_keys=True),
         "compiled_hash": "b" * 64,
         "extension_dependencies": json.dumps([]),
-        "validation_summary": json.dumps({"diagnostics": []}),
         "workflow_key": workflow_key,
     }
 
@@ -80,12 +81,11 @@ def _insert_current_package(connection: Connection, key: str, **overrides: str) 
                 INSERT INTO workflow_packages (
                     key, name, description, status, manifest_source, manifest_hash,
                     package_definition, compiled_plan, compiled_hash,
-                    extension_dependencies, validation_summary
+                    extension_dependencies
                 ) VALUES (
                     :key, :name, '', 'active', :manifest_source, :manifest_hash,
                     CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
-                    :compiled_hash, CAST(:extension_dependencies AS jsonb),
-                    CAST(:validation_summary AS jsonb)
+                    :compiled_hash, CAST(:extension_dependencies AS jsonb)
                 ) RETURNING id
                 """
             ),
@@ -117,6 +117,21 @@ def _insert_run_snapshot(connection: Connection, *, run_id: int, package_id: int
         ),
         {**payload, "package_id": package_id, "run_id": run_id},
     )
+
+
+def _assert_clean_preset_artifacts(row: RowMapping) -> None:
+    serialized_preset = "".join(
+        (
+            str(row["manifest_source"]),
+            json.dumps(row["package_definition"], sort_keys=True),
+            json.dumps(row["compiled_plan"], sort_keys=True),
+            json.dumps(row["extension_dependencies"], sort_keys=True),
+        )
+    )
+    removed_validation_column = "_".join(("validation", "summary"))
+    removed_budget_field = "budget" + "Usd"
+    assert removed_validation_column not in serialized_preset
+    assert removed_budget_field not in serialized_preset
 
 
 def _foreign_key_signature(
@@ -186,12 +201,17 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "compiled_plan",
         "compiled_hash",
         "extension_dependencies",
-        "validation_summary",
         "created_at",
         "updated_at",
-        "last_launched_at",
     } <= set(package_columns)
-    assert {"latest_version_id", "draft_source"}.isdisjoint(package_columns)
+    removed_validation_column = "_".join(("validation", "summary"))
+    removed_launch_column = "_".join(("last", "launched", "at"))
+    assert {
+        "latest_version_id",
+        "draft_source",
+        removed_validation_column,
+        removed_launch_column,
+    }.isdisjoint(package_columns)
     assert _RUN_PROVENANCE_COLUMNS <= set(run_columns)
     assert _REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
     assert {
@@ -238,8 +258,9 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     assert package_columns["package_definition"]["nullable"] is False
     assert package_columns["compiled_plan"]["nullable"] is False
     assert package_columns["extension_dependencies"]["nullable"] is False
-    assert package_columns["validation_summary"]["nullable"] is False
     assert "uq_workflow_packages_active_key" in package_indexes
+    removed_launch_index = "ix_workflow_packages_" + removed_launch_column
+    assert removed_launch_index not in package_indexes
     assert {
         "ix_runs_workflow_package",
         "ix_runs_workflow_package_key",
@@ -287,6 +308,247 @@ def test_init_db_creates_current_workflow_package_and_run_snapshot_schema(
 
     try:
         _assert_workflow_package_schema(engine)
+    finally:
+        engine.dispose()
+
+
+def test_workflow_package_upgrade_drops_obsolete_package_row_state_columns(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            removed_validation_column = "_".join(("validation", "summary"))
+            removed_launch_column = "_".join(("last", "launched", "at"))
+            connection.execute(
+                text(
+                    "ALTER TABLE workflow_packages "
+                    f"ADD COLUMN {removed_validation_column} JSONB DEFAULT '{{}}'::jsonb"
+                )
+            )
+            connection.execute(
+                text(
+                    f"ALTER TABLE workflow_packages ADD COLUMN {removed_launch_column} TIMESTAMPTZ"
+                )
+            )
+            removed_launch_index = "ix_workflow_packages_" + removed_launch_column
+            connection.execute(
+                text(
+                    f"CREATE INDEX {removed_launch_index} "
+                    f"ON workflow_packages ({removed_launch_column})"
+                )
+            )
+
+        init_db(database_url)
+
+        _assert_workflow_package_schema(engine)
+    finally:
+        engine.dispose()
+
+
+def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.connect() as connection:
+            clean_row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                               package_definition, compiled_plan, compiled_hash,
+                               extension_dependencies
+                        FROM workflow_packages
+                        WHERE key = :package_key
+                        """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+        stale_id = int(clean_row["id"])
+
+        with engine.begin() as connection:
+            connection.execute(text(f"DELETE FROM {_DB_UPGRADE_MARKER_TABLE}"))
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_packages
+                    SET name = 'Stale TradingAgents Preset',
+                        description = 'stale preset row',
+                        status = 'draft',
+                        manifest_source = 'stale manifest',
+                        manifest_hash = :manifest_hash,
+                        package_definition = '{"stale": true}'::jsonb,
+                        compiled_plan = '{"stale": true}'::jsonb,
+                        compiled_hash = :compiled_hash,
+                        extension_dependencies = '[]'::jsonb,
+                        updated_at = NOW()
+                    WHERE key = :package_key
+                    """
+                ),
+                {
+                    "compiled_hash": "1" * 64,
+                    "manifest_hash": "0" * 64,
+                    "package_key": _TRADINGAGENTS_PRESET_KEY,
+                },
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        _assert_workflow_package_schema(engine)
+        with engine.connect() as connection:
+            reseeded_row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                               package_definition, compiled_plan, compiled_hash,
+                               extension_dependencies
+                        FROM workflow_packages
+                        WHERE key = :package_key
+                        """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+            marker_count = connection.execute(
+                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
+            ).scalar_one()
+
+        assert int(reseeded_row["id"]) != stale_id
+        for field in (
+            "name",
+            "description",
+            "status",
+            "manifest_source",
+            "manifest_hash",
+            "package_definition",
+            "compiled_plan",
+            "compiled_hash",
+            "extension_dependencies",
+        ):
+            assert reseeded_row[field] == clean_row[field]
+        _assert_clean_preset_artifacts(reseeded_row)
+        assert marker_count == 1
+    finally:
+        engine.dispose()
+
+
+def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.connect() as connection:
+            clean_row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                               package_definition, compiled_plan, compiled_hash,
+                               extension_dependencies
+                        FROM workflow_packages
+                        WHERE key = :package_key
+                        """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+        stale_id = int(clean_row["id"])
+
+        with engine.begin() as connection:
+            removed_budget_field = "budget" + "Usd"
+            connection.execute(
+                text(
+                    """
+                    UPDATE workflow_packages
+                    SET manifest_source = manifest_source || E'\n# stale preset artifact\n'
+                            || :removed_budget_field || E': "10"\n',
+                        manifest_hash = :manifest_hash,
+                        package_definition = jsonb_set(
+                            package_definition,
+                            CAST(:package_budget_path AS text[]),
+                            '10'::jsonb,
+                            true
+                        ),
+                        compiled_plan = jsonb_set(
+                            compiled_plan,
+                            CAST(:plan_budget_path AS text[]),
+                            '10'::jsonb,
+                            true
+                        ),
+                        updated_at = NOW()
+                    WHERE key = :package_key
+                    """
+                ),
+                {
+                    "manifest_hash": "0" * 64,
+                    "package_budget_path": "{"
+                    + ",".join(("spec", "agents", "0", removed_budget_field))
+                    + "}",
+                    "package_key": _TRADINGAGENTS_PRESET_KEY,
+                    "plan_budget_path": "{" + ",".join(("agents", "0", removed_budget_field)) + "}",
+                    "removed_budget_field": removed_budget_field,
+                },
+            )
+            marker_count_before = connection.execute(
+                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
+            ).scalar_one()
+
+        assert marker_count_before == 1
+        init_db(database_url)
+
+        _assert_workflow_package_schema(engine)
+        with engine.connect() as connection:
+            reseeded_row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                               package_definition, compiled_plan, compiled_hash,
+                               extension_dependencies
+                        FROM workflow_packages
+                        WHERE key = :package_key
+                        """
+                    ),
+                    {"package_key": _TRADINGAGENTS_PRESET_KEY},
+                )
+                .mappings()
+                .one()
+            )
+            marker_count_after = connection.execute(
+                text(f"SELECT COUNT(*) FROM {_DB_UPGRADE_MARKER_TABLE}")
+            ).scalar_one()
+
+        assert int(reseeded_row["id"]) != stale_id
+        for field in (
+            "name",
+            "description",
+            "status",
+            "manifest_source",
+            "manifest_hash",
+            "package_definition",
+            "compiled_plan",
+            "compiled_hash",
+            "extension_dependencies",
+        ):
+            assert reseeded_row[field] == clean_row[field]
+        _assert_clean_preset_artifacts(reseeded_row)
+        assert marker_count_after == 1
     finally:
         engine.dispose()
 
@@ -378,14 +640,12 @@ def test_workflow_package_upgrade_deletes_archived_duplicates_before_index_creat
                     INSERT INTO workflow_packages (
                         key, name, description, status, manifest_source, manifest_hash,
                         package_definition, compiled_plan, compiled_hash,
-                        extension_dependencies, validation_summary, archived_at,
-                        archived_by, archived_reason
+                        extension_dependencies, archived_at, archived_by, archived_reason
                     ) VALUES (
                         'duplicate_package', 'Duplicate Package Archived', '', 'archived',
                         :manifest_source, :manifest_hash, CAST(:package_definition AS jsonb),
                         CAST(:compiled_plan AS jsonb), :compiled_hash,
-                        CAST(:extension_dependencies AS jsonb),
-                        CAST(:validation_summary AS jsonb), NOW(), 'tester',
+                        CAST(:extension_dependencies AS jsonb), NOW(), 'tester',
                         'removed during hard delete cutover'
                     )
                     """

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -144,7 +143,6 @@ def _build_agent(
     output_schema: OutputSchema,
     capabilities: list[Capability],
     mcp_servers: list[McpServer],
-    budget_usd: Decimal = Decimal("1.25000000"),
     model_connection_id: int = 1,
 ) -> Agent:
     return Agent(
@@ -175,7 +173,6 @@ def _build_agent(
             }
             for server in mcp_servers
         ],
-        budget_usd=budget_usd,
     )
 
 
@@ -185,7 +182,6 @@ def _build_workflow(
     version: int,
     status: str,
     agent: Agent,
-    aggregate_budget_usd: Decimal,
 ) -> Workflow:
     return Workflow(
         key=key,
@@ -207,7 +203,6 @@ def _build_workflow(
                         "outputSchemaVersion": agent.output_schema_version,
                         "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                         "optional": False,
-                        "budgetUsd": str(agent.budget_usd),
                     }
                 ],
             }
@@ -222,7 +217,6 @@ def _build_workflow(
             "outputSchemaId": agent.output_schema_id,
             "outputSchemaVersion": agent.output_schema_version,
         },
-        aggregate_budget_usd=aggregate_budget_usd,
     )
 
 
@@ -438,7 +432,6 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 "mcpServerVersion": 1,
             }
         ]
-        assert stored_agent.budget_usd == Decimal("1.25000000")
 
         draft_schema = _build_output_schema(
             key="decision_schema",
@@ -455,7 +448,6 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 output_schema=draft_schema,
                 capabilities=[published_capability],
                 mcp_servers=[published_server],
-                budget_usd=Decimal("2.50000000"),
             )
         )
         with pytest.raises(IntegrityError):
@@ -478,7 +470,6 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 output_schema=draft_schema,
                 capabilities=[published_capability],
                 mcp_servers=[published_server],
-                budget_usd=Decimal("2.50000000"),
             )
         )
         session.commit()
@@ -491,7 +482,6 @@ def test_agent_platform_agent_models_pin_versioned_dependencies_and_enforce_stat
                 output_schema=draft_schema,
                 capabilities=[published_capability],
                 mcp_servers=[published_server],
-                budget_usd=Decimal("3.00000000"),
             )
         )
         with pytest.raises(IntegrityError):
@@ -1290,7 +1280,6 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             output_schema=published_schema,
             capabilities=[published_capability],
             mcp_servers=[published_server],
-            budget_usd=Decimal("1.50000000"),
         )
         session.add(published_agent)
         session.flush()
@@ -1300,7 +1289,6 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             version=1,
             status="published",
             agent=published_agent,
-            aggregate_budget_usd=Decimal("1.50000000"),
         )
         session.add(workflow)
         session.commit()
@@ -1311,7 +1299,6 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
         assert stored_workflow.steps[0]["agents"][0]["agentVersion"] == 1
         assert stored_workflow.steps[0]["agents"][0]["outputSchemaVersion"] == 1
         assert stored_workflow.output_spec["agentVersion"] == 1
-        assert stored_workflow.aggregate_budget_usd == Decimal("1.50000000")
 
         draft_schema = _build_output_schema(
             key="decision_schema",
@@ -1327,7 +1314,6 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
             output_schema=draft_schema,
             capabilities=[published_capability],
             mcp_servers=[published_server],
-            budget_usd=Decimal("2.75000000"),
         )
         session.add(draft_agent)
         session.flush()
@@ -1337,7 +1323,6 @@ def test_agent_platform_workflow_models_pin_agent_schema_versions_and_aggregate_
                 version=2,
                 status="draft",
                 agent=draft_agent,
-                aggregate_budget_usd=Decimal("2.75000000"),
             )
         )
         session.commit()
@@ -1440,7 +1425,6 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
             version=1,
             status="published",
             agent=published_agent,
-            aggregate_budget_usd=Decimal("1.25000000"),
         )
         session.add(workflow)
         session.flush()

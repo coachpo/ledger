@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -62,7 +61,6 @@ def test_agent_service_persists_manifest_source_and_compiled_projection(
         assert created_payload["compilerVersion"] == AGENT_MANIFEST_COMPILER_VERSION
         assert created.name == "Research Agent"
         assert created.system_prompt == "You are a research analyst.\nReturn concise output."
-        assert created.budget_usd == Decimal("1.25")
         assert created_row.manifest_source == source
         assert created_row.manifest_hash == _manifest_hash(source)
         assert created_row.model_connection_id == cast(ModelConnection, refs["connection"]).id
@@ -184,7 +182,6 @@ def test_agent_manifest_update_creates_version_and_preserves_historical_source(
             1,
         )
         .replace("Return concise output.", "Return concise updated output.", 1)
-        .replace('budgetUsd: "1.25"', 'budgetUsd: "2.50"', 1)
     )
 
     with session_factory() as session:
@@ -201,7 +198,6 @@ def test_agent_manifest_update_creates_version_and_preserves_historical_source(
         assert (
             updated.system_prompt == "You are a research analyst.\nReturn concise updated output."
         )
-        assert updated.budget_usd == Decimal("2.50")
         assert updated.manifest_source == updated_source
         assert updated.manifest_hash == _manifest_hash(updated_source)
 

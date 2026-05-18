@@ -56,12 +56,10 @@ const packageRead: WorkflowPackageRead = {
   description: "HTTP callback package.",
   id: 42,
   key: "http_callbacks",
-  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "HTTP Callback Package",
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
-  warnings: [],
 };
 
 const manifestSource = `apiVersion: signaldeck.workflowPackage/v1

@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -53,7 +51,6 @@ def _agent_row(refs: dict[str, object]) -> Agent:
         mcp_servers=[
             {"mcpServerId": 888, "mcpServerKey": "market_data", "mcpServerVersion": 1},
         ],
-        budget_usd=Decimal("1.25"),
     )
 
 
@@ -70,7 +67,6 @@ def test_decompile_agent_manifest_round_trips_stored_payload_to_canonical_yaml(
         assert "systemPrompt: |" in result.source
         assert "capabilities:" in result.source
         assert "skills:" not in result.source
-        assert 'budgetUsd: "1.25"' in result.source
         assert parsed.diagnostics == []
         assert parsed.manifest is not None
         assert parsed.manifest.spec.model_connection == "primary_openai"

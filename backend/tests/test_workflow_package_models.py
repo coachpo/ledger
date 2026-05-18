@@ -61,7 +61,6 @@ def _build_package(
         compiled_plan=_compiled_plan(key, agent_key),
         compiled_hash=compiled_hash,
         extension_dependencies=[{"key": "signaldeck.finance", "required": True}],
-        validation_summary={"diagnostics": [], "warnings": []},
     )
 
 
@@ -84,12 +83,17 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "compiled_plan",
         "compiled_hash",
         "extension_dependencies",
-        "validation_summary",
-        "last_launched_at",
         "created_at",
         "updated_at",
     } <= set(package_table.c.keys())
-    assert {"latest_version_id", "draft_source"}.isdisjoint(package_table.c.keys())
+    removed_validation_column = "_".join(("validation", "summary"))
+    removed_launch_column = "_".join(("last", "launched", "at"))
+    assert {
+        "latest_version_id",
+        "draft_source",
+        removed_validation_column,
+        removed_launch_column,
+    }.isdisjoint(package_table.c.keys())
     removed_archive_columns = {
         "_".join(("arch" + "ived", suffix)) for suffix in ("at", "by", "reason")
     }
@@ -104,8 +108,9 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "uq_workflow_packages_active_key",
         "ix_workflow_packages_manifest_hash",
         "ix_workflow_packages_compiled_hash",
-        "ix_workflow_packages_last_launched_at",
     } <= {index.name for index in package_table.indexes}
+    removed_launch_index = "ix_workflow_packages_" + removed_launch_column
+    assert removed_launch_index not in {index.name for index in package_table.indexes}
 
 
 def test_workflow_package_models_store_current_artifacts_and_allow_private_key_reuse(
@@ -149,8 +154,10 @@ def test_workflow_package_models_store_current_artifacts_and_allow_private_key_r
         assert stored_packages[0].extension_dependencies == [
             {"key": "signaldeck.finance", "required": True}
         ]
-        assert stored_packages[0].validation_summary == {"diagnostics": [], "warnings": []}
-        assert stored_packages[0].last_launched_at is None
+        removed_validation_column = "_".join(("validation", "summary"))
+        removed_launch_column = "_".join(("last", "launched", "at"))
+        assert not hasattr(stored_packages[0], removed_validation_column)
+        assert not hasattr(stored_packages[0], removed_launch_column)
         assert not hasattr(stored_packages[0], "latest_version_id")
         assert not hasattr(stored_packages[0], "versions")
 

@@ -72,7 +72,6 @@ def test_package_export_contains_model_key_not_secret_or_id(
             package_definition=package_definition,
             compiled_plan=compiled_plan,
             compiled_hash=cast(str, compiled["compiledHash"]),
-            validation_summary={"diagnostics": []},
         )
         binding = ModelConnectionService(session).resolve_package_model_connection_binding(
             "tradingagents_primary_model",

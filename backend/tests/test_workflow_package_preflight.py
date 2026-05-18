@@ -366,7 +366,6 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
         package_definition=cast(dict[str, Any], compiled["packageDefinition"]),
         compiled_plan=compiled_plan,
         compiled_hash="b" * 64,
-        validation_summary={"diagnostics": []},
     )
 
     with session_factory() as session:

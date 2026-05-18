@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -97,7 +96,6 @@ def _seed_agent(session: Session) -> None:
             output_schema_version=output_schema.version,
             capabilities=[],
             mcp_servers=[],
-            budget_usd=Decimal("0.05000000"),
         )
     )
     session.commit()

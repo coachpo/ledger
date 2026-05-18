@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import hashlib
-from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -71,7 +70,6 @@ def _create_legacy_agent(session: Session, refs: dict[str, object], key: str) ->
         mcp_servers=[
             {"mcpServerId": 888, "mcpServerKey": "market_data", "mcpServerVersion": 1},
         ],
-        budget_usd=Decimal("1.25"),
     )
     session.add(agent)
     session.commit()
@@ -165,7 +163,6 @@ def test_agent_manifest_backfill_rewrites_lossless_noncanonical_manifest_source(
             "  outputSchema: research_summary@3\n"
             "  mcpServers: [market_data@1]\n"
             "  capabilities: [sec_filing_lookup@2]\n"
-            '  budgetUsd: "1.25000000"\n'
             "  inputSchema: {required: [ticker], properties: {ticker: {type: string}}, "
             "additionalProperties: false, type: object}\n"
         )

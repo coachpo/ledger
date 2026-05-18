@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import time
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -23,7 +22,10 @@ from app.services.agent_execution_service import AgentExecutionService, RunAgent
 from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
-from tests.test_workflow_package_manifest_http_node import http_node_package_source
+from tests.test_workflow_package_manifest_http_node import (
+    assert_removed_contract_tokens_absent,
+    http_node_package_source,
+)
 
 
 class _RuntimeOpenAIUsage:
@@ -69,28 +71,17 @@ class _RuntimeRecordingOpenAIClient:
         cls.total_tokens = 23
 
 
-_TRADINGAGENTS_FIXTURE = (
-    Path(__file__).resolve().parent
-    / "fixtures"
-    / "workflow_packages"
-    / "tradingagents_advisory_research.yaml"
-)
+_TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 
 
-def _tradingagents_package_source() -> str:
-    return _TRADINGAGENTS_FIXTURE.read_text()
-
-
-def _delete_existing_tradingagents_package(client: TestClient) -> None:
+def _seeded_tradingagents_package(client: TestClient) -> dict[str, Any]:
     packages_response = client.get("/api/workflow-packages")
     assert packages_response.status_code == 200, packages_response.json()
-    package_items = cast(list[dict[str, object]], packages_response.json()["items"])
+    package_items = cast(list[dict[str, Any]], packages_response.json()["items"])
     for package in package_items:
-        if package["key"] != "tradingagents_advisory_research":
-            continue
-        deleted = client.delete(f"/api/workflow-packages/{package['id']}")
-        assert deleted.status_code == 204, deleted.text
-        break
+        if package["key"] == _TRADINGAGENTS_PRESET_KEY:
+            return package
+    raise AssertionError("TradingAgents advisory preset was not seeded")
 
 
 def _seed_tradingagents_model_connection(
@@ -156,7 +147,6 @@ spec:
         required: [ticker]
       outputSchema: summary_output
       capabilityProfiles: []
-      budgetUsd: "0.10"
   workflows:
     - key: runtime_workflow
       name: Runtime Workflow
@@ -376,8 +366,10 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     detail_response = client.get(f"/api/runs/{first_run['id']}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = detail_response.json()
+    assert_removed_contract_tokens_absent(detail, context="run detail")
     assert detail["targetKind"] == "workflowPackage"
     provenance = cast(dict[str, Any], detail["packageProvenance"])
+    assert_removed_contract_tokens_absent(provenance, context="package provenance")
     assert provenance["workflowPackageId"] == first_package["id"]
     assert provenance["workflowPackageKey"] == "provenance_filter_package"
     assert provenance["workflowPackageManifestHash"]
@@ -425,6 +417,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
     assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
     serialized = json.dumps(detail, sort_keys=True)
+    assert "last" + "LaunchedAt" not in serialized
     assert "sk-package-provenance-secret" not in serialized
     assert "secretPayload" not in serialized
 
@@ -628,13 +621,7 @@ def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
-    _delete_existing_tradingagents_package(client)
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _tradingagents_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    return cast(dict[str, Any], response.json())
+    return _seeded_tradingagents_package(client)
 
 
 def _tradingagents_parameters() -> dict[str, object]:
@@ -645,6 +632,26 @@ def _tradingagents_parameters() -> dict[str, object]:
         "horizonDays": 30,
         "benchmarkSymbol": "SPY",
     }
+
+
+def test_seeded_tradingagents_advisory_manifest_exports_after_startup(
+    client: TestClient,
+) -> None:
+    package = _seeded_tradingagents_package(client)
+
+    response = client.get(f"/api/workflow-packages/{package['id']}/manifest")
+
+    assert response.status_code == 200, response.json()
+    manifest = cast(dict[str, Any], response.json())
+    assert_removed_contract_tokens_absent(manifest, context="seeded manifest hydration")
+    assert manifest["packageId"] == package["id"]
+    assert manifest["packageKey"] == _TRADINGAGENTS_PRESET_KEY
+    assert _TRADINGAGENTS_PRESET_KEY in manifest["manifestSource"]
+    assert manifest["packageDefinition"]["metadata"]["key"] == _TRADINGAGENTS_PRESET_KEY
+
+    exported = client.get(f"/api/workflow-packages/{package['id']}/export")
+    assert exported.status_code == 200, exported.text
+    assert_removed_contract_tokens_absent(exported.text, context="seeded manifest export")
 
 
 def _mcp_only_package_source(package_key: str) -> str:
@@ -871,6 +878,10 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     detail_response = client.get(f"/api/runs/{run_id}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = detail_response.json()
+    assert detail["status"] == "failed"
+    assert detail["error"] == "Extension is disabled"
+    dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
+    assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
     assert detail["status"] == "failed"
     assert detail["error"] == "Extension is disabled"
     dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])

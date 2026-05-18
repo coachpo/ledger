@@ -31,7 +31,6 @@ spec:
     - sec_filing_lookup@2
   mcpServers:
     - market_data@1
-  budgetUsd: "1.25"
 """
 
 
@@ -182,11 +181,6 @@ def test_parser_rejects_unsupported_yaml_features(
             _valid_manifest_source().replace("    type: object\n", "    type: string\n", 1),
             "spec.inputSchema",
             "inputSchema must be an object schema",
-        ),
-        (
-            _valid_manifest_source().replace('  budgetUsd: "1.25"', "  budgetUsd: 1.25", 1),
-            "spec.budgetUsd",
-            "decimal string",
         ),
     ],
 )

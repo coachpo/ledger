@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any, cast
 
 import httpx
@@ -341,7 +340,6 @@ def _mixed_plan() -> ExecutionPlan:
         output_schema=agent_output,
         capability_profiles=(),
         mcp_servers=(),
-        budget_usd=Decimal("0"),
     )
     operation = PackageRuntimeOperationSpec(
         key="notify_after_agent",
@@ -366,7 +364,6 @@ def _mixed_plan() -> ExecutionPlan:
             version=1,
         ),
         input_schema={"type": "object", "additionalProperties": True},
-        aggregate_budget_usd=Decimal("0"),
         steps=(
             ExecutionPlanStep(
                 index=1,

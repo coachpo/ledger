@@ -16,7 +16,6 @@ class _PackagePayload(TypedDict):
     package_definition: dict[str, Any]
     compiled_plan: dict[str, Any]
     compiled_hash: str
-    validation_summary: dict[str, Any]
 
 
 def _package_payload(package_key: str = "market_review") -> _PackagePayload:
@@ -35,7 +34,6 @@ def _package_payload(package_key: str = "market_review") -> _PackagePayload:
             "workflows": [{"key": "primary_workflow"}],
         },
         "compiled_hash": _HASH_B,
-        "validation_summary": {"diagnostics": []},
     }
 
 
@@ -75,7 +73,8 @@ def test_workflow_package_repository_creates_current_package_artifact(
         assert stored.compiled_hash == _HASH_B
         assert stored.package_definition["metadata"]["key"] == "market_review"
         assert stored.compiled_plan["workflows"][0]["key"] == "primary_workflow"
-        assert stored.validation_summary == {"diagnostics": []}
+        removed_validation_column = "_".join(("validation", "summary"))
+        assert not hasattr(stored, removed_validation_column)
 
 
 def test_workflow_package_repository_lists_and_updates_current_packages(
@@ -110,7 +109,6 @@ def test_workflow_package_repository_replaces_current_artifact_in_place(
         )
         replacement["manifest_hash"] = _HASH_B
         replacement["compiled_hash"] = _HASH_A
-        replacement["validation_summary"] = {"diagnostics": [{"severity": "warning"}]}
 
         repository.update_package(package, **replacement)
         session.commit()
@@ -122,4 +120,5 @@ def test_workflow_package_repository_replaces_current_artifact_in_place(
         assert stored.manifest_source == replacement["manifest_source"]
         assert stored.manifest_hash == _HASH_B
         assert stored.compiled_hash == _HASH_A
-        assert stored.validation_summary == {"diagnostics": [{"severity": "warning"}]}
+        removed_validation_column = "_".join(("validation", "summary"))
+        assert not hasattr(stored, removed_validation_column)

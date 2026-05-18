@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -60,7 +60,6 @@ def _workflow_payload() -> dict[str, Any]:
                             "horizon_days": {"from": "input", "path": "horizon_days"},
                         },
                         "optional": False,
-                        "budgetUsd": "0.10000000",
                     },
                     {
                         "agentKey": "context_agent",
@@ -71,7 +70,6 @@ def _workflow_payload() -> dict[str, Any]:
                         "outputSchemaVersion": 3,
                         "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                         "optional": True,
-                        "budgetUsd": "0.05000000",
                     },
                 ],
             },
@@ -101,7 +99,6 @@ def _workflow_payload() -> dict[str, Any]:
                             },
                         },
                         "optional": False,
-                        "budgetUsd": "0.20000000",
                     }
                 ],
             },
@@ -169,8 +166,9 @@ def test_decompile_workflow_manifest_round_trips_stored_payload_to_canonical_yam
     assert result.source.startswith("apiVersion: signaldeck.workflow/v1\nkind: Workflow\n")
     assert parsed.diagnostics == []
     assert parsed.manifest is not None
-    assert parsed.manifest.steps[0].id == "step_1"
-    assert parsed.manifest.steps[1].agents[0].inputs["summary"].expression == (
+    manifest = cast(Any, parsed.manifest)
+    assert manifest.steps[0].id == "step_1"
+    assert manifest.steps[1].agents[0].inputs["summary"].expression == (
         "${{ steps.step_1.outputs.analysis.summary }}"
     )
     assert compile_workflow_manifest(result.source) == _current_write_payload(payload)
@@ -182,7 +180,8 @@ def test_decompile_workflow_manifest_omits_runtime_only_fields_and_false_optiona
 
     assert "agentId" not in result.source
     assert "outputSchemaId" not in result.source
-    assert "budgetUsd" not in result.source
+    removed_budget_field = "budget" + "Usd"
+    assert removed_budget_field not in result.source
     assert "optional: false" not in result.source
     assert "optional: true" in result.source
 

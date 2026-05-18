@@ -458,7 +458,6 @@ def test_run_start_follow_up_runs_once_for_deleted_workflow_package_snapshot(
             version=1,
         ),
         input_schema={"type": "object", "additionalProperties": True},
-        aggregate_budget_usd=Decimal("0"),
         steps=(ExecutionPlanStep(index=1, agents=(), operations=()),),
         final_output=ExecutionPlanFinalOutput(step_index=1, slot="missing"),
     )
@@ -480,7 +479,6 @@ def test_run_start_follow_up_runs_once_for_deleted_workflow_package_snapshot(
             compiled_plan={"packageKey": "follow_pkg", "workflows": [{"key": "follow_workflow"}]},
             compiled_hash="e" * 64,
             extension_dependencies=[],
-            validation_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
         session.add(package)
         session.flush()

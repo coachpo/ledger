@@ -65,7 +65,6 @@ spec:
       outputSchema: trading_decision
       capabilityProfiles: [market_research_tools]
       mcpServers: [research_context]
-      budgetUsd: "0.25"
   workflows:
     - key: daily_research
       name: Daily Research
@@ -166,6 +165,8 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
     capability_profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     mcp_servers = cast(list[dict[str, object]], spec["mcpServers"])
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
+    removed_budget_field = "budget" + "Usd"
+    assert removed_budget_field not in agents[0]
     assert "modelConnectionId" not in agents[0]
     assert capability_profiles[0]["toolKeys"] == ["signaldeck.market_data.quote_lookup"]
     assert "tool_keys" not in capability_profiles[0]
@@ -326,10 +327,24 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
             True,
         ),
         (
-            _valid_package_manifest_source().replace('budgetUsd: "0.25"', "budgetUsd: .inf", 1),
-            "spec.agents[0].budgetUsd",
+            _valid_package_manifest_source().replace(
+                "description: Portable package for the representative research workflow.",
+                "description: .inf",
+                1,
+            ),
+            "metadata.description",
             "YAML numeric values must be finite",
             False,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "      mcpServers: [research_context]\n",
+                "      mcpServers: [research_context]\n      " + "budget" + 'Usd: "0.25"\n',
+                1,
+            ),
+            "spec.agents[0]." + "budget" + "Usd",
+            "Extra inputs are not permitted",
+            True,
         ),
         (
             _with_duplicate_output_schema(),

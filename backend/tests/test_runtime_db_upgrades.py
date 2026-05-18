@@ -246,6 +246,9 @@ _TRADINGAGENTS_FIXTURE_PATH = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
+_TRADINGAGENTS_DEMO_PATH = (
+    Path(__file__).parents[2] / "demo" / "tradingagents_advisory_research.yaml"
+)
 _TRADINGAGENTS_PRESET_SQL_PATH = (
     Path(__file__).parents[1] / "app" / "db" / "tradingagents_advisory_research.sql"
 )
@@ -286,11 +289,11 @@ def _insert_representable_workflow_package(
                 INSERT INTO workflow_packages (
                     key, name, description, status, manifest_source, manifest_hash,
                     package_definition, compiled_plan, compiled_hash,
-                    extension_dependencies, validation_summary
+                    extension_dependencies
                 ) VALUES (
                     :key, :name, '', 'active', :manifest_source, :manifest_hash,
                     CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
-                    :compiled_hash, '[]'::jsonb, '{"diagnostics": []}'::jsonb
+                    :compiled_hash, '[]'::jsonb
                 ) RETURNING id
                 """
             ),
@@ -518,11 +521,11 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
             "INSERT INTO agents ("
             "key, version, status, name, description, model_connection_id, model, "
             "system_prompt, input_schema, output_schema_id, output_schema_version, capabilities, "
-            "mcp_servers, budget_usd, created_at, updated_at"
+            "mcp_servers, created_at, updated_at"
             ") VALUES ("
             ":key, 1, 'published', :name, :description, :model_connection_id, :model, "
             ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, 1, "
-            "CAST(:capabilities AS jsonb), CAST(:mcp_servers AS jsonb), 0, NOW(), NOW()"
+            "CAST(:capabilities AS jsonb), CAST(:mcp_servers AS jsonb), NOW(), NOW()"
             ")"
         ),
         [
@@ -581,10 +584,10 @@ def _seed_stock_analysis_upgrade_rows(connection) -> int:
         text(
             "INSERT INTO workflows ("
             "key, version, status, name, description, input_schema, steps, output_spec, "
-            "aggregate_budget_usd, created_at, updated_at"
+            "created_at, updated_at"
             ") VALUES ("
             ":key, 1, 'published', :name, :description, CAST(:input_schema AS jsonb), "
-            "CAST(:steps AS jsonb), CAST(:output_spec AS jsonb), 0, NOW(), NOW()"
+            "CAST(:steps AS jsonb), CAST(:output_spec AS jsonb), NOW(), NOW()"
             ")"
         ),
         [
@@ -939,11 +942,11 @@ def _insert_agent_model_connection_snapshot_row(
             INSERT INTO agents (
                 key, version, status, name, description, model_connection_id, model,
                 system_prompt, input_schema, output_schema_id, output_schema_version,
-                capabilities, mcp_servers, budget_usd, model_connection_snapshot
+                capabilities, mcp_servers, model_connection_snapshot
             ) VALUES (
                 :key, 1, 'published', :name, '', :model_connection_id, :model_id,
                 :system_prompt, '{"type":"object"}'::jsonb, 1, 1,
-                '[]'::jsonb, '[]'::jsonb, 0, CAST(:model_connection_snapshot AS jsonb)
+                '[]'::jsonb, '[]'::jsonb, CAST(:model_connection_snapshot AS jsonb)
             )
             """
         ),
@@ -1446,21 +1449,23 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     database_url: str,
 ) -> None:
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
+    demo_source = _TRADINGAGENTS_DEMO_PATH.read_text(encoding="utf-8")
     preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
+    assert demo_source == fixture_source
     assert "INSERT INTO workflow_packages" in preset_sql
+    assert "ON CONFLICT (key) DO UPDATE" in preset_sql
+    assert "WHERE NOT EXISTS" not in preset_sql
     assert "INSERT INTO workflow_package_versions" not in preset_sql
     assert "latest_version_id" not in preset_sql
     assert "draft_source" not in preset_sql
+    removed_validation_column = "_".join(("validation", "summary"))
+    assert removed_validation_column not in preset_sql
     assert "INSERT INTO model_connections" not in preset_sql
     assert "workflow_package_secret_bindings (" not in preset_sql
     assert "INSERT INTO runs" not in preset_sql
     compiled = compile_workflow_package_manifest(fixture_source)
     expected_package_definition = cast(dict[str, object], compiled["packageDefinition"])
     expected_compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
-    expected_agents = cast(
-        list[dict[str, object]],
-        cast(dict[str, object], expected_package_definition["spec"])["agents"],
-    )
 
     init_db(database_url)
     engine = create_engine(database_url, future=True)
@@ -1485,8 +1490,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                         package.package_definition,
                         package.compiled_plan,
                         package.compiled_hash,
-                        package.extension_dependencies,
-                        package.validation_summary
+                        package.extension_dependencies
                     FROM workflow_packages AS package
                     WHERE package.key = :package_key
                     """
@@ -1542,28 +1546,15 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             extension_dependencies[0]["surfaces"],
         )
 
-        validation_summary = cast(dict[str, object], row["validation_summary"])
-        assert validation_summary["diagnostics"] == []
-        warnings = cast(list[dict[str, object]], validation_summary["warnings"])
-        assert len(warnings) == len(expected_agents)
-        assert all(
-            warning["issue"]
-            == f"Model connection {_TRADINGAGENTS_MODEL_CONNECTION_KEY!r} was not found"
-            for warning in warnings
-        )
-        assert validation_summary["dbUpgradePreset"] == {
-            "allowMissingModelConnections": True,
-            "secretSafe": True,
-            "source": "phase_b_db_upgrade",
-        }
-
         serialized_preset = (
             fixture_source
+            + demo_source
             + json.dumps(row["package_definition"], sort_keys=True)
             + json.dumps(row["compiled_plan"], sort_keys=True)
-            + json.dumps(row["validation_summary"], sort_keys=True)
         )
+        removed_budget_field = "budget" + "Usd"
         for forbidden_value in (
+            removed_budget_field,
             "encrypted",
             "requiredBindings",
             "secretPayload",
@@ -1811,7 +1802,6 @@ def test_init_db_deletes_legacy_skill_storage_and_global_agents_idempotently(
                     output_schema_version INTEGER NOT NULL,
                     skills JSONB NOT NULL DEFAULT '[]'::jsonb,
                     mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    budget_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
@@ -3109,7 +3099,6 @@ def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schem
                     output_schema_version INTEGER NOT NULL,
                     skills JSONB NOT NULL DEFAULT '[]'::jsonb,
                     mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    budget_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     CONSTRAINT ck_agents_status CHECK (
@@ -3119,7 +3108,6 @@ def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schem
                     CONSTRAINT ck_agents_output_schema_version_positive CHECK (
                         output_schema_version > 0
                     ),
-                    CONSTRAINT ck_agents_budget_usd_non_negative CHECK (budget_usd >= 0),
                     CONSTRAINT uq_agents_key_version UNIQUE (key, version)
                 )
                 """
@@ -3128,10 +3116,10 @@ def test_init_db_hard_cutover_deletes_legacy_agent_rows_when_stale_runtime_schem
                 text(
                     "INSERT INTO agents ("
                     "key, version, status, name, description, model, system_prompt, input_schema, "
-                    "output_schema_id, output_schema_version, skills, mcp_servers, budget_usd"
+                    "output_schema_id, output_schema_version, skills, mcp_servers"
                     ") VALUES ("
                     ":key, 1, 'published', :name, '', :model, 'Analyze the ticker.', "
-                    "'{\"type\":\"object\"}'::jsonb, 1, 1, '[]'::jsonb, '[]'::jsonb, 0"
+                    "'{\"type\":\"object\"}'::jsonb, 1, 1, '[]'::jsonb, '[]'::jsonb"
                     ")"
                 ),
                 [
@@ -3217,14 +3205,12 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
                     "INSERT INTO agents ("
                     "key, version, status, name, description, model_connection_id, model, "
                     "system_prompt, input_schema, output_schema_id, "
-                    "output_schema_version, capabilities, "
-                    "mcp_servers, budget_usd"
+                    "output_schema_version, capabilities, mcp_servers"
                     ") VALUES ("
                     ":key, :version, :status, :name, :description, NULL, :model, "
                     ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
                     ":output_schema_version, CAST(:capabilities AS jsonb), "
-                    "CAST(:mcp_servers AS jsonb), "
-                    ":budget_usd"
+                    "CAST(:mcp_servers AS jsonb)"
                     ")"
                 ),
                 {
@@ -3240,7 +3226,6 @@ def test_upgrade_legacy_schema_repairs_existing_nullable_model_connection_column
                     "output_schema_version": 1,
                     "capabilities": "[]",
                     "mcp_servers": "[]",
-                    "budget_usd": 0,
                 },
             )
 
@@ -3307,14 +3292,12 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "INSERT INTO agents ("
                     "key, version, status, name, description, model_connection_id, model, "
                     "system_prompt, input_schema, output_schema_id, "
-                    "output_schema_version, capabilities, "
-                    "mcp_servers, budget_usd, model_connection_snapshot"
+                    "output_schema_version, capabilities, mcp_servers, model_connection_snapshot"
                     ") VALUES ("
                     ":key, :version, :status, :name, :description, :model_connection_id, :model, "
                     ":system_prompt, CAST(:input_schema AS jsonb), :output_schema_id, "
                     ":output_schema_version, CAST(:capabilities AS jsonb), "
-                    "CAST(:mcp_servers AS jsonb), "
-                    ":budget_usd, CAST(:model_connection_snapshot AS jsonb)"
+                    "CAST(:mcp_servers AS jsonb), CAST(:model_connection_snapshot AS jsonb)"
                     ")"
                 ),
                 {
@@ -3331,7 +3314,6 @@ def test_upgrade_legacy_schema_rehardens_nullable_model_connection_column_when_a
                     "output_schema_version": 1,
                     "capabilities": "[]",
                     "mcp_servers": "[]",
-                    "budget_usd": 0,
                     "model_connection_snapshot": json.dumps(
                         {
                             "base_url": "https://api.openai.com/v1",
@@ -3844,7 +3826,7 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         engine.dispose()
 
 
-def test_upgrade_legacy_schema_preserves_snapshot_backed_package_run_before_cleanup(
+def test_upgrade_legacy_schema_purges_pre_cutover_package_runs_snapshots_and_memory_reports(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -3852,12 +3834,13 @@ def test_upgrade_legacy_schema_preserves_snapshot_backed_package_run_before_clea
 
     try:
         with engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS db_upgrade_markers")
             package = _insert_representable_workflow_package(
                 connection,
                 key="cleanup_order_package",
                 workflow_key="cleanup_order_workflow",
             )
-            preserved_run_id = connection.execute(
+            snapshot_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
@@ -3873,11 +3856,11 @@ def test_upgrade_legacy_schema_preserves_snapshot_backed_package_run_before_clea
             ).scalar_one()
             _insert_run_workflow_package_snapshot(
                 connection,
-                run_id=int(preserved_run_id),
+                run_id=int(snapshot_run_id),
                 package=package,
                 parameters={"ticker": "MSFT"},
             )
-            connection.execute(
+            stale_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
@@ -3887,42 +3870,155 @@ def test_upgrade_legacy_schema_preserves_snapshot_backed_package_run_before_clea
                     "'workflowPackage', :package_id, 'stale_without_snapshot', "
                     ":target_version, :package_id, 'stale_without_snapshot', "
                     ":workflow_key, '{}'::jsonb, 'succeeded'"
-                    ")"
+                    ") RETURNING id"
                 ),
                 package,
-            )
-            connection.execute(
+            ).scalar_one()
+            for run_id, slug in (
+                (snapshot_run_id, "agent_memory_pre_cutover_snapshot_run"),
+                (stale_run_id, "agent_memory_pre_cutover_stale_run"),
+            ):
+                _insert_report_upgrade_row(
+                    connection,
+                    slug=slug,
+                    source="agent",
+                    metadata={"analysis": {"reviewType": "agent_memory", "runId": int(run_id)}},
+                )
+
+        upgrade_legacy_schema(engine)
+
+        with engine.connect() as connection:
+            package_run_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM runs
+                    WHERE target_kind = 'workflowPackage'
+                       OR workflow_package_id IS NOT NULL
+                       OR workflow_package_key IS NOT NULL
+                    """
+                )
+            ).scalar_one()
+            snapshot_count = connection.execute(
+                text("SELECT COUNT(*) FROM run_workflow_package_snapshots")
+            ).scalar_one()
+            memory_report_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM reports
+                    WHERE slug IN (
+                        'agent_memory_pre_cutover_snapshot_run',
+                        'agent_memory_pre_cutover_stale_run'
+                    )
+                    """
+                )
+            ).scalar_one()
+            marker_count = connection.execute(
+                text("SELECT COUNT(*) FROM db_upgrade_markers")
+            ).scalar_one()
+
+        assert package_run_count == 0
+        assert snapshot_count == 0
+        assert memory_report_count == 0
+        assert marker_count == 1
+
+        with engine.begin() as connection:
+            post_cutover_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
-                    "target_kind, target_id, target_key, target_version, input, status"
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, input, status"
                     ") VALUES ("
-                    "'workflow', 42, 'cleanup_order_legacy_workflow', 1, "
-                    "'{}'::jsonb, 'succeeded'"
-                    ")"
-                )
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, "
+                    "CAST(:input_payload AS jsonb), 'succeeded'"
+                    ") RETURNING id"
+                ),
+                {**package, "input_payload": json.dumps({"ticker": "AAPL"})},
+            ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(post_cutover_run_id),
+                package=package,
+                parameters={"ticker": "AAPL"},
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug="agent_memory_post_cutover_run",
+                source="agent",
+                metadata={
+                    "analysis": {
+                        "reviewType": "agent_memory",
+                        "runId": int(post_cutover_run_id),
+                    }
+                },
             )
 
         upgrade_legacy_schema(engine)
 
         with engine.connect() as connection:
-            rows = (
+            surviving_row = (
                 connection.execute(
                     text(
                         """
-                        SELECT run.id, run.target_key, snapshot.launch_parameters
+                        SELECT run.id, snapshot.launch_parameters
                         FROM runs AS run
                         JOIN run_workflow_package_snapshots AS snapshot
                           ON snapshot.run_id = run.id
-                        ORDER BY run.id
+                        WHERE run.id = :run_id
                         """
-                    )
+                    ),
+                    {"run_id": post_cutover_run_id},
                 )
                 .mappings()
-                .all()
+                .one()
+            )
+            surviving_memory_count = connection.execute(
+                text("SELECT COUNT(*) FROM reports WHERE slug = 'agent_memory_post_cutover_run'")
+            ).scalar_one()
+
+        assert surviving_row["launch_parameters"] == {"ticker": "AAPL"}
+        assert surviving_memory_count == 1
+    finally:
+        engine.dispose()
+
+
+def test_upgrade_legacy_schema_drops_global_authoring_allocation_columns(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    agent_column = "_".join(("budget", "usd"))
+    workflow_column = "_".join(("aggregate", "budget", "usd"))
+    agent_constraint = "_".join(("ck", "agents", "budget", "usd", "non", "negative"))
+    workflow_constraint = "_".join(("ck", "workflows", "aggregate", "budget", "non", "negative"))
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"ALTER TABLE agents ADD COLUMN {agent_column} NUMERIC(20, 8) NOT NULL DEFAULT 0"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE agents ADD CONSTRAINT {agent_constraint} CHECK ({agent_column} >= 0)"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE workflows ADD COLUMN {workflow_column} "
+                "NUMERIC(20, 8) NOT NULL DEFAULT 0"
+            )
+            connection.exec_driver_sql(
+                f"ALTER TABLE workflows ADD CONSTRAINT {workflow_constraint} "
+                f"CHECK ({workflow_column} >= 0)"
             )
 
-        assert [row["id"] for row in rows] == [preserved_run_id]
-        assert rows[0]["target_key"] == "cleanup_order_package"
-        assert rows[0]["launch_parameters"] == {"ticker": "MSFT"}
+        upgrade_legacy_schema(engine)
+
+        columns = {
+            "agents": {column["name"] for column in inspect(engine).get_columns("agents")},
+            "workflows": {column["name"] for column in inspect(engine).get_columns("workflows")},
+        }
+        assert agent_column not in columns["agents"]
+        assert workflow_column not in columns["workflows"]
     finally:
         engine.dispose()

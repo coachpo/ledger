@@ -51,7 +51,6 @@ spec:
   outputSchema: platform_graph_analyst_report@1
   capabilities:
     - platform_graph_market_data@1
-  budgetUsd: "0.25"
 """,
     "social_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -84,7 +83,6 @@ spec:
   outputSchema: platform_graph_analyst_report@1
   capabilities:
     - platform_graph_news@1
-  budgetUsd: "0.25"
 """,
     "news_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -116,7 +114,6 @@ spec:
   outputSchema: platform_graph_analyst_report@1
   capabilities:
     - platform_graph_news@1
-  budgetUsd: "0.25"
 """,
     "fundamentals_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -149,7 +146,6 @@ spec:
   outputSchema: platform_graph_analyst_report@1
   capabilities:
     - platform_graph_fundamentals@1
-  budgetUsd: "0.25"
 """,
     "bull_researcher": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -199,7 +195,6 @@ spec:
   outputSchema: platform_graph_investment_debate_transition@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.30"
 """,
     "bear_researcher": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -229,7 +224,6 @@ spec:
   outputSchema: platform_graph_investment_debate_transition@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.30"
 """,
     "research_manager": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -264,7 +258,6 @@ spec:
   outputSchema: platform_graph_research_plan@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.35"
 """,
     "trader": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -297,7 +290,6 @@ spec:
   outputSchema: platform_graph_trader_proposal@1
   capabilities:
     - signaldeck_positions@1
-  budgetUsd: "0.30"
 """,
     "aggressive_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -337,7 +329,6 @@ spec:
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.25"
 """,
     "neutral_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -369,7 +360,6 @@ spec:
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.25"
 """,
     "conservative_risk_analyst": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -399,7 +389,6 @@ spec:
   outputSchema: platform_graph_risk_debate_transition@1
   capabilities:
     - signaldeck_reports@1
-  budgetUsd: "0.25"
 """,
     "portfolio_manager": """apiVersion: signaldeck.agent/v1
 kind: Agent
@@ -429,7 +418,6 @@ spec:
   capabilities:
     - signaldeck_reports@1
     - platform_graph_memory@1
-  budgetUsd: "0.35"
 """,
 }
 

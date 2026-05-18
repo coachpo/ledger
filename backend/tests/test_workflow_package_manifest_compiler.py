@@ -77,7 +77,6 @@ spec:
       outputSchema: decision
       capabilityProfiles: [report_context_tools]
       mcpServers: [exa]
-      budgetUsd: "0.25"
   workflows:
     - key: inline_private_mcp_roundtrip
       name: Inline Private MCP Roundtrip
@@ -122,8 +121,11 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
         "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
     )
     assert "modelConnection: tradingagents_primary_model" in roundtrip.source
+    removed_budget_field = "budget" + "Usd"
+    assert removed_budget_field not in roundtrip.source
 
     serialized = _canonical_json(compiled)
+    assert removed_budget_field not in serialized
     assert "modelConnectionId" not in serialized
     assert "outputSchemaId" not in serialized
     assert "capabilityId" not in serialized

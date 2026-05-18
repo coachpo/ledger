@@ -76,12 +76,10 @@ const packageRead: WorkflowPackageRead = {
   description: "Package for neutral research workflows.",
   id: 42,
   key: "market_review_package",
-  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
-  warnings: [],
 };
 
 const manifestRead: WorkflowPackageManifestRead = {
@@ -150,7 +148,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     importPackageMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
-    importPackageMock.mockResolvedValue({ ...packageRead, warnings: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }] });
+    importPackageMock.mockResolvedValue(packageRead);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve("apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
@@ -423,7 +421,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
       manifestSource: expect.stringContaining("sk-import-secret"),
     }));
-    expect(await screen.findByText(/missing model connection primary_model/i)).toBeVisible();
+    expect(screen.queryByText(/import warnings/i)).not.toBeInTheDocument();
   });
 
   it("keeps import input as pasted for inline private MCP values", async () => {
