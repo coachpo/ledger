@@ -20,7 +20,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Symbol-name cache queries | `symbol_name_cache.py` | symbol lookup plus `insert_if_missing()` |
 | Text-template queries | `text_template.py` | list_all, get_by_name |
 | Report queries | `report.py` | newest-first listing, slug lookup, and name lookup |
-| Platform package queries | `workflow_package.py` | package header reads, immutable version lookup, import/export, preflight, and lifecycle helpers |
+| Platform package queries | `workflow_package.py` | current package reads and writes, import/export, preflight, and lifecycle helpers |
 | Platform global queries | `model_connection.py`, `run.py` | saved model connection lookup, package run provenance, and run list/detail helpers |
 ## CONVENTIONS
 - Each repository is constructed with a `Session` and exposes query methods.
@@ -51,7 +51,7 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 ## NOTES
 - Repositories are instantiated directly inside service constructors with the shared `Session`.
 - `ReportRepository` keeps slug and name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
-- `WorkflowPackageRepository` keeps package headers, immutable versions, and package provenance lookup behavior centralized.
+- `WorkflowPackageRepository` keeps current package persistence and lookup behavior centralized.
 - `ModelConnectionRepository` filters saved provider connections by status for list/editor/package-binding flows.
 - `RunRepository` backs the current run list/detail surfaces and keeps persisted package-run lookup behavior centralized.
 - `TradingOperationRepository` retains historical attribution helpers where preserved legacy columns still matter, but there is no active `SimulationRepository` in the shipped package.

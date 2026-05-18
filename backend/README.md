@@ -27,7 +27,7 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 - `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
 - `/api/model-connections` for global live provider bindings and secret-safe connection testing
 - `/api/tools` for read-only server-declared tool metadata
-- `/api/runs` for global run list/detail, rerun, step replay, and immutable package provenance
+- `/api/runs` for global run list/detail, rerun, step replay, and immutable run-owned executable snapshot provenance
 
 ## Tests
 

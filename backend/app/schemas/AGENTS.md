@@ -35,7 +35,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
 - Portfolio slugs are normalized to lowercase underscore identifiers on create and intentionally omitted from `PortfolioUpdate`.
 - `extension.py` keeps bundled extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
-- Agent-platform schemas keep immutable package versions, typed package-local wiring, secret-safe model bindings, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
+- Agent-platform schemas keep current package artifacts, typed package-local wiring, secret-safe model bindings, run-owned snapshots, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 
 ## ANTI-PATTERNS
 - Do not hand-build camelCase dicts; use `model_validate()` or `.model_dump()`.
@@ -59,7 +59,7 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 ## NOTES
 - Market data schemas include `warnings` lists for degraded-state messaging.
 - Trading operation schemas use a discriminated union across BUY/SELL/DIVIDEND/SPLIT payloads.
-- `workflow_package.py` and `workflow_package_manifest.py` carry package authoring, validation, import/export, preflight, launch, and immutable package artifact payloads.
+- `workflow_package.py` and `workflow_package_manifest.py` carry current package authoring, validation, import/export, preflight, launch, and artifact payloads.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `extension.py` exposes bundled extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.

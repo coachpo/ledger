@@ -87,7 +87,7 @@ test.describe("Extension lifecycle browser matrix", () => {
 
     await page.goto("/extensions");
     const row = page.getByTestId(`extension-row-${FINANCE_EXTENSION_SEGMENT}`);
-    await expect(row).toContainText("Toggle whether this bundled extension is available in the app.");
+    await expect(row).toContainText("Finance Workspace");
     await expect(row).toContainText("Enabled");
     await page
       .getByTestId(`extension-toggle-${FINANCE_EXTENSION_SEGMENT}`)
@@ -114,7 +114,7 @@ test.describe("Extension lifecycle browser matrix", () => {
     await page
       .getByTestId(`extension-toggle-${FINANCE_EXTENSION_SEGMENT}`)
       .click();
-    await expect(row).toContainText("Toggle whether this bundled extension is available in the app.");
+    await expect(row).toContainText("Finance Workspace");
     await expect(row).toContainText("Enabled");
 
     await expect(page.getByTestId("nav-dashboard")).toBeVisible();

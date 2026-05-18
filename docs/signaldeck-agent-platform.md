@@ -29,7 +29,7 @@ Backend registry and frontend scaffold data are private wiring. They may hold th
 
 ## Workflow Packages
 
-Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes inside immutable package versions.
+Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
 
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles. Workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
@@ -94,9 +94,9 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 ## Runs
 
-Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{version, workflowKey, parameters}`.
+Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{workflowKey, parameters}`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
 
-Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and package provenance. Detail payloads include steps, agent invocations, and operation invocations for review without requiring a separate tracing product or Logfire token.
+Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and snapshot-based package provenance. Detail payloads include steps, agent invocations, operation invocations, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. Reruns and step replays execute that stored run snapshot, not the current package state.
 
 Run extension requirements appear as `extensionDependencies`. Each dependency record contains only `extensionKey`, `surfaces`, and `fields`. These records help explain launch-time requirements and are not public extension snapshots or a place to carry labels, enabled state, versioning, phase, categories, disabled reasons, or registrar metadata.
 
@@ -108,7 +108,7 @@ Run memory artifacts are memory-domain payloads. They expose `memoryId`, `summar
 
 `frontend/src/routes.ts` is the route source of truth. `frontend/src/components/layout.tsx` owns sidebar entries and breadcrumbs for Workflow Packages, Model Connections, and Runs.
 
-List pages provide create/import actions, status/version badges, and archive/delete actions where supported. Editors use hooks and API modules rather than direct fetch calls from view code. Validation appears as inline alerts, field messages, toasts, and backend error-envelope messages.
+List pages provide create/import actions, current-readiness badges, and archive/delete actions where supported. Editors use hooks and API modules rather than direct fetch calls from view code. Validation appears as inline alerts, field messages, toasts, and backend error-envelope messages.
 
 Workflow Package and Template editor routes use the full-height layout region inside the normal shell. Workflow Package editing remains YAML-first for workflow graph changes; `kind: http` authoring lives in the manifest YAML, package secret binding editing lives in the Secret Bindings tab, and run detail renders operation invocation cards separately from agent invocation cards.
 

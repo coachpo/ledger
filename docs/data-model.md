@@ -23,8 +23,8 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 
 | Table | Role |
 |---|---|
-| `workflow_packages` | mutable package headers with stable key, name, description, status, draft source, and latest version pointers |
-| `workflow_package_versions` | immutable package manifests, package definitions, compiled plans, hashes, validation summaries, and launch timestamps |
+| `workflow_packages` | one mutable current package per stable key, including name, description, status, manifest source, package definition, compiled plan, hashes, validation summary, extension dependencies, and launch timestamp |
+| `run_workflow_package_snapshots` | one immutable executable snapshot per workflow-package run, keyed by `run_id`, with copied package identity, workflow identity, hashes, manifest/export material, compiled plan, local refs, launch inputs, model-connection audit refs, and preflight summary |
 | `model_connections` | global saved provider/model endpoint config, encrypted API keys, health/test metadata, and archive state |
 | `extension_states` | operational bundled-extension state keyed by `extension_key`, storing only `enabled` |
 | `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun/replay metadata, package provenance, launch snapshots, and dependency-only extension requirements |
@@ -32,7 +32,7 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 | `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, and copied replay context |
 | `run_operation_invocations` | persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional trace span ids, and copied replay context |
 
-Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside immutable package version JSON. They are not normalized into global authoring tables.
+Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside the current package artifact. Runs copy the executable artifact into their own snapshot at launch. These resources are not normalized into global authoring tables.
 
 ## Integrity Rules
 
@@ -40,12 +40,12 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Portfolio-owned records enforce portfolio isolation through foreign keys and service lookups.
 - Trading operations are append-only; full sell-down may delete the current aggregate position row.
 - Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content updates are allowed. `source` describes origin with canonical values `compiled`, `uploaded`, `external`, and `agent`; `external` is for true external user/API-created reports, not agent-created reports.
-- Package versions are immutable after creation; package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
+- Workflow packages are mutable current definitions. Each launch writes one immutable run-owned executable snapshot, and package exports keep private MCP `env`, `headers`, and `query` values inline while omitting database ids and run history.
 - Model-connection secrets remain encrypted at rest and masked in reads/errors. Workflow package manifests store model connection keys as live bindings, not provider credentials.
 - Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`.
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
-- Runs store package id, package key, package version, package hash, workflow key, local resource refs, resolved model connection refs, launch snapshots, and `extension_dependencies` records containing only extension key, surfaces, and fields.
-- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `workflow_package_versions`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, and `run_operation_invocations`.
+- Runs store snapshot-based package id, package key, package hashes, workflow key, local resource refs, resolved model connection refs, launch inputs, and `extension_dependencies` records containing only extension key, surfaces, and fields.
+- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `run_workflow_package_snapshots`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, and `run_operation_invocations`. Repair must not recreate package-side history.
 
 ## Retired Data
 

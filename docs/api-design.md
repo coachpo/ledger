@@ -34,7 +34,7 @@ Template/report series can be built by creating a template, previewing with `POS
 
 | Resource | Routes |
 |---|---|
-| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `GET/POST /api/workflow-packages/{packageId}/versions`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
+| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import` |
 | Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
@@ -80,7 +80,7 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
 - Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `signaldeck.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
 - `signaldeck.finance` is created enabled by default at startup/reset and supports enable/disable state only. Do not add phase, contribution inventory, versioning, disabled-reason, or state-version fields to public extension responses.
-- Runs persist package provenance including package id, package key, version, hash, workflow key, dependency-only `extensionDependencies`, launch snapshots, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
+- Runs persist snapshot-based package provenance including copied package id, package key, hashes, workflow key, dependency-only `extensionDependencies`, launch parameters, optional Logfire trace ids, per-agent span ids, and per-operation span ids.
 
 ## HTTP Status Guidelines
 

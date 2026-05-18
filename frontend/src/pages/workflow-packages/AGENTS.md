@@ -12,13 +12,13 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Package inventory | `list.tsx` | active package list query, search, version summaries, import/create/delete entry points |
+| Package inventory | `list.tsx` | active package list query, search, current-readiness summaries, import/create/delete entry points |
 | Package editor shell | `editor.tsx` | overview, agents, output schemas, capability profiles, private MCP, preflight, launch, export/import tabs |
 | Placeholder shell | `placeholder.tsx` | obsolete placeholder retained only if tests/imports still reference it |
 | Editor shell tests | `editor-shell.test.tsx` | full-height shell, tab routing, save/validation behavior |
 | Resource editor tests | `resource-editors.test.tsx` | local package resource editing and no retired global API imports |
 | Preflight / launch tests | `preflight-launch-export.test.tsx` | blocking diagnostics, generated launch form labels/help text, import/export contract coverage |
-| Package list tests | `list.test.tsx` | search, hard-delete, and version-summary behavior |
+| Package list tests | `list.test.tsx` | search, hard-delete, and current-package summary behavior |
 
 ## CONVENTIONS
 - `editor.tsx` is the route-family hotspot; keep request policy in hooks and local draft/resource editing in the page.

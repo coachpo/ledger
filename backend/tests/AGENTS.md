@@ -17,7 +17,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | slim bundled extension state, private registry wiring, route/tool filtering, and lifecycle matrix behavior |
 | Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py` | package execution, run detail/list, model-binding provenance, reruns, and step replay coverage |
 | Runtime artifact coverage | `test_workflow_package_runtime_artifacts.py`, `test_memory_domain_schemas.py` | persisted step outputs, Logfire trace linkage, run-detail artifacts, and memory DTO projections |
-| Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, and version-pinning expectations |
+| Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, current-package persistence, and run-snapshot expectations |
 | DB-upgrade and cutover coverage | `test_runtime_db_upgrades.py`, `test_legacy_backend_cutover.py` | startup repairs, legacy table cleanup, and removed-route/module guarantees |
 | Focused helper coverage | `test_refactor_helpers.py` | targeted helper regressions when small backend refactors need coverage |
 

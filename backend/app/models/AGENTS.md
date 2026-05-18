@@ -38,7 +38,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Do not omit indexes for frequently queried lookup paths.
 - Do not create relationships just for convenience when ids suffice.
 - Do not rename tables or columns casually; tests and upgrade helpers depend on them.
-- Do not document retired global authoring tables as live behavior. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside `workflow_package_versions` JSON artifacts.
+- Do not document retired global authoring tables as live behavior. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside the current `workflow_packages` JSON artifacts and run-owned snapshots.
 
 ## VALIDATION
 ```bash
