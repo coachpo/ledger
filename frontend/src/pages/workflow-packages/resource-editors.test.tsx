@@ -583,24 +583,4 @@ spec:
     );
   });
 
-  it("does not import retired global authoring API clients", async () => {
-    const { readFile } = await import("node:fs/promises");
-    const source = await readFile(
-      `${process.cwd()}/src/pages/workflow-packages/editor.tsx`,
-      "utf8",
-    );
-    const forbidden = [
-      ["agents", "Api"].join(""),
-      ["capabilities", "Api"].join(""),
-      ["output", "Schemas", "Api"].join(""),
-      ["mcp", "Servers", "Api"].join(""),
-      ["@/hooks/use", "-agents"].join(""),
-      ["@/hooks/use", "-capabilities"].join(""),
-      ["@/hooks/use", "-output-schemas"].join(""),
-      ["@/hooks/use", "-mcp-servers"].join(""),
-    ];
-    for (const token of forbidden) {
-      expect(source).not.toContain(token);
-    }
-  });
 });

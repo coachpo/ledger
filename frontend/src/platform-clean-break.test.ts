@@ -32,6 +32,10 @@ const staleTokens = [
   ["capabilities", "Api"].join(""),
   ["mcpServers", "Api"].join(""),
   ["outputSchemas", "Api"].join(""),
+  ["@/hooks/use-", "agents"].join(""),
+  ["@/hooks/use-", "capabilities"].join(""),
+  ["@/hooks/use-", "output-schemas"].join(""),
+  ["@/hooks/use-", "mcp-servers"].join(""),
 ];
 
 describe("platform clean break", () => {
