@@ -26,4 +26,5 @@ e2e/
 - Specs should use API-assisted setup when it keeps the UI assertion focused.
 - Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 - Use role/text/testid locators and web-first assertions; avoid brittle deep CSS, XPath, and `nth-child` chains.
+- For ordinary removal-only browser validation, prefer manual confirmation over adding dedicated “proves not” Playwright specs unless the absence itself is a shipped contract or route guard.
 - Do not add sleeps when a role, URL, response, or `expect.poll` can express readiness.

@@ -20,6 +20,9 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
+- `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
+- `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
+- `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/workflow-packages/AGENTS.md` — package list, editor, validation, preflight, launch, import, and export flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, rerun/step-replay, package provenance, polling monitor, and trace-link views
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, platform-authoring widgets, feature UI, and primitives
@@ -50,10 +53,10 @@ frontend/
 | App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/extensions/runtime.tsx`, `src/components/layout.tsx` | query client, router provider, extension route assembly, layout shell, theme toggle, sidebar navigation |
 | Extension runtime and state | `src/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/hooks/use-extensions.ts`, `src/pages/extensions/list.tsx` | bundled frontend extensions, finance route/nav/tool filtering, `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
-| Portfolio routes | `src/pages/portfolios/list.tsx`, `src/pages/portfolios/detail.tsx`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
+| Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/list.tsx`, `src/pages/templates/editor.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
-| Report routes | `src/pages/reports/list.tsx`, `src/pages/reports/detail.tsx`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/model-connections/list.tsx`, `src/pages/model-connections/editor.tsx`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
+| Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
+| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
@@ -81,6 +84,7 @@ frontend/
 - This parent guide owns `src/styles/`, `src/test/`, and `scripts/` because those folders are still small. Split them back out only if they gain independent ownership or materially different rules.
 - `src/styles/` owns global Tailwind/theme entrypoints only; keep one-off layout and feature styling in components instead of growing the global layer.
 - `src/test/setup.ts` owns global jsdom/browser shims only; route-specific mocks, network mocks, and feature data factories stay with the owning tests.
+- For ordinary removal-only validation, prefer manual confirmation over adding dedicated “proves not” UI tests; keep absence assertions only when the missing surface is itself a shipped contract or guardrail.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
 - Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
 

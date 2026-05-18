@@ -26,6 +26,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - The app fixture uses `create_app(init_database=False)` so fixtures, not app startup, control DB initialization.
 - Helper functions inside the test modules build portfolios, templates, reports, and platform fixtures explicitly instead of hiding setup behind opaque shared state.
 - Quote-provider behavior is exercised through `app.dependency_overrides` on the FastAPI app rather than through real network calls.
+- For ordinary removal-only checks, prefer manual confirmation over adding standalone “proves not” tests. Keep absence assertions only when the missing surface is itself the shipped contract, such as removed routes/modules or slim-state guarantees.
 - `TEST_DATABASE_URL` or `DATABASE_URL` must point to a PostgreSQL server where the test user can connect to `postgres` and create/drop databases.
 
 ## ANTI-PATTERNS
