@@ -118,7 +118,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     targetId: 7,
     targetKey: "http_callbacks",
     targetKind: "workflowPackage",
-    targetVersion: 1,
     totalTokens: 0,
     traceId: "trace-http",
     updatedAt: "2026-05-15T08:31:00Z",

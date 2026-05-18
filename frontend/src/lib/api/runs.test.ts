@@ -63,7 +63,6 @@ describe("runs api", () => {
         targetId: 17,
         targetKey: " market_review ",
         targetKind: "workflow",
-        targetVersion: 3,
       }),
     ).resolves.toEqual({ items: [] });
 
@@ -78,7 +77,6 @@ describe("runs api", () => {
       targetId: "17",
       targetKey: "market_review",
       targetKind: "workflow",
-      targetVersion: "3",
     });
   });
 

@@ -29,7 +29,6 @@ export function normalizeRunListParams(params: RunListParams = {}): RunListParam
     targetId: params.targetId,
     targetKey: normalizeOptionalText(params.targetKey),
     targetKind: params.targetKind,
-    targetVersion: params.targetVersion,
     workflowKey: normalizeOptionalText(params.workflowKey),
     workflowPackageId: params.workflowPackageId,
     workflowPackageKey: normalizeOptionalText(params.workflowPackageKey),

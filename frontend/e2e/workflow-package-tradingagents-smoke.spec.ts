@@ -56,7 +56,7 @@ async function seedTradingAgentsModel(request: APIRequestContext) {
   expect(response.ok()).toBeTruthy();
 }
 
-async function createOrVersionPackage(request: APIRequestContext, manifestSource: string) {
+async function createOrUpdatePackage(request: APIRequestContext, manifestSource: string) {
   const create = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, { data: { manifestSource } });
   if (create.status() === 201) {
     return create.json();
@@ -65,11 +65,17 @@ async function createOrVersionPackage(request: APIRequestContext, manifestSource
   if (create.status() !== 409) {
     throw new Error(`Unexpected workflow package create status ${create.status()}: ${createBody}`);
   }
-  const imported = await request.post(`${PLATFORM_API_BASE}/workflow-packages/import`, {
-    data: { manifestSource, mode: "createVersion" },
+  const list = await request.get(`${PLATFORM_API_BASE}/workflow-packages`);
+  expect(list.ok()).toBeTruthy();
+  const existing = (await list.json()).items.find(
+    (item: { id: number; key: string }) => item.key === "tradingagents_advisory_research",
+  );
+  expect(existing).toBeTruthy();
+  const updated = await request.patch(`${PLATFORM_API_BASE}/workflow-packages/${existing.id}`, {
+    data: { manifestSource },
   });
-  expect(imported.ok()).toBeTruthy();
-  return imported.json();
+  expect(updated.ok()).toBeTruthy();
+  return updated.json();
 }
 
 async function waitForRun(request: APIRequestContext, runId: number) {
@@ -100,7 +106,7 @@ function workflowStepCount(detail: Record<string, unknown>) {
 test.describe("TradingAgents workflow-package smoke", () => {
   test("launches the ordinary package fixture with deterministic model output", async ({ request }) => {
     await seedTradingAgentsModel(request);
-    const workflowPackage = await createOrVersionPackage(request, fixtureSource());
+    const workflowPackage = await createOrUpdatePackage(request, fixtureSource());
 
     const preflight = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${workflowPackage.id}/preflight`, {
       params: { workflowKey: "advisory_research" },

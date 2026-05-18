@@ -1,6 +1,6 @@
 import { ArrowRight, RefreshCcw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
@@ -39,7 +39,7 @@ function formatTargetKindLabel(targetKind: RunTargetKind): string {
 
 function describeRunTarget(targetKind: RunTargetKind): string {
   if (targetKind === "workflowPackage") {
-    return "Package workflow execution";
+    return "Captured package snapshot execution";
   }
   return targetKind === "agent" ? "Standalone agent execution" : "Multi-step workflow execution";
 }
@@ -82,7 +82,7 @@ export function RunsListPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor recent agent and workflow executions with live status, target identity,
+            Monitor recent agent and workflow executions with live status, captured snapshot identity,
             total token summaries, and direct links into per-run detail.
           </p>
         </div>
@@ -196,7 +196,7 @@ export function RunsListPage() {
                 <>
                   <Badge variant="secondary">{run.status}</Badge>
                   <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
-                  <Badge variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
+                  <Badge variant="outline">{run.targetKey}</Badge>
                 </>
               }
               description={
@@ -213,12 +213,7 @@ export function RunsListPage() {
                 <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     {run.targetKind === "workflowPackage" ? (
-                      <Link
-                        className="min-w-0 break-words text-primary underline-offset-4 hover:underline"
-                        to={`/workflow-packages/${run.targetId}`}
-                      >
-                        {`Package: ${run.targetKey}@${run.targetVersion}`}
-                      </Link>
+                      <span className="min-w-0 break-words">{`Captured snapshot: ${run.targetKey} · Package id at launch: #${run.targetId}`}</span>
                     ) : (
                       <span className="min-w-0 break-words">{`${formatTargetKindLabel(run.targetKind)} id: ${run.targetId}`}</span>
                     )}

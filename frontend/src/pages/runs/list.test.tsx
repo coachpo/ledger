@@ -37,7 +37,6 @@ describe("RunsListPage", () => {
             targetId: 40,
             targetKey: "queued_review",
             targetKind: "workflow",
-            targetVersion: 1,
             totalTokens: 0,
             traceId: null,
           },
@@ -50,7 +49,6 @@ describe("RunsListPage", () => {
             targetId: 41,
             targetKey: "market_review_package",
             targetKind: "workflowPackage",
-            targetVersion: 2,
             totalTokens: 21,
             traceId: "trace-15",
           },
@@ -63,7 +61,6 @@ describe("RunsListPage", () => {
             targetId: 12,
             targetKey: "macro_agent",
             targetKind: "agent",
-            targetVersion: 9,
             totalTokens: 13,
             traceId: "trace-16",
           },
@@ -84,16 +81,14 @@ describe("RunsListPage", () => {
     expect(screen.getByTestId("runs-row-16")).toBeVisible();
     expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
-    expect(screen.getByText(/queued_review@1/i)).toBeVisible();
-    expect(screen.getAllByText(/market_review_package@2/i)[0]).toBeVisible();
-    expect(screen.getByText(/macro_agent@9/i)).toBeVisible();
+    expect(screen.getByText(/^queued_review$/i)).toBeVisible();
+    expect(screen.getAllByText(/^market_review_package$/i)[0]).toBeVisible();
+    expect(screen.getByText(/^macro_agent$/i)).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Package: market_review_package@2" })).toHaveAttribute(
-      "href",
-      "/workflow-packages/41",
-    );
+    expect(screen.getByText(/captured snapshot: market_review_package/i)).toBeVisible();
+    expect(screen.getByText(/package id at launch: #41/i)).toBeVisible();
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
-    expect(screen.queryByRole("link", { name: /workflow:/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /package:/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/total tokens: 0/i);
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/total tokens: 21/i);
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/total tokens: 13/i);

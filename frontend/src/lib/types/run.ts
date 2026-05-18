@@ -23,7 +23,6 @@ export interface RunTargetIdentityRead {
   targetKind: RunTargetKind;
   targetId: number;
   targetKey: string;
-  targetVersion: number;
 }
 
 export interface RunAgentErrorRead {
@@ -93,19 +92,58 @@ export interface RunExtensionDependencyRead {
   fields: string[];
 }
 
-export interface RunPackageProvenanceRead {
-  availability: UnknownRecord;
-  launchSnapshot: UnknownRecord | null;
-  localResourceRefs: UnknownRecord;
-  preflightSummary: UnknownRecord | null;
-  resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
+export interface RunPackageLocalResourceRefsRead {
+  agents: string[];
+  outputSchemas: string[];
+  capabilityProfiles: string[];
+  mcpServers: string[];
+  workflows: string[];
+}
+
+export interface RunPackagePreflightSummaryRead {
+  ready: boolean;
+  blockingErrors: UnknownRecord[];
+  warnings: UnknownRecord[];
+}
+
+export interface RunPackageLaunchSnapshotRead {
   workflowKey: string;
-  workflowPackageCompiledHash: string;
+  workflowName: string;
+  workflowDescription: string;
+  inputSchema: UnknownRecord;
+  parameters: UnknownRecord;
+}
+
+export interface RunCurrentPackageAuditRead {
+  available: boolean;
+  status?: string | null;
+  manifestHash?: string | null;
+  compiledHash?: string | null;
+  manifestHashMatchesSnapshot?: boolean | null;
+  compiledHashMatchesSnapshot?: boolean | null;
+  unavailableReason?: string | null;
+}
+
+export interface RunPackageProvenanceRead {
   workflowPackageId: number;
   workflowPackageKey: string;
+  workflowPackageName: string;
+  workflowPackageDescription: string;
+  workflowPackageStatus?: string | null;
   workflowPackageManifestHash: string;
-  workflowPackageVersion: number;
-  workflowPackageVersionId: number | null;
+  workflowPackageCompiledHash: string;
+  workflowKey: string;
+  workflowName: string;
+  workflowDescription: string;
+  manifestSource: string;
+  packageDefinition: UnknownRecord;
+  compiledPlan: UnknownRecord;
+  launchSnapshot: RunPackageLaunchSnapshotRead | null;
+  extensionDependencies: RunExtensionDependencyRead[];
+  localResourceRefs: RunPackageLocalResourceRefsRead;
+  resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
+  preflightSummary: RunPackagePreflightSummaryRead | null;
+  currentPackage: RunCurrentPackageAuditRead | null;
 }
 
 export interface RunAgentInvocationRead {
@@ -251,6 +289,7 @@ export interface RunRead extends RunTargetIdentityRead {
 export interface RunRerunDraftRead extends RunTargetIdentityRead {
   sourceRunId: number;
   parameters: UnknownRecord;
+  packageProvenance: RunPackageProvenanceRead | null;
 }
 
 export interface RunRerunCreateRequest {
@@ -261,6 +300,7 @@ export interface RunStepReplayDraftRead extends RunTargetIdentityRead {
   sourceRunId: number;
   replayStepIndex: number;
   parameters: UnknownRecord;
+  packageProvenance: RunPackageProvenanceRead | null;
 }
 
 export interface RunStepReplayCreateRequest {
@@ -272,7 +312,6 @@ export interface RunListParams {
   targetKind?: RunTargetKind;
   targetId?: number;
   targetKey?: string;
-  targetVersion?: number;
   workflowPackageId?: number;
   workflowPackageKey?: string;
   workflowKey?: string;

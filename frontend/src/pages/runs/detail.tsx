@@ -24,6 +24,7 @@ import type {
   RunGraphMetadata,
   RunMemoryArtifactRead,
   RunOperationInvocationRead,
+  RunPackageProvenanceRead,
   RunPackageResolvedModelConnectionRead,
   RunRead,
   RunStatus,
@@ -103,7 +104,7 @@ type LineageDiagramNodeData = {
 type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
 type LineageDiagramEdge = Edge;
 
-const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step to replay from.";
+const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step from this run snapshot to replay from.";
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
@@ -156,7 +157,7 @@ function formatTargetKindLabel(targetKind: RunTargetKind): string {
 
 function describeRunTarget(targetKind: RunTargetKind): string {
   if (targetKind === "workflowPackage") {
-    return "Workflow package execution with immutable package provenance.";
+    return "Workflow package run captured an immutable executable snapshot at launch.";
   }
   return targetKind === "agent"
     ? "Standalone agent execution with a single runnable target."
@@ -585,9 +586,7 @@ function SourceOperationInvocationLink({ invocation }: { invocation: RunOperatio
 
 function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
   const provenance = artifact.provenance;
-  const workflow = provenance.workflowKey
-    ? `workflow ${provenance.workflowKey}${provenance.workflowVersion ? `@${provenance.workflowVersion}` : ""}`
-    : null;
+  const workflow = provenance.workflowKey ? `workflow ${provenance.workflowKey}` : null;
 
   return [
     `${provenance.agentKey}@${provenance.agentVersion}`,
@@ -733,7 +732,7 @@ function RunStepReplayDialog({
       <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Step replay draft</DialogTitle>
+            <DialogTitle>Snapshot step replay draft</DialogTitle>
             {replayStepIndex !== undefined ? <Badge variant="outline">Step {replayStepIndex}</Badge> : null}
             {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Source snapshot"}</Badge> : null}
           </div>
@@ -806,7 +805,7 @@ function RunStepReplayDialog({
           </Button>
           <Button data-testid="run-step-replay-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
             {createStepReplay.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Create step replay
+            Create snapshot step replay
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1084,7 +1083,7 @@ function ExecutionOutline({
                 {canReplay ? (
                   <div className="mt-2 rounded-lg border bg-muted/20 p-2" data-testid={`runs-step-${step.index}-replay-entry`}>
                     <Button className="w-full cursor-pointer justify-start" onClick={() => onOpenReplay(step.index)} size="sm" type="button" variant="outline">
-                      Replay step
+                      Replay snapshot step
                     </Button>
                   </div>
                 ) : null}
@@ -1209,25 +1208,55 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
   );
 }
 
+function formatSnapshotMatch(value: boolean | null | undefined): string {
+  if (value === true) {
+    return "Matches snapshot";
+  }
+  if (value === false) {
+    return "Differs from snapshot";
+  }
+  return "Not checked";
+}
+
+function currentPackageValue(provenance: RunPackageProvenanceRead): ReactNode {
+  const currentPackage = provenance.currentPackage;
+  if (!currentPackage) {
+    return "Not checked";
+  }
+  if (!currentPackage.available) {
+    return currentPackage.unavailableReason ? `Unavailable · ${currentPackage.unavailableReason}` : "Unavailable";
+  }
+
+  return (
+    <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${provenance.workflowPackageId}`}>
+      {provenance.workflowPackageKey}
+    </Link>
+  );
+}
+
 function PackageProvenanceEvidence({ run }: { run: RunRead }) {
   if (!run.packageProvenance) {
-    return <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No workflow package provenance was captured for this run.</div>;
+    return <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No executable package snapshot was captured for this run.</div>;
   }
 
   return (
     <Card data-testid="runs-package-provenance">
       <CardHeader>
-        <CardTitle className="text-base">Package provenance</CardTitle>
-        <CardDescription>Immutable workflow package identity captured when the run was created.</CardDescription>
+        <CardTitle className="text-base">Executable snapshot</CardTitle>
+        <CardDescription>Captured workflow package snapshot for this immutable run, plus the optional current-package audit.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <DetailGrid
           items={[
-            { label: "Package", value: <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>{run.packageProvenance.workflowPackageKey}@{run.packageProvenance.workflowPackageVersion}</Link> },
-            { label: "Workflow key", value: run.packageProvenance.workflowKey },
-            { label: "Manifest hash", value: run.packageProvenance.workflowPackageManifestHash },
-            { label: "Compiled hash", value: run.packageProvenance.workflowPackageCompiledHash },
-            { label: "Package id", value: `#${run.packageProvenance.workflowPackageId}` },
+            { label: "Snapshot package", value: run.packageProvenance.workflowPackageKey },
+            { label: "Workflow", value: run.packageProvenance.workflowKey },
+            { label: "Snapshot manifest hash", value: run.packageProvenance.workflowPackageManifestHash },
+            { label: "Snapshot compiled hash", value: run.packageProvenance.workflowPackageCompiledHash },
+            { label: "Captured package id", value: `#${run.packageProvenance.workflowPackageId}` },
+            { label: "Current package", value: currentPackageValue(run.packageProvenance) },
+            { label: "Current package status", value: run.packageProvenance.currentPackage?.status ?? "Not checked" },
+            { label: "Manifest match", value: formatSnapshotMatch(run.packageProvenance.currentPackage?.manifestHashMatchesSnapshot) },
+            { label: "Compiled match", value: formatSnapshotMatch(run.packageProvenance.currentPackage?.compiledHashMatchesSnapshot) },
           ]}
         />
         <div className="space-y-2">
@@ -1655,8 +1684,8 @@ export function RunsDetailPage() {
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-semibold tracking-tight">Run #{run.id}</h1>
-                <Badge data-testid="runs-detail-target-identity" variant="outline">{run.targetKey}@{run.targetVersion}</Badge>
-                <Badge variant="outline">Target id: {run.targetId}</Badge>
+                <Badge data-testid="runs-detail-target-identity" variant="outline">{run.targetKind === "workflowPackage" ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}` : run.targetKey}</Badge>
+                <Badge variant="outline">{run.targetKind === "workflowPackage" ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}` : `Target id: ${run.targetId}`}</Badge>
                 {run.sourceRunId ? <Badge variant="secondary"><GitBranch className="size-3" /> Replay lineage</Badge> : null}
               </div>
               <p className="text-sm text-muted-foreground">
@@ -1667,15 +1696,15 @@ export function RunsDetailPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {run.targetKind === "workflowPackage" && run.packageProvenance ? (
+              {run.targetKind === "workflowPackage" && run.packageProvenance?.currentPackage?.available ? (
                 <Button asChild data-testid="runs-detail-package-link" size="sm" variant="outline">
-                  <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Back to package</Link>
+                  <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Open current package</Link>
                 </Button>
               ) : null}
               {canReplayRun ? (
                 <Button className="cursor-pointer" data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button" variant="outline">
                   <PlayCircle data-icon="inline-start" />
-                  Rerun
+                  Run snapshot again
                 </Button>
               ) : null}
               <Button asChild size="sm" variant="outline"><Link to="/runs">Back to runs</Link></Button>

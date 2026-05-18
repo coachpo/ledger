@@ -171,12 +171,12 @@ export function RunRerunDialog({
       <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Rerun draft</DialogTitle>
+            <DialogTitle>Run snapshot again</DialogTitle>
             {draftQuery.data ? <Badge variant="outline">Source run #{draftQuery.data.sourceRunId}</Badge> : null}
-            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Source parameters"}</Badge> : null}
+            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Captured snapshot"}</Badge> : null}
           </div>
           <DialogDescription>
-            Create a new run from the same workflow version and parameters. Edit the JSON if this rerun needs different inputs.
+            Create a new run from this run's captured executable snapshot and parameters. Edit the JSON only if this snapshot rerun needs different inputs.
           </DialogDescription>
         </DialogHeader>
 
@@ -205,8 +205,8 @@ export function RunRerunDialog({
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-rerun-dialog-body">
             <CardHeader>
-              <CardTitle className="text-base">Rerun parameters</CardTitle>
-              <CardDescription>Submit unchanged source parameters or edit the JSON before creating a new run.</CardDescription>
+              <CardTitle className="text-base">Snapshot rerun parameters</CardTitle>
+              <CardDescription>Submit unchanged snapshot parameters or edit the JSON before creating a new run from this captured snapshot.</CardDescription>
             </CardHeader>
             <CardContent>
               <JsonEditorField
@@ -234,7 +234,7 @@ export function RunRerunDialog({
           </Button>
           <Button data-testid="run-rerun-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
             {createRerun.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Create rerun
+            Run snapshot again
           </Button>
         </DialogFooter>
       </DialogContent>

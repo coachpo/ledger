@@ -250,7 +250,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     targetId: 7,
     targetKey: "market_review",
     targetKind: "workflow",
-    targetVersion: 2,
     totalTokens: 51,
     traceId: "trace-42",
     updatedAt: "2026-04-20T10:00:04Z",
@@ -288,7 +287,7 @@ function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDr
     targetId: 7,
     targetKey: "market_review",
     targetKind: "workflow",
-    targetVersion: 2,
+    packageProvenance: null,
     ...overrides,
   };
 }
@@ -301,7 +300,7 @@ function buildStepReplayDraft(overrides: Partial<RunStepReplayDraftRead> = {}): 
     targetId: 7,
     targetKey: "market_review",
     targetKind: "workflow",
-    targetVersion: 2,
+    packageProvenance: null,
     ...overrides,
   };
 }
@@ -410,12 +409,44 @@ describe("RunsDetailPage", () => {
       targetId: 7,
       targetKey: "market_review_package",
       targetKind: "workflowPackage",
-      targetVersion: 2,
       packageProvenance: {
-        availability: { available: true },
-        launchSnapshot: null,
-        localResourceRefs: {},
-        preflightSummary: { ready: true },
+        workflowPackageId: 7,
+        workflowPackageKey: "market_review_package",
+        workflowPackageName: "Market Review Package",
+        workflowPackageDescription: "Snapshot package for market reviews.",
+        workflowPackageStatus: "active",
+        workflowPackageManifestHash: "manifest-hash-abc",
+        workflowPackageCompiledHash: "compiled-hash-abc",
+        workflowKey: "market_review",
+        workflowName: "Market review",
+        workflowDescription: "Review market context.",
+        manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+        packageDefinition: { package: { key: "market_review_package" } },
+        compiledPlan: { workflow: { key: "market_review" } },
+        launchSnapshot: {
+          workflowKey: "market_review",
+          workflowName: "Market review",
+          workflowDescription: "Review market context.",
+          inputSchema: { type: "object" },
+          parameters: { ticker: "AAPL" },
+        },
+        extensionDependencies: [],
+        localResourceRefs: {
+          agents: ["research_agent"],
+          outputSchemas: [],
+          capabilityProfiles: [],
+          mcpServers: [],
+          workflows: ["market_review"],
+        },
+        preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
+        currentPackage: {
+          available: true,
+          status: "active",
+          manifestHash: "manifest-hash-abc",
+          compiledHash: "compiled-hash-abc",
+          manifestHashMatchesSnapshot: true,
+          compiledHashMatchesSnapshot: true,
+        },
         resolvedModelConnections: [
           {
             apiStyle: "responses",
@@ -440,13 +471,6 @@ describe("RunsDetailPage", () => {
             timeoutSeconds: 5,
           },
         ],
-        workflowKey: "market_review",
-        workflowPackageCompiledHash: "compiled-hash-abc",
-        workflowPackageId: 7,
-        workflowPackageKey: "market_review_package",
-        workflowPackageManifestHash: "manifest-hash-abc",
-        workflowPackageVersion: 2,
-        workflowPackageVersionId: 70,
       },
       steps: [
         buildStep({
@@ -474,10 +498,10 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-evidence-viewer")).toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/succeeded/i);
     expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/market_review_package@2/i);
-    expect(screen.getByRole("link", { name: /back to package/i })).toHaveAttribute("href", "/workflow-packages/7");
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: market_review_package/i);
+    expect(screen.getByRole("link", { name: /open current package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/rerun/i);
+    expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/run snapshot again/i);
     const finalOutput = screen.getByTestId("runs-detail-final-output");
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
@@ -562,10 +586,16 @@ describe("RunsDetailPage", () => {
     stepLineageRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
     const provenanceRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package@2/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/executable snapshot/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot package/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package/i);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot manifest hash/i);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/manifest-hash-abc/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot compiled hash/i);
     expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/compiled-hash-abc/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/current package status/i);
+    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/matches snapshot/i);
     expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
     expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
     expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);
@@ -694,7 +724,7 @@ describe("RunsDetailPage", () => {
     expect(artifact).toHaveTextContent("AAPL decision memory");
     expect(artifact).toHaveTextContent(/pending/i);
     expect(artifact).toHaveTextContent(/portfolio_manager@3/i);
-    expect(artifact).toHaveTextContent(/workflow market_review@2/i);
+    expect(artifact).toHaveTextContent(/workflow market_review/i);
     expect(artifact).toHaveTextContent(/slot decision/i);
     expect(artifact).toHaveTextContent(/run #42/i);
     expect(artifact).toHaveTextContent(/loop review_loop.*iteration 2/i);
@@ -806,7 +836,6 @@ describe("RunsDetailPage", () => {
           targetId: 12,
           targetKey: "macro_agent",
           targetKind: "agent",
-          targetVersion: 9,
           totalTokens: 18,
           traceId: null,
         }),
@@ -816,7 +845,7 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/agent/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/macro_agent@9/i);
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/^macro_agent$/i);
     expect(screen.getByText(/target id: 12/i)).toBeVisible();
     expect(screen.getByText(/standalone agent execution/i)).toBeVisible();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/result\/span-agent-1/i);
@@ -918,7 +947,7 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByRole("dialog", { name: /rerun draft/i })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: /run snapshot again/i })).toBeVisible();
     expect(useRunRerunDraftMock).toHaveBeenLastCalledWith("42", { enabled: true });
     fireEvent.change(await screen.findByLabelText("Rerun parameters JSON"), {
       target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
@@ -942,7 +971,7 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByRole("dialog", { name: /step replay draft/i })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: /snapshot step replay draft/i })).toBeVisible();
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: true });
     expect(await screen.findByLabelText("Step replay parameters JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
   });
@@ -952,7 +981,7 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-2-replay-entry")).toBeVisible();
-    fireEvent.click(within(screen.getByTestId("runs-step-1-replay-entry")).getByRole("button", { name: /replay step/i }));
+    fireEvent.click(within(screen.getByTestId("runs-step-1-replay-entry")).getByRole("button", { name: /replay snapshot step/i }));
 
     expect(setSearchParamsMock).toHaveBeenCalledTimes(1);
     const updater = setSearchParamsMock.mock.calls[0][0] as (current: URLSearchParams) => URLSearchParams;

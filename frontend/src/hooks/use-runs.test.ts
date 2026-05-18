@@ -51,7 +51,6 @@ function runListWithStatuses(statuses: RunStatus[]): RunListRead {
       targetId: 100 + index,
       targetKey: "market_review",
       targetKind: "workflowPackage",
-      targetVersion: 1,
       totalTokens: 0,
       traceId: null,
     })),
@@ -82,7 +81,6 @@ function runDetailWithStatus(status: RunStatus): RunRead {
     targetId: 100,
     targetKey: "market_review",
     targetKind: "workflowPackage",
-    targetVersion: 1,
     totalTokens: 0,
     traceId: null,
     updatedAt: "2026-05-15T10:00:00Z",
@@ -104,7 +102,6 @@ describe("useRuns hooks", () => {
       status: "running" as const,
       targetKey: "market_review",
       targetKind: "workflow" as const,
-      targetVersion: 2,
     };
 
     useRuns(params, { refetchInterval: 2_000 });
