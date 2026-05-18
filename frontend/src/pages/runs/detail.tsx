@@ -24,8 +24,6 @@ import type {
   RunGraphMetadata,
   RunMemoryArtifactRead,
   RunOperationInvocationRead,
-  RunPackageProvenanceRead,
-  RunPackageResolvedModelConnectionRead,
   RunRead,
   RunStatus,
   RunStepRead,
@@ -200,22 +198,6 @@ function stepIndicatorState(status: RunStepStatus): StepIndicatorState {
   }
 
   return "neutral";
-}
-
-function modelConnectionKindLabel(connection: RunPackageResolvedModelConnectionRead): string {
-  return connection.connectionKind === "deterministic_smoke" ? "Deterministic smoke" : "Provider-backed";
-}
-
-function modelConnectionKindDescription(connection: RunPackageResolvedModelConnectionRead): string {
-  if (connection.connectionKind === "deterministic_smoke") {
-    return "Offline deterministic smoke path";
-  }
-
-  return connection.hasApiKey ? "Provider credentials configured" : "Provider credentials missing";
-}
-
-function sortedResolvedModelConnections(connections: RunPackageResolvedModelConnectionRead[]): RunPackageResolvedModelConnectionRead[] {
-  return [...connections].sort((left, right) => left.key.localeCompare(right.key));
 }
 
 function sortedInvocations(invocations: RunAgentInvocationRead[]): RunAgentInvocationRead[] {
@@ -463,34 +445,6 @@ function LineageDiagram({
   );
 }
 
-function ResolvedModelConnections({ connections }: { connections: RunPackageResolvedModelConnectionRead[] }) {
-  const sortedConnections = sortedResolvedModelConnections(connections);
-  if (sortedConnections.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed bg-background/50 p-3 text-sm text-muted-foreground">
-        No resolved model connections were captured for this run.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="runs-resolved-model-connections">
-      {sortedConnections.map((connection) => (
-        <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-resolved-model-connection-${connection.key}`} key={connection.key}>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-foreground">{connection.name}</span>
-            <Badge variant={connection.connectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
-              {modelConnectionKindLabel(connection)}
-            </Badge>
-          </div>
-          <p className="mt-1 break-all text-xs text-muted-foreground">{connection.key} · {connection.modelId} · {connection.apiStyle}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{modelConnectionKindDescription(connection)} · {connection.timeoutSeconds}s timeout</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function JsonBlock({ label, testId, value }: { label?: string; testId?: string; value: unknown }) {
   return (
     <div className="min-w-0 space-y-2">
@@ -508,6 +462,23 @@ function RunPayloadPane({ headingId, label, testId, value }: { headingId: string
       <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
       <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId}>
         <div className="whitespace-pre-wrap break-words text-foreground">{stringifyJson(value)}</div>
+      </div>
+    </section>
+  );
+}
+
+function RunFinalOutputPane({ run }: { run: RunRead }) {
+  const isPendingFinalOutput = (run.status === "queued" || run.status === "running") && run.finalOutput === null;
+
+  if (!isPendingFinalOutput) {
+    return <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />;
+  }
+
+  return (
+    <section aria-labelledby="runs-final-output-heading" className="space-y-3">
+      <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
+      <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-detail-final-output">
+        Final output is not available yet.
       </div>
     </section>
   );
@@ -1037,7 +1008,7 @@ function ExecutionOutline({
             <InspectionSelectorButton activeInspection={activeInspection} onSelect={onSelect} pane="finalOutput" target={{ type: "run" }}>
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium">Run result</span>
-                <span className="text-xs text-muted-foreground">Final output, input, lineage, provenance, and memory</span>
+                <span className="text-xs text-muted-foreground">Final output, input, lineage, and memory</span>
               </span>
             </InspectionSelectorButton>
           </div>
@@ -1203,66 +1174,6 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
       </CardHeader>
       <CardContent>
         <LineageDiagram ariaLabel="Run replay and resume lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
-      </CardContent>
-    </Card>
-  );
-}
-
-function formatSnapshotMatch(value: boolean | null | undefined): string {
-  if (value === true) {
-    return "Matches snapshot";
-  }
-  if (value === false) {
-    return "Differs from snapshot";
-  }
-  return "Not checked";
-}
-
-function currentPackageValue(provenance: RunPackageProvenanceRead): ReactNode {
-  const currentPackage = provenance.currentPackage;
-  if (!currentPackage) {
-    return "Not checked";
-  }
-  if (!currentPackage.available) {
-    return currentPackage.unavailableReason ? `Unavailable · ${currentPackage.unavailableReason}` : "Unavailable";
-  }
-
-  return (
-    <Link className="text-primary underline-offset-4 hover:underline" to={`/workflow-packages/${provenance.workflowPackageId}`}>
-      {provenance.workflowPackageKey}
-    </Link>
-  );
-}
-
-function PackageProvenanceEvidence({ run }: { run: RunRead }) {
-  if (!run.packageProvenance) {
-    return <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No executable package snapshot was captured for this run.</div>;
-  }
-
-  return (
-    <Card data-testid="runs-package-provenance">
-      <CardHeader>
-        <CardTitle className="text-base">Executable snapshot</CardTitle>
-        <CardDescription>Captured workflow package snapshot for this immutable run, plus the optional current-package audit.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <DetailGrid
-          items={[
-            { label: "Snapshot package", value: run.packageProvenance.workflowPackageKey },
-            { label: "Workflow", value: run.packageProvenance.workflowKey },
-            { label: "Snapshot manifest hash", value: run.packageProvenance.workflowPackageManifestHash },
-            { label: "Snapshot compiled hash", value: run.packageProvenance.workflowPackageCompiledHash },
-            { label: "Captured package id", value: `#${run.packageProvenance.workflowPackageId}` },
-            { label: "Current package", value: currentPackageValue(run.packageProvenance) },
-            { label: "Current package status", value: run.packageProvenance.currentPackage?.status ?? "Not checked" },
-            { label: "Manifest match", value: formatSnapshotMatch(run.packageProvenance.currentPackage?.manifestHashMatchesSnapshot) },
-            { label: "Compiled match", value: formatSnapshotMatch(run.packageProvenance.currentPackage?.compiledHashMatchesSnapshot) },
-          ]}
-        />
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Resolved model connections</p>
-          <ResolvedModelConnections connections={run.packageProvenance.resolvedModelConnections} />
-        </div>
       </CardContent>
     </Card>
   );
@@ -1510,12 +1421,10 @@ function EvidenceViewer({
     content = <RunPayloadPane headingId="runs-input-heading" label="Run input" testId="runs-detail-input" value={run.input} />;
   } else if (activeInspection.pane === "lineage") {
     content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
-  } else if (activeInspection.pane === "provenance") {
-    content = <PackageProvenanceEvidence run={run} />;
   } else if (activeInspection.pane === "memory") {
     content = run.memoryArtifacts[0] ? <MemoryArtifactEvidence artifact={run.memoryArtifacts[0]} /> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No memory artifacts were created by this run.</div>;
   } else {
-    content = <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />;
+    content = <RunFinalOutputPane run={run} />;
   }
 
   return (

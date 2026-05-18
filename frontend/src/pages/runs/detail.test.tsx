@@ -585,23 +585,11 @@ describe("RunsDetailPage", () => {
 
     stepLineageRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
-    const provenanceRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/executable snapshot/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot package/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review_package/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/market_review/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot manifest hash/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/manifest-hash-abc/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/snapshot compiled hash/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/compiled-hash-abc/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/current package status/i);
-    expect(screen.getByTestId("runs-package-provenance")).toHaveTextContent(/matches snapshot/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider-backed/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-primary_openai")).toHaveTextContent(/provider credentials configured/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/deterministic smoke/i);
-    expect(screen.getByTestId("runs-resolved-model-connection-smoke_model")).toHaveTextContent(/offline deterministic smoke path/i);
+    const invalidRunPaneRender = render(<RunsDetailPage />);
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(/normalized/i);
+    expect(screen.getByRole("heading", { name: /final output/i })).toBeVisible();
 
-    provenanceRender.unmount();
+    invalidRunPaneRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=step:1&pane=request");
     const invalidStepPaneRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-1-summary")).toBeInTheDocument();
@@ -900,7 +888,8 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
-    expect(screen.getByTestId("runs-detail-final-output")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent("Final output is not available yet.");
+    expect(screen.getByTestId("runs-detail-final-output")).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm", "text-muted-foreground");
     expect(screen.getByRole("heading", { name: /final output/i })).toBeVisible();
     expect(screen.queryByText(/no invocation trace spans captured/i)).not.toBeInTheDocument();
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();

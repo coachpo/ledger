@@ -32,7 +32,7 @@ type RunInspectionIndex = {
   stepIndexes: Set<number>;
 };
 
-const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "lineage", "provenance", "memory"];
+const RUN_PANES: RunInspectionPane[] = ["finalOutput", "input", "lineage", "memory"];
 const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
 const AGENT_INVOCATION_PANES: RunInspectionPane[] = ["output", "input", "wiring", "lineage", "error"];
 const OPERATION_INVOCATION_PANES: RunInspectionPane[] = ["output", "request", "response", "lineage", "error"];
