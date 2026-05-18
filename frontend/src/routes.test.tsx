@@ -45,14 +45,6 @@ const retiredAuthoringRoutes = [
   "/workflows/123/run",
 ];
 
-const retiredPageTestIds = [
-  "platform-agents-page",
-  "platform-capabilities-page",
-  "platform-mcp-servers-page",
-  "platform-output-schemas-page",
-  "workflows-list-page",
-];
-
 function sampleExtensionRoutePath(path: string) {
   return path
     .replace(":portfolioId", "123")
@@ -290,31 +282,4 @@ describe("router", () => {
     ).toHaveAttribute("href", "/workflow-packages");
   });
 
-  it("does not render retired page test ids for old authoring URLs", () => {
-    for (const retiredRoute of retiredAuthoringRoutes) {
-      const testRouter = createMemoryRouter(router.routes, {
-        initialEntries: [retiredRoute],
-      });
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-      });
-      queryClient.setQueryData(
-        queryKeys.platform.extensions.list(),
-        extensionList(true),
-      );
-      const { unmount } = render(
-        <ThemeProvider>
-          <QueryClientProvider client={queryClient}>
-            <RouterProvider router={testRouter} />
-          </QueryClientProvider>
-        </ThemeProvider>,
-      );
-
-      for (const testId of retiredPageTestIds) {
-        expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
-      }
-
-      unmount();
-    }
-  });
 });

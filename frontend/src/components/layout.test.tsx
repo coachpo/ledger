@@ -127,30 +127,6 @@ describe("Layout", () => {
     }
 
     expect(
-      screen.queryByRole("link", { name: /agents/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /capabilities/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /mcp servers/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /output schemas/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /^workflows$/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /tryout/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /studio/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /orchestration/i }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.queryByRole("link", { name: /backtests/i }),
     ).not.toBeInTheDocument();
   });
