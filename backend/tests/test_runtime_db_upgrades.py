@@ -37,6 +37,7 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "run_operation_invocations",
     "run_steps",
     "runs",
+    "run_workflow_package_snapshots",
     "capabilities",
     "workflows",
 }
@@ -86,6 +87,9 @@ _RUN_HEADER_COLUMNS = {
     "target_id",
     "target_key",
     "target_version",
+    "workflow_package_id",
+    "workflow_package_key",
+    "workflow_package_workflow_key",
     "extension_dependencies",
     "input",
     "status",
@@ -102,6 +106,37 @@ _RUN_HEADER_COLUMNS = {
     "queued_at",
     "started_at",
     "finished_at",
+    "created_at",
+    "updated_at",
+}
+_REMOVED_RUN_PROVENANCE_COLUMNS = {
+    "workflow_package_version_id",
+    "workflow_package_version",
+    "workflow_package_manifest_hash",
+    "workflow_package_compiled_hash",
+    "launch_snapshot",
+}
+_RUN_SNAPSHOT_COLUMNS = {
+    "run_id",
+    "workflow_package_id",
+    "workflow_package_key",
+    "workflow_package_name",
+    "workflow_package_description",
+    "workflow_package_status",
+    "workflow_key",
+    "workflow_name",
+    "workflow_description",
+    "manifest_hash",
+    "compiled_hash",
+    "manifest_source",
+    "package_definition",
+    "compiled_plan",
+    "extension_dependencies",
+    "local_resource_refs",
+    "input_schema",
+    "launch_parameters",
+    "resolved_model_connections",
+    "preflight_summary",
     "created_at",
     "updated_at",
 }
@@ -224,60 +259,131 @@ def _insert_representable_workflow_package(
 ) -> dict[str, object]:
     manifest_hash = "a" * 64
     compiled_hash = "b" * 64
+    package_definition: dict[str, object] = {
+        "metadata": {"key": key, "name": key.replace("_", " ").title()},
+        "spec": {"workflows": [{"key": workflow_key}]},
+    }
+    compiled_plan: dict[str, object] = {
+        "packageKey": key,
+        "agents": [],
+        "outputSchemas": [],
+        "capabilityProfiles": [],
+        "mcpServers": [],
+        "workflows": [
+            {
+                "key": workflow_key,
+                "name": workflow_key,
+                "description": "",
+                "inputSchema": {},
+            }
+        ],
+    }
     package_id = cast(
         int,
         connection.execute(
             text(
                 """
-                INSERT INTO workflow_packages (key, name, description, status, draft_source)
-                VALUES (:key, :name, '', 'active', '')
-                RETURNING id
-                """
-            ),
-            {"key": key, "name": key.replace("_", " ").title()},
-        ).scalar_one(),
-    )
-    version_id = cast(
-        int,
-        connection.execute(
-            text(
-                """
-                INSERT INTO workflow_package_versions (
-                    package_id, version, manifest_source, manifest_hash, package_definition,
-                    compiled_plan, compiled_hash, validation_summary
+                INSERT INTO workflow_packages (
+                    key, name, description, status, manifest_source, manifest_hash,
+                    package_definition, compiled_plan, compiled_hash,
+                    extension_dependencies, validation_summary
                 ) VALUES (
-                    :package_id, 1, 'manifest', :manifest_hash,
+                    :key, :name, '', 'active', :manifest_source, :manifest_hash,
                     CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
-                    :compiled_hash, '{"diagnostics": []}'::jsonb
+                    :compiled_hash, '[]'::jsonb, '{"diagnostics": []}'::jsonb
                 ) RETURNING id
                 """
             ),
             {
                 "compiled_hash": compiled_hash,
-                "compiled_plan": json.dumps(
-                    {"packageKey": key, "workflows": [{"key": workflow_key}]}
-                ),
+                "compiled_plan": json.dumps(compiled_plan, sort_keys=True),
+                "key": key,
                 "manifest_hash": manifest_hash,
-                "package_definition": json.dumps(
-                    {"metadata": {"key": key}, "spec": {"workflows": [{"key": workflow_key}]}}
-                ),
-                "package_id": package_id,
+                "manifest_source": "manifest",
+                "name": key.replace("_", " ").title(),
+                "package_definition": json.dumps(package_definition, sort_keys=True),
             },
         ).scalar_one(),
-    )
-    _ = connection.execute(
-        text("UPDATE workflow_packages SET latest_version_id = :version_id WHERE id = :id"),
-        {"id": package_id, "version_id": version_id},
     )
     return {
         "package_id": package_id,
         "package_key": key,
-        "version_id": version_id,
-        "version": 1,
+        "target_version": 1,
         "manifest_hash": manifest_hash,
         "compiled_hash": compiled_hash,
+        "manifest_source": "manifest",
+        "package_definition": package_definition,
+        "compiled_plan": compiled_plan,
+        "extension_dependencies": [],
         "workflow_key": workflow_key,
+        "workflow_name": workflow_key,
     }
+
+
+def _insert_run_workflow_package_snapshot(
+    connection: Connection,
+    *,
+    run_id: int,
+    package: dict[str, object],
+    parameters: dict[str, object] | None = None,
+    extension_dependencies: list[dict[str, object]] | None = None,
+) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO run_workflow_package_snapshots (
+                run_id, workflow_package_id, workflow_package_key, workflow_package_name,
+                workflow_package_description, workflow_package_status, workflow_key,
+                workflow_name, workflow_description, manifest_hash, compiled_hash,
+                manifest_source, package_definition, compiled_plan, extension_dependencies,
+                local_resource_refs, input_schema, launch_parameters,
+                resolved_model_connections, preflight_summary, created_at, updated_at
+            ) VALUES (
+                :run_id, :package_id, :package_key, :package_name, '', 'active',
+                :workflow_key, :workflow_name, '', :manifest_hash, :compiled_hash,
+                :manifest_source, CAST(:package_definition AS jsonb),
+                CAST(:compiled_plan AS jsonb), CAST(:extension_dependencies AS jsonb),
+                CAST(:local_resource_refs AS jsonb), '{}'::jsonb,
+                CAST(:launch_parameters AS jsonb), '[]'::jsonb, '{}'::jsonb, NOW(), NOW()
+            )
+            """
+        ),
+        {
+            "compiled_hash": package["compiled_hash"],
+            "compiled_plan": json.dumps(package["compiled_plan"], sort_keys=True),
+            "extension_dependencies": json.dumps(
+                (
+                    extension_dependencies
+                    if extension_dependencies is not None
+                    else package["extension_dependencies"]
+                ),
+                sort_keys=True,
+            ),
+            "launch_parameters": json.dumps(parameters or {}, sort_keys=True),
+            "local_resource_refs": json.dumps(
+                {
+                    "agents": [],
+                    "outputSchemas": [],
+                    "capabilityProfiles": [],
+                    "mcpServers": [],
+                    "workflows": [package["workflow_key"]],
+                },
+                sort_keys=True,
+            ),
+            "manifest_hash": package["manifest_hash"],
+            "manifest_source": package["manifest_source"],
+            "package_definition": json.dumps(
+                package["package_definition"],
+                sort_keys=True,
+            ),
+            "package_id": package["package_id"],
+            "package_key": package["package_key"],
+            "package_name": str(package["package_key"]).replace("_", " ").title(),
+            "run_id": run_id,
+            "workflow_key": package["workflow_key"],
+            "workflow_name": package["workflow_name"],
+        },
+    )
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -964,6 +1070,9 @@ def _assert_model_connection_reasoning_effort_direct_sql_contract(
 def _assert_runtime_execution_table_shape(engine) -> None:
     inspector = inspect(engine)
     run_columns = {column["name"]: column for column in inspector.get_columns("runs")}
+    snapshot_columns = {
+        column["name"]: column for column in inspector.get_columns("run_workflow_package_snapshots")
+    }
     run_step_columns = {column["name"]: column for column in inspector.get_columns("run_steps")}
     invocation_columns = {
         column["name"]: column for column in inspector.get_columns("run_agent_invocations")
@@ -972,6 +1081,9 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         column["name"]: column for column in inspector.get_columns("run_operation_invocations")
     }
     run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
+    snapshot_indexes = {
+        index["name"] for index in inspector.get_indexes("run_workflow_package_snapshots")
+    }
     run_step_indexes = {index["name"] for index in inspector.get_indexes("run_steps")}
     invocation_indexes = {index["name"] for index in inspector.get_indexes("run_agent_invocations")}
     operation_indexes = {
@@ -1015,6 +1127,10 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     run_foreign_keys = {
         _foreign_key_signature(foreign_key) for foreign_key in inspector.get_foreign_keys("runs")
     }
+    snapshot_foreign_keys = {
+        _foreign_key_signature(foreign_key)
+        for foreign_key in inspector.get_foreign_keys("run_workflow_package_snapshots")
+    }
     run_step_foreign_keys = {
         _foreign_key_signature(foreign_key)
         for foreign_key in inspector.get_foreign_keys("run_steps")
@@ -1033,6 +1149,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "workflow_key",
         "workflow_version",
         "per_step_outputs",
+        *_REMOVED_RUN_PROVENANCE_COLUMNS,
         *_RUN_COST_COLUMNS,
     }.isdisjoint(run_columns)
     assert run_columns["source_run_id"]["nullable"] is True
@@ -1048,6 +1165,9 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ix_runs_target_key",
         "ix_runs_source_run",
         "ix_runs_lineage_root",
+        "ix_runs_workflow_package",
+        "ix_runs_workflow_package_key",
+        "ix_runs_workflow_package_workflow_key",
     } <= run_indexes
     assert {
         "ck_runs_target_kind",
@@ -1064,12 +1184,26 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("agent_id",), "agents", "CASCADE") in run_foreign_keys
     assert (("workflow_id",), "workflows", "CASCADE") in run_foreign_keys
-    assert (("workflow_package_id",), "workflow_packages", "CASCADE") in run_foreign_keys
-    assert (
-        ("workflow_package_version_id",),
-        "workflow_package_versions",
-        "CASCADE",
-    ) in run_foreign_keys
+    assert (("workflow_package_id",), "workflow_packages", "SET NULL") in run_foreign_keys
+    assert not any(
+        foreign_key[0]
+        for foreign_key in run_foreign_keys
+        if set(foreign_key[0]) & _REMOVED_RUN_PROVENANCE_COLUMNS
+    )
+
+    assert set(snapshot_columns) == _RUN_SNAPSHOT_COLUMNS
+    assert snapshot_columns["run_id"]["nullable"] is False
+    assert snapshot_columns["workflow_package_id"]["nullable"] is False
+    assert snapshot_columns["workflow_package_key"]["nullable"] is False
+    assert snapshot_columns["manifest_source"]["nullable"] is False
+    assert snapshot_columns["package_definition"]["nullable"] is False
+    assert {
+        "ix_run_workflow_package_snapshots_package_key",
+        "ix_run_workflow_package_snapshots_workflow_key",
+        "ix_run_workflow_package_snapshots_manifest_hash",
+        "ix_run_workflow_package_snapshots_compiled_hash",
+    } <= snapshot_indexes
+    assert snapshot_foreign_keys == {(("run_id",), "runs", "CASCADE")}
 
     assert _RUN_STEP_COLUMNS <= set(run_step_columns)
     assert run_step_columns["run_id"]["nullable"] is False
@@ -1314,7 +1448,9 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
     preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
     assert "INSERT INTO workflow_packages" in preset_sql
-    assert "INSERT INTO workflow_package_versions" in preset_sql
+    assert "INSERT INTO workflow_package_versions" not in preset_sql
+    assert "latest_version_id" not in preset_sql
+    assert "draft_source" not in preset_sql
     assert "INSERT INTO model_connections" not in preset_sql
     assert "workflow_package_secret_bindings (" not in preset_sql
     assert "INSERT INTO runs" not in preset_sql
@@ -1331,6 +1467,9 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
 
     try:
         with engine.connect() as connection:
+            table_names = set(inspect(connection).get_table_names())
+            assert "workflow_package_versions" not in table_names
+            assert "workflow_package_version_model_connections" not in table_names
             row = (
                 connection.execute(
                     text(
@@ -1341,20 +1480,14 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                         package.name,
                         package.description,
                         package.status,
-                        package.latest_version_id,
-                        package.draft_source,
-                        version.id AS version_id,
-                        version.version,
-                        version.manifest_source,
-                        version.manifest_hash,
-                        version.package_definition,
-                        version.compiled_plan,
-                        version.compiled_hash,
-                        version.extension_dependencies,
-                        version.validation_summary
+                        package.manifest_source,
+                        package.manifest_hash,
+                        package.package_definition,
+                        package.compiled_plan,
+                        package.compiled_hash,
+                        package.extension_dependencies,
+                        package.validation_summary
                     FROM workflow_packages AS package
-                    JOIN workflow_package_versions AS version
-                      ON version.id = package.latest_version_id
                     WHERE package.key = :package_key
                     """
                     ),
@@ -1365,9 +1498,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             )
             package_count = connection.execute(
                 text("SELECT COUNT(*) FROM workflow_packages")
-            ).scalar_one()
-            version_count = connection.execute(
-                text("SELECT COUNT(*) FROM workflow_package_versions")
             ).scalar_one()
             model_connection_count = connection.execute(
                 text("SELECT COUNT(*) FROM model_connections")
@@ -1389,20 +1519,9 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                 ),
                 {"package_id": row["package_id"]},
             ).scalar_one()
-            preset_reference_count = connection.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM workflow_package_version_model_connections
-                    WHERE workflow_package_version_id = :version_id
-                    """
-                ),
-                {"version_id": row["version_id"]},
-            ).scalar_one()
             run_count = connection.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
 
         assert package_count == 1
-        assert version_count == 1
         assert row["key"] == _TRADINGAGENTS_PRESET_KEY
         assert row["name"] == "TradingAgents Advisory Research"
         assert (
@@ -1410,9 +1529,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             == cast(dict[str, object], expected_package_definition["metadata"])["description"]
         )
         assert row["status"] == "active"
-        assert row["latest_version_id"] == row["version_id"]
-        assert row["version"] == 1
-        assert row["draft_source"] == fixture_source
         assert row["manifest_source"] == fixture_source
         assert row["manifest_hash"] == compiled["manifestHash"]
         assert row["compiled_hash"] == compiled["compiledHash"]
@@ -1459,21 +1575,17 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
         assert non_empty_model_secret_count == 0
         assert preset_model_connection_count == 0
         assert secret_binding_count == 0
-        assert preset_reference_count == 0
         assert run_count == 0
 
         package_id = row["package_id"]
-        version_id = row["version_id"]
         upgrade_legacy_schema(engine)
         with engine.connect() as connection:
             idempotent_row = (
                 connection.execute(
                     text(
                         """
-                    SELECT package.id AS package_id, version.id AS version_id
+                    SELECT package.id AS package_id
                     FROM workflow_packages AS package
-                    JOIN workflow_package_versions AS version
-                      ON version.id = package.latest_version_id
                     WHERE package.key = :package_key
                     """
                     ),
@@ -1483,7 +1595,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                 .one()
             )
         assert idempotent_row["package_id"] == package_id
-        assert idempotent_row["version_id"] == version_id
     finally:
         engine.dispose()
 
@@ -1532,17 +1643,14 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
+                    "workflow_package_id, workflow_package_key, "
                     "workflow_package_workflow_key, "
                     "input, status, total_tokens, inherited_tokens, executed_tokens, "
                     f"{run_cost_columns_sql}"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, '{}'::jsonb, 'succeeded', 17, 5, 12, "
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, "
+                    "'{}'::jsonb, 'succeeded', 17, 5, 12, "
                     f"{run_cost_placeholders_sql}"
                     ") RETURNING id"
                 ),
@@ -1554,6 +1662,11 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                     },
                 },
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(run_id),
+                package=package,
+            )
             connection.execute(
                 text(
                     "INSERT INTO runs ("
@@ -1616,6 +1729,7 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                 text(
                     "SELECT "
                     "(SELECT COUNT(*) FROM runs), "
+                    "(SELECT COUNT(*) FROM run_workflow_package_snapshots), "
                     "(SELECT COUNT(*) FROM run_steps), "
                     "(SELECT COUNT(*) FROM run_agent_invocations)"
                 )
@@ -1632,7 +1746,7 @@ def test_init_db_removes_cost_columns_and_deletes_non_package_runtime_rows(
                 {"invocation_id": invocation_id},
             ).one()
 
-        assert runtime_counts == (1, 1, 1)
+        assert runtime_counts == (1, 1, 1, 1)
         assert preserved_run == ("cost_package", "succeeded", 17)
         assert preserved_invocation == ("legacy_cost_agent", "succeeded", 19)
         assert set(_RUN_COST_COLUMNS).isdisjoint(run_columns)
@@ -1880,39 +1994,41 @@ def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
+                    "workflow_package_id, workflow_package_key, "
                     "workflow_package_workflow_key, "
                     "status, input, started_at, finished_at, created_at"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, 'succeeded', '{}'::jsonb, "
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, 'succeeded', '{}'::jsonb, "
                     "'2026-04-19T10:00:00Z', '2026-04-19T10:02:00Z', "
                     "'2026-04-19T09:59:00Z') RETURNING id"
                 ),
                 package,
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(succeeded_run_id),
+                package=package,
+            )
             running_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
+                    "workflow_package_id, workflow_package_key, "
                     "workflow_package_workflow_key, "
                     "status, input, started_at, created_at"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, 'running', '{}'::jsonb, "
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, 'running', '{}'::jsonb, "
                     "'2026-04-19T11:00:00Z', '2026-04-19T10:59:00Z') RETURNING id"
                 ),
                 package,
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(running_run_id),
+                package=package,
+            )
             connection.exec_driver_sql("ALTER TABLE runs DROP CONSTRAINT ck_runs_status")
             connection.exec_driver_sql(
                 "ALTER TABLE runs ADD CONSTRAINT ck_runs_status "
@@ -1943,16 +2059,11 @@ def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
-                    "workflow_package_workflow_key, "
-                    "input"
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, input"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, '{}'::jsonb"
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, '{}'::jsonb"
                     ") RETURNING status"
                 ),
                 package,
@@ -1990,56 +2101,58 @@ def test_init_db_running_run_recovery_marks_new_platform_rows_terminal(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
-                    "workflow_package_workflow_key, "
-                    "status, input"
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, status, input"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, 'running', '{}'::jsonb"
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, 'running', '{}'::jsonb"
                     ") RETURNING id"
                 ),
                 package,
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(running_run_id),
+                package=package,
+            )
             failed_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
-                    "workflow_package_workflow_key, "
-                    "status, input, error"
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, status, input, error"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, 'failed', '{}'::jsonb, 'existing failure'"
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, 'failed', "
+                    "'{}'::jsonb, 'existing failure'"
                     ") RETURNING id"
                 ),
                 package,
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(failed_run_id),
+                package=package,
+            )
             queued_run_id = connection.execute(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, "
-                    "workflow_package_workflow_key, "
-                    "status, input, started_at, finished_at"
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, status, input, started_at, finished_at"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, "
-                    ":workflow_key, 'queued', '{}'::jsonb, NULL, NULL"
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, 'queued', "
+                    "'{}'::jsonb, NULL, NULL"
                     ") RETURNING id"
                 ),
                 package,
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(queued_run_id),
+                package=package,
+            )
             step_rows = connection.execute(
                 text(
                     "INSERT INTO run_steps (run_id, step_index, status, origin, persisted_at) "
@@ -3669,63 +3782,31 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
             connection.exec_driver_sql(
                 "ALTER TABLE runs RENAME COLUMN extension_dependencies TO extension_snapshots"
             )
-            package_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_packages (key, name, description, status, draft_source)
-                    VALUES ('legacy_snapshot_package', 'Legacy Snapshot Package', '', 'active', '')
-                    RETURNING id
-                    """
-                )
-            ).scalar_one()
-            version_id = connection.execute(
-                text(
-                    """
-                    INSERT INTO workflow_package_versions (
-                        package_id, version, manifest_source, manifest_hash, package_definition,
-                        compiled_plan, compiled_hash, validation_summary
-                    ) VALUES (
-                        :package_id, 1, 'apiVersion: signaldeck.workflowPackage/v1',
-                        'legacyhash', '{}'::jsonb, '{"agents": []}'::jsonb,
-                        'compiledhash', '{}'::jsonb
-                    ) RETURNING id
-                    """
-                ),
-                {"package_id": package_id},
-            ).scalar_one()
-            connection.execute(
-                text(
-                    """
-                    UPDATE workflow_packages
-                    SET latest_version_id = :version_id
-                    WHERE id = :package_id
-                    """
-                ),
-                {"package_id": package_id, "version_id": version_id},
+            package = _insert_representable_workflow_package(
+                connection,
+                key="legacy_snapshot_package",
+                workflow_key="advisory_research",
             )
-            connection.execute(
+            run_id = connection.execute(
                 text(
                     """
                     INSERT INTO runs (
                         target_kind, target_id, target_key, target_version,
-                        workflow_package_id, workflow_package_key, workflow_package_version_id,
-                        workflow_package_version, workflow_package_manifest_hash,
-                        workflow_package_compiled_hash, workflow_package_workflow_key,
-                        extension_snapshots, input, status
+                        workflow_package_id, workflow_package_key,
+                        workflow_package_workflow_key, extension_snapshots, input, status
                     ) VALUES (
-                        'workflowPackage', :package_id, 'legacy_snapshot_package', 1,
-                        :package_id, 'legacy_snapshot_package', :version_id,
-                        1, 'legacyhash', 'compiledhash',
-                        'advisory_research', CAST(:snapshots AS JSONB),
-                        '{}'::jsonb, 'queued'
-                    )
+                        'workflowPackage', :package_id, :package_key, :target_version,
+                        :package_id, :package_key, :workflow_key,
+                        CAST(:snapshots AS JSONB), '{}'::jsonb, 'queued'
+                    ) RETURNING id
                     """
                 ),
-                {
-                    "package_id": package_id,
-                    "version_id": version_id,
-                    "snapshots": json.dumps(legacy_snapshots),
-                },
+                {**package, "snapshots": json.dumps(legacy_snapshots)},
+            ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(run_id),
+                package=package,
             )
 
         upgrade_legacy_schema(engine)
@@ -3734,17 +3815,14 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert "extension_dependencies" in run_columns
         assert "extension_snapshots" not in run_columns
+        assert _REMOVED_RUN_PROVENANCE_COLUMNS.isdisjoint(run_columns)
 
         with engine.connect() as connection:
             row = (
                 connection.execute(
                     text(
                         """
-                    SELECT
-                        extension_dependencies,
-                        workflow_package_manifest_hash,
-                        workflow_package_compiled_hash,
-                        launch_snapshot
+                    SELECT extension_dependencies
                     FROM runs
                     WHERE target_key = 'legacy_snapshot_package'
                     """
@@ -3754,10 +3832,6 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
                 .one()
             )
 
-        assert row["workflow_package_manifest_hash"] == "legacyhash"
-        assert row["workflow_package_compiled_hash"] == "compiledhash"
-        assert row["launch_snapshot"]["workflowKey"] == "advisory_research"
-        assert row["launch_snapshot"]["parameters"] == {}
         assert row["extension_dependencies"] == [
             {
                 "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
@@ -3770,7 +3844,7 @@ def test_upgrade_legacy_schema_normalizes_run_extension_snapshot_jsonb(
         engine.dispose()
 
 
-def test_upgrade_legacy_schema_backfills_package_run_before_clean_break_cleanup(
+def test_upgrade_legacy_schema_preserves_snapshot_backed_package_run_before_cleanup(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -3787,19 +3861,36 @@ def test_upgrade_legacy_schema_backfills_package_run_before_clean_break_cleanup(
                 text(
                     "INSERT INTO runs ("
                     "target_kind, target_id, target_key, target_version, "
-                    "workflow_package_id, workflow_package_key, workflow_package_version_id, "
-                    "workflow_package_version, workflow_package_manifest_hash, "
-                    "workflow_package_compiled_hash, workflow_package_workflow_key, "
-                    "input, status"
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, input, status"
                     ") VALUES ("
-                    "'workflowPackage', :package_id, :package_key, :version, "
-                    ":package_id, :package_key, :version_id, :version, "
-                    ":manifest_hash, :compiled_hash, :workflow_key, "
-                    "'{\"ticker\": \"MSFT\"}'::jsonb, 'succeeded'"
+                    "'workflowPackage', :package_id, :package_key, :target_version, "
+                    ":package_id, :package_key, :workflow_key, "
+                    "CAST(:input_payload AS jsonb), 'succeeded'"
                     ") RETURNING id"
                 ),
-                package,
+                {**package, "input_payload": json.dumps({"ticker": "MSFT"})},
             ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(preserved_run_id),
+                package=package,
+                parameters={"ticker": "MSFT"},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO runs ("
+                    "target_kind, target_id, target_key, target_version, "
+                    "workflow_package_id, workflow_package_key, "
+                    "workflow_package_workflow_key, input, status"
+                    ") VALUES ("
+                    "'workflowPackage', :package_id, 'stale_without_snapshot', "
+                    ":target_version, :package_id, 'stale_without_snapshot', "
+                    ":workflow_key, '{}'::jsonb, 'succeeded'"
+                    ")"
+                ),
+                package,
+            )
             connection.execute(
                 text(
                     "INSERT INTO runs ("
@@ -3816,7 +3907,15 @@ def test_upgrade_legacy_schema_backfills_package_run_before_clean_break_cleanup(
         with engine.connect() as connection:
             rows = (
                 connection.execute(
-                    text("SELECT id, target_key, launch_snapshot " "FROM runs ORDER BY id")
+                    text(
+                        """
+                        SELECT run.id, run.target_key, snapshot.launch_parameters
+                        FROM runs AS run
+                        JOIN run_workflow_package_snapshots AS snapshot
+                          ON snapshot.run_id = run.id
+                        ORDER BY run.id
+                        """
+                    )
                 )
                 .mappings()
                 .all()
@@ -3824,27 +3923,6 @@ def test_upgrade_legacy_schema_backfills_package_run_before_clean_break_cleanup(
 
         assert [row["id"] for row in rows] == [preserved_run_id]
         assert rows[0]["target_key"] == "cleanup_order_package"
-        assert rows[0]["launch_snapshot"] == {
-            "workflowKey": "cleanup_order_workflow",
-            "workflowName": "cleanup_order_workflow",
-            "workflowDescription": "",
-            "inputSchema": {},
-            "parameters": {"ticker": "MSFT"},
-            "localResourceRefs": {
-                "agents": [],
-                "outputSchemas": [],
-                "capabilityProfiles": [],
-                "mcpServers": [],
-                "workflows": ["cleanup_order_workflow"],
-            },
-            "resolvedModelConnections": [],
-            "preflightSummary": None,
-            "workflowPackageId": package["package_id"],
-            "workflowPackageKey": "cleanup_order_package",
-            "workflowPackageVersionId": package["version_id"],
-            "workflowPackageVersion": 1,
-            "workflowPackageManifestHash": package["manifest_hash"],
-            "workflowPackageCompiledHash": package["compiled_hash"],
-        }
+        assert rows[0]["launch_parameters"] == {"ticker": "MSFT"}
     finally:
         engine.dispose()
