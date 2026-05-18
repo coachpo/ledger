@@ -1,8 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
-
 import { ModelConnectionsEditorPage } from "./editor";
 
 const navigateMock = vi.fn();
@@ -96,18 +94,6 @@ describe("ModelConnectionsEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
     fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
 
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        key: "primary_openai",
-        name: "Primary OpenAI",
-        apiStyle: "responses",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "medium",
-        timeoutSeconds: 60,
-      }),
-    );
-
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
     await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
@@ -154,18 +140,6 @@ describe("ModelConnectionsEditorPage", () => {
     fillRequiredCreateFields();
     await chooseReasoningEffort(/^Omit reasoning parameter$/);
 
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        key: "primary_openai",
-        name: "Primary OpenAI",
-        apiStyle: "responses",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: null,
-        timeoutSeconds: 60,
-      }),
-    );
-
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
     await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
@@ -180,18 +154,6 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
     fillRequiredCreateFields();
     await chooseReasoningEffort(/^none$/);
-
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        key: "primary_openai",
-        name: "Primary OpenAI",
-        apiStyle: "responses",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "none",
-        timeoutSeconds: 60,
-      }),
-    );
 
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
@@ -210,18 +172,6 @@ describe("ModelConnectionsEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
       target: { value: "  xhigh  " },
     });
-
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        key: "primary_openai",
-        name: "Primary OpenAI",
-        apiStyle: "responses",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "xhigh",
-        timeoutSeconds: 60,
-      }),
-    );
 
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
@@ -277,17 +227,6 @@ describe("ModelConnectionsEditorPage", () => {
 
     expect(screen.getByLabelText(/^Reasoning Effort$/i)).toHaveTextContent("Custom...");
     expect(screen.getByLabelText(/^Custom Reasoning Effort$/i)).toHaveValue("experimental-reasoning");
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        name: "Primary OpenAI",
-        description: "Production OpenAI connection.",
-        apiStyle: "chat_completions",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "experimental-reasoning",
-        timeoutSeconds: 90,
-      }),
-    );
   });
 
   it("submits Chat Completions API style when selected", async () => {
@@ -312,31 +251,6 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
-  it("masks an entered apiKey in the exact config preview", () => {
-    render(<ModelConnectionsEditorPage />);
-
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
-    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
-    fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
-    fireEvent.change(screen.getByLabelText(/^API Key$/i), { target: { value: "redacted-live-secret" } });
-
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        key: "primary_openai",
-        name: "Primary OpenAI",
-        apiStyle: "responses",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "medium",
-        timeoutSeconds: 60,
-        apiKey: "••••••••",
-      }),
-    );
-    expect(screen.getByLabelText(/exact config json/i)).not.toHaveValue(
-      expect.stringContaining("redacted-live-secret"),
-    );
-  });
-
   it("keeps the secret blank on edit and preserves the existing key when save omits apiKey", async () => {
     paramsMock.modelConnectionId = "4";
     updateModelConnectionMock.mockResolvedValue({ id: 4 });
@@ -351,17 +265,6 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
       "Chat Completions API - legacy / OpenAI-compatible",
-    );
-    expect(screen.getByLabelText(/exact config json/i)).toHaveValue(
-      stringifyJson({
-        name: "Primary OpenAI",
-        description: "Production OpenAI connection.",
-        apiStyle: "chat_completions",
-        baseUrl: "https://api.openai.com/v1",
-        modelId: "gpt-4.1",
-        reasoningEffort: "high",
-        timeoutSeconds: 90,
-      }),
     );
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, PlugZap, Save, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exact-json-preview";
 import {
   useCreateModelConnection,
   useModelConnection,
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/format";
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 import type {
   ModelConnectionApiStyle,
   ModelConnectionCreateInput,
@@ -90,8 +88,6 @@ const initialValues: ModelConnectionEditorValues = {
   reasoningEffort: "medium",
   timeoutSeconds: "60",
 };
-
-const MASKED_SECRET_VALUE = "••••••••";
 
 function isReasoningEffortPreset(value: string | null): value is ReasoningEffortPreset {
   return REASONING_EFFORT_PRESETS.includes(value as ReasoningEffortPreset);
@@ -197,22 +193,6 @@ function buildUpdatePayload(values: ModelConnectionEditorValues): ModelConnectio
   };
 }
 
-function buildPreviewPayload(
-  values: ModelConnectionEditorValues,
-  isEditing: boolean,
-): ModelConnectionCreateInput | ModelConnectionUpdateInput {
-  const payload = isEditing ? buildUpdatePayload(values) : buildCreatePayload(values);
-
-  if (!payload.apiKey) {
-    return payload;
-  }
-
-  return {
-    ...payload,
-    apiKey: MASKED_SECRET_VALUE,
-  };
-}
-
 export function ModelConnectionsEditorPage() {
   const { modelConnectionId } = useParams<{ modelConnectionId: string }>();
   const navigate = useNavigate();
@@ -236,13 +216,6 @@ export function ModelConnectionsEditorPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isBusy = isSaving || testConnectionMutation.isPending;
   const currentConnectionKind = connectionQuery.data?.connectionKind ?? "provider";
-  const exactConfigJson = useMemo(() => {
-    try {
-      return stringifyJson(buildPreviewPayload(values, isEditing));
-    } catch {
-      return "";
-    }
-  }, [isEditing, values]);
 
   const updateValue = <Key extends keyof ModelConnectionEditorValues>(
     key: Key,
@@ -540,22 +513,6 @@ export function ModelConnectionsEditorPage() {
               No connection test has been recorded yet.
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Exact config JSON</CardTitle>
-          <CardDescription>
-            Read-only canonical JSON derived from the same create or update payload used on save. API keys stay masked.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ExactJsonPreview
-            ariaLabel="Exact config JSON"
-            data-testid="model-connection-exact-config-json"
-            value={exactConfigJson}
-          />
         </CardContent>
       </Card>
     </div>
