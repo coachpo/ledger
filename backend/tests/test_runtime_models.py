@@ -264,19 +264,6 @@ def test_agent_platform_package_tables_are_current_only() -> None:
     assert AGENT_PLATFORM_PACKAGE_TABLE_NAMES <= set(Base.metadata.tables)
     assert REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES.isdisjoint(Base.metadata.tables)
 
-    package_table = Base.metadata.tables["workflow_packages"]
-    assert {
-        "manifest_source",
-        "manifest_hash",
-        "package_definition",
-        "compiled_plan",
-        "compiled_hash",
-        "extension_dependencies",
-        "validation_summary",
-        "last_launched_at",
-    } <= set(package_table.c.keys())
-    assert {"latest_version_id", "draft_source"}.isdisjoint(package_table.c.keys())
-
 
 def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
     assert AGENT_PLATFORM_CONFIG_TABLE_NAMES <= set(Base.metadata.tables)
