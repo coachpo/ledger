@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
-from app.models.workflow_package import WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
@@ -150,7 +150,7 @@ def test_create_blocks_missing_model_connection(
         "Model connection 'tradingagents_primary_model' was not found"
     }
     with session_factory() as session:
-        assert session.query(WorkflowPackageVersion).count() == 0
+        assert session.query(WorkflowPackage).count() == 0
 
 
 def test_preflight_reports_binding_schema_tool_and_graph_failures(
@@ -162,10 +162,10 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
 
     with session_factory() as session:
         repository = WorkflowPackageRepository(session)
-        version = repository.get_latest_version(int(created["id"]))
-        assert version is not None
-        compiled_plan = deepcopy(cast(dict[str, Any], version.compiled_plan))
-        package_definition = deepcopy(cast(dict[str, Any], version.package_definition))
+        package = repository.get(int(created["id"]))
+        assert package is not None
+        compiled_plan = deepcopy(cast(dict[str, Any], package.compiled_plan))
+        package_definition = deepcopy(cast(dict[str, Any], package.package_definition))
         profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
         for profile in profiles:
             if profile["key"] == "market_research_tools":
@@ -191,8 +191,8 @@ def test_preflight_reports_binding_schema_tool_and_graph_failures(
         cast(list[dict[str, Any]], workflow["steps"])[0]["agents"][0]["wiring"] = {
             "ticker": {"from": "step", "stepIndex": 1, "slot": "market_report"}
         }
-        version.compiled_plan = compiled_plan
-        version.package_definition = package_definition
+        package.compiled_plan = compiled_plan
+        package.package_definition = package_definition
         session.commit()
 
     preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
@@ -355,9 +355,12 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
     operation = cast(list[dict[str, Any]], workflow["steps"])[0]["operations"][0]
     operation["method"] = "PATCH"
     cast(dict[str, Any], operation["request"])["body"] = {"from": "step", "stepIndex": 1}
-    package_version = WorkflowPackageVersion(
-        package_id=987,
-        version=1,
+    package = WorkflowPackage(
+        id=987,
+        key="http_node_package",
+        name="HTTP Node Package",
+        description="",
+        status="active",
         manifest_source=http_node_package_source(),
         manifest_hash="a" * 64,
         package_definition=cast(dict[str, Any], compiled["packageDefinition"]),
@@ -368,7 +371,7 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
 
     with session_factory() as session:
         errors = WorkflowPackagePreflightService(session)._http_errors(
-            package_version,
+            package,
             compiled_plan,
         )
 

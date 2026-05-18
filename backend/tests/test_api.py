@@ -317,9 +317,7 @@ def test_agent_platform_runs_target_filters_require_target_kind(client: TestClie
         "details": [
             {
                 "field": "targetKind",
-                "issue": (
-                    "targetKind is required when targetId, targetKey, or targetVersion is provided"
-                ),
+                "issue": "targetKind is required when targetId or targetKey is provided",
             }
         ],
     }

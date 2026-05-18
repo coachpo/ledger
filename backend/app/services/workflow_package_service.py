@@ -4,20 +4,17 @@ from __future__ import annotations
 from typing import Any, NoReturn, cast
 
 from fastapi import Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalog
 from app.core.errors import ApiError, not_found_error, validation_error
-from app.models.workflow_package import (
-    WorkflowPackage,
-    WorkflowPackageSecretBinding,
-    WorkflowPackageVersion,
-)
+from app.models.run import Run, RunWorkflowPackageSnapshot
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
 from app.schemas.model_connection import normalize_model_connection_key
 from app.schemas.workflow_package import (
-    WorkflowPackageImportMode,
     WorkflowPackageImportRequest,
     WorkflowPackageLaunchCreateRequest,
     WorkflowPackageLaunchCreateResponse,
@@ -32,8 +29,6 @@ from app.schemas.workflow_package import (
     WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
-    WorkflowPackageVersionListRead,
-    WorkflowPackageVersionRead,
     normalize_workflow_package_secret_binding_key,
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
@@ -114,18 +109,15 @@ class WorkflowPackageService:
     def get_manifest(
         self,
         package_id: int,
-        *,
-        version: int | None = None,
     ) -> WorkflowPackageManifestRead:
-        package, package_version = self._resolve_package_version(package_id, version=version)
+        package = self._get_package(package_id)
         hydrated = build_workflow_package_manifest_hydration_payload(
-            {"packageDefinition": package_version.package_definition}
+            {"packageDefinition": package.package_definition}
         )
         return WorkflowPackageManifestRead.model_validate(
             {
                 "packageId": package.id,
                 "packageKey": package.key,
-                "version": package_version.version,
                 **hydrated,
             }
         )
@@ -150,24 +142,17 @@ class WorkflowPackageService:
                 code="workflow_package_duplicate_key",
                 message="A workflow package with this key already exists",
             )
-        model_connection_refs = self._resolve_model_connection_refs(prepared)
+        self._resolve_model_connection_refs(prepared)
         package = self.repository.create_package(
             key=key,
             name=str(cast(dict[str, Any], metadata)["name"]),
             description=str(cast(dict[str, Any], metadata).get("description") or ""),
             status="active",
-            draft_source=payload.manifest_source,
+            **self._current_artifact_fields(prepared, payload.manifest_source),
         )
         try:
-            version = self._create_version(
-                package,
-                prepared,
-                payload.manifest_source,
-                model_connection_refs=model_connection_refs,
-            )
             self.session.commit()
             self.session.refresh(package)
-            self.session.refresh(version)
         except Exception:
             self.session.rollback()
             raise
@@ -193,19 +178,13 @@ class WorkflowPackageService:
                         }
                     ],
                 )
-            model_connection_refs = self._resolve_model_connection_refs(prepared)
+            self._resolve_model_connection_refs(prepared)
             self.repository.update_package(
                 package,
                 name=str(cast(dict[str, Any], metadata)["name"]),
                 description=str(cast(dict[str, Any], metadata).get("description") or ""),
-                draft_source=payload.manifest_source,
                 status="active" if payload.status is None else payload.status.value,
-            )
-            _ = self._create_version(
-                package,
-                prepared,
-                payload.manifest_source,
-                model_connection_refs=model_connection_refs,
+                **self._current_artifact_fields(prepared, payload.manifest_source),
             )
         elif payload.status is not None:
             self.repository.update_package(package, status=payload.status.value)
@@ -224,15 +203,6 @@ class WorkflowPackageService:
 
     def delete_package(self, package_id: int) -> None:
         package = self._get_package(package_id)
-        RunService(
-            self.session,
-            self.session_factory,
-            provider_bundle=self.provider_bundle,
-        ).delete_runs_for_target(
-            target_kind="workflowPackage",
-            target_id=package.id,
-            workflow_package_id=package.id,
-        )
         try:
             self.repository.delete(package)
             self.session.commit()
@@ -274,6 +244,14 @@ class WorkflowPackageService:
         binding = self.secret_binding_repository.get_by_key(package.id, normalized_key)
         if binding is None:
             raise not_found_error("Workflow package secret binding")
+        reference_details = self._secret_binding_reference_details(package, normalized_key)
+        if reference_details:
+            raise ApiError(
+                status_code=status.HTTP_409_CONFLICT,
+                code="workflow_package_secret_binding_in_use",
+                message="Workflow package secret binding is in use",
+                details=reference_details,
+            )
         try:
             self.secret_binding_repository.delete(binding)
             self.session.commit()
@@ -281,62 +259,12 @@ class WorkflowPackageService:
             self.session.rollback()
             raise
 
-    def list_versions(self, package_id: int) -> WorkflowPackageVersionListRead:
+    def export_package(self, package_id: int) -> Response:
         package = self._get_package(package_id)
-        return WorkflowPackageVersionListRead(
-            items=[
-                self._to_version_read(item) for item in self.repository.list_versions(package.id)
-            ]
-        )
-
-    def create_version(
-        self,
-        package_id: int,
-        payload: WorkflowPackageManifestRequest,
-    ) -> WorkflowPackageRead:
-        package = self._get_package(package_id)
-        prepared = self._prepare_manifest_or_raise(payload.manifest_source)
-        metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
-        if str(cast(dict[str, Any], metadata)["key"]) != package.key:
-            raise validation_error(
-                "Workflow package manifest validation failed",
-                [
-                    {
-                        "field": "manifestSource",
-                        "issue": f"Manifest key must remain {package.key!r}",
-                        "path": "metadata.key",
-                    }
-                ],
-            )
-        model_connection_refs = self._resolve_model_connection_refs(prepared)
-        try:
-            self.repository.update_package(
-                package,
-                name=str(cast(dict[str, Any], metadata)["name"]),
-                description=str(cast(dict[str, Any], metadata).get("description") or ""),
-                status="active",
-                draft_source=payload.manifest_source,
-            )
-            _ = self._create_version(
-                package,
-                prepared,
-                payload.manifest_source,
-                model_connection_refs=model_connection_refs,
-            )
-            self.session.commit()
-            self.session.refresh(package)
-        except Exception:
-            self.session.rollback()
-            raise
-        return self._to_package_read(package)
-
-    def export_package(self, package_id: int, *, version: int | None = None) -> Response:
-        package, package_version = self._resolve_package_version(package_id, version=version)
-        del package
         exported = export_workflow_package_yaml(
             {
-                "packageDefinition": package_version.package_definition,
-                "compiledPlan": package_version.compiled_plan,
+                "packageDefinition": package.package_definition,
+                "compiledPlan": package.compiled_plan,
             }
         )
         return Response(content=exported, media_type="application/yaml")
@@ -346,66 +274,39 @@ class WorkflowPackageService:
         metadata = cast(dict[str, Any], prepared["packageDefinition"])["metadata"]
         key = str(cast(dict[str, Any], metadata)["key"])
         existing = self.repository.get_by_key(key)
-        if existing is not None and payload.mode != WorkflowPackageImportMode.CREATE_VERSION:
+        if existing is not None:
             raise ApiError(
                 status_code=status.HTTP_409_CONFLICT,
                 code="workflow_package_import_conflict",
                 message="An active workflow package with this key already exists",
             )
-        if existing is None:
-            request = WorkflowPackageManifestRequest(manifest_source=payload.manifest_source)
-            return self.create_package(request)
-        return self.create_version(
-            existing.id,
-            WorkflowPackageManifestRequest(manifest_source=payload.manifest_source),
-        )
+        request = WorkflowPackageManifestRequest(manifest_source=payload.manifest_source)
+        return self.create_package(request)
 
     def preflight_package(
         self,
         package_id: int,
         *,
-        version: int | None = None,
         workflow_key: str | None = None,
     ) -> WorkflowPackageLaunchRead:
-        package, package_version = self._resolve_package_version(package_id, version=version)
-        workflow = self._select_compiled_workflow(package_version, workflow_key)
-        selected_workflow_key = str(workflow["key"])
-        preflight = WorkflowPackagePreflightService(self.session).run(
-            package_version,
-            workflow_key=selected_workflow_key,
+        package = self._get_package(package_id)
+        return self._build_launch_read(
+            package,
+            workflow_key=workflow_key,
             require_api_key=True,
-        )
-        return WorkflowPackageLaunchRead.model_validate(
-            {
-                "packageId": package.id,
-                "packageKey": package.key,
-                "packageVersion": package_version.version,
-                "manifestHash": package_version.manifest_hash,
-                "workflowKey": selected_workflow_key,
-                "name": workflow.get("name") or selected_workflow_key,
-                "description": workflow.get("description") or "",
-                "inputSchema": workflow.get("inputSchema") or {},
-                "ready": preflight.ready,
-                "blockingErrors": preflight.blocking_errors,
-                "warnings": preflight.warnings,
-            }
         )
 
     def get_launch(
         self,
         package_id: int,
         *,
-        version: int | None = None,
         workflow_key: str | None = None,
     ) -> WorkflowPackageLaunchRead:
-        return RunService(
-            self.session,
-            self.session_factory,
-            provider_bundle=self.provider_bundle,
-        ).get_workflow_package_launch(
-            package_id,
-            version=version,
+        package = self._get_package(package_id)
+        return self._build_launch_read(
+            package,
             workflow_key=workflow_key,
+            require_api_key=False,
         )
 
     def create_launch(
@@ -418,6 +319,35 @@ class WorkflowPackageService:
             self.session_factory,
             provider_bundle=self.provider_bundle,
         ).create_workflow_package_launch(package_id, payload)
+
+    def _build_launch_read(
+        self,
+        package: WorkflowPackage,
+        *,
+        workflow_key: str | None,
+        require_api_key: bool,
+    ) -> WorkflowPackageLaunchRead:
+        workflow = self._select_compiled_workflow(package, workflow_key)
+        selected_workflow_key = str(workflow["key"])
+        preflight = WorkflowPackagePreflightService(self.session).run(
+            package,
+            workflow_key=selected_workflow_key,
+            require_api_key=require_api_key,
+        )
+        return WorkflowPackageLaunchRead.model_validate(
+            {
+                "packageId": package.id,
+                "packageKey": package.key,
+                "manifestHash": package.manifest_hash,
+                "workflowKey": selected_workflow_key,
+                "name": workflow.get("name") or selected_workflow_key,
+                "description": workflow.get("description") or "",
+                "inputSchema": workflow.get("inputSchema") or {},
+                "ready": preflight.ready,
+                "blockingErrors": preflight.blocking_errors,
+                "warnings": preflight.warnings,
+            }
+        )
 
     def _prepare_manifest_or_raise(self, manifest_source: str) -> dict[str, object]:
         try:
@@ -438,33 +368,29 @@ class WorkflowPackageService:
             raise _WorkflowPackageDiagnosticsError(exc.diagnostics) from exc
         return compiled
 
-    def _create_version(
+    def _current_artifact_fields(
         self,
-        package: WorkflowPackage,
         prepared: dict[str, object],
         manifest_source: str,
-        *,
-        model_connection_refs: list[tuple[int, str]],
-    ) -> WorkflowPackageVersion:
-        return self.repository.create_version(
-            package,
-            manifest_source=manifest_source,
-            manifest_hash=str(prepared["manifestHash"]),
-            package_definition=cast(dict[str, Any], prepared["packageDefinition"]),
-            compiled_plan=cast(dict[str, Any], prepared["compiledPlan"]),
-            compiled_hash=str(prepared["compiledHash"]),
-            extension_dependencies=cast(
+    ) -> dict[str, Any]:
+        package_definition = cast(dict[str, Any], prepared["packageDefinition"])
+        return {
+            "manifest_source": manifest_source,
+            "manifest_hash": str(prepared["manifestHash"]),
+            "package_definition": package_definition,
+            "compiled_plan": cast(dict[str, Any], prepared["compiledPlan"]),
+            "compiled_hash": str(prepared["compiledHash"]),
+            "extension_dependencies": cast(
                 list[dict[str, Any]],
                 prepared.get("extensionDependencies") or [],
             ),
-            validation_summary={
+            "validation_summary": {
                 "diagnostics": [],
                 "warnings": WorkflowPackagePreflightService(self.session).save_warnings(
-                    cast(dict[str, Any], prepared["packageDefinition"])
+                    package_definition
                 ),
             },
-            model_connection_refs=model_connection_refs,
-        )
+        }
 
     def _resolve_model_connection_refs(
         self,
@@ -503,30 +429,14 @@ class WorkflowPackageService:
             raise validation_error("Workflow package manifest validation failed", errors)
         return list(refs_by_id.items())
 
-    def _resolve_package_version(
-        self,
-        package_id: int,
-        *,
-        version: int | None,
-    ) -> tuple[WorkflowPackage, WorkflowPackageVersion]:
-        package = self._get_package(package_id)
-        package_version = (
-            self.repository.get_latest_version(package.id)
-            if version is None
-            else self.repository.get_version(package.id, version)
-        )
-        if package_version is None:
-            raise not_found_error("Workflow package version")
-        return package, package_version
-
     @staticmethod
     def _select_compiled_workflow(
-        package_version: WorkflowPackageVersion,
+        package: WorkflowPackage,
         workflow_key: str | None,
     ) -> dict[str, Any]:
         workflows = [
             workflow
-            for workflow in package_version.compiled_plan.get("workflows") or []
+            for workflow in package.compiled_plan.get("workflows") or []
             if isinstance(workflow, dict)
         ]
         if not workflows:
@@ -557,8 +467,84 @@ class WorkflowPackageService:
                 [{"field": "key", "issue": str(exc)}],
             ) from exc
 
+    def _secret_binding_reference_details(
+        self,
+        package: WorkflowPackage,
+        key: str,
+    ) -> list[dict[str, object]]:
+        references: dict[tuple[str, int], dict[str, object]] = {}
+        if self._compiled_plan_references_secret(package.compiled_plan, key):
+            references[("workflowPackage", package.id)] = self._secret_reference_detail(
+                ref_type="workflowPackage",
+                ref_id=package.id,
+                ref_key=package.key,
+            )
+        snapshot_statement = (
+            select(RunWorkflowPackageSnapshot)
+            .join(Run, Run.id == RunWorkflowPackageSnapshot.run_id)
+            .where(
+                Run.target_kind == "workflowPackage",
+                RunWorkflowPackageSnapshot.workflow_package_id == package.id,
+            )
+            .order_by(
+                RunWorkflowPackageSnapshot.workflow_package_key.asc(),
+                RunWorkflowPackageSnapshot.workflow_key.asc(),
+                RunWorkflowPackageSnapshot.run_id.asc(),
+            )
+        )
+        for snapshot in self.session.scalars(snapshot_statement):
+            if not self._compiled_plan_references_secret(snapshot.compiled_plan, key):
+                continue
+            ref_key = snapshot.workflow_package_key
+            if snapshot.workflow_key:
+                ref_key = f"{ref_key}:{snapshot.workflow_key}"
+            references[("workflowPackageRunSnapshot", snapshot.run_id)] = (
+                self._secret_reference_detail(
+                    ref_type="workflowPackageRunSnapshot",
+                    ref_id=snapshot.run_id,
+                    ref_key=ref_key,
+                )
+            )
+        return sorted(
+            references.values(),
+            key=lambda item: (
+                str(item["refType"]),
+                str(item["refKey"]),
+                cast(int, item["refId"]),
+            ),
+        )
+
+    @staticmethod
+    def _secret_reference_detail(
+        *,
+        ref_type: str,
+        ref_id: int,
+        ref_key: str,
+    ) -> dict[str, object]:
+        return {
+            "field": "secretBinding",
+            "issue": "Secret binding is referenced",
+            "refType": ref_type,
+            "refId": ref_id,
+            "refKey": ref_key,
+        }
+
+    @classmethod
+    def _compiled_plan_references_secret(cls, value: object, key: str) -> bool:
+        if isinstance(value, dict):
+            raw_source = value.get("from", value.get("source"))
+            if (
+                isinstance(raw_source, str)
+                and raw_source.strip().lower() in {"secret", "secrets"}
+                and value.get("key") == key
+            ):
+                return True
+            return any(cls._compiled_plan_references_secret(item, key) for item in value.values())
+        if isinstance(value, list):
+            return any(cls._compiled_plan_references_secret(item, key) for item in value)
+        return False
+
     def _to_package_read(self, package: WorkflowPackage) -> WorkflowPackageRead:
-        latest = package.latest_version or self.repository.get_latest_version(package.id)
         return WorkflowPackageRead.model_validate(
             {
                 "id": package.id,
@@ -566,13 +552,12 @@ class WorkflowPackageService:
                 "name": package.name,
                 "description": package.description,
                 "status": package.status,
-                "latestVersion": latest.version if latest is not None else None,
-                "latestVersionId": latest.id if latest is not None else None,
-                "manifestHash": latest.manifest_hash if latest is not None else None,
-                "compiledHash": latest.compiled_hash if latest is not None else None,
-                "warnings": self._version_warnings(latest),
+                "manifestHash": package.manifest_hash,
+                "compiledHash": package.compiled_hash,
+                "warnings": self._package_warnings(package),
                 "createdAt": package.created_at,
                 "updatedAt": package.updated_at,
+                "lastLaunchedAt": package.last_launched_at,
             }
         )
 
@@ -588,22 +573,6 @@ class WorkflowPackageService:
                 "hasValue": bool(str(payload.get("value") or "").strip()),
                 "createdAt": binding.created_at,
                 "updatedAt": binding.updated_at,
-            }
-        )
-
-    @staticmethod
-    def _to_version_read(version: WorkflowPackageVersion) -> WorkflowPackageVersionRead:
-        return WorkflowPackageVersionRead.model_validate(
-            {
-                "id": version.id,
-                "packageId": version.package_id,
-                "version": version.version,
-                "manifestHash": version.manifest_hash,
-                "compiledHash": version.compiled_hash,
-                "validationSummary": version.validation_summary,
-                "warnings": WorkflowPackageService._version_warnings(version),
-                "createdAt": version.created_at,
-                "launchedAt": version.launched_at,
             }
         )
 
@@ -638,10 +607,10 @@ class WorkflowPackageService:
         )
 
     @staticmethod
-    def _version_warnings(version: WorkflowPackageVersion | None) -> list[dict[str, Any]]:
-        if version is None or not isinstance(version.validation_summary, dict):
+    def _package_warnings(package: WorkflowPackage) -> list[dict[str, Any]]:
+        if not isinstance(package.validation_summary, dict):
             return []
-        warnings = version.validation_summary.get("warnings")
+        warnings = package.validation_summary.get("warnings")
         return (
             [dict(item) for item in warnings if isinstance(item, dict)]
             if isinstance(warnings, list)

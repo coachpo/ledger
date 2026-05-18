@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
-from app.models.platform_reference import WorkflowPackageVersionModelConnection
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
 _FIXTURE = (
@@ -96,11 +95,10 @@ def _assert_manifest_payload(
     *,
     package_id: int,
     package_key: str,
-    version: int,
 ) -> dict[str, object]:
     assert body["packageId"] == package_id
     assert body["packageKey"] == package_key
-    assert body["version"] == version
+    assert "version" not in body
     assert "compiledPlan" not in body
 
     source = cast(str, body["manifestSource"])
@@ -228,37 +226,35 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     assert created["id"]
     assert created["key"] == "tradingagents_advisory_research"
     assert created["status"] == "active"
-    assert created["latestVersion"] == 1
+    assert "latestVersion" not in created
+    assert "latestVersionId" not in created
     assert isinstance(created["manifestHash"], str)
 
-    latest_manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
-    assert latest_manifest.status_code == 200, latest_manifest.json()
-    latest_manifest_body = cast(dict[str, object], latest_manifest.json())
+    manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
+    assert manifest.status_code == 200, manifest.json()
+    manifest_body = cast(dict[str, object], manifest.json())
     _ = _assert_manifest_payload(
-        latest_manifest_body,
+        manifest_body,
         package_id=cast(int, created["id"]),
         package_key="tradingagents_advisory_research",
-        version=1,
     )
 
-    explicit_manifest = client.get(
+    versioned_manifest = client.get(
         f"/api/workflow-packages/{created['id']}/manifest",
         params={"version": 1},
     )
-    assert explicit_manifest.status_code == 200, explicit_manifest.json()
-    explicit_manifest_body = cast(dict[str, object], explicit_manifest.json())
-    assert explicit_manifest_body == latest_manifest_body
+    assert versioned_manifest.status_code == 422, versioned_manifest.json()
+    assert versioned_manifest.json()["details"][0]["field"] == "version"
 
     detail = client.get(f"/api/workflow-packages/{created['id']}")
     assert detail.status_code == 200, detail.json()
-    assert detail.json()["latestVersionId"] == created["latestVersionId"]
+    assert "latestVersion" not in detail.json()
+    assert "latestVersionId" not in detail.json()
 
     versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
-    assert versions.status_code == 200, versions.json()
-    version_items = cast(list[dict[str, object]], versions.json()["items"])
-    assert [item["version"] for item in version_items] == [1]
+    assert versions.status_code == 404, versions.json()
 
-    export = client.get(f"/api/workflow-packages/{created['id']}/export", params={"version": 1})
+    export = client.get(f"/api/workflow-packages/{created['id']}/export")
     assert export.status_code == 200, export.text
     assert export.headers["content-type"].startswith("application/yaml")
     assert "apiVersion: signaldeck.workflowPackage/v1" in export.text
@@ -280,6 +276,13 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     ):
         assert forbidden not in export.text
 
+    versioned_export = client.get(
+        f"/api/workflow-packages/{created['id']}/export",
+        params={"version": 1},
+    )
+    assert versioned_export.status_code == 422, versioned_export.json()
+    assert versioned_export.json()["details"][0]["field"] == "version"
+
     conflict = client.post(
         "/api/workflow-packages/import",
         json={"manifestSource": export.text},
@@ -287,39 +290,14 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     assert conflict.status_code == 409, conflict.json()
     assert conflict.json()["code"] == "workflow_package_import_conflict"
 
-    imported_version = client.post(
+    create_version_mode = client.post(
         "/api/workflow-packages/import",
         json={"manifestSource": export.text, "mode": "createVersion"},
     )
-    assert imported_version.status_code == 201, imported_version.json()
-    imported_version_body = cast(dict[str, object], imported_version.json())
-    created_latest_version_id = cast(int, created["latestVersionId"])
-    imported_latest_version_id = cast(int, imported_version_body["latestVersionId"])
-    assert imported_version_body["id"] == created["id"]
-    assert imported_version_body["latestVersion"] == 2
-
-    with session_factory() as session:
-        refs = (
-            session.query(WorkflowPackageVersionModelConnection)
-            .order_by(WorkflowPackageVersionModelConnection.workflow_package_version_id.asc())
-            .all()
-        )
-        assert [ref.workflow_package_version_id for ref in refs] == [
-            created_latest_version_id,
-            imported_latest_version_id,
-        ]
-        assert [ref.model_connection_key for ref in refs] == [
-            "tradingagents_primary_model",
-            "tradingagents_primary_model",
-        ]
-
-    versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
-    assert versions.status_code == 200, versions.json()
-    version_items = cast(list[dict[str, object]], versions.json()["items"])
-    assert [item["version"] for item in version_items] == [2, 1]
+    assert create_version_mode.status_code == 422, create_version_mode.json()
 
 
-def test_manifest_round_trip_save_creates_immutable_next_version(
+def test_manifest_round_trip_save_updates_current_package_in_place(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -327,25 +305,21 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     created = _create_package(client)
     package_id = cast(int, created["id"])
 
-    version_one = client.get(
-        f"/api/workflow-packages/{package_id}/manifest",
-        params={"version": 1},
-    )
-    assert version_one.status_code == 200, version_one.json()
-    version_one_body = cast(dict[str, object], version_one.json())
+    current = client.get(f"/api/workflow-packages/{package_id}/manifest")
+    assert current.status_code == 200, current.json()
+    current_body = cast(dict[str, object], current.json())
     _ = _assert_manifest_payload(
-        version_one_body,
+        current_body,
         package_id=package_id,
         package_key="tradingagents_advisory_research",
-        version=1,
     )
-    version_one_definition = cast(dict[str, object], version_one_body["packageDefinition"])
-    assert _workflow_description(version_one_definition, "advisory_research") == (
+    current_definition = cast(dict[str, object], current_body["packageDefinition"])
+    assert _workflow_description(current_definition, "advisory_research") == (
         "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
         "bounded loop semantics only."
     )
 
-    edited_source = _edited_workflow_manifest_source(cast(str, version_one_body["manifestSource"]))
+    edited_source = _edited_workflow_manifest_source(cast(str, current_body["manifestSource"]))
     saved = client.patch(
         f"/api/workflow-packages/{package_id}",
         json={"manifestSource": edited_source},
@@ -353,23 +327,24 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
     assert saved.status_code == 200, saved.json()
     saved_body = cast(dict[str, object], saved.json())
     assert saved_body["id"] == package_id
-    assert saved_body["latestVersion"] == 2
-    assert saved_body["latestVersionId"] != created["latestVersionId"]
+    assert "latestVersion" not in saved_body
+    assert "latestVersionId" not in saved_body
 
-    latest = client.get(f"/api/workflow-packages/{package_id}/manifest")
-    assert latest.status_code == 200, latest.json()
-    version_two_body = cast(dict[str, object], latest.json())
+    updated = client.get(f"/api/workflow-packages/{package_id}/manifest")
+    assert updated.status_code == 200, updated.json()
+    updated_body = cast(dict[str, object], updated.json())
     _ = _assert_manifest_payload(
-        version_two_body,
+        updated_body,
         package_id=package_id,
         package_key="tradingagents_advisory_research",
-        version=2,
     )
-    assert saved_body["manifestHash"] == version_two_body["manifestHash"]
-    assert saved_body["compiledHash"] == version_two_body["compiledHash"]
-    assert version_two_body["manifestHash"] != version_one_body["manifestHash"]
-    version_two_definition = cast(dict[str, object], version_two_body["packageDefinition"])
-    assert _workflow_description(version_two_definition, "advisory_research") == (
+    assert saved_body["manifestHash"] == updated_body["manifestHash"]
+    assert saved_body["compiledHash"] == updated_body["compiledHash"]
+    assert updated_body["manifestHash"] != current_body["manifestHash"]
+    updated_definition = cast(dict[str, object], updated_body["packageDefinition"])
+    updated_metadata = cast(dict[str, object], updated_definition["metadata"])
+    assert updated_metadata["name"] == "TradingAgents Advisory Research v2"
+    assert _workflow_description(updated_definition, "advisory_research") == (
         "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
         "bounded loop semantics only."
     )
@@ -378,26 +353,10 @@ def test_manifest_round_trip_save_creates_immutable_next_version(
         f"/api/workflow-packages/{package_id}/manifest",
         params={"version": 1},
     )
-    assert historical.status_code == 200, historical.json()
-    historical_body = cast(dict[str, object], historical.json())
-    _ = _assert_manifest_payload(
-        historical_body,
-        package_id=package_id,
-        package_key="tradingagents_advisory_research",
-        version=1,
-    )
-    assert _manifest_semantics(historical_body) == _manifest_semantics(version_one_body)
-    assert _manifest_semantics(historical_body) != _manifest_semantics(version_two_body)
-    historical_definition = cast(dict[str, object], historical_body["packageDefinition"])
-    assert _workflow_description(historical_definition, "advisory_research") == (
-        "Canonical TradingAgents advisory research topology using SignalDeck sequence and "
-        "bounded loop semantics only."
-    )
+    assert historical.status_code == 422, historical.json()
 
     versions = client.get(f"/api/workflow-packages/{package_id}/versions")
-    assert versions.status_code == 200, versions.json()
-    version_items = cast(list[dict[str, object]], versions.json()["items"])
-    assert [item["version"] for item in version_items] == [2, 1]
+    assert versions.status_code == 404, versions.json()
 
 
 def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
@@ -410,12 +369,7 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
     with session_factory() as session:
         package = session.get(WorkflowPackage, cast(int, created["id"]))
         assert package is not None
-        original_version = session.get(
-            WorkflowPackageVersion,
-            cast(int, created["latestVersionId"]),
-        )
-        assert original_version is not None
-        polluted_definition = deepcopy(cast(dict[str, Any], original_version.package_definition))
+        polluted_definition = deepcopy(cast(dict[str, Any], package.package_definition))
         spec = cast(dict[str, Any], polluted_definition["spec"])
         agent = cast(list[dict[str, Any]], spec["agents"])[0]
         agent.update(
@@ -427,19 +381,8 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
                 "password": "agent-password",
             }
         )
-        polluted_version = WorkflowPackageVersion(
-            package_id=package.id,
-            version=2,
-            manifest_source=original_version.manifest_source,
-            manifest_hash=original_version.manifest_hash,
-            package_definition=polluted_definition,
-            compiled_plan=deepcopy(cast(dict[str, Any], original_version.compiled_plan)),
-            compiled_hash=original_version.compiled_hash,
-            validation_summary=deepcopy(original_version.validation_summary),
-        )
-        session.add(polluted_version)
-        session.flush()
-        package.latest_version_id = polluted_version.id
+        package.package_definition = polluted_definition
+        session.add(package)
         session.commit()
 
     latest_manifest = client.get(f"/api/workflow-packages/{created['id']}/manifest")
@@ -449,7 +392,6 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
         latest_manifest_body,
         package_id=cast(int, created["id"]),
         package_key="tradingagents_advisory_research",
-        version=2,
     )
     latest_spec = cast(
         dict[str, Any],
@@ -461,15 +403,7 @@ def test_manifest_reads_recursively_sanitize_polluted_stored_jsonb(
         f"/api/workflow-packages/{created['id']}/manifest",
         params={"version": 1},
     )
-    assert explicit_manifest.status_code == 200, explicit_manifest.json()
-    explicit_manifest_body = cast(dict[str, object], explicit_manifest.json())
-    _ = _assert_manifest_payload(
-        explicit_manifest_body,
-        package_id=cast(int, created["id"]),
-        package_key="tradingagents_advisory_research",
-        version=1,
-    )
-    assert explicit_manifest_body["version"] == 1
+    assert explicit_manifest.status_code == 422, explicit_manifest.json()
 
 
 def test_validate_manifest_reports_diagnostics_without_persisting(
@@ -483,7 +417,7 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     )
 
     with session_factory() as session:
-        version_count_before = session.query(WorkflowPackageVersion).count()
+        package_count_before = session.query(WorkflowPackage).count()
 
     response = client.post(
         "/api/workflow-packages/validate-manifest",
@@ -496,10 +430,10 @@ def test_validate_manifest_reports_diagnostics_without_persisting(
     diagnostics = cast(list[dict[str, object]], body["diagnostics"])
     assert diagnostics[0]["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[3]"
     with session_factory() as session:
-        assert session.query(WorkflowPackageVersion).count() == version_count_before
+        assert session.query(WorkflowPackage).count() == package_count_before
 
 
-def test_launch_metadata_and_stub_creation(
+def test_launch_metadata_and_create_contract_reject_removed_version(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -510,10 +444,29 @@ def test_launch_metadata_and_stub_creation(
     assert launch.status_code == 200, launch.json()
     launch_body = cast(dict[str, object], launch.json())
     assert launch_body["packageId"] == created["id"]
-    assert launch_body["packageVersion"] == 1
+    assert "packageVersion" not in launch_body
     assert launch_body["workflowKey"] == "advisory_research"
     assert launch_body["ready"] is True
     assert launch_body["blockingErrors"] == []
+
+    versioned_launch = client.get(
+        f"/api/workflow-packages/{created['id']}/launch",
+        params={"version": 1},
+    )
+    assert versioned_launch.status_code == 422, versioned_launch.json()
+
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert "packageVersion" not in preflight_body
+    assert preflight_body["workflowKey"] == "advisory_research"
+    assert preflight_body["ready"] is True
+
+    versioned_preflight = client.post(
+        f"/api/workflow-packages/{created['id']}/preflight",
+        params={"version": 1},
+    )
+    assert versioned_preflight.status_code == 422, versioned_preflight.json()
 
     created_launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
@@ -529,31 +482,14 @@ def test_launch_metadata_and_stub_creation(
             },
         },
     )
-    assert created_launch.status_code == 201, created_launch.json()
-    assert created_launch.json()["status"] == "queued"
-    assert created_launch.json()["workflowPackageId"] == created["id"]
-    assert created_launch.json()["workflowKey"] == "advisory_research"
+    assert created_launch.status_code == 422, created_launch.json()
 
-    versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
-    assert versions.status_code == 200, versions.json()
-    assert versions.json()["items"][0]["launchedAt"] is not None
-
-    latest_version_id = cast(int, created["latestVersionId"])
     deleted = client.delete(f"/api/workflow-packages/{created['id']}")
     assert deleted.status_code == 204, deleted.text
     assert deleted.content == b""
 
     missing_package = client.get(f"/api/workflow-packages/{created['id']}")
     assert missing_package.status_code == 404, missing_package.json()
-    missing_run = client.get(f"/api/runs/{created_launch.json()['id']}")
-    assert missing_run.status_code == 404, missing_run.json()
-    with session_factory() as session:
-        assert session.get(WorkflowPackageVersion, latest_version_id) is None
-        assert (
-            session.query(WorkflowPackageVersionModelConnection)
-            .filter_by(workflow_package_version_id=latest_version_id)
-            .count()
-        ) == 0
 
 
 def test_launch_blocks_failed_model_connection(
@@ -579,31 +515,17 @@ def test_launch_blocks_failed_model_connection(
     }
     assert {error["issue"] for error in launch_errors} == {"Connection test failed."}
 
-    created_launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={
-            "version": 1,
-            "workflowKey": "advisory_research",
-            "parameters": {
-                "ticker": "AAPL",
-                "asOfDate": "2026-05-08",
-                "portfolioId": "tradingagents_demo",
-                "horizonDays": 30,
-                "benchmarkSymbol": "SPY",
-            },
-        },
-    )
-    assert created_launch.status_code == 422, created_launch.json()
-    created_launch_body = cast(dict[str, object], created_launch.json())
-    assert created_launch_body["code"] == "validation_error"
-    assert created_launch_body["message"] == "Workflow package launch validation failed"
-    launch_details = cast(list[dict[str, object]], created_launch_body["details"])
-    assert len(launch_details) == 12
-    assert launch_details[0] == {
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    assert preflight_body["ready"] is False
+    preflight_errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
+    assert len(preflight_errors) == 12
+    assert preflight_errors[0] == {
         "field": "spec.agents[0].modelConnection",
         "issue": "Connection test failed.",
     }
-    assert {detail["issue"] for detail in launch_details} == {"Connection test failed."}
+    assert {detail["issue"] for detail in preflight_errors} == {"Connection test failed."}
 
 
 def test_delete_hard_deletes_never_launched_package(

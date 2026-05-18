@@ -18,11 +18,6 @@ class WorkflowPackageStatus(str, Enum):  # noqa: UP042
     ACTIVE = "active"
 
 
-class WorkflowPackageImportMode(str, Enum):  # noqa: UP042
-    CREATE = "create"
-    CREATE_VERSION = "createVersion"
-
-
 _SECRET_BINDING_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
 
@@ -72,7 +67,7 @@ class WorkflowPackageUpdateRequest(CamelModel):
 
 
 class WorkflowPackageImportRequest(WorkflowPackageManifestRequest):
-    mode: WorkflowPackageImportMode = WorkflowPackageImportMode.CREATE
+    pass
 
 
 class WorkflowPackageMetadataRead(CamelModel):
@@ -95,7 +90,6 @@ class WorkflowPackageValidationRead(CamelModel):
 class WorkflowPackageManifestRead(CamelModel):
     package_id: int
     package_key: str
-    version: int = Field(ge=1)
     manifest_source: str
     package_definition: dict[str, Any]
     manifest_hash: str
@@ -139,36 +133,14 @@ class WorkflowPackageRead(CamelModel):
     name: str
     description: str
     status: WorkflowPackageStatus
-    latest_version: int | None = None
-    latest_version_id: int | None = None
     manifest_hash: str | None = None
     compiled_hash: str | None = None
     warnings: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    last_launched_at: datetime | None = None
 
-    @field_validator("created_at", "updated_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class WorkflowPackageListRead(CamelModel):
-    items: list[WorkflowPackageRead]
-
-
-class WorkflowPackageVersionRead(CamelModel):
-    id: int
-    package_id: int
-    version: int = Field(ge=1)
-    manifest_hash: str
-    compiled_hash: str
-    validation_summary: dict[str, Any]
-    warnings: list[dict[str, Any]] = Field(default_factory=list)
-    created_at: datetime
-    launched_at: datetime | None = None
-
-    @field_validator("created_at", "launched_at")
+    @field_validator("created_at", "updated_at", "last_launched_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
         if value is None:
@@ -176,14 +148,13 @@ class WorkflowPackageVersionRead(CamelModel):
         return ensure_timezone(value)
 
 
-class WorkflowPackageVersionListRead(CamelModel):
-    items: list[WorkflowPackageVersionRead]
+class WorkflowPackageListRead(CamelModel):
+    items: list[WorkflowPackageRead]
 
 
 class WorkflowPackageLaunchRead(CamelModel):
     package_id: int
     package_key: str
-    package_version: int = Field(ge=1)
     manifest_hash: str
     workflow_key: str
     name: str
@@ -195,7 +166,6 @@ class WorkflowPackageLaunchRead(CamelModel):
 
 
 class WorkflowPackageLaunchCreateRequest(CamelModel):
-    version: int | None = Field(default=None, ge=1)
     workflow_key: str | None = None
     parameters: dict[str, object] = Field(default_factory=dict)
 
@@ -205,7 +175,6 @@ class WorkflowPackageLaunchCreateResponse(CamelModel):
     status: Literal["queued", "running", "succeeded", "failed"]
     workflow_package_id: int
     workflow_package_key: str
-    workflow_package_version: int = Field(ge=1)
     workflow_key: str
     created_at: datetime
 
@@ -216,7 +185,6 @@ class WorkflowPackageLaunchCreateResponse(CamelModel):
 
 
 __all__ = [
-    "WorkflowPackageImportMode",
     "WorkflowPackageImportRequest",
     "WorkflowPackageLaunchCreateRequest",
     "WorkflowPackageLaunchCreateResponse",
@@ -232,7 +200,5 @@ __all__ = [
     "WorkflowPackageStatus",
     "WorkflowPackageUpdateRequest",
     "WorkflowPackageValidationRead",
-    "WorkflowPackageVersionListRead",
-    "WorkflowPackageVersionRead",
     "normalize_workflow_package_secret_binding_key",
 ]

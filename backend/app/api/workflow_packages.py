@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.dependencies import get_workflow_package_service
+from app.core.errors import validation_error
 from app.schemas.workflow_package import (
     WorkflowPackageImportRequest,
     WorkflowPackageLaunchCreateRequest,
@@ -21,11 +22,29 @@ from app.schemas.workflow_package import (
     WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
-    WorkflowPackageVersionListRead,
 )
 from app.services.workflow_package_service import WorkflowPackageService
 
-router = APIRouter(prefix="/workflow-packages", tags=["workflow-packages"])
+
+def reject_removed_version_query(request: Request) -> None:
+    if "version" not in request.query_params:
+        return
+    raise validation_error(
+        "Workflow package request validation failed",
+        [
+            {
+                "field": "version",
+                "issue": "Workflow package version selection is no longer supported",
+            }
+        ],
+    )
+
+
+router = APIRouter(
+    prefix="/workflow-packages",
+    tags=["workflow-packages"],
+    dependencies=[Depends(reject_removed_version_query)],
+)
 
 
 @router.get("", response_model=WorkflowPackageListRead)
@@ -128,59 +147,38 @@ def delete_workflow_package_secret_binding(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{package_id}/versions", response_model=WorkflowPackageVersionListRead)
-def list_workflow_package_versions(
-    package_id: int,
-    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-) -> WorkflowPackageVersionListRead:
-    return service.list_versions(package_id)
-
-
-@router.post("/{package_id}/versions", response_model=WorkflowPackageRead)
-def create_workflow_package_version(
-    package_id: int,
-    payload: WorkflowPackageManifestRequest,
-    service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-) -> WorkflowPackageRead:
-    return service.create_version(package_id, payload)
-
-
 @router.get("/{package_id}/manifest", response_model=WorkflowPackageManifestRead)
 def get_workflow_package_manifest(
     package_id: int,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    version: Annotated[int | None, Query(ge=1)] = None,
 ) -> WorkflowPackageManifestRead:
-    return service.get_manifest(package_id, version=version)
+    return service.get_manifest(package_id)
 
 
 @router.get("/{package_id}/export", response_model=None)
 def export_workflow_package(
     package_id: int,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    version: Annotated[int | None, Query(ge=1)] = None,
 ) -> Response:
-    return service.export_package(package_id, version=version)
+    return service.export_package(package_id)
 
 
 @router.post("/{package_id}/preflight", response_model=WorkflowPackageLaunchRead)
 def preflight_workflow_package(
     package_id: int,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    version: Annotated[int | None, Query(ge=1)] = None,
     workflow_key: Annotated[str | None, Query(alias="workflowKey")] = None,
 ) -> WorkflowPackageLaunchRead:
-    return service.preflight_package(package_id, version=version, workflow_key=workflow_key)
+    return service.preflight_package(package_id, workflow_key=workflow_key)
 
 
 @router.get("/{package_id}/launch", response_model=WorkflowPackageLaunchRead)
 def get_workflow_package_launch(
     package_id: int,
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    version: Annotated[int | None, Query(ge=1)] = None,
     workflow_key: Annotated[str | None, Query(alias="workflowKey")] = None,
 ) -> WorkflowPackageLaunchRead:
-    return service.get_launch(package_id, version=version, workflow_key=workflow_key)
+    return service.get_launch(package_id, workflow_key=workflow_key)
 
 
 @router.post(
