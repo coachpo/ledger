@@ -1,4 +1,5 @@
 import {
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   Handle,
@@ -7,11 +8,13 @@ import {
   ReactFlow,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeProps,
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Activity, AlertCircle, Database, Download, FileText, GitBranch, Loader2, PlayCircle, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { useCreateRunStepReplay, useRun, useRunStepReplayDraft } from "@/hooks/use-runs";
@@ -104,6 +107,10 @@ const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
+const LINEAGE_INITIAL_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
+const LINEAGE_FIT_VIEW_MAX_ZOOM = 1;
+const LINEAGE_MAX_ZOOM = 1.8;
+const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
 
 function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
@@ -338,7 +345,7 @@ function LineageNode({ data }: NodeProps<LineageDiagramNode>) {
   return (
     <div
       className={cn(
-        "nodrag nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-sm",
+        "nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-sm",
         data.tone === "current" && "border-primary/30 bg-primary/5",
         data.tone === "source" && "border-positive/30 bg-positive/5",
       )}
@@ -374,22 +381,47 @@ const lineageDefaultEdgeOptions: Partial<LineageDiagramEdge> = {
 
 function LineageDiagram({
   ariaLabel,
-  className,
   edges,
   nodes,
   testId,
 }: {
   ariaLabel: string;
-  className?: string;
   edges: LineageDiagramEdge[];
   nodes: LineageDiagramNode[];
   testId: string;
 }) {
+  const [interactiveNodes, setInteractiveNodes] = useState(nodes);
+  const [viewport, setViewport] = useState(LINEAGE_INITIAL_VIEWPORT);
+
+  useEffect(() => {
+    setInteractiveNodes((currentNodes) => {
+      const currentNodesById = new Map(currentNodes.map((node) => [node.id, node]));
+      const hasSameNodes = currentNodes.length === nodes.length && nodes.every((node) => currentNodesById.has(node.id));
+
+      if (!hasSameNodes) {
+        return nodes;
+      }
+
+      return nodes.map((node) => ({
+        ...node,
+        position: currentNodesById.get(node.id)?.position ?? node.position,
+      }));
+    });
+  }, [nodes]);
+
+  const handleNodesChange = useCallback((changes: NodeChange<LineageDiagramNode>[]) => {
+    setInteractiveNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+  }, []);
+
+  const handleViewportChange = useCallback((nextViewport: Viewport) => {
+    setViewport(nextViewport);
+  }, []);
+
   return (
     <div
       className={cn(
-        "h-56 overflow-hidden rounded-xl border bg-muted/20 [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
-        className,
+        LINEAGE_CANVAS_HEIGHT_CLASS,
+        "overflow-hidden rounded-xl border bg-muted/20 [&_.react-flow__edge-text]:fill-muted-foreground [&_.react-flow__edge-textbg]:fill-background",
       )}
       data-testid={testId}
     >
@@ -403,23 +435,26 @@ function LineageDiagram({
         edgesFocusable={false}
         elementsSelectable={false}
         fitView
-        fitViewOptions={{ padding: 0.22 }}
-        maxZoom={1.3}
+        fitViewOptions={{ maxZoom: LINEAGE_FIT_VIEW_MAX_ZOOM, padding: 0.22 }}
+        maxZoom={LINEAGE_MAX_ZOOM}
         minZoom={0.55}
         multiSelectionKeyCode={null}
         nodeTypes={lineageNodeTypes}
-        nodes={nodes}
+        nodes={interactiveNodes}
         nodesConnectable={false}
-        nodesDraggable={false}
+        nodesDraggable
         nodesFocusable={false}
+        onNodesChange={handleNodesChange}
+        onViewportChange={handleViewportChange}
         panOnDrag={false}
-        preventScrolling={false}
+        preventScrolling
         proOptions={{ hideAttribution: true }}
         selectNodesOnDrag={false}
         selectionKeyCode={null}
-        zoomOnDoubleClick={false}
-        zoomOnPinch={false}
-        zoomOnScroll={false}
+        viewport={viewport}
+        zoomOnDoubleClick
+        zoomOnPinch
+        zoomOnScroll
       >
         <Background color="var(--border)" gap={16} size={1} variant={BackgroundVariant.Dots} />
       </ReactFlow>
@@ -1343,7 +1378,6 @@ function StepLineageEvidence({ step }: { step: RunStepRead }) {
       <CardContent>
         <LineageDiagram
           ariaLabel={`Step ${step.index} provenance lineage diagram`}
-          className={hasUpstreamStep ? "h-52" : "h-48"}
           edges={edges}
           nodes={nodes}
           testId={`runs-step-${step.index}-lineage-diagram`}
