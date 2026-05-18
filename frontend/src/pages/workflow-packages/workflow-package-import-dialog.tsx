@@ -11,10 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import type {
-  WorkflowPackageImportMode,
   WorkflowPackageImportRequest,
   WorkflowPackageRead,
 } from "@/lib/types/workflow-package";
@@ -34,16 +32,14 @@ export function WorkflowPackageImportDialog(props: WorkflowPackageImportDialogPr
     onImport,
   } = props;
   const [open, setOpen] = useState(false);
-  const [importMode, setImportMode] = useState<WorkflowPackageImportMode>("create");
   const [importSource, setImportSource] = useState("");
 
   const submitImport = async () => {
-    const imported = await onImport({ manifestSource: importSource, mode: importMode });
+    const imported = await onImport({ manifestSource: importSource });
     if (!imported) {
       return;
     }
     setOpen(false);
-    setImportMode("create");
     setImportSource("");
   };
 
@@ -69,10 +65,6 @@ export function WorkflowPackageImportDialog(props: WorkflowPackageImportDialogPr
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <RadioGroup value={importMode} onValueChange={(value) => setImportMode(value as WorkflowPackageImportMode)}>
-            <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="create" />Create new package</label>
-            <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="createVersion" />Create version for matching package key</label>
-          </RadioGroup>
           <div className="space-y-2">
             <Label htmlFor="import-yaml">Import package YAML</Label>
             <Textarea

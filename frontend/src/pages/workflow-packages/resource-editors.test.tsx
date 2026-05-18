@@ -82,12 +82,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
     isError: false,
     isPending: false,
   }),
-  useWorkflowPackageVersions: () => ({
-    data: { items: [] },
-    error: null,
-    isError: false,
-    isPending: false,
-  }),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -96,8 +90,7 @@ const packageRead: WorkflowPackageRead = {
   description: "Private package for multi-agent market review.",
   id: 42,
   key: "market_review_package",
-  latestVersion: 7,
-  latestVersionId: 70,
+  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
@@ -121,7 +114,6 @@ spec:
   packageDefinition: {},
   packageId: 42,
   packageKey: "market_review_package",
-  version: 7,
 };
 
 function renderEditor(initialEntry = "/workflow-packages/42") {

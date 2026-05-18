@@ -112,18 +112,13 @@ async function waitForRun(request: APIRequestContext, runId: number) {
   throw new Error(`Run ${runId} did not finish: ${JSON.stringify(latest)}`);
 }
 
-async function openPackageRow(page: Page, packageKey: string) {
-  await page.goto("/workflow-packages");
-  await expect(page.getByTestId("workflow-packages-list-page")).toBeVisible();
-  await page.getByLabel("Search workflow packages").fill(packageKey);
-  const row = page.getByTestId(`workflow-packages-row-${packageKey}`);
-  await expect(row).toBeVisible();
-  await row.getByRole("button", { name: `Open package E2E Package ${packageKey}` }).click();
+async function openPackageEditor(page: Page, packageId: number) {
+  await page.goto(`/workflow-packages/${packageId}`);
   await expect(page.getByTestId("workflow-package-editor-shell")).toBeVisible();
 }
 
 test.describe("Workflow packages", () => {
-  test("covers package-first authoring, export, version import, launch, and provenance", async ({ page, request }) => {
+  test("covers current-package authoring, export, import, launch, and snapshot provenance", async ({ page, request }) => {
     const suffix = Date.now();
     const packageKey = `e2e_package_${suffix}`;
     const modelKey = `e2e_model_${suffix}`;
@@ -135,25 +130,23 @@ test.describe("Workflow packages", () => {
     expect(createResponse.status()).toBe(201);
     const created = await createResponse.json();
 
-    await openPackageRow(page, packageKey);
+    await openPackageEditor(page, Number(created.id));
     await page.getByRole("tab", { name: "Agents tab" }).click();
     await expect(page.getByTestId("workflow-package-agents-tab")).toBeVisible();
 
     const editedSource = packageManifest(packageKey, modelKey, "Edited Package Analyst");
-    const versionResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/versions`, {
+    const updateResponse = await request.patch(`${PLATFORM_API_BASE}/workflow-packages/${created.id}`, {
       data: { manifestSource: editedSource },
     });
-    expect(versionResponse.ok()).toBeTruthy();
+    expect(updateResponse.ok()).toBeTruthy();
 
     const preflight = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/preflight`, {
-      params: { version: 2, workflowKey: "advisory_flow" },
+      params: { workflowKey: "advisory_flow" },
     });
     expect(preflight.ok()).toBeTruthy();
     expect(await preflight.json()).toMatchObject({ ready: true, workflowKey: "advisory_flow" });
 
-    const exportResponse = await request.get(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/export`, {
-      params: { version: 2 },
-    });
+    const exportResponse = await request.get(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/export`);
     expect(exportResponse.ok()).toBeTruthy();
     const exported = await exportResponse.text();
     expect(exported).toContain(`modelConnection: ${modelKey}`);
@@ -161,16 +154,17 @@ test.describe("Workflow packages", () => {
       expect(exported).not.toContain(forbidden);
     }
 
+    const importedKey = `${packageKey}_imported`;
     const importResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages/import`, {
-      data: { manifestSource: exported, mode: "createVersion" },
+      data: { manifestSource: exported.replace(`key: ${packageKey}`, `key: ${importedKey}`) },
     });
     expect(importResponse.ok()).toBeTruthy();
-    expect((await importResponse.json()).latestVersion).toBe(3);
+    expect((await importResponse.json()).key).toBe(importedKey);
 
     await page.goto(`/workflow-packages/${created.id}/run`);
     await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
     const launch = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`, {
-      data: { version: 3, workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } },
+      data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } },
     });
     expect(launch.status()).toBe(201);
     const launched = await launch.json();
@@ -186,20 +180,22 @@ test.describe("Workflow packages", () => {
     await page.reload();
     await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
     await expect(page.getByTestId("runs-detail-final-output")).toContainText("deterministic summary");
-    await page.getByRole("button", { name: "Provenance" }).click();
-    await expect(page.getByTestId("runs-package-provenance")).toContainText(`${packageKey}@3`);
+    await page.getByTestId("runs-evidence-pane-nav").getByRole("button", { name: "Provenance" }).click();
+    await expect(page.getByTestId("runs-package-provenance")).toContainText("Executable snapshot");
+    await expect(page.getByTestId("runs-package-provenance")).toContainText("Captured workflow package snapshot");
+    await expect(page.getByTestId("runs-package-provenance")).toContainText(packageKey);
     await expect(page.getByTestId("runs-package-provenance")).toContainText("advisory_flow");
     await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute("href", `/workflow-packages/${created.id}`);
 
     await page.getByTestId("runs-detail-rerun").click();
-    await expect(page.getByRole("dialog", { name: /rerun draft/i })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /run snapshot again/i })).toBeVisible();
     await page.getByTestId("run-rerun-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
 
     await page.goto(`/runs/${runId}`);
     await expect(page.getByTestId("runs-step-1-replay-entry")).toBeVisible();
-    await page.getByTestId("runs-step-1-replay-entry").getByRole("button", { name: /replay step/i }).click();
-    await expect(page.getByRole("dialog", { name: /step replay draft/i })).toBeVisible();
+    await page.getByTestId("runs-step-1-replay-entry").getByRole("button", { name: /replay snapshot step/i }).click();
+    await expect(page.getByRole("dialog", { name: /snapshot step replay draft/i })).toBeVisible();
     await page.getByTestId("run-step-replay-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
   });

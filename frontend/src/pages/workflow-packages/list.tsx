@@ -17,8 +17,6 @@ import {
   useDeleteWorkflowPackage,
   useImportWorkflowPackage,
   useWorkflowPackages,
-  useWorkflowPackageVersionSummaries,
-  type WorkflowPackageVersionSummary,
 } from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import type {
@@ -57,8 +55,8 @@ function formatNullableDateTime(value: string | null): string {
   return value ? formatDateTime(value) : "Not recorded";
 }
 
-function formatLatestVersion(value: number | null): string {
-  return value === null ? "None" : `v${value}`;
+function formatNullableHash(value: string | null): string {
+  return value ? value.slice(0, 12) : "Not recorded";
 }
 
 function sortPackages(items: readonly WorkflowPackageRead[]) {
@@ -80,7 +78,8 @@ function filterPackages(items: readonly WorkflowPackageRead[], search: string) {
       item.key,
       item.description,
       item.status,
-      String(item.latestVersion ?? ""),
+      item.manifestHash ?? "",
+      item.compiledHash ?? "",
     ]
       .join(" ")
       .toLowerCase()
@@ -101,29 +100,19 @@ function statusBadge(packageStatus: WorkflowPackageStatus) {
   );
 }
 
-function preflightBadge(
-  summary: WorkflowPackageVersionSummary | undefined,
-  latestVersion: number | null,
-) {
-  if (latestVersion === null) {
-    return <Badge variant="outline">Not versioned</Badge>;
+function preflightBadge(workflowPackage: WorkflowPackageRead) {
+  if (!workflowPackage.manifestHash || !workflowPackage.compiledHash) {
+    return <Badge variant="outline">Not validated</Badge>;
   }
 
-  if (!summary || summary.isPending) {
-    return <Badge variant="outline">Checking</Badge>;
-  }
-
-  if (summary.isError) {
-    return <Badge variant="outline">Unavailable</Badge>;
-  }
-
-  if (summary.warningCount > 0) {
+  const warningCount = workflowPackage.warnings.length;
+  if (warningCount > 0) {
     return (
       <Badge
         className="border-chart-3/30 bg-chart-3/10 text-chart-3"
         variant="outline"
       >
-        {summary.warningCount} warning{summary.warningCount === 1 ? "" : "s"}
+        {warningCount} warning{warningCount === 1 ? "" : "s"}
       </Badge>
     );
   }
@@ -138,16 +127,8 @@ function preflightBadge(
   );
 }
 
-function lastRunLabel(summary: WorkflowPackageVersionSummary | undefined) {
-  if (!summary || summary.isPending) {
-    return "Checking";
-  }
-
-  if (summary.isError) {
-    return summary.errorMessage ?? "Unavailable";
-  }
-
-  return formatNullableDateTime(summary.latestLaunchedAt);
+function lastRunLabel(workflowPackage: WorkflowPackageRead) {
+  return formatNullableDateTime(workflowPackage.lastLaunchedAt);
 }
 
 function LoadingTable() {
@@ -177,7 +158,7 @@ function EmptyState({ search }: { search: string }) {
           </p>
           <p className="max-w-md text-sm text-muted-foreground">
             {search.trim()
-              ? "Refine the search by package name, key, status, or version."
+              ? "Refine the search by package name, key, status, or manifest hash."
               : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."}
           </p>
         </div>
@@ -194,10 +175,6 @@ export function WorkflowPackagesListPage() {
   const packages = useMemo(
     () => sortPackages(packagesQuery.data?.items ?? []),
     [packagesQuery.data?.items],
-  );
-  const versionSummaries = useWorkflowPackageVersionSummaries(
-    packages.map((item) => item.id),
-    !packagesQuery.isPending && !packagesQuery.isError,
   );
   const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
   const [search, setSearch] = useState("");
@@ -279,7 +256,7 @@ export function WorkflowPackagesListPage() {
           <Input
             aria-label="Search workflow packages"
             className="h-8 pl-8 text-xs"
-            placeholder="Search packages by name, key, status, or version..."
+            placeholder="Search packages by name, key, status, readiness, or hash..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -336,7 +313,6 @@ export function WorkflowPackagesListPage() {
       viewMode === "cards" ? (
         <PlatformResourceList>
           {filteredPackages.map((workflowPackage) => {
-            const summary = versionSummaries.get(String(workflowPackage.id));
             const packagePath = `/workflow-packages/${workflowPackage.id}`;
             const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
 
@@ -362,30 +338,30 @@ export function WorkflowPackagesListPage() {
                 badges={
                   <>
                     {statusBadge(workflowPackage.status)}
-                    {preflightBadge(summary, workflowPackage.latestVersion)}
+                    {preflightBadge(workflowPackage)}
                   </>
                 }
                 metadata={
                   <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
-                        Latest Version:
+                        Manifest Hash:
                       </span>{" "}
                       <span className="font-['Fira_Code',ui-monospace,monospace]">
-                        {formatLatestVersion(workflowPackage.latestVersion)}
+                        {formatNullableHash(workflowPackage.manifestHash)}
                       </span>
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Last Preflight:
                       </span>{" "}
-                      {preflightBadge(summary, workflowPackage.latestVersion)}
+                      {preflightBadge(workflowPackage)}
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Last Run:
                       </span>{" "}
-                      <span>{lastRunLabel(summary)}</span>
+                      <span>{lastRunLabel(workflowPackage)}</span>
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
@@ -447,7 +423,7 @@ export function WorkflowPackagesListPage() {
             <TableRow className="bg-muted/30 hover:bg-muted/30">
               <TableHead>Name</TableHead>
               <TableHead>Key</TableHead>
-              <TableHead>Latest Version</TableHead>
+              <TableHead>Manifest Hash</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Last Preflight</TableHead>
               <TableHead>Last Run</TableHead>
@@ -456,9 +432,7 @@ export function WorkflowPackagesListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredPackages.map((workflowPackage) => {
-              const summary = versionSummaries.get(String(workflowPackage.id));
-              return (
+            {filteredPackages.map((workflowPackage) => (
                 <TableRow
                   key={workflowPackage.id}
                   data-testid={`workflow-packages-row-${workflowPackage.key}`}
@@ -478,14 +452,12 @@ export function WorkflowPackagesListPage() {
                     {workflowPackage.key}
                   </TableCell>
                   <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs">
-                    {formatLatestVersion(workflowPackage.latestVersion)}
+                    {formatNullableHash(workflowPackage.manifestHash)}
                   </TableCell>
                   <TableCell>{statusBadge(workflowPackage.status)}</TableCell>
-                  <TableCell>
-                    {preflightBadge(summary, workflowPackage.latestVersion)}
-                  </TableCell>
+                  <TableCell>{preflightBadge(workflowPackage)}</TableCell>
                   <TableCell className="max-w-44 whitespace-normal text-xs text-muted-foreground">
-                    {lastRunLabel(summary)}
+                    {lastRunLabel(workflowPackage)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDateTime(workflowPackage.updatedAt)}
@@ -535,15 +507,14 @@ export function WorkflowPackagesListPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              );
-            })}
+            ))}
           </TableBody>
         </Table>
       ) : null}
       <ConfirmDeleteDialog
         open={deleting !== null}
         title="Delete workflow package"
-        description={`Permanently delete ${deleting?.name ?? "this workflow package"}? This removes the package, package-owned runs, and related package resources. This cannot be undone.`}
+        description={`Permanently delete ${deleting?.name ?? "this workflow package"}? This removes the current package and related package resources. Historical run snapshots are preserved. This cannot be undone.`}
         confirmLabel="Delete package"
         isPending={deletePackage.isPending}
         onOpenChange={(open) => {

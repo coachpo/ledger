@@ -81,7 +81,6 @@ import {
   useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
   useWorkflowPackageSecretBindings,
-  useWorkflowPackageVersions,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
 import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
@@ -115,13 +114,11 @@ import {
 import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
-  WorkflowPackageImportMode,
   WorkflowPackageImportRequest,
   WorkflowPackageLaunchRead,
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
   WorkflowPackageSecretBindingRead,
-  WorkflowPackageVersionRead,
 } from "@/lib/types/workflow-package";
 import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
@@ -208,7 +205,7 @@ function agentFormValues(agent: PackageAgentDraft): AgentFormValues {
 }
 
 const editorTabs: WorkflowPackageEditorTabDefinition[] = [
-  { description: "Package metadata, manifest identity, version hashes, and draft status.", icon: Workflow, label: "Overview", value: "overview" },
+  { description: "Package metadata, manifest identity, current hashes, and draft status.", icon: Workflow, label: "Overview", value: "overview" },
   { description: "Package-private agent definitions stay local to this package shell.", icon: Boxes, label: "Agents", value: "agents" },
   { description: "Local output contracts are authored inside the package boundary.", icon: Braces, label: "Output Schemas", value: "output-schemas" },
   { description: "Capability profiles collect server-declared tool keys for local agents.", icon: ShieldCheck, label: "Capability Profiles", value: "capability-profiles" },
@@ -230,7 +227,7 @@ function packageTitle(workflowPackage: WorkflowPackageRead | undefined, isNew: b
 
 function packageSubtitle(workflowPackage: WorkflowPackageRead | undefined, isNew: boolean) {
   if (workflowPackage) {
-    return `${workflowPackage.key} · ${workflowPackage.latestVersion === null ? "No version" : `v${workflowPackage.latestVersion}`}`;
+    return workflowPackage.key;
   }
   return isNew ? "Draft manifest shell" : "Loading package identity";
 }
@@ -246,7 +243,7 @@ function statusBadge(workflowPackage: WorkflowPackageRead | undefined) {
 }
 
 function manifestIdentity(manifest: WorkflowPackageManifestRead) {
-  return `package:${manifest.packageId}:v${manifest.version}:${manifest.manifestHash}`;
+  return `package:${manifest.packageId}:${manifest.manifestHash}`;
 }
 
 type PackageDiagnostic = {
@@ -320,17 +317,6 @@ function collectSecretReferenceKeys(value: unknown): string[] {
 
 function sortedSecretBindings(bindings: readonly WorkflowPackageSecretBindingRead[]): WorkflowPackageSecretBindingRead[] {
   return [...bindings].sort((left, right) => left.key.localeCompare(right.key));
-}
-
-function versionLabel(version: number | null | undefined) {
-  return version ? `v${version}` : "No version";
-}
-
-function versionSelectionNotice(selectedVersion: number | undefined, latestVersion: number | null | undefined) {
-  if (selectedVersion === undefined || latestVersion === null || selectedVersion === latestVersion) {
-    return null;
-  }
-  return `Editing stays pinned to the latest saved version ${versionLabel(latestVersion)}. This selector only changes launch and export previews for ${versionLabel(selectedVersion)}.`;
 }
 
 function EditorSkeleton() {
@@ -1226,7 +1212,7 @@ function PreflightTab(props: {
           {ready ? <CheckCircle2 /> : <AlertCircle />}
           <AlertTitle>{ready ? "Ready to launch" : "Needs attention"}</AlertTitle>
           <AlertDescription>
-            {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}@${read.packageVersion}.` : "Select a saved package version and run preflight to check readiness."}
+            {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}.` : "Run preflight to check current package readiness."}
           </AlertDescription>
         </Alert>
         <ModelConnectionModeSummary diagnostics={diagnostics} read={read} />
@@ -1242,14 +1228,10 @@ function LaunchTab(props: {
   launchLoading: boolean;
   onRunPreflight: () => Promise<WorkflowPackageLaunchRead | null>;
   packageId: string | undefined;
-  selectedVersion: number | undefined;
-  setSelectedVersion: (version: number | undefined) => void;
   setWorkflowKey: (workflowKey: string) => void;
-  versions: WorkflowPackageVersionRead[];
   workflowKey: string;
-  workflowPackage: WorkflowPackageRead | undefined;
 }) {
-  const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, selectedVersion, setSelectedVersion, setWorkflowKey, versions, workflowKey, workflowPackage } = props;
+  const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, setWorkflowKey, workflowKey } = props;
   const navigate = useNavigate();
   const [parametersText, setParametersText] = useState(() => stringifyJson({}));
   const [runtimeInputErrors, setRuntimeInputErrors] = useState<ApiErrorDetail[]>([]);
@@ -1257,8 +1239,7 @@ function LaunchTab(props: {
   const inputSchemaSnapshot = useMemo(() => inputSchemaFingerprint ? JSON.parse(inputSchemaFingerprint) as unknown : undefined, [inputSchemaFingerprint]);
   const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchemaSnapshot), [inputSchemaSnapshot]);
   const launchDiagnostics = useMemo(() => diagnosticsFromLaunch(launchRead), [launchRead]);
-  const resolvedVersion = selectedVersion ?? launchRead?.packageVersion ?? workflowPackage?.latestVersion ?? null;
-  const launchFormIdentity = `${packageId ?? ""}:${resolvedVersion ?? ""}:${workflowKey}:${inputSchemaFingerprint}`;
+  const launchFormIdentity = `${packageId ?? ""}:${workflowKey}:${inputSchemaFingerprint}`;
 
   useEffect(() => {
     setParametersText(resetLaunchParametersTemplate(inputTemplate));
@@ -1292,7 +1273,7 @@ function LaunchTab(props: {
       }
       const run = await createLaunch.mutateAsync({
         packageId,
-        payload: { parameters, version: selectedVersion ?? null, workflowKey: workflowKey || null },
+        payload: { parameters, workflowKey: workflowKey || null },
       });
       toast.success("Package run queued");
       navigate(`/runs/${run.id}`);
@@ -1308,14 +1289,10 @@ function LaunchTab(props: {
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-launch-tab">
       <CardHeader className="border-b pb-4">
         <CardTitle>Launch package run</CardTitle>
-        <CardDescription>Select an immutable package version and workflow key, provide runtime inputs, preflight, then queue a run.</CardDescription>
+        <CardDescription>Select a workflow key, provide runtime inputs, preflight, then queue a run from the current package.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2"><Label>Package version</Label><Select value={selectedVersion ? String(selectedVersion) : "__latest__"} onValueChange={(value) => setSelectedVersion(value === "__latest__" ? undefined : Number(value))}><SelectTrigger aria-label="Package version"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__latest__">Latest ({versionLabel(workflowPackage?.latestVersion)})</SelectItem>{versions.map((version) => <SelectItem key={version.id} value={String(version.version)}>{versionLabel(version.version)}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label htmlFor="workflow-key">Workflow key</Label><Input id="workflow-key" aria-label="Workflow key" placeholder="Workflow key" value={workflowKey} onChange={(event) => setWorkflowKey(event.target.value)} /></div>
-        </div>
-        {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
+        <div className="space-y-2"><Label htmlFor="workflow-key">Workflow key</Label><Input id="workflow-key" aria-label="Workflow key" placeholder="Workflow key" value={workflowKey} onChange={(event) => setWorkflowKey(event.target.value)} /></div>
         {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
         <ModelConnectionModeSummary diagnostics={launchDiagnostics} read={launchRead} />
         <Card className="bg-background/60">
@@ -1363,18 +1340,14 @@ function ExportsTab(props: {
   confirmDiscardChanges: (action: string) => boolean;
   draft: WorkflowPackageDraft;
   importPackage: ReturnType<typeof useImportWorkflowPackage>;
-  onImportComplete: (mode: WorkflowPackageImportMode, imported: WorkflowPackageRead) => void;
+  onImportComplete: (imported: WorkflowPackageRead) => void;
   packageId: string | undefined;
-  selectedVersion: number | undefined;
-  workflowPackage: WorkflowPackageRead | undefined;
 }) {
-  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId, selectedVersion, workflowPackage } = props;
+  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
-  const exportHref = packageId && workflowPackage && workflowPackage.latestVersion !== null
-    ? exportWorkflowPackageUrl(packageId, selectedVersion)
-    : undefined;
+  const exportHref = packageId ? exportWorkflowPackageUrl(packageId) : undefined;
 
   useEffect(() => {
     if (!exportHref) {
@@ -1414,16 +1387,14 @@ function ExportsTab(props: {
   }, [exportHref, generatedManifestSource]);
 
   const importManifest = async (payload: WorkflowPackageImportRequest) => {
-    const importMode: WorkflowPackageImportMode = payload.mode ?? "create";
-    const action = importMode === "createVersion" ? "import this package version" : "import this package";
-    if (!confirmDiscardChanges(action)) {
+    if (!confirmDiscardChanges("import this package")) {
       return null;
     }
     try {
       const imported = await importPackage.mutateAsync(payload);
       setImportWarnings(imported.warnings);
-      onImportComplete(importMode, imported);
-      toast.success(importMode === "createVersion" ? "Imported package version" : "Imported package");
+      onImportComplete(imported);
+      toast.success("Imported package");
       return imported;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to import package.");
@@ -1437,7 +1408,6 @@ function ExportsTab(props: {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download and import package manifests as plain YAML. Package-private MCP inline values remain visible in the manifest.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
-        {versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion) ? <Alert><AlertCircle /><AlertTitle>Launch/export version differs from latest</AlertTitle><AlertDescription>{versionSelectionNotice(selectedVersion, workflowPackage?.latestVersion)}</AlertDescription></Alert> : null}
         <Textarea aria-label="Package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={exportPreview} />
         {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{stringifyJson(warning)}</li>)}</ul></AlertDescription></Alert> : null}
       </CardContent>
@@ -1462,7 +1432,6 @@ export function WorkflowPackageEditorPage() {
   const [issues, setIssues] = useState<WorkflowPackageEditorIssue[]>([]);
   const [diagnosticTarget, setDiagnosticTarget] = useState<DiagnosticTarget>(null);
   const [initializedManifestIdentity, setInitializedManifestIdentity] = useState<string | null>(isNew ? "new" : null);
-  const [selectedVersion, setSelectedVersion] = useState<number | undefined>(undefined);
   const [workflowKey, setWorkflowKey] = useState("");
   const [preflightRead, setPreflightRead] = useState<WorkflowPackageLaunchRead | undefined>(undefined);
   const createPackage = useCreateWorkflowPackage();
@@ -1471,8 +1440,7 @@ export function WorkflowPackageEditorPage() {
   const preflightPackage = usePreflightWorkflowPackage();
   const createLaunch = useCreateWorkflowPackageLaunch();
   const importPackage = useImportWorkflowPackage();
-  const versionsQuery = useWorkflowPackageVersions(isNew ? undefined : packageId);
-  const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, selectedVersion, workflowKey.trim() || undefined);
+  const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, workflowKey.trim() || undefined);
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
   const secretBindingsQuery = useWorkflowPackageSecretBindings(isNew ? undefined : packageId);
@@ -1551,7 +1519,6 @@ export function WorkflowPackageEditorPage() {
   const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
   const combinedIssues = [...localIssues, ...issues];
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`, label: connection.name, value: connection.key }));
-  const versions = versionsQuery.data?.items ?? [];
   const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
   const referencedSecretKeys = useMemo(() => collectSecretReferenceKeys(draft.spec.workflows), [draft.spec.workflows]);
   const isSaving = createPackage.isPending || updatePackage.isPending;
@@ -1604,12 +1571,8 @@ export function WorkflowPackageEditorPage() {
     void manifestQuery.refetch();
   };
 
-  const handleImportSuccess = (mode: WorkflowPackageImportMode, imported: WorkflowPackageRead) => {
+  const handleImportSuccess = (imported: WorkflowPackageRead) => {
     clearTransientEditorState();
-    if (mode !== "create") {
-      return;
-    }
-    setSelectedVersion(undefined);
     setWorkflowKey("");
     navigate(`/workflow-packages/${imported.id}`);
   };
@@ -1659,7 +1622,7 @@ export function WorkflowPackageEditorPage() {
       return null;
     }
     try {
-      const result = await preflightPackage.mutateAsync({ packageId, payload: { version: selectedVersion ?? null, workflowKey: workflowKey || null, parameters: {} } });
+      const result = await preflightPackage.mutateAsync({ packageId, payload: { workflowKey: workflowKey || null, parameters: {} } });
       setPreflightRead(result);
       const diagnostics = diagnosticsFromLaunch(result);
       const blockingIssue = diagnostics.find((diagnostic) => diagnostic.severity === "error");
@@ -1707,7 +1670,6 @@ export function WorkflowPackageEditorPage() {
     if (isNew) {
       const created = await createPackage.mutateAsync({ manifestSource });
       clearTransientEditorState();
-      setSelectedVersion(undefined);
       setWorkflowKey("");
       toast.success("Workflow package created");
       navigate(`/workflow-packages/${created.id}`);
@@ -1751,8 +1713,8 @@ export function WorkflowPackageEditorPage() {
             <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
             <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
             <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
-            <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} selectedVersion={selectedVersion} setSelectedVersion={setSelectedVersion} setWorkflowKey={setWorkflowKey} versions={versions} workflowKey={workflowKey} workflowPackage={workflowPackage} /></TabsContent>
-            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} selectedVersion={selectedVersion} workflowPackage={workflowPackage} /></TabsContent>
+            <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} setWorkflowKey={setWorkflowKey} workflowKey={workflowKey} /></TabsContent>
+            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} /></TabsContent>
           </Tabs>
         </>
       )}

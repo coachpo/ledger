@@ -21,7 +21,6 @@ const {
   useDeletePackageMock,
   useImportPackageMock,
   useWorkflowPackagesMock,
-  useWorkflowPackageVersionSummariesMock,
 } = vi.hoisted(() => ({
   deletePackageMock: vi.fn(),
   importPackageMock: vi.fn(),
@@ -31,7 +30,6 @@ const {
   useDeletePackageMock: vi.fn(),
   useImportPackageMock: vi.fn(),
   useWorkflowPackagesMock: vi.fn(),
-  useWorkflowPackageVersionSummariesMock: vi.fn(),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -53,8 +51,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useDeleteWorkflowPackage: () => useDeletePackageMock(),
   useImportWorkflowPackage: () => useImportPackageMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
-  useWorkflowPackageVersionSummaries: (...args: unknown[]) =>
-    useWorkflowPackageVersionSummariesMock(...args),
 }));
 
 function packageFixture(
@@ -66,8 +62,7 @@ function packageFixture(
     description: "Reusable package",
     id: 1,
     key: "alpha_package",
-    latestVersion: 2,
-    latestVersionId: 20,
+    lastLaunchedAt: "2026-05-03T11:00:00Z",
     manifestHash: "manifest-hash",
     name: "Alpha Package",
     status: "active",
@@ -95,7 +90,6 @@ describe("WorkflowPackagesListPage", () => {
     useDeletePackageMock.mockReset();
     useImportPackageMock.mockReset();
     useWorkflowPackagesMock.mockReset();
-    useWorkflowPackageVersionSummariesMock.mockReset();
     importPackageMock.mockResolvedValue(
       packageFixture({
         id: 77,
@@ -112,7 +106,6 @@ describe("WorkflowPackagesListPage", () => {
       isPending: false,
       mutateAsync: importPackageMock,
     });
-    useWorkflowPackageVersionSummariesMock.mockReturnValue(new Map());
   });
 
   it("renders loading, error, and empty states", () => {
@@ -165,7 +158,7 @@ describe("WorkflowPackagesListPage", () => {
             description: "Risk review workflow bundle",
             id: 9,
             key: "risk_review",
-            latestVersion: 3,
+            lastLaunchedAt: "2026-05-04T11:00:00Z",
             name: "Risk Review",
             status: "active",
             updatedAt: "2026-05-04T10:00:00Z",
@@ -174,7 +167,7 @@ describe("WorkflowPackagesListPage", () => {
             description: "Draft allocation bundle",
             id: 4,
             key: "allocation_draft",
-            latestVersion: 1,
+            lastLaunchedAt: null,
             name: "Allocation Draft",
             status: "draft",
             updatedAt: "2026-05-02T10:00:00Z",
@@ -186,33 +179,6 @@ describe("WorkflowPackagesListPage", () => {
       isError: false,
       isPending: false,
     });
-    useWorkflowPackageVersionSummariesMock.mockReturnValue(
-      new Map([
-        [
-          "9",
-          {
-            errorMessage: null,
-            isError: false,
-            isPending: false,
-            latestCreatedAt: "2026-05-04T10:00:00Z",
-            latestLaunchedAt: "2026-05-04T11:00:00Z",
-            warningCount: 0,
-          },
-        ],
-        [
-          "4",
-          {
-            errorMessage: null,
-            isError: false,
-            isPending: false,
-            latestCreatedAt: "2026-05-02T10:00:00Z",
-            latestLaunchedAt: null,
-            warningCount: 2,
-          },
-        ],
-      ]),
-    );
-
     renderPage();
 
     expect(
@@ -242,7 +208,7 @@ describe("WorkflowPackagesListPage", () => {
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
     expect(riskRow).toHaveTextContent("risk_review");
-    expect(riskRow).toHaveTextContent("v3");
+    expect(riskRow).toHaveTextContent("manifest-has");
     expect(riskRow).toHaveTextContent("Active");
     expect(riskRow).toHaveTextContent("Passed");
     expect(riskRow).toHaveTextContent("May 4, 2026");
@@ -264,7 +230,7 @@ describe("WorkflowPackagesListPage", () => {
       "workflow-packages-row-allocation_draft",
     );
     expect(draftRow).toHaveTextContent("Draft");
-    expect(draftRow).toHaveTextContent("2 warnings");
+    expect(draftRow).toHaveTextContent("1 warning");
     expect(draftRow).toHaveTextContent("Not recorded");
 
     fireEvent.click(screen.getByLabelText("Table view"));
@@ -276,7 +242,7 @@ describe("WorkflowPackagesListPage", () => {
     for (const column of [
       "Name",
       "Key",
-      "Latest Version",
+      "Manifest Hash",
       "Status",
       "Last Preflight",
       "Last Run",
@@ -350,6 +316,9 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Permanently delete Risk Review?",
     );
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Historical run snapshots are preserved.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
 
     await waitFor(() => expect(deletePackageMock).toHaveBeenCalledWith(9));
@@ -395,7 +364,6 @@ describe("WorkflowPackagesListPage", () => {
     await waitFor(() =>
       expect(importPackageMock).toHaveBeenCalledWith({
         manifestSource: expect.stringContaining("sk-import-secret"),
-        mode: "create",
       }),
     );
     expect(importPackageMock.mock.calls[0][0].manifestSource).toContain(

@@ -24,7 +24,6 @@ const {
   useWorkflowPackageLaunchMock,
   useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
-  useWorkflowPackageVersionsMock,
   validatePackageMock,
 } = vi.hoisted(() => ({
   createLaunchMock: vi.fn(),
@@ -43,7 +42,6 @@ const {
   useWorkflowPackageLaunchMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
-  useWorkflowPackageVersionsMock: vi.fn(),
   validatePackageMock: vi.fn(),
 }));
 
@@ -70,7 +68,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
-  useWorkflowPackageVersions: (...args: unknown[]) => useWorkflowPackageVersionsMock(...args),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -79,8 +76,7 @@ const packageRead: WorkflowPackageRead = {
   description: "Package for neutral research workflows.",
   id: 42,
   key: "market_review_package",
-  latestVersion: 7,
-  latestVersionId: 70,
+  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
@@ -104,7 +100,6 @@ spec:
   packageDefinition: {},
   packageId: 42,
   packageKey: "market_review_package",
-  version: 7,
 };
 
 const launchRead: WorkflowPackageLaunchRead = {
@@ -121,7 +116,6 @@ const launchRead: WorkflowPackageLaunchRead = {
   name: "Market Review",
   packageId: 42,
   packageKey: "market_review_package",
-  packageVersion: 7,
   ready: true,
   warnings: [],
   workflowKey: "market_review",
@@ -146,13 +140,6 @@ function clickTab(name: string) {
   fireEvent.click(screen.getByRole("tab", { name: `${name} tab` }));
 }
 
-async function choosePackageVersion(name: RegExp) {
-  const versionSelect = screen.getByLabelText("Package version");
-  versionSelect.focus();
-  fireEvent.keyDown(versionSelect, { key: "ArrowDown" });
-  fireEvent.click(await screen.findByRole("option", { name }));
-}
-
 describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => {
   beforeEach(() => {
     navigateMock.mockReset();
@@ -162,7 +149,7 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     createLaunchMock.mockReset();
     importPackageMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
-    createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package", workflowPackageVersion: 7 });
+    createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
     importPackageMock.mockResolvedValue({ ...packageRead, warnings: [{ field: "spec.agents[0].modelConnection", issue: "Missing model connection primary_model" }] });
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -172,7 +159,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     window.fetch = fetchMock;
     useWorkflowPackageMock.mockReturnValue({ data: packageRead, error: null, isError: false, isPending: false, refetch: vi.fn() });
     useWorkflowPackageManifestMock.mockReturnValue({ data: manifestRead, error: null, isError: false, isFetching: false, isPending: false, refetch: vi.fn() });
-    useWorkflowPackageVersionsMock.mockReturnValue({ data: { items: [{ compiledHash: "compiled", createdAt: "2026-05-05T10:00:00Z", id: 70, launchedAt: null, manifestHash: "manifest", packageId: 42, validationSummary: {}, version: 7, warnings: [] }] }, error: null, isError: false, isPending: false });
     useWorkflowPackageLaunchMock.mockReturnValue({ data: launchRead, error: null, isError: false, isPending: false });
     useCreatePackageMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
     useUpdatePackageMock.mockReturnValue({ isPending: false, mutateAsync: updatePackageMock });
@@ -225,11 +211,11 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
 
     await waitFor(() => expect(preflightPackageMock).toHaveBeenCalledWith({
       packageId: "42",
-      payload: { parameters: {}, version: null, workflowKey: "market_review" },
+      payload: { parameters: {}, workflowKey: "market_review" },
     }));
     expect(createLaunchMock).toHaveBeenCalledWith({
       packageId: "42",
-      payload: { parameters: { ticker: "AAPL" }, version: null, workflowKey: "market_review" },
+      payload: { parameters: { ticker: "AAPL" }, workflowKey: "market_review" },
     });
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
   });
@@ -289,13 +275,12 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
           horizonDays: 14,
           includeNews: true,
         },
-        version: null,
         workflowKey: "market_review",
       },
     }));
   });
 
-  it("resets raw JSON launch state when workflow key, selected version, or schema identity changes", async () => {
+  it("resets raw JSON launch state when workflow key or schema identity changes", async () => {
     const resetLaunchRead: WorkflowPackageLaunchRead = {
       ...launchRead,
       inputSchema: {
@@ -308,17 +293,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       workflowKey: "reset_workflow",
     };
     useWorkflowPackageLaunchMock.mockReturnValue({ data: resetLaunchRead, error: null, isError: false, isPending: false });
-    useWorkflowPackageVersionsMock.mockReturnValue({
-      data: {
-        items: [
-          { compiledHash: "compiled", createdAt: "2026-05-05T10:00:00Z", id: 70, launchedAt: null, manifestHash: "manifest", packageId: 42, validationSummary: {}, version: 7, warnings: [] },
-          { compiledHash: "compiled-6", createdAt: "2026-05-04T10:00:00Z", id: 60, launchedAt: null, manifestHash: "manifest-6", packageId: 42, validationSummary: {}, version: 6, warnings: [] },
-        ],
-      },
-      error: null,
-      isError: false,
-      isPending: false,
-    });
     const view = renderEditor("/workflow-packages/42/run");
 
     const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
@@ -333,10 +307,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     fireEvent.change(screen.getByLabelText("Workflow key"), { target: { value: "alternate_workflow" } });
     await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
     fireEvent.change(runtimeJson, { target: { value: '{"ticker":"NVDA"}' } });
-
-    await choosePackageVersion(/^v6$/);
-    await waitFor(() => expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "" }, null, 2)));
-    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"META"}' } });
 
     useWorkflowPackageLaunchMock.mockReturnValue({
       data: {
@@ -427,7 +397,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       packageId: "42",
       payload: {
         parameters: { enabled: true, filters: { sector: "energy" }, limit: 3 },
-        version: null,
         workflowKey: "market_review",
       },
     }));
@@ -453,7 +422,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
 
     await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
       manifestSource: expect.stringContaining("sk-import-secret"),
-      mode: "create",
     }));
     expect(await screen.findByText(/missing model connection primary_model/i)).toBeVisible();
   });

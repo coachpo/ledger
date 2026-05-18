@@ -38,7 +38,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
-  useWorkflowPackageVersions: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -47,8 +46,7 @@ const packageRead: WorkflowPackageRead = {
   description: "Private package for multi-agent market review.",
   id: 42,
   key: "market_review_package",
-  latestVersion: 7,
-  latestVersionId: 70,
+  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
   status: "active",
@@ -72,7 +70,6 @@ spec:
   packageDefinition: {},
   packageId: 42,
   packageKey: "market_review_package",
-  version: 7,
 };
 
 function renderEditor(initialEntry: string, routePath: string) {
@@ -112,7 +109,7 @@ describe("WorkflowPackageEditorPage", () => {
 
     expect(screen.getByTestId("workflow-package-editor-shell")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Market Review Package" })).toBeVisible();
-    expect(screen.getByText("market_review_package · v7")).toBeVisible();
+    expect(screen.getByText("market_review_package")).toBeVisible();
     expect(screen.getAllByText("Private package for multi-agent market review.")[0]).toBeVisible();
 
     for (const tabName of [
@@ -166,13 +163,16 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
   });
 
-  it("keeps historical versions launch/export-only while hydration stays pinned to the latest draft", () => {
-    renderEditor("/workflow-packages/42?version=7", "/workflow-packages/:packageId");
+  it("renders current-only authoring without historical affordances", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
     expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
     expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
     expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
     expect(screen.getByRole("button", { name: "Save package draft" })).toBeEnabled();
+    expect(screen.queryByText(new RegExp("Package vers" + "ion", "i"))).not.toBeInTheDocument();
+    expect(screen.queryByText(/Latest/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(new RegExp("selected vers" + "ion", "i"))).not.toBeInTheDocument();
   });
 
   it("surfaces package load errors in a blocking retry state", () => {

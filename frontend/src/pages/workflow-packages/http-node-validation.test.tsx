@@ -41,7 +41,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
-  useWorkflowPackageVersions: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
 const packageRead: WorkflowPackageRead = {
@@ -50,8 +49,7 @@ const packageRead: WorkflowPackageRead = {
   description: "HTTP callback package.",
   id: 42,
   key: "http_callbacks",
-  latestVersion: 7,
-  latestVersionId: 70,
+  lastLaunchedAt: "2026-05-05T11:00:00Z",
   manifestHash: "manifest-hash-123",
   name: "HTTP Callback Package",
   status: "active",
@@ -106,7 +104,6 @@ const manifestRead: WorkflowPackageManifestRead = {
   packageDefinition: {},
   packageId: 42,
   packageKey: "http_callbacks",
-  version: 7,
 };
 
 function renderEditor() {
