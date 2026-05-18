@@ -100,15 +100,15 @@ def _coerce_legacy_target_identity(value: Any) -> Any:
     legacy_pairs = (
         ("workflowId", "targetId"),
         ("workflowKey", "targetKey"),
-        ("workflowVersion", "targetVersion"),
         ("workflow_id", "target_id"),
         ("workflow_key", "target_key"),
-        ("workflow_version", "target_version"),
     )
     for legacy_key, target_key in legacy_pairs:
         if target_key not in data and legacy_key in data:
             data[target_key] = data[legacy_key]
         data.pop(legacy_key, None)
+    data.pop("workflowVersion", None)
+    data.pop("workflow_version", None)
 
     has_target_kind = "targetKind" in data or "target_kind" in data
     if not has_target_kind and has_legacy_identity:
@@ -292,7 +292,6 @@ class RunCreatedRead(CamelModel):
     target_kind: RunTargetKind
     target_id: int
     target_key: str
-    target_version: int = Field(ge=1)
     trace_id: str | None = None
     created_at: datetime
 
@@ -312,7 +311,6 @@ class RunListItemRead(CamelModel):
     target_kind: RunTargetKind
     target_id: int
     target_key: str
-    target_version: int = Field(ge=1)
     status: RunStatus
     total_tokens: int = Field(ge=0)
     trace_id: str | None = None
@@ -375,9 +373,13 @@ class RunPackageLaunchSnapshotRead(CamelModel):
     parameters: dict[str, Any]
 
 
-class RunPackageAvailabilityRead(CamelModel):
-    package_status: str | None = None
-    package_version_available: bool
+class RunCurrentPackageAuditRead(CamelModel):
+    available: bool
+    status: str | None = None
+    manifest_hash: str | None = None
+    compiled_hash: str | None = None
+    manifest_hash_matches_snapshot: bool | None = None
+    compiled_hash_matches_snapshot: bool | None = None
     unavailable_reason: str | None = None
 
 
@@ -390,18 +392,25 @@ class RunExtensionDependencyRead(CamelModel):
 class RunPackageProvenanceRead(CamelModel):
     workflow_package_id: int
     workflow_package_key: str
-    workflow_package_version_id: int | None = None
-    workflow_package_version: int = Field(ge=1)
+    workflow_package_name: str
+    workflow_package_description: str
+    workflow_package_status: str | None = None
     workflow_package_manifest_hash: str
     workflow_package_compiled_hash: str
     workflow_key: str
+    workflow_name: str
+    workflow_description: str
+    manifest_source: str
+    package_definition: dict[str, Any]
+    compiled_plan: dict[str, Any]
     launch_snapshot: RunPackageLaunchSnapshotRead | None = None
+    extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     local_resource_refs: RunPackageLocalResourceRefsRead
     resolved_model_connections: list[RunPackageResolvedModelConnectionRead] = Field(
         default_factory=list
     )
     preflight_summary: RunPackagePreflightSummaryRead | None = None
-    availability: RunPackageAvailabilityRead
+    current_package: RunCurrentPackageAuditRead | None = None
 
 
 class RunRead(CamelModel):
@@ -409,7 +418,6 @@ class RunRead(CamelModel):
     target_kind: RunTargetKind
     target_id: int
     target_key: str
-    target_version: int = Field(ge=1)
     input: dict[str, Any]
     source_run_id: int | None = None
     lineage_root_run_id: int | None = None
@@ -437,6 +445,14 @@ class RunRead(CamelModel):
     def coerce_target_identity(cls, value: Any) -> Any:
         return _coerce_legacy_target_identity(value)
 
+    @model_validator(mode="after")
+    def require_workflow_package_snapshot_provenance(self) -> Self:
+        if self.target_kind == RunTargetKind.WORKFLOW_PACKAGE and self.package_provenance is None:
+            raise ValueError(
+                "workflow package runs require run-owned executable snapshot provenance"
+            )
+        return self
+
     @field_validator("queued_at", "started_at", "finished_at", "created_at", "updated_at")
     @classmethod
     def validate_timestamps(cls, value: datetime | None) -> datetime | None:
@@ -450,7 +466,6 @@ class RunRerunDraftRead(CamelModel):
     target_kind: RunTargetKind
     target_id: int
     target_key: str
-    target_version: int = Field(ge=1)
     parameters: dict[str, object]
     package_provenance: RunPackageProvenanceRead | None = None
 
@@ -465,7 +480,6 @@ class RunStepReplayDraftRead(CamelModel):
     target_kind: RunTargetKind
     target_id: int
     target_key: str
-    target_version: int = Field(ge=1)
     parameters: dict[str, object]
     package_provenance: RunPackageProvenanceRead | None = None
 
@@ -489,7 +503,7 @@ __all__ = [
     "RunOperationKind",
     "RunListRead",
     "RunMemoryArtifactRead",
-    "RunPackageAvailabilityRead",
+    "RunCurrentPackageAuditRead",
     "RunPackageLaunchSnapshotRead",
     "RunPackageLocalResourceRefsRead",
     "RunPackagePreflightSummaryRead",

@@ -45,13 +45,12 @@ def test_package_execution_plan_builds_from_local_compiled_plan_without_global_r
         _compiled_plan(),
         "daily_research",
         model_bindings={"tradingagents_primary_model": _model_binding()},
-        package_version=3,
     )
 
     assert plan.target.kind == "workflow_package"
     assert plan.target.id == 1
     assert plan.target.key == "daily_research"
-    assert plan.target.version == 3
+    assert plan.target.version is None
     assert plan.aggregate_budget_usd == Decimal("0.25")
     assert plan.input_schema["properties"]["ticker"] == {"type": "string"}
     assert len(plan.steps) == 1

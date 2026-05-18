@@ -17,7 +17,7 @@ from app.models.capability import Capability
 from app.models.mcp_server import McpServer
 from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
@@ -47,11 +47,20 @@ AGENT_PLATFORM_CONFIG_TABLE_NAMES = {
     "model_connections",
     "output_schemas",
 }
+AGENT_PLATFORM_PACKAGE_TABLE_NAMES = {
+    "workflow_packages",
+    "workflow_package_secret_bindings",
+}
 AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "agents",
     "workflows",
     "runs",
+    "run_workflow_package_snapshots",
     "run_operation_invocations",
+}
+REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES = {
+    "workflow_package_versions",
+    "workflow_package_version_model_connections",
 }
 
 
@@ -249,6 +258,24 @@ def _build_run(
 
 def test_legacy_backend_tables_are_not_registered_on_metadata() -> None:
     assert LEGACY_BACKEND_TABLE_NAMES.isdisjoint(Base.metadata.tables)
+
+
+def test_agent_platform_package_tables_are_current_only() -> None:
+    assert AGENT_PLATFORM_PACKAGE_TABLE_NAMES <= set(Base.metadata.tables)
+    assert REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES.isdisjoint(Base.metadata.tables)
+
+    package_table = Base.metadata.tables["workflow_packages"]
+    assert {
+        "manifest_source",
+        "manifest_hash",
+        "package_definition",
+        "compiled_plan",
+        "compiled_hash",
+        "extension_dependencies",
+        "validation_summary",
+        "last_launched_at",
+    } <= set(package_table.c.keys())
+    assert {"latest_version_id", "draft_source"}.isdisjoint(package_table.c.keys())
 
 
 def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
@@ -1346,6 +1373,46 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
     assert run_table.c.queued_at.nullable is False
     assert "workflow_id" in run_table.c
     assert {"workflow_key", "workflow_version", "per_step_outputs"}.isdisjoint(run_table.c.keys())
+    assert {
+        "workflow_package_version_id",
+        "workflow_package_version",
+        "workflow_package_manifest_hash",
+        "workflow_package_compiled_hash",
+        "launch_snapshot",
+    }.isdisjoint(run_table.c.keys())
+
+    assert RunWorkflowPackageSnapshot.__tablename__ == "run_workflow_package_snapshots"
+    snapshot_table = Base.metadata.tables["run_workflow_package_snapshots"]
+    assert list(snapshot_table.primary_key.columns.keys()) == ["run_id"]
+    assert "id" not in snapshot_table.c
+    assert {
+        "run_id",
+        "workflow_package_id",
+        "workflow_package_key",
+        "workflow_package_name",
+        "workflow_package_description",
+        "workflow_package_status",
+        "workflow_key",
+        "workflow_name",
+        "workflow_description",
+        "manifest_hash",
+        "compiled_hash",
+        "manifest_source",
+        "package_definition",
+        "compiled_plan",
+        "extension_dependencies",
+        "local_resource_refs",
+        "input_schema",
+        "launch_parameters",
+        "resolved_model_connections",
+        "preflight_summary",
+        "created_at",
+        "updated_at",
+    } == set(snapshot_table.c.keys())
+    snapshot_foreign_keys = list(snapshot_table.foreign_keys)
+    assert len(snapshot_foreign_keys) == 1
+    assert snapshot_foreign_keys[0].column.table.name == "runs"
+    assert snapshot_foreign_keys[0].column.name == "id"
 
     with session_factory() as session:
         published_capability = _build_capability(
@@ -1599,7 +1666,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "targetKind": "workflow",
         "targetId": 7,
         "targetKey": "queued_workflow",
-        "targetVersion": 1,
         "status": "queued",
         "totalTokens": 0,
         "traceId": None,
@@ -1645,7 +1711,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "targetKind",
         "targetId",
         "targetKey",
-        "targetVersion",
         "input",
         "sourceRunId",
         "lineageRootRunId",

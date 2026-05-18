@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, event
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.core.formatting import utcnow
 from app.models.base import Base, IdMixin, TimestampMixin
@@ -37,10 +37,8 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
         Index("ix_runs_source_run", "source_run_id"),
         Index("ix_runs_lineage_root", "lineage_root_run_id"),
-        Index("ix_runs_workflow_package", "workflow_package_id", "workflow_package_version"),
-        Index("ix_runs_workflow_package_key", "workflow_package_key", "workflow_package_version"),
-        Index("ix_runs_workflow_package_manifest_hash", "workflow_package_manifest_hash"),
-        Index("ix_runs_workflow_package_compiled_hash", "workflow_package_compiled_hash"),
+        Index("ix_runs_workflow_package", "workflow_package_id"),
+        Index("ix_runs_workflow_package_key", "workflow_package_key"),
         Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
     )
 
@@ -58,19 +56,11 @@ class Run(IdMixin, TimestampMixin, Base):
     target_key: Mapped[str] = mapped_column(String(120), nullable=False)
     target_version: Mapped[int] = mapped_column(nullable=False)
     workflow_package_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflow_packages.id", ondelete="CASCADE"),
+        ForeignKey("workflow_packages.id", ondelete="SET NULL"),
         nullable=True,
     )
     workflow_package_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    workflow_package_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflow_package_versions.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    workflow_package_version: Mapped[int | None] = mapped_column(nullable=True)
-    workflow_package_manifest_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    workflow_package_compiled_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     workflow_package_workflow_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    launch_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
@@ -154,6 +144,13 @@ class Run(IdMixin, TimestampMixin, Base):
         foreign_keys="RunStep.run_id",
         order_by="RunStep.step_index",
     )
+    workflow_package_snapshot: Mapped[RunWorkflowPackageSnapshot | None] = relationship(
+        "RunWorkflowPackageSnapshot",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
 
     def _set_workflow_target_kind(self) -> None:
         if getattr(self, "target_kind", None) is None:
@@ -185,3 +182,100 @@ class Run(IdMixin, TimestampMixin, Base):
     def workflow_version(self, value: int) -> None:
         self._set_workflow_target_kind()
         self.target_version = value
+
+
+class RunWorkflowPackageSnapshot(TimestampMixin, Base):
+    __tablename__ = "run_workflow_package_snapshots"
+    __table_args__ = (
+        Index("ix_run_workflow_package_snapshots_package_key", "workflow_package_key"),
+        Index("ix_run_workflow_package_snapshots_workflow_key", "workflow_key"),
+        Index("ix_run_workflow_package_snapshots_manifest_hash", "manifest_hash"),
+        Index("ix_run_workflow_package_snapshots_compiled_hash", "compiled_hash"),
+    )
+
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    workflow_package_id: Mapped[int] = mapped_column(nullable=False)
+    workflow_package_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    workflow_package_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    workflow_package_description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    workflow_package_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    workflow_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    workflow_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    workflow_description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    compiled_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_source: Mapped[str] = mapped_column(Text, nullable=False)
+    package_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    compiled_plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    extension_dependencies: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
+    )
+    local_resource_refs: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    input_schema: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    launch_parameters: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    resolved_model_connections: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=sql_text("'[]'::jsonb"),
+    )
+    preflight_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+
+    run: Mapped[Run] = relationship("Run", back_populates="workflow_package_snapshot")
+
+
+def _workflow_package_runs_pending_snapshot(session: Session) -> list[Run]:
+    pending_runs: list[Run] = []
+    for obj in [*session.new, *session.dirty]:
+        if not isinstance(obj, Run):
+            continue
+        if obj.target_kind == "workflowPackage" and obj.workflow_package_snapshot is None:
+            pending_runs.append(obj)
+    return pending_runs
+
+
+@event.listens_for(Session, "before_flush")
+def _require_workflow_package_run_snapshot(
+    session: Session,
+    flush_context: object,
+    instances: object,
+) -> None:
+    del flush_context, instances
+    if _workflow_package_runs_pending_snapshot(session):
+        raise ValueError("workflow package runs require a run-owned executable snapshot")

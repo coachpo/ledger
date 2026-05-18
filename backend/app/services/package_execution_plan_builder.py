@@ -30,7 +30,6 @@ from app.services.execution_plan import (
 )
 
 _PACKAGE_TARGET_ID = 1
-_PACKAGE_TARGET_VERSION = 1
 _PACKAGE_OUTPUT_SCHEMA_VERSION = 1
 _PACKAGE_AGENT_VERSION = 1
 _SUPPORTED_GRAPH_NODE_KINDS = {"sequence", "fanout", "loop", "step", "http"}
@@ -67,11 +66,9 @@ class PackageExecutionPlanBuilder:
         compiled_plan: Mapping[str, Any],
         *,
         model_bindings: Mapping[str, PackageResolvedModelBinding | Any] | None = None,
-        package_version: int = _PACKAGE_TARGET_VERSION,
         ownership: PackageExecutionOwnership | None = None,
     ) -> None:
         self.compiled_plan = dict(compiled_plan)
-        self.package_version = package_version
         self.ownership = ownership
         self.model_bindings = {
             key: self._coerce_model_binding(key, binding)
@@ -101,13 +98,11 @@ class PackageExecutionPlanBuilder:
         workflow_key: str,
         *,
         model_bindings: Mapping[str, PackageResolvedModelBinding | Any] | None = None,
-        package_version: int = _PACKAGE_TARGET_VERSION,
         ownership: PackageExecutionOwnership | None = None,
     ) -> ExecutionPlan:
         return cls(
             compiled_plan,
             model_bindings=model_bindings,
-            package_version=package_version,
             ownership=ownership,
         ).build_workflow_plan(workflow_key)
 
@@ -175,15 +170,12 @@ class PackageExecutionPlanBuilder:
         )
         target_id = self.ownership.package_id if self.ownership is not None else _PACKAGE_TARGET_ID
         target_key = self.ownership.package_key if self.ownership is not None else workflow_key
-        target_version = (
-            self.ownership.package_version if self.ownership is not None else self.package_version
-        )
         return ExecutionPlan(
             target=ExecutionPlanTarget(
                 kind="workflow_package",
                 id=target_id,
                 key=target_key,
-                version=target_version,
+                version=None,
             ),
             input_schema=deepcopy(cast(dict[str, Any], workflow.get("inputSchema") or {})),
             aggregate_budget_usd=sum(

@@ -18,7 +18,7 @@ class ExecutionPlanTarget:
     kind: ExecutionPlanTargetKind
     id: int
     key: str
-    version: int
+    version: int | None
 
 
 @dataclass(frozen=True)

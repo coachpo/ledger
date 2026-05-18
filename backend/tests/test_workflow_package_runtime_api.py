@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.workflow import Workflow
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.schemas.extension import ExtensionToggleRequest
 from app.services.extension_service import ExtensionService
 from app.services.run_queue_service import RunQueueService
@@ -226,7 +226,6 @@ def test_workflow_package_launch_rejects_unknown_root_parameter_key(
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "runtime_workflow",
             "parameters": {"ticker": "MSFT", "unexpected": True},
         },
@@ -283,7 +282,6 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "runtime_workflow",
             "parameters": {
                 "ticker": "MSFT",
@@ -326,10 +324,16 @@ def test_workflow_package_launch_executes_with_live_model_connection(
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
+    with session_factory() as session:
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert snapshot is not None
+        assert snapshot.workflow_package_key == "runtime_package"
+        assert snapshot.workflow_key == "runtime_workflow"
+        assert snapshot.launch_parameters == {"ticker": "MSFT"}
 
     _drain_run_queue(session_factory)
     detail = _wait_for_run(client, run_id)
@@ -338,6 +342,11 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     assert detail["targetKind"] == "workflowPackage"
     assert detail["targetId"] == created["id"]
     assert detail["targetKey"] == "runtime_package"
+    provenance = cast(dict[str, Any], detail["packageProvenance"])
+    assert provenance["workflowPackageKey"] == "runtime_package"
+    assert provenance["workflowKey"] == "runtime_workflow"
+    assert "workflowPackageVersion" not in provenance
+    assert provenance["launchSnapshot"]["parameters"] == {"ticker": "MSFT"}
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     assert invocation["agentRef"] == {
         "scope": "packageLocal",
@@ -366,19 +375,17 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     with session_factory() as session:
         run = session.get(Run, run_id)
         assert run is not None
-        package_version = (
-            session.query(WorkflowPackageVersion)
-            .filter_by(package_id=created["id"], version=1)
-            .one()
-        )
+        package = session.get(WorkflowPackage, created["id"])
+        assert package is not None
+        snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert snapshot is not None
         assert run.workflow_package_key == "runtime_package"
-        assert run.workflow_package_version == 1
-        assert run.workflow_package_manifest_hash == package_version.manifest_hash
-        assert run.workflow_package_compiled_hash == package_version.compiled_hash
         assert run.workflow_package_workflow_key == "runtime_workflow"
-        assert run.launch_snapshot is not None
-        assert run.launch_snapshot["workflowKey"] == "runtime_workflow"
-        assert run.launch_snapshot["parameters"] == {"ticker": "MSFT"}
+        assert snapshot.manifest_hash == package.manifest_hash
+        assert snapshot.compiled_hash == package.compiled_hash
+        assert snapshot.workflow_key == "runtime_workflow"
+        assert snapshot.launch_parameters == {"ticker": "MSFT"}
+        assert snapshot.resolved_model_connections[0]["modelId"] == "gpt-package-v2"
         assert session.query(Agent).count() == 0
         assert session.query(Workflow).count() == 0
         invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
@@ -413,7 +420,7 @@ def test_workflow_package_runtime_uses_smoke_kind_without_openai(
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "runtime_workflow", "parameters": {"ticker": "AMD"}},
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AMD"}},
     )
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
@@ -453,7 +460,6 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "runtime_workflow",
             "parameters": {"ticker": "AMD"},
         },
@@ -534,7 +540,7 @@ def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
 
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
-        json={"version": 1, "workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "NVDA"}},
     )
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
@@ -576,15 +582,5 @@ def test_workflow_package_create_rejects_missing_model_connection(
         assert session.query(Run).count() == 0
         assert (
             session.query(WorkflowPackage).filter_by(key="runtime_missing_model_package").count()
-            == 0
-        )
-        assert (
-            session.query(WorkflowPackageVersion)
-            .join(
-                WorkflowPackage,
-                WorkflowPackageVersion.package_id == WorkflowPackage.id,
-            )
-            .filter(WorkflowPackage.key == "runtime_missing_model_package")
-            .count()
             == 0
         )

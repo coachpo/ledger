@@ -10,7 +10,7 @@ from app.agents import ToolCatalogValidationError
 from app.agents.mcp.tool_adapter import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
 from app.models.output_schema import OutputSchema
-from app.models.workflow_package import WorkflowPackageVersion
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
@@ -65,24 +65,24 @@ class WorkflowPackagePreflightService:
 
     def run(
         self,
-        package_version: WorkflowPackageVersion,
+        package: WorkflowPackage,
         *,
         workflow_key: str,
         require_api_key: bool,
     ) -> WorkflowPackagePreflightResult:
         blocking_errors: list[dict[str, Any]] = []
-        package_definition = package_version.package_definition or {}
-        compiled_plan = package_version.compiled_plan or {}
+        package_definition = package.package_definition or {}
+        compiled_plan = package.compiled_plan or {}
         blocking_errors.extend(self._schema_errors(compiled_plan))
         blocking_errors.extend(self._tool_errors(compiled_plan))
         blocking_errors.extend(self._mcp_errors(compiled_plan))
         blocking_errors.extend(
             self._extension_dependency_errors(
-                package_version,
+                package,
                 existing_errors=blocking_errors,
             )
         )
-        blocking_errors.extend(self._http_errors(package_version, compiled_plan))
+        blocking_errors.extend(self._http_errors(package, compiled_plan))
         model_bindings, model_warnings, model_errors = self._model_bindings(
             compiled_plan,
             require_api_key=require_api_key,
@@ -94,7 +94,6 @@ class WorkflowPackagePreflightService:
                     compiled_plan,
                     workflow_key,
                     model_bindings=model_bindings,
-                    package_version=package_version.version,
                 )
             except WorkflowPackageExecutionPlanError as exc:
                 blocking_errors.extend(dict(detail) for detail in exc.details)
@@ -256,12 +255,12 @@ class WorkflowPackagePreflightService:
 
     def _extension_dependency_errors(
         self,
-        package_version: WorkflowPackageVersion,
+        package: WorkflowPackage,
         *,
         existing_errors: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         dependencies = ExtensionDependencyService.normalize_dependency_payloads(
-            getattr(package_version, "extension_dependencies", [])
+            package.extension_dependencies
         )
         if not dependencies:
             return []
@@ -347,7 +346,7 @@ class WorkflowPackagePreflightService:
 
     def _http_errors(
         self,
-        package_version: WorkflowPackageVersion,
+        package: WorkflowPackage,
         compiled_plan: dict[str, Any],
     ) -> list[dict[str, Any]]:
         errors: list[dict[str, Any]] = []
@@ -356,9 +355,7 @@ class WorkflowPackagePreflightService:
             for schema in self._compiled_section(compiled_plan, "outputSchemas")
             if schema.get("key")
         }
-        configured_secret_keys = self.secret_binding_repository.list_keys_for_package(
-            package_version.package_id
-        )
+        configured_secret_keys = self.secret_binding_repository.list_keys_for_package(package.id)
         for workflow in self._compiled_section(compiled_plan, "workflows"):
             workflow_key = str(workflow.get("key") or "workflow")
             seen_operation_keys: set[str] = set()
@@ -606,7 +603,7 @@ class WorkflowPackagePreflightService:
                 )
                 bindings[connection.key] = model_binding
                 continue
-            if not has_api_key:
+            if require_api_key and not has_api_key:
                 errors.append({"field": path, "issue": "API key is not configured"})
                 continue
             if connection.last_test_ok is False:

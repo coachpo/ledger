@@ -117,7 +117,6 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
         "targetKind": RunTargetKind.WORKFLOW.value,
         "targetId": 42,
         "targetKey": "portfolio_review",
-        "targetVersion": 7,
         "parameters": {"ticker": "MSFT"},
         "packageProvenance": None,
     }
@@ -142,7 +141,6 @@ def test_step_replay_contracts_use_parameters_object_and_reject_extra_fields() -
         "targetKind": RunTargetKind.WORKFLOW.value,
         "targetId": 42,
         "targetKey": "portfolio_review",
-        "targetVersion": 7,
         "parameters": {"ticker": "MSFT"},
         "packageProvenance": None,
     }
