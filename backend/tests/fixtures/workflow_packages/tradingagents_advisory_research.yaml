@@ -265,7 +265,6 @@ spec:
     capabilityProfiles:
     - market_research_tools
     mcpServers: []
-    budgetUsd: "0.25"
   - key: sentiment_analyst
     name: Sentiment Analyst
     description: Single-shot sentiment synthesizer using SignalDeck social sentiment payloads.
@@ -296,7 +295,6 @@ spec:
     capabilityProfiles:
     - social_sentiment_tools
     mcpServers: []
-    budgetUsd: "0.20"
   - key: news_analyst
     name: News Analyst
     description: Tool-first news and insider-data analyst for the advisory research packet.
@@ -323,7 +321,6 @@ spec:
     capabilityProfiles:
     - news_research_tools
     mcpServers: []
-    budgetUsd: "0.25"
   - key: fundamentals_analyst
     name: Fundamentals Analyst
     description: Tool-first fundamentals analyst for valuation, quality, and financial context.
@@ -350,7 +347,6 @@ spec:
     capabilityProfiles:
     - fundamentals_tools
     mcpServers: []
-    budgetUsd: "0.25"
   - key: bull_researcher
     name: Bull Researcher
     description: Bullish investment-debate advocate using analyst reports, not direct tools.
@@ -467,7 +463,6 @@ spec:
     outputSchema: investment_debate_transition
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.20"
   - key: bear_researcher
     name: Bear Researcher
     description: Bearish investment-debate advocate using analyst reports, not direct tools.
@@ -584,7 +579,6 @@ spec:
     outputSchema: investment_debate_transition
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.20"
   - key: research_manager
     name: Research Manager
     description: Structured arbiter of the investment debate and research plan.
@@ -777,7 +771,6 @@ spec:
     outputSchema: research_plan
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.30"
   - key: trader
     name: Trader
     description: Structured advisory exposure proposer, with no execution authority.
@@ -885,7 +878,6 @@ spec:
     capabilityProfiles:
     - portfolio_context_tools
     mcpServers: []
-    budgetUsd: "0.30"
   - key: aggressive_risk_analyst
     name: Aggressive Risk Analyst
     description: Pro-risk debater focused on opportunity cost and upside participation.
@@ -1028,7 +1020,6 @@ spec:
     outputSchema: risk_debate_transition
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.20"
   - key: neutral_risk_analyst
     name: Neutral Risk Analyst
     description: Balanced risk debater focused on proportionality and evidence quality.
@@ -1171,7 +1162,6 @@ spec:
     outputSchema: risk_debate_transition
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.20"
   - key: conservative_risk_analyst
     name: Conservative Risk Analyst
     description: Defensive risk debater focused on drawdown, uncertainty, and capital preservation.
@@ -1314,7 +1304,6 @@ spec:
     outputSchema: risk_debate_transition
     capabilityProfiles: []
     mcpServers: []
-    budgetUsd: "0.20"
   - key: portfolio_manager
     name: Portfolio Manager
     description: Final structured advisory decision maker for the package.
@@ -1465,7 +1454,6 @@ spec:
     - portfolio_context_tools
     - report_context_tools
     mcpServers: []
-    budgetUsd: "0.35"
   workflows:
   - key: advisory_research
     name: Advisory Research

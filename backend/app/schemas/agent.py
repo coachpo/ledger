@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
 from typing import Any
 
@@ -109,7 +108,6 @@ class AgentVersionBase(CamelModel):
     output_schema_version: int | None = Field(default=None, ge=1)
     capabilities: list[AgentCapabilityRefWrite] = Field(default_factory=list)
     mcp_servers: list[AgentMcpServerRefWrite] = Field(default_factory=list)
-    budget_usd: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
 
     @field_validator("name", "system_prompt", mode="before")
     @classmethod
@@ -212,7 +210,6 @@ class AgentRead(CamelModel):
     output_schema: OutputSchemaRead
     capabilities: list[CapabilityRead]
     mcp_servers: list[AgentMcpServerRead]
-    budget_usd: Decimal
     created_at: datetime
     updated_at: datetime
 

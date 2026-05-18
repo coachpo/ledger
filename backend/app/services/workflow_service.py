@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, NoReturn, cast
 
 from fastapi import status
@@ -268,7 +267,6 @@ class WorkflowService:
         )
         resolved_slots: dict[tuple[int, str], _ResolvedSlot] = {}
         normalized_steps: list[dict[str, Any]] = []
-        aggregate_budget = Decimal("0")
 
         for step_offset, step in enumerate(steps, start=1):
             step_field = f"steps[{step_offset - 1}]"
@@ -324,7 +322,6 @@ class WorkflowService:
                         "outputSchemaVersion": output_schema.version,
                         "wiring": normalized_wiring,
                         "optional": agent_ref.optional,
-                        "budgetUsd": str(agent.budget_usd),
                     }
                 )
                 resolved_slots[(step.index, agent_ref.slot)] = _ResolvedSlot(
@@ -335,7 +332,6 @@ class WorkflowService:
                     schema=output_node,
                     optional=agent_ref.optional,
                 )
-                aggregate_budget += agent.budget_usd
             normalized_steps.append({"index": step.index, "agents": normalized_agents})
 
         normalized_output_spec = self._normalize_output_spec(
@@ -354,7 +350,6 @@ class WorkflowService:
                 normalized_output_spec,
                 compiled_graph,
             ),
-            "aggregate_budget_usd": aggregate_budget,
         }
 
     def _prepare_manifest_write_or_raise(self, manifest_source: str) -> _PreparedManifestWrite:
@@ -945,7 +940,6 @@ class WorkflowService:
                 "steps": workflow.steps,
                 "outputSpec": self._output_spec_without_compiled_graph(workflow.output_spec),
                 "compiledGraph": self._stored_compiled_graph(workflow.output_spec),
-                "aggregateBudgetUsd": workflow.aggregate_budget_usd,
                 "createdAt": workflow.created_at,
                 "updatedAt": workflow.updated_at,
             }

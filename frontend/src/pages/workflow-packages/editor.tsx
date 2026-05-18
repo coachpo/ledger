@@ -143,7 +143,6 @@ type WorkflowPackageEditorTabDefinition = {
 
 
 const agentFormSchema = z.object({
-  budgetUsd: z.string().min(1, "Budget USD is required."),
   description: z.string(),
   key: z.string().min(1, "Agent key is required."),
   modelConnection: z.string().min(1, "Model connection key is required."),
@@ -177,7 +176,6 @@ function fieldNameFromAgentPath(field: string): keyof AgentFormValues | null {
   const match = /^spec\.agents\[\d+]\.(?<name>[A-Za-z][A-Za-z0-9]*)/.exec(field);
   const name = match?.groups?.name;
   if (
-    name === "budgetUsd" ||
     name === "description" ||
     name === "key" ||
     name === "modelConnection" ||
@@ -193,7 +191,6 @@ function fieldNameFromAgentPath(field: string): keyof AgentFormValues | null {
 
 function agentFormValues(agent: PackageAgentDraft): AgentFormValues {
   return {
-    budgetUsd: agent.budgetUsd,
     description: agent.description,
     key: agent.key,
     modelConnection: agent.modelConnection,
@@ -496,7 +493,7 @@ function AgentSheet(props: {
       <SheetContent className="w-full overflow-y-auto sm:max-w-3xl" data-testid={`package-agent-sheet-${agentIndex}`}>
         <SheetHeader>
           <SheetTitle>Agent editor</SheetTitle>
-          <SheetDescription>Save model, schema, profile, MCP, budget, timeout, and prompt fields into this package manifest only.</SheetDescription>
+          <SheetDescription>Save model, schema, profile, MCP, timeout, and prompt fields into this package manifest only.</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form className="grid gap-4 px-4 pb-4" onSubmit={(event) => event.preventDefault()}>
@@ -621,27 +618,6 @@ function AgentSheet(props: {
               />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="budgetUsd"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Budget USD</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        data-field={fieldPath("budgetUsd")}
-                        aria-label="Budget USD"
-                        onChange={(event) => {
-                          field.onChange(event);
-                          setAgent("budgetUsd", event.target.value);
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <FormField
                 control={form.control}
                 name="timeoutSeconds"
@@ -1346,7 +1322,6 @@ function ExportsTab(props: {
   const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
-  const [importWarnings, setImportWarnings] = useState<UnknownRecord[]>([]);
   const exportHref = packageId ? exportWorkflowPackageUrl(packageId) : undefined;
 
   useEffect(() => {
@@ -1392,7 +1367,6 @@ function ExportsTab(props: {
     }
     try {
       const imported = await importPackage.mutateAsync(payload);
-      setImportWarnings(imported.warnings);
       onImportComplete(imported);
       toast.success("Imported package");
       return imported;
@@ -1409,7 +1383,6 @@ function ExportsTab(props: {
       </CardHeader>
       <CardContent className="space-y-4 p-4">
         <Textarea aria-label="Package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={exportPreview} />
-        {importWarnings.length > 0 ? <Alert><AlertCircle /><AlertTitle>Import warnings</AlertTitle><AlertDescription><ul className="list-disc pl-5">{importWarnings.map((warning, index) => <li key={index}>{stringifyJson(warning)}</li>)}</ul></AlertDescription></Alert> : null}
       </CardContent>
     </Card>
   );

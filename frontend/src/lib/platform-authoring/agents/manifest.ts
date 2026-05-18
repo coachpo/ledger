@@ -125,7 +125,6 @@ export interface AgentManifestFormatResult {
 }
 
 export interface AgentManifestSourceInput {
-  budgetUsd?: string;
   description?: string;
   inputSchema: unknown;
   key: string;
@@ -138,7 +137,6 @@ export interface AgentManifestSourceInput {
 }
 
 export interface AgentManifestScaffoldOptions {
-  budgetUsd?: string;
   description?: string;
   key?: string;
   modelConnection?: string;
@@ -669,7 +667,7 @@ function normalizeManifestForStringify(value: unknown, path: readonly PathToken[
   if (pathKey === "spec") {
     return orderedRecord(
       value,
-      ["modelConnection", "systemPrompt", "inputSchema", "outputSchema", "capabilities", "mcpServers", "budgetUsd"],
+      ["modelConnection", "systemPrompt", "inputSchema", "outputSchema", "capabilities", "mcpServers"],
       path,
     );
   }
@@ -707,7 +705,6 @@ export function createAgentManifestSource(input: AgentManifestSourceInput): stri
         outputSchema: input.outputSchema.trim(),
         capabilities: [...(input.capabilities ?? [])].map((ref) => ref.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
         mcpServers: [...(input.mcpServers ?? [])].map((ref) => ref.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right)),
-        budgetUsd: input.budgetUsd?.trim() || "0",
       },
     }),
     YAML_STRINGIFY_OPTIONS,
@@ -716,7 +713,6 @@ export function createAgentManifestSource(input: AgentManifestSourceInput): stri
 
 export function createAgentManifestScaffold(options: AgentManifestScaffoldOptions = {}): string {
   return createAgentManifestSource({
-    budgetUsd: options.budgetUsd ?? "0",
     description: options.description ?? "Describe what this agent does.",
     inputSchema: {
       type: "object",

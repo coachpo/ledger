@@ -109,7 +109,7 @@ export function WorkflowsListPage() {
               description={workflow.description}
               metadata={
                 <p className="text-sm text-muted-foreground">
-                  {workflow.steps.length} step(s) · Aggregate budget {workflow.aggregateBudgetUsd}
+                  {workflow.steps.length} step(s)
                 </p>
               }
               subtitle={workflow.key}

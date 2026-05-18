@@ -91,7 +91,6 @@ export interface WorkflowStepAgentRead {
   slot: string;
   wiring: Record<string, WorkflowWireSource>;
   optional: boolean;
-  budgetUsd: string;
 }
 
 export interface WorkflowStepRead {
@@ -208,7 +207,6 @@ export interface WorkflowRead {
   steps: WorkflowStepRead[];
   outputSpec: WorkflowOutputSpecRead;
   compiledGraph?: WorkflowCompiledGraph | null;
-  aggregateBudgetUsd: string;
   createdAt: string;
   updatedAt: string;
 }

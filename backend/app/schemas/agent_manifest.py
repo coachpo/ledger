@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Literal, cast
 
@@ -111,7 +110,6 @@ class AgentManifestSpec(CamelModel):
     output_schema: AgentManifestPinnedRef = Field(alias="outputSchema")
     capabilities: list[AgentManifestPinnedRef] = Field(default_factory=list)
     mcp_servers: list[AgentManifestPinnedRef] = Field(default_factory=list, alias="mcpServers")
-    budget_usd: str = Field(default="0", alias="budgetUsd")
 
     @field_validator("model_connection", mode="before")
     @classmethod
@@ -144,24 +142,6 @@ class AgentManifestSpec(CamelModel):
     @classmethod
     def validate_mcp_servers(cls, value: object) -> list[AgentManifestPinnedRef]:
         return _parse_ref_list(value, field_name="mcpServers", allow_hyphen=True)
-
-    @field_validator("budget_usd", mode="before")
-    @classmethod
-    def validate_budget_usd(cls, value: object) -> str:
-        if value is None:
-            return "0"
-        if not isinstance(value, str):
-            raise ValueError("budgetUsd must be a decimal string")
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("budgetUsd is required")
-        try:
-            decimal_value = Decimal(normalized)
-        except InvalidOperation as exc:
-            raise ValueError("budgetUsd must be a decimal string") from exc
-        if not decimal_value.is_finite() or decimal_value < 0:
-            raise ValueError("budgetUsd must be a non-negative decimal string")
-        return normalized
 
     @field_serializer("output_schema", when_used="json")
     def serialize_output_schema(self, value: AgentManifestPinnedRef) -> str:

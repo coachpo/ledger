@@ -29,7 +29,6 @@ export interface AgentCompiledCreateInput {
   outputSchemaVersion?: number | null;
   capabilities?: AgentCapabilityRefWrite[];
   mcpServers?: AgentMcpServerRefWrite[];
-  budgetUsd?: string;
 }
 
 export type AgentCompiledUpdateInput = Omit<AgentCompiledCreateInput, "key">;
@@ -97,7 +96,6 @@ export interface AgentRead {
   outputSchema: OutputSchemaRead;
   capabilities: CapabilityRead[];
   mcpServers: AgentMcpServerRead[];
-  budgetUsd: string;
   createdAt: string;
   updatedAt: string;
 }

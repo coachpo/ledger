@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from io import StringIO
 from typing import Protocol, cast
 
 from pydantic import ValidationError
 from ruamel.yaml import YAML
-from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarString
+from ruamel.yaml.scalarstring import LiteralScalarString
 from sqlalchemy.orm import Session
 
 from app.models.agent import Agent
@@ -57,9 +56,6 @@ class AgentManifestSource(Protocol):
     @property
     def mcp_servers(self) -> list[dict[str, JsonValue]]: ...
 
-    @property
-    def budget_usd(self) -> Decimal: ...
-
 
 @dataclass(frozen=True)
 class AgentManifestDecompileResult:
@@ -106,7 +102,6 @@ class AgentManifestDecompiler:
                     cast(list[dict[str, object]], payload["mcpServers"]),
                     "mcpServer",
                 ),
-                "budgetUsd": DoubleQuotedScalarString(str(payload["budgetUsd"])),
             },
         }
         source = _dump_manifest_yaml(manifest)
@@ -145,7 +140,6 @@ class AgentManifestDecompiler:
                 }
                 for item in agent.mcp_servers
             ],
-            "budgetUsd": str(agent.budget_usd),
         }
         try:
             return cast(

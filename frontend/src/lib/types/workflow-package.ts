@@ -75,10 +75,8 @@ export interface WorkflowPackageRead {
   status: WorkflowPackageStatus;
   manifestHash: string | null;
   compiledHash: string | null;
-  warnings: UnknownRecord[];
   createdAt: string;
   updatedAt: string;
-  lastLaunchedAt: string | null;
 }
 
 export interface WorkflowPackageListRead {

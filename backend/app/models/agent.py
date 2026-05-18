@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
@@ -35,7 +34,6 @@ class Agent(IdMixin, TimestampMixin, Base):
             "output_schema_version > 0",
             name="ck_agents_output_schema_version_positive",
         ),
-        CheckConstraint("budget_usd >= 0", name="ck_agents_budget_usd_non_negative"),
         UniqueConstraint("key", "version", name="uq_agents_key_version"),
         Index("ix_agents_key", "key"),
         Index("ix_agents_status", "status"),
@@ -118,11 +116,6 @@ class Agent(IdMixin, TimestampMixin, Base):
         nullable=False,
         default=list,
         server_default=sql_text("'[]'::jsonb"),
-    )
-    budget_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

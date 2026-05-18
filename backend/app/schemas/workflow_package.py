@@ -135,16 +135,12 @@ class WorkflowPackageRead(CamelModel):
     status: WorkflowPackageStatus
     manifest_hash: str | None = None
     compiled_hash: str | None = None
-    warnings: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
-    last_launched_at: datetime | None = None
 
-    @field_validator("created_at", "updated_at", "last_launched_at")
+    @field_validator("created_at", "updated_at")
     @classmethod
-    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
+    def validate_timestamps(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
 
 

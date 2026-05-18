@@ -323,7 +323,6 @@ class AgentManifestParser:
             "output_schema": "outputSchema",
             "capabilities": "capabilities",
             "mcp_servers": "mcpServers",
-            "budget_usd": "budgetUsd",
         }
         for item in loc:
             if isinstance(item, str):

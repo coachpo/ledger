@@ -210,7 +210,6 @@ function createDuplicateAgentManifestScaffold(agent: AgentRead): string {
 
   if (parsed.isValidYaml && isRecord(manifest) && isRecord(manifest.metadata) && isRecord(manifest.spec)) {
     return createAgentManifestSource({
-      budgetUsd: readOptionalString(manifest.spec.budgetUsd),
       description: readOptionalString(manifest.metadata.description),
       inputSchema: manifest.spec.inputSchema ?? { additionalProperties: false, properties: {}, type: "object" },
       key: "new_agent",

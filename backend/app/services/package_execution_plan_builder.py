@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 from app.services.execution_ownership import PackageExecutionOwnership
@@ -178,15 +177,6 @@ class PackageExecutionPlanBuilder:
                 version=None,
             ),
             input_schema=deepcopy(cast(dict[str, Any], workflow.get("inputSchema") or {})),
-            aggregate_budget_usd=sum(
-                (
-                    agent.package_runtime_agent.budget_usd
-                    for step in steps
-                    for agent in step.agents
-                    if agent.package_runtime_agent is not None
-                ),
-                Decimal("0"),
-            ),
             steps=tuple(steps),
             final_output=final_output,
             package_workflow=package_workflow,
@@ -232,7 +222,6 @@ class PackageExecutionPlanBuilder:
                 output_schema=output_schema,
                 capability_profiles=capability_profiles,
                 mcp_servers=mcp_servers,
-                budget_usd=self._parse_budget(raw_agent.get("budgetUsd"), agent_key=agent_key),
             )
         return agents
 
@@ -791,24 +780,6 @@ class PackageExecutionPlanBuilder:
             for target_name, raw_source in raw_wiring.items()
             if isinstance(raw_source, dict)
         }
-
-    @staticmethod
-    def _parse_budget(value: object, *, agent_key: str) -> Decimal:
-        try:
-            budget = Decimal(str(value or "0"))
-        except InvalidOperation as exc:
-            raise WorkflowPackageExecutionPlanError.validation(
-                field=f"spec.agents.{agent_key}.budgetUsd",
-                issue="invalid_budget",
-                message=f"Package agent {agent_key!r} has an invalid budget",
-            ) from exc
-        if not budget.is_finite() or budget < 0:
-            raise WorkflowPackageExecutionPlanError.validation(
-                field=f"spec.agents.{agent_key}.budgetUsd",
-                issue="invalid_budget",
-                message=f"Package agent {agent_key!r} has an invalid budget",
-            )
-        return budget
 
     def _iter_section(self, section_name: str) -> list[dict[str, Any]]:
         raw_items = self.compiled_plan.get(section_name) or []

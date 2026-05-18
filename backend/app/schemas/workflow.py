@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal, cast
 
@@ -209,7 +208,6 @@ class WorkflowStepAgentRead(CamelModel):
     slot: str
     wiring: dict[str, WorkflowWireSource]
     optional: bool
-    budget_usd: Decimal
 
 
 class WorkflowStepRead(CamelModel):
@@ -427,7 +425,6 @@ class WorkflowRead(CamelModel):
     steps: list[WorkflowStepRead]
     output_spec: WorkflowOutputSpecRead
     compiled_graph: dict[str, object] | None = None
-    aggregate_budget_usd: Decimal
     created_at: datetime
     updated_at: datetime
 

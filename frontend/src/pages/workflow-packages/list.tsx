@@ -51,10 +51,6 @@ const statusLabel: Record<WorkflowPackageStatus, string> = {
   draft: "Draft",
 };
 
-function formatNullableDateTime(value: string | null): string {
-  return value ? formatDateTime(value) : "Not recorded";
-}
-
 function formatNullableHash(value: string | null): string {
   return value ? value.slice(0, 12) : "Not recorded";
 }
@@ -98,37 +94,6 @@ function statusBadge(packageStatus: WorkflowPackageStatus) {
       {statusLabel[packageStatus]}
     </Badge>
   );
-}
-
-function preflightBadge(workflowPackage: WorkflowPackageRead) {
-  if (!workflowPackage.manifestHash || !workflowPackage.compiledHash) {
-    return <Badge variant="outline">Not validated</Badge>;
-  }
-
-  const warningCount = workflowPackage.warnings.length;
-  if (warningCount > 0) {
-    return (
-      <Badge
-        className="border-chart-3/30 bg-chart-3/10 text-chart-3"
-        variant="outline"
-      >
-        {warningCount} warning{warningCount === 1 ? "" : "s"}
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge
-      className="border-positive/30 bg-positive/10 text-positive"
-      variant="outline"
-    >
-      Passed
-    </Badge>
-  );
-}
-
-function lastRunLabel(workflowPackage: WorkflowPackageRead) {
-  return formatNullableDateTime(workflowPackage.lastLaunchedAt);
 }
 
 function LoadingTable() {
@@ -223,7 +188,7 @@ export function WorkflowPackagesListPage() {
           </h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
             Package-first authoring for private agents, output schemas,
-            capability profiles, MCP bindings, preflight checks, and controlled
+            capability profiles, MCP bindings, artifact updates, and controlled
             launches.
           </p>
         </div>
@@ -256,7 +221,7 @@ export function WorkflowPackagesListPage() {
           <Input
             aria-label="Search workflow packages"
             className="h-8 pl-8 text-xs"
-            placeholder="Search packages by name, key, status, readiness, or hash..."
+            placeholder="Search packages by name, key, status, or hash..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -335,14 +300,9 @@ export function WorkflowPackagesListPage() {
                   label: `Open package details for ${workflowPackage.name}`,
                   onClick: () => navigate(packagePath),
                 }}
-                badges={
-                  <>
-                    {statusBadge(workflowPackage.status)}
-                    {preflightBadge(workflowPackage)}
-                  </>
-                }
+                badges={statusBadge(workflowPackage.status)}
                 metadata={
-                  <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Manifest Hash:
@@ -350,18 +310,6 @@ export function WorkflowPackagesListPage() {
                       <span className="font-['Fira_Code',ui-monospace,monospace]">
                         {formatNullableHash(workflowPackage.manifestHash)}
                       </span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">
-                        Last Preflight:
-                      </span>{" "}
-                      {preflightBadge(workflowPackage)}
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">
-                        Last Run:
-                      </span>{" "}
-                      <span>{lastRunLabel(workflowPackage)}</span>
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
@@ -425,8 +373,6 @@ export function WorkflowPackagesListPage() {
               <TableHead>Key</TableHead>
               <TableHead>Manifest Hash</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Last Preflight</TableHead>
-              <TableHead>Last Run</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -455,10 +401,6 @@ export function WorkflowPackagesListPage() {
                     {formatNullableHash(workflowPackage.manifestHash)}
                   </TableCell>
                   <TableCell>{statusBadge(workflowPackage.status)}</TableCell>
-                  <TableCell>{preflightBadge(workflowPackage)}</TableCell>
-                  <TableCell className="max-w-44 whitespace-normal text-xs text-muted-foreground">
-                    {lastRunLabel(workflowPackage)}
-                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDateTime(workflowPackage.updatedAt)}
                   </TableCell>

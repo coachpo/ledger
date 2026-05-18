@@ -40,7 +40,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         compiled_plan: dict[str, Any],
         compiled_hash: str,
         extension_dependencies: list[dict[str, Any]] | None = None,
-        validation_summary: dict[str, Any] | None = None,
     ) -> WorkflowPackage:
         package = WorkflowPackage(
             key=key,
@@ -53,7 +52,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
             compiled_plan=compiled_plan,
             compiled_hash=compiled_hash,
             extension_dependencies=list(extension_dependencies or []),
-            validation_summary=dict(validation_summary or {}),
         )
         return self.add(package)
 

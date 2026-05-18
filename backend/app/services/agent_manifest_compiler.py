@@ -116,7 +116,6 @@ class AgentManifestCompiler:
                 {"mcpServerKey": server.key, "mcpServerVersion": server.version}
                 for server in mcp_servers
             ],
-            "budgetUsd": manifest.spec.budget_usd,
         }
         return cast(
             dict[str, object],

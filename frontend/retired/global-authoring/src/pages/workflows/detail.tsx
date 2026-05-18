@@ -109,11 +109,10 @@ export function WorkflowDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Execution Shape</CardTitle>
-            <CardDescription>Planned step and budget summary.</CardDescription>
+            <CardDescription>Planned step and output summary.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>{workflow.steps.length} step(s)</p>
-            <p>Aggregate budget {workflow.aggregateBudgetUsd}</p>
             <p>Output slot {workflow.outputSpec.slot} from step {workflow.outputSpec.stepIndex}</p>
           </CardContent>
         </Card>

@@ -384,12 +384,6 @@ class WorkflowPackageService:
                 list[dict[str, Any]],
                 prepared.get("extensionDependencies") or [],
             ),
-            "validation_summary": {
-                "diagnostics": [],
-                "warnings": WorkflowPackagePreflightService(self.session).save_warnings(
-                    package_definition
-                ),
-            },
         }
 
     def _resolve_model_connection_refs(
@@ -554,10 +548,8 @@ class WorkflowPackageService:
                 "status": package.status,
                 "manifestHash": package.manifest_hash,
                 "compiledHash": package.compiled_hash,
-                "warnings": self._package_warnings(package),
                 "createdAt": package.created_at,
                 "updatedAt": package.updated_at,
-                "lastLaunchedAt": package.last_launched_at,
             }
         )
 
@@ -604,17 +596,6 @@ class WorkflowPackageService:
                 "manifestHash": prepared["manifestHash"],
                 "compiledHash": prepared["compiledHash"],
             }
-        )
-
-    @staticmethod
-    def _package_warnings(package: WorkflowPackage) -> list[dict[str, Any]]:
-        if not isinstance(package.validation_summary, dict):
-            return []
-        warnings = package.validation_summary.get("warnings")
-        return (
-            [dict(item) for item in warnings if isinstance(item, dict)]
-            if isinstance(warnings, list)
-            else []
         )
 
     @staticmethod

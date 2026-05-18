@@ -417,7 +417,6 @@ def _compile_agent(agent: WorkflowPackageAgent) -> dict[str, object]:
         "outputSchema": agent.output_schema,
         "capabilityProfiles": sorted(agent.capability_profiles),
         "mcpServers": sorted(agent.mcp_servers),
-        "budgetUsd": agent.budget_usd,
     }
 
 

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, Literal
 
 from app.services.execution_ownership import PackageExecutionOwnership
@@ -99,7 +98,6 @@ class PackageRuntimeAgentSpec:
     output_schema: PackageLocalOutputSchemaSpec
     capability_profiles: tuple[PackageCapabilityProfileGrant, ...]
     mcp_servers: tuple[PackagePrivateMcpConfig, ...]
-    budget_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -184,7 +182,6 @@ class ExecutionPlanFinalOutput:
 class ExecutionPlan:
     target: ExecutionPlanTarget
     input_schema: dict[str, Any]
-    aggregate_budget_usd: Decimal
     steps: tuple[ExecutionPlanStep, ...]
     final_output: ExecutionPlanFinalOutput
     package_workflow: PackageExecutionWorkflow | None = None

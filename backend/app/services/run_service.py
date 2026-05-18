@@ -701,8 +701,6 @@ class RunService:
                 plan=plan,
                 validated_input=validated_input,
             )
-            if workflow_package is not None:
-                workflow_package.last_launched_at = utcnow()
             self.session.commit()
             self.session.refresh(run)
         except Exception:

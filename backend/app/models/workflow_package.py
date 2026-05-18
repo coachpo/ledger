@@ -25,7 +25,6 @@ class WorkflowPackage(IdMixin, Base):
         Index("uq_workflow_packages_active_key", "key", unique=True),
         Index("ix_workflow_packages_manifest_hash", "manifest_hash"),
         Index("ix_workflow_packages_compiled_hash", "compiled_hash"),
-        Index("ix_workflow_packages_last_launched_at", "last_launched_at"),
     )
 
     key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -48,12 +47,6 @@ class WorkflowPackage(IdMixin, Base):
         default=list,
         server_default=sql_text("'[]'::jsonb"),
     )
-    validation_summary: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=sql_text("'{}'::jsonb"),
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -66,10 +59,6 @@ class WorkflowPackage(IdMixin, Base):
         default=utcnow,
         server_default=sql_text("now()"),
         onupdate=utcnow,
-    )
-    last_launched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
     )
 
     secret_bindings: Mapped[list[WorkflowPackageSecretBinding]] = relationship(

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Annotated, Literal, cast
 
@@ -300,7 +299,6 @@ class WorkflowPackageAgent(CamelModel):
     output_schema: str = Field(alias="outputSchema", min_length=1, max_length=120)
     capability_profiles: list[str] = Field(default_factory=list, alias="capabilityProfiles")
     mcp_servers: list[str] = Field(default_factory=list, alias="mcpServers")
-    budget_usd: str = Field(default="0", alias="budgetUsd")
 
     @field_validator("key", mode="before")
     @classmethod
@@ -341,22 +339,6 @@ class WorkflowPackageAgent(CamelModel):
     @classmethod
     def validate_mcp_servers(cls, value: object) -> list[str]:
         return _ref_list(value, field_name="mcpServers", allow_hyphen=True)
-
-    @field_validator("budget_usd", mode="before")
-    @classmethod
-    def validate_budget_usd(cls, value: object) -> str:
-        if value is None:
-            return "0"
-        if not isinstance(value, str):
-            raise ValueError("budgetUsd must be a decimal string")
-        normalized = value.strip()
-        try:
-            decimal_value = Decimal(normalized)
-        except InvalidOperation as exc:
-            raise ValueError("budgetUsd must be a decimal string") from exc
-        if not decimal_value.is_finite() or decimal_value < 0:
-            raise ValueError("budgetUsd must be a non-negative decimal string")
-        return normalized
 
 
 class WorkflowPackageReference(CamelModel):

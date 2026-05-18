@@ -9,7 +9,6 @@ import type { WorkflowPackageManifestDiagnostic } from "@/lib/types/workflow-pac
 export type PackageMcpTransport = "stdio" | "http-sse";
 
 export type PackageAgentDraft = {
-  budgetUsd: string;
   capabilityProfiles: string[];
   description: string;
   inputSchema: SchemaIRNode;
@@ -96,7 +95,6 @@ function createLocalKey(prefix: string) {
 
 export function createPackageAgentDraft(overrides: Partial<PackageAgentDraft> = {}): PackageAgentDraft {
   return {
-    budgetUsd: "0",
     capabilityProfiles: [],
     description: "",
     inputSchema: createDefaultSchemaNode("object"),
@@ -194,7 +192,6 @@ function parseArgsText(value: unknown) {
 function parseAgent(value: unknown, index: number): PackageAgentDraft {
   const record = isRecord(value) ? value : {};
   return createPackageAgentDraft({
-    budgetUsd: readString(record.budgetUsd, "0"),
     capabilityProfiles: readStringArray(record.capabilityProfiles),
     description: readString(record.description),
     inputSchema: parseSchema(record.inputSchema),
@@ -334,7 +331,6 @@ export function workflowPackageDraftToManifestObject(draft: WorkflowPackageDraft
     },
     spec: {
       agents: draft.spec.agents.map((agent) => ({
-        budgetUsd: agent.budgetUsd.trim() || "0",
         capabilityProfiles: [...agent.capabilityProfiles].sort((left, right) => left.localeCompare(right)),
         description: agent.description.trim(),
         inputSchema: schemaBuilderToJsonSchema(agent.inputSchema),

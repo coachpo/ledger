@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, UniqueConstraint
@@ -29,10 +28,6 @@ class Workflow(IdMixin, TimestampMixin, Base):
             name="ck_workflows_status",
         ),
         CheckConstraint("version > 0", name="ck_workflows_version_positive"),
-        CheckConstraint(
-            "aggregate_budget_usd >= 0",
-            name="ck_workflows_aggregate_budget_non_negative",
-        ),
         UniqueConstraint("key", "version", name="uq_workflows_key_version"),
         Index("ix_workflows_key", "key"),
         Index("ix_workflows_status", "status"),
@@ -75,11 +70,6 @@ class Workflow(IdMixin, TimestampMixin, Base):
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     steps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     output_spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    aggregate_budget_usd: Mapped[Decimal] = mapped_column(
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

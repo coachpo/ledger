@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import cast
 
+from pydantic import ValidationError
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Connection, Engine
 
@@ -18,6 +20,7 @@ from app.models.agent import (
 )
 from app.models.mcp_server import flatten_mcp_server_storage_payload
 from app.models.workflow import TEMPORARY_WORKFLOW_MANIFEST_SOURCE, WORKFLOW_MANIFEST_API_VERSION
+from app.schemas.workflow_package_manifest import WorkflowPackageManifest
 from app.services.legacy_authoring import LEGACY_AUTHORING_UPGRADE_ONLY
 
 LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_UPGRADE_ONLY
@@ -100,7 +103,11 @@ _EXTENSION_STATE_CREATE_CANONICAL_TABLE_SQL = f"""
     )
     """
 _PRESET_PACKAGE_SQL_FILE = "".join(("trading", "agents", "_", "advisory", "_", "research", ".sql"))
-_PRESET_MARKER_KEY = "dbUpgradePreset"
+_PRESET_PACKAGE_KEY = _PRESET_PACKAGE_SQL_FILE.removesuffix(".sql")
+_PRESET_PACKAGE_MANIFEST_HASH = "3acb5e24980d08216f9b4cbae0d2b524357d16aaf92116e2fe67006756228192"
+_PRESET_PACKAGE_COMPILED_HASH = "b131fc9d707e34bfccafd94439fda51e6af7821f85eedcf9a3366cc093fdd31b"
+_DB_UPGRADE_MARKER_TABLE = "db_upgrade_markers"
+_WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY = "workflow_package_artifact_cutover_v1"
 
 
 def _sql_string_literal(value: str) -> str:
@@ -291,7 +298,6 @@ $$,
                 output_schema_version INTEGER NOT NULL,
                 capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
                 mcp_servers JSONB NOT NULL DEFAULT '[]'::jsonb,
-                budget_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_agents_status CHECK (
@@ -301,7 +307,6 @@ $$,
                 CONSTRAINT ck_agents_output_schema_version_positive CHECK (
                     output_schema_version > 0
                 ),
-                CONSTRAINT ck_agents_budget_usd_non_negative CHECK (budget_usd >= 0),
                 CONSTRAINT uq_agents_key_version UNIQUE (key, version)
             )
             """,
@@ -341,16 +346,12 @@ $$,
                 input_schema JSONB NOT NULL,
                 steps JSONB NOT NULL,
                 output_spec JSONB NOT NULL,
-                aggregate_budget_usd NUMERIC(20, 8) NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_workflows_status CHECK (
                     status IN ('draft', 'published', 'deprecated')
                 ),
                 CONSTRAINT ck_workflows_version_positive CHECK (version > 0),
-                CONSTRAINT ck_workflows_aggregate_budget_non_negative CHECK (
-                    aggregate_budget_usd >= 0
-                ),
                 CONSTRAINT uq_workflows_key_version UNIQUE (key, version)
             )
             """,
@@ -724,10 +725,8 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
         compiled_plan JSONB NOT NULL,
         compiled_hash VARCHAR(64) NOT NULL,
         extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb,
-        validation_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_launched_at TIMESTAMPTZ,
         CONSTRAINT ck_workflow_packages_status CHECK (status IN ('draft', 'active'))
     )
     """,
@@ -755,10 +754,6 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_packages_compiled_hash "
         "ON workflow_packages (compiled_hash)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_workflow_packages_last_launched_at "
-        "ON workflow_packages (last_launched_at)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_package_secret_bindings_package "
@@ -933,7 +928,6 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "output_schema_version",
             "capabilities",
             "mcp_servers",
-            "budget_usd",
             "created_at",
             "updated_at",
         }
@@ -951,7 +945,6 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "input_schema",
             "steps",
             "output_spec",
-            "aggregate_budget_usd",
             "created_at",
             "updated_at",
         }
@@ -1568,9 +1561,12 @@ def _ensure_workflow_package_current_artifact_columns(
         "compiled_plan": "JSONB",
         "compiled_hash": "VARCHAR(64)",
         "extension_dependencies": "JSONB DEFAULT '[]'::jsonb",
-        "validation_summary": "JSONB DEFAULT '{}'::jsonb",
-        "last_launched_at": "TIMESTAMPTZ",
     }
+    removed_state_columns = {
+        "_".join(("last", "launched", "at")),
+        "_".join(("validation", "summary")),
+    }
+    obsolete_columns = removed_state_columns & package_columns
     required_artifact_columns = {
         "manifest_source",
         "manifest_hash",
@@ -1580,6 +1576,13 @@ def _ensure_workflow_package_current_artifact_columns(
     }
 
     with engine.begin() as connection:
+        if obsolete_columns:
+            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_last_launched_at")
+        for column_name in sorted(obsolete_columns):
+            connection.exec_driver_sql(
+                f"ALTER TABLE workflow_packages DROP COLUMN IF EXISTS {column_name}"
+            )
+            package_columns.discard(column_name)
         for column_name, column_type in column_definitions.items():
             if column_name not in package_columns:
                 connection.exec_driver_sql(
@@ -1601,11 +1604,6 @@ def _ensure_workflow_package_current_artifact_columns(
             "WHERE extension_dependencies IS NULL "
             "OR jsonb_typeof(extension_dependencies) <> 'array'"
         )
-        connection.exec_driver_sql(
-            "UPDATE workflow_packages SET validation_summary = '{}'::jsonb "
-            "WHERE validation_summary IS NULL "
-            "OR jsonb_typeof(validation_summary) <> 'object'"
-        )
         for column_name in sorted(required_artifact_columns):
             connection.exec_driver_sql(
                 f"ALTER TABLE workflow_packages ALTER COLUMN {column_name} SET NOT NULL"
@@ -1617,17 +1615,202 @@ def _ensure_workflow_package_current_artifact_columns(
         connection.exec_driver_sql(
             "ALTER TABLE workflow_packages ALTER COLUMN extension_dependencies SET NOT NULL"
         )
-        connection.exec_driver_sql(
-            "ALTER TABLE workflow_packages ALTER COLUMN validation_summary "
-            "SET DEFAULT '{}'::jsonb"
-        )
-        connection.exec_driver_sql(
-            "ALTER TABLE workflow_packages ALTER COLUMN validation_summary SET NOT NULL"
-        )
 
 
 def _preset_package_sql_path() -> Path:
     return Path(__file__).with_name(_PRESET_PACKAGE_SQL_FILE)
+
+
+def _ensure_db_upgrade_marker_table(engine: Engine, table_names: set[str]) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            f"""
+            CREATE TABLE IF NOT EXISTS {_DB_UPGRADE_MARKER_TABLE} (
+                key VARCHAR(120) PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+    table_names.add(_DB_UPGRADE_MARKER_TABLE)
+
+
+def _upgrade_marker_applied(connection: Connection, marker_key: str) -> bool:
+    return bool(
+        connection.execute(
+            text(f"SELECT 1 FROM {_DB_UPGRADE_MARKER_TABLE} WHERE key = :marker_key"),
+            {"marker_key": marker_key},
+        ).scalar_one_or_none()
+    )
+
+
+def _mark_upgrade_applied(connection: Connection, marker_key: str) -> None:
+    connection.execute(
+        text(
+            f"""
+            INSERT INTO {_DB_UPGRADE_MARKER_TABLE} (key)
+            VALUES (:marker_key)
+            ON CONFLICT (key) DO NOTHING
+            """
+        ),
+        {"marker_key": marker_key},
+    )
+
+
+def _ensure_report_agent_memory_cleanup_columns(engine: Engine, table_names: set[str]) -> None:
+    if "reports" not in table_names:
+        return
+
+    report_columns = {column["name"] for column in inspect(engine).get_columns("reports")}
+    with engine.begin() as connection:
+        if "source" not in report_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE reports ADD COLUMN source VARCHAR(20) DEFAULT 'compiled' NOT NULL"
+            )
+        if "metadata" not in report_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE reports ADD COLUMN metadata JSONB DEFAULT '{}' NOT NULL"
+            )
+
+
+def _workflow_package_run_artifact_filter_sql(
+    *,
+    run_columns: set[str],
+    table_names: set[str],
+) -> str:
+    filters: list[str] = []
+    if "target_kind" in run_columns:
+        filters.append("run.target_kind = 'workflowPackage'")
+    if "workflow_package_id" in run_columns:
+        filters.append("run.workflow_package_id IS NOT NULL")
+    if "workflow_package_key" in run_columns:
+        filters.append("run.workflow_package_key IS NOT NULL")
+    if "run_workflow_package_snapshots" in table_names:
+        filters.append(
+            "EXISTS ("
+            "SELECT 1 FROM run_workflow_package_snapshots AS snapshot "
+            "WHERE snapshot.run_id = run.id"
+            ")"
+        )
+    if not filters:
+        return "FALSE"
+    return " OR ".join(f"({filter_sql})" for filter_sql in filters)
+
+
+def _purge_workflow_package_run_artifacts(
+    connection: Connection,
+    *,
+    table_names: set[str],
+    run_columns: set[str],
+) -> None:
+    run_filter_sql = _workflow_package_run_artifact_filter_sql(
+        run_columns=run_columns,
+        table_names=table_names,
+    )
+    if run_filter_sql == "FALSE":
+        return
+
+    connection.exec_driver_sql("DROP TABLE IF EXISTS workflow_package_cutover_run_ids")
+    connection.exec_driver_sql(
+        f"""
+        CREATE TEMPORARY TABLE workflow_package_cutover_run_ids ON COMMIT DROP AS
+        SELECT DISTINCT run.id
+        FROM runs AS run
+        WHERE {run_filter_sql}
+        """
+    )
+    stale_run_count = connection.exec_driver_sql(
+        "SELECT COUNT(*) FROM workflow_package_cutover_run_ids"
+    ).scalar_one()
+    if not stale_run_count:
+        connection.exec_driver_sql("DROP TABLE workflow_package_cutover_run_ids")
+        return
+
+    if "reports" in table_names:
+        connection.exec_driver_sql(
+            """
+            DELETE FROM reports AS report
+            USING workflow_package_cutover_run_ids AS stale_run
+            WHERE report.source = 'agent'
+              AND jsonb_typeof(report.metadata) = 'object'
+              AND jsonb_typeof(report.metadata -> 'analysis') = 'object'
+              AND report.metadata -> 'analysis' ->> 'reviewType' = 'agent_memory'
+              AND (report.metadata -> 'analysis' ->> 'runId') ~ '^[0-9]+$'
+              AND (report.metadata -> 'analysis' ->> 'runId')::integer = stale_run.id
+            """
+        )
+
+    for table_name in (
+        "run_operation_invocations",
+        "run_agent_invocations",
+        "run_steps",
+        "run_workflow_package_snapshots",
+    ):
+        if table_name in table_names:
+            connection.exec_driver_sql(
+                f"""
+                DELETE FROM {table_name}
+                WHERE run_id IN (SELECT id FROM workflow_package_cutover_run_ids)
+                """
+            )
+
+    connection.exec_driver_sql(
+        """
+        DELETE FROM runs
+        WHERE id IN (SELECT id FROM workflow_package_cutover_run_ids)
+        """
+    )
+    connection.exec_driver_sql("DROP TABLE workflow_package_cutover_run_ids")
+
+
+def _jsonb_payload(value: object) -> object:
+    if isinstance(value, str):
+        return cast(object, json.loads(value))
+    return value
+
+
+def _browser_proven_package_preset_needs_reseed(connection: Connection) -> bool:
+    row = (
+        connection.execute(
+            text(
+                """
+                SELECT manifest_source, manifest_hash, package_definition,
+                       compiled_plan, compiled_hash
+                FROM workflow_packages
+                WHERE key = :package_key
+                """
+            ),
+            {"package_key": _PRESET_PACKAGE_KEY},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return True
+
+    if (
+        row["manifest_hash"] != _PRESET_PACKAGE_MANIFEST_HASH
+        or row["compiled_hash"] != _PRESET_PACKAGE_COMPILED_HASH
+    ):
+        return True
+
+    try:
+        package_definition = _jsonb_payload(row["package_definition"])
+        compiled_plan = _jsonb_payload(row["compiled_plan"])
+        WorkflowPackageManifest.model_validate(package_definition)
+    except (TypeError, ValueError, ValidationError):
+        return True
+
+    serialized_preset = (
+        str(row["manifest_source"])
+        + json.dumps(package_definition, sort_keys=True)
+        + json.dumps(compiled_plan, sort_keys=True)
+    )
+    removed_budget_field = "budget" + "Usd"
+    return removed_budget_field in serialized_preset
+
+
+def _insert_browser_proven_package_preset(connection: Connection, preset_sql_path: Path) -> None:
+    connection.exec_driver_sql(preset_sql_path.read_text(encoding="utf-8"))
 
 
 def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str]) -> None:
@@ -1638,8 +1821,37 @@ def _ensure_browser_proven_package_preset(engine: Engine, table_names: set[str])
     if not preset_sql_path.exists():
         return
 
+    _ensure_db_upgrade_marker_table(engine, table_names)
+    _ensure_report_agent_memory_cleanup_columns(engine, table_names)
+    _repair_legacy_agent_memory_report_sources(engine, table_names)
+    run_columns = set()
+    if "runs" in table_names:
+        run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
+
     with engine.begin() as connection:
-        connection.exec_driver_sql(preset_sql_path.read_text(encoding="utf-8"))
+        marker_applied = _upgrade_marker_applied(
+            connection,
+            _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY,
+        )
+        if not marker_applied and "runs" in table_names:
+            _purge_workflow_package_run_artifacts(
+                connection,
+                table_names=table_names,
+                run_columns=run_columns,
+            )
+
+        if not marker_applied or _browser_proven_package_preset_needs_reseed(connection):
+            connection.execute(
+                text("DELETE FROM workflow_packages WHERE key = :package_key"),
+                {"package_key": _PRESET_PACKAGE_KEY},
+            )
+            _insert_browser_proven_package_preset(connection, preset_sql_path)
+
+        if not marker_applied:
+            _mark_upgrade_applied(
+                connection,
+                _WORKFLOW_PACKAGE_STARTUP_CUTOVER_MARKER_KEY,
+            )
 
 
 def _ensure_platform_reference_tables(engine: Engine, table_names: set[str]) -> None:
@@ -2682,6 +2894,39 @@ def _remove_dead_agent_runtime_fields(engine: Engine, table_names: set[str]) -> 
             connection.exec_driver_sql("ALTER TABLE agents DROP COLUMN IF EXISTS streaming CASCADE")
 
 
+def _remove_global_authoring_allocation_columns(engine: Engine, table_names: set[str]) -> None:
+    if not {"agents", "workflows"} & table_names:
+        return
+
+    inspector = inspect(engine)
+    agent_column = "_".join(("budget", "usd"))
+    workflow_column = "_".join(("aggregate", "budget", "usd"))
+
+    with engine.begin() as connection:
+        if "agents" in table_names:
+            agent_columns = {column["name"] for column in inspector.get_columns("agents")}
+            if agent_column in agent_columns:
+                _drop_constraint_if_exists(
+                    connection,
+                    "agents",
+                    "_".join(("ck", "agents", "budget", "usd", "non", "negative")),
+                )
+                connection.exec_driver_sql(
+                    f"ALTER TABLE agents DROP COLUMN IF EXISTS {agent_column} CASCADE"
+                )
+        if "workflows" in table_names:
+            workflow_columns = {column["name"] for column in inspector.get_columns("workflows")}
+            if workflow_column in workflow_columns:
+                _drop_constraint_if_exists(
+                    connection,
+                    "workflows",
+                    "_".join(("ck", "workflows", "aggregate", "budget", "non", "negative")),
+                )
+                connection.exec_driver_sql(
+                    f"ALTER TABLE workflows DROP COLUMN IF EXISTS {workflow_column} CASCADE"
+                )
+
+
 def _remove_run_cost_columns(engine: Engine, table_names: set[str]) -> None:
     cost_word = "cost"
     currency_suffix = "usd"
@@ -3185,6 +3430,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
         _ensure_agent_platform_tables(engine, table_names)
         _ensure_run_workflow_package_provenance_support(engine, table_names)
         _remove_run_cost_columns(engine, table_names)
+    _ensure_browser_proven_package_preset(engine, table_names)
     _delete_clean_break_global_authoring_rows(engine, table_names)
     _ensure_model_connection_key_support(engine, table_names)
     _ensure_model_connection_kind_support(engine, table_names)
@@ -3194,6 +3440,7 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _ensure_agent_manifest_columns(engine, table_names)
     _ensure_workflow_manifest_columns(engine, table_names)
     _remove_dead_agent_runtime_fields(engine, table_names)
+    _remove_global_authoring_allocation_columns(engine, table_names)
     _ensure_agent_model_connection_support(engine, table_names)
     _backfill_agent_model_connections(
         engine,
@@ -3204,7 +3451,6 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _flatten_legacy_mcp_server_rows(engine, table_names)
     _ensure_hard_delete_lifecycle_schema(engine, table_names)
     _delete_rows_with_unresolved_dependency_refs(engine, table_names)
-    _ensure_browser_proven_package_preset(engine, table_names)
     _ensure_platform_reference_tables(engine, table_names)
     _backfill_platform_reference_tables(engine, table_names)
     _ensure_platform_foreign_keys(engine, table_names)

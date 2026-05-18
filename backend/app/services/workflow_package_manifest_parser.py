@@ -66,7 +66,6 @@ _ALIAS_LOC = {
     "system_prompt": "systemPrompt",
     "input_schema": "inputSchema",
     "output_schema": "outputSchema",
-    "budget_usd": "budgetUsd",
     "from_": "from",
     "max_iterations": "maxIterations",
     "timeout_seconds": "timeoutSeconds",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import NoReturn, cast
 
 from fastapi import status
@@ -272,7 +271,6 @@ class AgentService:
         output_schema_version: int | None,
         capabilities: Sequence[AgentCapabilityRefWrite],
         mcp_servers: Sequence[AgentMcpServerRefWrite],
-        budget_usd: Decimal,
         manifest_api_version: str,
         manifest_source: str,
         manifest_hash: str,
@@ -314,7 +312,6 @@ class AgentService:
                 }
                 for item in mcp_server_rows
             ],
-            "budget_usd": budget_usd,
         }
 
     def _prepare_manifest_write_or_raise(
@@ -345,7 +342,6 @@ class AgentService:
                 output_schema_version=payload.output_schema_version,
                 capabilities=payload.capabilities,
                 mcp_servers=payload.mcp_servers,
-                budget_usd=payload.budget_usd,
                 manifest_api_version=manifest.api_version,
                 manifest_source=manifest_source,
                 manifest_hash=self._manifest_hash(manifest_source),
@@ -403,7 +399,6 @@ class AgentService:
             "outputSchemaKey": "spec.outputSchema",
             "outputSchemaVersion": "spec.outputSchema",
             "systemPrompt": "spec.systemPrompt",
-            "budgetUsd": "spec.budgetUsd",
         }
         if field.startswith("inputSchema."):
             return field.replace("inputSchema", "spec.inputSchema", 1)
@@ -702,7 +697,6 @@ class AgentService:
                 "outputSchema": output_schema,
                 "capabilities": capabilities,
                 "mcpServers": mcp_servers,
-                "budgetUsd": agent.budget_usd,
                 "createdAt": agent.created_at,
                 "updatedAt": agent.updated_at,
             }
