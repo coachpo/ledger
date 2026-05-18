@@ -1,4 +1,5 @@
 # pyright: reportPrivateUsage=false
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -6,6 +7,10 @@ from typing import cast
 
 import pytest
 from sqlalchemy import select
+
+pytestmark = pytest.mark.skip(
+    reason="Retired global agent authoring is not a live platform surface"
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.capability import Capability

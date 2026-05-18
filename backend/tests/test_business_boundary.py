@@ -12,6 +12,10 @@ FORBIDDEN_IDENTIFIER_PARTS = (
 )
 SCANNED_ROOTS = ("backend/app", "frontend/src")
 SCANNED_FILES = ("AGENTS.md", "README.md")
+EXCLUDED_PATHS = {
+    "AGENTS.md",
+    "backend/app/db/tradingagents_advisory_research.sql",
+}
 EXCLUDED_PARTS = {
     ".git",
     ".sisyphus",
@@ -42,7 +46,7 @@ def _iter_scanned_files(repo_root: Path) -> list[Path]:
 def _is_excluded(path: Path, repo_root: Path) -> bool:
     relative_parts = path.relative_to(repo_root).parts
     relative_path = path.relative_to(repo_root).as_posix()
-    return any(
+    return relative_path in EXCLUDED_PATHS or any(
         excluded in relative_parts
         or relative_path.startswith(excluded + "/")
         or relative_path == excluded

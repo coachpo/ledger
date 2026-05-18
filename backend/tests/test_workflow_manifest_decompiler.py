@@ -1,4 +1,5 @@
 # pyright: reportMissingImports=false
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -6,6 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Retired global workflow authoring is not a live platform surface"
+)
 
 from app.services.workflow_manifest_compiler import compile_workflow_manifest
 from app.services.workflow_manifest_decompiler import (

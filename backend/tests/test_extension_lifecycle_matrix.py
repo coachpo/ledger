@@ -59,7 +59,6 @@ metadata:
 spec:
   inputs:
     type: object
-    additionalProperties: false
     properties:
       ticker:
         type: string
@@ -74,7 +73,6 @@ spec:
       name: Summary Output
       jsonSchema:
         type: object
-        additionalProperties: false
         properties:
           summary:
             type: string
@@ -86,7 +84,6 @@ spec:
       systemPrompt: Return a short JSON summary.
       inputSchema:
         type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string
@@ -99,7 +96,6 @@ spec:
       name: Finance Matrix Flow
       inputSchema:
         type: object
-        additionalProperties: false
         properties:
           ticker:
             type: string
@@ -293,7 +289,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     launch = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "finance_matrix_flow",
             "parameters": {"ticker": "MSFT"},
         },
@@ -353,7 +348,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     disabled_launch = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "finance_matrix_flow",
             "parameters": {"ticker": "MSFT"},
         },
@@ -416,7 +410,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     restored_launch = client.post(
         f"/api/workflow-packages/{package['id']}/launches",
         json={
-            "version": 1,
             "workflowKey": "finance_matrix_flow",
             "parameters": {"ticker": "NVDA"},
         },

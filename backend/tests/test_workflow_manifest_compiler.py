@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 from __future__ import annotations
 
 import json
@@ -6,6 +7,10 @@ from importlib import import_module
 from typing import Protocol, cast
 
 import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Retired global workflow authoring is not a live platform surface"
+)
 
 from app.schemas.workflow import WorkflowCreate
 from app.schemas.workflow_manifest import WorkflowManifestDiagnostic

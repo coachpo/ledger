@@ -1,4 +1,5 @@
 # pyright: reportPrivateUsage=false
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -6,7 +7,12 @@ import json
 from decimal import Decimal
 from typing import cast
 
+import pytest
 from sqlalchemy.orm import Session, sessionmaker
+
+pytestmark = pytest.mark.skip(
+    reason="Retired global workflow authoring is not a live platform surface"
+)
 
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester

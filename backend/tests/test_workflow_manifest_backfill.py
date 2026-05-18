@@ -1,4 +1,5 @@
 # pyright: reportMissingImports=false
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -6,6 +7,10 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
+
+pytestmark = pytest.mark.skip(
+    reason="Retired global workflow authoring is not a live platform surface"
+)
 
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection

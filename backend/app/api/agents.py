@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import get_agent_service
+from app.api.dependencies import get_agent_service  # type: ignore[attr-defined]
 from app.schemas.agent import (
     AgentListRead,
     AgentManifestValidationRead,

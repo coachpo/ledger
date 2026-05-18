@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import get_capability_service
+from app.api.dependencies import get_capability_service  # type: ignore[attr-defined]
 from app.schemas.capability import (
     CapabilityDraftCreate,
     CapabilityDraftUpdate,

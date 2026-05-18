@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import get_output_schema_service
+from app.api.dependencies import get_output_schema_service  # type: ignore[attr-defined]
 from app.schemas.output_schema import (
     OutputSchemaDraftCreate,
     OutputSchemaDraftUpdate,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar
 
 from app.extensions import BundledApiRouterContribution, BundledServerDeclaredToolContribution
 from app.extensions.signaldeck_finance.ownership import (
@@ -55,25 +55,20 @@ type RuntimeToolContributionLoader = Callable[[], tuple[RuntimeToolSpec, ...]]
 type ExecutionProviderBundleLoader = Callable[[], ExecutionProviderBundle]
 type RunLifecycleContributionLoader = Callable[[], tuple[ExtensionRunLifecycleHooks, ...]]
 
-_load_finance_api_router_contributions = cast(
-    ApiRouterContributionLoader,
-    _raw_load_finance_api_router_contributions,
+_load_finance_api_router_contributions: ApiRouterContributionLoader = (
+    _raw_load_finance_api_router_contributions
 )
-_load_finance_server_declared_tool_contributions = cast(
-    ServerDeclaredToolContributionLoader,
-    _raw_load_finance_server_declared_tool_contributions,
+_load_finance_server_declared_tool_contributions: ServerDeclaredToolContributionLoader = (
+    _raw_load_finance_server_declared_tool_contributions
 )
-_load_finance_runtime_tool_contributions = cast(
-    RuntimeToolContributionLoader,
-    _raw_load_finance_runtime_tool_contributions,
+_load_finance_runtime_tool_contributions: RuntimeToolContributionLoader = (
+    _raw_load_finance_runtime_tool_contributions
 )
-_load_finance_execution_provider_bundle = cast(
-    ExecutionProviderBundleLoader,
-    _raw_load_finance_execution_provider_bundle,
+_load_finance_execution_provider_bundle: ExecutionProviderBundleLoader = (
+    _raw_load_finance_execution_provider_bundle
 )
-_load_finance_run_lifecycle_hooks = cast(
-    RunLifecycleContributionLoader,
-    _raw_load_finance_run_lifecycle_hooks,
+_load_finance_run_lifecycle_hooks: RunLifecycleContributionLoader = (
+    _raw_load_finance_run_lifecycle_hooks
 )
 
 

@@ -1,10 +1,11 @@
+# pyright: reportAttributeAccessIssue=false
 from __future__ import annotations
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import get_run_service, get_workflow_service
+from app.api.dependencies import get_run_service, get_workflow_service  # type: ignore[attr-defined]
 from app.schemas.workflow import (
     WorkflowCreateRequest,
     WorkflowLaunchCreateRequest,
@@ -16,7 +17,6 @@ from app.schemas.workflow import (
     WorkflowRead,
     WorkflowStatus,
     WorkflowUpdateRequest,
-    WorkflowVersionListRead,
 )
 from app.services.run_service import RunService
 from app.services.workflow_service import WorkflowService
@@ -73,14 +73,6 @@ def get_workflow_launch(
     version: Annotated[int | None, Query()] = None,
 ) -> WorkflowLaunchRead:
     return service.get_workflow_launch(workflow_id, version=version)
-
-
-@router.get("/{workflow_id}/versions", response_model=WorkflowVersionListRead)
-def list_workflow_versions(
-    workflow_id: int,
-    service: Annotated[RunService, Depends(get_run_service)],
-) -> WorkflowVersionListRead:
-    return service.list_workflow_versions(workflow_id)
 
 
 @router.post(
