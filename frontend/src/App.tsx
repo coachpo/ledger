@@ -22,7 +22,7 @@ export default function App() {
         <ErrorBoundary>
           <RouterProvider router={router} />
         </ErrorBoundary>
-        <Toaster position="bottom-right" richColors />
+        <Toaster position="top-right" richColors />
       </QueryClientProvider>
     </ThemeProvider>
   );
