@@ -5,13 +5,97 @@ from datetime import datetime, timezone
 from typing import cast
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.schemas.run import RunPackageProvenanceRead, RunRead
+from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
+
+
+def _runtime_input_registry_boundary_source(*, package_key: str) -> str:
+    return f"""apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: {package_key}
+  name: Runtime Boundary Package
+  description: Runtime boundary fixture.
+spec:
+  inputs:
+    type: object
+    properties:
+      ticker:
+        type: string
+    required: [ticker]
+  capabilityProfiles: []
+  outputSchemas:
+    - key: summary_output
+      name: Summary Output
+      jsonSchema:
+        type: object
+        properties:
+          summary:
+            type: string
+        required: [summary]
+  agents:
+    - key: package_analyst
+      name: Package Analyst
+      modelConnection: package_runtime_model
+      systemPrompt: Return a short JSON summary.
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+        required: [ticker]
+      outputSchema: summary_output
+      capabilityProfiles: []
+  workflows:
+    - key: runtime_workflow
+      name: Runtime Workflow
+      inputSchema:
+        type: object
+        properties:
+          ticker:
+            type: string
+        required: [ticker]
+      flow:
+        kind: step
+        id: package_analysis
+        slot: analysis
+        uses: package_analyst
+        with:
+          ticker: ${{{{ inputs.ticker }}}}
+      output:
+        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
+"""
+
+
+def _seed_runtime_input_registry_boundary_model_connection(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        session.add(
+            ModelConnection(
+                key="package_runtime_model",
+                status="active",
+                connection_kind="provider",
+                name="Package Runtime Model",
+                description="Runtime boundary model binding.",
+                base_url="https://runtime-boundary.example.com/v1",
+                model_id="gpt-runtime-boundary",
+                reasoning_effort="high",
+                api_style="responses",
+                timeout_seconds=31,
+                secret_payload={"apiKey": "sk-runtime-boundary"},
+            )
+        )
+        session.commit()
 
 
 def _workflow_package_run() -> Run:
@@ -226,6 +310,120 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
             "compiledHashMatchesSnapshot": True,
             "unavailableReason": None,
         }
+
+
+def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_or_run_reporting(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_runtime_input_registry_boundary_model_connection(session_factory)
+    package_key = "runtime_boundary_package"
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": _runtime_input_registry_boundary_source(package_key=package_key)},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package_id = int(create_response.json()["id"])
+
+    personal_response = client.post(
+        f"/api/workflow-packages/{package_id}/runtime-input-registry/personal",
+        params={"workflowKey": "runtime_workflow"},
+        json={
+            "name": "Registry-only preset",
+            "payload": {"ticker": "MSFT", "notes": ["registry only"]},
+        },
+    )
+    assert personal_response.status_code == 201, personal_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AAPL"}},
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+
+    registry_response = client.get(
+        f"/api/workflow-packages/{package_id}/runtime-input-registry",
+        params={"workflowKey": "runtime_workflow"},
+    )
+    assert registry_response.status_code == 200, registry_response.json()
+    registry_body = cast(dict[str, object], registry_response.json())
+    assert len(cast(list[object], registry_body["personal"])) == 1
+    history = cast(list[dict[str, object]], registry_body["history"])
+    assert len(history) == 1
+    assert history[0]["sourceRunId"] == run_id
+    assert history[0]["payload"] == {"ticker": "AAPL"}
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, object], detail_response.json())
+    package_provenance = cast(dict[str, object], detail["packageProvenance"])
+    launch_snapshot = cast(dict[str, object], package_provenance["launchSnapshot"])
+    assert launch_snapshot["parameters"] == {"ticker": "AAPL"}
+    serialized_detail = json.dumps(detail, sort_keys=True)
+    assert "Registry-only preset" not in serialized_detail
+    assert "runtimeInput" not in serialized_detail
+    assert "registry only" not in serialized_detail
+
+    manifest_response = client.get(f"/api/workflow-packages/{package_id}/manifest")
+    assert manifest_response.status_code == 200, manifest_response.json()
+    serialized_manifest = json.dumps(manifest_response.json(), sort_keys=True)
+    assert "Registry-only preset" not in serialized_manifest
+    assert "runtimeInput" not in serialized_manifest
+    assert "registry only" not in serialized_manifest
+
+    export_response = client.get(f"/api/workflow-packages/{package_id}/export")
+    assert export_response.status_code == 200, export_response.text
+    exported_source = export_response.text
+    assert package_key in exported_source
+    assert "Registry-only preset" not in exported_source
+    assert "runtimeInput" not in exported_source
+    assert "registry only" not in exported_source
+
+    imported_source = exported_source.replace(
+        package_key,
+        "runtime_boundary_package_imported",
+        1,
+    )
+    import_response = client.post(
+        "/api/workflow-packages/import",
+        json={"manifestSource": imported_source},
+    )
+    assert import_response.status_code == 201, import_response.json()
+    imported_package_id = int(import_response.json()["id"])
+    imported_registry = client.get(
+        f"/api/workflow-packages/{imported_package_id}/runtime-input-registry",
+        params={"workflowKey": "runtime_workflow"},
+    )
+    assert imported_registry.status_code == 200, imported_registry.json()
+    assert imported_registry.json()["personal"] == []
+    assert imported_registry.json()["history"] == []
+
+    with session_factory() as session:
+        package = session.get(WorkflowPackage, package_id)
+        assert package is not None
+        run = session.get(Run, run_id)
+        assert run is not None
+        snapshot = run.workflow_package_snapshot
+        assert snapshot is not None
+        assert snapshot.launch_parameters == {"ticker": "AAPL"}
+        serialized_artifacts = json.dumps(
+            {
+                "manifestSource": package.manifest_source,
+                "packageDefinition": package.package_definition,
+                "compiledPlan": package.compiled_plan,
+            },
+            sort_keys=True,
+        )
+        assert "Registry-only preset" not in serialized_artifacts
+        assert "runtimeInput" not in serialized_artifacts
+        assert "registry only" not in serialized_artifacts
+        assert (
+            session.query(WorkflowPackageRuntimeInputEntry).filter_by(package_id=package_id).count()
+            == 2
+        )
 
 
 def test_workflow_package_run_requires_run_owned_snapshot(

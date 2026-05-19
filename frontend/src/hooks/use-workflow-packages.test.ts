@@ -26,27 +26,42 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/api/workflow-packages", () => ({
   createWorkflowPackage: vi.fn(),
   createWorkflowPackageLaunch: vi.fn(),
+  createWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
   deleteWorkflowPackage: vi.fn(),
+  deleteWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
   deleteWorkflowPackageSecretBinding: vi.fn(),
   getWorkflowPackage: vi.fn(),
   getWorkflowPackageLaunch: vi.fn(),
   getWorkflowPackageManifest: vi.fn(),
+  getWorkflowPackageRuntimeInputRegistry: vi.fn(),
   importWorkflowPackage: vi.fn(),
   listWorkflowPackageSecretBindings: vi.fn(),
   listWorkflowPackages: vi.fn(),
   preflightWorkflowPackage: vi.fn(),
   updateWorkflowPackage: vi.fn(),
+  updateWorkflowPackageRuntimeInputPersonalEntry: vi.fn(),
   upsertWorkflowPackageSecretBinding: vi.fn(),
   validateWorkflowPackageManifest: vi.fn(),
 }));
 
-import { deleteWorkflowPackage, validateWorkflowPackageManifest } from "@/lib/api/workflow-packages";
+import {
+  createWorkflowPackageRuntimeInputPersonalEntry,
+  deleteWorkflowPackage,
+  deleteWorkflowPackageRuntimeInputPersonalEntry,
+  updateWorkflowPackageRuntimeInputPersonalEntry,
+  validateWorkflowPackageManifest,
+} from "@/lib/api/workflow-packages";
 import { queryKeys } from "@/lib/query-keys";
 import {
   useCreateWorkflowPackageLaunch,
+  useCreateWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackage,
+  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
+  useUpdateWorkflowPackage,
+  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
+  useWorkflowPackageRuntimeInputRegistry,
   useWorkflowPackages,
 } from "./use-workflow-packages";
 
@@ -60,8 +75,11 @@ describe("useWorkflowPackages", () => {
     reactQueryState.invalidateQueriesMock.mockReset();
     reactQueryState.useQueryMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
-    vi.mocked(validateWorkflowPackageManifest).mockReset();
+    vi.mocked(createWorkflowPackageRuntimeInputPersonalEntry).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
+    vi.mocked(deleteWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(updateWorkflowPackageRuntimeInputPersonalEntry).mockReset();
+    vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
 
   it("uses package list and detail keys without live status filters", () => {
@@ -88,6 +106,29 @@ describe("useWorkflowPackages", () => {
       expect.objectContaining({
         enabled: true,
         queryKey: queryKeys.platform.workflowPackages.detail(15),
+      }),
+    );
+  });
+
+  it("uses workflow-scoped runtime input registry keys", () => {
+    useWorkflowPackageRuntimeInputRegistry(undefined, "runtime_workflow");
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        enabled: false,
+        queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(
+          "",
+          "runtime_workflow",
+        ),
+      }),
+    );
+
+    useWorkflowPackageRuntimeInputRegistry(15, " summarize ");
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        enabled: true,
+        queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
       }),
     );
   });
@@ -123,7 +164,7 @@ describe("useWorkflowPackages", () => {
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
     await mutationOptions.onSuccess?.(
-      { id: 23 },
+      { id: 23, workflowKey: "summarize" },
       { packageId: 15, payload: { workflowKey: "summarize", parameters: { ticker: "AVGO" } } },
     );
 
@@ -135,6 +176,74 @@ describe("useWorkflowPackages", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.launch(15, "summarize"),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
+    });
+  });
+
+  it("invalidates package update scopes including runtime input registries", async () => {
+    useUpdateWorkflowPackage();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.onSuccess?.(
+      { id: 15 },
+      { packageId: 15, payload: { manifestSource: "updated" } },
+    );
+
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
+    });
+  });
+
+  it("invalidates workflow-scoped registry entries after personal mutations", async () => {
+    useCreateWorkflowPackageRuntimeInputPersonalEntry();
+    let mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.({
+      packageId: 15,
+      workflowKey: "summarize",
+      payload: { name: "Morning", payload: { ticker: "AVGO" } },
+    });
+    expect(createWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(
+      15,
+      { name: "Morning", payload: { ticker: "AVGO" } },
+      { workflowKey: "summarize" },
+    );
+    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
+    });
+
+    reactQueryState.invalidateQueriesMock.mockClear();
+    useUpdateWorkflowPackageRuntimeInputPersonalEntry();
+    mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.({
+      entryId: 44,
+      packageId: 15,
+      workflowKey: "summarize",
+      payload: { payload: { ticker: "MSFT" } },
+    });
+    expect(updateWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(
+      15,
+      44,
+      { payload: { ticker: "MSFT" } },
+      { workflowKey: "summarize" },
+    );
+    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
+    });
+
+    reactQueryState.invalidateQueriesMock.mockClear();
+    useDeleteWorkflowPackageRuntimeInputPersonalEntry();
+    mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.({ entryId: 44, packageId: 15, workflowKey: "summarize" });
+    expect(deleteWorkflowPackageRuntimeInputPersonalEntry).toHaveBeenCalledWith(15, 44, {
+      workflowKey: "summarize",
+    });
+    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
     });
   });
 

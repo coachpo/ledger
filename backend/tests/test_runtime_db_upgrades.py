@@ -40,6 +40,7 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "run_steps",
     "runs",
     "run_workflow_package_snapshots",
+    "workflow_package_runtime_input_entries",
     "capabilities",
     "workflows",
 }
@@ -146,6 +147,24 @@ _RUN_SNAPSHOT_COLUMNS = {
     "launch_parameters",
     "resolved_model_connections",
     "preflight_summary",
+    "created_at",
+    "updated_at",
+}
+_RUNTIME_INPUT_REGISTRY_COLUMNS = {
+    "id",
+    "package_id",
+    "workflow_key",
+    "owner_type",
+    "owner_id",
+    "slot",
+    "name",
+    "payload",
+    "source_kind",
+    "manifest_hash",
+    "compiled_hash",
+    "schema_fingerprint",
+    "input_schema_snapshot",
+    "source_run_id",
     "created_at",
     "updated_at",
 }
@@ -2248,6 +2267,242 @@ def test_init_db_creates_workflow_package_secret_binding_table(database_url: str
         assert "ix_workflow_package_secret_bindings_key" in indexes
         assert "uq_workflow_package_secret_bindings_package_key" in unique_constraints
         assert (("package_id",), "workflow_packages", "CASCADE") in foreign_keys
+    finally:
+        engine.dispose()
+
+
+def test_init_db_creates_runtime_input_registry_table_and_cascades(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        inspector = inspect(engine)
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("workflow_package_runtime_input_entries")
+        }
+        indexes = {
+            index["name"]
+            for index in inspector.get_indexes("workflow_package_runtime_input_entries")
+        }
+        check_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(
+                "workflow_package_runtime_input_entries"
+            )
+        }
+        foreign_keys = {
+            _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+            for foreign_key in inspector.get_foreign_keys("workflow_package_runtime_input_entries")
+        }
+
+        assert set(columns) == _RUNTIME_INPUT_REGISTRY_COLUMNS
+        assert columns["package_id"]["nullable"] is False
+        assert columns["workflow_key"]["nullable"] is False
+        assert columns["owner_type"]["nullable"] is False
+        assert columns["owner_id"]["nullable"] is False
+        assert columns["slot"]["nullable"] is False
+        assert columns["name"]["nullable"] is True
+        assert columns["payload"]["nullable"] is False
+        assert columns["source_kind"]["nullable"] is False
+        assert columns["manifest_hash"]["nullable"] is False
+        assert columns["compiled_hash"]["nullable"] is False
+        assert columns["schema_fingerprint"]["nullable"] is False
+        assert columns["input_schema_snapshot"]["nullable"] is True
+        assert columns["source_run_id"]["nullable"] is True
+        assert {
+            "ix_workflow_package_runtime_input_entries_package",
+            "ix_workflow_package_runtime_input_entries_scope_slot_created",
+            "ix_workflow_package_runtime_input_entries_scope_slot_updated",
+            "ix_workflow_package_runtime_input_entries_source_run",
+        } <= indexes
+        assert {
+            "ck_workflow_package_runtime_input_entries_slot",
+            "ck_workflow_package_runtime_input_entries_name_personal_only",
+        } <= check_constraints
+        assert (("package_id",), "workflow_packages", "CASCADE") in foreign_keys
+        assert (("source_run_id",), "runs", "SET NULL") in foreign_keys
+
+        with engine.begin() as connection:
+            package = _insert_representable_workflow_package(
+                connection,
+                key="runtime_input_registry_scope",
+                workflow_key="daily_review",
+            )
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version,
+                        workflow_package_id, workflow_package_key,
+                        workflow_package_workflow_key, extension_dependencies,
+                        input, status
+                    ) VALUES (
+                        'workflowPackage', :package_id, :package_key,
+                        :target_version, :package_id, :package_key, :workflow_key,
+                        '[]'::jsonb, '{}'::jsonb, 'succeeded'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "package_id": package["package_id"],
+                    "package_key": package["package_key"],
+                    "target_version": package["target_version"],
+                    "workflow_key": package["workflow_key"],
+                },
+            ).scalar_one()
+            base_params = {
+                "package_id": package["package_id"],
+                "workflow_key": package["workflow_key"],
+                "owner_type": "local_user",
+                "owner_id": "default",
+                "manifest_hash": package["manifest_hash"],
+                "compiled_hash": package["compiled_hash"],
+                "schema_fingerprint": "c" * 64,
+                "input_schema_snapshot": json.dumps({"type": "object"}, sort_keys=True),
+            }
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_package_runtime_input_entries (
+                        package_id, workflow_key, owner_type, owner_id, slot, name,
+                        payload, source_kind, manifest_hash, compiled_hash,
+                        schema_fingerprint, input_schema_snapshot, source_run_id
+                    ) VALUES (
+                        :package_id, :workflow_key, :owner_type, :owner_id,
+                        'personal', 'Default review', CAST(:personal_payload AS jsonb),
+                        'manual', :manifest_hash, :compiled_hash, :schema_fingerprint,
+                        CAST(:input_schema_snapshot AS jsonb), NULL
+                    )
+                    """
+                ),
+                {
+                    **base_params,
+                    "personal_payload": json.dumps({"ticker": "MSFT"}, sort_keys=True),
+                },
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workflow_package_runtime_input_entries (
+                        package_id, workflow_key, owner_type, owner_id, slot, name,
+                        payload, source_kind, manifest_hash, compiled_hash,
+                        schema_fingerprint, input_schema_snapshot, source_run_id
+                    ) VALUES (
+                        :package_id, :workflow_key, :owner_type, :owner_id,
+                        'history', NULL, CAST(:history_payload AS jsonb), 'launch',
+                        :manifest_hash, :compiled_hash, :schema_fingerprint,
+                        CAST(:input_schema_snapshot AS jsonb), :run_id
+                    )
+                    """
+                ),
+                {
+                    **base_params,
+                    "history_payload": json.dumps({"ticker": "AAPL"}, sort_keys=True),
+                    "run_id": run_id,
+                },
+            )
+            entry_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_runtime_input_entries
+                    WHERE package_id = :package_id
+                    """
+                ),
+                {"package_id": package["package_id"]},
+            ).scalar_one()
+            connection.execute(text("DELETE FROM runs WHERE id = :run_id"), {"run_id": run_id})
+            source_run_null_count = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_package_runtime_input_entries
+                    WHERE package_id = :package_id
+                      AND slot = 'history'
+                      AND source_run_id IS NULL
+                    """
+                ),
+                {"package_id": package["package_id"]},
+            ).scalar_one()
+            connection.execute(
+                text("DELETE FROM workflow_packages WHERE id = :package_id"),
+                {"package_id": package["package_id"]},
+            )
+            remaining_count = connection.execute(
+                text("SELECT COUNT(*) FROM workflow_package_runtime_input_entries")
+            ).scalar_one()
+
+        assert entry_count == 2
+        assert source_run_null_count == 1
+        assert remaining_count == 0
+    finally:
+        engine.dispose()
+
+
+def test_runtime_input_registry_upgrade_does_not_backfill_from_run_snapshots(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            package = _insert_representable_workflow_package(
+                connection,
+                key="runtime_input_no_backfill",
+                workflow_key="daily_review",
+            )
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version,
+                        workflow_package_id, workflow_package_key,
+                        workflow_package_workflow_key, extension_dependencies,
+                        input, status
+                    ) VALUES (
+                        'workflowPackage', :package_id, :package_key, :target_version,
+                        :package_id, :package_key, :workflow_key,
+                        '[]'::jsonb, '{"ticker": "AAPL"}'::jsonb, 'succeeded'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "package_id": package["package_id"],
+                    "package_key": package["package_key"],
+                    "target_version": package["target_version"],
+                    "workflow_key": package["workflow_key"],
+                },
+            ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=cast(int, run_id),
+                package=package,
+                parameters={"ticker": "AAPL"},
+            )
+
+        init_db(database_url)
+
+        with engine.connect() as connection:
+            registry_count = connection.execute(
+                text("SELECT COUNT(*) FROM workflow_package_runtime_input_entries")
+            ).scalar_one()
+            snapshot_parameters = connection.execute(
+                text(
+                    """
+                    SELECT launch_parameters
+                    FROM run_workflow_package_snapshots
+                    WHERE run_id = :run_id
+                    """
+                ),
+                {"run_id": run_id},
+            ).scalar_one()
+
+        assert registry_count == 0
+        assert snapshot_parameters == {"ticker": "AAPL"}
     finally:
         engine.dispose()
 

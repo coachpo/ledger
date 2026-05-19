@@ -102,6 +102,65 @@ export interface WorkflowPackageLaunchRead {
   warnings: WorkflowPackageLaunchDiagnostic[];
 }
 
+export type WorkflowPackageRuntimeInputSlot = "history" | "personal";
+
+export interface WorkflowPackageRuntimeInputStaleReason {
+  field: string;
+  issue: string;
+  stored: string | null;
+  current: string | null;
+}
+
+export interface WorkflowPackageRuntimeInputStaleRead {
+  stale: boolean;
+  reasons: WorkflowPackageRuntimeInputStaleReason[];
+}
+
+export interface WorkflowPackageRuntimeInputCurrentMetadataRead {
+  workflowKey: string;
+  manifestHash: string;
+  compiledHash: string;
+  schemaFingerprint: string;
+  inputSchema: UnknownRecord;
+}
+
+export interface WorkflowPackageRuntimeInputEntryRead {
+  id: number;
+  packageId: number;
+  workflowKey: string;
+  slot: WorkflowPackageRuntimeInputSlot;
+  name: string | null;
+  payload: UnknownRecord;
+  sourceKind: string;
+  manifestHash: string;
+  compiledHash: string;
+  schemaFingerprint: string;
+  inputSchemaSnapshot: UnknownRecord | null;
+  sourceRunId: number | null;
+  stale: WorkflowPackageRuntimeInputStaleRead;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowPackageRuntimeInputRegistryRead {
+  packageId: number;
+  packageKey: string;
+  workflowKey: string;
+  currentMetadata: WorkflowPackageRuntimeInputCurrentMetadataRead | null;
+  personal: WorkflowPackageRuntimeInputEntryRead[];
+  history: WorkflowPackageRuntimeInputEntryRead[];
+}
+
+export interface WorkflowPackageRuntimeInputPersonalEntryCreateRequest {
+  name?: string | null;
+  payload: UnknownRecord;
+}
+
+export interface WorkflowPackageRuntimeInputPersonalEntryUpdateRequest {
+  name?: string | null;
+  payload?: UnknownRecord;
+}
+
 export interface WorkflowPackageLaunchCreateRequest {
   workflowKey?: string | null;
   parameters?: UnknownRecord;

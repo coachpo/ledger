@@ -11,6 +11,7 @@ from app.db.session import init_db
 
 _WORKFLOW_PACKAGE_TABLES = {
     "workflow_packages",
+    "workflow_package_runtime_input_entries",
     "workflow_package_secret_bindings",
     "run_workflow_package_snapshots",
 }

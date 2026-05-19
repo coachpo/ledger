@@ -161,5 +161,75 @@ describe("workflow packages api", () => {
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({ workflowKey: "summarize", parameters: { ticker: "MSFT" } }));
   });
+
+  it("reads and mutates workflow-scoped runtime input registry personal entries", async () => {
+    const {
+      createWorkflowPackageRuntimeInputPersonalEntry,
+      deleteWorkflowPackageRuntimeInputPersonalEntry,
+      getWorkflowPackageRuntimeInputRegistry,
+      updateWorkflowPackageRuntimeInputPersonalEntry,
+    } = await loadWorkflowPackagesApi("https://signaldeck.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          packageId: 12,
+          packageKey: "research_package",
+          workflowKey: "summarize",
+          currentMetadata: null,
+          personal: [],
+          history: [],
+        },
+        200,
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7, slot: "personal" }, 201));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7, slot: "personal" }, 200));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await getWorkflowPackageRuntimeInputRegistry(12, { workflowKey: "summarize" });
+    let lastCall = getLastFetchCall(fetchMock);
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe(
+      "https://signaldeck.example.com/api/workflow-packages/12/runtime-input-registry",
+    );
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
+    expect(lastCall.init?.method).toBe("GET");
+
+    await createWorkflowPackageRuntimeInputPersonalEntry(
+      12,
+      { name: "Morning", payload: { ticker: "MSFT" } },
+      { workflowKey: "summarize" },
+    );
+    lastCall = getLastFetchCall(fetchMock);
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe(
+      "https://signaldeck.example.com/api/workflow-packages/12/runtime-input-registry/personal",
+    );
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
+    expect(lastCall.init?.method).toBe("POST");
+    expect(lastCall.init?.body).toBe(JSON.stringify({ name: "Morning", payload: { ticker: "MSFT" } }));
+
+    await updateWorkflowPackageRuntimeInputPersonalEntry(
+      12,
+      7,
+      { payload: { ticker: "AVGO" } },
+      { workflowKey: "summarize" },
+    );
+    lastCall = getLastFetchCall(fetchMock);
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe(
+      "https://signaldeck.example.com/api/workflow-packages/12/runtime-input-registry/personal/7",
+    );
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
+    expect(lastCall.init?.method).toBe("PATCH");
+    expect(lastCall.init?.body).toBe(JSON.stringify({ payload: { ticker: "AVGO" } }));
+
+    await expect(
+      deleteWorkflowPackageRuntimeInputPersonalEntry(12, 7, { workflowKey: "summarize" }),
+    ).resolves.toBeUndefined();
+    lastCall = getLastFetchCall(fetchMock);
+    expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe(
+      "https://signaldeck.example.com/api/workflow-packages/12/runtime-input-registry/personal/7",
+    );
+    expect(Object.fromEntries(lastCall.url.searchParams.entries())).toEqual({ workflowKey: "summarize" });
+    expect(lastCall.init?.method).toBe("DELETE");
+  });
 });
 ;

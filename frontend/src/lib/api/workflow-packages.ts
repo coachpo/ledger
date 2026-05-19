@@ -14,6 +14,10 @@ import type {
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
+  WorkflowPackageRuntimeInputEntryRead,
+  WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
+  WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+  WorkflowPackageRuntimeInputRegistryRead,
   WorkflowPackageSecretBindingListRead,
   WorkflowPackageSecretBindingRead,
   WorkflowPackageSecretBindingUpdateRequest,
@@ -29,9 +33,25 @@ function workflowPackageSecretBindingPath(packageId: IdParam, key: IdParam): str
   return `${workflowPackagePath(packageId)}/secret-bindings/${toPathSegment(key)}`;
 }
 
+function workflowPackageRuntimeInputRegistryPath(packageId: IdParam): string {
+  return `${workflowPackagePath(packageId)}/runtime-input-registry`;
+}
+
+function workflowPackageRuntimeInputPersonalEntryPath(
+  packageId: IdParam,
+  entryId: IdParam,
+): string {
+  return `${workflowPackageRuntimeInputRegistryPath(packageId)}/personal/${toPathSegment(entryId)}`;
+}
+
 type WorkflowPackageWorkflowOptions = {
   signal?: AbortSignal;
   workflowKey?: string | null;
+};
+
+type WorkflowPackageRuntimeInputRegistryOptions = {
+  signal?: AbortSignal;
+  workflowKey: string;
 };
 
 function workflowKeyQuery(options: WorkflowPackageWorkflowOptions = {}) {
@@ -139,6 +159,64 @@ export function deleteWorkflowPackageSecretBinding(
   });
 }
 
+export function getWorkflowPackageRuntimeInputRegistry(
+  packageId: IdParam,
+  options: WorkflowPackageRuntimeInputRegistryOptions,
+): Promise<WorkflowPackageRuntimeInputRegistryRead> {
+  return requestPlatform<WorkflowPackageRuntimeInputRegistryRead>(
+    workflowPackageRuntimeInputRegistryPath(packageId),
+    {
+      query: workflowKeyQuery(options),
+      signal: options.signal,
+    },
+  );
+}
+
+export function createWorkflowPackageRuntimeInputPersonalEntry(
+  packageId: IdParam,
+  payload: WorkflowPackageRuntimeInputPersonalEntryCreateRequest,
+  options: WorkflowPackageRuntimeInputRegistryOptions,
+): Promise<WorkflowPackageRuntimeInputEntryRead> {
+  return requestPlatform<WorkflowPackageRuntimeInputEntryRead>(
+    `${workflowPackageRuntimeInputRegistryPath(packageId)}/personal`,
+    {
+      body: payload,
+      method: "POST",
+      query: workflowKeyQuery(options),
+      signal: options.signal,
+    },
+  );
+}
+
+export function updateWorkflowPackageRuntimeInputPersonalEntry(
+  packageId: IdParam,
+  entryId: IdParam,
+  payload: WorkflowPackageRuntimeInputPersonalEntryUpdateRequest,
+  options: WorkflowPackageRuntimeInputRegistryOptions,
+): Promise<WorkflowPackageRuntimeInputEntryRead> {
+  return requestPlatform<WorkflowPackageRuntimeInputEntryRead>(
+    workflowPackageRuntimeInputPersonalEntryPath(packageId, entryId),
+    {
+      body: payload,
+      method: "PATCH",
+      query: workflowKeyQuery(options),
+      signal: options.signal,
+    },
+  );
+}
+
+export function deleteWorkflowPackageRuntimeInputPersonalEntry(
+  packageId: IdParam,
+  entryId: IdParam,
+  options: WorkflowPackageRuntimeInputRegistryOptions,
+): Promise<void> {
+  return requestPlatform<void>(workflowPackageRuntimeInputPersonalEntryPath(packageId, entryId), {
+    method: "DELETE",
+    query: workflowKeyQuery(options),
+    signal: options.signal,
+  });
+}
+
 export function importWorkflowPackage(
   payload: WorkflowPackageImportRequest,
   signal?: AbortSignal,
@@ -189,18 +267,22 @@ export function createWorkflowPackageLaunch(
 
 export const workflowPackagesApi = {
   delete: deleteWorkflowPackage,
+  deleteRuntimeInputPersonalEntry: deleteWorkflowPackageRuntimeInputPersonalEntry,
   deleteSecretBinding: deleteWorkflowPackageSecretBinding,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
+  createRuntimeInputPersonalEntry: createWorkflowPackageRuntimeInputPersonalEntry,
   exportUrl: exportWorkflowPackageUrl,
   get: getWorkflowPackage,
   getLaunch: getWorkflowPackageLaunch,
   getManifest: getWorkflowPackageManifest,
+  getRuntimeInputRegistry: getWorkflowPackageRuntimeInputRegistry,
   import: importWorkflowPackage,
   list: listWorkflowPackages,
   listSecretBindings: listWorkflowPackageSecretBindings,
   preflight: preflightWorkflowPackage,
   update: updateWorkflowPackage,
+  updateRuntimeInputPersonalEntry: updateWorkflowPackageRuntimeInputPersonalEntry,
   upsertSecretBinding: upsertWorkflowPackageSecretBinding,
   validateManifest: validateWorkflowPackageManifest,
 } as const;

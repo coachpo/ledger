@@ -25,7 +25,11 @@ from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
 from app.models.workflow import Workflow
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
+from app.models.workflow_package import (
+    WorkflowPackage,
+    WorkflowPackageRuntimeInputEntry,
+    WorkflowPackageSecretBinding,
+)
 
 __all__ = [
     "Agent",
@@ -57,5 +61,6 @@ __all__ = [
     "Workflow",
     "WorkflowAgentRef",
     "WorkflowPackage",
+    "WorkflowPackageRuntimeInputEntry",
     "WorkflowPackageSecretBinding",
 ]

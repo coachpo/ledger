@@ -70,16 +70,20 @@ import { useModelConnections } from "@/hooks/use-model-connections";
 import {
   useCreateWorkflowPackage,
   useCreateWorkflowPackageLaunch,
+  useCreateWorkflowPackageRuntimeInputPersonalEntry,
+  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackageSecretBinding,
   useImportWorkflowPackage,
   usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
+  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useUpsertWorkflowPackageSecretBinding,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
+  useWorkflowPackageRuntimeInputRegistry,
   useWorkflowPackageSecretBindings,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
@@ -118,6 +122,7 @@ import type {
   WorkflowPackageLaunchRead,
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
+  WorkflowPackageRuntimeInputEntryRead,
   WorkflowPackageSecretBindingRead,
 } from "@/lib/types/workflow-package";
 import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
@@ -1188,6 +1193,190 @@ function PreflightTab(props: {
   );
 }
 
+const SAVED_INPUT_ENTRY_LIMIT = 20;
+
+type SavedInputEntryMode = "history" | "personal";
+
+function newestRuntimeInputEntries(
+  entries: readonly WorkflowPackageRuntimeInputEntryRead[],
+  timestampKey: "createdAt" | "updatedAt",
+): WorkflowPackageRuntimeInputEntryRead[] {
+  return [...entries].sort((left, right) => {
+    const timestampDelta = Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
+    return timestampDelta === 0 ? right.id - left.id : timestampDelta;
+  });
+}
+
+function savedInputEntryLabel(entry: WorkflowPackageRuntimeInputEntryRead, mode: SavedInputEntryMode) {
+  const name = entry.name?.trim();
+  if (name) {
+    return name;
+  }
+  if (mode === "history" && entry.sourceRunId) {
+    return `Run #${entry.sourceRunId}`;
+  }
+  return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
+}
+
+function SavedInputEntryRow(props: {
+  deletePending: boolean;
+  entry: WorkflowPackageRuntimeInputEntryRead;
+  mode: SavedInputEntryMode;
+  updatePending: boolean;
+  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+}) {
+  const { deletePending, entry, mode, onDelete, onLoad, onUpdate, updatePending } = props;
+  const label = savedInputEntryLabel(entry, mode);
+  const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
+  const staleReasons = entry.stale.reasons;
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-background/60 p-3" data-testid={`saved-input-${mode}-${entry.id}`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium">{label}</p>
+            {entry.stale.stale ? <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Stale</Badge> : null}
+          </div>
+          <p className="text-xs text-muted-foreground">{mode === "history" ? "Captured" : "Updated"} {formatDateTime(timestamp)}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button className="h-7 px-2 text-xs" size="sm" type="button" variant="outline" aria-label={`Load ${mode} input ${label}`} onClick={() => onLoad(entry)}>
+            Load
+          </Button>
+          {mode === "personal" ? (
+            <>
+              <Button className="h-7 px-2 text-xs" disabled={updatePending} size="sm" type="button" variant="outline" aria-label={`Overwrite personal input ${label}`} onClick={() => onUpdate(entry)}>
+                {updatePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                Overwrite
+              </Button>
+              <Button className="h-7 px-2 text-xs" disabled={deletePending} size="sm" type="button" variant="ghost" aria-label={`Delete personal input ${label}`} onClick={() => onDelete(entry)}>
+                {deletePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Trash2 className="size-3" data-icon="inline-start" />}
+                Delete
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {entry.stale.stale ? (
+        <div className="rounded-md border border-chart-3/30 bg-chart-3/10 px-2 py-1 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Saved against older workflow metadata.</p>
+          {staleReasons.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {staleReasons.map((reason) => (
+                <li key={`${entry.id}-${reason.field}-${reason.issue}`}>{reason.field}: {reason.issue}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SavedInputsHelper(props: {
+  createDisabled: boolean;
+  createPending: boolean;
+  deletePending: boolean;
+  error: Error | null;
+  historyEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
+  loading: boolean;
+  personalEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
+  presetName: string;
+  updatePending: boolean;
+  workflowKey: string;
+  onCreate: () => void;
+  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+  onPresetNameChange: (value: string) => void;
+  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
+}) {
+  const {
+    createDisabled,
+    createPending,
+    deletePending,
+    error,
+    historyEntries,
+    loading,
+    onCreate,
+    onDelete,
+    onLoad,
+    onPresetNameChange,
+    onUpdate,
+    personalEntries,
+    presetName,
+    updatePending,
+    workflowKey,
+  } = props;
+  const personalLimitReached = personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
+  const sortedPersonal = newestRuntimeInputEntries(personalEntries, "updatedAt");
+  const sortedHistory = newestRuntimeInputEntries(historyEntries, "createdAt");
+
+  return (
+    <div className="space-y-3 rounded-xl border bg-muted/20 p-3" data-testid="runtime-input-saved-inputs-helper">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold">Saved Inputs</h4>
+          <Badge variant="outline">{workflowKey || "workflow"}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">Load presets or prior launch inputs into the raw JSON editor. Loading never queues a run.</p>
+      </div>
+      <Alert className="border-chart-3/30 bg-chart-3/10">
+        <AlertCircle />
+        <AlertTitle>Not for secrets or PII</AlertTitle>
+        <AlertDescription>Saved inputs are convenience presets. Keep API keys, credentials, and personal data out of this surface.</AlertDescription>
+      </Alert>
+      {loading ? (
+        <div className="flex items-center gap-2 rounded-lg border bg-background/60 p-3 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          Loading saved inputs for {workflowKey || "this workflow"}...
+        </div>
+      ) : null}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Saved inputs unavailable</AlertTitle>
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Personal</h5>
+          <Badge variant="secondary">{personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}</Badge>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input className="h-8 text-xs" aria-label="Personal preset name" placeholder="Preset name" value={presetName} onChange={(event) => onPresetNameChange(event.target.value)} />
+          <Button className="h-8 text-xs" disabled={createDisabled || createPending || personalLimitReached} size="sm" type="button" onClick={onCreate}>
+            {createPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+            Save current JSON
+          </Button>
+        </div>
+        {personalLimitReached ? <p className="text-xs text-destructive">Personal presets are capped at 20 per workflow. Delete one before saving another.</p> : null}
+        {sortedPersonal.length === 0 ? <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No personal presets saved for this workflow.</p> : null}
+        <div className="space-y-2">
+          {sortedPersonal.map((entry) => (
+            <SavedInputEntryRow key={entry.id} deletePending={deletePending} entry={entry} mode="personal" updatePending={updatePending} onDelete={onDelete} onLoad={onLoad} onUpdate={onUpdate} />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">History</h5>
+          <Badge variant="secondary">{historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}</Badge>
+        </div>
+        {sortedHistory.length === 0 ? <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No launch history captured for this workflow yet.</p> : null}
+        <div className="space-y-2">
+          {sortedHistory.map((entry) => (
+            <SavedInputEntryRow key={entry.id} deletePending={false} entry={entry} mode="history" updatePending={false} onDelete={onDelete} onLoad={onLoad} onUpdate={onUpdate} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LaunchTab(props: {
   createLaunch: ReturnType<typeof useCreateWorkflowPackageLaunch>;
   launchRead: WorkflowPackageLaunchRead | undefined;
@@ -1201,6 +1390,12 @@ function LaunchTab(props: {
   const navigate = useNavigate();
   const [parametersText, setParametersText] = useState(() => stringifyJson({}));
   const [runtimeInputErrors, setRuntimeInputErrors] = useState<ApiErrorDetail[]>([]);
+  const [personalPresetName, setPersonalPresetName] = useState("");
+  const resolvedWorkflowKey = workflowKey.trim();
+  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(packageId, resolvedWorkflowKey);
+  const createPersonalEntry = useCreateWorkflowPackageRuntimeInputPersonalEntry();
+  const updatePersonalEntry = useUpdateWorkflowPackageRuntimeInputPersonalEntry();
+  const deletePersonalEntry = useDeleteWorkflowPackageRuntimeInputPersonalEntry();
   const inputSchemaFingerprint = useMemo(() => stringifyJson(launchRead?.inputSchema), [launchRead?.inputSchema]);
   const inputSchemaSnapshot = useMemo(() => inputSchemaFingerprint ? JSON.parse(inputSchemaFingerprint) as unknown : undefined, [inputSchemaFingerprint]);
   const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchemaSnapshot), [inputSchemaSnapshot]);
@@ -1215,6 +1410,89 @@ function LaunchTab(props: {
   const resetParameters = () => {
     setParametersText(resetLaunchParametersTemplate(inputTemplate));
     setRuntimeInputErrors([]);
+  };
+
+  const parseCurrentRuntimeInputs = () => {
+    setRuntimeInputErrors([]);
+    try {
+      return parseLaunchParametersJson(parametersText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime inputs JSON must be a valid object.";
+      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
+      toast.error(message);
+      return null;
+    }
+  };
+
+  const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    setParametersText(stringifyJson(entry.payload));
+    setRuntimeInputErrors([]);
+    toast.success("Saved input loaded into the JSON editor");
+  };
+
+  const savePersonalInput = async () => {
+    if (!packageId || !resolvedWorkflowKey) {
+      return;
+    }
+    const name = personalPresetName.trim();
+    if (!name) {
+      toast.error("Name this personal preset before saving it.");
+      return;
+    }
+    const payload = parseCurrentRuntimeInputs();
+    if (!payload) {
+      return;
+    }
+    try {
+      await createPersonalEntry.mutateAsync({
+        packageId,
+        payload: { name, payload },
+        workflowKey: resolvedWorkflowKey,
+      });
+      setPersonalPresetName("");
+      toast.success("Saved personal runtime input preset");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save personal runtime input preset.");
+    }
+  };
+
+  const overwritePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    if (!packageId || !resolvedWorkflowKey) {
+      return;
+    }
+    const payload = parseCurrentRuntimeInputs();
+    if (!payload) {
+      return;
+    }
+    const name = personalPresetName.trim() || entry.name;
+    try {
+      await updatePersonalEntry.mutateAsync({
+        entryId: entry.id,
+        packageId,
+        payload: { name: name || null, payload },
+        workflowKey: resolvedWorkflowKey,
+      });
+      setPersonalPresetName("");
+      toast.success("Updated personal runtime input preset");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update personal runtime input preset.");
+    }
+  };
+
+  const deletePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
+    if (!packageId || !resolvedWorkflowKey) {
+      return;
+    }
+    try {
+      await deletePersonalEntry.mutateAsync({
+        entryId: entry.id,
+        packageId,
+        workflowKey: resolvedWorkflowKey,
+      });
+      toast.success("Deleted personal runtime input preset");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete personal runtime input preset.");
+    }
   };
 
   const launchPackage = async () => {
@@ -1287,9 +1565,28 @@ function LaunchTab(props: {
               </Alert>
             ) : null}
             <RuntimeInputValidationAlert errors={runtimeInputErrors} />
-            <div className="space-y-2">
-              <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-              <Textarea id="runtime-json" aria-label="Runtime inputs JSON" className="font-mono text-xs" rows={10} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="space-y-2">
+                <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
+                <Textarea id="runtime-json" aria-label="Runtime inputs JSON" className="min-h-72 font-mono text-xs" rows={14} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
+              </div>
+              <SavedInputsHelper
+                createDisabled={!packageId || !resolvedWorkflowKey || !personalPresetName.trim() || runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
+                createPending={createPersonalEntry.isPending}
+                deletePending={deletePersonalEntry.isPending}
+                error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
+                historyEntries={runtimeInputRegistry.data?.history ?? []}
+                loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
+                personalEntries={runtimeInputRegistry.data?.personal ?? []}
+                presetName={personalPresetName}
+                updatePending={updatePersonalEntry.isPending}
+                workflowKey={resolvedWorkflowKey}
+                onCreate={() => void savePersonalInput()}
+                onDelete={(entry) => void deletePersonalInput(entry)}
+                onLoad={loadSavedInput}
+                onPresetNameChange={setPersonalPresetName}
+                onUpdate={(entry) => void overwritePersonalInput(entry)}
+              />
             </div>
           </CardContent>
         </Card>

@@ -152,6 +152,61 @@ class WorkflowPackageLaunchRead(CamelModel):
     warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class WorkflowPackageRuntimeInputStaleRead(CamelModel):
+    stale: bool
+    reasons: list[dict[str, str | None]] = Field(default_factory=list)
+
+
+class WorkflowPackageRuntimeInputCurrentMetadataRead(CamelModel):
+    workflow_key: str
+    manifest_hash: str
+    compiled_hash: str
+    schema_fingerprint: str
+    input_schema: dict[str, Any]
+
+
+class WorkflowPackageRuntimeInputEntryRead(CamelModel):
+    id: int
+    package_id: int
+    workflow_key: str
+    slot: Literal["history", "personal"]
+    name: str | None = None
+    payload: dict[str, Any]
+    source_kind: str
+    manifest_hash: str
+    compiled_hash: str
+    schema_fingerprint: str
+    input_schema_snapshot: dict[str, Any] | None = None
+    source_run_id: int | None = None
+    stale: WorkflowPackageRuntimeInputStaleRead
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+class WorkflowPackageRuntimeInputRegistryRead(CamelModel):
+    package_id: int
+    package_key: str
+    workflow_key: str
+    current_metadata: WorkflowPackageRuntimeInputCurrentMetadataRead | None = None
+    personal: list[WorkflowPackageRuntimeInputEntryRead]
+    history: list[WorkflowPackageRuntimeInputEntryRead]
+
+
+class WorkflowPackageRuntimeInputPersonalEntryCreateRequest(CamelModel):
+    name: object | None = None
+    payload: object
+
+
+class WorkflowPackageRuntimeInputPersonalEntryUpdateRequest(CamelModel):
+    name: object | None = None
+    payload: object | None = None
+
+
 class WorkflowPackageLaunchCreateRequest(CamelModel):
     workflow_key: str | None = None
     parameters: dict[str, object] = Field(default_factory=dict)
@@ -181,6 +236,12 @@ __all__ = [
     "WorkflowPackageManifestRequest",
     "WorkflowPackageMetadataRead",
     "WorkflowPackageRead",
+    "WorkflowPackageRuntimeInputCurrentMetadataRead",
+    "WorkflowPackageRuntimeInputEntryRead",
+    "WorkflowPackageRuntimeInputPersonalEntryCreateRequest",
+    "WorkflowPackageRuntimeInputPersonalEntryUpdateRequest",
+    "WorkflowPackageRuntimeInputRegistryRead",
+    "WorkflowPackageRuntimeInputStaleRead",
     "WorkflowPackageSecretBindingListRead",
     "WorkflowPackageSecretBindingRead",
     "WorkflowPackageSecretBindingUpdateRequest",

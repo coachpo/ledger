@@ -67,6 +67,24 @@ describe("query keys", () => {
       "preflight",
       "9",
     ]);
+    expect(queryKeys.platform.workflowPackages.runtimeInputRegistry("9", " review ")).toEqual(
+      queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review"),
+    );
+    expect(queryKeys.platform.workflowPackages.runtimeInputRegistry(9, "review")).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "runtimeInputRegistry",
+      "9",
+      { workflowKey: "review" },
+    ]);
+    expect(queryKeys.platform.workflowPackages.runtimeInputRegistryScope(9)).toEqual([
+      "api",
+      "platform",
+      "workflowPackages",
+      "runtimeInputRegistry",
+      "9",
+    ]);
   });
 
   it("keeps package-first platform keys separate from removed authoring namespaces", () => {

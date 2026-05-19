@@ -27,16 +27,26 @@ vi.mock("@/hooks/use-model-connections", () => ({
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateWorkflowPackageLaunch: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useCreateWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useImportWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   usePreflightWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
   useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageRuntimeInputRegistry: () => ({
+    data: { currentMetadata: null, history: [], packageId: 42, packageKey: "market_review_package", personal: [], workflowKey: "market_review" },
+    error: null,
+    isError: false,
+    isFetching: false,
+    isPending: false,
+  }),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 

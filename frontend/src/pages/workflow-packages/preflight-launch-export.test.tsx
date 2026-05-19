@@ -3,45 +3,64 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "@/lib/api-client";
-import type { WorkflowPackageLaunchRead, WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/types/workflow-package";
+import type {
+  WorkflowPackageLaunchRead,
+  WorkflowPackageManifestRead,
+  WorkflowPackageRead,
+  WorkflowPackageRuntimeInputEntryRead,
+} from "@/lib/types/workflow-package";
 
 import { WorkflowPackageEditorPage } from "./editor";
 
 const {
   createLaunchMock,
+  createRuntimeInputPersonalEntryMock,
+  deleteRuntimeInputPersonalEntryMock,
   importPackageMock,
   navigateMock,
   preflightPackageMock,
   updatePackageMock,
+  updateRuntimeInputPersonalEntryMock,
   useCreateLaunchMock,
   useCreatePackageMock,
+  useCreateRuntimeInputPersonalEntryMock,
+  useDeleteRuntimeInputPersonalEntryMock,
   useImportPackageMock,
   useModelConnectionsMock,
   usePreflightPackageMock,
   useToolsMock,
   useUpdatePackageMock,
+  useUpdateRuntimeInputPersonalEntryMock,
   useValidatePackageMock,
   useWorkflowPackageLaunchMock,
   useWorkflowPackageManifestMock,
   useWorkflowPackageMock,
+  useWorkflowPackageRuntimeInputRegistryMock,
   validatePackageMock,
 } = vi.hoisted(() => ({
   createLaunchMock: vi.fn(),
+  createRuntimeInputPersonalEntryMock: vi.fn(),
+  deleteRuntimeInputPersonalEntryMock: vi.fn(),
   importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
   preflightPackageMock: vi.fn(),
   updatePackageMock: vi.fn(),
+  updateRuntimeInputPersonalEntryMock: vi.fn(),
   useCreateLaunchMock: vi.fn(),
   useCreatePackageMock: vi.fn(),
+  useCreateRuntimeInputPersonalEntryMock: vi.fn(),
+  useDeleteRuntimeInputPersonalEntryMock: vi.fn(),
   useImportPackageMock: vi.fn(),
   useModelConnectionsMock: vi.fn(),
   usePreflightPackageMock: vi.fn(),
   useToolsMock: vi.fn(),
   useUpdatePackageMock: vi.fn(),
+  useUpdateRuntimeInputPersonalEntryMock: vi.fn(),
   useValidatePackageMock: vi.fn(),
   useWorkflowPackageLaunchMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
+  useWorkflowPackageRuntimeInputRegistryMock: vi.fn(),
   validatePackageMock: vi.fn(),
 }));
 
@@ -57,16 +76,20 @@ vi.mock("@/hooks/use-model-connections", () => ({
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => useCreatePackageMock(),
   useCreateWorkflowPackageLaunch: () => useCreateLaunchMock(),
+  useCreateWorkflowPackageRuntimeInputPersonalEntry: () => useCreateRuntimeInputPersonalEntryMock(),
+  useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
   useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useImportWorkflowPackage: () => useImportPackageMock(),
   usePreflightWorkflowPackage: () => usePreflightPackageMock(),
   useTools: () => useToolsMock(),
   useUpdateWorkflowPackage: () => useUpdatePackageMock(),
+  useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => useUpdateRuntimeInputPersonalEntryMock(),
   useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useValidateWorkflowPackageManifest: () => useValidatePackageMock(),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
   useWorkflowPackageLaunch: (...args: unknown[]) => useWorkflowPackageLaunchMock(...args),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
+  useWorkflowPackageRuntimeInputRegistry: (...args: unknown[]) => useWorkflowPackageRuntimeInputRegistryMock(...args),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
@@ -118,6 +141,51 @@ const launchRead: WorkflowPackageLaunchRead = {
   workflowKey: "market_review",
 };
 
+function runtimeInputEntry(
+  overrides: Partial<WorkflowPackageRuntimeInputEntryRead> & Pick<WorkflowPackageRuntimeInputEntryRead, "id" | "slot">,
+): WorkflowPackageRuntimeInputEntryRead {
+  const entry: WorkflowPackageRuntimeInputEntryRead = {
+    compiledHash: "compiled-hash-123",
+    createdAt: "2026-05-08T10:00:00Z",
+    id: overrides.id,
+    inputSchemaSnapshot: null,
+    manifestHash: "manifest-hash-123",
+    name: null,
+    packageId: 42,
+    payload: { ticker: "AAPL" },
+    schemaFingerprint: "schema-fingerprint-123",
+    slot: overrides.slot,
+    sourceKind: overrides.slot,
+    sourceRunId: null,
+    stale: { reasons: [], stale: false },
+    updatedAt: "2026-05-08T10:00:00Z",
+    workflowKey: "market_review",
+  };
+  return { ...entry, ...overrides };
+}
+
+function runtimeInputRegistry(overrides: {
+  history?: WorkflowPackageRuntimeInputEntryRead[];
+  isFetching?: boolean;
+  isPending?: boolean;
+  personal?: WorkflowPackageRuntimeInputEntryRead[];
+} = {}) {
+  return {
+    data: {
+      currentMetadata: null,
+      history: overrides.history ?? [],
+      packageId: 42,
+      packageKey: "market_review_package",
+      personal: overrides.personal ?? [],
+      workflowKey: "market_review",
+    },
+    error: null,
+    isError: false,
+    isFetching: overrides.isFetching ?? false,
+    isPending: overrides.isPending ?? false,
+  };
+}
+
 function editorElement(initialEntry = "/workflow-packages/42") {
   return (
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -141,12 +209,18 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
   beforeEach(() => {
     navigateMock.mockReset();
     updatePackageMock.mockReset();
+    updateRuntimeInputPersonalEntryMock.mockReset();
     validatePackageMock.mockReset();
     preflightPackageMock.mockReset();
     createLaunchMock.mockReset();
+    createRuntimeInputPersonalEntryMock.mockReset();
+    deleteRuntimeInputPersonalEntryMock.mockReset();
     importPackageMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
+    createRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "personal" }));
+    updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
+    deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
     importPackageMock.mockResolvedValue(packageRead);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -162,6 +236,10 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     useValidatePackageMock.mockReturnValue({ isPending: false, mutateAsync: validatePackageMock });
     usePreflightPackageMock.mockReturnValue({ isPending: false, mutateAsync: preflightPackageMock });
     useCreateLaunchMock.mockReturnValue({ isPending: false, mutateAsync: createLaunchMock });
+    useCreateRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: createRuntimeInputPersonalEntryMock });
+    useUpdateRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: updateRuntimeInputPersonalEntryMock });
+    useDeleteRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: deleteRuntimeInputPersonalEntryMock });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry());
     useImportPackageMock.mockReturnValue({ isPending: false, mutateAsync: importPackageMock });
     useModelConnectionsMock.mockReturnValue({ data: { items: [] }, error: null, isError: false, isPending: false });
     useToolsMock.mockReturnValue({ data: { items: [] }, error: null, isError: false, isPending: false });
@@ -215,6 +293,112 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
       payload: { parameters: { ticker: "AAPL" }, workflowKey: "market_review" },
     });
     expect(navigateMock).toHaveBeenCalledWith("/runs/99");
+  });
+
+  it("manages saved personal inputs and load-only history without replacing the raw editor", async () => {
+    const personal = runtimeInputEntry({
+      id: 7,
+      name: "Baseline preset",
+      payload: { ticker: "MSFT" },
+      slot: "personal",
+      stale: {
+        reasons: [{ current: "manifest-hash-123", field: "manifestHash", issue: "Manifest changed", stored: "old-manifest" }],
+        stale: true,
+      },
+      updatedAt: "2026-05-08T09:00:00Z",
+    });
+    const olderHistory = runtimeInputEntry({
+      createdAt: "2026-05-08T08:00:00Z",
+      id: 10,
+      payload: { ticker: "TSLA" },
+      slot: "history",
+      sourceRunId: 88,
+    });
+    const newerHistory = runtimeInputEntry({
+      createdAt: "2026-05-08T11:00:00Z",
+      id: 11,
+      payload: { ticker: "NVDA" },
+      slot: "history",
+      sourceRunId: 99,
+    });
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({
+      history: [olderHistory, newerHistory],
+      personal: [personal],
+    }));
+    renderEditor("/workflow-packages/42/run");
+
+    const launchTab = await screen.findByTestId("workflow-package-launch-tab");
+    const helper = within(launchTab).getByTestId("runtime-input-saved-inputs-helper");
+    expect(within(helper).getByText("Saved Inputs")).toBeVisible();
+    expect(within(helper).getByText("Not for secrets or PII")).toBeVisible();
+    expect(within(helper).getByText("1/20")).toBeVisible();
+    expect(within(helper).getByText("2/20")).toBeVisible();
+    expect(within(screen.getByTestId("saved-input-personal-7")).getByText("Stale")).toBeVisible();
+    expect(within(screen.getByTestId("saved-input-personal-7")).getByText(/manifestHash: Manifest changed/i)).toBeVisible();
+    expect(
+      screen.getByTestId("saved-input-history-11").compareDocumentPosition(screen.getByTestId("saved-input-history-10"))
+      & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const runtimeJson = (await screen.findByLabelText("Runtime inputs JSON")) as HTMLTextAreaElement;
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"AAPL"}' } });
+    fireEvent.change(screen.getByLabelText("Personal preset name"), { target: { value: "Morning preset" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save current JSON" }));
+
+    await waitFor(() => expect(createRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+      packageId: "42",
+      payload: { name: "Morning preset", payload: { ticker: "AAPL" } },
+      workflowKey: "market_review",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Load personal input Baseline preset" }));
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "MSFT" }, null, 2));
+    expect(createLaunchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(runtimeJson, { target: { value: '{"ticker":"GOOG"}' } });
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite personal input Baseline preset" }));
+    await waitFor(() => expect(updateRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+      entryId: 7,
+      packageId: "42",
+      payload: { name: "Baseline preset", payload: { ticker: "GOOG" } },
+      workflowKey: "market_review",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete personal input Baseline preset" }));
+    await waitFor(() => expect(deleteRuntimeInputPersonalEntryMock).toHaveBeenCalledWith({
+      entryId: 7,
+      packageId: "42",
+      workflowKey: "market_review",
+    }));
+
+    const newestHistoryRow = screen.getByTestId("saved-input-history-11");
+    expect(within(newestHistoryRow).queryByRole("button", { name: /overwrite/i })).not.toBeInTheDocument();
+    expect(within(newestHistoryRow).queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load history input Run #99" }));
+    expect(runtimeJson.value).toBe(JSON.stringify({ ticker: "NVDA" }, null, 2));
+    expect(preflightPackageMock).not.toHaveBeenCalled();
+    expect(createLaunchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows workflow-scoped loading and personal cap messaging in the saved inputs helper", async () => {
+    const personalEntries = Array.from({ length: 20 }, (_, index) => runtimeInputEntry({
+      id: index + 1,
+      name: `Preset ${index + 1}`,
+      slot: "personal",
+      updatedAt: `2026-05-08T10:${String(index).padStart(2, "0")}:00Z`,
+    }));
+    useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry({
+      isFetching: true,
+      personal: personalEntries,
+    }));
+    renderEditor("/workflow-packages/42/run");
+
+    const helper = await screen.findByTestId("runtime-input-saved-inputs-helper");
+    expect(within(helper).getByText(/loading saved inputs for market_review/i)).toBeVisible();
+    expect(within(helper).getByText("20/20")).toBeVisible();
+    expect(within(helper).getByText(/personal presets are capped at 20 per workflow/i)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Personal preset name"), { target: { value: "Overflow preset" } });
+    expect(screen.getByRole("button", { name: "Save current JSON" })).toBeDisabled();
   });
 
   it("submits raw launch parameters from the schema-derived template", async () => {

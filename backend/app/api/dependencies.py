@@ -15,6 +15,9 @@ from app.services.extension_service import ExtensionService, ExtensionStateSnaps
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
+from app.services.workflow_package_runtime_input_registry import (
+    WorkflowPackageRuntimeInputRegistryService,
+)
 from app.services.workflow_package_service import WorkflowPackageService
 
 
@@ -85,6 +88,12 @@ def get_workflow_package_service(
     )
 
 
+def get_workflow_package_runtime_input_registry_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> WorkflowPackageRuntimeInputRegistryService:
+    return WorkflowPackageRuntimeInputRegistryService(session)
+
+
 def get_run_service(
     session: Annotated[Session, Depends(get_session)],
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
@@ -100,6 +109,7 @@ __all__ = [
     "get_run_service",
     "get_session",
     "get_tool_catalog",
+    "get_workflow_package_runtime_input_registry_service",
     "get_workflow_package_service",
     "require_extension_enabled",
 ]
