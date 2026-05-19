@@ -63,5 +63,6 @@ tmp/
 
 # Local automation artifacts
 .sisyphus/
+.omo/
 .playwright-mcp/
 backend/results/
