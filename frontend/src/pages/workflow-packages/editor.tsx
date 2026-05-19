@@ -1954,22 +1954,24 @@ export function WorkflowPackageEditorPage() {
       ) : (
         <>
           {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
-          <Tabs value={activeTab} onValueChange={(value) => selectEditorTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4">
-            <div className="shrink-0 overflow-x-auto pb-1">
-              <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto !w-max min-w-full flex-nowrap justify-start bg-muted/60 p-1">
-                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="flex-none px-3 py-2" onClick={() => selectEditorTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+          <Tabs orientation="vertical" value={activeTab} onValueChange={(value) => selectEditorTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start">
+            <div className="shrink-0">
+              <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full justify-start bg-muted/60 p-1">
+                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="px-3 py-2" onClick={() => selectEditorTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
               </TabsList>
             </div>
-            <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
-            <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-            <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
-            <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
-            <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} setWorkflowKey={setWorkflowKey} workflowKey={workflowKey} /></TabsContent>
-            <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} /></TabsContent>
+            <div className="min-w-0">
+              <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
+              <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
+              <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+              <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
+              <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+              <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
+              <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
+              <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
+              <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} setWorkflowKey={setWorkflowKey} workflowKey={workflowKey} /></TabsContent>
+              <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} /></TabsContent>
+            </div>
           </Tabs>
         </>
       )}

@@ -153,13 +153,22 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("textbox", { name: "Workflow YAML" })).toBeVisible();
   });
 
-  it("keeps the package editor tab strip on one scrollable row", () => {
+  it("renders package editor tabs as a vertical rail beside the active panel", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
     const tabList = screen.getByRole("tablist", { name: "Workflow package editor sections" });
-    expect(tabList.parentElement).toHaveClass("shrink-0", "overflow-x-auto");
-    expect(tabList).toHaveClass("flex-nowrap");
-    expect(tabList).not.toHaveClass("flex-wrap");
+    expect(tabList).toHaveAttribute("aria-orientation", "vertical");
+
+    const tabsRoot = tabList.closest("[data-slot='tabs']");
+    const tabRail = tabList.parentElement;
+    const contentColumn = tabRail?.nextElementSibling;
+    if (!tabsRoot || !tabRail || !contentColumn) {
+      throw new Error("Expected the tab rail and tab panel column to share one tabs root");
+    }
+
+    expect(tabsRoot.children).toHaveLength(2);
+    expect(tabRail.parentElement).toBe(tabsRoot);
+    expect(contentColumn).toContainElement(screen.getByRole("tabpanel"));
   });
 
   it("hydrates existing package draft fields from manifestSource instead of summary metadata", () => {
