@@ -1323,11 +1323,6 @@ function SavedInputsHelper(props: {
         </div>
         <p className="text-xs text-muted-foreground">Load presets or prior launch inputs into the raw JSON editor. Loading never queues a run.</p>
       </div>
-      <Alert className="border-chart-3/30 bg-chart-3/10">
-        <AlertCircle />
-        <AlertTitle>Not for secrets or PII</AlertTitle>
-        <AlertDescription>Saved inputs are convenience presets. Keep API keys, credentials, and personal data out of this surface.</AlertDescription>
-      </Alert>
       {loading ? (
         <div className="flex items-center gap-2 rounded-lg border bg-background/60 p-3 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />

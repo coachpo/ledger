@@ -330,7 +330,8 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     const launchTab = await screen.findByTestId("workflow-package-launch-tab");
     const helper = within(launchTab).getByTestId("runtime-input-saved-inputs-helper");
     expect(within(helper).getByText("Saved Inputs")).toBeVisible();
-    expect(within(helper).getByText("Not for secrets or PII")).toBeVisible();
+    expect(within(helper).queryByText("Not for secrets or PII")).not.toBeInTheDocument();
+    expect(within(helper).queryByText("Saved inputs are convenience presets. Keep API keys, credentials, and personal data out of this surface.")).not.toBeInTheDocument();
     expect(within(helper).getByText("1/20")).toBeVisible();
     expect(within(helper).getByText("2/20")).toBeVisible();
     expect(within(screen.getByTestId("saved-input-personal-7")).getByText("Stale")).toBeVisible();
