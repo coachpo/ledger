@@ -31,7 +31,6 @@ import type {
   WorkflowPackageLaunchCreateRequest,
   WorkflowPackageLaunchCreateResponse,
   WorkflowPackageLaunchRead,
-  WorkflowPackageListParams,
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
@@ -99,10 +98,10 @@ export function useTools() {
   };
 }
 
-export function useWorkflowPackages(params: WorkflowPackageListParams = {}) {
+export function useWorkflowPackages() {
   return useQuery({
-    queryKey: queryKeys.platform.workflowPackages.list(params),
-    queryFn: ({ signal }) => listWorkflowPackages(params, signal),
+    queryKey: queryKeys.platform.workflowPackages.list(),
+    queryFn: ({ signal }) => listWorkflowPackages(signal),
   });
 }
 

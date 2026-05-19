@@ -79,11 +79,11 @@ def _insert_current_package(connection: Connection, key: str, **overrides: str) 
             text(
                 """
                 INSERT INTO workflow_packages (
-                    key, name, description, status, manifest_source, manifest_hash,
+                    key, name, description, manifest_source, manifest_hash,
                     package_definition, compiled_plan, compiled_hash,
                     extension_dependencies
                 ) VALUES (
-                    :key, :name, '', 'active', :manifest_source, :manifest_hash,
+                    :key, :name, '', :manifest_source, :manifest_hash,
                     CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
                     :compiled_hash, CAST(:extension_dependencies AS jsonb)
                 ) RETURNING id
@@ -148,6 +148,19 @@ def _foreign_key_signature(
     return columns, str(foreign_key.get("referred_table")), ondelete
 
 
+def _assert_workflow_package_live_status_artifacts_removed(
+    *,
+    package_columns: Mapping[str, object],
+    package_check_sql: Mapping[str | None, str],
+    package_indexes: set[str | None],
+) -> None:
+    assert "status" not in package_columns
+    assert "ck_workflow_packages_status" not in package_check_sql
+    assert "ix_workflow_packages_status" not in package_indexes
+    assert "uq_workflow_packages_active_key" not in package_indexes
+    assert "uq_workflow_packages_key" in package_indexes
+
+
 def _assert_workflow_package_schema(engine: Engine) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
@@ -194,7 +207,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "key",
         "name",
         "description",
-        "status",
         "manifest_source",
         "manifest_hash",
         "package_definition",
@@ -248,7 +260,11 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
         "deleted_by",
         "deleted_reason",
     }.isdisjoint(package_columns)
-    assert removed_archive_status not in package_check_sql["ck_workflow_packages_status"]
+    _assert_workflow_package_live_status_artifacts_removed(
+        package_columns=package_columns,
+        package_check_sql=package_check_sql,
+        package_indexes=package_indexes,
+    )
     assert {"id", "workflow_id", "agent_id"} <= workflow_agent_columns
     assert "workflow_package_version_id" not in workflow_agent_columns
     assert (("workflow_id",), "workflows", "CASCADE") in workflow_agent_foreign_keys
@@ -258,7 +274,6 @@ def _assert_workflow_package_schema(engine: Engine) -> None:
     assert package_columns["package_definition"]["nullable"] is False
     assert package_columns["compiled_plan"]["nullable"] is False
     assert package_columns["extension_dependencies"]["nullable"] is False
-    assert "uq_workflow_packages_active_key" in package_indexes
     removed_launch_index = "ix_workflow_packages_" + removed_launch_column
     assert removed_launch_index not in package_indexes
     assert {
@@ -360,7 +375,7 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
                 connection.execute(
                     text(
                         """
-                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                        SELECT id, name, description, manifest_source, manifest_hash,
                                package_definition, compiled_plan, compiled_hash,
                                extension_dependencies
                         FROM workflow_packages
@@ -382,7 +397,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
                     UPDATE workflow_packages
                     SET name = 'Stale TradingAgents Preset',
                         description = 'stale preset row',
-                        status = 'draft',
                         manifest_source = 'stale manifest',
                         manifest_hash = :manifest_hash,
                         package_definition = '{"stale": true}'::jsonb,
@@ -409,7 +423,7 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
                 connection.execute(
                     text(
                         """
-                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                        SELECT id, name, description, manifest_source, manifest_hash,
                                package_definition, compiled_plan, compiled_hash,
                                extension_dependencies
                         FROM workflow_packages
@@ -429,7 +443,6 @@ def test_workflow_package_upgrade_reseeds_stale_first_party_preset_row(
         for field in (
             "name",
             "description",
-            "status",
             "manifest_source",
             "manifest_hash",
             "package_definition",
@@ -456,7 +469,7 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
                 connection.execute(
                     text(
                         """
-                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                        SELECT id, name, description, manifest_source, manifest_hash,
                                package_definition, compiled_plan, compiled_hash,
                                extension_dependencies
                         FROM workflow_packages
@@ -511,6 +524,8 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
 
         assert marker_count_before == 1
         init_db(database_url)
+        _assert_workflow_package_schema(engine)
+        init_db(database_url)
 
         _assert_workflow_package_schema(engine)
         with engine.connect() as connection:
@@ -518,7 +533,7 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
                 connection.execute(
                     text(
                         """
-                        SELECT id, name, description, status, manifest_source, manifest_hash,
+                        SELECT id, name, description, manifest_source, manifest_hash,
                                package_definition, compiled_plan, compiled_hash,
                                extension_dependencies
                         FROM workflow_packages
@@ -538,7 +553,6 @@ def test_workflow_package_upgrade_reseeds_stale_marked_first_party_preset_row(
         for field in (
             "name",
             "description",
-            "status",
             "manifest_source",
             "manifest_hash",
             "package_definition",
@@ -608,7 +622,7 @@ def test_workflow_package_upgrade_is_idempotent_for_current_package_and_snapshot
         engine.dispose()
 
 
-def test_workflow_package_upgrade_deletes_archived_duplicates_before_index_creation(
+def test_workflow_package_upgrade_drops_status_artifacts_and_archived_duplicates(
     database_url: str,
 ) -> None:
     init_db(database_url)
@@ -616,11 +630,24 @@ def test_workflow_package_upgrade_deletes_archived_duplicates_before_index_creat
 
     try:
         with engine.begin() as connection:
+            connection.execute(text("DROP INDEX IF EXISTS uq_workflow_packages_key"))
             connection.execute(text("DROP INDEX IF EXISTS uq_workflow_packages_active_key"))
             connection.execute(
                 text(
-                    "ALTER TABLE workflow_packages DROP CONSTRAINT IF EXISTS "
-                    "ck_workflow_packages_status"
+                    "ALTER TABLE workflow_packages "
+                    "ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE workflow_packages ADD CONSTRAINT ck_workflow_packages_status "
+                    "CHECK (status IN ('draft', 'active', 'archived'))"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_workflow_packages_status "
+                    "ON workflow_packages (status)"
                 )
             )
             connection.execute(
@@ -654,20 +681,22 @@ def test_workflow_package_upgrade_deletes_archived_duplicates_before_index_creat
             )
 
         init_db(database_url)
+        _assert_workflow_package_schema(engine)
+        init_db(database_url)
 
         _assert_workflow_package_schema(engine)
         with engine.connect() as connection:
             package_rows = connection.execute(
                 text(
                     """
-                    SELECT key, status
+                    SELECT key
                     FROM workflow_packages
                     WHERE key = 'duplicate_package'
-                    ORDER BY status
+                    ORDER BY key
                     """
                 )
             ).all()
-            assert package_rows == [("duplicate_package", "active")]
+            assert package_rows == [("duplicate_package",)]
     finally:
         engine.dispose()
 

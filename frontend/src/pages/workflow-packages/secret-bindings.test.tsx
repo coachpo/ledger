@@ -58,7 +58,6 @@ const packageRead: WorkflowPackageRead = {
   key: "http_callbacks",
   manifestHash: "manifest-hash-123",
   name: "HTTP Callback Package",
-  status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
 };
 

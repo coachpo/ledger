@@ -44,7 +44,6 @@ def _build_package(
     key: str,
     name: str,
     description: str,
-    status: str = "active",
     manifest_source: str = "manifest-source",
     manifest_hash: str = _HASH_A,
     compiled_hash: str = _HASH_B,
@@ -54,7 +53,6 @@ def _build_package(
         key=key,
         name=name,
         description=description,
-        status=status,
         manifest_source=manifest_source,
         manifest_hash=manifest_hash,
         package_definition=_package_definition(key, agent_key),
@@ -76,7 +74,6 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "key",
         "name",
         "description",
-        "status",
         "manifest_source",
         "manifest_hash",
         "package_definition",
@@ -103,12 +100,14 @@ def test_workflow_package_tables_are_registered_with_constraints() -> None:
         "deleted_by",
         "deleted_reason",
     }.isdisjoint(package_table.c.keys())
+    assert "status" not in package_table.c.keys()
     assert {
         "ix_workflow_packages_key",
-        "uq_workflow_packages_active_key",
+        "uq_workflow_packages_key",
         "ix_workflow_packages_manifest_hash",
         "ix_workflow_packages_compiled_hash",
     } <= {index.name for index in package_table.indexes}
+    assert "uq_workflow_packages_active_key" not in {index.name for index in package_table.indexes}
     removed_launch_index = "ix_workflow_packages_" + removed_launch_column
     assert removed_launch_index not in {index.name for index in package_table.indexes}
 
@@ -162,7 +161,7 @@ def test_workflow_package_models_store_current_artifacts_and_allow_private_key_r
         assert not hasattr(stored_packages[0], "versions")
 
 
-def test_workflow_package_active_key_is_unique(
+def test_workflow_package_key_is_unique(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -170,8 +169,7 @@ def test_workflow_package_active_key_is_unique(
             _build_package(
                 key="market_review",
                 name="Market Review",
-                description="Active package",
-                status="active",
+                description="First package",
                 manifest_source="source-a",
             )
         )
@@ -181,8 +179,7 @@ def test_workflow_package_active_key_is_unique(
             _build_package(
                 key="market_review",
                 name="Duplicate Market Review",
-                description="Duplicate active package",
-                status="draft",
+                description="Duplicate package",
                 manifest_source="source-b",
             )
         )

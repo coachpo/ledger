@@ -12,6 +12,9 @@ import { WorkflowPackageEditorPage } from "./editor";
 const {
   createPackageMock,
   navigateMock,
+  toastErrorMock,
+  toastSuccessMock,
+  toastWarningMock,
   updatePackageMock,
   useCreateWorkflowPackageMock,
   useModelConnectionsMock,
@@ -24,6 +27,9 @@ const {
 } = vi.hoisted(() => ({
   createPackageMock: vi.fn(),
   navigateMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
+  toastWarningMock: vi.fn(),
   updatePackageMock: vi.fn(),
   useCreateWorkflowPackageMock: vi.fn(),
   useModelConnectionsMock: vi.fn(),
@@ -39,6 +45,14 @@ vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return { ...actual, useNavigate: () => navigateMock };
 });
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastErrorMock,
+    success: toastSuccessMock,
+    warning: toastWarningMock,
+  },
+}));
 
 vi.mock("@/hooks/use-model-connections", () => ({
   useModelConnections: (...args: unknown[]) => useModelConnectionsMock(...args),
@@ -92,7 +106,6 @@ const packageRead: WorkflowPackageRead = {
   key: "market_review_package",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
-  status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
 };
 
@@ -139,6 +152,9 @@ describe("WorkflowPackageEditorPage resource editors", () => {
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn();
     navigateMock.mockReset();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    toastWarningMock.mockReset();
     createPackageMock.mockReset();
     updatePackageMock.mockReset();
     validateManifestMock.mockReset();
@@ -186,7 +202,6 @@ describe("WorkflowPackageEditorPage resource editors", () => {
           {
             id: 1,
             key: "primary_model",
-            status: "active",
             name: "Primary Model",
             description: "OpenAI",
             baseUrl: "https://api.openai.com/v1",
@@ -194,6 +209,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
             reasoningEffort: null,
             timeoutSeconds: 60,
             apiStyle: "responses",
+            status: "active",
           },
         ],
       },
@@ -318,7 +334,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
       target: { value: "${MARKET_DATA_API_KEY}" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save package draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save package" }));
 
     expect(updatePackageMock).toHaveBeenCalledWith({
       packageId: "42",
@@ -332,6 +348,9 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(payload).toContain("MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY}");
     expect(payload).toContain("command: market-mcp");
     expect(payload).toContain("args:");
+    await waitFor(() =>
+      expect(toastSuccessMock).toHaveBeenCalledWith("Workflow package saved"),
+    );
     expect(createPackageMock).not.toHaveBeenCalled();
   });
 
@@ -400,7 +419,7 @@ spec:
 
     clickTab("Output Schemas");
     fireEvent.click(screen.getByRole("button", { name: "Add Schema" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save package draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save package" }));
 
     const payload = updatePackageMock.mock.calls.at(-1)?.[0].payload
       .manifestSource as string;

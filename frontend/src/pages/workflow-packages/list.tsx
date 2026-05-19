@@ -22,10 +22,8 @@ import { formatDateTime } from "@/lib/format";
 import type {
   WorkflowPackageImportRequest,
   WorkflowPackageRead,
-  WorkflowPackageStatus,
 } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -45,11 +43,6 @@ import {
   PlatformResourceList,
 } from "../platform-resource-shared";
 import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
-
-const statusLabel: Record<WorkflowPackageStatus, string> = {
-  active: "Active",
-  draft: "Draft",
-};
 
 function formatNullableHash(value: string | null): string {
   return value ? value.slice(0, 12) : "Not recorded";
@@ -73,26 +66,12 @@ function filterPackages(items: readonly WorkflowPackageRead[], search: string) {
       item.name,
       item.key,
       item.description,
-      item.status,
       item.manifestHash ?? "",
       item.compiledHash ?? "",
     ]
       .join(" ")
       .toLowerCase()
       .includes(query),
-  );
-}
-
-function statusBadge(packageStatus: WorkflowPackageStatus) {
-  const className =
-    packageStatus === "active"
-      ? "border-positive/30 bg-positive/10 text-positive"
-      : "border-chart-3/30 bg-chart-3/10 text-chart-3";
-
-  return (
-    <Badge className={className} variant="outline">
-      {statusLabel[packageStatus]}
-    </Badge>
   );
 }
 
@@ -123,7 +102,7 @@ function EmptyState({ search }: { search: string }) {
           </p>
           <p className="max-w-md text-sm text-muted-foreground">
             {search.trim()
-              ? "Refine the search by package name, key, status, or manifest hash."
+              ? "Refine the search by package name, key, or manifest hash."
               : "Create or import a package manifest to author private agents, schemas, capabilities, MCP bindings, and launch flows."}
           </p>
         </div>
@@ -221,7 +200,7 @@ export function WorkflowPackagesListPage() {
           <Input
             aria-label="Search workflow packages"
             className="h-8 pl-8 text-xs"
-            placeholder="Search packages by name, key, status, or hash..."
+            placeholder="Search packages by name, key, or hash..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -300,7 +279,6 @@ export function WorkflowPackagesListPage() {
                   label: `Open package details for ${workflowPackage.name}`,
                   onClick: () => navigate(packagePath),
                 }}
-                badges={statusBadge(workflowPackage.status)}
                 metadata={
                   <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2">
                     <div className="min-w-0">
@@ -372,7 +350,6 @@ export function WorkflowPackagesListPage() {
               <TableHead>Name</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>Manifest Hash</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -400,7 +377,6 @@ export function WorkflowPackagesListPage() {
                   <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs">
                     {formatNullableHash(workflowPackage.manifestHash)}
                   </TableCell>
-                  <TableCell>{statusBadge(workflowPackage.status)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDateTime(workflowPackage.updatedAt)}
                   </TableCell>

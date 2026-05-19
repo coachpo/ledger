@@ -64,7 +64,6 @@ function packageFixture(
     key: "alpha_package",
     manifestHash: "manifest-hash",
     name: "Alpha Package",
-    status: "active",
     updatedAt: "2026-05-03T10:00:00Z",
     ...overrides,
   };
@@ -157,15 +156,13 @@ describe("WorkflowPackagesListPage", () => {
             id: 9,
             key: "risk_review",
             name: "Risk Review",
-            status: "active",
-            updatedAt: "2026-05-04T10:00:00Z",
+                    updatedAt: "2026-05-04T10:00:00Z",
           }),
           packageFixture({
             description: "Draft allocation bundle",
             id: 4,
             key: "allocation_draft",
             name: "Allocation Draft",
-            status: "draft",
             updatedAt: "2026-05-02T10:00:00Z",
           }),
         ],
@@ -187,7 +184,7 @@ describe("WorkflowPackagesListPage", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("textbox", { name: "Search workflow packages" }),
-    ).toBeVisible();
+    ).toHaveAttribute("placeholder", "Search packages by name, key, or hash...");
     expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
     expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
     expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
@@ -204,7 +201,8 @@ describe("WorkflowPackagesListPage", () => {
     expect(riskRow).toHaveTextContent("Risk Review");
     expect(riskRow).toHaveTextContent("risk_review");
     expect(riskRow).toHaveTextContent("manifest-has");
-    expect(riskRow).toHaveTextContent("Active");
+    expect(riskRow).not.toHaveTextContent("Active");
+    expect(riskRow).not.toHaveTextContent("Draft");
     expect(riskRow).toHaveTextContent("May 4, 2026");
     expect(
       within(riskRow).getByRole("button", { name: "Open package Risk Review" }),
@@ -220,10 +218,13 @@ describe("WorkflowPackagesListPage", () => {
       }),
     ).toBeVisible();
 
-    const draftRow = screen.getByTestId(
+    const allocationRow = screen.getByTestId(
       "workflow-packages-row-allocation_draft",
     );
-    expect(draftRow).toHaveTextContent("Draft");
+    expect(allocationRow).toHaveTextContent("Allocation Draft");
+    expect(allocationRow).toHaveTextContent("allocation_draft");
+    expect(allocationRow).not.toHaveTextContent("Active");
+    expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Table view"));
     expect(screen.getByLabelText("Table view")).toHaveAttribute(
@@ -235,12 +236,12 @@ describe("WorkflowPackagesListPage", () => {
       "Name",
       "Key",
       "Manifest Hash",
-      "Status",
       "Updated",
       "Actions",
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
     }
+    expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
   });
 
   it("filters packages through the command search and routes primary actions", () => {

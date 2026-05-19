@@ -719,7 +719,6 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
         key VARCHAR(120) NOT NULL,
         name VARCHAR(200) NOT NULL,
         description TEXT NOT NULL DEFAULT '',
-        status VARCHAR(20) NOT NULL DEFAULT 'draft',
         manifest_source TEXT NOT NULL,
         manifest_hash VARCHAR(64) NOT NULL,
         package_definition JSONB NOT NULL,
@@ -727,8 +726,7 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
         compiled_hash VARCHAR(64) NOT NULL,
         extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT ck_workflow_packages_status CHECK (status IN ('draft', 'active'))
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
     """
@@ -743,11 +741,7 @@ _WORKFLOW_PACKAGE_TABLE_STATEMENTS: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_workflow_packages_key ON workflow_packages (key)",
-    "CREATE INDEX IF NOT EXISTS ix_workflow_packages_status ON workflow_packages (status)",
-    (
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_active_key "
-        "ON workflow_packages (key)"
-    ),
+    ("CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key " "ON workflow_packages (key)"),
     (
         "CREATE INDEX IF NOT EXISTS ix_workflow_packages_manifest_hash "
         "ON workflow_packages (manifest_hash)"
@@ -1586,10 +1580,6 @@ def _ensure_hard_delete_lifecycle_schema(engine: Engine, table_names: set[str]) 
         "_".join((removed_status, suffix)) for suffix in ("at", "by", "reason")
     )
     lifecycle_checks = {
-        "workflow_packages": (
-            "ck_workflow_packages_status",
-            "status IN ('draft', 'active')",
-        ),
         "agents": ("ck_agents_status", "status IN ('draft', 'published', 'deprecated')"),
         "workflows": ("ck_workflows_status", "status IN ('draft', 'published', 'deprecated')"),
         "capabilities": (
@@ -1618,11 +1608,19 @@ def _ensure_hard_delete_lifecycle_schema(engine: Engine, table_names: set[str]) 
                     f"CHECK ({constraint_sql})"
                 )
         if "workflow_packages" in table_names:
+            workflow_package_columns = {
+                column["name"] for column in inspect(engine).get_columns("workflow_packages")
+            }
+            archived_at_column = removed_archive_columns[0]
+            if archived_at_column in workflow_package_columns:
+                connection.exec_driver_sql(
+                    f"DELETE FROM workflow_packages WHERE {archived_at_column} IS NOT NULL"
+                )
             connection.exec_driver_sql(f"DROP INDEX IF EXISTS {removed_archive_index}")
             connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_deleted_at")
             connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
             connection.exec_driver_sql(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_active_key "
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key "
                 "ON workflow_packages (key)"
             )
             for column_name in (
@@ -1939,6 +1937,22 @@ def _ensure_workflow_package_current_artifact_columns(
                 f"ALTER TABLE workflow_packages DROP COLUMN IF EXISTS {column_name}"
             )
             package_columns.discard(column_name)
+        if "status" in package_columns:
+            _drop_constraint_if_exists(
+                connection,
+                "workflow_packages",
+                "ck_workflow_packages_status",
+            )
+            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_workflow_packages_status")
+            connection.exec_driver_sql(
+                "ALTER TABLE workflow_packages DROP COLUMN IF EXISTS status CASCADE"
+            )
+            package_columns.discard("status")
+        connection.exec_driver_sql("DROP INDEX IF EXISTS uq_workflow_packages_active_key")
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_packages_key "
+            "ON workflow_packages (key)"
+        )
         for column_name, column_type in column_definitions.items():
             if column_name not in package_columns:
                 connection.exec_driver_sql(

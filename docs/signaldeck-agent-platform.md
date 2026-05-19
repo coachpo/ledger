@@ -29,13 +29,13 @@ Backend registry and frontend scaffold data are private wiring. They may hold th
 
 ## Workflow Packages
 
-Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
+Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition without a live status lifecycle. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
 
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles. Workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
 `kind: step` continues to mean local package-agent invocation through `AgentExecutionService`. `kind: http` is the shipped non-agent operation node; it compiles into `ExecutionPlanOperation` and `PackageRuntimeOperationSpec`, not into fake agents. Mixed execution steps may carry both `agents` and `operations`; final outputs still resolve from step/slot selectors such as `${{ nodes.notify_slack.outputs.webhook_result }}`.
 
-Package import/export is manifest based. Exports keep private MCP `env`, `headers`, and `query` values inline in the package text. This is an intentional breaking change, and the old binding-based private MCP contract no longer applies. Exports still omit database ids, run history, package secret binding rows, and raw package secret binding values.
+Package import/export is manifest based. Exports keep private MCP `env`, `headers`, and `query` values inline in the package text. This is an intentional breaking change, and the old binding-based private MCP contract no longer applies. Exports still omit database ids, run history, live package status, package secret binding rows, and raw package secret binding values.
 
 ## HTTP Operation Nodes
 
@@ -96,7 +96,7 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{workflowKey, parameters}`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
 
-Runs persist status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and snapshot-based package provenance. Detail payloads include steps, agent invocations, operation invocations, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. Reruns and step replays execute that stored run snapshot, not the current package state.
+Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and snapshot-based package provenance. Detail payloads include steps, agent invocations, operation invocations, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. Reruns and step replays execute that stored run snapshot, not the current package state. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
 
 Run extension requirements appear as `extensionDependencies`. Each dependency record contains only `extensionKey`, `surfaces`, and `fields`. These records help explain launch-time requirements and are not public extension snapshots or a place to carry labels, enabled state, versioning, phase, categories, disabled reasons, or registrar metadata.
 

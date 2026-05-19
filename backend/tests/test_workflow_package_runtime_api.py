@@ -151,6 +151,7 @@ def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
 
 
 _PACKAGE_READ_OPERATION_FIELDS = {
+    "status",
     "blockingErrors",
     "canRun",
     "health",

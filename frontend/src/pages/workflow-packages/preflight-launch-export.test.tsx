@@ -78,7 +78,6 @@ const packageRead: WorkflowPackageRead = {
   key: "market_review_package",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
-  status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
 };
 

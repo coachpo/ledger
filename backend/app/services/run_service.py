@@ -577,7 +577,7 @@ class RunService:
             workflow_package_key=workflow_package.key,
             workflow_package_name=workflow_package.name,
             workflow_package_description=workflow_package.description,
-            workflow_package_status=workflow_package.status,
+            workflow_package_status=None,
             workflow_key=package_workflow.key,
             workflow_name=package_workflow.name,
             workflow_description=package_workflow.description,
@@ -874,7 +874,7 @@ class RunService:
             workflow_package_key=source_snapshot.workflow_package_key,
             workflow_package_name=source_snapshot.workflow_package_name,
             workflow_package_description=source_snapshot.workflow_package_description,
-            workflow_package_status=source_snapshot.workflow_package_status,
+            workflow_package_status=None,
             workflow_key=source_snapshot.workflow_key,
             workflow_name=source_snapshot.workflow_name,
             workflow_description=source_snapshot.workflow_description,
@@ -2972,7 +2972,6 @@ class RunService:
         if package is None:
             return {
                 "available": False,
-                "status": None,
                 "manifestHash": None,
                 "compiledHash": None,
                 "manifestHashMatchesSnapshot": None,
@@ -2981,7 +2980,6 @@ class RunService:
             }
         return {
             "available": True,
-            "status": package.status,
             "manifestHash": package.manifest_hash,
             "compiledHash": package.compiled_hash,
             "manifestHashMatchesSnapshot": package.manifest_hash == snapshot.manifest_hash,

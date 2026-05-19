@@ -19,7 +19,6 @@ from app.schemas.workflow_package import (
     WorkflowPackageSecretBindingListRead,
     WorkflowPackageSecretBindingRead,
     WorkflowPackageSecretBindingUpdateRequest,
-    WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
 )
@@ -40,6 +39,20 @@ def reject_removed_version_query(request: Request) -> None:
     )
 
 
+def reject_removed_status_query(request: Request) -> None:
+    if "status" not in request.query_params:
+        return
+    raise validation_error(
+        "Workflow package request validation failed",
+        [
+            {
+                "field": "status",
+                "issue": "Workflow package status filtering is no longer supported",
+            }
+        ],
+    )
+
+
 router = APIRouter(
     prefix="/workflow-packages",
     tags=["workflow-packages"],
@@ -47,12 +60,15 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=WorkflowPackageListRead)
+@router.get(
+    "",
+    response_model=WorkflowPackageListRead,
+    dependencies=[Depends(reject_removed_status_query)],
+)
 def list_workflow_packages(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
-    status_filter: Annotated[WorkflowPackageStatus | None, Query(alias="status")] = None,
 ) -> WorkflowPackageListRead:
-    return service.list_packages(status_filter=status_filter)
+    return service.list_packages()
 
 
 @router.post("", response_model=WorkflowPackageRead, status_code=status.HTTP_201_CREATED)

@@ -26,7 +26,6 @@ from app.schemas.workflow_package import (
     WorkflowPackageSecretBindingListRead,
     WorkflowPackageSecretBindingRead,
     WorkflowPackageSecretBindingUpdateRequest,
-    WorkflowPackageStatus,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
     normalize_workflow_package_secret_binding_key,
@@ -93,14 +92,8 @@ class WorkflowPackageService:
             social_sentiment_adapters=base_bundle.social_sentiment_adapters,
         )
 
-    def list_packages(
-        self,
-        *,
-        status_filter: WorkflowPackageStatus | None = None,
-    ) -> WorkflowPackageListRead:
-        packages = self.repository.list_packages(
-            status=status_filter.value if status_filter is not None else None,
-        )
+    def list_packages(self) -> WorkflowPackageListRead:
+        packages = self.repository.list_packages()
         return WorkflowPackageListRead(items=[self._to_package_read(item) for item in packages])
 
     def get_package(self, package_id: int) -> WorkflowPackageRead:
@@ -147,7 +140,6 @@ class WorkflowPackageService:
             key=key,
             name=str(cast(dict[str, Any], metadata)["name"]),
             description=str(cast(dict[str, Any], metadata).get("description") or ""),
-            status="active",
             **self._current_artifact_fields(prepared, payload.manifest_source),
         )
         try:
@@ -183,15 +175,12 @@ class WorkflowPackageService:
                 package,
                 name=str(cast(dict[str, Any], metadata)["name"]),
                 description=str(cast(dict[str, Any], metadata).get("description") or ""),
-                status="active" if payload.status is None else payload.status.value,
                 **self._current_artifact_fields(prepared, payload.manifest_source),
             )
-        elif payload.status is not None:
-            self.repository.update_package(package, status=payload.status.value)
         else:
             raise validation_error(
                 "Workflow package update is empty",
-                [{"field": "request", "issue": "Provide manifestSource or status"}],
+                [{"field": "request", "issue": "Provide manifestSource"}],
             )
         try:
             self.session.commit()
@@ -545,7 +534,6 @@ class WorkflowPackageService:
                 "key": package.key,
                 "name": package.name,
                 "description": package.description,
-                "status": package.status,
                 "manifestHash": package.manifest_hash,
                 "compiledHash": package.compiled_hash,
                 "createdAt": package.created_at,

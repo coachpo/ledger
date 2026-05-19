@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from enum import Enum
 from typing import Any, Literal
 
 from pydantic import Field, field_validator
@@ -11,12 +10,6 @@ from pydantic import Field, field_validator
 from app.schemas.common import CamelModel, ensure_timezone
 from app.schemas.workflow import WORKFLOW_MANIFEST_SOURCE_MAX_LENGTH
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
-
-
-class WorkflowPackageStatus(str, Enum):  # noqa: UP042
-    DRAFT = "draft"
-    ACTIVE = "active"
-
 
 _SECRET_BINDING_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,119}$")
 
@@ -56,7 +49,6 @@ class WorkflowPackageManifestRequest(CamelModel):
 
 class WorkflowPackageUpdateRequest(CamelModel):
     manifest_source: str | None = None
-    status: WorkflowPackageStatus | None = None
 
     @field_validator("manifest_source", mode="before")
     @classmethod
@@ -132,7 +124,6 @@ class WorkflowPackageRead(CamelModel):
     key: str
     name: str
     description: str
-    status: WorkflowPackageStatus
     manifest_hash: str | None = None
     compiled_hash: str | None = None
     created_at: datetime
@@ -193,7 +184,6 @@ __all__ = [
     "WorkflowPackageSecretBindingListRead",
     "WorkflowPackageSecretBindingRead",
     "WorkflowPackageSecretBindingUpdateRequest",
-    "WorkflowPackageStatus",
     "WorkflowPackageUpdateRequest",
     "WorkflowPackageValidationRead",
     "normalize_workflow_package_secret_binding_key",

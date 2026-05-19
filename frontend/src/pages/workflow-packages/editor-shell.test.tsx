@@ -48,7 +48,6 @@ const packageRead: WorkflowPackageRead = {
   key: "market_review_package",
   manifestHash: "manifest-hash-123",
   name: "Market Review Package",
-  status: "active",
   updatedAt: "2026-05-05T10:00:00Z",
 };
 
@@ -125,7 +124,7 @@ describe("WorkflowPackageEditorPage", () => {
       expect(screen.getByRole("tab", { name: `${tabName} tab` })).toBeVisible();
     }
 
-    expect(screen.getByRole("button", { name: "Save package draft" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Run package preflight" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeEnabled();
 
@@ -167,7 +166,7 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByLabelText("Package key")).toHaveValue("hydrated_market_review");
     expect(screen.getByLabelText("Package name")).toHaveValue("Hydrated Market Review");
     expect(screen.getByLabelText("Package description")).toHaveValue("Manifest source description");
-    expect(screen.getByRole("button", { name: "Save package draft" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
     expect(screen.queryByText(new RegExp("Package vers" + "ion", "i"))).not.toBeInTheDocument();
     expect(screen.queryByText(/Latest/i)).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp("selected vers" + "ion", "i"))).not.toBeInTheDocument();
@@ -187,7 +186,7 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
   });
 
@@ -247,7 +246,7 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByTestId("workflow-package-manifest-blocker")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("sufficiently indented");
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByRole("button", { name: "Save package draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
   });
 });

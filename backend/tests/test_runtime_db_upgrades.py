@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import bindparam, create_engine, inspect, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import init_db
 from app.db.upgrades import _ensure_agent_model_connection_snapshot_support, upgrade_legacy_schema
@@ -27,6 +28,7 @@ from app.reset_seed import (
     TRADING_DECISION_SCHEMA_KEY,
 )
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from app.services.workflow_package_service import WorkflowPackageService
 
 AGENT_PLATFORM_TABLE_NAMES = {
     "agents",
@@ -247,6 +249,7 @@ _INVOCATION_COST_COLUMN = f"{_RUNTIME_COST_WORD}_{_RUNTIME_COST_CURRENCY}"
 _INVOCATION_COST_CHECK = f"ck_run_agent_invocations_{_RUNTIME_COST_WORD}_non_negative"
 _TRADINGAGENTS_PRESET_KEY = "tradingagents_advisory_research"
 _TRADINGAGENTS_MODEL_CONNECTION_KEY = "tradingagents_primary_model"
+_TRADINGAGENTS_DETERMINISTIC_BASE_URL = "https://signaldeck-deterministic-model.local/v1"
 _TRADINGAGENTS_FIXTURE_PATH = (
     Path(__file__).parent
     / "fixtures"
@@ -294,11 +297,11 @@ def _insert_representable_workflow_package(
             text(
                 """
                 INSERT INTO workflow_packages (
-                    key, name, description, status, manifest_source, manifest_hash,
+                    key, name, description, manifest_source, manifest_hash,
                     package_definition, compiled_plan, compiled_hash,
                     extension_dependencies
                 ) VALUES (
-                    :key, :name, '', 'active', :manifest_source, :manifest_hash,
+                    :key, :name, '', :manifest_source, :manifest_hash,
                     CAST(:package_definition AS jsonb), CAST(:compiled_plan AS jsonb),
                     :compiled_hash, '[]'::jsonb
                 ) RETURNING id
@@ -394,6 +397,55 @@ def _insert_run_workflow_package_snapshot(
             "workflow_name": package["workflow_name"],
         },
     )
+
+
+def _assert_tradingagents_preset_launchable(
+    engine: Engine,
+    *,
+    package_id: int,
+    workflow_key: str,
+) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO model_connections (
+                    key, status, connection_kind, name, description, base_url, model_id,
+                    reasoning_effort, api_style, timeout_seconds, secret_payload,
+                    created_at, updated_at
+                ) VALUES (
+                    :key, 'active', 'deterministic_smoke', 'TradingAgents Primary Model',
+                    '', :base_url, :model_id, 'medium', 'responses', 60, '{}'::jsonb,
+                    NOW(), NOW()
+                )
+                ON CONFLICT (key) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    connection_kind = EXCLUDED.connection_kind,
+                    name = EXCLUDED.name,
+                    base_url = EXCLUDED.base_url,
+                    model_id = EXCLUDED.model_id,
+                    secret_payload = EXCLUDED.secret_payload,
+                    updated_at = NOW()
+                """
+            ),
+            {
+                "base_url": _TRADINGAGENTS_DETERMINISTIC_BASE_URL,
+                "key": _TRADINGAGENTS_MODEL_CONNECTION_KEY,
+                "model_id": "openai:gpt-5.4-mini",
+            },
+        )
+
+    test_session_factory: sessionmaker[Session] = sessionmaker(bind=engine, future=True)
+    with test_session_factory() as session:
+        launch = WorkflowPackageService(session, test_session_factory).get_launch(
+            package_id,
+            workflow_key=workflow_key,
+        )
+
+    assert launch.package_key == _TRADINGAGENTS_PRESET_KEY
+    assert launch.workflow_key == workflow_key
+    assert launch.ready is True
+    assert launch.blocking_errors == []
 
 
 def _seed_stock_analysis_upgrade_rows(connection) -> int:
@@ -2239,7 +2291,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
                         package.key,
                         package.name,
                         package.description,
-                        package.status,
                         package.manifest_source,
                         package.manifest_hash,
                         package.package_definition,
@@ -2287,7 +2338,6 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
             row["description"]
             == cast(dict[str, object], expected_package_definition["metadata"])["description"]
         )
-        assert row["status"] == "active"
         assert row["manifest_source"] == fixture_source
         assert row["manifest_hash"] == compiled["manifestHash"]
         assert row["compiled_hash"] == compiled["compiledHash"]
@@ -2323,7 +2373,14 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
         assert secret_binding_count == 0
         assert run_count == 0
 
-        package_id = row["package_id"]
+        package_id = int(row["package_id"])
+        workflows = cast(list[dict[str, object]], expected_compiled_plan["workflows"])
+        _assert_tradingagents_preset_launchable(
+            engine,
+            package_id=package_id,
+            workflow_key=str(workflows[0]["key"]),
+        )
+
         upgrade_legacy_schema(engine)
         with engine.connect() as connection:
             idempotent_row = (

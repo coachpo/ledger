@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,13 +16,8 @@ from app.models.mcp_server import EncryptedJSONB
 class WorkflowPackage(IdMixin, Base):
     __tablename__ = "workflow_packages"
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('draft', 'active')",
-            name="ck_workflow_packages_status",
-        ),
         Index("ix_workflow_packages_key", "key"),
-        Index("ix_workflow_packages_status", "status"),
-        Index("uq_workflow_packages_active_key", "key", unique=True),
+        Index("uq_workflow_packages_key", "key", unique=True),
         Index("ix_workflow_packages_manifest_hash", "manifest_hash"),
         Index("ix_workflow_packages_compiled_hash", "compiled_hash"),
     )
@@ -30,12 +25,6 @@ class WorkflowPackage(IdMixin, Base):
     key: Mapped[str] = mapped_column(String(120), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="draft",
-        server_default="draft",
-    )
     manifest_source: Mapped[str] = mapped_column(Text, nullable=False)
     manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     package_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

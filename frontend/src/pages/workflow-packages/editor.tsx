@@ -202,7 +202,7 @@ function agentFormValues(agent: PackageAgentDraft): AgentFormValues {
 }
 
 const editorTabs: WorkflowPackageEditorTabDefinition[] = [
-  { description: "Package metadata, manifest identity, current hashes, and draft status.", icon: Workflow, label: "Overview", value: "overview" },
+  { description: "Package metadata, manifest identity, current hashes, and local edit state.", icon: Workflow, label: "Overview", value: "overview" },
   { description: "Package-private agent definitions stay local to this package shell.", icon: Boxes, label: "Agents", value: "agents" },
   { description: "Local output contracts are authored inside the package boundary.", icon: Braces, label: "Output Schemas", value: "output-schemas" },
   { description: "Capability profiles collect server-declared tool keys for local agents.", icon: ShieldCheck, label: "Capability Profiles", value: "capability-profiles" },
@@ -227,16 +227,6 @@ function packageSubtitle(workflowPackage: WorkflowPackageRead | undefined, isNew
     return workflowPackage.key;
   }
   return isNew ? "Draft manifest shell" : "Loading package identity";
-}
-
-function statusBadge(workflowPackage: WorkflowPackageRead | undefined) {
-  if (!workflowPackage) {
-    return <Badge variant="outline">Draft shell</Badge>;
-  }
-  const className = workflowPackage.status === "active"
-    ? "border-positive/30 bg-positive/10 text-positive"
-    : "border-chart-3/30 bg-chart-3/10 text-chart-3";
-  return <Badge className={className} variant="outline">{workflowPackage.status}</Badge>;
 }
 
 function manifestIdentity(manifest: WorkflowPackageManifestRead) {
@@ -1627,7 +1617,7 @@ export function WorkflowPackageEditorPage() {
     toast[backendIssues.some((issue) => issue.issue) ? "warning" : "success"](backendIssues.length > 0 ? "Package validation returned diagnostics" : "Package validation passed");
   };
 
-  const saveDraft = async () => {
+  const savePackage = async () => {
     if (isEditorBlocked) {
       toast.error("Load a valid package manifest before saving.");
       return;
@@ -1651,7 +1641,7 @@ export function WorkflowPackageEditorPage() {
     if (packageId) {
       await updatePackage.mutateAsync({ packageId, payload: { manifestSource } });
       clearTransientEditorState();
-      toast.success("Workflow package draft saved");
+      toast.success("Workflow package saved");
     }
   };
 
@@ -1663,8 +1653,8 @@ export function WorkflowPackageEditorPage() {
     <div ref={editorShellRef} className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
       <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{statusBadge(workflowPackage)}{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package draft" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void saveDraft()}><Save data-icon="inline-start" />Save Draft</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
+          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
+          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
         </CardContent>
       </Card>
       {editorBlocker ? (

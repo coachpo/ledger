@@ -188,6 +188,25 @@ def _edited_workflow_manifest_source(source: str) -> str:
     )
 
 
+def test_workflow_package_list_rejects_removed_status_query(client: TestClient) -> None:
+    ordinary = client.get("/api/workflow-packages")
+    assert ordinary.status_code == 200, ordinary.json()
+
+    response = client.get("/api/workflow-packages", params={"status": "active"})
+
+    assert response.status_code == 422, response.json()
+    assert response.json() == {
+        "code": "validation_error",
+        "message": "Workflow package request validation failed",
+        "details": [
+            {
+                "field": "status",
+                "issue": "Workflow package status filtering is no longer supported",
+            }
+        ],
+    }
+
+
 def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -226,7 +245,7 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
 
     assert created["id"]
     assert created["key"] == "tradingagents_advisory_research"
-    assert created["status"] == "active"
+    assert "status" not in created
     assert "latestVersion" not in created
     assert "latestVersionId" not in created
     assert isinstance(created["manifestHash"], str)
@@ -249,8 +268,10 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
 
     detail = client.get(f"/api/workflow-packages/{created['id']}")
     assert detail.status_code == 200, detail.json()
-    assert "latestVersion" not in detail.json()
-    assert "latestVersionId" not in detail.json()
+    detail_body = cast(dict[str, object], detail.json())
+    assert "status" not in detail_body
+    assert "latestVersion" not in detail_body
+    assert "latestVersionId" not in detail_body
 
     versions = client.get(f"/api/workflow-packages/{created['id']}/versions")
     assert versions.status_code == 404, versions.json()
@@ -328,8 +349,15 @@ def test_manifest_round_trip_save_updates_current_package_in_place(
     assert saved.status_code == 200, saved.json()
     saved_body = cast(dict[str, object], saved.json())
     assert saved_body["id"] == package_id
+    assert "status" not in saved_body
     assert "latestVersion" not in saved_body
     assert "latestVersionId" not in saved_body
+
+    status_update = client.patch(
+        f"/api/workflow-packages/{package_id}",
+        json={"status": "active"},
+    )
+    assert status_update.status_code == 422, status_update.json()
 
     updated = client.get(f"/api/workflow-packages/{package_id}/manifest")
     assert updated.status_code == 200, updated.json()

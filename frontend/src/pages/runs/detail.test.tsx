@@ -467,7 +467,6 @@ describe("RunsDetailPage", () => {
         preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
         currentPackage: {
           available: true,
-          status: "active",
           manifestHash: "manifest-hash-abc",
           compiledHash: "compiled-hash-abc",
           manifestHashMatchesSnapshot: true,

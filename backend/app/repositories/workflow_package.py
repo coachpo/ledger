@@ -11,15 +11,8 @@ from app.repositories.base import BaseRepository
 class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
     model = WorkflowPackage
 
-    def list_packages(
-        self,
-        *,
-        status: str | None = None,
-    ) -> list[WorkflowPackage]:
-        statement = select(self.model)
-        if status is not None:
-            statement = statement.where(self.model.status == status)
-        statement = statement.order_by(self.model.key.asc(), self.model.id.asc())
+    def list_packages(self) -> list[WorkflowPackage]:
+        statement = select(self.model).order_by(self.model.key.asc(), self.model.id.asc())
         return self._list(statement)
 
     def get_by_key(self, key: str) -> WorkflowPackage | None:
@@ -33,7 +26,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
         key: str,
         name: str,
         description: str = "",
-        status: str = "draft",
         manifest_source: str,
         manifest_hash: str,
         package_definition: dict[str, Any],
@@ -45,7 +37,6 @@ class WorkflowPackageRepository(BaseRepository[WorkflowPackage]):
             key=key,
             name=name,
             description=description,
-            status=status,
             manifest_source=manifest_source,
             manifest_hash=manifest_hash,
             package_definition=package_definition,

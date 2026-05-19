@@ -10,7 +10,6 @@ import type {
   WorkflowPackageLaunchCreateRequest,
   WorkflowPackageLaunchCreateResponse,
   WorkflowPackageLaunchRead,
-  WorkflowPackageListParams,
   WorkflowPackageListRead,
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
@@ -41,12 +40,8 @@ function workflowKeyQuery(options: WorkflowPackageWorkflowOptions = {}) {
   });
 }
 
-export function listWorkflowPackages(
-  params: WorkflowPackageListParams = {},
-  signal?: AbortSignal,
-): Promise<WorkflowPackageListRead> {
+export function listWorkflowPackages(signal?: AbortSignal): Promise<WorkflowPackageListRead> {
   return requestPlatform<WorkflowPackageListRead>("/workflow-packages", {
-    query: toQueryRecord(params),
     signal,
   });
 }

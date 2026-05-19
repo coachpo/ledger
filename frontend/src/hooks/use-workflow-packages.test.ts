@@ -47,6 +47,7 @@ import {
   useDeleteWorkflowPackage,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
+  useWorkflowPackages,
 } from "./use-workflow-packages";
 
 type CapturedMutationOptions = {
@@ -57,15 +58,24 @@ type CapturedMutationOptions = {
 describe("useWorkflowPackages", () => {
   beforeEach(() => {
     reactQueryState.invalidateQueriesMock.mockReset();
+    reactQueryState.useQueryMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     vi.mocked(validateWorkflowPackageManifest).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
   });
 
-  it("uses package detail keys and disables detail queries without an id", () => {
-    useWorkflowPackage(undefined);
+  it("uses package list and detail keys without live status filters", () => {
+    useWorkflowPackages();
     expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
       1,
+      expect.objectContaining({
+        queryKey: queryKeys.platform.workflowPackages.list(),
+      }),
+    );
+
+    useWorkflowPackage(undefined);
+    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
         enabled: false,
         queryKey: queryKeys.platform.workflowPackages.detail(""),
@@ -74,7 +84,7 @@ describe("useWorkflowPackages", () => {
 
     useWorkflowPackage(15);
     expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.objectContaining({
         enabled: true,
         queryKey: queryKeys.platform.workflowPackages.detail(15),

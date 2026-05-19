@@ -136,7 +136,6 @@ def _provenance_from_snapshot(
             "preflightSummary": snapshot.preflight_summary,
             "currentPackage": {
                 "available": True,
-                "status": snapshot.workflow_package_status,
                 "manifestHash": snapshot.manifest_hash,
                 "compiledHash": snapshot.compiled_hash,
                 "manifestHashMatchesSnapshot": True,
@@ -214,13 +213,13 @@ def test_workflow_package_run_persists_run_owned_executable_snapshot(
         assert "workflowPackage" + "Version" not in serialized
         assert "last" + "LaunchedAt" not in serialized
         assert "apiKey" not in serialized
+        assert payload["workflowPackageStatus"] == "active"
         assert payload["workflowPackageManifestHash"] == "a" * 64
         assert cast(dict[str, object], payload["launchSnapshot"])["parameters"] == {
             "ticker": "AAPL",
         }
         assert payload["currentPackage"] == {
             "available": True,
-            "status": "active",
             "manifestHash": "a" * 64,
             "compiledHash": "b" * 64,
             "manifestHashMatchesSnapshot": True,

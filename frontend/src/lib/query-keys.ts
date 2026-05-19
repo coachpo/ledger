@@ -2,7 +2,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { GetMarketHistoryParams, GetMarketQuotesParams } from "./types/market-data";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { RunListParams } from "./types/run";
-import type { WorkflowPackageListParams } from "./types/workflow-package";
 
 const apiRoot = ["api"] as const;
 const platformApiRoot = [...apiRoot, "platform"] as const;
@@ -42,12 +41,6 @@ function normalizeHistoryParams(params: GetMarketHistoryParams) {
 }
 function normalizeModelConnectionListParams(_params: ModelConnectionListParams = {}) {
   return {};
-}
-
-function normalizeWorkflowPackageListParams(params: WorkflowPackageListParams = {}) {
-  return omitUndefined({
-    status: params.status,
-  });
 }
 
 function normalizeRunListParams(params: RunListParams = {}) {
@@ -141,8 +134,7 @@ const workflowPackagesQueryKeys = {
       { workflowKey: normalizedWorkflowKey },
     ] as const;
   },
-  list: (params: WorkflowPackageListParams = {}) =>
-    [...workflowPackagesRoot, "list", normalizeWorkflowPackageListParams(params)] as const,
+  list: () => [...workflowPackagesRoot, "list"] as const,
   preflight: (packageId: IdParam, workflowKey?: string | null) => {
     const normalizedWorkflowKey = normalizeOptionalText(workflowKey);
     if (normalizedWorkflowKey === undefined) {

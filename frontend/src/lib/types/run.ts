@@ -147,7 +147,6 @@ export interface RunPackageLaunchSnapshotRead {
 
 export interface RunCurrentPackageAuditRead {
   available: boolean;
-  status?: string | null;
   manifestHash?: string | null;
   compiledHash?: string | null;
   manifestHashMatchesSnapshot?: boolean | null;

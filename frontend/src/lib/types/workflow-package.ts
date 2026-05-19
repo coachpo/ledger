@@ -2,7 +2,6 @@ import type { UnknownRecord } from "./common";
 import type { ModelConnectionKind } from "./model-connection";
 import type { RunStatus } from "./run";
 
-export type WorkflowPackageStatus = "draft" | "active";
 export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
 export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
 
@@ -21,7 +20,6 @@ export interface WorkflowPackageManifestRead {
 
 export interface WorkflowPackageUpdateRequest {
   manifestSource?: string | null;
-  status?: WorkflowPackageStatus | null;
 }
 
 export interface WorkflowPackageSecretBindingRead {
@@ -72,7 +70,6 @@ export interface WorkflowPackageRead {
   key: string;
   name: string;
   description: string;
-  status: WorkflowPackageStatus;
   manifestHash: string | null;
   compiledHash: string | null;
   createdAt: string;
@@ -119,6 +116,3 @@ export interface WorkflowPackageLaunchCreateResponse {
   createdAt: string;
 }
 
-export interface WorkflowPackageListParams {
-  status?: WorkflowPackageStatus;
-}

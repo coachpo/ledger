@@ -46,8 +46,9 @@ def test_workflow_package_routes_are_registered_without_old_authoring(app) -> No
 
 
 def test_workflow_package_openapi_is_current_package_only(client: TestClient) -> None:
-    openapi = client.get("/openapi.json").json()
-    schemas = cast(dict[str, dict[str, object]], openapi["components"]["schemas"])
+    openapi = cast(dict[str, object], client.get("/openapi.json").json())
+    components = cast(dict[str, object], openapi["components"])
+    schemas = cast(dict[str, dict[str, object]], components["schemas"])
     paths = cast(dict[str, dict[str, object]], openapi["paths"])
 
     assert "WorkflowPackageVersionRead" not in schemas
@@ -55,6 +56,7 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
     assert "WorkflowPackageImportMode" not in schemas
 
     package_properties = cast(dict[str, object], schemas["WorkflowPackageRead"]["properties"])
+    assert "status" not in package_properties
     assert "latestVersion" not in package_properties
     assert "latestVersionId" not in package_properties
     assert "warnings" not in package_properties
@@ -78,11 +80,36 @@ def test_workflow_package_openapi_is_current_package_only(client: TestClient) ->
     )
     assert "version" not in launch_request_properties
 
+    update_request_properties = cast(
+        dict[str, object],
+        schemas["WorkflowPackageUpdateRequest"]["properties"],
+    )
+    assert "status" not in update_request_properties
+
     import_request_properties = cast(
         dict[str, object],
         schemas["WorkflowPackageImportRequest"]["properties"],
     )
     assert "mode" not in import_request_properties
+
+    provenance_properties = cast(
+        dict[str, object],
+        schemas["RunPackageProvenanceRead"]["properties"],
+    )
+    current_package_properties = cast(
+        dict[str, object],
+        schemas["RunCurrentPackageAuditRead"]["properties"],
+    )
+    assert "workflowPackageStatus" in provenance_properties
+    assert "currentPackage" in provenance_properties
+    assert "status" not in current_package_properties
+
+    list_operation = cast(dict[str, object], paths["/api/workflow-packages"]["get"])
+    list_parameters = cast(
+        list[dict[str, object]],
+        list_operation.get("parameters") or [],
+    )
+    assert all(parameter["name"] != "status" for parameter in list_parameters)
 
     for path in (
         "/api/workflow-packages/{package_id}/manifest",

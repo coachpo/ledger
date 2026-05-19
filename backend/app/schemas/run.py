@@ -494,7 +494,6 @@ class RunPackageLaunchSnapshotRead(CamelModel):
 
 class RunCurrentPackageAuditRead(CamelModel):
     available: bool
-    status: str | None = None
     manifest_hash: str | None = None
     compiled_hash: str | None = None
     manifest_hash_matches_snapshot: bool | None = None

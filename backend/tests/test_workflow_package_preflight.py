@@ -358,7 +358,6 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
         key="http_node_package",
         name="HTTP Node Package",
         description="",
-        status="active",
         manifest_source=http_node_package_source(),
         manifest_hash="a" * 64,
         package_definition=cast(dict[str, Any], compiled["packageDefinition"]),

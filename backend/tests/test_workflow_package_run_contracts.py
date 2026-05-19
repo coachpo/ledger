@@ -507,6 +507,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     assert_removed_contract_tokens_absent(provenance, context="package provenance")
     assert provenance["workflowPackageId"] == first_package["id"]
     assert provenance["workflowPackageKey"] == "provenance_filter_package"
+    assert provenance["workflowPackageStatus"] is None
     assert provenance["workflowPackageManifestHash"]
     assert provenance["workflowPackageCompiledHash"]
     assert provenance["workflowPackageManifestHash"] != provenance["workflowPackageCompiledHash"]
@@ -548,7 +549,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
         "warnings": [],
     }
     assert provenance["currentPackage"]["available"] is True
-    assert provenance["currentPackage"]["status"] == "active"
+    assert "status" not in provenance["currentPackage"]
     assert provenance["currentPackage"]["manifestHashMatchesSnapshot"] is True
     assert provenance["currentPackage"]["compiledHashMatchesSnapshot"] is True
     serialized = json.dumps(detail, sort_keys=True)
@@ -561,6 +562,71 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     rerun_provenance = cast(dict[str, Any], rerun_draft.json()["packageProvenance"])
     assert rerun_provenance["workflowPackageKey"] == "provenance_filter_package"
     assert rerun_provenance["resolvedModelConnections"][0]["connectionKind"] == "provider"
+
+
+def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_lineage(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="null_status_snapshot_package")
+    fresh_run = _launch_package_run(client, package, ticker="MSFT")
+    fresh_run_id = int(fresh_run["id"])
+
+    fresh_detail_response = client.get(f"/api/runs/{fresh_run_id}")
+    assert fresh_detail_response.status_code == 200, fresh_detail_response.json()
+    fresh_provenance = cast(dict[str, Any], fresh_detail_response.json()["packageProvenance"])
+    assert fresh_provenance["workflowPackageStatus"] is None
+    assert "status" not in fresh_provenance["currentPackage"]
+
+    with session_factory() as session:
+        source_run = session.get(Run, fresh_run_id)
+        assert source_run is not None
+        source_snapshot = source_run.workflow_package_snapshot
+        assert source_snapshot is not None
+        assert source_snapshot.workflow_package_status is None
+        source_snapshot.workflow_package_status = "active"
+        session.commit()
+
+    historical_source_response = client.get(f"/api/runs/{fresh_run_id}")
+    assert historical_source_response.status_code == 200, historical_source_response.json()
+    historical_source_provenance = cast(
+        dict[str, Any],
+        historical_source_response.json()["packageProvenance"],
+    )
+    assert historical_source_provenance["workflowPackageStatus"] == "active"
+
+    rerun_response = client.post(
+        f"/api/runs/{fresh_run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    assert rerun_response.status_code == 201, rerun_response.json()
+    rerun_id = int(rerun_response.json()["id"])
+    rerun_detail_response = client.get(f"/api/runs/{rerun_id}")
+    assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
+    rerun_provenance = cast(dict[str, Any], rerun_detail_response.json()["packageProvenance"])
+    assert rerun_provenance["workflowPackageStatus"] is None
+    assert "status" not in rerun_provenance["currentPackage"]
+
+    stable_source_response = client.get(f"/api/runs/{fresh_run_id}")
+    assert stable_source_response.status_code == 200, stable_source_response.json()
+    stable_source_provenance = cast(
+        dict[str, Any],
+        stable_source_response.json()["packageProvenance"],
+    )
+    assert stable_source_provenance["workflowPackageStatus"] == "active"
+
+    with session_factory() as session:
+        source_run = session.get(Run, fresh_run_id)
+        rerun = session.get(Run, rerun_id)
+        assert source_run is not None
+        assert rerun is not None
+        assert source_run.workflow_package_snapshot is not None
+        assert rerun.workflow_package_snapshot is not None
+        assert source_run.workflow_package_snapshot.workflow_package_status == "active"
+        assert rerun.workflow_package_snapshot.workflow_package_status is None
 
 
 _recording_package_agent_calls: list[dict[str, Any]] = []
@@ -650,6 +716,7 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
     assert rerun_provenance["workflowPackageCompiledHash"] == snapshot_compiled_hash
     assert rerun_provenance["launchSnapshot"]["parameters"] == {"ticker": "AAPL"}
     assert rerun_provenance["currentPackage"]["available"] is True
+    assert "status" not in rerun_provenance["currentPackage"]
     assert rerun_provenance["currentPackage"]["manifestHashMatchesSnapshot"] is False
     assert rerun_provenance["currentPackage"]["compiledHashMatchesSnapshot"] is False
 
@@ -707,7 +774,6 @@ def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
     assert provenance["workflowPackageId"] == package_id
     assert provenance["currentPackage"] == {
         "available": False,
-        "status": None,
         "manifestHash": None,
         "compiledHash": None,
         "manifestHashMatchesSnapshot": None,
@@ -727,6 +793,7 @@ def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
     assert replay_provenance["workflowPackageId"] == package_id
     assert replay_provenance["launchSnapshot"]["parameters"] == {"ticker": "TSLA"}
     assert replay_provenance["currentPackage"]["available"] is False
+    assert "status" not in replay_provenance["currentPackage"]
     by_deleted_snapshot_model = client.get(
         "/api/runs",
         params={"modelConnectionKey": "package_runtime_model"},

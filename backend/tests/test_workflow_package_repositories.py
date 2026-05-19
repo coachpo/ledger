@@ -43,7 +43,6 @@ def _create_current_package(session: Session, key: str = "market_review"):
         key=key,
         name="Market Review",
         description="Current package",
-        status="draft",
         **_package_payload(key),
     )
     session.commit()
@@ -59,7 +58,6 @@ def test_workflow_package_repository_creates_current_package_artifact(
             key="market_review",
             name="Market Review",
             description="Current package",
-            status="draft",
             **_package_payload(),
         )
         session.commit()
@@ -84,14 +82,12 @@ def test_workflow_package_repository_lists_and_updates_current_packages(
         package = _create_current_package(session)
         repository = WorkflowPackageRepository(session)
 
-        repository.update_package(package, name="Updated Market Review", status="active")
+        repository.update_package(package, name="Updated Market Review")
         session.commit()
 
         assert repository.get_by_key("market_review") is not None
-        assert ("market_review", "active") in [
-            (item.key, item.status) for item in repository.list_packages()
-        ]
-        assert [(item.key, item.status) for item in repository.list_packages(status="draft")] == []
+        listed_packages = {(item.key, item.name) for item in repository.list_packages()}
+        assert ("market_review", "Updated Market Review") in listed_packages
 
 
 def test_workflow_package_repository_replaces_current_artifact_in_place(
