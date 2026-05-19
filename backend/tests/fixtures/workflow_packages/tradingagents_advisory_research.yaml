@@ -92,11 +92,11 @@ spec:
     toolKeys:
     - signaldeck.positions.lookup
   - key: memory_write_tools
-    name: Memory Write Tools
-    description: Reads and writes advisory memory reports through SignalDeck report tools.
+    name: Memory Tools
+    description: Reads and writes advisory memory through SignalDeck core memory tools.
     toolKeys:
-    - signaldeck.reports.lookup
-    - signaldeck.reports.write
+    - signaldeck.memory.lookup
+    - signaldeck.memory.write
   outputSchemas:
   - key: analyst_report
     name: Analyst Report

@@ -37,6 +37,9 @@ class RuntimeToolContext:
     quote_provider: QuoteProvider | None = None
     social_sentiment_adapters: Sequence[SocialSentimentSourceAdapter] | None = None
     run_id: int | None = None
+    run_step_id: int | None = None
+    run_agent_invocation_id: int | None = None
+    run_operation_invocation_id: int | None = None
     agent_key: str | None = None
     agent_version: int | None = None
     agent_name: str | None = None
@@ -46,6 +49,8 @@ class RuntimeToolContext:
     step_id: str | None = None
     slot: str | None = None
     trace_id: str | None = None
+    trace_span_id: str | None = None
+    invocation_id: str | None = None
 
 
 class RuntimeToolParser(Protocol):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import math
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Final, Literal, Self, cast
@@ -15,38 +17,116 @@ from pydantic import (
 )
 
 from app.core.errors import ApiError
-from app.core.formatting import normalize_symbol
 from app.schemas.common import CamelModel, ensure_timezone
 
 INVALID_MEMORY_ID_CODE: Final = "invalid_memory_id"
 MEMORY_NOT_FOUND_CODE: Final = "memory_not_found"
 
-MemoryProjection = Literal[
-    "model-visible",
-    "api-visible",
-    "ui-visible",
-    "report-route-visible",
-]
+MemoryProjection = Literal["model-visible", "api-visible", "ui-visible"]
 
-MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS: Final[frozenset[str]] = frozenset(
-    {"auditLinks", "reportId", "reportSlug", "reportName", "url", "downloadUrl"}
+MEMORY_LOOKUP_DEFAULT_LIMIT: Final = 5
+MEMORY_LOOKUP_MAX_LIMIT: Final = 20
+MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS: Final = 4_000
+MEMORY_LOOKUP_MAX_CHARACTERS: Final = 8_000
+MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS: Final = 4_096
+MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK: Final = "current-run-package-agent"
+MEMORY_REVISION_WRITE_MODE: Final = "immutable-revision-per-content-change"
+MEMORY_DUPLICATE_REVISION_BEHAVIOR: Final = "reuse-existing-active-revision"
+MEMORY_DEFERRED_GET_DECISION: Final = "phase-1b"
+MEMORY_CORE_RUNTIME_TOOL_KEYS: Final[tuple[str, str]] = (
+    "signaldeck.memory.write",
+    "signaldeck.memory.lookup",
 )
-
+MEMORY_IDEMPOTENCY_FALLBACK_FIELDS: Final[tuple[str, ...]] = (
+    "scope_type",
+    "scope_key",
+    "kind",
+    "content_hash",
+    "source_run_id",
+    "source_agent_key",
+    "source_step_id",
+    "source_slot",
+)
+MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "ticker",
+        "benchmarkSymbol",
+        "rawReturn",
+        "alpha",
+        "reportId",
+        "reportSlug",
+        "reportName",
+        "url",
+        "downloadUrl",
+        "auditLinks",
+        "action",
+        "decision",
+        "portfolioSlug",
+        "horizonDays",
+        "confidence",
+        "decisionSummary",
+        "outcome",
+        "reflections",
+    }
+)
 MEMORY_PROJECTION_MATRIX: Final[dict[MemoryProjection, tuple[str, ...]]] = {
     "model-visible": (
         "memoryId",
+        "revisionId",
         "status",
-        "action",
-        "createdAt",
+        "kind",
+        "summary",
+        "content",
+        "subjectRefs",
+        "attributes",
+        "scope",
         "provenance",
         "warnings",
-        "text",
-        "outcome",
-        "reflections",
     ),
-    "api-visible": ("memoryId", "status", "provenance", "auditLinks"),
-    "ui-visible": ("memoryId", "status", "summary", "provenance", "auditLinks"),
-    "report-route-visible": ("auditLinks",),
+    "api-visible": (
+        "memoryId",
+        "revisionId",
+        "status",
+        "kind",
+        "summary",
+        "content",
+        "subjectRefs",
+        "attributes",
+        "scope",
+        "provenance",
+        "revision",
+        "createdAt",
+        "updatedAt",
+    ),
+    "ui-visible": (
+        "memoryId",
+        "revisionId",
+        "status",
+        "kind",
+        "summary",
+        "subjectRefs",
+        "scope",
+        "provenance",
+        "createdAt",
+        "updatedAt",
+    ),
+}
+
+type JsonScalar = str | int | float | bool | None
+type JsonValue = JsonScalar | list[JsonScalar] | dict[str, JsonScalar]
+type MemoryAttributes = dict[str, JsonValue]
+
+_MEMORY_COMPATIBILITY_EXCLUDE: Final[set[str]] = {
+    "action",
+    "benchmark_symbol",
+    "confidence",
+    "decision",
+    "decision_summary",
+    "horizon_days",
+    "outcome",
+    "portfolio_slug",
+    "reflections",
+    "ticker",
 }
 
 
@@ -66,36 +146,102 @@ def memory_not_found_error() -> ApiError:
     )
 
 
-def _normalize_required_text(value: object, *, field_name: str) -> str:
+def _normalize_required_text(
+    value: object,
+    *,
+    field_name: str,
+    max_length: int | None = None,
+) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
     normalized = value.strip()
     if not normalized:
         raise ValueError(f"{field_name} is required")
+    if max_length is not None and len(normalized) > max_length:
+        raise ValueError(f"{field_name} must be at most {max_length} characters")
     return normalized
 
 
-def _normalize_optional_text(value: object, *, field_name: str) -> str | None:
+def _normalize_optional_text(
+    value: object,
+    *,
+    field_name: str,
+    max_length: int | None = None,
+) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
-    return value.strip() or None
-
-
-def _normalize_ticker(value: object) -> str:
-    if not isinstance(value, str):
-        raise ValueError("Ticker must be a string")
-    normalized = normalize_symbol(value)
+    normalized = value.strip()
     if not normalized:
-        raise ValueError("Ticker is required")
+        return None
+    if max_length is not None and len(normalized) > max_length:
+        raise ValueError(f"{field_name} must be at most {max_length} characters")
     return normalized
+
+
+def _normalize_kind(value: object, *, field_name: str = "kind") -> str:
+    normalized = _normalize_required_text(value, field_name=field_name, max_length=80)
+    return normalized.lower()
+
+
+def _normalize_optional_kind(value: object, *, field_name: str = "kind") -> str | None:
+    normalized = _normalize_optional_text(value, field_name=field_name, max_length=80)
+    return None if normalized is None else normalized.lower()
+
+
+def _normalize_attributes(value: object) -> MemoryAttributes:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("attributes must be an object")
+    raw_attributes = cast(dict[object, JsonValue], value)
+    normalized: MemoryAttributes = {}
+    for raw_key, raw_value in raw_attributes.items():
+        key = _normalize_required_text(raw_key, field_name="Attribute key", max_length=120)
+        normalized[key] = raw_value
+    return normalized
+
+
+def _normalize_idempotency_fallback_fields(value: object) -> tuple[str, ...]:
+    if value is None:
+        return MEMORY_IDEMPOTENCY_FALLBACK_FIELDS
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("idempotencyFallbackFields must be a list of field names")
+    raw_fields = cast(list[object] | tuple[object, ...], value)
+    fields: list[str] = []
+    for item in raw_fields:
+        if not isinstance(item, str):
+            raise ValueError("idempotencyFallbackFields must be a list of field names")
+        fields.append(item)
+    normalized = tuple(fields)
+    if normalized != MEMORY_IDEMPOTENCY_FALLBACK_FIELDS:
+        raise ValueError("idempotencyFallbackFields must use the phase-1 fallback identity")
+    return normalized
+
+
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+class MemoryScopeType(str, Enum):  # noqa: UP042
+    WORKSPACE = "workspace"
+    PACKAGE = "package"
+    WORKFLOW = "workflow"
+    RUN = "run"
+    AGENT = "agent"
 
 
 class MemoryLifecycleStatus(str, Enum):  # noqa: UP042
     PENDING = "pending"
     RESOLVED = "resolved"
     EXPIRED = "expired"
+
+
+class MemoryRevisionAction(str, Enum):  # noqa: UP042
+    CREATED = "created"
+    REUSED = "reused"
+    SUPERSEDED = "superseded"
 
 
 class MemoryId(CamelModel):
@@ -107,55 +253,84 @@ class MemoryId(CamelModel):
         return _normalize_required_text(value, field_name="memoryId")
 
 
-class MemoryDecision(CamelModel):
-    action: Literal["buy", "hold", "sell"]
-    rationale: str = Field(min_length=1)
-    risk_summary: str = Field(min_length=1)
-    execution_plan: str = Field(min_length=1)
+class MemoryScope(CamelModel):
+    scope_type: MemoryScopeType
+    scope_key: str = Field(min_length=1, max_length=160)
 
-    @field_validator("rationale", "risk_summary", "execution_plan", mode="before")
+    @field_validator("scope_key", mode="before")
     @classmethod
-    def validate_decision_text(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Decision text")
+    def validate_scope_key(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="scopeKey", max_length=160)
 
 
-class MemoryOutcome(CamelModel):
-    resolved_status: Literal["resolved", "expired"]
-    resolved_at: datetime
-    raw_return: Decimal | None = None
-    benchmark_return: Decimal | None = None
-    alpha: Decimal | None = None
+class MemorySubjectRef(CamelModel):
+    kind: str = Field(min_length=1, max_length=80)
+    id: str = Field(min_length=1, max_length=160)
+    label: str | None = Field(default=None, max_length=160)
+    attributes: MemoryAttributes = Field(default_factory=dict)
 
-    @field_validator("resolved_at")
+    @field_validator("kind", mode="before")
     @classmethod
-    def validate_resolved_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value, field_name="subjectRef.kind")
 
-    @model_validator(mode="after")
-    def validate_resolution_fields(self) -> Self:
-        if self.resolved_status == "resolved" and (self.raw_return is None or self.alpha is None):
-            raise ValueError("rawReturn and alpha are required for resolved memory")
-        return self
-
-
-class MemoryReflection(CamelModel):
-    reflection: str = Field(min_length=1)
-    reflected_at: datetime
-    source: str | None = None
-
-    @field_validator("reflection", mode="before")
+    @field_validator("id", mode="before")
     @classmethod
-    def validate_reflection(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Reflection")
+    def validate_id(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="subjectRef.id", max_length=160)
 
-    @field_validator("source", mode="before")
+    @field_validator("label", mode="before")
     @classmethod
-    def normalize_source(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Reflection source")
+    def normalize_label(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="subjectRef.label", max_length=160)
 
-    @field_validator("reflected_at")
+    @field_validator("attributes", mode="before")
     @classmethod
-    def validate_reflected_at(cls, value: datetime) -> datetime:
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
+
+class MemoryRevisionPolicy(CamelModel):
+    mode: Literal["immutable-revision-per-content-change"] = MEMORY_REVISION_WRITE_MODE
+    duplicate_content: Literal["reuse-existing-active-revision"] = (
+        MEMORY_DUPLICATE_REVISION_BEHAVIOR
+    )
+    supersedes_revision_id: str | None = Field(default=None, max_length=160)
+
+    @field_validator("supersedes_revision_id", mode="before")
+    @classmethod
+    def normalize_supersedes_revision_id(cls, value: object) -> str | None:
+        return _normalize_optional_text(
+            value,
+            field_name="supersedesRevisionId",
+            max_length=160,
+        )
+
+
+class MemoryRevisionRead(CamelModel):
+    revision_id: str = Field(min_length=1, max_length=160)
+    version: int = Field(ge=1)
+    content_hash: str = Field(min_length=64, max_length=64)
+    created_at: datetime
+    supersedes_revision_id: str | None = Field(default=None, max_length=160)
+
+    @field_validator("revision_id", "content_hash", mode="before")
+    @classmethod
+    def validate_required_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Revision field", max_length=160)
+
+    @field_validator("supersedes_revision_id", mode="before")
+    @classmethod
+    def normalize_supersedes_revision_id(cls, value: object) -> str | None:
+        return _normalize_optional_text(
+            value,
+            field_name="supersedesRevisionId",
+            max_length=160,
+        )
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
 
 
@@ -163,48 +338,231 @@ class MemoryProvenance(CamelModel):
     run_id: int = Field(ge=1)
     agent_key: str = Field(min_length=1, max_length=120)
     agent_version: int = Field(ge=1)
-    agent_name: str | None = None
+    created_by_type: Literal["agent"] = "agent"
+    agent_name: str | None = Field(default=None, max_length=160)
     workflow_key: str | None = Field(default=None, max_length=120)
     workflow_version: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, max_length=120)
     slot: str | None = Field(default=None, max_length=120)
     trace_id: str | None = Field(default=None, max_length=255)
-    created_by_type: Literal["agent"] = "agent"
 
     @field_validator("agent_key", mode="before")
     @classmethod
     def validate_agent_key(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="agentKey")
+        return _normalize_required_text(value, field_name="agentKey", max_length=120)
 
     @field_validator("agent_name", "workflow_key", "step_id", "slot", "trace_id", mode="before")
     @classmethod
     def normalize_optional_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Provenance field")
+        return _normalize_optional_text(value, field_name="Provenance field", max_length=255)
 
 
-class MemoryAuditReportLink(CamelModel):
-    slug: str = Field(min_length=1)
-    name: str = Field(min_length=1)
-    url: str = Field(min_length=1)
-    download_url: str = Field(min_length=1)
+class MemoryContent(CamelModel):
+    summary: str = Field(default="Memory content", min_length=1)
+    content: str = Field(default="Memory content", min_length=1)
+    attributes: MemoryAttributes = Field(default_factory=dict)
 
-    @field_validator("slug", "name", "url", "download_url", mode="before")
+    @field_validator("summary", "content", mode="before")
     @classmethod
-    def validate_link_text(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="Report audit link field")
+    def validate_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory content")
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
 
 
-class MemoryAuditLinks(CamelModel):
-    report: MemoryAuditReportLink | None = None
+class MemoryDecision(MemoryContent):
+    action: Literal["buy", "hold", "sell"] = "hold"
+    rationale: str = ""
+    risk_summary: str = ""
+    execution_plan: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_neutral_content(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        rationale = _normalize_optional_text(payload.get("rationale"), field_name="rationale")
+        risk_summary = _normalize_optional_text(
+            payload.get("risk_summary") or payload.get("riskSummary"),
+            field_name="riskSummary",
+        )
+        execution_plan = _normalize_optional_text(
+            payload.get("execution_plan") or payload.get("executionPlan"),
+            field_name="executionPlan",
+        )
+        if "summary" not in payload:
+            payload["summary"] = rationale or "Memory decision"
+        if "content" not in payload:
+            payload["content"] = (
+                "\n".join(
+                    part for part in (rationale, risk_summary, execution_plan) if part is not None
+                )
+                or payload["summary"]
+            )
+        return payload
 
 
-class _MemoryProjectionMixin(CamelModel):
+class MemoryOutcome(CamelModel):
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.RESOLVED
+    summary: str = Field(default="Memory resolved", min_length=1)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    resolved_status: Literal["resolved", "expired"] = "resolved"
+    resolved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    raw_return: Decimal | None = None
+    benchmark_return: Decimal | None = None
+    alpha: Decimal | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_neutral_outcome(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        resolved_status = str(
+            payload.get("resolved_status") or payload.get("resolvedStatus") or "resolved"
+        )
+        if "status" not in payload:
+            payload["status"] = resolved_status
+        if "summary" not in payload:
+            payload["summary"] = f"Memory {resolved_status}"
+        if "observed_at" not in payload and "observedAt" not in payload:
+            observed_at = payload.get("resolved_at") or payload.get("resolvedAt")
+            if observed_at is not None:
+                payload["observed_at"] = observed_at
+        return payload
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def validate_summary(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Outcome summary")
+
+    @field_validator("observed_at", "resolved_at")
+    @classmethod
+    def validate_timestamps(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
     @model_serializer(mode="wrap")
-    def serialize_without_empty_audit_links(
+    def serialize_legacy_resolution_payload(
         self,
         handler: SerializerFunctionWrapHandler,
     ) -> dict[str, object]:
         payload = cast(dict[str, object], handler(self))
+        for key in ("status", "summary", "observedAt", "observed_at", "attributes"):
+            _ = payload.pop(key, None)
+        return payload
+
+
+class MemoryReflection(MemoryContent):
+    reflected_at: datetime
+    source: str | None = None
+    reflection: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_neutral_reflection(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        reflection = _normalize_optional_text(payload.get("reflection"), field_name="reflection")
+        if "summary" not in payload:
+            payload["summary"] = reflection or "Memory reflection"
+        if "content" not in payload:
+            payload["content"] = reflection or payload["summary"]
+        return payload
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def normalize_source(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Reflection source", max_length=160)
+
+    @field_validator("reflected_at")
+    @classmethod
+    def validate_reflected_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
+
+def _default_memory_scope() -> MemoryScope:
+    return MemoryScope(scope_type=MemoryScopeType.RUN, scope_key="run")
+
+
+def _default_memory_revision() -> MemoryRevisionRead:
+    return MemoryRevisionRead(
+        revision_id="rev",
+        version=1,
+        content_hash=_content_hash(""),
+        created_at=datetime.now(UTC),
+    )
+
+
+def _default_memory_decision() -> MemoryDecision:
+    return MemoryDecision(summary="Memory decision", content="Memory decision")
+
+
+def _default_memory_outcome() -> MemoryOutcome:
+    return MemoryOutcome(summary="Memory resolved")
+
+
+class MemoryAuditReportLink(CamelModel):
+    reference: str = Field(default="audit-reference", min_length=1, max_length=255)
+    label: str | None = Field(default=None, max_length=160)
+    slug: str | None = Field(default=None, max_length=160)
+    name: str | None = Field(default=None, max_length=160)
+    url: str | None = Field(default=None, max_length=255)
+    download_url: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_reference(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if "reference" not in payload:
+            payload["reference"] = payload.get("slug") or payload.get("url") or payload.get("name")
+        if "label" not in payload:
+            payload["label"] = payload.get("name")
+        return payload
+
+    @field_validator("reference", mode="before")
+    @classmethod
+    def validate_reference(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Audit reference", max_length=255)
+
+    @field_validator("label", "slug", "name", "url", "download_url", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Audit link field", max_length=255)
+
+
+class MemoryAuditLinks(CamelModel):
+    references: list[MemoryAuditReportLink] = Field(default_factory=list)
+    report: MemoryAuditReportLink | None = None
+
+    @field_validator("references", mode="before")
+    @classmethod
+    def coerce_references(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
+
+
+class _MemoryProjectionMixin(CamelModel):
+    @model_serializer(mode="wrap")
+    def serialize_without_compatibility_fields(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], handler(self))
+        _ = payload.pop("action", None)
         if payload.get("auditLinks") is None:
             _ = payload.pop("auditLinks", None)
         if payload.get("audit_links") is None:
@@ -217,7 +575,7 @@ class _MemoryProjectionMixin(CamelModel):
             self.model_dump(
                 mode="json",
                 by_alias=True,
-                exclude={"audit_links"},
+                exclude=_MEMORY_COMPATIBILITY_EXCLUDE | {"audit_links"},
                 exclude_none=True,
             ),
         )
@@ -227,43 +585,101 @@ class _MemoryProjectionMixin(CamelModel):
             return self.model_visible_dump()
         return cast(
             dict[str, object],
-            self.model_dump(mode="json", by_alias=True, exclude_none=True),
+            self.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude=_MEMORY_COMPATIBILITY_EXCLUDE,
+                exclude_none=True,
+            ),
         )
 
 
 class MemoryEntryRead(_MemoryProjectionMixin):
-    memory_id: str = Field(min_length=1)
-    status: MemoryLifecycleStatus
-    ticker: str = Field(min_length=1, max_length=32)
-    decision: MemoryDecision
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(default="rev", min_length=1, max_length=160)
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    kind: str = Field(default="memory", min_length=1, max_length=80)
+    summary: str = Field(default="Memory entry", min_length=1)
+    content: str = Field(default="Memory entry", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    scope: MemoryScope = Field(default_factory=_default_memory_scope)
     provenance: MemoryProvenance
+    revision: MemoryRevisionRead = Field(default_factory=_default_memory_revision)
     created_at: datetime
+    updated_at: datetime | None = None
+    ticker: str = ""
+    decision: MemoryDecision = Field(default_factory=_default_memory_decision)
     portfolio_slug: str | None = None
     horizon_days: int | None = Field(default=None, ge=1)
     confidence: str | None = None
     decision_summary: str | None = None
-    benchmark_symbol: str | None = Field(default=None, max_length=32)
+    benchmark_symbol: str | None = None
     outcome: MemoryOutcome | None = None
     reflections: list[MemoryReflection] = Field(default_factory=list)
     audit_links: MemoryAuditLinks | None = None
-    updated_at: datetime | None = None
 
-    @field_validator("memory_id", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def validate_memory_id(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="memoryId")
+    def populate_neutral_entry(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        memory_id = str(payload.get("memory_id") or payload.get("memoryId") or "memory")
+        decision = payload.get("decision")
+        summary = payload.get("decision_summary") or payload.get("decisionSummary")
+        if "revision_id" not in payload and "revisionId" not in payload:
+            payload["revision_id"] = f"{memory_id}:rev"
+        if "kind" not in payload:
+            payload["kind"] = "memory"
+        if "summary" not in payload:
+            payload["summary"] = summary or "Memory entry"
+        if "content" not in payload:
+            payload["content"] = summary or (
+                str(decision) if decision is not None else payload["summary"]
+            )
+        if "scope" not in payload:
+            payload["scope"] = {
+                "scopeType": "run",
+                "scopeKey": str(payload.get("memory_id") or memory_id),
+            }
+        if "revision" not in payload:
+            payload["revision"] = {
+                "revisionId": payload["revision_id"],
+                "version": 1,
+                "contentHash": _content_hash(str(payload["content"])),
+                "createdAt": payload.get("created_at")
+                or payload.get("createdAt")
+                or datetime.now(UTC),
+            }
+        return payload
 
-    @field_validator("ticker", "benchmark_symbol", mode="before")
+    @field_validator("memory_id", "revision_id", mode="before")
     @classmethod
-    def normalize_symbols(cls, value: object) -> str | None:
+    def validate_ids(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory id field", max_length=160)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value)
+
+    @field_validator("summary", "content", mode="before")
+    @classmethod
+    def validate_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory entry field")
+
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
         if value is None:
-            return None
-        return _normalize_ticker(value)
+            return []
+        return value
 
-    @field_validator("portfolio_slug", "confidence", "decision_summary", mode="before")
+    @field_validator("attributes", mode="before")
     @classmethod
-    def normalize_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Memory entry field")
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -273,85 +689,237 @@ class MemoryEntryRead(_MemoryProjectionMixin):
         return ensure_timezone(value)
 
     @model_validator(mode="after")
-    def validate_lifecycle(self) -> Self:
-        if self.status == MemoryLifecycleStatus.PENDING:
-            if self.outcome is not None:
-                raise ValueError("Pending memory cannot include resolved outcome fields")
-            if self.reflections:
-                raise ValueError("Pending memory cannot include reflections")
-            return self
-        if self.outcome is None:
-            raise ValueError("outcome is required once memory is no longer pending")
-        if self.outcome.resolved_status != self.status.value:
-            raise ValueError("outcome.resolvedStatus must match memory status")
+    def validate_revision_identity(self) -> Self:
+        if self.revision.revision_id != self.revision_id:
+            raise ValueError("revision.revisionId must match revisionId")
         return self
 
 
 class MemoryWriteRequest(CamelModel):
-    ticker: str = Field(min_length=1, max_length=32)
-    decision: MemoryDecision
+    kind: str = Field(default="memory", min_length=1, max_length=80)
+    summary: str = Field(default="Memory entry", min_length=1)
+    content: str = Field(default="Memory entry", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    attributes: MemoryAttributes = Field(default_factory=dict)
+    scope: MemoryScope = Field(default_factory=_default_memory_scope)
     provenance: MemoryProvenance
+    revision: MemoryRevisionPolicy = Field(default_factory=MemoryRevisionPolicy)
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    idempotency_fallback_fields: tuple[str, ...] = Field(
+        default=MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
+    )
+    ticker: str = ""
+    decision: MemoryDecision = Field(default_factory=_default_memory_decision)
     portfolio_slug: str | None = None
     horizon_days: int | None = Field(default=None, ge=1)
     confidence: str | None = None
     decision_summary: str | None = None
-    benchmark_symbol: str | None = Field(default=None, max_length=32)
+    benchmark_symbol: str | None = None
 
-    @field_validator("ticker", "benchmark_symbol", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def normalize_symbols(cls, value: object) -> str | None:
+    def populate_neutral_write(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        decision = payload.get("decision")
+        summary = payload.get("decision_summary") or payload.get("decisionSummary")
+        ticker = payload.get("ticker")
+        if "kind" not in payload:
+            payload["kind"] = "memory"
+        if "summary" not in payload:
+            payload["summary"] = summary or "Memory entry"
+        if "content" not in payload:
+            payload["content"] = summary or (
+                str(decision) if decision is not None else payload["summary"]
+            )
+        if "scope" not in payload:
+            provenance = payload.get("provenance")
+            if isinstance(provenance, MemoryProvenance):
+                run_id: object = provenance.run_id
+            elif isinstance(provenance, dict):
+                run_id = provenance.get("runId") or provenance.get("run_id") or "run"
+            else:
+                run_id = "run"
+            payload["scope"] = {"scopeType": "run", "scopeKey": str(run_id)}
+        if "subjectRefs" not in payload and ticker:
+            payload["subjectRefs"] = [{"kind": "instrument", "id": ticker}]
+        return payload
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value)
+
+    @field_validator("summary", "content", mode="before")
+    @classmethod
+    def validate_text(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory write request field")
+
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
         if value is None:
-            return None
-        return _normalize_ticker(value)
+            return []
+        return value
 
-    @field_validator("portfolio_slug", "confidence", "decision_summary", mode="before")
+    @field_validator("attributes", mode="before")
     @classmethod
-    def normalize_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Memory write request field")
+    def normalize_attributes(cls, value: object) -> MemoryAttributes:
+        return _normalize_attributes(value)
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def normalize_idempotency_key(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="idempotencyKey", max_length=160)
+
+    @field_validator("idempotency_fallback_fields", mode="before")
+    @classmethod
+    def validate_idempotency_fallback_fields(cls, value: object) -> tuple[str, ...]:
+        return _normalize_idempotency_fallback_fields(value)
+
+    def content_hash(self) -> str:
+        return _content_hash(self.content)
+
+    def idempotency_fallback_identity(self) -> dict[str, object]:
+        return {
+            "scope_type": self.scope.scope_type.value,
+            "scope_key": self.scope.scope_key,
+            "kind": self.kind,
+            "content_hash": self.content_hash(),
+            "source_run_id": self.provenance.run_id,
+            "source_agent_key": self.provenance.agent_key,
+            "source_step_id": self.provenance.step_id,
+            "source_slot": self.provenance.slot,
+        }
 
 
 class MemoryWriteResult(_MemoryProjectionMixin):
-    memory_id: str = Field(min_length=1)
-    status: MemoryLifecycleStatus
-    action: Literal["created", "existing"]
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(default="rev", min_length=1, max_length=160)
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    revision_action: MemoryRevisionAction = MemoryRevisionAction.CREATED
     created_at: datetime
     provenance: MemoryProvenance
-    audit_links: MemoryAuditLinks | None = None
+    revision: MemoryRevisionRead = Field(default_factory=_default_memory_revision)
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    idempotency_fallback_fields: tuple[str, ...] = Field(
+        default=MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
+    )
     warnings: list[dict[str, object]] = Field(default_factory=list)
+    audit_links: MemoryAuditLinks | None = None
+    action: Literal["created", "existing"] = "created"
 
-    @field_validator("memory_id", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def validate_memory_id(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="memoryId")
+    def populate_neutral_result(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        memory_id = str(payload.get("memory_id") or payload.get("memoryId") or "memory")
+        action = str(payload.get("action") or "created")
+        if "revision_id" not in payload and "revisionId" not in payload:
+            payload["revision_id"] = f"{memory_id}:rev"
+        if "revision_action" not in payload and "revisionAction" not in payload:
+            payload["revision_action"] = "reused" if action == "existing" else "created"
+        if "revision" not in payload:
+            payload["revision"] = {
+                "revisionId": payload["revision_id"],
+                "version": 1,
+                "contentHash": _content_hash(memory_id),
+                "createdAt": payload.get("created_at")
+                or payload.get("createdAt")
+                or datetime.now(UTC),
+            }
+        return payload
+
+    @field_validator("memory_id", "revision_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory write result id", max_length=160)
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def normalize_idempotency_key(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="idempotencyKey", max_length=160)
 
     @field_validator("created_at")
     @classmethod
     def validate_created_at(cls, value: datetime) -> datetime:
         return ensure_timezone(value)
 
+    @field_validator("idempotency_fallback_fields", mode="before")
+    @classmethod
+    def validate_idempotency_fallback_fields(cls, value: object) -> tuple[str, ...]:
+        return _normalize_idempotency_fallback_fields(value)
+
+    @model_validator(mode="after")
+    def validate_revision_identity(self) -> Self:
+        if self.revision.revision_id != self.revision_id:
+            raise ValueError("revision.revisionId must match revisionId")
+        return self
+
 
 class MemoryQuery(CamelModel):
+    @model_validator(mode="before")
+    @classmethod
+    def clamp_legacy_finance_budget(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        max_characters = payload.get("max_characters") or payload.get("maxCharacters")
+        has_legacy_selector = any(
+            payload.get(key) is not None
+            for key in ("ticker", "portfolio_slug", "portfolioSlug", "agent_key", "agentKey")
+        )
+        if (
+            isinstance(max_characters, int)
+            and max_characters > MEMORY_LOOKUP_MAX_CHARACTERS
+            and has_legacy_selector
+        ):
+            payload["max_characters"] = MEMORY_LOOKUP_MAX_CHARACTERS
+            _ = payload.pop("maxCharacters", None)
+        return payload
+
+    query: str | None = Field(default=None, max_length=1_000)
+    scope: MemoryScope | None = None
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    kind: str | None = Field(default=None, max_length=80)
+    status: MemoryLifecycleStatus | None = None
     ticker: str | None = Field(default=None, max_length=32)
     portfolio_slug: str | None = None
     agent_key: str | None = Field(default=None, max_length=120)
     workflow_key: str | None = Field(default=None, max_length=120)
-    status: MemoryLifecycleStatus | None = None
     tags: list[str] = Field(default_factory=list)
-    limit: int = Field(default=5, ge=1)
+    query_embedding: tuple[float, ...] | None = Field(default=None, exclude=True)
+    query_embedding_provider: str | None = Field(default=None, exclude=True, max_length=80)
+    query_embedding_model: str | None = Field(default=None, exclude=True, max_length=200)
+    limit: int = Field(default=MEMORY_LOOKUP_DEFAULT_LIMIT, ge=1, le=MEMORY_LOOKUP_MAX_LIMIT)
     offset: int = Field(default=0, ge=0)
-    max_characters: int | None = Field(default=None, ge=1)
+    max_characters: int = Field(
+        default=MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS,
+        ge=1,
+        le=MEMORY_LOOKUP_MAX_CHARACTERS,
+    )
+    scope_mode: Literal["explicit-selectors", "current-context-fallback"] = (
+        "current-context-fallback"
+    )
+    fallback_scope: Literal["current-run-package-agent"] = MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK
 
-    @field_validator("ticker", mode="before")
+    @field_validator("query", mode="before")
     @classmethod
-    def normalize_ticker(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        return _normalize_ticker(value)
+    def normalize_query(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="query", max_length=1_000)
 
-    @field_validator("portfolio_slug", "agent_key", "workflow_key", mode="before")
+    @field_validator("kind", mode="before")
     @classmethod
-    def normalize_text_fields(cls, value: object) -> str | None:
-        return _normalize_optional_text(value, field_name="Memory query field")
+    def normalize_kind(cls, value: object) -> str | None:
+        return _normalize_optional_kind(value)
+
+    @field_validator("ticker", "portfolio_slug", "agent_key", "workflow_key", mode="before")
+    @classmethod
+    def normalize_legacy_filters(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Memory query field", max_length=120)
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -360,43 +928,201 @@ class MemoryQuery(CamelModel):
             return []
         return value
 
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
+
+    @field_validator("query_embedding", mode="before")
+    @classmethod
+    def normalize_query_embedding(cls, value: object) -> tuple[float, ...] | None:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("queryEmbedding must be a list of numbers")
+        raw_values = cast(list[object] | tuple[object, ...], value)
+        if not raw_values:
+            raise ValueError("queryEmbedding must not be empty")
+        if len(raw_values) > MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS:
+            raise ValueError("queryEmbedding exceeds the maximum supported dimensions")
+        normalized: list[float] = []
+        for item in raw_values:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise ValueError("queryEmbedding values must be finite numbers")
+            number = float(item)
+            if not math.isfinite(number):
+                raise ValueError("queryEmbedding values must be finite numbers")
+            normalized.append(number)
+        return tuple(normalized)
+
+    @field_validator("query_embedding_provider", "query_embedding_model", mode="before")
+    @classmethod
+    def normalize_embedding_provenance(cls, value: object) -> str | None:
+        return _normalize_optional_text(value, field_name="Embedding provenance", max_length=200)
+
+    @model_validator(mode="after")
+    def set_scope_mode(self) -> Self:
+        has_explicit_selector = (
+            self.scope is not None or bool(self.subject_refs) or self.kind is not None
+        )
+        self.scope_mode = (
+            "explicit-selectors" if has_explicit_selector else "current-context-fallback"
+        )
+        return self
+
+
+class MemoryRetrievalScore(CamelModel):
+    retrieval_mode: Literal["lexical", "vector", "hybrid"] = "lexical"
+    rank: int = Field(ge=1)
+    score: float = 0.0
+    scope_specificity: int = Field(default=0, ge=0)
+    lexical_rank: int | None = Field(default=None, ge=1)
+    lexical_score: float | None = None
+    vector_rank: int | None = Field(default=None, ge=1)
+    vector_similarity: float | None = None
+    vector_distance: float | None = None
+    sources: list[Literal["lexical", "vector"]] = Field(default_factory=list)
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def coerce_sources(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
+
 
 class MemoryPromptSnippet(_MemoryProjectionMixin):
-    memory_id: str = Field(min_length=1)
-    text: str = Field(min_length=1)
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(default="rev", min_length=1, max_length=160)
+    kind: str = Field(default="memory", min_length=1, max_length=80)
+    summary: str = Field(default="Memory snippet", min_length=1)
+    content: str = Field(default="Memory snippet", min_length=1)
+    text: str = Field(default="", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    scope: MemoryScope = Field(default_factory=_default_memory_scope)
     provenance: MemoryProvenance
-    outcome: MemoryOutcome
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    outcome: MemoryOutcome = Field(default_factory=_default_memory_outcome)
     reflections: list[MemoryReflection] = Field(default_factory=list)
+    retrieval_score: MemoryRetrievalScore | None = None
 
-    @field_validator("memory_id", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def validate_memory_id(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="memoryId")
+    def populate_neutral_snippet(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        memory_id = str(payload.get("memory_id") or payload.get("memoryId") or "memory")
+        text = payload.get("text")
+        if "revision_id" not in payload and "revisionId" not in payload:
+            payload["revision_id"] = f"{memory_id}:rev"
+        if "kind" not in payload:
+            payload["kind"] = "memory"
+        if "summary" not in payload:
+            payload["summary"] = "Memory snippet"
+        if "content" not in payload:
+            payload["content"] = text or payload["summary"]
+        if "text" not in payload:
+            payload["text"] = payload["content"]
+        if "scope" not in payload:
+            payload["scope"] = {"scopeType": "run", "scopeKey": memory_id}
+        if "created_at" not in payload and "createdAt" not in payload:
+            payload["created_at"] = datetime.now(UTC)
+        return payload
 
-    @field_validator("text", mode="before")
+    @field_validator("memory_id", "revision_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Prompt snippet id", max_length=160)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value)
+
+    @field_validator("summary", "content", mode="before")
     @classmethod
     def validate_text(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="Prompt snippet text")
 
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return ensure_timezone(value)
+
 
 class MemoryArtifactRead(_MemoryProjectionMixin):
-    memory_id: str = Field(min_length=1)
-    status: MemoryLifecycleStatus
-    summary: str = Field(min_length=1)
+    memory_id: str = Field(min_length=1, max_length=160)
+    revision_id: str = Field(default="rev", min_length=1, max_length=160)
+    status: MemoryLifecycleStatus = MemoryLifecycleStatus.PENDING
+    kind: str = Field(default="memory", min_length=1, max_length=80)
+    summary: str = Field(default="Memory artifact", min_length=1)
+    subject_refs: list[MemorySubjectRef] = Field(default_factory=list)
+    scope: MemoryScope = Field(default_factory=_default_memory_scope)
     provenance: MemoryProvenance
     created_at: datetime
     audit_links: MemoryAuditLinks | None = None
     source_graph_metadata: dict[str, object] | None = None
 
-    @field_validator("memory_id", mode="before")
+    @model_serializer(mode="wrap")
+    def serialize_artifact_projection(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        payload = cast(dict[str, object], handler(self))
+        for key in ("revisionId", "revision_id", "kind", "subjectRefs", "subject_refs", "scope"):
+            _ = payload.pop(key, None)
+        if payload.get("auditLinks") is None:
+            _ = payload.pop("auditLinks", None)
+        if payload.get("sourceGraphMetadata") is None:
+            _ = payload.pop("sourceGraphMetadata", None)
+        return payload
+
+    @model_validator(mode="before")
     @classmethod
-    def validate_memory_id(cls, value: object) -> str:
-        return _normalize_required_text(value, field_name="memoryId")
+    def populate_neutral_artifact(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        memory_id = str(payload.get("memory_id") or payload.get("memoryId") or "memory")
+        if "revision_id" not in payload and "revisionId" not in payload:
+            payload["revision_id"] = f"{memory_id}:rev"
+        if "kind" not in payload:
+            payload["kind"] = "memory"
+        if "scope" not in payload:
+            payload["scope"] = {"scopeType": "run", "scopeKey": memory_id}
+        return payload
+
+    @field_validator("memory_id", "revision_id", mode="before")
+    @classmethod
+    def validate_ids(cls, value: object) -> str:
+        return _normalize_required_text(value, field_name="Memory artifact id", max_length=160)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def validate_kind(cls, value: object) -> str:
+        return _normalize_kind(value)
 
     @field_validator("summary", mode="before")
     @classmethod
     def validate_summary(cls, value: object) -> str:
         return _normalize_required_text(value, field_name="Memory artifact summary")
+
+    @field_validator("subject_refs", mode="before")
+    @classmethod
+    def coerce_subject_refs(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
 
     @field_validator("created_at")
     @classmethod
@@ -406,22 +1132,42 @@ class MemoryArtifactRead(_MemoryProjectionMixin):
 
 __all__ = [
     "INVALID_MEMORY_ID_CODE",
+    "MEMORY_CORE_RUNTIME_TOOL_KEYS",
+    "MEMORY_DEFERRED_GET_DECISION",
+    "MEMORY_DUPLICATE_REVISION_BEHAVIOR",
+    "MEMORY_IDEMPOTENCY_FALLBACK_FIELDS",
+    "MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK",
+    "MEMORY_LOOKUP_DEFAULT_LIMIT",
+    "MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS",
+    "MEMORY_LOOKUP_MAX_CHARACTERS",
+    "MEMORY_LOOKUP_MAX_LIMIT",
     "MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS",
     "MEMORY_NOT_FOUND_CODE",
     "MEMORY_PROJECTION_MATRIX",
+    "MEMORY_QUERY_EMBEDDING_MAX_DIMENSIONS",
+    "MEMORY_REVISION_WRITE_MODE",
     "MemoryArtifactRead",
     "MemoryAuditLinks",
     "MemoryAuditReportLink",
+    "MemoryAttributes",
+    "MemoryContent",
     "MemoryDecision",
     "MemoryEntryRead",
     "MemoryId",
     "MemoryLifecycleStatus",
     "MemoryOutcome",
-    "MemoryPromptSnippet",
     "MemoryProjection",
+    "MemoryPromptSnippet",
     "MemoryProvenance",
+    "MemoryRetrievalScore",
     "MemoryQuery",
     "MemoryReflection",
+    "MemoryRevisionAction",
+    "MemoryRevisionPolicy",
+    "MemoryRevisionRead",
+    "MemoryScope",
+    "MemoryScopeType",
+    "MemorySubjectRef",
     "MemoryWriteRequest",
     "MemoryWriteResult",
     "invalid_memory_id_error",

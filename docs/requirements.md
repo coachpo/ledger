@@ -49,7 +49,7 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 - Package-private agents, output schemas, capability profiles, and workflow graphs must stay inside immutable package versions. Private MCP configs must stay inline as `env`, `headers`, and `query` manifest text.
 - Package exports must keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
-- Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
+- Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 - Package launches must use the strict launch envelope and create queued global runs with immutable package provenance.
 - Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun metadata, and step replay metadata.
 

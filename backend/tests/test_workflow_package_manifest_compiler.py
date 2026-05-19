@@ -35,11 +35,12 @@ spec:
     required: [ticker]
   capabilityProfiles:
     - key: report_context_tools
-      name: Report Context Tools
-      description: Reads persisted SignalDeck reports for research context.
+      name: Report Context and Memory Tools
+      description: Reads persisted SignalDeck reports and core memory for research context.
       toolKeys:
         - signaldeck.reports.lookup
-        - signaldeck.reports.write
+        - signaldeck.memory.lookup
+        - signaldeck.memory.write
   outputSchemas:
     - key: decision
       name: Decision
@@ -170,7 +171,7 @@ def test_compile_valid_package_manifest_roundtrips_without_ids() -> None:
     assert graph["rootNodeId"] == "market_analysis"
 
 
-def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_values() -> None:
+def test_compile_inline_private_mcp_preserves_report_lookup_memory_keys() -> None:
     compiled = compile_workflow_package_manifest(_inline_private_mcp_manifest_source())
     roundtrip = decompile_workflow_package_manifest(compiled)
     recompiled = compile_workflow_package_manifest(roundtrip.source)
@@ -182,7 +183,8 @@ def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_valu
 
     assert cast(list[str], profiles_by_key["report_context_tools"]["toolKeys"]) == [
         "signaldeck.reports.lookup",
-        "signaldeck.reports.write",
+        "signaldeck.memory.lookup",
+        "signaldeck.memory.write",
     ]
     assert mcp_server["headers"] == {"Authorization": "Bearer test-token"}
     assert mcp_server["query"] == {"api_key": "test-api-key"}
@@ -191,7 +193,9 @@ def test_compile_inline_private_mcp_preserves_report_tool_keys_and_http_sse_valu
     assert "secretRefs" not in roundtrip.source
     assert "requiredBindings" not in roundtrip.source
     assert "signaldeck.reports.lookup" in roundtrip.source
-    assert "signaldeck.reports.write" in roundtrip.source
+    assert "signaldeck.memory.lookup" in roundtrip.source
+    assert "signaldeck.memory.write" in roundtrip.source
+    assert "signaldeck.reports.write" not in roundtrip.source
     assert _canonical_json(compiled) == _canonical_json(recompiled)
 
 
@@ -212,20 +216,21 @@ def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
     )
 
 
-def test_compile_package_manifest_rejects_phase_one_memory_tool_keys() -> None:
+def test_compile_package_manifest_accepts_core_memory_tool_keys() -> None:
     source = _valid_package_manifest_source().replace(
         "        - signaldeck.market_data.quote_lookup\n",
         "        - signaldeck.memory.lookup\n",
         1,
     )
 
-    with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
-        _ = compile_workflow_package_manifest(source)
+    compiled = compile_workflow_package_manifest(source)
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    spec = cast(dict[str, object], package_definition["spec"])
+    profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
+    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
 
-    assert any(
-        diagnostic.path == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
-        and "Unknown server-declared tool 'signaldeck.memory.lookup'" in diagnostic.message
-        for diagnostic in excinfo.value.diagnostics
+    assert cast(list[str], profiles_by_key["market_research_tools"]["toolKeys"])[0] == (
+        "signaldeck.memory.lookup"
     )
 
 

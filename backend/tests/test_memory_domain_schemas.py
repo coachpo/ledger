@@ -1,29 +1,37 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import cast
 
 import pytest
 from pydantic import ValidationError
 
 from app.schemas.memory import (
     INVALID_MEMORY_ID_CODE,
+    MEMORY_CORE_RUNTIME_TOOL_KEYS,
+    MEMORY_DEFERRED_GET_DECISION,
+    MEMORY_DUPLICATE_REVISION_BEHAVIOR,
+    MEMORY_IDEMPOTENCY_FALLBACK_FIELDS,
+    MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK,
+    MEMORY_LOOKUP_DEFAULT_LIMIT,
+    MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS,
+    MEMORY_LOOKUP_MAX_CHARACTERS,
+    MEMORY_LOOKUP_MAX_LIMIT,
     MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS,
     MEMORY_NOT_FOUND_CODE,
     MEMORY_PROJECTION_MATRIX,
+    MEMORY_REVISION_WRITE_MODE,
     MemoryArtifactRead,
-    MemoryAuditLinks,
-    MemoryAuditReportLink,
-    MemoryDecision,
     MemoryEntryRead,
     MemoryId,
     MemoryLifecycleStatus,
-    MemoryOutcome,
     MemoryPromptSnippet,
     MemoryProvenance,
     MemoryQuery,
-    MemoryReflection,
+    MemoryRevisionAction,
+    MemoryRevisionRead,
+    MemoryScope,
+    MemoryScopeType,
+    MemorySubjectRef,
     MemoryWriteRequest,
     MemoryWriteResult,
     invalid_memory_id_error,
@@ -31,75 +39,68 @@ from app.schemas.memory import (
 )
 
 _CREATED_AT = datetime(2026, 5, 8, 9, 30, tzinfo=UTC)
-_RESOLVED_AT = datetime(2026, 5, 15, 9, 30, tzinfo=UTC)
-_REFLECTED_AT = datetime(2026, 5, 16, 9, 30, tzinfo=UTC)
+_UPDATED_AT = datetime(2026, 5, 9, 9, 30, tzinfo=UTC)
+_CONTENT_HASH = "f" * 64
 
-_FORBIDDEN_MODEL_VISIBLE_FRAGMENTS = (
+_FORBIDDEN_CORE_FRAGMENTS = (
+    "ticker",
+    "benchmarkSymbol",
+    "rawReturn",
+    "alpha",
+    "auditLinks",
     "reportId",
     "reportSlug",
     "reportName",
-    "auditLinks",
-    "url",
     "/reports/",
     "download",
-    "agent_memory_nvda_slug",
-    "Agent Memory Report",
-    "# Agent Memory",
 )
 
 
-def _decision() -> MemoryDecision:
-    return MemoryDecision.model_validate(
-        {
-            "action": "buy",
-            "rationale": "Earnings durability supports a long position.",
-            "riskSummary": "Sizing should account for cyclicality.",
-            "executionPlan": "Scale in after liquidity confirmation.",
-        }
-    )
+def _scope() -> MemoryScope:
+    return MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-advisory")
+
+
+def _subject_ref() -> MemorySubjectRef:
+    return MemorySubjectRef(kind=" portfolio ", id=" core-us ", label=" Core US ")
 
 
 def _provenance() -> MemoryProvenance:
     return MemoryProvenance.model_validate(
         {
             "runId": 42,
-            "agentKey": "portfolio_manager",
+            "agentKey": " memory_curator ",
             "agentVersion": 3,
-            "agentName": "Portfolio Manager",
+            "agentName": "Memory Curator",
             "workflowKey": "daily_review",
             "workflowVersion": 7,
-            "stepId": "portfolio_decision",
-            "slot": "decision",
+            "stepId": "memory_write",
+            "slot": "post_run_note",
             "traceId": "trace-abc123",
         }
     )
 
 
-def _outcome(status: str = "resolved") -> MemoryOutcome:
-    payload: dict[str, object] = {
-        "resolvedStatus": status,
-        "resolvedAt": _RESOLVED_AT,
-    }
-    if status == "resolved":
-        payload.update(
-            {
-                "rawReturn": Decimal("0.125"),
-                "benchmarkReturn": Decimal("0.030"),
-                "alpha": Decimal("0.095"),
-            }
-        )
-    return MemoryOutcome.model_validate(payload)
-
-
-def _audit_links() -> MemoryAuditLinks:
-    return MemoryAuditLinks(
-        report=MemoryAuditReportLink(
-            slug="agent_memory_nvda_slug",
-            name="Agent Memory Report",
-            url="/reports/agent_memory_nvda_slug",
-            download_url="/api/v1/reports/agent_memory_nvda_slug/download",
-        )
+def _revision(revision_id: str = "rev_1001") -> MemoryRevisionRead:
+    return MemoryRevisionRead(
+        revision_id=revision_id,
+        version=1,
+        content_hash=_CONTENT_HASH,
+        created_at=_CREATED_AT,
     )
+
+
+def _write_payload() -> dict[str, object]:
+    return {
+        "kind": " Research.Note ",
+        "summary": "Reusable risk-context note.",
+        "content": "Historical drawdown context should be reviewed before sizing.",
+        "subjectRefs": [
+            _subject_ref().model_dump(mode="json", by_alias=True),
+        ],
+        "attributes": {"confidence": "medium", "reviewCount": 1},
+        "scope": _scope().model_dump(mode="json", by_alias=True),
+        "provenance": _provenance().model_dump(mode="json", by_alias=True),
+    }
 
 
 def _serialized_text(payload: object) -> str:
@@ -115,239 +116,230 @@ def test_memory_id_is_opaque_phase_1_identity() -> None:
     assert future_memory_id.value == "memory-provider-token"
 
 
-def test_invalid_memory_id_error_uses_sanitized_memory_domain_error() -> None:
-    error = invalid_memory_id_error()
+def test_memory_domain_errors_are_sanitized() -> None:
+    invalid_error = invalid_memory_id_error()
+    not_found_error = memory_not_found_error()
+
+    assert invalid_error.code == INVALID_MEMORY_ID_CODE
+    assert invalid_error.status_code == 400
+    assert invalid_error.message == "Invalid memory id"
+    assert invalid_error.details == []
+    assert not_found_error.code == MEMORY_NOT_FOUND_CODE
+    assert not_found_error.status_code == 404
+    assert not_found_error.message == "Memory not found"
+
     serialized = _serialized_text(
-        {"code": error.code, "message": error.message, "details": error.details}
+        {
+            "invalid": invalid_error.__dict__,
+            "notFound": not_found_error.__dict__,
+        }
     )
-    assert error.code == INVALID_MEMORY_ID_CODE
-    assert error.status_code == 400
-    assert error.message == "Invalid memory id"
-    assert error.details == []
     assert "report" not in serialized.lower()
     assert "/reports/" not in serialized
 
 
-def test_memory_not_found_error_stays_memory_domain_only() -> None:
-    error = memory_not_found_error()
-    serialized = _serialized_text(
-        {"code": error.code, "message": error.message, "details": error.details}
+def test_projection_matrix_documents_neutral_visibility_surfaces() -> None:
+    assert set(MEMORY_PROJECTION_MATRIX) == {"model-visible", "api-visible", "ui-visible"}
+    assert "kind" in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "summary" in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "content" in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["model-visible"]
+    assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["api-visible"]
+    assert MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS >= {
+        "ticker",
+        "benchmarkSymbol",
+        "rawReturn",
+        "alpha",
+        "auditLinks",
+        "reportId",
+    }
+
+
+def test_memory_write_request_accepts_neutral_core_contract() -> None:
+    request = MemoryWriteRequest.model_validate(_write_payload())
+
+    assert request.kind == "research.note"
+    assert request.scope.scope_type == MemoryScopeType.PACKAGE
+    assert request.scope.scope_key == "pkg-advisory"
+    assert request.subject_refs[0].kind == "portfolio"
+    assert request.subject_refs[0].id == "core-us"
+    assert request.attributes == {"confidence": "medium", "reviewCount": 1}
+    assert request.provenance.agent_key == "memory_curator"
+    assert request.revision.mode == MEMORY_REVISION_WRITE_MODE
+    assert request.revision.duplicate_content == MEMORY_DUPLICATE_REVISION_BEHAVIOR
+    assert request.idempotency_key is None
+    assert request.idempotency_fallback_fields == MEMORY_IDEMPOTENCY_FALLBACK_FIELDS
+
+    identity = request.idempotency_fallback_identity()
+    assert tuple(identity) == MEMORY_IDEMPOTENCY_FALLBACK_FIELDS
+    assert identity["scope_type"] == "package"
+    assert identity["scope_key"] == "pkg-advisory"
+    assert identity["kind"] == "research.note"
+    assert isinstance(identity["content_hash"], str)
+    assert len(identity["content_hash"]) == 64
+    assert identity["source_run_id"] == 42
+    assert identity["source_agent_key"] == "memory_curator"
+    assert identity["source_step_id"] == "memory_write"
+    assert identity["source_slot"] == "post_run_note"
+
+
+def test_memory_write_request_does_not_require_finance_shaped_core_fields() -> None:
+    request = MemoryWriteRequest.model_validate(_write_payload())
+
+    payload = request.model_dump(mode="json", by_alias=True)
+    assert payload["kind"] == "research.note"
+    assert "ticker" in payload
+    assert payload["ticker"] == ""
+    assert payload["benchmarkSymbol"] is None
+    assert request.idempotency_fallback_fields == MEMORY_IDEMPOTENCY_FALLBACK_FIELDS
+
+
+def test_memory_query_defaults_to_current_context_fallback_and_budgets() -> None:
+    query = MemoryQuery.model_validate({"query": " drawdown "})
+    payload = query.model_dump(mode="json", by_alias=True)
+
+    assert query.query == "drawdown"
+    assert query.scope is None
+    assert query.subject_refs == []
+    assert query.scope_mode == "current-context-fallback"
+    assert query.fallback_scope == MEMORY_LOOKUP_CURRENT_CONTEXT_FALLBACK
+    assert query.limit == MEMORY_LOOKUP_DEFAULT_LIMIT
+    assert query.max_characters == MEMORY_LOOKUP_DEFAULT_MAX_CHARACTERS
+    assert payload["scopeMode"] == "current-context-fallback"
+    assert payload["fallbackScope"] == "current-run-package-agent"
+
+    with pytest.raises(ValidationError):
+        _ = MemoryQuery.model_validate({"limit": MEMORY_LOOKUP_MAX_LIMIT + 1})
+    with pytest.raises(ValidationError):
+        _ = MemoryQuery.model_validate({"maxCharacters": MEMORY_LOOKUP_MAX_CHARACTERS + 1})
+
+
+def test_memory_query_with_scope_or_subject_uses_explicit_selectors() -> None:
+    scoped = MemoryQuery.model_validate(
+        {
+            "query": "portfolio context",
+            "scope": _scope().model_dump(mode="json", by_alias=True),
+        }
+    )
+    subject_scoped = MemoryQuery.model_validate(
+        {
+            "subjectRefs": [_subject_ref().model_dump(mode="json", by_alias=True)],
+            "kind": "Research.Note",
+        }
     )
 
-    assert error.code == MEMORY_NOT_FOUND_CODE
-    assert error.status_code == 404
-    assert error.message == "Memory not found"
-    assert "report" not in serialized.lower()
-    assert "/reports/" not in serialized
+    assert scoped.scope_mode == "explicit-selectors"
+    assert scoped.scope is not None
+    assert subject_scoped.scope_mode == "explicit-selectors"
+    assert subject_scoped.kind == "research.note"
+    assert subject_scoped.subject_refs[0].id == "core-us"
 
 
-def test_memory_write_result_model_visible_projection_has_no_report_fields() -> None:
+def test_write_result_uses_revision_semantics_without_action_field() -> None:
     result = MemoryWriteResult(
         memory_id="mem_1001",
+        revision_id="rev_1001",
         status=MemoryLifecycleStatus.PENDING,
-        action="created",
+        revision_action=MemoryRevisionAction.CREATED,
         created_at=_CREATED_AT,
         provenance=_provenance(),
+        revision=_revision(),
     )
 
     payload = result.model_dump(mode="json", by_alias=True)
-    assert set(payload) == {
-        "memoryId",
-        "status",
-        "action",
-        "createdAt",
-        "provenance",
-        "warnings",
-    }
     assert payload["memoryId"] == "mem_1001"
+    assert payload["revisionId"] == "rev_1001"
     assert payload["status"] == "pending"
-    assert payload["action"] == "created"
+    assert payload["revisionAction"] == "created"
     assert payload["createdAt"] == "2026-05-08T09:30:00Z"
-    assert cast(dict[str, object], payload["provenance"])["agentKey"] == "portfolio_manager"
-    assert payload["warnings"] == []
+    assert payload["idempotencyFallbackFields"] == list(MEMORY_IDEMPOTENCY_FALLBACK_FIELDS)
+    assert "action" not in payload
+    assert "auditLinks" not in payload
+    assert "reportSlug" not in _serialized_text(payload)
 
-    serialized = _serialized_text(payload)
-    for fragment in _FORBIDDEN_MODEL_VISIBLE_FRAGMENTS:
-        assert fragment not in serialized
-
-
-def test_projection_matrix_documents_four_visibility_surfaces() -> None:
-    assert set(MEMORY_PROJECTION_MATRIX) == {
-        "model-visible",
-        "api-visible",
-        "ui-visible",
-        "report-route-visible",
-    }
-    assert "auditLinks" not in MEMORY_PROJECTION_MATRIX["model-visible"]
-    assert "auditLinks" in MEMORY_PROJECTION_MATRIX["api-visible"]
-    assert "auditLinks" in MEMORY_PROJECTION_MATRIX["ui-visible"]
-    assert MEMORY_MODEL_VISIBLE_EXCLUDED_FIELDS >= {"auditLinks", "reportId", "reportSlug"}
+    reused = MemoryWriteResult(
+        memory_id="mem_1001",
+        revision_id="rev_1001",
+        status=MemoryLifecycleStatus.PENDING,
+        revision_action=MemoryRevisionAction.REUSED,
+        created_at=_CREATED_AT,
+        provenance=_provenance(),
+        revision=_revision(),
+    )
+    assert reused.model_dump(mode="json", by_alias=True)["revisionAction"] == "reused"
 
 
-def test_model_visible_projection_strips_audit_links_from_write_result() -> None:
-    result = MemoryWriteResult(
+def test_memory_entry_read_uses_neutral_fields_and_camel_case() -> None:
+    entry = MemoryEntryRead(
         memory_id="mem_1002",
-        status=MemoryLifecycleStatus.PENDING,
-        action="existing",
+        revision_id="rev_1002",
+        kind="Observation",
+        summary="Cross-run context",
+        content="The prior agent recorded context that applies beyond finance.",
+        subject_refs=[_subject_ref()],
+        attributes={"source": "agent_note"},
+        scope=_scope(),
+        provenance=_provenance(),
+        revision=_revision("rev_1002"),
         created_at=_CREATED_AT,
-        provenance=_provenance(),
-        audit_links=_audit_links(),
+        updated_at=_UPDATED_AT,
     )
 
-    assert "auditLinks" in result.dump_for_projection("api-visible")
-    model_payload = result.model_visible_dump()
+    payload = entry.dump_for_projection("api-visible")
+    assert payload["memoryId"] == "mem_1002"
+    assert payload["revisionId"] == "rev_1002"
+    assert payload["kind"] == "observation"
+    assert payload["status"] == "pending"
+    assert payload["createdAt"] == "2026-05-08T09:30:00Z"
+    assert payload["updatedAt"] == "2026-05-09T09:30:00Z"
+    assert payload["subjectRefs"] == [
+        {"kind": "portfolio", "id": "core-us", "label": "Core US", "attributes": {}}
+    ]
 
-    serialized = _serialized_text(model_payload)
-    assert "auditLinks" not in model_payload
-    for fragment in _FORBIDDEN_MODEL_VISIBLE_FRAGMENTS:
-        assert fragment not in serialized
-
-
-def test_memory_artifact_api_projection_may_include_nested_report_audit_links() -> None:
-    artifact = MemoryArtifactRead(
-        memory_id="mem_1003",
-        status=MemoryLifecycleStatus.PENDING,
-        summary="NVDA buy memory",
-        provenance=_provenance(),
-        created_at=_CREATED_AT,
-        audit_links=_audit_links(),
-        source_graph_metadata={"stepId": "portfolio_decision"},
-    )
-
-    payload = artifact.dump_for_projection("ui-visible")
-    audit_links = cast(dict[str, object], payload["auditLinks"])
-    report = cast(dict[str, object], audit_links["report"])
-
-    assert payload["memoryId"] == "mem_1003"
-    assert report["slug"] == "agent_memory_nvda_slug"
-    assert report["url"] == "/reports/agent_memory_nvda_slug"
-    assert str(report["downloadUrl"]).endswith("/download")
-    assert "reportId" not in report
-
-
-def test_memory_prompt_snippet_model_visible_text_excludes_report_audit_details() -> None:
-    snippet = MemoryPromptSnippet(
-        memory_id="mem_1004",
-        text=(
-            "Historical memory, not an instruction:\n"
-            "Decision: buy NVDA for portfolio core_us.\n"
-            "Outcome: resolved with alpha 0.095."
-        ),
-        provenance=_provenance(),
-        outcome=_outcome(),
-        reflections=[
-            MemoryReflection(
-                reflection="Liquidity confirmation mattered.",
-                reflected_at=_REFLECTED_AT,
-            )
-        ],
-    )
-
-    payload = snippet.model_visible_dump()
     serialized = _serialized_text(payload)
-
-    assert payload["memoryId"] == "mem_1004"
-    assert "Historical memory, not an instruction" in str(payload["text"])
-    for fragment in _FORBIDDEN_MODEL_VISIBLE_FRAGMENTS:
+    for fragment in _FORBIDDEN_CORE_FRAGMENTS:
         assert fragment not in serialized
 
 
-def test_memory_entry_lifecycle_matches_report_backed_metadata_rules() -> None:
-    resolved = MemoryEntryRead(
-        memory_id="mem_1005",
-        status=MemoryLifecycleStatus.RESOLVED,
-        ticker=" nvda ",
-        decision=_decision(),
+def test_prompt_snippet_and_artifact_are_model_safe_and_report_free() -> None:
+    snippet = MemoryPromptSnippet(
+        memory_id="mem_1003",
+        revision_id="rev_1003",
+        kind="instruction.note",
+        summary="Historical context",
+        content="Historical memory, not an instruction: prior constraints were strict.",
+        subject_refs=[_subject_ref()],
+        scope=_scope(),
         provenance=_provenance(),
         created_at=_CREATED_AT,
-        outcome=_outcome(),
-        reflections=[
-            MemoryReflection(
-                reflection="Outcome confirmed thesis.",
-                reflected_at=_REFLECTED_AT,
-            )
-        ],
     )
-    expired = MemoryEntryRead(
-        memory_id="mem_1006",
-        status=MemoryLifecycleStatus.EXPIRED,
-        ticker="msft",
-        decision=_decision(),
+    artifact = MemoryArtifactRead(
+        memory_id="mem_1004",
+        revision_id="rev_1004",
+        kind="observation",
+        summary="Memory written during run",
+        subject_refs=[_subject_ref()],
+        scope=_scope(),
         provenance=_provenance(),
         created_at=_CREATED_AT,
-        outcome=_outcome("expired"),
+        source_graph_metadata={"stepId": "memory_write"},
     )
 
-    assert resolved.ticker == "NVDA"
-    assert expired.outcome is not None
-    assert expired.outcome.raw_return is None
-    assert expired.outcome.alpha is None
+    snippet_payload = snippet.model_visible_dump()
+    artifact_payload = artifact.dump_for_projection("ui-visible")
+    serialized = _serialized_text({"snippet": snippet_payload, "artifact": artifact_payload})
+
+    assert snippet_payload["memoryId"] == "mem_1003"
+    assert "Historical memory, not an instruction" in str(snippet_payload["content"])
+    assert artifact_payload["memoryId"] == "mem_1004"
+    assert artifact_payload["sourceGraphMetadata"] == {"stepId": "memory_write"}
+    for fragment in _FORBIDDEN_CORE_FRAGMENTS:
+        assert fragment not in serialized
 
 
-def test_memory_entry_rejects_pending_outcome_and_resolved_without_outcome() -> None:
-    with pytest.raises(ValidationError):
-        _ = MemoryEntryRead(
-            memory_id="mem_1007",
-            status=MemoryLifecycleStatus.PENDING,
-            ticker="NVDA",
-            decision=_decision(),
-            provenance=_provenance(),
-            created_at=_CREATED_AT,
-            outcome=_outcome(),
-        )
-
-    with pytest.raises(ValidationError):
-        _ = MemoryEntryRead(
-            memory_id="mem_1008",
-            status=MemoryLifecycleStatus.RESOLVED,
-            ticker="NVDA",
-            decision=_decision(),
-            provenance=_provenance(),
-            created_at=_CREATED_AT,
-        )
-
-    with pytest.raises(ValidationError):
-        _ = MemoryOutcome(resolved_status="resolved", resolved_at=_RESOLVED_AT)
-
-
-def test_memory_write_request_keeps_model_input_separate_from_trusted_provenance() -> None:
-    request = MemoryWriteRequest.model_validate(
-        {
-            "ticker": " nvda ",
-            "portfolioSlug": " core_us ",
-            "horizonDays": 14,
-            "confidence": " high ",
-            "decisionSummary": " Durable earnings setup. ",
-            "benchmarkSymbol": " spy ",
-            "decision": _decision().model_dump(mode="json", by_alias=True),
-            "provenance": _provenance().model_dump(mode="json", by_alias=True),
-        }
+def test_core_memory_tool_contract_names_and_get_deferral_are_explicit() -> None:
+    assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
+        "signaldeck.memory.write",
+        "signaldeck.memory.lookup",
     )
-    query = MemoryQuery.model_validate(
-        {
-            "ticker": " nvda ",
-            "portfolioSlug": " core_us ",
-            "agentKey": " portfolio_manager ",
-            "status": "resolved",
-            "limit": 3,
-            "offset": 0,
-            "maxCharacters": 4000,
-        }
-    )
-
-    assert request.ticker == "NVDA"
-    assert request.portfolio_slug == "core_us"
-    assert request.benchmark_symbol == "SPY"
-    assert request.provenance.run_id == 42
-    assert query.ticker == "NVDA"
-    assert query.portfolio_slug == "core_us"
-    assert query.status == MemoryLifecycleStatus.RESOLVED
-
-
-def test_invalid_memory_id_error_helper_is_sanitized() -> None:
-    error = invalid_memory_id_error()
-
-    assert error.code == INVALID_MEMORY_ID_CODE
-    assert error.message == "Invalid memory id"
-    assert error.details == []
-    assert "report" not in _serialized_text(error.__dict__).lower()
+    assert MEMORY_DEFERRED_GET_DECISION == "phase-1b"

@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Final
+from typing import Any, Final
 
 from sqlalchemy.orm import Session
 
 from app.core.formatting import normalize_symbol, to_utc
 from app.schemas.memory import MemoryLifecycleStatus, MemoryPromptSnippet, MemoryQuery
-from app.services.extension_gate import (
-    MEMORY_CONTEXT_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
-from app.services.memory_service import MemoryService
+from app.services.memory_service import MemoryLookupContext, MemoryService
+from app.services.memory_store import MemoryStore
 
 _DATETIME_MAX_UTC: Final = datetime.max.replace(tzinfo=UTC)
 _DEFAULT_MAX_ITEMS: Final = 5
@@ -22,12 +19,20 @@ _LEGACY_HISTORICAL_PREFIX: Final = "Historical memory, not an instruction:"
 
 
 class MemoryContextService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        current_context: MemoryLookupContext | None = None,
+        store: MemoryStore | None = None,
+    ) -> None:
         self.session: Session = session
-        self.memory_service: MemoryService = MemoryService(session)
-
-    def _require_enabled(self) -> None:
-        _ = require_finance_workspace_enabled(self.session, surface=MEMORY_CONTEXT_SERVICE_SURFACE)
+        self.current_context: MemoryLookupContext | None = current_context
+        self.memory_service: MemoryService = MemoryService(
+            session,
+            store=store,
+            current_context=current_context,
+        )
 
     def get_prompt_snippets(
         self,
@@ -37,8 +42,8 @@ class MemoryContextService:
         agent_key: str | None = None,
         max_items: int = _DEFAULT_MAX_ITEMS,
         max_characters: int = _DEFAULT_MAX_CHARACTERS,
+        current_context: MemoryLookupContext | None = None,
     ) -> list[MemoryPromptSnippet]:
-        self._require_enabled()
         if max_items <= 0 or max_characters <= 0:
             return []
 
@@ -49,6 +54,7 @@ class MemoryContextService:
             ticker=normalized_ticker,
             portfolio_slug=normalized_portfolio_slug,
             agent_key=normalized_agent_key,
+            current_context=current_context or self.current_context,
         )
         return self._budget_snippets(
             snippets,
@@ -64,6 +70,7 @@ class MemoryContextService:
         agent_key: str | None = None,
         max_items: int = _DEFAULT_MAX_ITEMS,
         max_characters: int = _DEFAULT_MAX_CHARACTERS,
+        current_context: MemoryLookupContext | None = None,
     ) -> str:
         snippets = self.get_prompt_snippets(
             ticker=ticker,
@@ -71,8 +78,25 @@ class MemoryContextService:
             agent_key=agent_key,
             max_items=max_items,
             max_characters=max_characters,
+            current_context=current_context,
         )
-        return "\n\n".join(snippet.text for snippet in snippets)
+        prompt_context = "\n\n".join(snippet.text for snippet in snippets)
+        self.memory_service.record_injection_event(
+            snippets=snippets,
+            injected_text=prompt_context,
+            filters=self._filter_snapshot(
+                ticker=ticker,
+                portfolio_slug=portfolio_slug,
+                agent_key=agent_key,
+            ),
+            budget={
+                "maxItems": max_items,
+                "maxCharacters": max_characters,
+                "usedCharacters": len(prompt_context),
+            },
+            current_context=current_context or self.current_context,
+        )
+        return prompt_context
 
     def _ordered_snippets(
         self,
@@ -80,6 +104,7 @@ class MemoryContextService:
         ticker: str | None,
         portfolio_slug: str | None,
         agent_key: str | None,
+        current_context: MemoryLookupContext | None,
     ) -> list[MemoryPromptSnippet]:
         seen_memory_ids: set[str] = set()
         ordered: list[MemoryPromptSnippet] = []
@@ -89,7 +114,7 @@ class MemoryContextService:
             agent_key=agent_key,
         ):
             group_snippets = sorted(
-                self._query_all(group),
+                self._query_all(group, current_context=current_context),
                 key=self._snippet_sort_key,
             )
             for snippet in group_snippets:
@@ -135,14 +160,22 @@ class MemoryContextService:
         groups.append(MemoryQuery(agent_key=agent_key, status=MemoryLifecycleStatus.RESOLVED))
         return groups
 
-    def _query_all(self, query: MemoryQuery) -> list[MemoryPromptSnippet]:
+    def _query_all(
+        self,
+        query: MemoryQuery,
+        *,
+        current_context: MemoryLookupContext | None,
+    ) -> list[MemoryPromptSnippet]:
         snippets: list[MemoryPromptSnippet] = []
         offset = 0
         while True:
             page_query = query.model_copy(
                 update={"limit": _QUERY_PAGE_SIZE, "offset": offset, "max_characters": None}
             )
-            page = self.memory_service.query_memory(page_query)
+            page = self.memory_service.query_memory(
+                page_query,
+                current_context=current_context,
+            )
             snippets.extend(page)
             if len(page) < _QUERY_PAGE_SIZE:
                 break
@@ -191,6 +224,23 @@ class MemoryContextService:
         elif not text.startswith(_HISTORICAL_PREFIX):
             text = f"{_HISTORICAL_PREFIX}\n{text}"
         return snippet.model_copy(update={"text": text})
+
+    @staticmethod
+    def _filter_snapshot(
+        *,
+        ticker: str | None,
+        portfolio_slug: str | None,
+        agent_key: str | None,
+    ) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in {
+                "ticker": MemoryContextService._normalize_ticker(ticker),
+                "portfolioSlug": MemoryContextService._normalize_optional_text(portfolio_slug),
+                "agentKey": MemoryContextService._normalize_optional_text(agent_key),
+            }.items()
+            if value is not None
+        }
 
     @staticmethod
     def _normalize_ticker(value: str | None) -> str | None:

@@ -155,4 +155,4 @@ The VERSION files are lightweight mirrors used for repository-level checks; this
 - `docs/prd.md`, `docs/requirements.md`, `docs/spec.md`, `docs/api-design.md`, and `docs/data-model.md` are current product, requirements, API, and data references
 - `docs/test-plan.md` and `docs/run-input-schema-helptext.md` cover validation and generated run-input form metadata
 - `docs/signaldeck-agent-platform.md` is the canonical package-first platform reference
-- `docs/signaldeck-memory-layer-design.md` records the live phase 1 report-backed memory boundary
+- `docs/signaldeck-memory-layer-design.md` records the live phase 1 platform-core memory boundary

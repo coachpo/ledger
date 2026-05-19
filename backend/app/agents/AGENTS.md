@@ -21,15 +21,16 @@ app/agents/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Server-declared tools | `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py` | canonical SignalDeck tool keys, names, descriptions loaded from extension registrars |
+| Server-declared tools | `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py` | canonical core SignalDeck tool keys plus extension-contributed keys, names, and descriptions |
 | Capability tool-key validation | `tool_catalog/__init__.py` | validates `toolKeys` against known server tools after enabled-extension filtering |
-| Native registry | `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py` | OpenAI tool definitions and grant-checked dispatch loaded from extension registrars |
-| Financial native tools | `runtime_tools/market_data.py`, `runtime_tools/positions.py`, `runtime_tools/reports.py` | quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, positions, report lookup, memory-report writes |
+| Native registry | `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py` | core plus extension OpenAI tool definitions and grant-checked dispatch |
+| Core memory native tools | `runtime_tools/memory.py` | platform-owned `signaldeck.memory.write` and `signaldeck.memory.lookup` parsers, grant policies, executors, and result models |
+| Financial native tools | `../extensions/signaldeck_finance/runtime_*` | finance-owned quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, positions, report lookup, and retired report-write boundary |
 | MCP runtime | `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
 
 ## CONVENTIONS
-- Server-declared finance tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes; `ExtensionService` filters visibility by enabled extension keys.
-- `signaldeck.reports.lookup` and `signaldeck.reports.write` remain the stable server tool keys in phase 1. Their OpenAI function names, `signaldeck_reports_lookup` and `signaldeck_reports_write`, are compatibility anchors, not legacy debt to rename now.
-- Phase 1 does not expose `signaldeck.memory.*` tool keys. Keep report lookup report-shaped, and keep report memory writes memory-shaped while preserving the report tool key and function name.
-- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime write output may expose `memoryId`, status, summary, provenance, and warnings; API/UI projections can add nested `auditLinks.report` after the model call.
-- Runtime tools and prompt builders treat `memoryId` values as opaque. Only `ReportBackedMemoryStore` may parse the phase 1 `mem_<report_id>` format.
+- Core memory tool keys `signaldeck.memory.write` and `signaldeck.memory.lookup` are platform-owned, have OpenAI function names `signaldeck_memory_write` and `signaldeck_memory_lookup`, and must remain visible when all extensions are disabled.
+- Server-declared finance tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup; `ExtensionService` filters visibility by enabled extension keys. Core memory tools are platform-owned.
+- `signaldeck.reports.lookup` remains a finance-owned report lookup anchor. `signaldeck.reports.write` remains importable only as a retired fail-closed boundary; do not route new core memory behavior through finance registrars.
+- Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime memory write output may expose `memoryId`, `revisionId`, status, revision action, provenance, and warnings.
+- Runtime tools and prompt builders treat `memoryId` values as opaque. Only `ReportBackedMemoryStore` may parse the legacy `mem_<report_id>` format.

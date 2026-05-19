@@ -29,7 +29,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
 4. Workflow Packages: YAML package manifest authoring with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, preflight, import, export, and launch flows. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
-6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, reports, and report memory writes.
+6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 7. Runs: global run list/detail, package provenance, launch snapshots, reruns, and step replays.
 
 ## Success Criteria
@@ -38,7 +38,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 - Template compile and report generation work with `inputs`, `portfolios`, and `reports` placeholders.
 - Report-series workflows can reuse stable tags and runtime inputs to reference the latest prior report in a series.
 - Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
-- Agent memory reports keep `source="agent"` for origin, `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` for purpose/type, and server-owned `metadata.createdBy.type="agent"` provenance.
+- Historical agent-memory reports remain source-aware report-domain records, while canonical memory writes and lookup use platform-core memory tools and tables.
 - Workflow Packages can be authored from `signaldeck.workflowPackage/v1` YAML manifests and validated before save.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections remain global live bindings, global Tools remain read-only metadata, and package-private resources stay inside package versions.

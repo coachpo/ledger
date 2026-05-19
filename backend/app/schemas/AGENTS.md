@@ -22,7 +22,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
 | Extension schemas | `extension.py` | bundled extension list/read/toggle payloads with slim public state |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
-| Memory domain schemas | `memory.py`, `memory_report.py` | memory DTO projections plus report-backed agent-memory metadata |
+| Memory domain schemas | `memory.py`, `memory_report.py` | core memory DTO projections plus historical agent-memory report metadata |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
 ## CONVENTIONS

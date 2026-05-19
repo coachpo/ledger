@@ -74,6 +74,37 @@ export interface RunMemoryArtifactRead {
   } | null;
 }
 
+export type RunMemoryEventType =
+  | "retrieved"
+  | "injected"
+  | "written"
+  | "reused"
+  | "superseded"
+  | "reviewed"
+  | "failed";
+
+export interface RunMemoryEventRead {
+  id: number;
+  runId: number;
+  runStepId: number | null;
+  runAgentInvocationId: number | null;
+  runOperationInvocationId: number | null;
+  stepId: string | null;
+  invocationId: string | null;
+  eventType: RunMemoryEventType;
+  memoryId: string | null;
+  revisionId: string | null;
+  retrievalMode: string | null;
+  filters: UnknownRecord;
+  budget: UnknownRecord;
+  excerpt: string | null;
+  injectedText: string | null;
+  resultSnapshot: UnknownRecord;
+  statusSnapshot: UnknownRecord;
+  traceSpanId: string | null;
+  createdAt: string;
+}
+
 export interface RunPackageResolvedModelConnectionRead {
   key: string;
   name: string;
@@ -282,6 +313,7 @@ export interface RunRead extends RunTargetIdentityRead {
   updatedAt: string;
   steps: RunStepRead[];
   memoryArtifacts: RunMemoryArtifactRead[];
+  memoryEvents: RunMemoryEventRead[];
   extensionDependencies: RunExtensionDependencyRead[];
   packageProvenance: RunPackageProvenanceRead | null;
 }

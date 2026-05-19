@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.agents.mcp import DefaultMcpConnectionTester
+from app.agents.runtime_tools.memory import MEMORY_WRITE_TOOL_KEY
 from app.core.errors import ApiError
-from app.extensions.signaldeck_finance.runtime_types import REPORT_MEMORY_WRITE_TOOL_KEY
 from app.models.agent import Agent
 from app.models.capability import Capability
 from app.models.mcp_server import McpServer
@@ -1198,6 +1198,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "extensionDependencies",
             "steps",
             "memoryArtifacts",
+            "memoryEvents",
             "packageProvenance",
         }
         assert serialized_detail["queuedAt"] == "2026-04-19T09:59:00Z"
@@ -1270,7 +1271,7 @@ def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
             status="published",
             name="Post Run Memory Writer",
             description="Grants post-run memory writes.",
-            tool_keys=[REPORT_MEMORY_WRITE_TOOL_KEY],
+            tool_keys=[MEMORY_WRITE_TOOL_KEY],
         )
         output_schema = _build_output_schema(
             key="post_run_memory_schema",
@@ -1407,38 +1408,22 @@ def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
             service.get_run(run_id).model_dump(mode="json", by_alias=True),
         )
 
-    assert len(reports) == 1
-    report = reports[0]
-    assert report.source == "agent"
-    analysis = cast(dict[str, object], report.metadata_["analysis"])
-    created_by = cast(dict[str, object], report.metadata_["createdBy"])
-    assert analysis["reviewType"] == "agent_memory"
-    assert analysis["versionGroup"] == "agent_memory/v1"
-    assert analysis["runId"] == run_id
-    assert analysis["decisionSummary"] == "Post-run memory summary."
-    assert created_by["type"] == "agent"
+    assert reports == []
 
     artifacts = cast(list[dict[str, object]], detail["memoryArtifacts"])
     assert len(artifacts) == 1
     artifact = artifacts[0]
-    assert {"reportId", "slug", "name"}.isdisjoint(artifact)
-    assert artifact["memoryId"] == f"mem_{report.id}"
+    assert {"reportId", "slug", "name", "auditLinks"}.isdisjoint(artifact)
+    assert str(artifact["memoryId"]).startswith("memory_")
     assert artifact["summary"] == "Post-run memory summary."
     assert artifact["status"] == "pending"
     assert artifact["sourceGraphMetadata"] == {
-        "nodeId": "portfolio_decision",
+        "stepId": "portfolio_decision",
         "slot": "decision",
-        "traceId": "trace-post-run-memory",
+        "traceId": "span-post-run-memory",
         "workflowKey": "post_run_memory_workflow",
         "workflowVersion": 1,
     }
-    audit_links = cast(dict[str, object], artifact["auditLinks"])
-    report_link = cast(dict[str, object], audit_links["report"])
-    assert report_link["slug"] == report.slug
-    assert report_link["name"] == report.name
-    assert report_link["url"] == f"/reports/{report.slug}"
-    assert report_link["downloadUrl"] == f"/api/v1/reports/{report.slug}/download"
-    assert "reportId" not in report_link
 
 
 def _post_run_memory_node_ref(path: str) -> dict[str, object]:
@@ -1767,7 +1752,7 @@ def test_draft_replacement_physically_deletes_superseded_global_drafts(
                 {
                     "key": "draft_replace_capability",
                     "name": "Draft Replace Capability",
-                    "toolKeys": [REPORT_MEMORY_WRITE_TOOL_KEY],
+                    "toolKeys": [MEMORY_WRITE_TOOL_KEY],
                 }
             )
         )
@@ -1798,7 +1783,7 @@ def test_draft_replacement_physically_deletes_superseded_global_drafts(
             CapabilityDraftUpdate.model_validate(
                 {
                     "name": "Updated Draft Replace Capability",
-                    "toolKeys": [REPORT_MEMORY_WRITE_TOOL_KEY],
+                    "toolKeys": [MEMORY_WRITE_TOOL_KEY],
                 }
             ),
         )

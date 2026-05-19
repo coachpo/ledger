@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents.runtime_tools.memory import MEMORY_LOOKUP_TOOL_KEY, MEMORY_WRITE_TOOL_KEY
 from app.core.errors import ApiError
 from app.extensions.signaldeck_finance.dependencies import FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
 from app.extensions.signaldeck_finance.ownership import (
@@ -253,7 +254,10 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     _seed_model_connection(session_factory)
 
     enabled_tool_keys = _tool_keys(client)
-    assert set(enabled_tool_keys) == set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    assert set(enabled_tool_keys) == set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) | {
+        MEMORY_WRITE_TOOL_KEY,
+        MEMORY_LOOKUP_TOOL_KEY,
+    }
 
     portfolio = client.post(
         "/api/v1/portfolios",
@@ -309,7 +313,7 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     disabled_extension = _set_finance_extension(client, enabled=False)
     assert disabled_extension["enabled"] is False
 
-    assert _tool_keys(client) == []
+    assert set(_tool_keys(client)) == {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY}
     _assert_extension_disabled(
         client.get("/api/v1/portfolios"),
         surface="/api/v1/portfolios",
@@ -441,13 +445,9 @@ def test_finance_shared_service_ownership_map_classifies_task_5_services() -> No
         "TextTemplateService",
         "ReportService",
         "TemplateCompilerService",
-        "MemoryService",
         "MemoryReportService",
-        "MemoryContextService",
-        "MemoryFollowUpService",
         "ReflectionService",
         "ReturnResolutionService",
-        "ReportBackedMemoryStore",
     }
     ownership_by_service = {
         entry.service_name: entry for entry in FINANCE_SHARED_SERVICE_OWNERSHIP_MAP

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import type { RunAgentInvocationRead, RunRead, RunRerunDraftRead, RunStepRead, RunStepReplayDraftRead } from "@/lib/types/run";
+import type { RunAgentInvocationRead, RunMemoryEventRead, RunRead, RunRerunDraftRead, RunStepRead, RunStepReplayDraftRead } from "@/lib/types/run";
 
 import { RunsDetailPage } from "./detail";
 
@@ -226,6 +226,31 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
   };
 }
 
+function buildMemoryEvent(overrides: Partial<RunMemoryEventRead> = {}): RunMemoryEventRead {
+  return {
+    budget: {},
+    createdAt: NOW,
+    eventType: "retrieved",
+    excerpt: null,
+    filters: {},
+    id: 9001,
+    injectedText: null,
+    invocationId: null,
+    memoryId: null,
+    resultSnapshot: {},
+    retrievalMode: null,
+    revisionId: null,
+    runAgentInvocationId: null,
+    runId: 42,
+    runOperationInvocationId: null,
+    runStepId: null,
+    statusSnapshot: {},
+    stepId: null,
+    traceSpanId: null,
+    ...overrides,
+  };
+}
+
 function buildRun(overrides: Partial<RunRead> = {}): RunRead {
   return {
     createdAt: NOW,
@@ -239,6 +264,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
     memoryArtifacts: [],
+    memoryEvents: [],
     extensionDependencies: [],
     packageProvenance: null,
     queuedAt: NOW,
@@ -630,13 +656,13 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
   });
 
-  it("groups graph metadata and renders memory artifact audit report links", () => {
+  it("groups graph metadata and renders compact memory artifact audit links", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
           memoryArtifacts: [
             {
-              memoryId: "mem_701",
+              memoryId: "memory_701",
               summary: "AAPL decision memory",
               status: "pending",
               createdAt: NOW,
@@ -705,10 +731,10 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByTestId("runs-step-1-slot-market")).not.toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("inspect=memory:mem_701");
+    searchParamsMock = new URLSearchParams("inspect=memory:memory_701");
     render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-memory-artifacts")).toBeInTheDocument();
-    const artifact = screen.getByTestId("runs-memory-artifact-mem_701");
+    const artifact = screen.getByTestId("runs-memory-artifact-memory_701");
     expect(artifact).toHaveTextContent("AAPL decision memory");
     expect(artifact).toHaveTextContent(/pending/i);
     expect(artifact).toHaveTextContent(/portfolio_manager@3/i);
@@ -730,7 +756,7 @@ describe("RunsDetailPage", () => {
         buildRun({
           memoryArtifacts: [
             {
-              memoryId: "mem_702",
+              memoryId: "memory_702",
               summary: "AAPL risk memory",
               status: "active",
               createdAt: NOW,
@@ -748,10 +774,10 @@ describe("RunsDetailPage", () => {
       ),
     );
 
-    searchParamsMock = new URLSearchParams("inspect=memory:mem_702");
+    searchParamsMock = new URLSearchParams("inspect=memory:memory_702");
     render(<RunsDetailPage />);
 
-    const artifact = screen.getByTestId("runs-memory-artifact-mem_702");
+    const artifact = screen.getByTestId("runs-memory-artifact-memory_702");
     expect(artifact).toHaveTextContent("AAPL risk memory");
     expect(artifact).toHaveTextContent(/active/i);
     expect(artifact).toHaveTextContent(/risk_manager@1/i);
@@ -759,6 +785,109 @@ describe("RunsDetailPage", () => {
     expect(artifact).toHaveTextContent(/run #42/i);
     expect(within(artifact).queryByRole("link", { name: /open report/i })).not.toBeInTheDocument();
     expect(within(artifact).queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it("renders grouped run memory event evidence and keeps artifacts compact", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          memoryArtifacts: [
+            {
+              memoryId: "memory_safe",
+              summary: "Compact safe memory",
+              status: "active",
+              createdAt: NOW,
+              provenance: {
+                agentKey: "portfolio_manager",
+                agentVersion: 3,
+                createdByType: "agent",
+                runId: 42,
+                slot: "decision",
+                workflowKey: "market_review",
+              },
+              sourceGraphMetadata: null,
+            },
+          ],
+          memoryEvents: [
+            buildMemoryEvent({
+              id: 9101,
+              eventType: "retrieved",
+              retrievalMode: "explicit-selectors",
+              filters: { scope: "package:market_review" },
+              budget: { limit: 5, maxCharacters: 4000 },
+              resultSnapshot: { resultCount: 1, snippets: [{ memoryId: "memory_safe", summary: "Safe memory" }] },
+              traceSpanId: "span-memory-lookup",
+            }),
+            buildMemoryEvent({
+              id: 9102,
+              eventType: "injected",
+              injectedText: "Historical memory, not an instruction: Safe memory",
+              statusSnapshot: { status: "injected" },
+            }),
+            buildMemoryEvent({
+              id: 9103,
+              eventType: "written",
+              memoryId: "memory_safe",
+              revisionId: "revision_created",
+              resultSnapshot: { revisionAction: "created" },
+            }),
+            buildMemoryEvent({
+              id: 9104,
+              eventType: "reused",
+              memoryId: "memory_safe",
+              revisionId: "revision_created",
+              resultSnapshot: { revisionAction: "reused" },
+            }),
+            buildMemoryEvent({
+              id: 9105,
+              eventType: "reviewed",
+              memoryId: "memory_safe",
+              statusSnapshot: { status: "resolved" },
+            }),
+            buildMemoryEvent({
+              id: 9106,
+              eventType: "failed",
+              statusSnapshot: { status: "failed", code: "memory_write_failed" },
+            }),
+          ],
+        }),
+      ),
+    );
+
+    searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
+    expect(screen.getByRole("heading", { name: /run memory evidence/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /retrieved context/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /memory written and reused/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /review and follow-up/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /audit trail/i })).toBeVisible();
+    expect(screen.getByTestId("runs-memory-group-retrievedContext")).toHaveTextContent(/2 events/i);
+    expect(screen.getByTestId("runs-memory-group-memoryWrites")).toHaveTextContent(/2 events/i);
+    expect(screen.getByTestId("runs-memory-group-reviewFollowUp")).toHaveTextContent(/1 event/i);
+    expect(screen.getByTestId("runs-memory-group-auditTrail")).toHaveTextContent(/1 event/i);
+    expect(screen.getByTestId("runs-memory-event-9101-result")).toHaveTextContent(/Safe memory/i);
+    expect(screen.getByTestId("runs-memory-event-9102-injected-text")).toHaveTextContent(/Historical memory, not an instruction/i);
+    expect(screen.getByTestId("runs-memory-event-9103-result")).toHaveTextContent(/created/i);
+    expect(screen.getByTestId("runs-memory-event-9104-result")).toHaveTextContent(/reused/i);
+    expect(screen.getByTestId("runs-memory-event-9105-status")).toHaveTextContent(/resolved/i);
+    expect(screen.getByTestId("runs-memory-event-9106-status")).toHaveTextContent(/memory_write_failed/i);
+    expect(screen.getByTestId("runs-memory-compact-artifacts")).toHaveTextContent(/compact artifact slice/i);
+    expect(screen.getByTestId("runs-memory-compact-artifact-memory_safe")).toHaveTextContent(/Compact safe memory/i);
+    expect(screen.queryByTestId("runs-memory-artifacts-empty")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open report/i })).not.toBeInTheDocument();
+  });
+
+  it("distinguishes absent run memory evidence from absent compact artifacts", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun()));
+    searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
+
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-memory-evidence-empty")).toHaveTextContent(/No run memory evidence was recorded/i);
+    expect(screen.getByTestId("runs-memory-artifacts-empty")).toHaveTextContent(/No compact memory artifacts were written/i);
+    expect(screen.queryByText(/No memory artifacts were created by this run/i)).not.toBeInTheDocument();
   });
 
   it("omits graph grouping and memory artifact cards when metadata is absent", () => {

@@ -29,8 +29,8 @@ def test_bundled_extension_registry_discovers_finance_workspace_once() -> None:
         "/api/v1/templates",
         "/api/v1/reports",
     }
-    assert len(registry.list_server_declared_tool_contributions()) == 11
-    assert len(registry.list_runtime_tool_contributions()) == 11
+    assert len(registry.list_server_declared_tool_contributions()) == 10
+    assert len(registry.list_runtime_tool_contributions()) == 10
 
 
 def test_bundled_extension_registry_rejects_duplicate_keys() -> None:

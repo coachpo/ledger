@@ -192,6 +192,11 @@ test.describe("Workflow packages", () => {
     await expect(page.getByText(`Captured package id: ${created.id}`)).toBeVisible();
     await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute("href", `/workflow-packages/${created.id}`);
 
+    await page.getByTestId("runs-evidence-pane-nav").getByRole("button", { name: "Memory" }).click();
+    await expect(page.getByTestId("runs-memory-evidence-empty")).toContainText("No run memory evidence was recorded");
+    await expect(page.getByTestId("runs-memory-artifacts-empty")).toContainText("No compact memory artifacts were written");
+    await expect(page.getByTestId("runs-memory-compact-artifacts")).toContainText("Compact artifact slice");
+
     await page.getByTestId("runs-detail-rerun").click();
     await expect(page.getByRole("dialog", { name: /run snapshot again/i })).toBeVisible();
     await page.getByTestId("run-rerun-submit").click();

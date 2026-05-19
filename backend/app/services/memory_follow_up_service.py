@@ -1,32 +1,48 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal, Protocol
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
 from app.core.formatting import to_utc
-from app.repositories.report import ReportRepository
+from app.models.agent_memory import AgentMemoryEntry
 from app.schemas.memory import MemoryEntryRead, MemoryLifecycleStatus
-from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE
-from app.services.extension_gate import (
-    MEMORY_FOLLOW_UP_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
-from app.services.market_data_service import MarketDataService
 from app.services.memory_service import MemoryService
-from app.services.reflection_service import ReflectionService
-from app.services.report_backed_memory_store import ReportBackedMemoryStore
-from app.services.return_resolution_service import ReturnResolutionService, ReturnResolutionStatus
 
-_MEMORY_REPORT_SOURCE = "agent"
+type MemoryFollowUpStatus = Literal["pending", "resolved", "expired"]
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryFollowUpEvaluation:
+    status: MemoryFollowUpStatus
+    reason: str | None = None
+    reflected: bool = False
+    event_recorded: bool = False
+    result_snapshot: dict[str, object] = field(default_factory=dict)
+    status_snapshot: dict[str, object] = field(default_factory=dict)
+
+
+class MemoryFollowUpEvaluator(Protocol):
+    evaluator_key: str
+    memory_kinds: frozenset[str]
+
+    def evaluate(
+        self,
+        memory: MemoryEntryRead,
+        *,
+        reviewed_at: datetime,
+    ) -> MemoryFollowUpEvaluation: ...
 
 
 @dataclass(frozen=True, slots=True)
 class MemoryFollowUpItem:
     memory_id: str
-    status: ReturnResolutionStatus
+    status: MemoryFollowUpStatus
     reason: str | None
     reflected: bool
 
@@ -45,53 +61,41 @@ class MemoryFollowUpService:
     def __init__(
         self,
         session: Session,
-        market_data_service: MarketDataService,
+        *,
+        evaluators: Sequence[MemoryFollowUpEvaluator] = (),
     ) -> None:
         self.session: Session = session
-        self.repository: ReportRepository = ReportRepository(session)
         self.memory_service: MemoryService = MemoryService(session)
-        self.return_resolution_service: ReturnResolutionService = ReturnResolutionService(
-            session,
-            market_data_service,
-        )
-        self.reflection_service: ReflectionService = ReflectionService(session)
-
-    def _require_enabled(self) -> None:
-        _ = require_finance_workspace_enabled(
-            self.session,
-            surface=MEMORY_FOLLOW_UP_SERVICE_SURFACE,
-        )
+        self.evaluators: tuple[MemoryFollowUpEvaluator, ...] = tuple(evaluators)
 
     def run_due(self, now: datetime) -> MemoryFollowUpRunResult:
-        self._require_enabled()
-        reflected_at = to_utc(now)
+        reviewed_at = to_utc(now)
         items: list[MemoryFollowUpItem] = []
 
         try:
             for memory in self._pending_memories():
-                resolution = self.return_resolution_service.resolve_memory(
-                    memory.memory_id,
-                    end_date=reflected_at,
-                    benchmark_symbol=memory.benchmark_symbol,
-                    commit=False,
+                evaluator = self._evaluator_for(memory)
+                evaluation = self._evaluate(
+                    memory,
+                    evaluator=evaluator,
+                    reviewed_at=reviewed_at,
                 )
-                reflected = False
-                if resolution.status != "pending" and not resolution.memory.reflections:
-                    _ = self.reflection_service.generate_and_append_reflection(
-                        memory.memory_id,
-                        reflected_at=reflected_at,
-                        commit=False,
+                if not evaluation.event_recorded:
+                    self._record_review_event(
+                        memory,
+                        evaluator_key=None if evaluator is None else evaluator.evaluator_key,
+                        evaluation=evaluation,
+                        reviewed_at=reviewed_at,
                     )
-                    reflected = True
                 items.append(
                     MemoryFollowUpItem(
                         memory_id=memory.memory_id,
-                        status=resolution.status,
-                        reason=resolution.reason,
-                        reflected=reflected,
+                        status=evaluation.status,
+                        reason=evaluation.reason,
+                        reflected=evaluation.reflected,
                     )
                 )
-            if any(item.status != "pending" or item.reflected for item in items):
+            if items:
                 self.session.commit()
         except Exception:
             self.session.rollback()
@@ -99,14 +103,77 @@ class MemoryFollowUpService:
 
         return self._result(items)
 
+    def _evaluate(
+        self,
+        memory: MemoryEntryRead,
+        *,
+        evaluator: MemoryFollowUpEvaluator | None,
+        reviewed_at: datetime,
+    ) -> MemoryFollowUpEvaluation:
+        if evaluator is None:
+            return MemoryFollowUpEvaluation(
+                status="pending",
+                reason="no_evaluator",
+                result_snapshot={"scheduler": "core.memory_follow_up"},
+            )
+        return evaluator.evaluate(memory, reviewed_at=reviewed_at)
+
+    def _evaluator_for(self, memory: MemoryEntryRead) -> MemoryFollowUpEvaluator | None:
+        return next(
+            (
+                evaluator
+                for evaluator in self.evaluators
+                if not evaluator.memory_kinds or memory.kind in evaluator.memory_kinds
+            ),
+            None,
+        )
+
+    def _record_review_event(
+        self,
+        memory: MemoryEntryRead,
+        *,
+        evaluator_key: str | None,
+        evaluation: MemoryFollowUpEvaluation,
+        reviewed_at: datetime,
+    ) -> None:
+        result_snapshot: dict[str, object] = {
+            "memoryId": memory.memory_id,
+            "memoryKind": memory.kind,
+            "scheduler": "core.memory_follow_up",
+            "status": evaluation.status,
+            "reviewedAt": reviewed_at.isoformat().replace("+00:00", "Z"),
+        }
+        if evaluator_key is not None:
+            result_snapshot["evaluator"] = evaluator_key
+        if evaluation.reason is not None:
+            result_snapshot["reason"] = evaluation.reason
+        result_snapshot.update(evaluation.result_snapshot)
+
+        status_snapshot: dict[str, object] = {"status": evaluation.status}
+        if evaluation.reason is not None:
+            status_snapshot["reason"] = evaluation.reason
+        status_snapshot.update(evaluation.status_snapshot)
+
+        _ = self.memory_service.record_review_event(
+            memory.memory_id,
+            filters={
+                "scheduler": "core.memory_follow_up",
+                "memoryKind": memory.kind,
+                "evaluator": evaluator_key,
+            },
+            result_snapshot=result_snapshot,
+            status_snapshot=status_snapshot,
+            commit=False,
+        )
+
     def _pending_memories(self) -> list[MemoryEntryRead]:
-        reports = self.repository.list_all(
-            review_type=AGENT_MEMORY_REVIEW_TYPE,
-            source=_MEMORY_REPORT_SOURCE,
+        statement = (
+            select(AgentMemoryEntry.memory_id)
+            .where(AgentMemoryEntry.status == MemoryLifecycleStatus.PENDING.value)
+            .order_by(AgentMemoryEntry.created_at.asc(), AgentMemoryEntry.id.asc())
         )
         pending: list[MemoryEntryRead] = []
-        for report in sorted(reports, key=lambda item: (item.created_at, item.id)):
-            memory_id = ReportBackedMemoryStore.memory_id_from_report_id(report.id)
+        for memory_id in self.session.scalars(statement):
             try:
                 memory = self.memory_service.get_memory(memory_id)
             except ApiError:
@@ -128,7 +195,10 @@ class MemoryFollowUpService:
 
 
 __all__ = [
+    "MemoryFollowUpEvaluation",
+    "MemoryFollowUpEvaluator",
     "MemoryFollowUpItem",
     "MemoryFollowUpRunResult",
     "MemoryFollowUpService",
+    "MemoryFollowUpStatus",
 ]

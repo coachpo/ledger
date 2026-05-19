@@ -1,38 +1,31 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import override
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.errors import ApiError
-from app.extensions.signaldeck_finance.hooks import MEMORY_FOLLOW_UP_SERVICE_SURFACE
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.extensions.signaldeck_finance.hooks import register_run_lifecycle_hooks
+from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.report import Report
-from app.models.run import Run, RunWorkflowPackageSnapshot
-from app.models.run_step import RunStep
-from app.models.workflow_package import WorkflowPackage
-from app.repositories.run import RunRepository
+from app.models.run import Run
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.memory import (
     MemoryDecision,
-    MemoryLifecycleStatus,
     MemoryProvenance,
+    MemoryScope,
+    MemoryScopeType,
     MemoryWriteRequest,
 )
-from app.services.execution_plan import (
-    ExecutionPlan,
-    ExecutionPlanFinalOutput,
-    ExecutionPlanStep,
-    ExecutionPlanTarget,
-)
+from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
+from app.services.execution_providers import ExecutionProviderBundle
+from app.services.extension_gate import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.services.extension_service import ExtensionService
-from app.services.market_data_service import (
-    MarketDataService,
+from app.services.memory_follow_up_service import MemoryFollowUpService
+from app.services.memory_service import MemoryService
+from app.services.quote_provider import (
     ProviderFundamentals,
     ProviderHistorySeries,
     ProviderInsiderData,
@@ -40,114 +33,19 @@ from app.services.market_data_service import (
     ProviderOhlcvRow,
     ProviderOhlcvSeries,
     ProviderQuote,
-    QuoteProviderError,
 )
-from app.services.memory_context_service import MemoryContextService
-from app.services.memory_follow_up_service import MemoryFollowUpService
-from app.services.memory_service import MemoryService
-from app.services.report_backed_memory_store import ReportBackedMemoryStore
-from app.services.return_resolution_service import ReturnResolutionService
-from app.services.run_service import RunService
-
-type _RowsBySymbol = dict[str, list[tuple[datetime, Decimal]]]
+from app.services.run_lifecycle import WorkflowPackageStartContext
 
 
-def _decision(action: Literal["buy", "hold", "sell"] = "buy") -> MemoryDecision:
-    return MemoryDecision(
-        action=action,
-        rationale="Earnings durability supports a long position.",
-        risk_summary="Sizing should account for semiconductor cyclicality.",
-        execution_plan="Scale in after the next market-data refresh.",
-    )
-
-
-def _provenance(run_id: int = 42) -> MemoryProvenance:
-    return MemoryProvenance(
-        run_id=run_id,
-        agent_key="portfolio_manager",
-        agent_version=3,
-        agent_name="Portfolio Manager",
-        workflow_key="platform_graph_daily_review",
-        workflow_version=5,
-        step_id="portfolio_decision",
-        slot="decision",
-        trace_id="trace-abc123",
-    )
-
-
-def _write_request(
-    *,
-    run_id: int = 42,
-    action: Literal["buy", "hold", "sell"] = "buy",
-    horizon_days: int = 4,
-    ticker: str = "NVDA",
-    benchmark_symbol: str | None = None,
-) -> MemoryWriteRequest:
-    return MemoryWriteRequest(
-        ticker=ticker,
-        portfolio_slug="core_us",
-        horizon_days=horizon_days,
-        confidence="high",
-        decision_summary="Long-term compounding memory.",
-        benchmark_symbol=benchmark_symbol,
-        decision=_decision(action),
-        provenance=_provenance(run_id),
-    )
-
-
-def _latest_report(session: Session) -> Report:
-    report = session.scalars(select(Report).order_by(Report.id.desc())).first()
-    assert report is not None
-    return report
-
-
-def _create_pending_memory(
-    session: Session,
-    *,
-    run_id: int = 42,
-    action: Literal["buy", "hold", "sell"] = "buy",
-    horizon_days: int = 4,
-    ticker: str = "NVDA",
-    benchmark_symbol: str | None = None,
-    created_at: datetime | None = None,
-) -> tuple[str, Report]:
-    result = ReportBackedMemoryStore(session).create_pending(
-        _write_request(
-            run_id=run_id,
-            action=action,
-            horizon_days=horizon_days,
-            ticker=ticker,
-            benchmark_symbol=benchmark_symbol,
-        )
-    )
-    report = _latest_report(session)
-    report.created_at = created_at or datetime(2026, 1, 2, tzinfo=UTC)
-    session.commit()
-    session.refresh(report)
-    return result.memory_id, report
-
-
-def _disable_finance_workspace(session: Session) -> None:
-    ExtensionService(session).set_extension_enabled(
-        FINANCE_WORKSPACE_EXTENSION_KEY,
-        ExtensionToggleRequest.model_validate({"enabled": False}),
-    )
-
-
-class _MemoryHistoryQuoteProvider:
-    provider_name: str = "memory_follow_up_test"
-
-    def __init__(
-        self,
-        rows_by_symbol: _RowsBySymbol,
-    ) -> None:
-        self.rows_by_symbol: _RowsBySymbol = rows_by_symbol
+class _NoopQuoteProvider:
+    provider_name: str = "noop_follow_up_test"
 
     def fetch_symbol_name(self, symbol: str) -> str | None:
-        return symbol.upper()
+        del symbol
+        return None
 
     def fetch_quote(self, symbol: str) -> ProviderQuote:
-        raise QuoteProviderError(f"No quote available for {symbol}")
+        raise AssertionError(f"Unexpected quote lookup for {symbol}")
 
     def fetch_history(
         self,
@@ -156,8 +54,7 @@ class _MemoryHistoryQuoteProvider:
         range_value: str,
         interval: str,
     ) -> ProviderHistorySeries:
-        _ = (range_value, interval)
-        raise QuoteProviderError(f"No history available for {symbol}")
+        raise AssertionError(f"Unexpected history lookup for {symbol}:{range_value}:{interval}")
 
     def fetch_ohlcv(
         self,
@@ -167,28 +64,12 @@ class _MemoryHistoryQuoteProvider:
         end_date: datetime,
         interval: str,
     ) -> ProviderOhlcvSeries:
-        _ = (start_date, end_date, interval)
-        rows = self.rows_by_symbol.get(symbol.upper())
-        if rows is None:
-            raise QuoteProviderError(f"No OHLCV data available for {symbol}")
-        return ProviderOhlcvSeries(
-            symbol=symbol.upper(),
-            currency="USD",
-            provider=self.provider_name,
-            rows=[
-                ProviderOhlcvRow(
-                    at=at,
-                    open=close,
-                    high=close,
-                    low=close,
-                    close=close,
-                )
-                for at, close in rows
-            ],
+        raise AssertionError(
+            f"Unexpected OHLCV lookup for {symbol}:{start_date}:{end_date}:{interval}"
         )
 
     def fetch_fundamentals(self, symbol: str) -> ProviderFundamentals:
-        raise QuoteProviderError(f"No fundamentals available for {symbol}")
+        raise AssertionError(f"Unexpected fundamentals lookup for {symbol}")
 
     def fetch_news(
         self,
@@ -199,8 +80,9 @@ class _MemoryHistoryQuoteProvider:
         end_date: datetime | None,
         limit: int,
     ) -> ProviderNewsResult:
-        _ = (symbols, query, start_date, end_date, limit)
-        raise QuoteProviderError("No news available")
+        raise AssertionError(
+            f"Unexpected news lookup for {symbols}:{query}:{start_date}:{end_date}:{limit}"
+        )
 
     def fetch_insider_transactions(
         self,
@@ -210,353 +92,270 @@ class _MemoryHistoryQuoteProvider:
         end_date: datetime | None,
         limit: int,
     ) -> ProviderInsiderData:
-        _ = (start_date, end_date, limit)
-        raise QuoteProviderError(f"No insider data available for {symbol}")
+        raise AssertionError(
+            f"Unexpected insider lookup for {symbol}:{start_date}:{end_date}:{limit}"
+        )
 
 
-def _market_data_service(
-    session: Session,
-    rows_by_symbol: _RowsBySymbol,
-) -> MarketDataService:
-    return MarketDataService(
-        session=session,
-        quote_provider=_MemoryHistoryQuoteProvider(rows_by_symbol),
+class _ResolvingQuoteProvider(_NoopQuoteProvider):
+    provider_name: str = "resolving_follow_up_test"
+
+    @override
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        *,
+        start_date: datetime,
+        end_date: datetime,
+        interval: str,
+    ) -> ProviderOhlcvSeries:
+        del interval
+        exit_close = Decimal("120") if symbol == "NVDA" else Decimal("110")
+        return ProviderOhlcvSeries(
+            symbol=symbol,
+            currency="USD",
+            provider=self.provider_name,
+            rows=[
+                ProviderOhlcvRow(
+                    at=start_date,
+                    open=Decimal("100"),
+                    high=Decimal("100"),
+                    low=Decimal("100"),
+                    close=Decimal("100"),
+                ),
+                ProviderOhlcvRow(
+                    at=end_date,
+                    open=exit_close,
+                    high=exit_close,
+                    low=exit_close,
+                    close=exit_close,
+                ),
+            ],
+        )
+
+
+def _agent_memory_metadata(run_id: int = 101) -> dict[str, object]:
+    return {
+        "createdBy": {
+            "type": "agent",
+            "runId": run_id,
+            "agentKey": "analyst",
+            "agentVersion": 1,
+        },
+        "analysis": {
+            "reviewType": AGENT_MEMORY_REVIEW_TYPE,
+            "versionGroup": AGENT_MEMORY_VERSION_GROUP,
+            "ticker": "NVDA",
+            "decision": {
+                "action": "buy",
+                "rationale": "Historical agent-memory report.",
+                "riskSummary": "Report rows must not drive follow-up.",
+                "executionPlan": "Use core memory events instead.",
+            },
+            "runId": run_id,
+            "agentKey": "analyst",
+            "agentVersion": 1,
+            "resolvedStatus": "pending",
+        },
+        "tags": [AGENT_MEMORY_REVIEW_TYPE],
+    }
+
+
+def _insert_legacy_agent_memory_report(session: Session) -> Report:
+    report = Report(
+        name="legacy_agent_memory_follow_up",
+        slug="legacy_agent_memory_follow_up",
+        source="agent",
+        content="# Historical pending memory\n",
+        metadata_=_agent_memory_metadata(),
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return report
+
+
+def _seed_run(session: Session) -> Run:
+    run = Run(
+        target_kind="workflow",
+        target_id=1,
+        target_key="memory_follow_up_workflow",
+        target_version=1,
+        input={"ticker": "NVDA"},
+        status="succeeded",
+    )
+    session.add(run)
+    session.flush()
+    session.refresh(run)
+    return run
+
+
+def _provenance(run_id: int) -> MemoryProvenance:
+    return MemoryProvenance(
+        run_id=run_id,
+        agent_key="analyst",
+        agent_version=1,
+        agent_name="Analyst",
+        workflow_key="memory_follow_up_workflow",
+        workflow_version=1,
+        step_id="decision",
+        slot="thesis",
+        trace_id="trace-follow-up",
     )
 
 
-def test_disabled_finance_workspace_blocks_follow_up_without_mutating_memory(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        _, report = _create_pending_memory(session)
-        original_content = report.content
-        original_metadata = deepcopy(report.metadata_)
-        _disable_finance_workspace(session)
-
-        with pytest.raises(ApiError) as exc_info:
-            _ = MemoryFollowUpService(
-                session,
-                _market_data_service(
-                    session,
-                    {
-                        "NVDA": [
-                            (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
-                            (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
-                        ],
-                    },
-                ),
-            ).run_due(datetime(2026, 1, 6, 9, tzinfo=UTC))
-
-        persisted = session.get(Report, report.id)
-        assert persisted is not None
-
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.code == "extension_disabled"
-    assert exc_info.value.details == [
-        {
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": MEMORY_FOLLOW_UP_SERVICE_SURFACE,
-        }
-    ]
-    assert persisted.content == original_content
-    assert persisted.metadata_ == original_metadata
+def _neutral_memory_request(run_id: int) -> MemoryWriteRequest:
+    return MemoryWriteRequest(
+        kind="research.note",
+        summary="Core follow-up note.",
+        content="Core follow-up scheduling should not require finance metadata.",
+        scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-core"),
+        provenance=_provenance(run_id),
+    )
 
 
-def test_matured_follow_up_resolves_and_append_reflection_prompt_safe(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        memory_id, report = _create_pending_memory(session)
-        result = MemoryFollowUpService(
-            session,
-            _market_data_service(
-                session,
-                {
-                    "NVDA": [
-                        (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
-                        (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
-                    ]
-                },
-            ),
-        ).run_due(datetime(2026, 1, 6, 9, tzinfo=UTC))
-        memory = MemoryService(session).get_memory(memory_id)
-        prompt = MemoryContextService(session).build_prompt_context(
-            ticker="nvda",
-            portfolio_slug="core_us",
-            max_items=10,
-            max_characters=10_000,
+def _finance_memory_request(run_id: int) -> MemoryWriteRequest:
+    return MemoryWriteRequest(
+        ticker="NVDA",
+        portfolio_slug="core_us",
+        horizon_days=2,
+        confidence="high",
+        decision_summary="Finance evaluator should resolve this decision.",
+        benchmark_symbol="SPY",
+        decision=MemoryDecision(
+            action="buy",
+            rationale="Demand supports a long position.",
+            risk_summary="Watch valuation.",
+            execution_plan="Review after the horizon elapses.",
+        ),
+        scope=MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-finance"),
+        provenance=_provenance(run_id),
+    )
+
+
+def _set_memory_created_at(session: Session, memory_id: str, created_at: datetime) -> None:
+    entry = session.scalar(select(AgentMemoryEntry).where(AgentMemoryEntry.memory_id == memory_id))
+    assert entry is not None
+    entry.created_at = created_at
+    session.flush()
+
+
+def _disable_finance_workspace(session: Session) -> None:
+    _ = ExtensionService(session).set_extension_enabled(
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        ExtensionToggleRequest(enabled=False),
+    )
+
+
+def _memory_events(session: Session, run_id: int) -> list[RunMemoryEvent]:
+    return list(
+        session.scalars(
+            select(RunMemoryEvent)
+            .where(RunMemoryEvent.run_id == run_id)
+            .order_by(RunMemoryEvent.id)
         )
-        persisted = session.get(Report, report.id)
-        assert persisted is not None
+    )
 
+
+def test_finance_extension_registers_optional_memory_follow_up_evaluator() -> None:
+    hooks = register_run_lifecycle_hooks()
+
+    assert len(hooks) == 1
+    assert hooks[0].extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    assert hooks[0].on_workflow_package_start is None
+    assert hooks[0].memory_follow_up_evaluators is not None
+
+
+def test_core_follow_up_records_review_event_with_finance_disabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    reviewed_at = datetime(2026, 1, 6, tzinfo=UTC)
+    with session_factory() as session:
+        _disable_finance_workspace(session)
+        run = _seed_run(session)
+        created = MemoryService(session).write_memory(
+            capability_references=[],
+            payload=_neutral_memory_request(run.id),
+        )
+        result = MemoryFollowUpService(session).run_due(reviewed_at)
+        events = _memory_events(session, run.id)
+        reports = list(session.scalars(select(Report)))
+
+    assert reports == []
+    assert result.checked == 1
+    assert result.resolved == 0
+    assert result.expired == 0
+    assert result.pending == 1
+    assert result.reflected == 0
+    assert result.items[0].memory_id == created.memory_id
+    assert result.items[0].reason == "no_evaluator"
+    assert [event.event_type for event in events] == ["written", "reviewed"]
+    reviewed = events[-1]
+    assert reviewed.memory_id == created.memory_id
+    assert reviewed.result_snapshot["scheduler"] == "core.memory_follow_up"
+    assert reviewed.result_snapshot["reason"] == "no_evaluator"
+    assert reviewed.status_snapshot == {"status": "pending", "reason": "no_evaluator"}
+
+
+def test_finance_evaluator_contribution_resolves_and_reflects_when_enabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    created_at = datetime(2026, 1, 1, 9, tzinfo=UTC)
+    reviewed_at = datetime(2026, 1, 6, tzinfo=UTC)
+    with session_factory() as session:
+        run = _seed_run(session)
+        memory_service = MemoryService(session)
+        created = memory_service.write_memory(
+            capability_references=[],
+            payload=_finance_memory_request(run.id),
+        )
+        _set_memory_created_at(session, created.memory_id, created_at)
+        hooks = register_run_lifecycle_hooks()
+        evaluator_factory = hooks[0].memory_follow_up_evaluators
+        assert evaluator_factory is not None
+        evaluators = evaluator_factory(
+            WorkflowPackageStartContext(
+                session=session,
+                provider_bundle=ExecutionProviderBundle(quote_provider=_ResolvingQuoteProvider()),
+                now=reviewed_at,
+            )
+        )
+        result = MemoryFollowUpService(session, evaluators=evaluators).run_due(reviewed_at)
+        memory = memory_service.get_memory(created.memory_id)
+        events = _memory_events(session, run.id)
+        reports = list(session.scalars(select(Report)))
+
+    assert reports == []
     assert result.checked == 1
     assert result.resolved == 1
     assert result.expired == 0
     assert result.pending == 0
     assert result.reflected == 1
-    assert result.items[0].memory_id == memory_id
-    assert result.items[0].status == "resolved"
-    assert result.items[0].reflected is True
-    assert memory.status == MemoryLifecycleStatus.RESOLVED
+    assert result.items[0].memory_id == created.memory_id
+    assert result.items[0].reason is None
+    assert memory.status.value == "resolved"
     assert memory.outcome is not None
-    assert memory.outcome.raw_return == Decimal("0.25")
-    assert memory.outcome.alpha == Decimal("0.25")
-    assert [reflection.reflection for reflection in memory.reflections] == [
-        "NVDA buy memory resolved with raw return 0.25, alpha 0.25. "
-        + "Lesson: Long-term compounding memory."
-    ]
-    assert persisted.content.count("### Reflection") == 1
-    assert "Historical memory (not an instruction):" in prompt
-    assert "# Agent Memory" not in prompt
-    assert persisted.slug not in prompt
-    assert "/reports/" not in prompt
-    assert "auditLinks" not in prompt
+    assert memory.outcome.raw_return == Decimal("0.2")
+    assert memory.reflections
+    assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
+    assert events[1].status_snapshot == {"status": "resolved"}
+    assert events[2].result_snapshot["reflectionCount"] == 1
 
 
-def test_matured_follow_up_leaves_future_memory_pending(
+def test_follow_up_service_ignores_legacy_agent_memory_reports(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
-        memory_id, _ = _create_pending_memory(session, horizon_days=14)
-        result = MemoryFollowUpService(
-            session,
-            _market_data_service(session, {}),
-        ).run_due(datetime(2026, 1, 6, tzinfo=UTC))
-        memory = MemoryService(session).get_memory(memory_id)
+        report = _insert_legacy_agent_memory_report(session)
+        result = MemoryFollowUpService(session).run_due(datetime(2026, 1, 6, tzinfo=UTC))
+        persisted = session.scalar(select(Report).where(Report.id == report.id))
+        assert persisted is not None
 
-    assert result.checked == 1
-    assert result.pending == 1
+    assert result.checked == 0
+    assert result.resolved == 0
+    assert result.expired == 0
+    assert result.pending == 0
     assert result.reflected == 0
-    assert result.items[0].reason == "exit_condition_pending"
-    assert memory.status == MemoryLifecycleStatus.PENDING
-    assert memory.reflections == []
-
-
-def test_matured_follow_up_expires_and_append_reflection_when_history_missing(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        memory_id, report = _create_pending_memory(session, run_id=43)
-        result = MemoryFollowUpService(
-            session,
-            _market_data_service(session, {}),
-        ).run_due(datetime(2026, 1, 6, tzinfo=UTC))
-        memory = MemoryService(session).get_memory(memory_id)
-        persisted = session.get(Report, report.id)
-        assert persisted is not None
-
-    assert result.checked == 1
-    assert result.expired == 1
-    assert result.reflected == 1
-    assert result.items[0].reason == "symbol_history_unavailable"
-    assert memory.status == MemoryLifecycleStatus.EXPIRED
-    assert memory.outcome is not None
-    assert memory.outcome.raw_return is None
-    assert [reflection.reflection for reflection in memory.reflections] == [
-        "NVDA buy memory resolved with status expired. " + "Lesson: Long-term compounding memory."
-    ]
-    assert persisted.content.count("### Reflection") == 1
-
-
-def test_idempotent_follow_up_does_not_duplicate_resolution_or_reflection(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        memory_id, report = _create_pending_memory(session, run_id=44)
-        service = MemoryFollowUpService(
-            session,
-            _market_data_service(
-                session,
-                {
-                    "NVDA": [
-                        (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
-                        (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
-                        (datetime(2026, 1, 8, tzinfo=UTC), Decimal("150")),
-                    ]
-                },
-            ),
-        )
-        first = service.run_due(datetime(2026, 1, 6, tzinfo=UTC))
-        second = service.run_due(datetime(2026, 1, 8, tzinfo=UTC))
-        memory = MemoryService(session).get_memory(memory_id)
-        persisted = session.get(Report, report.id)
-        assert persisted is not None
-
-    assert first.checked == 1
-    assert first.resolved == 1
-    assert first.reflected == 1
-    assert second.checked == 0
-    assert second.reflected == 0
-    assert memory.outcome is not None
-    assert memory.outcome.resolved_at == datetime(2026, 1, 6, tzinfo=UTC)
-    assert memory.outcome.raw_return == Decimal("0.25")
-    assert len(memory.reflections) == 1
-    assert persisted.content.count("### Reflection") == 1
-
-
-def test_duplicate_resolution_returns_existing_outcome_without_overwrite(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        memory_id, _ = _create_pending_memory(session, run_id=45)
-        service = ReturnResolutionService(
-            session,
-            _market_data_service(
-                session,
-                {
-                    "NVDA": [
-                        (datetime(2026, 1, 2, tzinfo=UTC), Decimal("100")),
-                        (datetime(2026, 1, 6, tzinfo=UTC), Decimal("125")),
-                        (datetime(2026, 1, 8, tzinfo=UTC), Decimal("150")),
-                    ]
-                },
-            ),
-        )
-        first = service.resolve_memory(
-            memory_id,
-            end_date=datetime(2026, 1, 6, tzinfo=UTC),
-        )
-        second = service.resolve_memory(
-            memory_id,
-            end_date=datetime(2026, 1, 8, tzinfo=UTC),
-        )
-        memory = MemoryService(session).get_memory(memory_id)
-
-    assert first.status == "resolved"
-    assert first.reason is None
-    assert second.status == "resolved"
-    assert second.reason == "already_finalized"
-    assert memory.outcome is not None
-    assert memory.outcome.resolved_at == datetime(2026, 1, 6, tzinfo=UTC)
-    assert memory.outcome.raw_return == Decimal("0.25")
-
-
-def test_run_start_follow_up_runs_once_for_deleted_workflow_package_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    calls: list[dict[str, Any]] = []
-    step_id: int | None = None
-
-    class _FakeMemoryFollowUpService:
-        def __init__(self, session: Session, market_data_service: MarketDataService) -> None:
-            del market_data_service
-            self.session = session
-
-        def run_due(self, now: datetime) -> object:
-            assert step_id is not None
-            step = self.session.get(RunStep, step_id)
-            assert step is not None
-            calls.append({"now": now, "stepStatus": step.status})
-            return object()
-
-    plan = ExecutionPlan(
-        target=ExecutionPlanTarget(
-            kind="workflow_package",
-            id=1,
-            key="follow_pkg",
-            version=1,
-        ),
-        input_schema={"type": "object", "additionalProperties": True},
-        steps=(ExecutionPlanStep(index=1, agents=(), operations=()),),
-        final_output=ExecutionPlanFinalOutput(step_index=1, slot="missing"),
-    )
-    monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.hooks.MemoryFollowUpService",
-        _FakeMemoryFollowUpService,
-    )
-    monkeypatch.setattr(RunService, "_build_plan_for_run", lambda self, run: plan)
-
-    with session_factory() as session:
-        package = WorkflowPackage(
-            key="follow_pkg",
-            name="Follow Package",
-            description="Follow-up package fixture.",
-            status="active",
-            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
-            manifest_hash="f" * 64,
-            package_definition={"metadata": {"key": "follow_pkg", "name": "Follow Package"}},
-            compiled_plan={"packageKey": "follow_pkg", "workflows": [{"key": "follow_workflow"}]},
-            compiled_hash="e" * 64,
-            extension_dependencies=[],
-        )
-        session.add(package)
-        session.flush()
-        extension_dependencies = [
-            {
-                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surfaces": ["tool.signaldeck.reports.lookup"],
-                "fields": [],
-            }
-        ]
-        run = Run(
-            target_kind="workflowPackage",
-            target_id=package.id,
-            target_key=package.key,
-            target_version=1,
-            workflow_package_id=package.id,
-            workflow_package_key=package.key,
-            workflow_package_workflow_key="follow_workflow",
-            extension_dependencies=extension_dependencies,
-            input={},
-            status="queued",
-            total_tokens=0,
-            inherited_tokens=0,
-            executed_tokens=0,
-        )
-        run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
-            workflow_package_id=package.id,
-            workflow_package_key=package.key,
-            workflow_package_name=package.name,
-            workflow_package_description=package.description,
-            workflow_package_status=package.status,
-            workflow_key="follow_workflow",
-            workflow_name="Follow Workflow",
-            workflow_description="",
-            manifest_hash=package.manifest_hash,
-            compiled_hash=package.compiled_hash,
-            manifest_source=package.manifest_source,
-            package_definition=package.package_definition,
-            compiled_plan=package.compiled_plan,
-            extension_dependencies=extension_dependencies,
-            local_resource_refs={"workflows": ["follow_workflow"]},
-            input_schema={"type": "object", "additionalProperties": True},
-            launch_parameters={},
-            resolved_model_connections=[],
-            preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
-        )
-        session.add(run)
-        session.flush()
-        RunService(session, session_factory)._create_planned_run_rows(
-            run=run,
-            plan=plan,
-            validated_input={},
-        )
-        session.commit()
-        step = session.query(RunStep).filter_by(run_id=run.id, step_index=1).one()
-        step_id = step.id
-        run_id = run.id
-        session.delete(package)
-        session.commit()
-        session.expire_all()
-        deleted_package_run = session.get(Run, run_id)
-        assert deleted_package_run is not None
-        assert deleted_package_run.workflow_package_id is None
-
-    with session_factory() as session:
-        claimed = RunRepository(session).claim_next_queued(run_id=run_id)
-        assert claimed is not None
-        assert claimed.started_at is None
-        session.commit()
-
-    with session_factory() as session:
-        service = RunService(session, session_factory)
-        service.execute_claimed_run(run_id)
-        service.execute_claimed_run(run_id)
-        persisted = session.get(Run, run_id)
-        assert persisted is not None
-
-    assert len(calls) == 1
-    assert calls[0]["stepStatus"] == "pending"
-    assert isinstance(calls[0]["now"], datetime)
-    assert persisted.started_at == calls[0]["now"]
+    assert result.items == ()
+    assert persisted.content == "# Historical pending memory\n"
+    assert persisted.metadata_ == _agent_memory_metadata()

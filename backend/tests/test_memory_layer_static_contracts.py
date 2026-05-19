@@ -25,6 +25,7 @@ PROMPT_FORBIDDEN = (
     "download",
 )
 FRONTEND_REMOVED_ARTIFACT_READ_RE = re.compile(r"\bartifact\.(?:reportId|slug|name)\b")
+CANONICAL_MEMORY_STORE = "backend/app/services/memory_store.py"
 MEMORY_ID_OWNER = BACKEND / "app/services/report_backed_memory_store.py"
 MEMORY_ID_FORBIDDEN_PATTERNS = (
     re.compile(r"\bdef\s+(?:format|parse)_report_backed_memory_id\b"),
@@ -129,18 +130,28 @@ def test_model_visible_runtime_write_contracts_do_not_leak_report_identity() -> 
 def test_prompt_context_sources_do_not_render_report_identity() -> None:
     prompt_sources = "\n\n".join(
         [
-            _python_node_source(
-                "backend/app/services/report_backed_memory_store.py",
-                "_prompt_snippet",
-            ),
-            _python_node_source(
-                "backend/app/services/report_backed_memory_store.py",
-                "_render_prompt_text",
-            ),
+            _python_node_source(CANONICAL_MEMORY_STORE, "_render_prompt_text"),
             _read("backend/app/services/memory_context_service.py"),
         ]
     )
     _assert_no_forbidden_lines("memory prompt sources", prompt_sources, PROMPT_FORBIDDEN)
+
+
+def test_postgres_memory_store_does_not_use_reports_as_substrate() -> None:
+    store_source = _python_node_source(CANONICAL_MEMORY_STORE, "PostgresMemoryStore")
+    _assert_fragments_absent(
+        "PostgresMemoryStore",
+        store_source,
+        (
+            "ReportBackedMemoryStore",
+            "ReportRepository",
+            "app.models.report",
+            "report_id",
+            "report_slug",
+            "/reports/",
+            "download",
+        ),
+    )
 
 
 def test_frontend_run_memory_artifacts_do_not_read_removed_report_fields() -> None:

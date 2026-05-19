@@ -88,13 +88,6 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         module=_SERVER_DECLARED_MODULE,
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
-    ServerDeclaredToolSpec(
-        key="signaldeck.reports.write",
-        display_name="Report Memory Write",
-        description="Create pending agent-memory reports through server-owned memory writes.",
-        module=_SERVER_DECLARED_MODULE,
-        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-    ),
 )
 
 

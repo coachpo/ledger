@@ -13,19 +13,13 @@ from app.extensions.signaldeck_finance.grant_policy import (
     REPORT_LOOKUP_GRANT_POLICY,
     REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
     REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-    REPORT_MEMORY_WRITE_GRANT_POLICY,
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.runtime_types import (
     REPORT_LOOKUP_TOOL_KEY,
     REPORT_MEMORY_WRITE_TOOL_KEY,
-    RuntimeReportMemoryWriteResult,
 )
-from app.schemas.memory_report import (
-    AgentMemoryReportCreateMetadata,
-    AgentMemoryTrustedCreateContext,
-)
-from app.services.memory_service import MemoryService
+from app.schemas.memory_report import AgentMemoryReportCreateMetadata
 from app.services.report_service import ReportService
 
 REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_reports_lookup"
@@ -71,13 +65,11 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
 
 REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME = "signaldeck_reports_write"
 
-_REPORT_MEMORY_WRITE_DISPLAY_NAME = "Report Memory Write"
-_REPORT_MEMORY_WRITE_DESCRIPTION = "Create a pending agent-memory report from decision text."
+_REPORT_MEMORY_WRITE_DISPLAY_NAME = "Retired Report Memory Write"
+_REPORT_MEMORY_WRITE_DESCRIPTION = "Retired legacy report-backed memory write tool."
 _REPORT_MEMORY_WRITE_GUIDANCE = (
-    "When you commit a trading decision that should be remembered, call the "
-    "signaldeck_reports_write tool with only ticker, portfolio/horizon context, confidence, "
-    "summary, and decision text. Do not include run, agent, workflow, outcome, return, "
-    "alpha, timestamp, or reflection fields."
+    "The signaldeck_reports_write tool is retired. Use signaldeck_memory_write for "
+    "canonical platform memory writes."
 )
 _REPORT_MEMORY_WRITE_PARAMETERS_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -230,23 +222,12 @@ def execute_report_memory_write(
     context: RuntimeToolContext,
     arguments: dict[str, object],
 ) -> dict[str, object]:
-    trusted_context = _trusted_memory_write_context(context)
-    payload = cast(AgentMemoryReportCreateMetadata, arguments["payload"])
-    memory_request = MemoryService.write_request_from_report_create(
-        payload=payload,
-        trusted_context=trusted_context,
-    )
-    with context.session_factory() as session:
-        result = MemoryService(session).write_memory(
-            capability_references=context.capability_references,
-            payload=memory_request,
-            grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
-        )
-    return cast(
-        dict[str, object],
-        RuntimeReportMemoryWriteResult.from_memory_write_result(result).model_dump(
-            mode="json",
-            by_alias=True,
+    del context, arguments
+    raise RuntimeToolError(
+        code="report_memory_write_retired",
+        message=(
+            "signaldeck_reports_write is retired; use signaldeck_memory_write for "
+            "canonical platform memory writes."
         ),
     )
 
@@ -296,51 +277,6 @@ def _validation_details_from_pydantic_error(exc: ValidationError) -> list[dict[s
             }
         )
     return details
-
-
-def _trusted_memory_write_context(
-    context: RuntimeToolContext,
-) -> AgentMemoryTrustedCreateContext:
-    run_id = context.run_id
-    agent_key = context.agent_key
-    agent_version = context.agent_version
-    step_id = context.step_id
-    slot = context.slot
-    missing_fields: list[str] = []
-    if run_id is None:
-        missing_fields.append("runId")
-    if agent_key is None:
-        missing_fields.append("agentKey")
-    if agent_version is None:
-        missing_fields.append("agentVersion")
-    if step_id is None:
-        missing_fields.append("stepId")
-    if slot is None:
-        missing_fields.append("slot")
-    if missing_fields:
-        raise RuntimeToolError(
-            code="agent_tool_dependency_missing",
-            message=(
-                "signaldeck_reports_write requires runtime context fields: "
-                f"{', '.join(missing_fields)}."
-            ),
-        )
-    assert run_id is not None
-    assert agent_key is not None
-    assert agent_version is not None
-    assert step_id is not None
-    assert slot is not None
-    return AgentMemoryTrustedCreateContext(
-        run_id=run_id,
-        agent_key=agent_key,
-        agent_version=agent_version,
-        agent_name=context.agent_name,
-        workflow_key=context.workflow_key,
-        workflow_version=context.workflow_version,
-        step_id=step_id,
-        slot=slot,
-        trace_id=context.trace_id,
-    )
 
 
 def _parse_optional_string_argument(value: object) -> str | None:

@@ -48,6 +48,7 @@ from app.schemas.run import (
     RunListItemRead,
     RunListRead,
     RunMemoryArtifactRead,
+    RunMemoryEventRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
@@ -97,7 +98,8 @@ from app.services.http_operation_execution_service import (
     HttpOperationExecutionService,
 )
 from app.services.legacy_authoring import raise_legacy_global_authoring_runtime_blocked
-from app.services.memory_service import MemoryService
+from app.services.memory_follow_up_service import MemoryFollowUpEvaluator, MemoryFollowUpService
+from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
@@ -1369,16 +1371,23 @@ class RunService:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             return
         extension_keys = self._run_extension_dependency_keys(run)
-        if not extension_keys:
-            return
         context = WorkflowPackageStartContext(
             session=self.session,
             provider_bundle=self.provider_bundle,
             now=now,
         )
-        for hooks in ExtensionService(self.session).get_run_lifecycle_hooks(extension_keys):
-            if hooks.on_workflow_package_start is not None:
-                hooks.on_workflow_package_start(context)
+        hooks = ExtensionService(self.session).get_run_lifecycle_hooks(extension_keys)
+        evaluators: list[MemoryFollowUpEvaluator] = []
+        for hook in hooks:
+            if hook.memory_follow_up_evaluators is not None:
+                evaluators.extend(hook.memory_follow_up_evaluators(context))
+        _ = MemoryFollowUpService(
+            self.session,
+            evaluators=tuple(evaluators),
+        ).run_due(now)
+        for hook in hooks:
+            if hook.on_workflow_package_start is not None:
+                hook.on_workflow_package_start(context)
 
     def _create_post_run_memory_artifact(self, run_id: int) -> None:
         run = self._get_run_or_raise(run_id)
@@ -1418,7 +1427,18 @@ class RunService:
             slot=self._post_run_memory_context_slot(context_ref, context_invocation),
             trace_id=run.trace_id,
         )
-        memory_service = MemoryService(self.session)
+        memory_service = MemoryService(
+            self.session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                workflow_key=run.target_key,
+                agent_key=context_invocation.agent_key,
+                run_step_id=context_invocation.run_step_id,
+                run_agent_invocation_id=context_invocation.id,
+                step_id=trusted_context.step_id,
+                trace_span_id=context_invocation.trace_span_id,
+            ),
+        )
         _ = memory_service.write_memory(
             capability_references=agent.capabilities,
             payload=memory_service.write_request_from_report_create(
@@ -2333,9 +2353,11 @@ class RunService:
             try:
                 raw_result = await self._invoke_agent(
                     agent=prepared.agent,
+                    invocation=prepared.invocation,
                     resolved_input=prepared.resolved_input,
                     output_model=prepared.output_model,
                     trace_id=trace_id,
+                    trace_span_id=trace_span_id,
                     step_index=prepared.step_index,
                     slot=prepared.slot,
                 )
@@ -2428,9 +2450,11 @@ class RunService:
         self,
         *,
         agent: Agent | PackageRuntimeAgentSpec,
+        invocation: RunAgentInvocation,
         resolved_input: dict[str, Any],
         output_model: type[BaseModel],
         trace_id: str | None,
+        trace_span_id: str | None,
         step_index: int,
         slot: str,
     ) -> RunAgentInvocationResult:
@@ -2452,9 +2476,12 @@ class RunService:
             slot=slot,
             openai_client_factory=OpenAI,
             run_id=None if runtime_context is None else runtime_context.run_id,
+            run_step_id=invocation.run_step_id,
+            run_agent_invocation_id=invocation.id,
             workflow_key=workflow_key,
             workflow_version=workflow_version,
             package_ownership=package_ownership,
+            trace_span_id=trace_span_id,
         )
 
     @staticmethod
@@ -3026,6 +3053,7 @@ class RunService:
                     )
                 ],
                 "memoryArtifacts": self._memory_artifact_links(run.id),
+                "memoryEvents": self._memory_event_evidence(run.id),
                 "extensionDependencies": ExtensionDependencyService.normalize_dependency_payloads(
                     run.extension_dependencies
                 ),
@@ -3034,13 +3062,22 @@ class RunService:
         )
 
     def _memory_artifact_links(self, run_id: int) -> list[RunMemoryArtifactRead]:
-        try:
-            artifacts = MemoryService(self.session).list_run_artifacts(run_id)
-        except ApiError as exc:
-            if exc.code != "extension_disabled":
-                raise
-            return []
-        return [self._memory_artifact_link(artifact) for artifact in artifacts]
+        artifacts = MemoryService(self.session).list_run_artifacts(run_id)
+
+        seen_memory_ids: set[str] = set()
+        artifact_links: list[RunMemoryArtifactRead] = []
+        for artifact in artifacts:
+            if artifact.memory_id in seen_memory_ids:
+                continue
+            seen_memory_ids.add(artifact.memory_id)
+            artifact_links.append(self._memory_artifact_link(artifact))
+        return artifact_links
+
+    def _memory_event_evidence(self, run_id: int) -> list[RunMemoryEventRead]:
+        return [
+            RunMemoryEventRead.model_validate(event)
+            for event in self.run_repository.list_memory_events_for_run(run_id)
+        ]
 
     @staticmethod
     def _memory_artifact_link(artifact: MemoryArtifactRead) -> RunMemoryArtifactRead:

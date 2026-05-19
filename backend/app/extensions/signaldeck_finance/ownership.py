@@ -33,7 +33,9 @@ FINANCE_WORKSPACE_DENIED_MESSAGES = {
     ),
     "signaldeck.positions.lookup": ("Agent is not authorized to use signaldeck.positions.lookup."),
     "signaldeck.reports.lookup": ("Agent is not authorized to use signaldeck.reports.lookup."),
-    "signaldeck.reports.write": ("Agent is not authorized to use signaldeck.reports.write."),
+    "signaldeck.reports.write": (
+        "Agent is not authorized to use the retired signaldeck.reports.write."
+    ),
 }
 
 FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS = (
@@ -47,7 +49,6 @@ FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS = (
     "signaldeck.insider_data.lookup",
     "signaldeck.positions.lookup",
     "signaldeck.reports.lookup",
-    "signaldeck.reports.write",
 )
 
 FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES = (
@@ -61,7 +62,6 @@ FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES = (
     "signaldeck_insider_data_lookup",
     "signaldeck_positions_lookup",
     "signaldeck_reports_lookup",
-    "signaldeck_reports_write",
 )
 
 __all__ = [

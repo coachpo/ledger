@@ -81,7 +81,7 @@ def _seed_model_connection(
         session.commit()
 
 
-def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
+def test_preflight_accepts_fixture_report_lookup_and_core_memory_tool_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
     compiled = compile_workflow_package_manifest(_package_source())
@@ -94,15 +94,15 @@ def test_preflight_accepts_fixture_report_lookup_and_write_tool_keys(
 
     assert errors == []
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.reports.lookup",
-        "signaldeck.reports.write",
+        "signaldeck.memory.lookup",
+        "signaldeck.memory.write",
     ]
     assert cast(list[dict[str, Any]], compiled_plan["mcpServers"]) == []
     assert "fanout" not in _package_source()
     assert "kind: sequence" in _package_source()
 
 
-def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
+def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys(
     session_factory: sessionmaker[Session],
 ) -> None:
     compiled = compile_workflow_package_manifest(_package_source())
@@ -111,22 +111,20 @@ def test_preflight_rejects_duplicate_and_phase_one_memory_tool_keys(
     for profile in profiles:
         if profile["key"] == "memory_write_tools":
             profile["toolKeys"] = [
-                "signaldeck.reports.write",
-                "signaldeck.reports.write",
                 "signaldeck.memory.write",
+                "signaldeck.memory.write",
+                "signaldeck.memory.lookup",
             ]
 
     with session_factory() as session:
         errors = WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
 
-    assert {
-        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
-        "issue": "Duplicate tool key 'signaldeck.reports.write' is not allowed",
-    } in errors
-    assert {
-        "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[2]",
-        "issue": "Unknown server-declared tool 'signaldeck.memory.write'",
-    } in errors
+    assert errors == [
+        {
+            "field": "spec.capabilityProfiles.memory_write_tools.toolKeys[1]",
+            "issue": "Duplicate tool key 'signaldeck.memory.write' is not allowed",
+        }
+    ]
 
 
 def test_create_blocks_missing_model_connection(

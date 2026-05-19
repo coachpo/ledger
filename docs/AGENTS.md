@@ -20,7 +20,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Test strategy | `test-plan.md` | quality gates, E2E ports, route-family coverage |
 | Run input help | `run-input-schema-helptext.md` | supported schema display metadata and unsupported help mechanisms |
 | Platform reference | `signaldeck-agent-platform.md` | Workflow Packages, Model Connections, Tools, Runs, retired-platform boundaries |
-| Memory design | `signaldeck-memory-layer-design.md` | report-backed phase-1 memory services, metadata, runtime tool boundaries |
+| Memory design | `signaldeck-memory-layer-design.md` | platform-core memory schemas, storage, runtime tools, run evidence, and report-domain boundaries |
 | Advisory research design | `advisory-research-signaldeck-upgrade-design.md` | research/design note for TradingAgents-inspired advisory upgrades |
 
 ## CONVENTIONS

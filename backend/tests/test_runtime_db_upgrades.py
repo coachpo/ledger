@@ -41,6 +41,13 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "capabilities",
     "workflows",
 }
+CORE_MEMORY_TABLE_NAMES = {
+    "agent_memory_entries",
+    "agent_memory_revisions",
+    "agent_memory_chunks",
+    "run_memory_events",
+}
+CORE_MEMORY_PGVECTOR_TABLE_NAMES = {"agent_memory_embeddings"}
 LEGACY_BACKEND_TABLE_NAMES = {
     "agent_specs",
     "workflow_specs",
@@ -863,6 +870,321 @@ def _foreign_key_signature(
     return columns, str(foreign_key.get("referred_table")), ondelete
 
 
+def _assert_core_memory_table_shape(engine: Engine) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    assert CORE_MEMORY_TABLE_NAMES <= table_names
+
+    entry_columns = {
+        column["name"]: column for column in inspector.get_columns("agent_memory_entries")
+    }
+    revision_columns = {
+        column["name"]: column for column in inspector.get_columns("agent_memory_revisions")
+    }
+    chunk_columns = {
+        column["name"]: column for column in inspector.get_columns("agent_memory_chunks")
+    }
+    event_columns = {
+        column["name"]: column for column in inspector.get_columns("run_memory_events")
+    }
+    entry_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_entries")}
+    revision_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_revisions")}
+    chunk_indexes = {index["name"] for index in inspector.get_indexes("agent_memory_chunks")}
+    event_indexes = {index["name"] for index in inspector.get_indexes("run_memory_events")}
+
+    assert {
+        "id",
+        "memory_id",
+        "scope_type",
+        "scope_key",
+        "kind",
+        "status",
+        "summary",
+        "subject_refs",
+        "attributes",
+        "content_hash",
+        "idempotency_key",
+        "source_run_id",
+        "source_agent_key",
+        "source_agent_version",
+        "source_step_id",
+        "source_slot",
+        "source_trace_id",
+        "created_at",
+        "updated_at",
+    } <= set(entry_columns)
+    assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_columns)
+    assert entry_columns["content_hash"]["nullable"] is False
+    assert entry_columns["scope_type"]["nullable"] is False
+    assert entry_columns["status"]["nullable"] is False
+
+    assert {
+        "id",
+        "memory_entry_id",
+        "revision_id",
+        "version",
+        "status",
+        "summary",
+        "content",
+        "content_hash",
+        "subject_refs",
+        "attributes",
+        "supersedes_revision_id",
+        "source_run_id",
+        "source_agent_key",
+        "source_step_id",
+        "source_slot",
+        "trace_span_id",
+        "created_at",
+    } <= set(revision_columns)
+    assert revision_columns["content_hash"]["nullable"] is False
+    assert revision_columns["memory_entry_id"]["nullable"] is False
+
+    assert {
+        "id",
+        "memory_entry_id",
+        "memory_revision_id",
+        "memory_id",
+        "revision_id",
+        "chunk_id",
+        "chunk_index",
+        "chunking_version",
+        "content",
+        "content_hash",
+        "source_content_hash",
+        "token_count",
+        "attributes",
+        "created_at",
+    } <= set(chunk_columns)
+    assert chunk_columns["memory_entry_id"]["nullable"] is False
+    assert chunk_columns["memory_revision_id"]["nullable"] is False
+    assert chunk_columns["content_hash"]["nullable"] is False
+    assert chunk_columns["source_content_hash"]["nullable"] is False
+
+    assert {
+        "id",
+        "run_id",
+        "run_step_id",
+        "run_agent_invocation_id",
+        "run_operation_invocation_id",
+        "step_id",
+        "invocation_id",
+        "event_type",
+        "memory_entry_id",
+        "memory_revision_id",
+        "memory_id",
+        "revision_id",
+        "retrieval_mode",
+        "filters",
+        "budget",
+        "excerpt",
+        "injected_text",
+        "result_snapshot",
+        "status_snapshot",
+        "trace_span_id",
+        "created_at",
+    } <= set(event_columns)
+    assert event_columns["run_id"]["nullable"] is False
+    assert event_columns["event_type"]["nullable"] is False
+
+    assert {
+        "ix_agent_memory_entries_scope",
+        "ix_agent_memory_entries_scope_status_kind",
+        "ix_agent_memory_entries_status_kind",
+        "ix_agent_memory_entries_content_hash",
+        "ix_agent_memory_entries_source",
+        "uq_agent_memory_entries_idempotency_key",
+        "uq_agent_memory_entries_idempotency_fallback",
+    } <= entry_indexes
+    assert {
+        "ix_agent_memory_revisions_entry",
+        "ix_agent_memory_revisions_content_hash",
+        "ix_agent_memory_revisions_created_at",
+        "ix_agent_memory_revisions_supersedes",
+    } <= revision_indexes
+    assert {
+        "ix_agent_memory_chunks_entry",
+        "ix_agent_memory_chunks_revision",
+        "ix_agent_memory_chunks_memory_id",
+        "ix_agent_memory_chunks_revision_id",
+        "ix_agent_memory_chunks_content_hash",
+        "ix_agent_memory_chunks_chunking_version",
+    } <= chunk_indexes
+
+    assert {
+        "ix_run_memory_events_run_created_at",
+        "ix_run_memory_events_run_type_created_at",
+        "ix_run_memory_events_run_step",
+        "ix_run_memory_events_agent_invocation",
+        "ix_run_memory_events_operation_invocation",
+        "ix_run_memory_events_memory_entry",
+        "ix_run_memory_events_memory_revision",
+        "ix_run_memory_events_trace_span",
+    } <= event_indexes
+
+    entry_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("agent_memory_entries")
+        if constraint.get("name")
+    }
+    revision_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("agent_memory_revisions")
+        if constraint.get("name")
+    }
+    chunk_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("agent_memory_chunks")
+        if constraint.get("name")
+    }
+    assert "uq_agent_memory_entries_memory_id" in entry_constraints
+    assert {
+        "uq_agent_memory_revisions_revision_id",
+        "uq_agent_memory_revisions_entry_version",
+    } <= revision_constraints
+    assert {
+        "uq_agent_memory_chunks_chunk_id",
+        "uq_agent_memory_chunks_revision_index",
+    } <= chunk_constraints
+    assert "uq_agent_memory_revisions_entry_content_hash" not in revision_constraints
+
+    entry_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("agent_memory_entries")
+        if constraint.get("name")
+    }
+    revision_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("agent_memory_revisions")
+        if constraint.get("name")
+    }
+    chunk_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("agent_memory_chunks")
+        if constraint.get("name")
+    }
+    event_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("run_memory_events")
+        if constraint.get("name")
+    }
+    assert {
+        "ck_agent_memory_entries_scope_type",
+        "ck_agent_memory_entries_status",
+        "ck_agent_memory_entries_content_hash",
+    } <= entry_checks
+    assert {
+        "ck_agent_memory_revisions_status",
+        "ck_agent_memory_revisions_content_hash",
+        "ck_agent_memory_revisions_version_positive",
+    } <= revision_checks
+    assert {
+        "ck_agent_memory_chunks_chunk_index_non_negative",
+        "ck_agent_memory_chunks_content_hash",
+        "ck_agent_memory_chunks_source_content_hash",
+    } <= chunk_checks
+    assert "ck_run_memory_events_event_type" in event_checks
+
+    revision_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("agent_memory_revisions")
+    }
+    chunk_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("agent_memory_chunks")
+    }
+    event_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("run_memory_events")
+    }
+    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in revision_foreign_keys
+    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in chunk_foreign_keys
+    assert (("memory_revision_id",), "agent_memory_revisions", "CASCADE") in chunk_foreign_keys
+    assert (("run_id",), "runs", "CASCADE") in event_foreign_keys
+    assert (("run_step_id",), "run_steps", "SET NULL") in event_foreign_keys
+    assert (
+        ("memory_entry_id",),
+        "agent_memory_entries",
+        "SET NULL",
+    ) in event_foreign_keys
+    assert (
+        ("memory_revision_id",),
+        "agent_memory_revisions",
+        "SET NULL",
+    ) in event_foreign_keys
+
+
+def _assert_memory_embedding_table_shape(engine: Engine) -> None:
+    inspector = inspect(engine)
+    assert CORE_MEMORY_PGVECTOR_TABLE_NAMES <= set(inspector.get_table_names())
+
+    embedding_columns = {
+        column["name"]: column for column in inspector.get_columns("agent_memory_embeddings")
+    }
+    embedding_indexes = {
+        index["name"] for index in inspector.get_indexes("agent_memory_embeddings")
+    }
+    assert {
+        "id",
+        "memory_chunk_id",
+        "memory_entry_id",
+        "memory_revision_id",
+        "memory_id",
+        "revision_id",
+        "chunk_id",
+        "embedding_provider",
+        "embedding_model",
+        "embedding_dimensions",
+        "embedding",
+        "content_hash",
+        "chunking_version",
+        "embedding_config_hash",
+        "status",
+        "error_message",
+        "metadata",
+        "embedded_at",
+        "created_at",
+        "updated_at",
+    } <= set(embedding_columns)
+    assert embedding_columns["memory_chunk_id"]["nullable"] is False
+    assert embedding_columns["embedding_model"]["nullable"] is False
+    assert embedding_columns["embedding_dimensions"]["nullable"] is False
+    assert embedding_columns["content_hash"]["nullable"] is False
+    assert {
+        "ix_agent_memory_embeddings_chunk",
+        "ix_agent_memory_embeddings_entry",
+        "ix_agent_memory_embeddings_revision",
+        "ix_agent_memory_embeddings_status",
+        "ix_agent_memory_embeddings_model_status",
+        "ix_agent_memory_embeddings_provenance",
+        "uq_agent_memory_embeddings_chunk_provenance",
+    } <= embedding_indexes
+
+    embedding_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("agent_memory_embeddings")
+        if constraint.get("name")
+    }
+    assert {
+        "ck_agent_memory_embeddings_status",
+        "ck_agent_memory_embeddings_dimensions_positive",
+        "ck_agent_memory_embeddings_content_hash",
+        "ck_agent_memory_embeddings_ready_has_vector",
+    } <= embedding_checks
+
+    embedding_foreign_keys = {
+        _foreign_key_signature(cast(dict[str, object], cast(object, foreign_key)))
+        for foreign_key in inspector.get_foreign_keys("agent_memory_embeddings")
+    }
+    assert (("memory_chunk_id",), "agent_memory_chunks", "CASCADE") in embedding_foreign_keys
+    assert (("memory_entry_id",), "agent_memory_entries", "CASCADE") in embedding_foreign_keys
+    assert (
+        ("memory_revision_id",),
+        "agent_memory_revisions",
+        "CASCADE",
+    ) in embedding_foreign_keys
+
+
 def _model_connection_reasoning_effort_check_sql(engine: Engine) -> str:
     return next(
         str(constraint["sqltext"])
@@ -1402,6 +1724,439 @@ def test_init_db_creates_run_operation_invocations_table(database_url: str) -> N
 
     try:
         _assert_runtime_execution_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_creates_core_memory_tables_idempotently(database_url: str) -> None:
+    init_db(database_url)
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    first_content_hash = "a" * 64
+    second_content_hash = "b" * 64
+
+    try:
+        _assert_core_memory_table_shape(engine)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                ALTER TABLE agent_memory_revisions
+                ADD CONSTRAINT uq_agent_memory_revisions_entry_content_hash
+                UNIQUE (memory_entry_id, content_hash)
+                """
+            )
+        init_db(database_url)
+        _assert_core_memory_table_shape(engine)
+
+        with engine.begin() as connection:
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'memory_package', 1, '{}'::jsonb, 'succeeded'
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+            memory_entry_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_entries (
+                        memory_id, scope_type, scope_key, kind, status, summary,
+                        content_hash, source_run_id, source_agent_key, source_agent_version,
+                        source_step_id, source_slot
+                    ) VALUES (
+                        'memory-core-1', 'run', :scope_key, 'decision', 'pending',
+                        'Memory summary', :content_hash, :run_id, 'research_agent', 1,
+                        'write_memory', 'decision'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "run_id": run_id,
+                    "scope_key": str(run_id),
+                },
+            ).scalar_one()
+
+            revision_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_revisions (
+                        memory_entry_id, revision_id, version, status, summary, content,
+                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        source_slot
+                    ) VALUES (
+                        :memory_entry_id, 'memory-core-1:rev-1', 1, 'pending',
+                        'Memory summary', 'Canonical memory content.', :content_hash, :run_id,
+                        'research_agent', 'write_memory', 'decision'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "run_id": run_id,
+                },
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_revisions (
+                        memory_entry_id, revision_id, version, status, summary, content,
+                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        source_slot
+                    ) VALUES
+                        (
+                            :memory_entry_id, 'memory-core-1:rev-2', 2, 'pending',
+                            'Updated memory summary', 'Canonical memory content B.',
+                            :second_content_hash, :run_id, 'research_agent', 'write_memory',
+                            'decision'
+                        ),
+                        (
+                            :memory_entry_id, 'memory-core-1:rev-3', 3, 'pending',
+                            'Memory summary restored', 'Canonical memory content.',
+                            :first_content_hash, :run_id, 'research_agent', 'write_memory',
+                            'decision'
+                        )
+                    """
+                ),
+                {
+                    "first_content_hash": first_content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "run_id": run_id,
+                    "second_content_hash": second_content_hash,
+                },
+            )
+            memory_chunk_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_chunks (
+                        memory_entry_id, memory_revision_id, memory_id, revision_id, chunk_id,
+                        chunk_index, chunking_version, content, content_hash, source_content_hash,
+                        token_count
+                    ) VALUES (
+                        :memory_entry_id, :revision_id, 'memory-core-1', 'memory-core-1:rev-1',
+                        'memory-core-1:rev-1:chunk-0', 0, 'memory-core-chunker/v1',
+                        'Canonical memory content.', :content_hash, :content_hash, 3
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "revision_id": revision_id,
+                },
+            ).scalar_one()
+            assert memory_chunk_id is not None
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO run_memory_events (
+                        run_id, event_type, memory_entry_id, memory_revision_id, memory_id,
+                        revision_id, retrieval_mode, result_snapshot, status_snapshot
+                    ) VALUES (
+                        :run_id, 'written', :memory_entry_id, :revision_id, 'memory-core-1',
+                        'memory-core-1:rev-1', 'write', '{"action":"created"}'::jsonb,
+                        '{"status":"pending"}'::jsonb
+                    )
+                    """
+                ),
+                {
+                    "memory_entry_id": memory_entry_id,
+                    "revision_id": revision_id,
+                    "run_id": run_id,
+                },
+            )
+
+        with engine.connect() as connection:
+            counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM agent_memory_entries),
+                        (SELECT COUNT(*) FROM agent_memory_revisions),
+                        (SELECT COUNT(*) FROM agent_memory_chunks),
+                        (SELECT COUNT(*) FROM run_memory_events)
+                    """
+                )
+            ).one()
+        assert counts == (1, 3, 1, 1)
+        with engine.connect() as connection:
+            revision_hashes = connection.execute(
+                text(
+                    """
+                    SELECT version, content_hash
+                    FROM agent_memory_revisions
+                    WHERE memory_entry_id = :memory_entry_id
+                    ORDER BY version ASC
+                    """
+                ),
+                {"memory_entry_id": memory_entry_id},
+            ).all()
+        assert revision_hashes == [
+            (1, first_content_hash),
+            (2, second_content_hash),
+            (3, first_content_hash),
+        ]
+        with engine.connect() as connection:
+            chunk_row = connection.execute(
+                text(
+                    """
+                    SELECT chunk_index, chunking_version, content_hash, source_content_hash
+                    FROM agent_memory_chunks
+                    WHERE memory_revision_id = :revision_id
+                    """
+                ),
+                {"revision_id": revision_id},
+            ).one()
+        assert chunk_row == (0, "memory-core-chunker/v1", first_content_hash, first_content_hash)
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO agent_memory_entries (
+                            memory_id, scope_type, scope_key, kind, status, summary,
+                            content_hash, source_run_id, source_agent_key, source_agent_version,
+                            source_step_id, source_slot
+                        ) VALUES (
+                            'memory-core-duplicate', 'run', :scope_key, 'decision', 'pending',
+                            'Duplicate memory summary', :content_hash, :run_id,
+                            'research_agent', 1, 'write_memory', 'decision'
+                        )
+                        """
+                    ),
+                    {
+                        "content_hash": first_content_hash,
+                        "run_id": run_id,
+                        "scope_key": str(run_id),
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_keeps_core_memory_available_without_pgvector(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.db.upgrades._ensure_pgvector_extension", lambda engine: False)
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+        assert CORE_MEMORY_TABLE_NAMES <= table_names
+        assert CORE_MEMORY_PGVECTOR_TABLE_NAMES.isdisjoint(table_names)
+        _assert_core_memory_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_init_db_creates_memory_embedding_table_when_pgvector_available(database_url: str) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+    first_content_hash = "a" * 64
+
+    try:
+        if not CORE_MEMORY_PGVECTOR_TABLE_NAMES <= set(inspect(engine).get_table_names()):
+            pytest.skip("pgvector extension is not available for this PostgreSQL instance")
+
+        _assert_core_memory_table_shape(engine)
+        _assert_memory_embedding_table_shape(engine)
+
+        with engine.begin() as connection:
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version, input, status
+                    ) VALUES (
+                        'workflowPackage', 1, 'embedding_package', 1, '{}'::jsonb, 'succeeded'
+                    )
+                    RETURNING id
+                    """
+                )
+            ).scalar_one()
+            memory_entry_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_entries (
+                        memory_id, scope_type, scope_key, kind, status, summary,
+                        content_hash, source_run_id, source_agent_key, source_agent_version,
+                        source_step_id, source_slot
+                    ) VALUES (
+                        'memory-embedding-1', 'run', :scope_key, 'decision', 'pending',
+                        'Embedding memory summary', :content_hash, :run_id,
+                        'research_agent', 1, 'write_memory', 'decision'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "run_id": run_id,
+                    "scope_key": str(run_id),
+                },
+            ).scalar_one()
+            revision_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_revisions (
+                        memory_entry_id, revision_id, version, status, summary, content,
+                        content_hash, source_run_id, source_agent_key, source_step_id,
+                        source_slot
+                    ) VALUES (
+                        :memory_entry_id, 'memory-embedding-1:rev-1', 1, 'pending',
+                        'Embedding memory summary', 'Canonical memory content.', :content_hash,
+                        :run_id, 'research_agent', 'write_memory', 'decision'
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "run_id": run_id,
+                },
+            ).scalar_one()
+            memory_chunk_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_chunks (
+                        memory_entry_id, memory_revision_id, memory_id, revision_id, chunk_id,
+                        chunk_index, chunking_version, content, content_hash, source_content_hash,
+                        token_count
+                    ) VALUES (
+                        :memory_entry_id, :revision_row_id, 'memory-embedding-1',
+                        'memory-embedding-1:rev-1', 'memory-embedding-1:rev-1:chunk-0', 0,
+                        'memory-core-chunker/v1', 'Canonical memory content.', :content_hash,
+                        :content_hash, 3
+                    ) RETURNING id
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "memory_entry_id": memory_entry_id,
+                    "revision_row_id": revision_id,
+                },
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO agent_memory_embeddings (
+                        memory_chunk_id, memory_entry_id, memory_revision_id, memory_id,
+                        revision_id, chunk_id, embedding_provider, embedding_model,
+                        embedding_dimensions, embedding, content_hash, chunking_version,
+                        embedding_config_hash, status, metadata, embedded_at
+                    ) VALUES (
+                        :memory_chunk_id, :memory_entry_id, :revision_row_id,
+                        'memory-embedding-1', 'memory-embedding-1:rev-1',
+                        'memory-embedding-1:rev-1:chunk-0', 'openai',
+                        'text-embedding-3-small', 3, '[0.1,0.2,0.3]'::vector,
+                        :content_hash, 'memory-core-chunker/v1', :embedding_config_hash,
+                        'ready', '{"source":"test"}'::jsonb, NOW()
+                    )
+                    """
+                ),
+                {
+                    "content_hash": first_content_hash,
+                    "embedding_config_hash": "b" * 64,
+                    "memory_chunk_id": memory_chunk_id,
+                    "memory_entry_id": memory_entry_id,
+                    "revision_row_id": revision_id,
+                },
+            )
+
+        with engine.connect() as connection:
+            provenance = connection.execute(
+                text(
+                    """
+                    SELECT embedding_model, embedding_dimensions, content_hash,
+                           chunking_version, status, metadata
+                    FROM agent_memory_embeddings
+                    WHERE memory_chunk_id = :memory_chunk_id
+                    """
+                ),
+                {"memory_chunk_id": memory_chunk_id},
+            ).one()
+        assert provenance == (
+            "text-embedding-3-small",
+            3,
+            first_content_hash,
+            "memory-core-chunker/v1",
+            "ready",
+            {"source": "test"},
+        )
+    finally:
+        engine.dispose()
+
+
+def test_init_db_ignores_legacy_report_backed_memory_rows(database_url: str) -> None:
+    engine = create_engine(database_url, future=True)
+    legacy_slug = "legacy_agent_memory_historical"
+    normal_slug = "ordinary_external_report"
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE reports (
+                    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL,
+                    slug VARCHAR(200) NOT NULL,
+                    source VARCHAR(20) NOT NULL DEFAULT 'compiled',
+                    content TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_reports_name UNIQUE (name),
+                    CONSTRAINT uq_reports_slug UNIQUE (slug)
+                )
+                """
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=legacy_slug,
+                source="agent",
+                metadata=_agent_memory_report_metadata(),
+            )
+            _insert_report_upgrade_row(
+                connection,
+                slug=normal_slug,
+                source="external",
+                metadata={"analysis": {"reviewType": "weekly_review"}},
+            )
+
+        init_db(database_url)
+        init_db(database_url)
+
+        _assert_core_memory_table_shape(engine)
+        rows = _report_upgrade_rows_by_slug(engine, (legacy_slug, normal_slug))
+        with engine.connect() as connection:
+            memory_counts = connection.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM agent_memory_entries),
+                        (SELECT COUNT(*) FROM agent_memory_revisions),
+                        (SELECT COUNT(*) FROM agent_memory_chunks),
+                        (SELECT COUNT(*) FROM run_memory_events)
+                    """
+                )
+            ).one()
+
+        assert memory_counts == (0, 0, 0, 0)
+        assert rows[legacy_slug]["source"] == "agent"
+        assert rows[legacy_slug]["metadata"] == _agent_memory_report_metadata()
+        assert rows[normal_slug] == {
+            "source": "external",
+            "metadata": {"analysis": {"reviewType": "weekly_review"}},
+        }
     finally:
         engine.dispose()
 

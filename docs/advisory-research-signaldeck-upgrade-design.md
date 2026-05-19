@@ -20,7 +20,7 @@ This note keeps the research rationale only. Live implementation details now liv
 |---|---|
 | API routes, HTTP operation contract, run detail shape | `api-design.md` |
 | Package-first platform behavior, Tools, Runs, UI contract | `signaldeck-agent-platform.md` |
-| Report-backed memory and follow-up automation | `signaldeck-memory-layer-design.md` |
+| Platform-core memory and run evidence | `signaldeck-memory-layer-design.md` |
 | Platform tables, including operation invocations | `data-model.md` |
 | Validation scope | `test-plan.md` |
 
@@ -28,8 +28,8 @@ This note keeps the research rationale only. Live implementation details now liv
 
 SignalDeck kept the useful TradingAgents-inspired outcomes as general platform capabilities:
 
-- Native finance runtime tools now cover market data, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes.
-- Report-backed memory now has due follow-up automation that resolves pending outcomes, appends reflections, and feeds future prompt snippets through memory-domain services.
+- Native runtime tools now cover finance-owned market data, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup, plus platform-core memory write/lookup.
+- Platform-core memory now persists scoped entries, revisions, and run memory evidence while historical agent-memory reports stay report-domain history.
 - A TradingAgents-style advisory research package remains demo/smoke package data, not a product-specific platform mode.
 - `kind: http` is the shipped non-agent operation node, backed by package secret bindings, strict HTTP execution, `run_operation_invocations`, and operation cards in run detail.
 - Advisory package outputs stay advisory-only. They may propose a portfolio decision but must not execute trades, draft brokerage operations, or add LangGraph checkpoint/runtime semantics.

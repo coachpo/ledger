@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import openai
@@ -150,9 +150,12 @@ class AgentExecutionService:
         slot: str,
         openai_client_factory: type[Any] | None = None,
         run_id: int | None = None,
+        run_step_id: int | None = None,
+        run_agent_invocation_id: int | None = None,
         workflow_key: str | None = None,
         workflow_version: int | None = None,
         package_ownership: PackageExecutionOwnership | None = None,
+        trace_span_id: str | None = None,
     ) -> RunAgentInvocationResult:
         client_factory = openai_client_factory or self.openai_client_factory
         return await asyncio.to_thread(
@@ -165,9 +168,12 @@ class AgentExecutionService:
             slot,
             client_factory,
             run_id,
+            run_step_id,
+            run_agent_invocation_id,
             workflow_key,
             workflow_version,
             package_ownership,
+            trace_span_id,
         )
 
     def _invoke_sync(
@@ -180,9 +186,12 @@ class AgentExecutionService:
         slot: str,
         openai_client_factory: type[Any],
         run_id: int | None,
+        run_step_id: int | None,
+        run_agent_invocation_id: int | None,
         workflow_key: str | None,
         workflow_version: int | None,
         package_ownership: PackageExecutionOwnership | None,
+        trace_span_id: str | None,
     ) -> RunAgentInvocationResult:
         step_id = f"step_{step_index}"
         with self.session_factory() as session:
@@ -201,12 +210,15 @@ class AgentExecutionService:
                 granted_tool_keys=granted_tool_keys,
                 mcp_server_refs=mcp_server_refs,
                 run_id=run_id,
+                run_step_id=run_step_id,
+                run_agent_invocation_id=run_agent_invocation_id,
                 workflow_key=workflow_key,
                 workflow_version=workflow_version,
                 package_ownership=package_ownership,
                 step_id=step_id,
                 slot=slot,
                 trace_id=trace_id,
+                trace_span_id=trace_span_id,
             )
         except RuntimeToolGrantError as exc:
             raise RunExecutionError(
@@ -439,12 +451,15 @@ class AgentExecutionService:
         granted_tool_keys: set[str],
         mcp_server_refs: Sequence[Mapping[str, object]],
         run_id: int | None,
+        run_step_id: int | None,
+        run_agent_invocation_id: int | None,
         workflow_key: str | None,
         workflow_version: int | None,
         package_ownership: PackageExecutionOwnership | None,
         step_id: str | None,
         slot: str,
         trace_id: str | None,
+        trace_span_id: str | None,
     ) -> RunAgentInvocationResult:
         if model_connection.connection_kind == "deterministic_smoke":
             return RunAgentInvocationResult(
@@ -488,6 +503,8 @@ class AgentExecutionService:
             quote_provider=self.quote_provider,
             social_sentiment_adapters=self.social_sentiment_adapters,
             run_id=run_id,
+            run_step_id=run_step_id,
+            run_agent_invocation_id=run_agent_invocation_id,
             agent_key=agent.key,
             agent_version=self._runtime_agent_version(agent),
             agent_name=agent.name,
@@ -497,6 +514,7 @@ class AgentExecutionService:
             step_id=step_id,
             slot=slot,
             trace_id=trace_id,
+            trace_span_id=trace_span_id,
         )
         instructions = self._build_openai_instructions(
             agent,
@@ -1153,7 +1171,7 @@ class AgentExecutionService:
                 name=tool_call.name,
                 arguments_json=tool_call.arguments_json,
                 granted_tool_keys=granted_tool_keys,
-                context=runtime_tool_context,
+                context=replace(runtime_tool_context, invocation_id=tool_call.call_id),
             )
         except RuntimeToolError as exc:
             if exc.code != "agent_tool_call_unsupported":

@@ -1,38 +1,66 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from importlib import import_module
 from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.agents import ToolCatalogValidationError, get_default_tool_catalog
-from app.agents.runtime_tools import RUNTIME_TOOL_SPECS
+from app.agents.runtime_tools import get_default_runtime_tool_registry
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_EXTENSION_KEY,
     FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES,
     FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS,
 )
-from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
+from app.schemas.memory import MEMORY_CORE_RUNTIME_TOOL_KEYS
 
-_CANONICAL_TOOL_KEYS = {
+_REQUIRED_FINANCE_TOOL_KEYS = {
     "signaldeck.market_data.quote_lookup",
     "signaldeck.reports.lookup",
-    "signaldeck.reports.write",
 }
+_REQUIRED_CORE_TOOL_KEYS = set(MEMORY_CORE_RUNTIME_TOOL_KEYS)
+
+
+def _valid_manifest_source() -> str:
+    module = import_module("tests.test_workflow_package_manifest_parser")
+    source_factory = cast(Callable[[], str], module.__dict__["_valid_package_manifest_source"])
+    return source_factory()
 
 
 def test_signaldeck_finance_tool_inventory_matches_catalog_and_runtime() -> None:
-    server_declared_keys = {tool.key for tool in SERVER_DECLARED_TOOL_SPECS}
-    runtime_keys = {tool.key for tool in RUNTIME_TOOL_SPECS}
-    runtime_function_names = {tool.openai_function_name for tool in RUNTIME_TOOL_SPECS}
+    finance_server_declared_keys = {
+        tool.key
+        for tool in SERVER_DECLARED_TOOL_SPECS
+        if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    }
+    core_server_declared_keys = {
+        tool.key for tool in SERVER_DECLARED_TOOL_SPECS if tool.owner_extension_key is None
+    }
+    runtime_specs = get_default_runtime_tool_registry().list_specs()
+    finance_runtime_keys = {
+        tool.key
+        for tool in runtime_specs
+        if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    }
+    core_runtime_keys = {tool.key for tool in runtime_specs if tool.owner_extension_key is None}
+    finance_runtime_function_names = {
+        tool.openai_function_name
+        for tool in runtime_specs
+        if tool.owner_extension_key == FINANCE_WORKSPACE_EXTENSION_KEY
+    }
 
-    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == server_declared_keys
-    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == runtime_keys
-    assert set(FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES) == runtime_function_names
+    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_server_declared_keys
+    assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS) == finance_runtime_keys
+    assert set(FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES) == finance_runtime_function_names
+    assert _REQUIRED_CORE_TOOL_KEYS <= core_server_declared_keys
+    assert _REQUIRED_CORE_TOOL_KEYS <= core_runtime_keys
+    assert _REQUIRED_CORE_TOOL_KEYS.isdisjoint(finance_server_declared_keys)
 
 
-def test_default_tool_catalog_rejects_duplicate_unknown_and_phase_one_memory_keys() -> None:
+def test_default_tool_catalog_rejects_duplicate_and_unknown_keys() -> None:
     catalog = get_default_tool_catalog()
 
     with pytest.raises(ToolCatalogValidationError) as exc_info:
@@ -40,8 +68,7 @@ def test_default_tool_catalog_rejects_duplicate_unknown_and_phase_one_memory_key
             [
                 "signaldeck.reports.lookup",
                 "signaldeck.reports.lookup",
-                "signaldeck.memory.lookup",
-                "signaldeck.memory.write",
+                "signaldeck.unknown.lookup",
             ]
         )
 
@@ -52,13 +79,17 @@ def test_default_tool_catalog_rejects_duplicate_unknown_and_phase_one_memory_key
         },
         {
             "field": "toolKeys.2",
-            "issue": "Unknown server-declared tool 'signaldeck.memory.lookup'",
-        },
-        {
-            "field": "toolKeys.3",
-            "issue": "Unknown server-declared tool 'signaldeck.memory.write'",
+            "issue": "Unknown server-declared tool 'signaldeck.unknown.lookup'",
         },
     ]
+
+
+def test_core_memory_tool_keys_are_not_finance_owned() -> None:
+    assert MEMORY_CORE_RUNTIME_TOOL_KEYS == (
+        "signaldeck.memory.write",
+        "signaldeck.memory.lookup",
+    )
+    assert not set(MEMORY_CORE_RUNTIME_TOOL_KEYS) & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
 
 
 def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
@@ -70,10 +101,22 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
     tools_by_key = {str(item["key"]): item for item in items}
 
     assert not any("module" in item for item in items)
-    assert _CANONICAL_TOOL_KEYS <= set(tools_by_key)
+    assert _REQUIRED_FINANCE_TOOL_KEYS <= set(tools_by_key)
+    assert _REQUIRED_CORE_TOOL_KEYS <= set(tools_by_key)
+    memory_write_tool = tools_by_key["signaldeck.memory.write"]
+    memory_lookup_tool = tools_by_key["signaldeck.memory.lookup"]
     quote_tool = tools_by_key["signaldeck.market_data.quote_lookup"]
     report_lookup_tool = tools_by_key["signaldeck.reports.lookup"]
-    report_write_tool = tools_by_key["signaldeck.reports.write"]
+    assert memory_write_tool == {
+        "key": "signaldeck.memory.write",
+        "displayName": "Memory Write",
+        "description": "Write platform-core memory entries through server-owned memory storage.",
+    }
+    assert memory_lookup_tool == {
+        "key": "signaldeck.memory.lookup",
+        "displayName": "Memory Lookup",
+        "description": "Read bounded, scoped platform-core memory snippets.",
+    }
     assert quote_tool == {
         "key": "signaldeck.market_data.quote_lookup",
         "displayName": "Market Data Quote Lookup",
@@ -84,13 +127,7 @@ def test_get_tools_lists_server_declared_catalog(client: TestClient) -> None:
         "displayName": "Report Lookup",
         "description": "Read persisted SignalDeck reports through server-owned report lookups.",
     }
-    assert report_write_tool == {
-        "key": "signaldeck.reports.write",
-        "displayName": "Report Memory Write",
-        "description": "Create pending agent-memory reports through server-owned memory writes.",
-    }
-    assert not any(key.startswith("signaldeck.memory.") for key in tools_by_key)
-    for tool in (quote_tool, report_lookup_tool, report_write_tool):
+    for tool in (memory_write_tool, memory_lookup_tool, quote_tool, report_lookup_tool):
         assert "module" not in tool
         assert "ownerExtensionKey" not in tool
         assert "contributionCategories" not in tool
@@ -120,11 +157,14 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_classifies_t
     tools_response = client.get("/api/tools")
     assert tools_response.status_code == 200, tools_response.json()
     tools_body = cast(dict[str, object], tools_response.json())
-    assert tools_body["items"] == []
+    visible_items = cast(list[dict[str, object]], tools_body["items"])
+    visible_keys = {str(item["key"]) for item in visible_items}
+    assert not visible_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
+    assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
 
     validation_response = client.post(
         "/api/workflow-packages/validate-manifest",
-        json={"manifestSource": _valid_package_manifest_source()},
+        json={"manifestSource": _valid_manifest_source()},
     )
     assert validation_response.status_code == 200, validation_response.json()
     body = cast(dict[str, object], validation_response.json())

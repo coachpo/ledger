@@ -86,7 +86,7 @@ Read payloads and errors must mask or omit raw secrets. Blank API-key edits pres
 
 Tools are read-only server-declared metadata from `/api/tools`. Packages reference tool keys through local capability profiles; the platform does not expose global capability CRUD as a live route. The host is core, while the current finance/product/provider tool entries are provided by private `signaldeck.finance` registrars and appear only when that extension is enabled.
 
-Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and report memory writes. They remain visible to smoke and demo Workflow Packages while `signaldeck.finance` is enabled by default. Runtime tool keys and OpenAI function names stay stable. Examples include `signaldeck.market_data.ohlcv_lookup`, `signaldeck.indicators.lookup`, `signaldeck.news.lookup`, `signaldeck.social_sentiment.lookup`, `signaldeck.reports.lookup`, `signaldeck.reports.write`, and OpenAI function names such as `signaldeck_social_sentiment_lookup` and `signaldeck_reports_lookup`.
+Current native tools cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, report lookup, and platform-core memory write/lookup. Finance-owned tools remain visible to smoke and demo Workflow Packages while `signaldeck.finance` is enabled by default; core memory tools stay visible even when it is disabled. Examples include `signaldeck.market_data.ohlcv_lookup`, `signaldeck.indicators.lookup`, `signaldeck.news.lookup`, `signaldeck.social_sentiment.lookup`, `signaldeck.reports.lookup`, `signaldeck.memory.write`, `signaldeck.memory.lookup`, and OpenAI function names such as `signaldeck_social_sentiment_lookup`, `signaldeck_reports_lookup`, and `signaldeck_memory_write`.
 
 `signaldeck.news.lookup` remains the company/query/macro news contract. `signaldeck.social_sentiment.lookup` is separate and additive: it accepts `symbol`, optional `sources` (`reddit`, `stocktwits`), optional `startDate`, optional `endDate`, and optional `itemLimit` capped at `50`; output contains `sourceBlocks`, aggregate `metrics`, and structured `warnings`. Provider outage, timeout, rate-limit, empty-source, partial-result, and truncation paths return deterministic warnings rather than raw provider errors.
 
@@ -102,7 +102,7 @@ Run extension requirements appear as `extensionDependencies`. Each dependency re
 
 Run detail keeps operation invocation rows separate from agent rows. Each step has `invocations` for agents and `operationInvocations` for `kind: http` operations. Operation invocation detail includes `operationKey`, `operationKind`, `method`, `timeoutSeconds`, redacted `requestMetadata`, bounded `responseMetadata`, `output`, `outputOrigin`, status/error fields, replay source fields, and timestamps. HTTP-only steps have no agent invocations; mixed steps can show both families.
 
-Run memory artifacts are memory-domain payloads. They expose `memoryId`, `summary`, `status`, `createdAt`, provenance, graph metadata when available, and optional `auditLinks.report` for report open/download actions while reports remain the backing store. `MemoryFollowUpService.run_due(now)` runs synchronously at workflow-package run start and appends due report-backed reflections idempotently before normal step execution.
+Run memory evidence is persisted as `memoryEvents[]`, a generic stream of retrieval, injection, write/reuse, review, supersession, and failure facts from `run_memory_events`. `memoryArtifacts[]` is only a compact human-auditable slice for memories written by the run. Artifacts expose opaque `memoryId`, `summary`, `status`, `createdAt`, provenance, graph metadata when available, and optional `auditLinks.report` only when an ordinary report-domain audit action exists.
 
 ## UI Contract
 
@@ -151,8 +151,8 @@ Each milestone has a deterministic targeted command, and the combined command is
 # Milestone 1: native data/news/social runtime tools and provider normalization
 (cd backend && uv run pytest tests/test_runtime_tools.py tests/test_runtime_tools_social_sentiment.py tests/test_market_data_service.py tests/test_social_sentiment_service.py -k "social_sentiment or news_lookup_contract or news_adapter or social_adapter or timeout or rate_limit or empty_result or partial_result")
 
-# Milestone 2: report-backed memory follow-up automation
-(cd backend && uv run pytest tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_report_backed_memory_store.py -k "matured_follow_up or append_reflection or idempotent or duplicate_resolution or run_start_follow_up")
+# Milestone 2: core memory tools and run evidence
+(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_tool_catalog_api.py tests/test_memory_service.py tests/test_runtime_tools.py tests/test_workflow_package_run_contracts.py -k "memory or run_detail_exposes_persisted_memory_event_evidence")
 
 # Milestone 3: canonical advisory package fixture behavior
 (cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_smoke_fixture.py tests/test_workflow_package_run_contracts.py -k "tradingagents_advisory_research or advisory_only_output or portfolio_decision")

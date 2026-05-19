@@ -22,6 +22,22 @@ from app.agents.runtime_tools import (
     RuntimeToolSpec,
     get_default_runtime_tool_registry,
 )
+from app.agents.runtime_tools.memory import (
+    MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE,
+    MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+    MEMORY_LOOKUP_TOOL_KEY,
+    MEMORY_LOOKUP_TOOL_SPEC,
+    MEMORY_TOOL_ACCESS_DENIED_CODE,
+    MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+    MEMORY_WRITE_TOOL_KEY,
+    MEMORY_WRITE_TOOL_SPEC,
+    RuntimeMemoryLookupArguments,
+    RuntimeMemoryWriteArguments,
+    RuntimeMemoryWriteResult,
+    parse_memory_lookup_arguments,
+    parse_memory_write_arguments,
+)
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.agents.tool_catalog.server_declared import SERVER_DECLARED_TOOL_SPECS
 from app.extensions.signaldeck_finance.grant_policy import (
@@ -111,10 +127,15 @@ from app.extensions.signaldeck_finance.runtime_types import (
     RuntimeSocialSentimentMetric,
     RuntimeSocialSentimentSourceBlock,
 )
+from app.models.agent_memory import AgentMemoryEntry, RunMemoryEvent
 from app.models.capability import Capability
 from app.models.report import Report
+from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_operation_invocation import RunOperationInvocation
+from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
-from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance
+from app.schemas.memory import MemoryLifecycleStatus, MemoryProvenance, MemoryRevisionAction
 from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.capability_service import (
@@ -146,6 +167,12 @@ from app.services.quote_provider import (
 from app.services.report_service import ReportService
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+_RUNTIME_RUN_ID = 4242
+_RUNTIME_RUN_STEP_ID = 5101
+_RUNTIME_AGENT_INVOCATION_ID = 5201
+_RUNTIME_OPERATION_INVOCATION_ID = 5301
+_RUNTIME_TOOL_CALL_INVOCATION_ID = "tool-call-runtime-memory"
+_RUNTIME_TRACE_SPAN_ID = "span-runtime-tools"
 
 _GENERIC_PLATFORM_RUNTIME_TOOL_KEYS = (
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
@@ -164,6 +191,8 @@ _GENERIC_PLATFORM_RUNTIME_TOOL_OPENAI_FUNCTION_NAMES_BY_KEY = {
     INSIDER_DATA_LOOKUP_TOOL_KEY: "signaldeck_insider_data_lookup",
 }
 _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
+    MEMORY_WRITE_TOOL_KEY,
+    MEMORY_LOOKUP_TOOL_KEY,
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
     MARKET_DATA_OHLCV_LOOKUP_TOOL_KEY,
@@ -174,7 +203,6 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     INSIDER_DATA_LOOKUP_TOOL_KEY,
     POSITION_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_TOOL_KEY,
 }
 _FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
     "reportId",
@@ -185,6 +213,8 @@ _FORBIDDEN_REPORT_WRITE_MODEL_KEYS = {
     "downloadUrl",
 }
 _FORBIDDEN_REPORT_WRITE_MODEL_FRAGMENTS = ("/reports/", "download")
+_FORBIDDEN_CORE_MEMORY_MODEL_KEYS = _FORBIDDEN_REPORT_WRITE_MODEL_KEYS
+_FORBIDDEN_CORE_MEMORY_MODEL_FRAGMENTS = ("/reports/", "download", "http://", "https://")
 
 
 class _SessionScope:
@@ -216,6 +246,9 @@ def _runtime_context(
     session_factory_override: sessionmaker[Session] | None = None,
     quote_provider: QuoteProvider | None = None,
     run_id: int | None = None,
+    run_step_id: int | None = None,
+    run_agent_invocation_id: int | None = None,
+    run_operation_invocation_id: int | None = None,
     agent_key: str | None = None,
     agent_version: int | None = None,
     agent_name: str | None = None,
@@ -224,6 +257,8 @@ def _runtime_context(
     step_id: str | None = None,
     slot: str | None = None,
     trace_id: str | None = None,
+    trace_span_id: str | None = None,
+    invocation_id: str | None = None,
 ) -> RuntimeToolContext:
     selected_session_factory = session_factory_override or (
         _failing_session_factory if fail_on_session else _session_factory
@@ -241,6 +276,9 @@ def _runtime_context(
         ),
         quote_provider=quote_provider,
         run_id=run_id,
+        run_step_id=run_step_id,
+        run_agent_invocation_id=run_agent_invocation_id,
+        run_operation_invocation_id=run_operation_invocation_id,
         agent_key=agent_key,
         agent_version=agent_version,
         agent_name=agent_name,
@@ -249,6 +287,8 @@ def _runtime_context(
         step_id=step_id,
         slot=slot,
         trace_id=trace_id,
+        trace_span_id=trace_span_id,
+        invocation_id=invocation_id,
     )
 
 
@@ -267,6 +307,66 @@ def _seed_runtime_tool_capability(
                 name=f"{key} v1",
                 description="Runtime tool test capability.",
                 tool_keys=list(tools),
+            )
+        )
+        session.commit()
+
+
+def _seed_runtime_run(
+    session_factory: sessionmaker[Session],
+    *,
+    run_id: int = _RUNTIME_RUN_ID,
+) -> None:
+    with session_factory() as session:
+        session.add(
+            Run(
+                id=run_id,
+                target_kind="workflow",
+                target_id=1,
+                target_key="runtime_tool_test_workflow",
+                target_version=1,
+                input={},
+                status="running",
+            )
+        )
+        session.add(
+            RunStep(
+                id=_RUNTIME_RUN_STEP_ID,
+                run_id=run_id,
+                step_index=1,
+                status="running",
+            )
+        )
+        session.add(
+            RunAgentInvocation(
+                id=_RUNTIME_AGENT_INVOCATION_ID,
+                run_step_id=_RUNTIME_RUN_STEP_ID,
+                run_id=run_id,
+                step_index=1,
+                slot="decision",
+                position=0,
+                agent_id=101,
+                agent_key="portfolio_manager",
+                agent_version=3,
+                output_schema_id=201,
+                output_schema_version=1,
+                input_mode="wired",
+                status="running",
+            )
+        )
+        session.add(
+            RunOperationInvocation(
+                id=_RUNTIME_OPERATION_INVOCATION_ID,
+                run_step_id=_RUNTIME_RUN_STEP_ID,
+                run_id=run_id,
+                step_index=1,
+                slot="memory_dispatch",
+                position=1,
+                operation_key="memory_dispatch",
+                operation_kind="http",
+                output_schema_id=202,
+                output_schema_version=1,
+                status="running",
             )
         )
         session.commit()
@@ -335,6 +435,24 @@ def _reports_write_arguments_json(
     return json.dumps(payload)
 
 
+def _memory_write_arguments_json(
+    overrides: dict[str, object] | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "kind": "research.note",
+        "summary": "Durable model-safe memory.",
+        "content": "Prior run found durable evidence.",
+        "subjectRefs": [{"kind": "instrument", "id": "NVDA", "label": None, "attributes": None}],
+        "attributes": {"tags": ["earnings"], "confidence": "high"},
+        "scope": None,
+        "idempotencyKey": "runtime-core-memory-write",
+        "supersedesRevisionId": None,
+    }
+    if overrides is not None:
+        payload.update(overrides)
+    return json.dumps(payload)
+
+
 def _reports_write_runtime_context(
     session_factory: sessionmaker[Session],
     *,
@@ -343,7 +461,10 @@ def _reports_write_runtime_context(
     return _runtime_context(
         capability_references=[{"capabilityKey": capability_key, "capabilityVersion": 1}],
         session_factory_override=session_factory,
-        run_id=4242,
+        run_id=_RUNTIME_RUN_ID,
+        run_step_id=_RUNTIME_RUN_STEP_ID,
+        run_agent_invocation_id=_RUNTIME_AGENT_INVOCATION_ID,
+        run_operation_invocation_id=_RUNTIME_OPERATION_INVOCATION_ID,
         agent_key="portfolio_manager",
         agent_version=3,
         agent_name="Portfolio Manager",
@@ -352,6 +473,8 @@ def _reports_write_runtime_context(
         step_id="portfolio_decision",
         slot="decision",
         trace_id="trace-runtime-tools",
+        trace_span_id=_RUNTIME_TRACE_SPAN_ID,
+        invocation_id=_RUNTIME_TOOL_CALL_INVOCATION_ID,
     )
 
 
@@ -402,7 +525,7 @@ def _assert_no_snake_case_keys(value: object, *, path: str) -> None:
             _assert_no_snake_case_keys(nested_value, path=f"{path}[{index}]")
 
 
-def _assert_reports_write_payload_is_model_visible_memory(payload: dict[str, object]) -> None:
+def _assert_retired_reports_write_payload_is_json_safe(payload: dict[str, object]) -> None:
     assert {"toolKey", "memoryId", "status", "action", "createdAt", "warnings"} <= set(payload)
     assert payload["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
     _assert_report_write_forbidden_keys_absent(payload, path="$")
@@ -424,6 +547,29 @@ def _assert_report_write_forbidden_keys_absent(value: object, *, path: str) -> N
         payload = cast(list[object], value)
         for index, nested_value in enumerate(payload):
             _assert_report_write_forbidden_keys_absent(nested_value, path=f"{path}[{index}]")
+
+
+def _assert_core_memory_payload_is_model_safe(payload: dict[str, object]) -> None:
+    _assert_native_runtime_payload_is_json_safe_and_camel(payload)
+    _assert_core_memory_forbidden_keys_absent(payload, path="$")
+    payload_json = json.dumps(payload, sort_keys=True)
+    for fragment in _FORBIDDEN_CORE_MEMORY_MODEL_FRAGMENTS:
+        assert fragment not in payload_json
+
+
+def _assert_core_memory_forbidden_keys_absent(value: object, *, path: str) -> None:
+    if isinstance(value, dict):
+        payload = cast(dict[object, object], value)
+        for key, nested_value in payload.items():
+            assert isinstance(key, str)
+            assert key not in _FORBIDDEN_CORE_MEMORY_MODEL_KEYS, f"forbidden key at {path}.{key}"
+            _assert_core_memory_forbidden_keys_absent(nested_value, path=f"{path}.{key}")
+        return
+
+    if isinstance(value, list):
+        payload = cast(list[object], value)
+        for index, nested_value in enumerate(payload):
+            _assert_core_memory_forbidden_keys_absent(nested_value, path=f"{path}[{index}]")
 
 
 def _report_read() -> ReportRead:
@@ -826,7 +972,6 @@ def test_native_runtime_financial_tool_result_keys_are_signaldeck_prefixed_and_c
         NEWS_LOOKUP_TOOL_KEY,
         SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
         INSIDER_DATA_LOOKUP_TOOL_KEY,
-        REPORT_MEMORY_WRITE_TOOL_KEY,
     )
     assert all(
         tool_key.startswith("signaldeck.") for tool_key in NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS
@@ -849,10 +994,10 @@ def test_builtin_native_runtime_tool_catalog_and_specs_stay_aligned() -> None:
     assert runtime_spec_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert server_declared_keys == _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS
     assert runtime_spec_keys == server_declared_keys
-    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in runtime_spec_keys)
-    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in server_declared_keys)
-    assert "signaldeck_memory_lookup" not in runtime_function_names
-    assert "signaldeck_memory_write" not in runtime_function_names
+    assert {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY} <= runtime_spec_keys
+    assert {MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY} <= server_declared_keys
+    assert MEMORY_WRITE_OPENAI_FUNCTION_NAME in runtime_function_names
+    assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME in runtime_function_names
 
 
 def test_generic_platform_runtime_tool_specs_have_expected_openai_function_names() -> None:
@@ -1077,7 +1222,7 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
         ],
     ).model_dump(mode="json", by_alias=True)
     _assert_native_runtime_payload_is_json_safe_and_camel(memory_payload)
-    _assert_reports_write_payload_is_model_visible_memory(memory_payload)
+    _assert_retired_reports_write_payload_is_json_safe(memory_payload)
     assert memory_payload == {
         "toolKey": "signaldeck.reports.write",
         "memoryId": "mem_7",
@@ -1104,6 +1249,21 @@ def test_native_runtime_tool_results_serialize_with_camel_case_contracts() -> No
             }
         ],
     }
+
+    core_memory_payload = RuntimeMemoryWriteResult(
+        memory_id="memory_7",
+        revision_id="revision_7",
+        status=MemoryLifecycleStatus.PENDING,
+        revision_action=MemoryRevisionAction.CREATED,
+        created_at=_NOW,
+        provenance=_reports_write_provenance(),
+    ).model_dump(mode="json", by_alias=True)
+    _assert_core_memory_payload_is_model_safe(core_memory_payload)
+    assert core_memory_payload["toolKey"] == MEMORY_WRITE_TOOL_KEY
+    assert core_memory_payload["memoryId"] == "memory_7"
+    assert core_memory_payload["revisionId"] == "revision_7"
+    assert core_memory_payload["revisionAction"] == "created"
+    assert "action" not in core_memory_payload
 
 
 def test_news_lookup_contract_remains_news_only_and_backward_compatible() -> None:
@@ -1680,6 +1840,19 @@ def test_report_lookup_accepts_agent_source() -> None:
 
 
 def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_execution_fields() -> None:
+    assert MEMORY_WRITE_TOOL_KEY == "signaldeck.memory.write"
+    assert MEMORY_WRITE_OPENAI_FUNCTION_NAME == "signaldeck_memory_write"
+    assert MEMORY_WRITE_TOOL_SPEC.key == MEMORY_WRITE_TOOL_KEY
+    assert MEMORY_WRITE_TOOL_SPEC.openai_function_name == MEMORY_WRITE_OPENAI_FUNCTION_NAME
+    assert MEMORY_WRITE_TOOL_SPEC.display_name == "Memory Write"
+    assert MEMORY_WRITE_TOOL_SPEC.owner_extension_key is None
+    assert MEMORY_LOOKUP_TOOL_KEY == "signaldeck.memory.lookup"
+    assert MEMORY_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_memory_lookup"
+    assert MEMORY_LOOKUP_TOOL_SPEC.key == MEMORY_LOOKUP_TOOL_KEY
+    assert MEMORY_LOOKUP_TOOL_SPEC.openai_function_name == MEMORY_LOOKUP_OPENAI_FUNCTION_NAME
+    assert MEMORY_LOOKUP_TOOL_SPEC.display_name == "Memory Lookup"
+    assert MEMORY_LOOKUP_TOOL_SPEC.owner_extension_key is None
+
     assert REPORT_LOOKUP_TOOL_KEY == "signaldeck.reports.lookup"
     assert REPORT_LOOKUP_OPENAI_FUNCTION_NAME == "signaldeck_reports_lookup"
     assert REPORT_LOOKUP_TOOL_SPEC.key == REPORT_LOOKUP_TOOL_KEY
@@ -1696,7 +1869,7 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
         REPORT_MEMORY_WRITE_TOOL_SPEC.openai_function_name
         == REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME
     )
-    assert REPORT_MEMORY_WRITE_TOOL_SPEC.display_name == "Report Memory Write"
+    assert REPORT_MEMORY_WRITE_TOOL_SPEC.display_name == "Retired Report Memory Write"
     assert REPORT_MEMORY_WRITE_TOOL_SPEC.key != REPORT_MEMORY_WRITE_TOOL_SPEC.openai_function_name
 
     assert POSITION_LOOKUP_TOOL_SPEC.key == POSITION_LOOKUP_TOOL_KEY
@@ -1821,12 +1994,16 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     registry = get_default_runtime_tool_registry()
 
     spec_by_key = {spec.key: spec for spec in registry.list_specs()}
+    assert spec_by_key[MEMORY_WRITE_TOOL_KEY].openai_function_name == (
+        MEMORY_WRITE_OPENAI_FUNCTION_NAME
+    )
+    assert spec_by_key[MEMORY_LOOKUP_TOOL_KEY].openai_function_name == (
+        MEMORY_LOOKUP_OPENAI_FUNCTION_NAME
+    )
     assert spec_by_key[REPORT_LOOKUP_TOOL_KEY].openai_function_name == (
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME
     )
-    assert spec_by_key[REPORT_MEMORY_WRITE_TOOL_KEY].openai_function_name == (
-        REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME
-    )
+    assert REPORT_MEMORY_WRITE_TOOL_KEY not in spec_by_key
     assert spec_by_key[MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY].openai_function_name == (
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME
     )
@@ -1847,7 +2024,6 @@ def test_default_runtime_tool_registry_exposes_financial_runtime_specs() -> None
     )
     assert [tool["name"] for tool in tools] == [
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
-        REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
         SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
@@ -1862,6 +2038,12 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
 
     assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY}) == []
     assert registry.get_guidance({REPORT_LOOKUP_TOOL_KEY}) == ""
+    core_tools = registry.get_openai_tools({MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY})
+    assert [tool["name"] for tool in core_tools] == [
+        MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+    ]
+    assert "signaldeck_memory_lookup" in registry.get_guidance({MEMORY_LOOKUP_TOOL_KEY})
 
     with pytest.raises(RuntimeToolError) as exc_info:
         _ = registry.dispatch(
@@ -1881,7 +2063,7 @@ def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typ
     ]
 
 
-def test_financial_runtime_tool_exposure_follows_quote_history_and_report_write_grants() -> None:
+def test_financial_runtime_tool_exposure_follows_quote_history_and_report_lookup_grants() -> None:
     registry = get_default_runtime_tool_registry()
 
     quote_only = registry.get_openai_tools({MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY})
@@ -1892,6 +2074,7 @@ def test_financial_runtime_tool_exposure_follows_quote_history_and_report_write_
         {
             MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
+            REPORT_LOOKUP_TOOL_KEY,
             REPORT_MEMORY_WRITE_TOOL_KEY,
         }
     )
@@ -1902,12 +2085,12 @@ def test_financial_runtime_tool_exposure_follows_quote_history_and_report_write_
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
     assert [tool["name"] for tool in all_native_financial] == [
-        REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
         MARKET_DATA_HISTORY_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
     assert REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME not in {
-        cast(str, tool["name"]) for tool in quote_history
+        cast(str, tool["name"]) for tool in all_native_financial
     }
 
 
@@ -2082,6 +2265,31 @@ def test_reports_write_runtime_tool_registry_denies_ungranted_before_parsing() -
     assert exc_info.value.message == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
 
 
+def test_core_memory_runtime_tool_registry_denies_ungranted_before_parsing() -> None:
+    registry = RuntimeToolRegistry([MEMORY_WRITE_TOOL_SPEC, MEMORY_LOOKUP_TOOL_SPEC])
+    context = _runtime_context(fail_on_session=True)
+
+    with pytest.raises(RuntimeToolError) as write_error:
+        _ = registry.dispatch(
+            name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+            arguments_json="not-json",
+            granted_tool_keys=set(),
+            context=context,
+        )
+    assert write_error.value.code == MEMORY_TOOL_ACCESS_DENIED_CODE
+    assert write_error.value.message == MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+
+    with pytest.raises(RuntimeToolError) as lookup_error:
+        _ = registry.dispatch(
+            name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json="not-json",
+            granted_tool_keys=set(),
+            context=context,
+        )
+    assert lookup_error.value.code == MEMORY_TOOL_ACCESS_DENIED_CODE
+    assert lookup_error.value.message == MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE
+
+
 @pytest.mark.parametrize(
     "field_name",
     [
@@ -2160,7 +2368,81 @@ def test_report_memory_write_rejects_created_by_argument() -> None:
     )
 
 
-def test_reports_write_runtime_tool_service_denies_missing_write_grant(
+@pytest.mark.parametrize(
+    ("arguments_json", "expected_message"),
+    [
+        ("{", "OpenAI response requested signaldeck_memory_write with invalid JSON arguments."),
+        ("[]", "signaldeck_memory_write arguments must be a JSON object."),
+        (
+            '{"summary":"Memory","content":"Body","reportId":"rpt_1"}',
+            "signaldeck_memory_write arguments contained unsupported fields: reportId",
+        ),
+        ('{"summary":"Memory"}', "signaldeck_memory_write arguments failed validation."),
+    ],
+)
+def test_memory_write_runtime_tool_parser_preserves_boundary_validation_messages(
+    arguments_json: str,
+    expected_message: str,
+) -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = parse_memory_write_arguments(arguments_json)
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert exc_info.value.message == expected_message
+
+
+def test_memory_write_runtime_tool_parser_normalizes_happy_path() -> None:
+    payload = cast(
+        RuntimeMemoryWriteArguments,
+        parse_memory_write_arguments(_memory_write_arguments_json())["payload"],
+    )
+
+    assert payload.kind == "research.note"
+    assert payload.summary == "Durable model-safe memory."
+    assert payload.content == "Prior run found durable evidence."
+    assert payload.subject_refs[0].kind == "instrument"
+    assert payload.scope is None
+    assert payload.idempotency_key == "runtime-core-memory-write"
+
+
+@pytest.mark.parametrize(
+    ("arguments_json", "expected_message"),
+    [
+        ("{", "OpenAI response requested signaldeck_memory_lookup with invalid JSON arguments."),
+        ("[]", "signaldeck_memory_lookup arguments must be a JSON object."),
+        (
+            '{"unsupported":true}',
+            "signaldeck_memory_lookup arguments contained unsupported fields: unsupported",
+        ),
+        ('{"limit":21}', "signaldeck_memory_lookup arguments failed validation."),
+        ('{"maxCharacters":8001}', "signaldeck_memory_lookup arguments failed validation."),
+    ],
+)
+def test_memory_lookup_runtime_tool_parser_enforces_boundary_and_budget_rules(
+    arguments_json: str,
+    expected_message: str,
+) -> None:
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = parse_memory_lookup_arguments(arguments_json)
+
+    assert exc_info.value.code == "agent_tool_call_invalid"
+    assert exc_info.value.message == expected_message
+
+
+def test_memory_lookup_runtime_tool_parser_defaults_to_current_context_fallback() -> None:
+    payload = cast(
+        RuntimeMemoryLookupArguments,
+        parse_memory_lookup_arguments("{}")["payload"],
+    )
+    query = payload.to_query()
+
+    assert query.scope_mode == "current-context-fallback"
+    assert query.fallback_scope == "current-run-package-agent"
+    assert query.limit == 5
+    assert query.max_characters == 4000
+
+
+def test_reports_write_runtime_tool_retirement_preempts_missing_write_grant(
     session_factory: sessionmaker[Session],
 ) -> None:
     capability_key = "runtime_reports_write_without_service_grant"
@@ -2171,7 +2453,7 @@ def test_reports_write_runtime_tool_service_denies_missing_write_grant(
     )
     registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
 
-    with pytest.raises(RuntimeToolGrantError) as exc_info:
+    with pytest.raises(RuntimeToolError) as exc_info:
         _ = registry.dispatch(
             name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
             arguments_json=_reports_write_arguments_json(),
@@ -2184,23 +2466,22 @@ def test_reports_write_runtime_tool_service_denies_missing_write_grant(
 
     with session_factory() as session:
         reports = list(session.scalars(select(Report)))
-    assert exc_info.value.code == REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE
-    assert exc_info.value.message == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+    assert exc_info.value.code == "report_memory_write_retired"
     assert reports == []
 
 
-def test_reports_write_runtime_tool_fails_closed_for_stale_stored_memory_key(
+def test_reports_write_runtime_tool_fails_closed_for_core_memory_grant_only(
     session_factory: sessionmaker[Session],
 ) -> None:
-    capability_key = "runtime_reports_write_stale_memory_key"
+    capability_key = "runtime_reports_write_core_memory_key_only"
     _seed_runtime_tool_capability(
         session_factory,
         key=capability_key,
-        tools=["signaldeck.memory.write"],
+        tools=[MEMORY_WRITE_TOOL_KEY],
     )
     registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
 
-    with pytest.raises(RuntimeToolGrantError) as exc_info:
+    with pytest.raises(RuntimeToolError) as exc_info:
         _ = registry.dispatch(
             name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
             arguments_json=_reports_write_arguments_json(),
@@ -2213,18 +2494,11 @@ def test_reports_write_runtime_tool_fails_closed_for_stale_stored_memory_key(
 
     with session_factory() as session:
         reports = list(session.scalars(select(Report)))
-    assert exc_info.value.code == "capability_tool_keys_invalid"
-    assert exc_info.value.message == "Capability contains stale or invalid tool keys."
-    assert exc_info.value.details == [
-        {
-            "field": "toolKeys.0",
-            "issue": "Unknown server-declared tool 'signaldeck.memory.write'",
-        }
-    ]
+    assert exc_info.value.code == "report_memory_write_retired"
     assert reports == []
 
 
-def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_idempotent(
+def test_reports_write_runtime_tool_fails_closed_after_retirement(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_runtime_tool_capability(
@@ -2234,94 +2508,212 @@ def test_reports_write_runtime_tool_creates_pending_memory_from_context_and_is_i
     registry = RuntimeToolRegistry([REPORT_MEMORY_WRITE_TOOL_SPEC])
     context = _reports_write_runtime_context(session_factory)
 
-    first_payload = registry.dispatch(
-        name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-        arguments_json=_reports_write_arguments_json(),
-        granted_tool_keys={REPORT_MEMORY_WRITE_TOOL_KEY},
-        context=context,
-    )
-    second_payload = registry.dispatch(
-        name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
-        arguments_json=_reports_write_arguments_json(),
-        granted_tool_keys={REPORT_MEMORY_WRITE_TOOL_KEY},
-        context=context,
-    )
-
-    _assert_native_runtime_payload_is_json_safe_and_camel(first_payload)
-    _assert_native_runtime_payload_is_json_safe_and_camel(second_payload)
-    _assert_reports_write_payload_is_model_visible_memory(first_payload)
-    _assert_reports_write_payload_is_model_visible_memory(second_payload)
-    assert first_payload["toolKey"] == REPORT_MEMORY_WRITE_TOOL_KEY
-    assert first_payload["memoryId"] == second_payload["memoryId"]
-    assert first_payload["createdAt"] == second_payload["createdAt"]
-    assert first_payload["status"] == "pending"
-    assert second_payload["status"] == "pending"
-    assert first_payload["action"] == "created"
-    assert second_payload["action"] == "existing"
-    assert first_payload["warnings"] == []
-    assert second_payload["warnings"] == []
-    expected_provenance = {
-        "runId": 4242,
-        "agentKey": "portfolio_manager",
-        "agentVersion": 3,
-        "agentName": "Portfolio Manager",
-        "workflowKey": "platform_graph_daily_review",
-        "workflowVersion": 5,
-        "stepId": "portfolio_decision",
-        "slot": "decision",
-        "traceId": "trace-runtime-tools",
-        "createdByType": "agent",
-    }
-    assert first_payload["provenance"] == expected_provenance
-    assert second_payload["provenance"] == expected_provenance
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=REPORT_MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+            arguments_json=_reports_write_arguments_json(),
+            granted_tool_keys={REPORT_MEMORY_WRITE_TOOL_KEY},
+            context=context,
+        )
 
     with session_factory() as session:
         reports = list(session.scalars(select(Report)))
+        entries = list(session.scalars(select(AgentMemoryEntry)))
 
-    assert len(reports) == 1
-    report = reports[0]
-    assert first_payload["memoryId"] == f"mem_{report.id}"
-    payload_json = json.dumps([first_payload, second_payload], sort_keys=True)
-    assert report.slug not in payload_json
-    assert report.name not in payload_json
-    analysis = cast(dict[str, object], report.metadata_["analysis"])
-    decision = cast(dict[str, object], analysis["decision"])
-    created_by = cast(dict[str, object], report.metadata_["createdBy"])
-    assert report.source == "agent"
-    assert created_by == {
-        "type": "agent",
-        "runId": 4242,
-        "agentKey": "portfolio_manager",
-        "agentVersion": 3,
-        "agentName": "Portfolio Manager",
-        "workflowKey": "platform_graph_daily_review",
-        "workflowVersion": 5,
-        "stepId": "portfolio_decision",
-        "slot": "decision",
-        "traceId": "trace-runtime-tools",
-    }
-    assert analysis["reviewType"] == "agent_memory"
-    assert analysis["versionGroup"] == "agent_memory/v1"
-    assert analysis["ticker"] == "NVDA"
-    assert analysis["portfolioSlug"] == "core_us"
-    assert analysis["horizonDays"] == 30
-    assert analysis["confidence"] == "high"
-    assert analysis["decisionSummary"] == "Durable earnings setup."
-    assert analysis["runId"] == 4242
-    assert analysis["agentKey"] == "portfolio_manager"
-    assert analysis["agentVersion"] == 3
-    assert analysis["agentName"] == "Portfolio Manager"
-    assert analysis["workflowKey"] == "platform_graph_daily_review"
-    assert analysis["workflowVersion"] == 5
-    assert analysis["stepId"] == "portfolio_decision"
-    assert analysis["slot"] == "decision"
-    assert analysis["traceId"] == "trace-runtime-tools"
-    assert analysis["resolvedStatus"] == "pending"
-    assert analysis["reflections"] == []
-    assert "resolvedAt" not in analysis
-    assert "rawReturn" not in analysis
-    assert "alpha" not in analysis
-    assert decision["action"] == "buy"
+    assert exc_info.value.code == "report_memory_write_retired"
+    assert exc_info.value.message == (
+        "signaldeck_reports_write is retired; use signaldeck_memory_write for "
+        "canonical platform memory writes."
+    )
+    assert reports == []
+    assert entries == []
+
+
+def test_memory_write_runtime_tool_creates_core_memory_without_reports(
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_runtime_tool_capability(session_factory, tools=[MEMORY_WRITE_TOOL_KEY])
+    _seed_runtime_run(session_factory)
+    registry = RuntimeToolRegistry([MEMORY_WRITE_TOOL_SPEC], enabled_extension_keys=set())
+    context = _reports_write_runtime_context(session_factory)
+
+    first_payload = registry.dispatch(
+        name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        arguments_json=_memory_write_arguments_json(),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY},
+        context=context,
+    )
+    second_payload = registry.dispatch(
+        name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        arguments_json=_memory_write_arguments_json(),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY},
+        context=context,
+    )
+
+    _assert_core_memory_payload_is_model_safe(first_payload)
+    _assert_core_memory_payload_is_model_safe(second_payload)
+    assert first_payload["toolKey"] == MEMORY_WRITE_TOOL_KEY
+    assert first_payload["memoryId"] == second_payload["memoryId"]
+    assert str(first_payload["memoryId"]).startswith("memory_")
+    assert str(first_payload["revisionId"]).startswith("revision_")
+    assert first_payload["status"] == "pending"
+    assert first_payload["revisionAction"] == "created"
+    assert second_payload["revisionAction"] == "reused"
+    assert "action" not in first_payload
+
+    with session_factory() as session:
+        reports = list(session.scalars(select(Report)))
+        entries = list(session.scalars(select(AgentMemoryEntry)))
+        events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
+
+    assert reports == []
+    assert len(entries) == 1
+    assert entries[0].memory_id == first_payload["memoryId"]
+    assert [event.event_type for event in events] == ["written", "reused"]
+    for event in events:
+        assert event.run_id == _RUNTIME_RUN_ID
+        assert event.run_step_id == _RUNTIME_RUN_STEP_ID
+        assert event.run_agent_invocation_id == _RUNTIME_AGENT_INVOCATION_ID
+        assert event.run_operation_invocation_id == _RUNTIME_OPERATION_INVOCATION_ID
+        assert event.step_id == "portfolio_decision"
+        assert event.invocation_id == _RUNTIME_TOOL_CALL_INVOCATION_ID
+        assert event.trace_span_id == _RUNTIME_TRACE_SPAN_ID
+        assert event.memory_id == first_payload["memoryId"]
+
+
+def test_memory_lookup_runtime_tool_uses_current_context_with_finance_disabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_runtime_tool_capability(
+        session_factory,
+        tools=[MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY],
+    )
+    _seed_runtime_run(session_factory)
+    registry = RuntimeToolRegistry(RUNTIME_TOOL_SPECS, enabled_extension_keys=set())
+    context = _reports_write_runtime_context(session_factory)
+    write_args = _memory_write_arguments_json(
+        {
+            "content": (
+                "## Report [download](https://example.test/reports/1/download)\n"
+                "- Keep this insight."
+            ),
+            "attributes": {"reportId": 7, "safe": "kept"},
+        }
+    )
+    _ = registry.dispatch(
+        name=MEMORY_WRITE_OPENAI_FUNCTION_NAME,
+        arguments_json=write_args,
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+        context=context,
+    )
+
+    lookup_payload = registry.dispatch(
+        name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+        arguments_json=json.dumps(
+            {
+                "query": None,
+                "scope": None,
+                "subjectRefs": None,
+                "kind": None,
+                "status": "pending",
+                "tags": None,
+                "limit": None,
+                "offset": None,
+                "maxCharacters": None,
+            }
+        ),
+        granted_tool_keys={MEMORY_WRITE_TOOL_KEY, MEMORY_LOOKUP_TOOL_KEY},
+        context=context,
+    )
+
+    _assert_core_memory_payload_is_model_safe(lookup_payload)
+    assert lookup_payload["toolKey"] == MEMORY_LOOKUP_TOOL_KEY
+    assert lookup_payload["scopeMode"] == "current-context-fallback"
+    assert lookup_payload["fallbackScope"] == "current-run-package-agent"
+    assert lookup_payload["limit"] == 5
+    assert lookup_payload["maxCharacters"] == 4000
+    assert lookup_payload["count"] == 1
+    memory = cast(list[dict[str, object]], lookup_payload["memories"])[0]
+    assert memory["content"] == "Report [redacted]\nKeep this insight."
+    assert memory["attributes"] == {}
+
+    with session_factory() as session:
+        events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
+
+    assert [event.event_type for event in events] == ["written", "retrieved", "injected"]
+    retrieval_event = events[1]
+    injected_event = events[2]
+    assert retrieval_event.run_id == _RUNTIME_RUN_ID
+    assert retrieval_event.run_step_id == _RUNTIME_RUN_STEP_ID
+    assert retrieval_event.run_agent_invocation_id == _RUNTIME_AGENT_INVOCATION_ID
+    assert retrieval_event.run_operation_invocation_id == _RUNTIME_OPERATION_INVOCATION_ID
+    assert retrieval_event.step_id == "portfolio_decision"
+    assert retrieval_event.invocation_id == _RUNTIME_TOOL_CALL_INVOCATION_ID
+    assert retrieval_event.trace_span_id == _RUNTIME_TRACE_SPAN_ID
+    assert retrieval_event.memory_id is None
+    assert retrieval_event.budget == {"limit": 5, "offset": 0, "maxCharacters": 4000}
+    assert retrieval_event.result_snapshot["resultCount"] == 1
+    assert retrieval_event.result_snapshot["snippets"][0]["memoryId"] == memory["memoryId"]
+    assert injected_event.run_id == _RUNTIME_RUN_ID
+    assert injected_event.run_step_id == _RUNTIME_RUN_STEP_ID
+    assert injected_event.run_agent_invocation_id == _RUNTIME_AGENT_INVOCATION_ID
+    assert injected_event.run_operation_invocation_id == _RUNTIME_OPERATION_INVOCATION_ID
+    assert injected_event.step_id == "portfolio_decision"
+    assert injected_event.invocation_id == _RUNTIME_TOOL_CALL_INVOCATION_ID
+    assert injected_event.trace_span_id == _RUNTIME_TRACE_SPAN_ID
+    assert injected_event.memory_id is None
+    assert injected_event.retrieval_mode == "runtime-tool"
+    assert injected_event.budget == {"limit": 5, "offset": 0, "maxCharacters": 4000}
+    assert injected_event.result_snapshot["resultCount"] == 1
+    assert injected_event.result_snapshot["snippets"][0]["memoryId"] == memory["memoryId"]
+    assert injected_event.status_snapshot == {"status": "injected"}
+    assert injected_event.injected_text is not None
+    assert "Keep this insight" in injected_event.injected_text
+
+
+def test_memory_lookup_runtime_tool_rejects_unscoped_call_without_context() -> None:
+    registry = RuntimeToolRegistry([MEMORY_LOOKUP_TOOL_SPEC])
+
+    with pytest.raises(RuntimeToolError) as exc_info:
+        _ = registry.dispatch(
+            name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json="{}",
+            granted_tool_keys={MEMORY_LOOKUP_TOOL_KEY},
+            context=_runtime_context(fail_on_session=True),
+        )
+
+    assert exc_info.value.code == "agent_tool_dependency_missing"
+    assert exc_info.value.message == (
+        "signaldeck_memory_lookup requires at least one explicit selector or "
+        "current runtime context."
+    )
+
+
+def test_memory_lookup_runtime_tool_service_denies_missing_lookup_grant(
+    session_factory: sessionmaker[Session],
+) -> None:
+    capability_key = "runtime_memory_lookup_without_service_grant"
+    _seed_runtime_tool_capability(
+        session_factory,
+        key=capability_key,
+        tools=[MEMORY_WRITE_TOOL_KEY],
+    )
+    _seed_runtime_run(session_factory)
+    registry = RuntimeToolRegistry([MEMORY_LOOKUP_TOOL_SPEC])
+
+    with pytest.raises(RuntimeToolGrantError) as exc_info:
+        _ = registry.dispatch(
+            name=MEMORY_LOOKUP_OPENAI_FUNCTION_NAME,
+            arguments_json='{"kind":"research.note"}',
+            granted_tool_keys={MEMORY_LOOKUP_TOOL_KEY},
+            context=_reports_write_runtime_context(
+                session_factory,
+                capability_key=capability_key,
+            ),
+        )
+
+    assert exc_info.value.code == MEMORY_TOOL_ACCESS_DENIED_CODE
+    assert exc_info.value.message == MEMORY_LOOKUP_ACCESS_DENIED_MESSAGE
 
 
 def test_market_data_quote_lookup_service_denies_missing_capability_reference_grant(

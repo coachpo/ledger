@@ -20,7 +20,7 @@ _FIXTURE = (
     / "workflow_packages"
     / "tradingagents_advisory_research.yaml"
 )
-_EXPECTED_FINANCE_TOOL_KEYS = {
+_EXPECTED_PACKAGE_TOOL_KEYS = {
     "signaldeck.market_data.quote_lookup",
     "signaldeck.market_data.history_lookup",
     "signaldeck.market_data.ohlcv_lookup",
@@ -31,7 +31,8 @@ _EXPECTED_FINANCE_TOOL_KEYS = {
     "signaldeck.insider_data.lookup",
     "signaldeck.positions.lookup",
     "signaldeck.reports.lookup",
-    "signaldeck.reports.write",
+    "signaldeck.memory.lookup",
+    "signaldeck.memory.write",
 }
 
 
@@ -213,7 +214,7 @@ def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
     assert manifest_response.status_code == 200, manifest_response.json()
     manifest_body = cast(dict[str, object], manifest_response.json())
     package_definition = cast(dict[str, object], manifest_body["packageDefinition"])
-    assert _profile_tool_keys(package_definition) == _EXPECTED_FINANCE_TOOL_KEYS
+    assert _profile_tool_keys(package_definition) == _EXPECTED_PACKAGE_TOOL_KEYS
 
 
 def test_manifest_reads_return_hydrated_safe_package_resources(

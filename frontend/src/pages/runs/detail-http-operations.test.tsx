@@ -106,6 +106,7 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     input: { ticker: "NVDA" },
     lineageRootRunId: null,
     memoryArtifacts: [],
+    memoryEvents: [],
     extensionDependencies: [],
     packageProvenance: null,
     queuedAt: NOW,

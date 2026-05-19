@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.models.agent_memory import RunMemoryEvent
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
 from app.models.run import Run
@@ -18,8 +19,19 @@ from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.models.workflow_package import WorkflowPackage
 from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.memory import (
+    MemoryLifecycleStatus,
+    MemoryOutcome,
+    MemoryProvenance,
+    MemoryQuery,
+    MemoryScope,
+    MemoryScopeType,
+    MemorySubjectRef,
+    MemoryWriteRequest,
+)
 from app.services.agent_execution_service import AgentExecutionService, RunAgentInvocationResult
 from app.services.extension_service import ExtensionService
+from app.services.memory_service import MemoryLookupContext, MemoryService
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from tests.test_workflow_package_manifest_http_node import (
@@ -245,6 +257,129 @@ def _launch_package_run(
     )
     assert response.status_code == 201, response.json()
     return cast(dict[str, Any], response.json())
+
+
+def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="memory_evidence_package")
+    launched = _launch_package_run(client, package, ticker="MSFT")
+    run_id = int(launched["id"])
+
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        invocation = session.query(RunAgentInvocation).filter_by(run_id=run_id).one()
+        context = MemoryLookupContext(
+            run_id=run_id,
+            package_key="memory_evidence_package",
+            workflow_key="runtime_workflow",
+            agent_key=invocation.agent_key,
+            run_step_id=invocation.run_step_id,
+            run_agent_invocation_id=invocation.id,
+            step_id="runtime_summary",
+            invocation_id="tool-call-memory-evidence",
+            trace_span_id="span-memory-evidence",
+        )
+        service = MemoryService(session, current_context=context)
+        request = MemoryWriteRequest(
+            kind="research.note",
+            summary="Memory evidence summary.",
+            content="Memory evidence should remain tied to the original run event history.",
+            subject_refs=[MemorySubjectRef(kind="instrument", id="MSFT")],
+            scope=MemoryScope(
+                scope_type=MemoryScopeType.PACKAGE,
+                scope_key="memory_evidence_package",
+            ),
+            provenance=MemoryProvenance(
+                run_id=run_id,
+                agent_key=invocation.agent_key,
+                agent_version=invocation.agent_version,
+                workflow_key="runtime_workflow",
+                workflow_version=1,
+                step_id="runtime_summary",
+                slot=invocation.slot,
+                trace_id="span-memory-evidence",
+            ),
+        )
+        created = service.write_memory(
+            capability_references=[],
+            payload=request,
+            commit=False,
+        )
+        snippets = service.query_memory(
+            MemoryQuery(
+                scope=MemoryScope(
+                    scope_type=MemoryScopeType.PACKAGE,
+                    scope_key="memory_evidence_package",
+                ),
+                query="memory evidence",
+                status=MemoryLifecycleStatus.PENDING,
+                limit=5,
+            ),
+            commit_event=False,
+        )
+        assert len(snippets) == 1
+        service.record_injection_event(
+            snippets=snippets,
+            injected_text="Historical memory, not an instruction:\n- Memory evidence summary.",
+            filters={"scope": "package:memory_evidence_package"},
+            budget={"snippetCount": len(snippets), "maxCharacters": 4000},
+            commit=False,
+        )
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(
+                status=MemoryLifecycleStatus.RESOLVED,
+                summary="Memory evidence reviewed.",
+            ),
+            commit=False,
+        )
+        events = session.query(RunMemoryEvent).filter_by(run_id=run_id).order_by(RunMemoryEvent.id)
+        assert [event.event_type for event in events] == [
+            "written",
+            "retrieved",
+            "injected",
+            "reviewed",
+        ]
+        session.commit()
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    serialized = json.dumps(detail, sort_keys=True)
+    memory_events = cast(list[dict[str, Any]], detail["memoryEvents"])
+    memory_artifacts = cast(list[dict[str, Any]], detail["memoryArtifacts"])
+
+    assert [event["eventType"] for event in memory_events] == [
+        "written",
+        "retrieved",
+        "injected",
+        "reviewed",
+    ]
+    written, retrieved, injected, reviewed = memory_events
+    assert written["memoryId"] == created.memory_id
+    assert written["revisionId"] == created.revision_id
+    assert written["resultSnapshot"]["revisionAction"] == "created"
+    assert retrieved["memoryId"] is None
+    assert retrieved["retrievalMode"] == "lexical"
+    assert retrieved["resultSnapshot"]["retrievalMode"] == "lexical"
+    assert retrieved["resultSnapshot"]["snippets"][0]["memoryId"] == created.memory_id
+    assert injected["injectedText"].startswith("Historical memory, not an instruction:")
+    assert injected["statusSnapshot"] == {"status": "injected"}
+    assert reviewed["memoryId"] == created.memory_id
+    assert reviewed["statusSnapshot"] == {"status": "resolved"}
+    assert memory_artifacts[0]["memoryId"] == created.memory_id
+    assert memory_artifacts[0]["summary"] == "Memory evidence summary."
+    assert "reportId" not in serialized
+    assert "reportSlug" not in serialized
+    assert "auditLinks" not in serialized
+    assert "/reports/" not in serialized
+    assert "download" not in serialized
 
 
 def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(

@@ -2,26 +2,46 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import cast
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.extensions.signaldeck_finance.grant_policy import (
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE,
-    REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
-    REPORT_MEMORY_WRITE_GRANT_POLICY,
+from app.agents.runtime_tools.memory import (
+    MEMORY_LOOKUP_TOOL_KEY,
+    MEMORY_TOOL_ACCESS_DENIED_CODE,
+    MEMORY_WRITE_ACCESS_DENIED_MESSAGE,
+    MEMORY_WRITE_GRANT_POLICY,
+    MEMORY_WRITE_TOOL_KEY,
 )
-from app.extensions.signaldeck_finance.runtime_types import (
-    REPORT_LOOKUP_TOOL_KEY,
-    REPORT_MEMORY_WRITE_TOOL_KEY,
-)
+from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
+from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.capability import Capability
 from app.models.report import Report
-from app.schemas.memory import MemoryDecision, MemoryProvenance, MemoryWriteRequest
+from app.models.run import Run
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_step import RunStep
+from app.repositories.agent_memory import (
+    AgentMemoryEntryRepository,
+    AgentMemoryLookupCandidate,
+    AgentMemoryRevisionRepository,
+    RunMemoryEventRepository,
+)
+from app.schemas.extension import ExtensionToggleRequest
+from app.schemas.memory import (
+    MemoryDecision,
+    MemoryLifecycleStatus,
+    MemoryOutcome,
+    MemoryProvenance,
+    MemoryQuery,
+    MemoryScope,
+    MemoryScopeType,
+    MemoryWriteRequest,
+)
 from app.services.capability_service import RuntimeToolGrantError
-from app.services.memory_service import MemoryService
+from app.services.extension_service import ExtensionService
+from app.services.memory_context_service import MemoryContextService
+from app.services.memory_service import MemoryLookupContext, MemoryService
 
 _MEMORY_WRITE_CAPABILITY_KEY = "memory_service_test_writer"
 
@@ -45,11 +65,59 @@ def _ensure_memory_write_capability(session: Session) -> None:
             version=1,
             status="published",
             name="Memory Service Test Writer",
-            description="Grants report-memory writes in memory service tests.",
-            tool_keys=[REPORT_MEMORY_WRITE_TOOL_KEY],
+            description="Grants core memory writes in memory service tests.",
+            tool_keys=[MEMORY_WRITE_TOOL_KEY],
         )
     )
     session.commit()
+
+
+def _seed_run(session: Session, *, run_id: int | None = None) -> Run:
+    run = Run(
+        id=run_id,
+        target_kind="workflow",
+        target_id=1,
+        target_key="platform_graph_daily_review",
+        target_version=5,
+        input={"ticker": "NVDA"},
+        status="running",
+        trace_id="trace-abc123",
+    )
+    session.add(run)
+    session.flush()
+    session.refresh(run)
+    return run
+
+
+def _seed_run_invocation(session: Session, run: Run) -> RunAgentInvocation:
+    step = RunStep(
+        run_id=run.id,
+        step_index=1,
+        status="running",
+        graph_metadata={"nodeId": "portfolio_decision"},
+    )
+    session.add(step)
+    session.flush()
+    session.refresh(step)
+    invocation = RunAgentInvocation(
+        run_step_id=step.id,
+        run_id=run.id,
+        step_index=1,
+        slot="decision",
+        position=0,
+        agent_id=1,
+        agent_key="portfolio_manager",
+        agent_version=3,
+        output_schema_id=1,
+        output_schema_version=1,
+        input_mode="wired",
+        graph_metadata={"nodeId": "portfolio_decision"},
+        status="running",
+    )
+    session.add(invocation)
+    session.flush()
+    session.refresh(invocation)
+    return invocation
 
 
 def _write_request(run_id: int = 42) -> MemoryWriteRequest:
@@ -84,7 +152,18 @@ def _reports(session: Session) -> list[Report]:
     return list(session.scalars(select(Report).order_by(Report.id)))
 
 
-def test_memory_report_service_boundary_write_memory_requires_grant_and_creates_no_report(
+def _count(session: Session, model: type[object]) -> int:
+    return int(session.scalar(select(func.count()).select_from(model)) or 0)
+
+
+def _disable_finance_workspace(session: Session) -> None:
+    _ = ExtensionService(session).set_extension_enabled(
+        FINANCE_WORKSPACE_EXTENSION_KEY,
+        ExtensionToggleRequest.model_validate({"enabled": False}),
+    )
+
+
+def test_core_memory_service_write_requires_grant_and_creates_no_report(
     session_factory: sessionmaker[Session],
 ) -> None:
     capability_key = "memory_service_read_only"
@@ -96,7 +175,7 @@ def test_memory_report_service_boundary_write_memory_requires_grant_and_creates_
                 status="published",
                 name="Read Only Memory Service Capability",
                 description="Does not grant memory writes.",
-                tool_keys=[REPORT_LOOKUP_TOOL_KEY],
+                tool_keys=[MEMORY_LOOKUP_TOOL_KEY],
             )
         )
         session.commit()
@@ -105,31 +184,40 @@ def test_memory_report_service_boundary_write_memory_requires_grant_and_creates_
             _ = MemoryService(session).write_memory(
                 capability_references=_capability_references(capability_key),
                 payload=_write_request(),
-                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
+                grant_policy=MEMORY_WRITE_GRANT_POLICY,
             )
         reports = _reports(session)
 
-    assert exc_info.value.code == REPORT_MEMORY_WRITE_ACCESS_DENIED_CODE
-    assert exc_info.value.message == REPORT_MEMORY_WRITE_ACCESS_DENIED_MESSAGE
+    assert exc_info.value.code == MEMORY_TOOL_ACCESS_DENIED_CODE
+    assert exc_info.value.message == MEMORY_WRITE_ACCESS_DENIED_MESSAGE
     assert reports == []
 
 
-def test_memory_report_service_boundary_write_memory_returns_memory_projections(
+def test_core_memory_service_write_returns_canonical_memory_projections(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         _ensure_memory_write_capability(session)
+        run = _seed_run(session)
         service = MemoryService(session)
         result = service.write_memory(
             capability_references=_capability_references(),
-            payload=_write_request(),
-            grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
+            payload=_write_request(run.id),
+            grant_policy=MEMORY_WRITE_GRANT_POLICY,
         )
         entry = service.get_memory(result.memory_id)
-        artifacts = service.list_run_artifacts(42)
+        artifacts = service.list_run_artifacts(run.id)
         reports = _reports(session)
+        entry_count = _count(session, AgentMemoryEntry)
+        revision_count = _count(session, AgentMemoryRevision)
+        event_count = _count(session, RunMemoryEvent)
 
-    assert len(reports) == 1
+    assert reports == []
+    assert entry_count == 1
+    assert revision_count == 1
+    assert event_count == 1
+    assert result.memory_id.startswith("memory_")
+    assert not result.memory_id.startswith("mem_")
     assert entry.memory_id == result.memory_id
     assert entry.audit_links is None
     model_payload = result.model_visible_dump()
@@ -143,14 +231,400 @@ def test_memory_report_service_boundary_write_memory_returns_memory_projections(
     artifact = artifacts[0]
     ui_payload = artifact.dump_for_projection("ui-visible")
     artifact_model_payload = artifact.model_visible_dump()
-    audit_links = cast(dict[str, object], ui_payload["auditLinks"])
-    report_link = cast(dict[str, object], audit_links["report"])
     assert artifact.memory_id == result.memory_id
-    assert report_link["slug"] == reports[0].slug
-    assert report_link["name"] == reports[0].name
-    assert "reportId" not in report_link
+    assert ui_payload["sourceGraphMetadata"] == {
+        "stepId": "portfolio_decision",
+        "slot": "decision",
+        "traceId": "trace-abc123",
+        "workflowKey": "platform_graph_daily_review",
+        "workflowVersion": 5,
+    }
     assert "auditLinks" not in artifact_model_payload
-    assert reports[0].slug not in str(artifact_model_payload)
+    assert "reportSlug" not in str(artifact_model_payload)
+
+
+def test_core_memory_service_query_binds_current_context_with_finance_disabled(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _disable_finance_workspace(session)
+        run = _seed_run(session)
+        service = MemoryService(session)
+        created = service.write_memory(
+            capability_references=[],
+            payload=_write_request(run.id),
+        )
+        resolved = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+        )
+        snippets = service.query_memory(
+            MemoryQuery(query="compounding"),
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                agent_key="portfolio_manager",
+                workflow_key="platform_graph_daily_review",
+            ),
+        )
+        reports = _reports(session)
+
+    assert resolved.status == MemoryLifecycleStatus.RESOLVED
+    assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
+    assert "Long-term compounding memory" in snippets[0].text
+    assert reports == []
+
+
+def test_current_context_fallback_globally_reranks_before_limit(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        service = MemoryService(session)
+        run_scoped = service.write_memory(
+            capability_references=[],
+            payload=_write_request(run.id).model_copy(
+                update={
+                    "scope": MemoryScope(
+                        scope_type=MemoryScopeType.RUN,
+                        scope_key=str(run.id),
+                    ),
+                    "summary": "Run scoped shared ranking memory.",
+                    "content": "shared ranking signal from the broad run scope.",
+                }
+            ),
+        )
+        agent_scoped = service.write_memory(
+            capability_references=[],
+            payload=_write_request(run.id).model_copy(
+                update={
+                    "scope": MemoryScope(
+                        scope_type=MemoryScopeType.AGENT,
+                        scope_key="portfolio_manager",
+                    ),
+                    "summary": "Agent scoped shared ranking memory.",
+                    "content": "shared ranking signal from the tight agent scope.",
+                }
+            ),
+        )
+        _ = service.resolve_memory(
+            run_scoped.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Run resolved"),
+        )
+        _ = service.resolve_memory(
+            agent_scoped.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Agent resolved"),
+        )
+
+        snippets = service.query_memory(
+            MemoryQuery(query="shared ranking", limit=1),
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                agent_key="portfolio_manager",
+                workflow_key="platform_graph_daily_review",
+            ),
+        )
+
+    assert [snippet.memory_id for snippet in snippets] == [agent_scoped.memory_id]
+    assert snippets[0].retrieval_score is not None
+    assert snippets[0].retrieval_score.scope_specificity == 5
+
+
+def test_core_memory_query_fuses_vector_candidates_and_records_score_provenance(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_factory() as session:
+        source_run = _seed_run(session)
+        retrieval_run = _seed_run(session)
+        scope = MemoryScope(scope_type=MemoryScopeType.PACKAGE, scope_key="pkg-hybrid")
+        service = MemoryService(session)
+        lexical_created = service.write_memory(
+            capability_references=[],
+            payload=_write_request(source_run.id).model_copy(
+                update={
+                    "scope": scope,
+                    "summary": "Alpha lexical memory.",
+                    "content": "alpha sizing guardrail should remain easy to find.",
+                }
+            ),
+        )
+        vector_created = service.write_memory(
+            capability_references=[],
+            payload=_write_request(source_run.id).model_copy(
+                update={
+                    "scope": scope,
+                    "summary": "Semantic margin memory.",
+                    "content": "Margin expansion should influence position sizing.",
+                }
+            ),
+        )
+        _ = service.resolve_memory(
+            lexical_created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Lexical resolved"),
+        )
+        _ = service.resolve_memory(
+            vector_created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Vector resolved"),
+        )
+
+        def fake_vector_candidates(
+            self: AgentMemoryEntryRepository,
+            **kwargs: object,
+        ) -> list[AgentMemoryLookupCandidate]:
+            assert kwargs["scope_type"] == "package"
+            assert kwargs["scope_key"] == "pkg-hybrid"
+            assert kwargs["status"] == "resolved"
+            assert kwargs["query_embedding"] == (0.1, 0.2, 0.3)
+            entry = self.get_by_memory_id(vector_created.memory_id)
+            assert entry is not None
+            revision = AgentMemoryRevisionRepository(self.session).get_latest_for_entry(entry.id)
+            assert revision is not None
+            return [
+                AgentMemoryLookupCandidate(
+                    entry=entry,
+                    revision=revision,
+                    vector_distance=0.05,
+                    vector_similarity=0.95,
+                )
+            ]
+
+        monkeypatch.setattr(
+            AgentMemoryEntryRepository,
+            "list_vector_lookup_candidates",
+            fake_vector_candidates,
+        )
+        snippets = MemoryService(
+            session,
+            current_context=MemoryLookupContext(run_id=retrieval_run.id),
+        ).query_memory(
+            MemoryQuery(
+                scope=scope,
+                query="alpha",
+                query_embedding=(0.1, 0.2, 0.3),
+                query_embedding_model="text-embedding-3-small",
+                limit=5,
+            )
+        )
+        events = list(
+            session.scalars(
+                select(RunMemoryEvent)
+                .where(RunMemoryEvent.run_id == retrieval_run.id)
+                .order_by(RunMemoryEvent.id)
+            )
+        )
+
+    assert [snippet.memory_id for snippet in snippets] == [
+        lexical_created.memory_id,
+        vector_created.memory_id,
+    ]
+    lexical_score = snippets[0].retrieval_score
+    vector_score = snippets[1].retrieval_score
+    assert lexical_score is not None
+    assert vector_score is not None
+    assert lexical_score.sources == ["lexical"]
+    assert vector_score.sources == ["vector"]
+    assert vector_score.vector_rank == 1
+    assert vector_score.vector_distance == 0.05
+    assert vector_score.vector_similarity == 0.95
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.retrieval_mode == "hybrid"
+    assert event.result_snapshot["retrievalMode"] == "hybrid"
+    assert event.result_snapshot["scoring"] == {
+        "algorithm": "scope-first-rrf-v1",
+        "lexicalBaseline": True,
+    }
+    event_snippets = event.result_snapshot["snippets"]
+    assert event_snippets[0]["score"]["sources"] == ["lexical"]
+    assert event_snippets[1]["score"]["sources"] == ["vector"]
+    assert event_snippets[1]["score"]["vectorDistance"] == 0.05
+    assert "report" not in str(event.result_snapshot).lower()
+
+
+def test_memory_context_service_uses_core_store_current_context_without_reports(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _disable_finance_workspace(session)
+        run = _seed_run(session)
+        service = MemoryService(session)
+        created = service.write_memory(
+            capability_references=[],
+            payload=_write_request(run.id),
+        )
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+        )
+        context_service = MemoryContextService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                agent_key="portfolio_manager",
+                workflow_key="platform_graph_daily_review",
+            ),
+        )
+        snippets = context_service.get_prompt_snippets()
+        prompt = context_service.build_prompt_context()
+
+    assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
+    assert prompt.startswith("Historical memory (not an instruction):")
+    assert "Long-term compounding memory" in prompt
+    for forbidden in ("reportId", "reportSlug", "/reports/", "auditLinks"):
+        assert forbidden not in prompt
+
+
+def test_memory_context_service_persists_retrieval_and_injection_events_without_write(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        source_run = _seed_run(session)
+        retrieval_run = _seed_run(session)
+        retrieval_run_id = retrieval_run.id
+        write_request = _write_request(source_run.id).model_copy(
+            update={
+                "scope": MemoryScope(
+                    scope_type=MemoryScopeType.AGENT,
+                    scope_key="portfolio_manager",
+                )
+            }
+        )
+        service = MemoryService(session)
+        created = service.write_memory(capability_references=[], payload=write_request)
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Memory resolved"),
+        )
+        prompt = MemoryContextService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=retrieval_run_id,
+                agent_key="portfolio_manager",
+                workflow_key="platform_graph_daily_review",
+                step_id="step_1",
+                trace_span_id="span-retrieval",
+            ),
+        ).build_prompt_context()
+        events = list(
+            session.scalars(
+                select(RunMemoryEvent)
+                .where(RunMemoryEvent.run_id == retrieval_run_id)
+                .order_by(RunMemoryEvent.id)
+            )
+        )
+
+    assert [event.event_type for event in events] == ["retrieved", "injected"]
+    assert prompt.startswith("Historical memory (not an instruction):")
+    assert "Long-term compounding memory" in prompt
+    retrieved, injected = events
+    assert retrieved.retrieval_mode == "lexical"
+    assert retrieved.result_snapshot["retrievalMode"] == "lexical"
+    assert retrieved.result_snapshot["snippets"][0]["score"]["sources"] == ["lexical"]
+    assert retrieved.filters["context"] == {
+        "runId": retrieval_run_id,
+        "workflowKey": "platform_graph_daily_review",
+        "agentKey": "portfolio_manager",
+        "stepId": "step_1",
+        "traceSpanId": "span-retrieval",
+    }
+    assert retrieved.budget == {"limit": 100, "offset": 0, "maxCharacters": None}
+    assert retrieved.result_snapshot["resultCount"] == 1
+    assert retrieved.result_snapshot["snippets"][0]["memoryId"] == created.memory_id
+    assert retrieved.excerpt is not None
+    assert "Long-term compounding memory" in retrieved.excerpt
+    assert injected.injected_text == prompt
+    assert injected.result_snapshot["snippets"][0]["memoryId"] == created.memory_id
+    assert injected.status_snapshot == {"status": "injected"}
+    for event in events:
+        assert event.memory_id is None
+        assert event.trace_span_id == "span-retrieval"
+        assert "report" not in str(event.result_snapshot).lower()
+
+
+def test_core_memory_write_and_reuse_events_keep_execution_provenance(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        _ensure_memory_write_capability(session)
+        run = _seed_run(session)
+        invocation = _seed_run_invocation(session, run)
+        run_id = run.id
+        run_step_id = invocation.run_step_id
+        run_agent_invocation_id = invocation.id
+        service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run_id,
+                run_step_id=run_step_id,
+                run_agent_invocation_id=run_agent_invocation_id,
+                step_id="step_1",
+                invocation_id="tool-call-1",
+                trace_span_id="span-write",
+            ),
+        )
+        payload = _write_request(run_id)
+        created = service.write_memory(
+            capability_references=_capability_references(),
+            payload=payload,
+            grant_policy=MEMORY_WRITE_GRANT_POLICY,
+        )
+        reused = service.write_memory(
+            capability_references=_capability_references(),
+            payload=payload,
+            grant_policy=MEMORY_WRITE_GRANT_POLICY,
+        )
+        events = list(
+            session.scalars(
+                select(RunMemoryEvent)
+                .where(RunMemoryEvent.run_id == run_id)
+                .order_by(RunMemoryEvent.id)
+            )
+        )
+
+    assert reused.memory_id == created.memory_id
+    assert reused.revision_id == created.revision_id
+    assert [event.event_type for event in events] == ["written", "reused"]
+    for event in events:
+        assert event.run_step_id == run_step_id
+        assert event.run_agent_invocation_id == run_agent_invocation_id
+        assert event.step_id == "step_1"
+        assert event.invocation_id == "tool-call-1"
+        assert event.memory_id == created.memory_id
+        assert event.revision_id == created.revision_id
+        assert event.trace_span_id == "span-write"
+        assert event.filters["contentHash"] == payload.content_hash()
+        assert event.filters["provenance"]["runId"] == run_id
+        assert event.budget == {}
+    assert events[0].result_snapshot["revisionAction"] == "created"
+    assert events[1].result_snapshot["revisionAction"] == "reused"
+
+
+def test_core_memory_write_rolls_back_when_event_persistence_fails(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_factory() as session:
+        _ensure_memory_write_capability(session)
+        run = _seed_run(session)
+
+        def failing_add_event(self: RunMemoryEventRepository, **fields: object) -> RunMemoryEvent:
+            del self, fields
+            raise RuntimeError("simulated event persistence failure")
+
+        monkeypatch.setattr(RunMemoryEventRepository, "add_event", failing_add_event)
+
+        with pytest.raises(RuntimeError, match="simulated event persistence failure"):
+            _ = MemoryService(session).write_memory(
+                capability_references=_capability_references(),
+                payload=_write_request(run.id),
+                grant_policy=MEMORY_WRITE_GRANT_POLICY,
+            )
+
+    with session_factory() as session:
+        assert _count(session, AgentMemoryEntry) == 0
+        assert _count(session, AgentMemoryRevision) == 0
+        assert _count(session, RunMemoryEvent) == 0
 
 
 def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(
@@ -159,6 +633,7 @@ def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(
 ) -> None:
     with session_factory() as session:
         _ensure_memory_write_capability(session)
+        run = _seed_run(session)
 
         def failing_commit() -> None:
             session.flush()
@@ -169,12 +644,15 @@ def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(
         with pytest.raises(RuntimeError, match="simulated memory service commit failure"):
             _ = MemoryService(session).write_memory(
                 capability_references=_capability_references(),
-                payload=_write_request(run_id=43),
-                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
+                payload=_write_request(run.id),
+                grant_policy=MEMORY_WRITE_GRANT_POLICY,
             )
 
     with session_factory() as session:
         assert _reports(session) == []
+        assert _count(session, AgentMemoryEntry) == 0
+        assert _count(session, AgentMemoryRevision) == 0
+        assert _count(session, RunMemoryEvent) == 0
 
 
 def test_memory_report_service_boundary_has_no_new_direct_production_create_call_sites() -> None:

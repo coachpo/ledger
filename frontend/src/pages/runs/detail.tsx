@@ -23,6 +23,8 @@ import type {
   RunAgentInvocationRead,
   RunGraphMetadata,
   RunMemoryArtifactRead,
+  RunMemoryEventRead,
+  RunMemoryEventType,
   RunOperationInvocationRead,
   RunRead,
   RunStatus,
@@ -80,6 +82,16 @@ type DetailItem = {
   value: ReactNode;
 };
 
+type MemoryEventGroupKey = "retrievedContext" | "memoryWrites" | "reviewFollowUp" | "auditTrail";
+
+type MemoryEventGroupDefinition = {
+  description: string;
+  emptyCopy: string;
+  eventTypes: RunMemoryEventType[];
+  key: MemoryEventGroupKey;
+  title: string;
+};
+
 type JsonValidationResult<T> = {
   error: string | null;
   value: T | null;
@@ -110,6 +122,36 @@ const LINEAGE_INITIAL_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const LINEAGE_FIT_VIEW_MAX_ZOOM = 1;
 const LINEAGE_MAX_ZOOM = 1.8;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
+const MEMORY_EVENT_GROUPS: MemoryEventGroupDefinition[] = [
+  {
+    description: "Lookup and prompt-injection context captured while this run assembled memory for agents.",
+    emptyCopy: "No retrieval or prompt-injection memory events were recorded.",
+    eventTypes: ["retrieved", "injected"],
+    key: "retrievedContext",
+    title: "Retrieved context",
+  },
+  {
+    description: "Writes, duplicate reuses, and supersession decisions emitted by core memory tools.",
+    emptyCopy: "No memory write, reuse, or supersession events were recorded.",
+    eventTypes: ["written", "reused", "superseded"],
+    key: "memoryWrites",
+    title: "Memory written and reused",
+  },
+  {
+    description: "Review and follow-up lifecycle evidence attached to memories touched by this run.",
+    emptyCopy: "No review or follow-up memory events were recorded.",
+    eventTypes: ["reviewed"],
+    key: "reviewFollowUp",
+    title: "Review and follow-up",
+  },
+  {
+    description: "Failure or uncategorized memory events retained as an audit trail for this run.",
+    emptyCopy: "No audit-only memory events were recorded.",
+    eventTypes: ["failed"],
+    key: "auditTrail",
+    title: "Audit trail",
+  },
+];
 
 function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
@@ -565,6 +607,80 @@ function memoryProvenanceLabel(artifact: RunMemoryArtifactRead): string {
     provenance.slot ? `slot ${provenance.slot}` : null,
     `run #${provenance.runId}`,
   ].filter(Boolean).join(" · ");
+}
+
+function hasRecordEntries(value: Record<string, unknown>): boolean {
+  return Object.keys(value).length > 0;
+}
+
+function formatMemoryEventType(eventType: RunMemoryEventType): string {
+  const labels: Record<RunMemoryEventType, string> = {
+    failed: "Failed",
+    injected: "Injected",
+    retrieved: "Retrieved",
+    reused: "Reused",
+    reviewed: "Reviewed",
+    superseded: "Superseded",
+    written: "Written",
+  };
+
+  return labels[eventType];
+}
+
+function groupKeyForMemoryEvent(eventType: RunMemoryEventType): MemoryEventGroupKey {
+  return MEMORY_EVENT_GROUPS.find((definition) => definition.eventTypes.includes(eventType))?.key ?? "auditTrail";
+}
+
+function groupedMemoryEvents(events: RunMemoryEventRead[]): Record<MemoryEventGroupKey, RunMemoryEventRead[]> {
+  const grouped: Record<MemoryEventGroupKey, RunMemoryEventRead[]> = {
+    auditTrail: [],
+    memoryWrites: [],
+    retrievedContext: [],
+    reviewFollowUp: [],
+  };
+
+  for (const event of events) {
+    grouped[groupKeyForMemoryEvent(event.eventType)].push(event);
+  }
+
+  return grouped;
+}
+
+function memoryEventDetails(event: RunMemoryEventRead): DetailItem[] {
+  const items: DetailItem[] = [
+    { label: "Event", value: `#${event.id}` },
+    { label: "Recorded", value: formatDateTime(event.createdAt) },
+  ];
+
+  if (event.runStepId) {
+    items.push({ label: "Run step", value: `#${event.runStepId}` });
+  }
+  if (event.stepId) {
+    items.push({ label: "Step key", value: event.stepId });
+  }
+  if (event.runAgentInvocationId) {
+    items.push({ label: "Agent invocation", value: `#${event.runAgentInvocationId}` });
+  }
+  if (event.runOperationInvocationId) {
+    items.push({ label: "Operation invocation", value: `#${event.runOperationInvocationId}` });
+  }
+  if (event.invocationId) {
+    items.push({ label: "Invocation key", value: event.invocationId });
+  }
+  if (event.memoryId) {
+    items.push({ label: "Memory id", value: event.memoryId });
+  }
+  if (event.revisionId) {
+    items.push({ label: "Revision id", value: event.revisionId });
+  }
+  if (event.retrievalMode) {
+    items.push({ label: "Retrieval mode", value: event.retrievalMode });
+  }
+  if (event.traceSpanId) {
+    items.push({ label: "Trace span", value: event.traceSpanId });
+  }
+
+  return items;
 }
 
 function JsonEditorField({
@@ -1063,7 +1179,7 @@ function ExecutionOutline({
           })}
           {run.memoryArtifacts.length > 0 ? (
             <div className="rounded-xl border bg-background p-2">
-              <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Memory artifacts</p>
+              <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Compact memory artifacts</p>
               <div className="space-y-1">
                 {run.memoryArtifacts.map((artifact) => (
                   <InspectionSelectorButton
@@ -1174,6 +1290,122 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
       </CardHeader>
       <CardContent>
         <LineageDiagram ariaLabel="Run replay and resume lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemoryTextEvidence({ label, testId, value }: { label: string; testId?: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MemoryEventCard({ event }: { event: RunMemoryEventRead }) {
+  return (
+    <Card className="gap-3" data-testid={`runs-memory-event-${event.id}`}>
+      <CardHeader className="px-4 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{formatMemoryEventType(event.eventType)}</Badge>
+          {event.memoryId ? <Badge variant="outline">{event.memoryId}</Badge> : null}
+          {event.revisionId ? <Badge variant="outline">{event.revisionId}</Badge> : null}
+        </div>
+        <CardDescription>{formatDateTime(event.createdAt)}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 pb-4">
+        <DetailGrid items={memoryEventDetails(event)} />
+        {event.excerpt ? <MemoryTextEvidence label="Excerpt" testId={`runs-memory-event-${event.id}-excerpt`} value={event.excerpt} /> : null}
+        {event.injectedText ? <MemoryTextEvidence label="Injected text" testId={`runs-memory-event-${event.id}-injected-text`} value={event.injectedText} /> : null}
+        {hasRecordEntries(event.filters) ? <JsonBlock label="Filters" testId={`runs-memory-event-${event.id}-filters`} value={event.filters} /> : null}
+        {hasRecordEntries(event.budget) ? <JsonBlock label="Budget" testId={`runs-memory-event-${event.id}-budget`} value={event.budget} /> : null}
+        {hasRecordEntries(event.resultSnapshot) ? <JsonBlock label="Result snapshot" testId={`runs-memory-event-${event.id}-result`} value={event.resultSnapshot} /> : null}
+        {hasRecordEntries(event.statusSnapshot) ? <JsonBlock label="Status snapshot" testId={`runs-memory-event-${event.id}-status`} value={event.statusSnapshot} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemoryEventGroupSection({ definition, events }: { definition: MemoryEventGroupDefinition; events: RunMemoryEventRead[] }) {
+  return (
+    <section aria-labelledby={`runs-memory-group-${definition.key}-heading`} className="space-y-3" data-testid={`runs-memory-group-${definition.key}`}>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-base font-medium leading-none" id={`runs-memory-group-${definition.key}-heading`}>{definition.title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{definition.description}</p>
+        </div>
+        <Badge variant="outline">{events.length} event{events.length === 1 ? "" : "s"}</Badge>
+      </div>
+      {events.length > 0 ? (
+        <div className="grid gap-3">
+          {events.map((event) => <MemoryEventCard event={event} key={event.id} />)}
+        </div>
+      ) : (
+        <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{definition.emptyCopy}</div>
+      )}
+    </section>
+  );
+}
+
+function MemoryArtifactSummaryCard({ artifact }: { artifact: RunMemoryArtifactRead }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={`runs-memory-compact-artifact-${artifact.memoryId}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-medium">{artifact.summary}</p>
+          <p className="text-xs text-muted-foreground">{artifact.status} · {formatDateTime(artifact.createdAt)}</p>
+        </div>
+        <FileText className="size-4 shrink-0 text-muted-foreground" />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{memoryProvenanceLabel(artifact)}</p>
+    </div>
+  );
+}
+
+function RunMemoryEvidence({ run }: { run: RunRead }) {
+  const memoryEvents = run.memoryEvents ?? [];
+  const groupedEvents = groupedMemoryEvents(memoryEvents);
+  const hasEvents = memoryEvents.length > 0;
+  const hasArtifacts = run.memoryArtifacts.length > 0;
+
+  return (
+    <Card data-testid="runs-memory-evidence">
+      <CardHeader>
+        <CardTitle className="text-base">Run memory evidence</CardTitle>
+        <CardDescription>
+          Run-scoped memory events are the full evidence trail; compact artifacts below are only the human-auditable slice.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {!hasEvents ? (
+          <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="runs-memory-evidence-empty">
+            No run memory evidence was recorded for this run. The backend did not emit retrieval, injection, write, reuse, review, follow-up, or audit events.
+          </div>
+        ) : (
+          MEMORY_EVENT_GROUPS.map((definition) => (
+            <MemoryEventGroupSection definition={definition} events={groupedEvents[definition.key]} key={definition.key} />
+          ))
+        )}
+
+        <section aria-labelledby="runs-memory-compact-artifacts-heading" className="space-y-3" data-testid="runs-memory-compact-artifacts">
+          <div>
+            <h3 className="text-base font-medium leading-none" id="runs-memory-compact-artifacts-heading">Compact artifact slice</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              These artifacts summarize memory rows written for human audit; they do not replace the event groups above.
+            </p>
+          </div>
+          {hasArtifacts ? (
+            <div className="grid gap-3">
+              {run.memoryArtifacts.map((artifact) => <MemoryArtifactSummaryCard artifact={artifact} key={artifact.memoryId} />)}
+            </div>
+          ) : (
+            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-memory-artifacts-empty">
+              No compact memory artifacts were written by this run.
+            </div>
+          )}
+        </section>
       </CardContent>
     </Card>
   );
@@ -1422,7 +1654,7 @@ function EvidenceViewer({
   } else if (activeInspection.pane === "lineage") {
     content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
   } else if (activeInspection.pane === "memory") {
-    content = run.memoryArtifacts[0] ? <MemoryArtifactEvidence artifact={run.memoryArtifacts[0]} /> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No memory artifacts were created by this run.</div>;
+    content = <RunMemoryEvidence run={run} />;
   } else {
     content = <RunFinalOutputPane run={run} />;
   }

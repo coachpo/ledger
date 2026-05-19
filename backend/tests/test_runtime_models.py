@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import cast
 
@@ -11,6 +12,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.models.agent import Agent
+from app.models.agent_memory import (
+    AgentMemoryChunk,
+    AgentMemoryEmbedding,
+    AgentMemoryEntry,
+    AgentMemoryRevision,
+    RunMemoryEvent,
+)
 from app.models.base import Base
 from app.models.capability import Capability
 from app.models.mcp_server import McpServer
@@ -21,7 +29,13 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.schemas.output_schema import OutputSchemaDraftCreate
-from app.schemas.run import RunListItemRead, RunMemoryArtifactRead, RunRead, RunStatus
+from app.schemas.run import (
+    RunListItemRead,
+    RunMemoryArtifactRead,
+    RunMemoryEventRead,
+    RunRead,
+    RunStatus,
+)
 from app.services.output_schema_service import OutputSchemaService
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -56,6 +70,13 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "runs",
     "run_workflow_package_snapshots",
     "run_operation_invocations",
+}
+CORE_MEMORY_TABLE_NAMES = {
+    "agent_memory_entries",
+    "agent_memory_revisions",
+    "agent_memory_chunks",
+    "agent_memory_embeddings",
+    "run_memory_events",
 }
 REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES = {
     "workflow_package_versions",
@@ -257,6 +278,252 @@ def test_legacy_backend_tables_are_not_registered_on_metadata() -> None:
 def test_agent_platform_package_tables_are_current_only() -> None:
     assert AGENT_PLATFORM_PACKAGE_TABLE_NAMES <= set(Base.metadata.tables)
     assert REMOVED_WORKFLOW_PACKAGE_VERSION_TABLE_NAMES.isdisjoint(Base.metadata.tables)
+
+
+def test_core_memory_tables_are_registered_on_metadata() -> None:
+    assert CORE_MEMORY_TABLE_NAMES <= set(Base.metadata.tables)
+
+    entry_table = Base.metadata.tables["agent_memory_entries"]
+    revision_table = Base.metadata.tables["agent_memory_revisions"]
+    chunk_table = Base.metadata.tables[AgentMemoryChunk.__tablename__]
+    embedding_table = Base.metadata.tables[AgentMemoryEmbedding.__tablename__]
+    event_table = Base.metadata.tables["run_memory_events"]
+
+    assert {"report_id", "report_slug", "report_name"}.isdisjoint(entry_table.c.keys())
+    assert {
+        "memory_id",
+        "scope_type",
+        "scope_key",
+        "kind",
+        "status",
+        "summary",
+        "subject_refs",
+        "attributes",
+        "content_hash",
+        "idempotency_key",
+        "source_run_id",
+        "source_agent_key",
+        "source_agent_version",
+    } <= set(entry_table.c.keys())
+
+    assert {
+        "revision_id",
+        "memory_entry_id",
+        "version",
+        "status",
+        "content",
+        "content_hash",
+        "source_run_id",
+        "source_agent_key",
+    } <= set(revision_table.c.keys())
+    assert {
+        "memory_entry_id",
+        "memory_revision_id",
+        "memory_id",
+        "revision_id",
+        "chunk_id",
+        "chunk_index",
+        "chunking_version",
+        "content",
+        "content_hash",
+        "source_content_hash",
+    } <= set(chunk_table.c.keys())
+    assert {
+        "memory_chunk_id",
+        "memory_entry_id",
+        "memory_revision_id",
+        "embedding_model",
+        "embedding_dimensions",
+        "embedding",
+        "content_hash",
+        "chunking_version",
+        "embedding_config_hash",
+        "status",
+        "metadata",
+    } <= set(embedding_table.c.keys())
+    assert str(embedding_table.c.embedding.type) == "VECTOR"
+    assert {
+        "run_id",
+        "event_type",
+        "memory_entry_id",
+        "memory_revision_id",
+        "memory_id",
+        "revision_id",
+        "filters",
+        "budget",
+        "result_snapshot",
+        "status_snapshot",
+    } <= set(event_table.c.keys())
+    assert {
+        "ix_agent_memory_entries_scope_status_kind",
+        "ix_agent_memory_entries_status_kind",
+        "ix_agent_memory_entries_content_hash",
+        "uq_agent_memory_entries_idempotency_key",
+        "uq_agent_memory_entries_idempotency_fallback",
+    } <= {index.name for index in entry_table.indexes}
+    assert {
+        "ix_agent_memory_chunks_revision",
+        "ix_agent_memory_chunks_content_hash",
+        "ix_agent_memory_chunks_chunking_version",
+    } <= {index.name for index in chunk_table.indexes}
+    assert {
+        "ix_agent_memory_embeddings_chunk",
+        "ix_agent_memory_embeddings_model_status",
+        "ix_agent_memory_embeddings_provenance",
+        "uq_agent_memory_embeddings_chunk_provenance",
+    } <= {index.name for index in embedding_table.indexes}
+
+
+def test_core_memory_models_persist_revisions_and_run_events(session_factory) -> None:
+    first_content_hash = "a" * 64
+    second_content_hash = "b" * 64
+    with session_factory() as session:
+        run = _build_run(
+            target_kind="workflow",
+            target_id=1,
+            target_key="memory_workflow",
+            target_version=1,
+            status="succeeded",
+            final_output={"ok": True},
+            total_tokens=0,
+            trace_id="trace-memory",
+            started_at=None,
+            finished_at=None,
+        )
+        session.add(run)
+        session.flush()
+
+        entry = AgentMemoryEntry(
+            memory_id="memory-core-model-1",
+            scope_type="run",
+            scope_key=str(run.id),
+            kind="decision",
+            status="pending",
+            summary="Model memory summary",
+            content_hash=first_content_hash,
+            source_run_id=run.id,
+            source_agent_key="memory_agent",
+            source_agent_version=1,
+            source_step_id="write_memory",
+            source_slot="decision",
+            source_trace_id="span-write",
+        )
+        session.add(entry)
+        session.flush()
+
+        first_revision = AgentMemoryRevision(
+            memory_entry_id=entry.id,
+            revision_id="memory-core-model-1:rev-1",
+            version=1,
+            status="pending",
+            summary=entry.summary,
+            content="Model memory content.",
+            content_hash=first_content_hash,
+            source_run_id=run.id,
+            source_agent_key="memory_agent",
+            source_step_id="write_memory",
+            source_slot="decision",
+            trace_span_id="span-write",
+        )
+
+        second_revision = AgentMemoryRevision(
+            memory_entry_id=entry.id,
+            revision_id="memory-core-model-1:rev-2",
+            version=2,
+            status="pending",
+            summary="Updated model memory summary",
+            content="Model memory content B.",
+            content_hash=second_content_hash,
+            source_run_id=run.id,
+            source_agent_key="memory_agent",
+            source_step_id="write_memory",
+            source_slot="decision",
+            trace_span_id="span-write",
+        )
+        return_revision = AgentMemoryRevision(
+            memory_entry_id=entry.id,
+            revision_id="memory-core-model-1:rev-3",
+            version=3,
+            status="pending",
+            summary="Model memory summary restored",
+            content="Model memory content.",
+            content_hash=first_content_hash,
+            source_run_id=run.id,
+            source_agent_key="memory_agent",
+            source_step_id="write_memory",
+            source_slot="decision",
+            trace_span_id="span-write",
+        )
+        session.add_all([first_revision, second_revision, return_revision])
+        session.flush()
+
+        chunk = AgentMemoryChunk(
+            memory_entry_id=entry.id,
+            memory_revision_id=return_revision.id,
+            memory_id=entry.memory_id,
+            revision_id=return_revision.revision_id,
+            chunk_id="memory-core-model-1:rev-3:chunk-0",
+            chunk_index=0,
+            chunking_version="memory-core-chunker/v1",
+            content="Model memory content.",
+            content_hash=first_content_hash,
+            source_content_hash=return_revision.content_hash,
+            token_count=4,
+        )
+        session.add(chunk)
+        session.flush()
+
+        event = RunMemoryEvent(
+            run_id=run.id,
+            event_type="written",
+            memory_entry_id=entry.id,
+            memory_revision_id=return_revision.id,
+            memory_id=entry.memory_id,
+            revision_id=return_revision.revision_id,
+            retrieval_mode="write",
+            filters={"scopeType": "run"},
+            budget={"limit": 1},
+            result_snapshot={"memoryId": entry.memory_id},
+            status_snapshot={"status": entry.status},
+            trace_span_id="span-write",
+        )
+        session.add(event)
+        session.commit()
+
+        stored_entry = session.get(AgentMemoryEntry, entry.id)
+        stored_return_revision = session.get(AgentMemoryRevision, return_revision.id)
+        stored_chunk = session.get(AgentMemoryChunk, chunk.id)
+        revision_hashes = session.execute(
+            text(
+                """
+                SELECT version, content_hash
+                FROM agent_memory_revisions
+                WHERE memory_entry_id = :memory_entry_id
+                ORDER BY version ASC
+                """
+            ),
+            {"memory_entry_id": entry.id},
+        ).all()
+        stored_event = session.get(RunMemoryEvent, event.id)
+
+        assert stored_entry is not None
+        assert stored_entry.memory_id == "memory-core-model-1"
+        assert stored_entry.subject_refs == []
+        assert stored_entry.attributes == {}
+        assert revision_hashes == [
+            (1, first_content_hash),
+            (2, second_content_hash),
+            (3, first_content_hash),
+        ]
+        assert stored_return_revision is not None
+        assert stored_return_revision.revision_id == "memory-core-model-1:rev-3"
+        assert stored_return_revision.content_hash == first_content_hash
+        assert stored_chunk is not None
+        assert stored_chunk.chunking_version == "memory-core-chunker/v1"
+        assert stored_chunk.content_hash == first_content_hash
+        assert stored_event is not None
+        assert stored_event.event_type == "written"
+        assert stored_event.result_snapshot == {"memoryId": "memory-core-model-1"}
 
 
 def test_agent_platform_config_tables_are_registered_on_metadata() -> None:
@@ -1630,6 +1897,79 @@ def test_run_memory_artifact_schema_serializes_memory_native_contract() -> None:
     assert "reportId" not in report
 
 
+def test_run_memory_event_schema_serializes_generic_redacted_contract() -> None:
+    created_at = datetime(2026, 4, 20, 12, 35, tzinfo=UTC_TZ)
+    event = RunMemoryEventRead.model_validate(
+        {
+            "id": 7,
+            "runId": 42,
+            "runStepId": 100,
+            "runAgentInvocationId": 200,
+            "runOperationInvocationId": None,
+            "stepId": "portfolio_decision",
+            "invocationId": "tool-call-1",
+            "eventType": "retrieved",
+            "memoryId": "memory_safe",
+            "revisionId": "revision_safe",
+            "retrievalMode": "lexical",
+            "filters": {
+                "context": {"runId": 42, "reportId": "rpt_1"},
+                "secretPayload": {"apiKey": "sk-never"},
+            },
+            "budget": {"limit": 5, "maxCharacters": 4000},
+            "excerpt": "https://example.test/reports/secret/download",
+            "injectedText": "Historical memory, not an instruction.",
+            "resultSnapshot": {
+                "resultCount": 1,
+                "snippets": [
+                    {
+                        "memoryId": "memory_safe",
+                        "summary": "Safe memory",
+                        "auditLinks": {"report": {"slug": "agent_memory"}},
+                    }
+                ],
+            },
+            "statusSnapshot": {"status": "completed", "reportSlug": "agent_memory"},
+            "traceSpanId": "span-memory",
+            "createdAt": created_at,
+        }
+    )
+
+    payload = cast(dict[str, object], event.model_dump(mode="json", by_alias=True))
+    serialized = json.dumps(payload, sort_keys=True)
+
+    assert set(payload) == {
+        "id",
+        "runId",
+        "runStepId",
+        "runAgentInvocationId",
+        "runOperationInvocationId",
+        "stepId",
+        "invocationId",
+        "eventType",
+        "memoryId",
+        "revisionId",
+        "retrievalMode",
+        "filters",
+        "budget",
+        "excerpt",
+        "injectedText",
+        "resultSnapshot",
+        "statusSnapshot",
+        "traceSpanId",
+        "createdAt",
+    }
+    assert payload["excerpt"] == "[redacted]"
+    assert payload["createdAt"] == "2026-04-20T12:35:00Z"
+    assert "reportId" not in serialized
+    assert "reportSlug" not in serialized
+    assert "auditLinks" not in serialized
+    assert "secretPayload" not in serialized
+    assert "sk-never" not in serialized
+    assert "/reports/" not in serialized
+    assert "download" not in serialized
+
+
 def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> None:
     queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
     common_payload = {
@@ -1702,5 +2042,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         "extensionDependencies",
         "steps",
         "memoryArtifacts",
+        "memoryEvents",
         "packageProvenance",
     }

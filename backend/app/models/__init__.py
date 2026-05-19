@@ -1,4 +1,11 @@
 from app.models.agent import Agent
+from app.models.agent_memory import (
+    AgentMemoryChunk,
+    AgentMemoryEmbedding,
+    AgentMemoryEntry,
+    AgentMemoryRevision,
+    RunMemoryEvent,
+)
 from app.models.balance import Balance
 from app.models.capability import Capability
 from app.models.extension import ExtensionState
@@ -24,6 +31,10 @@ __all__ = [
     "Agent",
     "AgentCapabilityRef",
     "AgentMcpServerRef",
+    "AgentMemoryChunk",
+    "AgentMemoryEmbedding",
+    "AgentMemoryEntry",
+    "AgentMemoryRevision",
     "Balance",
     "Capability",
     "ExtensionState",
@@ -36,6 +47,7 @@ __all__ = [
     "Report",
     "Run",
     "RunAgentInvocation",
+    "RunMemoryEvent",
     "RunWorkflowPackageSnapshot",
     "RunOperationInvocation",
     "RunStep",

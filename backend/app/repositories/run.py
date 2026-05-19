@@ -4,6 +4,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.models.agent_memory import RunMemoryEvent
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_step import RunStep
 from app.repositories.base import BaseRepository
@@ -90,6 +91,14 @@ class RunRepository(BaseRepository[Run]):
             )
         )
         return self._get_by_statement(statement)
+
+    def list_memory_events_for_run(self, run_id: int) -> list[RunMemoryEvent]:
+        statement = (
+            select(RunMemoryEvent)
+            .where(RunMemoryEvent.run_id == run_id)
+            .order_by(RunMemoryEvent.created_at.asc(), RunMemoryEvent.id.asc())
+        )
+        return list(self.session.scalars(statement))
 
     def list_ids_for_target_owner(
         self,

@@ -31,6 +31,9 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 | `run_steps` | persisted workflow step status, copied replay context, graph metadata, errors, and timestamps |
 | `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, and copied replay context |
 | `run_operation_invocations` | persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional trace span ids, and copied replay context |
+| `agent_memory_entries` | canonical platform-core memory entries keyed by opaque `memory_id`, with scope, kind, subject refs, status, content hash, idempotency key, and trusted provenance |
+| `agent_memory_revisions` | immutable content revisions keyed by opaque `revision_id`, with model-safe summary/content, attributes, revision action, supersession links, and content hash |
+| `run_memory_events` | append-only run-scoped memory evidence for retrieval, injection, writes/reuse, supersession, review, and failure facts |
 
 Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside the current package artifact. Runs copy the executable artifact into their own snapshot at launch. These resources are not normalized into global authoring tables.
 
@@ -42,10 +45,10 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content updates are allowed. `source` describes origin with canonical values `compiled`, `uploaded`, `external`, and `agent`; `external` is for true external user/API-created reports, not agent-created reports.
 - Workflow packages are mutable current definitions. Each launch writes one immutable run-owned executable snapshot, and package exports keep private MCP `env`, `headers`, and `query` values inline while omitting database ids and run history.
 - Model-connection secrets remain encrypted at rest and masked in reads/errors. Workflow package manifests store model connection keys as live bindings, not provider credentials.
-- Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`.
+- Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`, while platform-core memory tools stay visible independent of finance extension state.
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
 - Runs store snapshot-based package id, package key, package hashes, workflow key, local resource refs, resolved model connection refs, launch inputs, and `extension_dependencies` records containing only extension key, surfaces, and fields.
-- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `run_workflow_package_snapshots`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, and `run_operation_invocations`. Repair must not recreate package-side history.
+- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `run_workflow_package_snapshots`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, `run_operation_invocations`, `agent_memory_entries`, `agent_memory_revisions`, and `run_memory_events`. Repair must not recreate package-side history or treat report rows as canonical memory.
 
 ## Retired Data
 

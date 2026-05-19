@@ -14,7 +14,6 @@ from app.core.formatting import utcnow
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.repositories.report import ReportRepository
-from app.schemas.memory_report import AGENT_MEMORY_REVIEW_TYPE, AGENT_MEMORY_VERSION_GROUP
 from app.schemas.report import ReportMetadata, ReportRead, ReportUpdate
 from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
 from app.services.extension_gate import REPORT_SERVICE_SURFACE, require_finance_workspace_enabled
@@ -195,7 +194,6 @@ class ReportService:
     def update_report_by_slug(self, slug: str, payload: ReportUpdate) -> ReportRead:
         self._require_enabled()
         report = self._get_model_by_slug(slug)
-        self._ensure_public_mutation_allowed(report)
         if payload.content is not None:
             report.content = payload.content
         self.session.commit()
@@ -205,14 +203,12 @@ class ReportService:
     def delete_report_by_slug(self, slug: str) -> None:
         self._require_enabled()
         report = self._get_model_by_slug(slug)
-        self._ensure_public_mutation_allowed(report)
         self.repository.delete(report)
         self.session.commit()
 
     def update_report(self, report_id: int, payload: ReportUpdate) -> ReportRead:
         self._require_enabled()
         report = self._get_model(report_id)
-        self._ensure_public_mutation_allowed(report)
         if payload.content is not None:
             report.content = payload.content
         self.session.commit()
@@ -222,7 +218,6 @@ class ReportService:
     def delete_report(self, report_id: int) -> None:
         self._require_enabled()
         report = self._get_model(report_id)
-        self._ensure_public_mutation_allowed(report)
         self.repository.delete(report)
         self.session.commit()
 
@@ -259,40 +254,6 @@ class ReportService:
         if report is None:
             raise not_found_error("Report")
         return report
-
-    def _ensure_public_mutation_allowed(self, report: Report) -> None:
-        if self._is_agent_memory_report(report):
-            raise ApiError(
-                status_code=status.HTTP_403_FORBIDDEN,
-                code="memory_report_mutation_forbidden",
-                message=(
-                    "Agent-memory reports can only be changed through memory lifecycle services"
-                ),
-            )
-
-    @classmethod
-    def _is_agent_memory_report(cls, report: Report) -> bool:
-        analysis = report.metadata_.get("analysis")
-        if not isinstance(analysis, Mapping):
-            return False
-
-        analysis_metadata = cast(Mapping[str, object], analysis)
-        review_type = cls._metadata_string(
-            analysis_metadata.get("reviewType", analysis_metadata.get("review_type"))
-        )
-        version_group = cls._metadata_string(
-            analysis_metadata.get("versionGroup", analysis_metadata.get("version_group"))
-        )
-        return (
-            review_type == AGENT_MEMORY_REVIEW_TYPE and version_group == AGENT_MEMORY_VERSION_GROUP
-        )
-
-    @staticmethod
-    def _metadata_string(value: object) -> str | None:
-        if not isinstance(value, str):
-            return None
-        normalized = value.strip()
-        return normalized or None
 
     def _generate_unique_name(self, template_name: str) -> str:
         normalized = self._normalize_name(template_name)

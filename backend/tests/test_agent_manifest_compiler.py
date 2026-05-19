@@ -151,7 +151,7 @@ def _seed_platform_graph_manifest_refs(session: Session) -> None:
         ],
         "signaldeck_reports": ["signaldeck.reports.lookup"],
         "signaldeck_positions": ["signaldeck.positions.lookup"],
-        "platform_graph_memory": ["signaldeck.reports.write"],
+        "platform_graph_memory": ["signaldeck.memory.write"],
     }
     capabilities = [
         Capability(
@@ -254,7 +254,7 @@ def test_compile_platform_graph_example_agent_manifest_resolves_expected_capabil
     assert payload["capabilities"] == expected_capabilities
 
 
-def test_platform_graph_memory_capability_preserves_report_write_tool_key(
+def test_platform_graph_memory_capability_uses_platform_core_memory_tool_key(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -264,8 +264,8 @@ def test_platform_graph_memory_capability_preserves_report_write_tool_key(
         )
 
     assert capability is not None
-    assert capability.tool_keys == ["signaldeck.reports.write"]
-    assert not any(tool_key.startswith("signaldeck.memory.") for tool_key in capability.tool_keys)
+    assert capability.tool_keys == ["signaldeck.memory.write"]
+    assert "signaldeck.reports.write" not in capability.tool_keys
 
 
 def test_compile_agent_manifest_preserves_input_schema_metadata(

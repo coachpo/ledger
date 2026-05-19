@@ -3,9 +3,28 @@ from __future__ import annotations
 from app.extensions import BundledServerDeclaredToolContribution as ServerDeclaredToolSpec
 from app.extensions.registry import get_bundled_extension_registry
 
+_CORE_SERVER_DECLARED_MODULE = __name__
+CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = (
+    ServerDeclaredToolSpec(
+        key="signaldeck.memory.write",
+        display_name="Memory Write",
+        description="Write platform-core memory entries through server-owned memory storage.",
+        module=_CORE_SERVER_DECLARED_MODULE,
+    ),
+    ServerDeclaredToolSpec(
+        key="signaldeck.memory.lookup",
+        display_name="Memory Lookup",
+        description="Read bounded, scoped platform-core memory snippets.",
+        module=_CORE_SERVER_DECLARED_MODULE,
+    ),
+)
+
 
 def _load_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:
-    return get_bundled_extension_registry().list_server_declared_tool_contributions()
+    return (
+        *CORE_SERVER_DECLARED_TOOL_SPECS,
+        *get_bundled_extension_registry().list_server_declared_tool_contributions(),
+    )
 
 
 def _registry_by_key(
@@ -36,6 +55,7 @@ SERVER_DECLARED_TOOL_REGISTRY: dict[str, ServerDeclaredToolSpec] = _registry_by_
 )
 
 __all__ = [
+    "CORE_SERVER_DECLARED_TOOL_SPECS",
     "SERVER_DECLARED_TOOL_REGISTRY",
     "SERVER_DECLARED_TOOL_SPECS",
     "ServerDeclaredToolSpec",

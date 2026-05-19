@@ -1,146 +1,138 @@
 # SignalDeck Memory Layer Design Note
 
-> Status: Phase 1 memory layer notes for branch `main` at `69e809e`.
+> Status: Core memory infrastructure phase-1 contract for branch `main` at `10ae652`.
 
 ## Scope
 
-SignalDeck's live agent memory layer stores durable memory as reports, but callers work with memory-domain services and DTOs. Reports remain the backing store and audit surface for phase 1. The product model above persistence is memory-first.
+SignalDeck memory is platform-core infrastructure for Workflow Package runs. The phase-1 contract is neutral: callers write and look up memory by `kind`, `summary`, `content`, `subjectRefs`, `attributes`, scope, status, revision, and provenance. Finance-specific concepts can appear only as extension-owned attributes or subject references; they are not required core fields.
 
-This note covers the shipped phase 1 boundary:
+This note covers the phase-1 contract now represented in `backend/app/schemas/memory.py`:
 
-1. Memory writes and reads go through `MemoryService`.
-2. Persistence goes through the `MemoryStore` Protocol.
-3. The concrete adapter is `ReportBackedMemoryStore`.
-4. Prompt context goes through `MemoryContextService`.
-5. Due follow-ups go through `MemoryFollowUpService`, `ReturnResolutionService`, and `ReflectionService`.
-6. Run detail exposes memory artifacts, with report links only as audit actions.
+1. Memory IDs and revision IDs are opaque.
+2. Writes create immutable revisions or reuse an exact duplicate active revision.
+3. Lookup is bounded and scoped, with a safe current-context fallback.
+4. Runtime tool names are `signaldeck.memory.write` and `signaldeck.memory.lookup`.
+5. Exact-id `signaldeck.memory.get` is deferred to phase 1b.
 
-There is no public `/api/memory` route, no memory table, no vector search, and no embeddings in phase 1.
+There is still no public browser `/api/memory` CRUD surface in this phase. The implementation path is package-first runtime memory, not standalone global agents or retired authoring surfaces.
 
-## Live Implementation
+## Live Contract Files
 
 | Area | Live files |
 | --- | --- |
-| Domain schemas | `backend/app/schemas/memory.py`, `backend/app/schemas/memory_report.py` |
-| Service boundary | `backend/app/services/memory_service.py` |
-| Store contract | `backend/app/services/memory_store.py` |
-| Report-backed adapter | `backend/app/services/report_backed_memory_store.py` |
-| Prompt context | `backend/app/services/memory_context_service.py` |
-| Follow-up automation | `backend/app/services/memory_follow_up_service.py`, `backend/app/services/return_resolution_service.py`, `backend/app/services/reflection_service.py` |
-| Runtime tools | `backend/app/agents/runtime_tools/reports.py`, `backend/app/agents/runtime_tools/types.py` |
-| Run API | `backend/app/schemas/run.py`, `backend/app/services/run_service.py` |
-| Frontend run detail | `frontend/src/lib/types/run.ts`, `frontend/src/pages/runs/detail.tsx` |
-| Contract tests | `backend/tests/test_memory_domain_schemas.py`, `backend/tests/test_memory_service.py`, `backend/tests/test_memory_follow_up_service.py`, `backend/tests/test_report_backed_memory_store.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_memory_layer_static_contracts.py`, `frontend/src/pages/runs/detail.test.tsx` |
+| Core memory schemas | `backend/app/schemas/memory.py` |
+| Schema contract tests | `backend/tests/test_memory_domain_schemas.py` |
+| Tool contract guardrails | `backend/tests/test_tool_catalog_api.py` |
+| Future persistence owner | `backend/app/db/`, `backend/app/models/`, `backend/app/repositories/` |
+| Future runtime-tool owner | `backend/app/agents/` |
+| Future run evidence owner | `backend/app/schemas/run.py`, `backend/app/services/run_service.py` |
 
-## Data Model
+## Core DTO Contract
 
-Phase 1 memory is a domain object backed by a report row.
+Memory DTOs use SignalDeck's camelCase API convention externally and snake_case internally. All schemas inherit `CamelModel`, so extra request fields remain forbidden.
 
-A memory report is identified by these persisted markers:
+The required core write fields are:
+
+| Field | Purpose |
+| --- | --- |
+| `kind` | Neutral memory category such as `observation`, `research.note`, or extension-defined values. |
+| `summary` | Short model-safe summary for cards, snippets, and run evidence. |
+| `content` | Canonical memory text used for deterministic lexical lookup before pgvector lands. |
+| `subjectRefs` | Optional neutral references to subjects such as packages, portfolios, documents, users, or instruments. |
+| `attributes` | Optional JSON metadata; extension-specific fields live here instead of top-level core fields. |
+| `scope` | Required write scope with `scopeType` and `scopeKey`. |
+| `provenance` | Trusted server context for run, agent, workflow, step, slot, and trace. |
+
+The core contract does not require `ticker`, `action`, `benchmarkSymbol`, `rawReturn`, `alpha`, report slugs, report URLs, download URLs, or `auditLinks`.
+
+## Revision Semantics
+
+Every content-changing write creates a new immutable revision. The write request carries an explicit revision policy:
 
 ```text
-source = "agent"
-metadata.analysis.reviewType = "agent_memory"
-metadata.analysis.versionGroup = "agent_memory/v1"
-metadata.createdBy.type = "agent"
+mode = "immutable-revision-per-content-change"
+duplicateContent = "reuse-existing-active-revision"
 ```
 
-`ReportBackedMemoryStore` owns the conversion between report rows and memory DTOs. It is also the only place that parses or formats the current `memoryId` value, `mem_<report_id>`. Every other layer treats `memoryId` as opaque.
+If an exact duplicate active revision already exists, the write returns that revision with `revisionAction="reused"`. A new content revision returns `revisionAction="created"`. Superseding a prior revision is explicit through `supersedesRevisionId` and returns `revisionAction="superseded"` when that operation is implemented.
 
-Report markdown remains a human audit artifact for report detail and download flows. It isn't the prompt source, the API identity, or the frontend card model.
+`MemoryWriteResult` returns `memoryId`, `revisionId`, status, `revisionAction`, created time, provenance, revision metadata, idempotency semantics, and warnings. It does not expose the old generic `action` field.
 
-## Service Boundaries
+## Idempotency
 
-`MemoryService` is the command boundary for memory work. It checks memory write grants, creates pending memories, reads one memory entry, resolves outcomes, appends reflections, queries prompt snippets, and lists run artifacts.
+Writers may provide `idempotencyKey`. If they omit it, phase 1 uses this deterministic fallback identity:
 
-`MemoryFollowUpService.run_due(now)` is the automation boundary for matured pending memories. It lists pending report-backed memories, asks `ReturnResolutionService` to resolve outcomes, appends one generated reflection through `ReflectionService` when resolution completes or expires, and commits idempotently before workflow-package run execution.
+```text
+(scope_type, scope_key, kind, content_hash, source_run_id, source_agent_key, source_step_id, source_slot)
+```
 
-`MemoryStore` defines the persistence contract:
+`content_hash` is the SHA-256 hash of the canonical `content` string. The fallback intentionally includes trusted provenance so two agents can write the same text in different run slots without accidental collision, while exact repeat calls from the same slot reuse the existing active revision.
 
-| Method | Responsibility |
-| --- | --- |
-| `create_pending` | Create or return an idempotent pending memory. |
-| `get` | Return one `MemoryEntryRead` by opaque memory id. |
-| `query` | Return bounded `MemoryPromptSnippet` values. |
-| `resolve` | Move a memory to resolved or expired with outcome data. |
-| `append_reflection` | Add a reflection without changing the original decision or provenance. |
-| `list_artifacts_for_run` | Return memory artifacts for run detail. |
-| `audit_links` | Return optional report links for human review. |
+## Lookup Scope and Budgets
 
-`ReportBackedMemoryStore` implements that contract using `ReportRepository` and the reports table. It hides report ids, slugs, names, markdown rendering, and metadata JSON details from callers above the adapter.
+`signaldeck.memory.lookup` is never an unscoped global search. A request can provide explicit selectors through `scope`, `subjectRefs`, or `kind`. When those selectors are omitted, the server binds lookup to the current run/package/agent context only, represented in schema outputs as:
 
-## DTO Contract
+```text
+scopeMode = "current-context-fallback"
+fallbackScope = "current-run-package-agent"
+```
 
-Memory DTOs use SignalDeck's camelCase API convention.
+Explicitly scoped lookups serialize as `scopeMode="explicit-selectors"`.
 
-`MemoryEntryRead` is the full memory read model. It includes `memoryId`, `status`, ticker and portfolio scope, decision text, optional outcome, reflections, provenance, audit links, and timestamps.
+Phase-1 lookup budgets are fixed in the schema contract:
 
-`MemoryWriteRequest` is the trusted write input built from runtime tool arguments plus server context. Model-supplied arguments provide the decision analysis. Trusted provenance, run ids, agent keys, workflow keys, graph node ids, trace ids, outcome fields, and reflections come from the server.
+| Budget | Default | Hard cap |
+| --- | ---: | ---: |
+| `limit` | 5 | 20 |
+| `maxCharacters` | 4000 | 8000 |
 
-`MemoryWriteResult` is the runtime write result. Model-visible output includes `memoryId`, `status`, action, created time, provenance, and warnings. It omits report ids, slugs, names, URLs, downloads, and `auditLinks`.
-`MemoryPromptSnippet` is safe prompt context. It carries bounded historical memory text, provenance, outcome context, and reflections. It must not include raw report markdown, report identity, report routes, download URLs, or audit links.
-
-`MemoryArtifactRead` is the run detail projection. It includes `memoryId`, `summary`, `status`, `createdAt`, provenance, optional graph metadata, and optional `auditLinks.report`.
-
-`MemoryAuditLinks` holds optional human audit links. In phase 1 the useful link is the backing report open/download pair.
+Requests above those caps fail validation. Phase-1 ranking is deterministic: scope specificity first, lexical PostgreSQL ranking over `content`, revision creation time descending, then `memoryId` ascending as the final tie-breaker. pgvector can accelerate retrieval later, but canonical memory remains in Postgres entries and revisions.
 
 ## Runtime Tools
 
-The stable runtime tool keys and OpenAI function names stay unchanged:
+The phase-1 core memory tool keys are:
 
 | Stable surface | Value |
 | --- | --- |
-| Report lookup tool key | `signaldeck.reports.lookup` |
-| Report memory write tool key | `signaldeck.reports.write` |
-| Report lookup OpenAI function | `signaldeck_reports_lookup` |
-| Report memory write OpenAI function | `signaldeck_reports_write` |
+| Core memory write tool key | `signaldeck.memory.write` |
+| Core memory lookup tool key | `signaldeck.memory.lookup` |
+| Exact-id get tool | Deferred to phase 1b (`signaldeck.memory.get`) |
 
-The names are report flavored because existing package manifests and tool grants depend on them. The write path now returns memory-shaped results through `MemoryService`. Future `signaldeck.memory.*` tools would be additive, not a phase 1 rename.
+These tools are platform-core, not finance-extension tools. They must remain available when `signaldeck.finance` is disabled. `signaldeck.reports.write` is not the canonical memory write surface for the core contract.
 
-`signaldeck.reports.lookup` remains a report lookup tool. Memory prompt context is handled by `MemoryContextService`, not by sending raw report markdown into model prompts.
+## Model-Safe Projection
 
-## Prompt Context
+Model-visible memory outputs can include `memoryId`, `revisionId`, `status`, `kind`, `summary`, `content`, `subjectRefs`, `attributes`, `scope`, provenance, and warnings. They must not include report ids, report slugs, report names, report routes, download URLs, raw markdown, or `auditLinks`.
 
-`MemoryContextService` owns model-safe prompt rendering. It accepts `MemoryQuery`, asks the store for memory snippets, applies item and character budgets, and renders historical context with provenance, outcome, and reflection details.
+`MemoryPromptSnippet` is safe prompt context. It frames old memory as historical context, not a system or developer instruction.
 
-Prompt snippets should frame old memory as history, not instructions. A past decision can say what an agent chose and what happened. It cannot direct the current agent as system or developer content.
-
-The model-visible context excludes report ids, report slugs, report names, report URLs, download URLs, `auditLinks.report`, and raw markdown.
-
-## Run Detail Artifacts
-
-`RunService.get_run` calls `MemoryService.list_run_artifacts` and returns memory artifacts on `RunRead.memoryArtifacts`. The frontend run detail card renders `memoryId`, `summary`, `status`, `createdAt`, provenance, and graph context.
-
-If `auditLinks.report` exists, the frontend shows report open and download actions. Those are audit actions only. The primary identity is still `memoryId`.
-
-Frontend run types expose memory artifacts with `memoryId`, `summary`, `status`, provenance, optional `sourceGraphMetadata`, and optional report audit links.
+`RunMemoryEventRead` is the full run-detail evidence stream for retrieval, injection, write/reuse, supersede, review, and failure facts persisted in `run_memory_events`. `MemoryArtifactRead` is only the compact run-detail write slice assembled from canonical memory events and rows.
 
 ## What Stays Stable
 
-1. Report routes stay under `/api/v1/reports`.
-2. Report slug lookup, filters, upload, download, and markdown behavior stay unchanged.
-3. Report `source` values remain `compiled`, `uploaded`, `external`, and `agent`.
-4. Template `reports.*` placeholders and compile behavior stay unchanged.
-5. Runtime tool keys stay `signaldeck.reports.lookup` and `signaldeck.reports.write`.
-6. OpenAI function names stay `signaldeck_reports_lookup` and `signaldeck_reports_write`.
-7. Memory reports keep `agent_memory` and `agent_memory/v1` metadata markers.
+1. Workflow Packages remain the only live executable workflow entry point.
+2. There is no public `/api/memory` CRUD route in phase 1.
+3. `memoryId` and `revisionId` are opaque outside the memory store.
+4. Reports remain ordinary report-domain artifacts; they are not the memory substrate.
+5. Core memory must operate with the Finance Workspace extension disabled.
+6. pgvector, embeddings, and chunk tables are phase-2 accelerators, not the source of truth.
 
 ## Guardrails
 
-1. Keep `memoryId` opaque outside `ReportBackedMemoryStore`.
-2. Don't expose report identity in model-visible memory outputs.
-3. Don't use report markdown as prompt memory content.
-4. Don't add a public memory API until it can expose memory DTOs only.
-5. Don't rename stable report tool keys during phase 1.
-6. Don't add vector search or embeddings to the phase 1 contract.
+1. Do not add finance-only fields as required top-level core memory fields.
+2. Do not allow unscoped global lookup.
+3. Do not use reports as the canonical memory persistence substrate.
+4. Do not expose report identity or raw markdown in model-visible memory outputs.
+5. Do not register core memory tools through finance-owned registrars.
+6. Do not ship exact-id `get` until a concrete phase-1b flow proves the need.
 
 ## Verification Targets
 
-Use the memory and run contract tests when code changes touch this layer:
+Use focused backend and frontend contract tests when this layer changes:
 
 ```bash
-(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_report_backed_memory_store.py tests/test_runtime_tools.py tests/test_memory_layer_static_contracts.py)
+(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_tool_catalog_api.py tests/test_memory_service.py tests/test_runtime_tools.py tests/test_workflow_package_run_contracts.py -k "memory or run_detail_exposes_persisted_memory_event_evidence")
 (cd frontend && pnpm test:run src/pages/runs/detail.test.tsx)
 ```
 
-Manual product checks for memory changes are run detail first: launch a workflow that writes memory, open the run detail page, confirm memory cards render from memory fields, open the optional audit report, and download the report from the audit action.
+The stale-claim guard should confirm live docs and targeted tests no longer describe reports as the canonical memory substrate.

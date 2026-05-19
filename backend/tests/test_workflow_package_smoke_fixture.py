@@ -57,7 +57,8 @@ EXPECTED_TOOL_KEYS = {
     "signaldeck.insider_data.lookup",
     "signaldeck.positions.lookup",
     "signaldeck.reports.lookup",
-    "signaldeck.reports.write",
+    "signaldeck.memory.lookup",
+    "signaldeck.memory.write",
 }
 FORBIDDEN_EXPORT_FIELDS = {
     "secretPayload",
@@ -157,7 +158,7 @@ def test_tradingagents_advisory_research_fixture_compiles_and_exports_cleanly() 
     assert any(cast(list[str], agent["capabilityProfiles"]) for agent in compiled_agents)
 
 
-def test_tradingagents_fixture_keeps_report_lookup_and_write_in_memory_profile() -> None:
+def test_tradingagents_fixture_keeps_report_lookup_and_core_memory_profile() -> None:
     compiled = compile_workflow_package_manifest(_fixture_source())
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     spec = cast(dict[str, object], package_definition["spec"])
@@ -168,8 +169,8 @@ def test_tradingagents_fixture_keeps_report_lookup_and_write_in_memory_profile()
         "signaldeck.reports.lookup"
     ]
     assert cast(list[str], profiles_by_key["memory_write_tools"]["toolKeys"]) == [
-        "signaldeck.reports.lookup",
-        "signaldeck.reports.write",
+        "signaldeck.memory.lookup",
+        "signaldeck.memory.write",
     ]
 
 

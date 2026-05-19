@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers bundled backend extension infrastructure.
 
 ## OVERVIEW
-`app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current bundled extension is `signaldeck.finance`, which owns preserved finance `/api/v1` routers, finance provider factories, runtime tool specs/executors, and report-backed memory hooks.
+`app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current bundled extension is `signaldeck.finance`, which owns preserved finance `/api/v1` routers, finance provider factories, runtime tool specs/executors, report lookup, and historical agent-memory report readers.
 
 Future upgrade work must preserve the boundary between generic extension infrastructure in this folder and finance-owned behavior in `signaldeck_finance/`. Move behavior across that seam only when the shared platform contract is explicit and the registries, docs, and tests move with it.
 
@@ -12,7 +12,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
 
 ## CHILD DOCS
-- `signaldeck_finance/AGENTS.md` — bundled `signaldeck.finance` ownership, route registrations, provider factories, tool specs, and report-backed memory hooks
+- `signaldeck_finance/AGENTS.md` — bundled `signaldeck.finance` ownership, route registrations, provider factories, tool specs, report lookup, and historical agent-memory report readers
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
