@@ -509,17 +509,21 @@ function RunPayloadPane({ headingId, label, testId, value }: { headingId: string
 function RunFinalOutputPane({ run }: { run: RunRead }) {
   const isPendingFinalOutput = (run.status === "queued" || run.status === "running") && run.finalOutput === null;
 
-  if (!isPendingFinalOutput) {
-    return <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />;
-  }
-
   return (
-    <section aria-labelledby="runs-final-output-heading" className="space-y-3">
-      <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
-      <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-detail-final-output">
-        Final output is not available yet.
-      </div>
-    </section>
+    <Card data-testid="runs-detail-final-output-card">
+      <CardContent className="space-y-5 pt-6">
+        {!isPendingFinalOutput ? (
+          <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />
+        ) : (
+          <section aria-labelledby="runs-final-output-heading" className="space-y-3">
+            <h3 className="text-base font-medium leading-none" id="runs-final-output-heading">Final output</h3>
+            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground" data-testid="runs-detail-final-output">
+              Final output is not available yet.
+            </div>
+          </section>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

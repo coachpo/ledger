@@ -527,12 +527,15 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("link", { name: /open current package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/run snapshot again/i);
-    const finalOutput = screen.getByTestId("runs-detail-final-output");
+    const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
+    const finalOutput = within(finalOutputCard).getByTestId("runs-detail-final-output");
+    expect(finalOutputCard).toHaveAttribute("data-slot", "card");
+    expect(finalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass("space-y-5", "pt-6");
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
-    expect(screen.getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
+    expect(within(finalOutputCard).getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
     expect(screen.getByTestId("runs-step-2-trace-summary")).toHaveTextContent(/decision\/span-2/i);
@@ -570,6 +573,7 @@ describe("RunsDetailPage", () => {
     expect(runInput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
     expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(screen.getByRole("heading", { name: /^run input$/i })).toHaveClass("text-base", "font-medium", "leading-none");
+    expect(screen.queryByTestId("runs-detail-final-output-card")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-detail-final-output")).not.toBeInTheDocument();
 
     runInputRender.unmount();
@@ -1132,9 +1136,13 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent("Final output is not available yet.");
-    expect(screen.getByTestId("runs-detail-final-output")).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm", "text-muted-foreground");
-    expect(screen.getByRole("heading", { name: /final output/i })).toBeVisible();
+    const pendingFinalOutputCard = screen.getByTestId("runs-detail-final-output-card");
+    const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId("runs-detail-final-output");
+    expect(pendingFinalOutputCard).toHaveAttribute("data-slot", "card");
+    expect(pendingFinalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass("space-y-5", "pt-6");
+    expect(pendingFinalOutput).toHaveTextContent("Final output is not available yet.");
+    expect(pendingFinalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm", "text-muted-foreground");
+    expect(within(pendingFinalOutputCard).getByRole("heading", { name: /final output/i })).toBeVisible();
     expect(screen.queryByText(/no invocation trace spans captured/i)).not.toBeInTheDocument();
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/no invocations have been planned or persisted/i)).not.toBeInTheDocument();
