@@ -17,7 +17,7 @@ src/components/
 ├── theme-toggle.tsx        # header control for light/dark/system
 ├── theme.ts                # theme context types
 ├── shared/                 # reusable components across features
-├── forms/                  # small cross-feature dialog forms; covered here
+├── forms/                  # small cross-feature dialog/form helpers for templates, reports, portfolios, and model-connection secrets; covered here
 ├── templates/              # template-editor support components and placeholder/runtime-input UI
 │   └── AGENTS.md
 ├── portfolios/             # portfolio feature-specific components
@@ -48,7 +48,7 @@ src/components/
 - Routed page components live in `src/pages/` and are thin route-layer components.
 - Shared components in `shared/` are reusable across multiple features and should not contain portfolio-specific request logic.
 - `shared/` is where the app keeps reusable data tables, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
-- `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing, shared report-generation dialogs, and write-only secret inputs.
+- `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing, shared report-generation dialogs reused by template/report routes, and write-only secret inputs used by model-connection flows.
 - Form/dialog components accept data and callbacks from parents; they should not own navigation, toasts, hooks, or direct API calls.
 - `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
