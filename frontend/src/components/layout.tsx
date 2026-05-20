@@ -76,6 +76,14 @@ function getPageMeta(pathname: string) {
     return { section: "Workflow Packages", title: "Workflow Packages" };
   }
 
+  if (pathname === "/workflow-packages/import") {
+    return {
+      section: "Workflow Packages",
+      sectionHref: "/workflow-packages",
+      title: "Import Workflow Package",
+    };
+  }
+
   if (pathname === "/workflow-packages/new") {
     return {
       section: "Workflow Packages",
