@@ -14,7 +14,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 ## STRUCTURE
 ```text
 src/extensions/
-|-- runtime.tsx             # route/nav/tool filtering and disabled/loading shells
+|-- runtime.tsx             # loading/disabled route shells and gate components
+|-- runtime-helpers.ts      # route assembly, nav grouping, and extension-filtered tool helpers
 |-- registry.ts             # bundled frontend extension registry
 |-- types.ts                # private frontend route/nav/tool gate contracts
 `-- signaldeck-finance/     # Finance Workspace route/nav/tool scaffold
@@ -23,16 +24,19 @@ src/extensions/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Runtime assembly | `runtime.tsx` | `assembleFinanceWorkspaceRoutes()`, `assembleNavGroups()`, `FinanceWorkspaceRouteGate`, tool filtering |
+| Runtime gates and shells | `runtime.tsx` | `FinanceWorkspaceRouteGate`, loading/disabled shells, and backend-state gating UI |
+| Runtime assembly | `runtime-helpers.ts` | `assembleFinanceWorkspaceRoutes()`, `assembleNavGroups()`, and `filterToolsForExtensionState()` |
 | Finance scaffold | `signaldeck-finance/scaffold.ts` | finance route/nav/tool entries and private backend-state gate tags |
 | Registry export | `registry.ts`, `index.ts` | bundled extension lookup and public exports |
 | Backend state hooks | `../hooks/use-extensions.ts` | TanStack Query wrapper for `/api/extensions` |
+| Route-state surface | `../pages/extensions/AGENTS.md` | `/extensions` page consumes the slim backend contract, not scaffold metadata |
 
 ## CONVENTIONS
-- `runtime.tsx` is the only frontend layer that translates extension state into Finance Workspace route/nav visibility and tool filtering.
+- `runtime.tsx` owns gate components and loading/disabled shells; `runtime-helpers.ts` owns route assembly, nav grouping, and extension-filtered tool helpers.
 - Extension keys must match backend registry keys exactly; the bundled finance key is `signaldeck.finance`.
 - Keep route/nav/tool entries declarative in scaffolds and route gates generic in runtime.
 - Private gate tags such as `requiredExtensionKey` are frontend wiring only. Do not mirror backend registry metadata or expose scaffold details as public state.
+- The `/extensions` route renders only the slim backend contract. Page/layout code must not recreate scaffold or registry logic that belongs here.
 
 ## ANTI-PATTERNS
 - Do not hard-code Finance Workspace visibility in `routes.ts`, `layout.tsx`, or page components.
