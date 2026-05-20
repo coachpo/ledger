@@ -36,6 +36,7 @@ AGENT_PLATFORM_TABLE_NAMES = {
     "model_connections",
     "output_schemas",
     "run_agent_invocations",
+    "run_forks",
     "run_operation_invocations",
     "run_steps",
     "runs",
@@ -216,6 +217,17 @@ _RUN_AGENT_INVOCATION_COLUMNS = {
     "started_at",
     "finished_at",
     "persisted_at",
+    "created_at",
+    "updated_at",
+}
+_RUN_FORK_COLUMNS = {
+    "run_id",
+    "source_run_id",
+    "lineage_root_run_id",
+    "source_invocation_id",
+    "source_step_index",
+    "resume_step_index",
+    "invocation_input",
     "created_at",
     "updated_at",
 }
@@ -1473,6 +1485,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     invocation_columns = {
         column["name"]: column for column in inspector.get_columns("run_agent_invocations")
     }
+    fork_columns = {column["name"]: column for column in inspector.get_columns("run_forks")}
     operation_columns = {
         column["name"]: column for column in inspector.get_columns("run_operation_invocations")
     }
@@ -1482,6 +1495,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     }
     run_step_indexes = {index["name"] for index in inspector.get_indexes("run_steps")}
     invocation_indexes = {index["name"] for index in inspector.get_indexes("run_agent_invocations")}
+    fork_indexes = {index["name"] for index in inspector.get_indexes("run_forks")}
     operation_indexes = {
         index["name"] for index in inspector.get_indexes("run_operation_invocations")
     }
@@ -1502,6 +1516,11 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     invocation_checks = {
         constraint["name"]
         for constraint in inspector.get_check_constraints("run_agent_invocations")
+        if constraint.get("name")
+    }
+    fork_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("run_forks")
         if constraint.get("name")
     }
     operation_checks = {
@@ -1534,6 +1553,10 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     invocation_foreign_keys = {
         _foreign_key_signature(foreign_key)
         for foreign_key in inspector.get_foreign_keys("run_agent_invocations")
+    }
+    fork_foreign_keys = {
+        _foreign_key_signature(foreign_key)
+        for foreign_key in inspector.get_foreign_keys("run_forks")
     }
     operation_foreign_keys = {
         _foreign_key_signature(foreign_key)
@@ -1654,6 +1677,32 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "run_agent_invocations",
         "SET NULL",
     ) in invocation_foreign_keys
+
+    assert _RUN_FORK_COLUMNS <= set(fork_columns)
+    assert fork_columns["run_id"]["nullable"] is False
+    assert fork_columns["source_run_id"]["nullable"] is True
+    assert fork_columns["lineage_root_run_id"]["nullable"] is True
+    assert fork_columns["source_invocation_id"]["nullable"] is True
+    assert fork_columns["source_step_index"]["nullable"] is False
+    assert fork_columns["resume_step_index"]["nullable"] is False
+    assert fork_columns["invocation_input"]["nullable"] is False
+    assert {
+        "ix_run_forks_source_run",
+        "ix_run_forks_lineage_root",
+        "ix_run_forks_source_invocation",
+    } <= fork_indexes
+    assert {
+        "ck_run_forks_source_step_index_positive",
+        "ck_run_forks_resume_step_index_positive",
+    } <= fork_checks
+    assert (("run_id",), "runs", "CASCADE") in fork_foreign_keys
+    assert (("source_run_id",), "runs", "SET NULL") in fork_foreign_keys
+    assert (("lineage_root_run_id",), "runs", "SET NULL") in fork_foreign_keys
+    assert (
+        ("source_invocation_id",),
+        "run_agent_invocations",
+        "SET NULL",
+    ) in fork_foreign_keys
 
     assert _RUN_OPERATION_INVOCATION_COLUMNS <= set(operation_columns)
     assert operation_columns["run_step_id"]["nullable"] is False
@@ -1795,6 +1844,107 @@ def test_init_db_creates_run_operation_invocations_table(database_url: str) -> N
 
     try:
         _assert_runtime_execution_table_shape(engine)
+    finally:
+        engine.dispose()
+
+
+def test_upgrade_creates_run_forks_without_backfilling_legacy_lineage(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql('DROP TABLE IF EXISTS "run_forks"')
+            package = _insert_representable_workflow_package(
+                connection,
+                key="fork_upgrade_package",
+            )
+            source_run_id = cast(
+                int,
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO runs (
+                            target_kind, target_id, target_key, target_version,
+                            workflow_package_id, workflow_package_key,
+                            workflow_package_workflow_key, extension_dependencies,
+                            input, status, resume_step_index
+                        ) VALUES (
+                            'workflowPackage', :package_id, :package_key, 1,
+                            :package_id, :package_key, :workflow_key, '[]'::jsonb,
+                            CAST(:input AS jsonb), 'succeeded', 1
+                        ) RETURNING id
+                        """
+                    ),
+                    {
+                        "input": json.dumps({"ticker": "NVDA"}, sort_keys=True),
+                        "package_id": package["package_id"],
+                        "package_key": package["package_key"],
+                        "workflow_key": package["workflow_key"],
+                    },
+                ).scalar_one(),
+            )
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=source_run_id,
+                package=package,
+                parameters={"ticker": "NVDA"},
+            )
+            legacy_run_id = cast(
+                int,
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO runs (
+                            target_kind, target_id, target_key, target_version,
+                            workflow_package_id, workflow_package_key,
+                            workflow_package_workflow_key, extension_dependencies,
+                            input, status, source_run_id, lineage_root_run_id,
+                            forked_from_step_index, resume_step_index
+                        ) VALUES (
+                            'workflowPackage', :package_id, :package_key, 1,
+                            :package_id, :package_key, :workflow_key, '[]'::jsonb,
+                            CAST(:input AS jsonb), 'succeeded', :source_run_id,
+                            :source_run_id, 2, 2
+                        ) RETURNING id
+                        """
+                    ),
+                    {
+                        "input": json.dumps({"ticker": "NVDA"}, sort_keys=True),
+                        "package_id": package["package_id"],
+                        "package_key": package["package_key"],
+                        "source_run_id": source_run_id,
+                        "workflow_key": package["workflow_key"],
+                    },
+                ).scalar_one(),
+            )
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=legacy_run_id,
+                package=package,
+                parameters={"ticker": "NVDA"},
+            )
+
+        upgrade_legacy_schema(engine)
+        _assert_runtime_execution_table_shape(engine)
+        with engine.connect() as connection:
+            fork_count = connection.execute(text("SELECT COUNT(*) FROM run_forks")).scalar_one()
+            legacy_lineage = connection.execute(
+                text(
+                    """
+                    SELECT source_run_id, lineage_root_run_id,
+                           forked_from_step_index, resume_step_index
+                    FROM runs
+                    WHERE id = :legacy_run_id
+                    """
+                ),
+                {"legacy_run_id": legacy_run_id},
+            ).one()
+
+        assert fork_count == 0
+        assert tuple(legacy_lineage) == (source_run_id, source_run_id, 2, 2)
     finally:
         engine.dispose()
 
@@ -2513,7 +2663,12 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     fixture_source = _TRADINGAGENTS_FIXTURE_PATH.read_text(encoding="utf-8")
     demo_source = _TRADINGAGENTS_DEMO_PATH.read_text(encoding="utf-8")
     preset_sql = _TRADINGAGENTS_PRESET_SQL_PATH.read_text(encoding="utf-8")
-    assert demo_source == fixture_source
+    fixture_compiled = compile_workflow_package_manifest(fixture_source)
+    demo_compiled = compile_workflow_package_manifest(demo_source)
+    assert demo_compiled["manifestHash"] == fixture_compiled["manifestHash"]
+    assert demo_compiled["compiledHash"] == fixture_compiled["compiledHash"]
+    assert demo_compiled["packageDefinition"] == fixture_compiled["packageDefinition"]
+    assert demo_compiled["compiledPlan"] == fixture_compiled["compiledPlan"]
     assert "INSERT INTO workflow_packages" in preset_sql
     assert "ON CONFLICT (key) DO UPDATE" in preset_sql
     assert "WHERE NOT EXISTS" not in preset_sql
@@ -2525,7 +2680,7 @@ def test_init_db_seeds_tradingagents_advisory_preset_without_secret_state(
     assert "INSERT INTO model_connections" not in preset_sql
     assert "workflow_package_secret_bindings (" not in preset_sql
     assert "INSERT INTO runs" not in preset_sql
-    compiled = compile_workflow_package_manifest(fixture_source)
+    compiled = fixture_compiled
     expected_package_definition = cast(dict[str, object], compiled["packageDefinition"])
     expected_compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
 

@@ -86,6 +86,7 @@ class RunRepository(BaseRepository[Run]):
             select(self.model)
             .where(self.model.id == run_id)
             .options(
+                selectinload(self.model.fork),
                 selectinload(self.model.steps).selectinload(RunStep.invocations),
                 selectinload(self.model.steps).selectinload(RunStep.operation_invocations),
             )

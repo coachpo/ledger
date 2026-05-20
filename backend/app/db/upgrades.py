@@ -617,6 +617,40 @@ $$,
         ),
     ),
     (
+        "run_forks",
+        (
+            """
+            CREATE TABLE IF NOT EXISTS run_forks (
+                run_id INTEGER PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+                source_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+                lineage_root_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+                source_invocation_id INTEGER REFERENCES run_agent_invocations(id)
+                    ON DELETE SET NULL,
+                source_step_index INTEGER NOT NULL,
+                resume_step_index INTEGER NOT NULL,
+                invocation_input JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT ck_run_forks_source_step_index_positive CHECK (
+                    source_step_index > 0
+                ),
+                CONSTRAINT ck_run_forks_resume_step_index_positive CHECK (
+                    resume_step_index > 0
+                )
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_run_forks_source_run ON run_forks (source_run_id)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_run_forks_lineage_root "
+                "ON run_forks (lineage_root_run_id)"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_run_forks_source_invocation "
+                "ON run_forks (source_invocation_id)"
+            ),
+        ),
+    ),
+    (
         "run_operation_invocations",
         (
             """
@@ -1243,6 +1277,7 @@ _CORE_MEMORY_PGVECTOR_TABLE_STATEMENTS: tuple[str, ...] = (
 )
 
 _RUNTIME_HARD_CUTOVER_DROP_ORDER = (
+    "run_forks",
     "run_operation_invocations",
     "run_agent_invocations",
     "run_steps",
@@ -1260,6 +1295,7 @@ _RUNTIME_HARD_CUTOVER_CREATE_ORDER = (
     "run_workflow_package_snapshots",
     "run_steps",
     "run_agent_invocations",
+    "run_forks",
     "run_operation_invocations",
 )
 _GLOBAL_AUTHORING_TABLES = (
@@ -1463,6 +1499,19 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "updated_at",
         }
     ),
+    "run_forks": frozenset(
+        {
+            "run_id",
+            "source_run_id",
+            "lineage_root_run_id",
+            "source_invocation_id",
+            "source_step_index",
+            "resume_step_index",
+            "invocation_input",
+            "created_at",
+            "updated_at",
+        }
+    ),
     "run_operation_invocations": frozenset(
         {
             "id",
@@ -1512,6 +1561,7 @@ _RUNTIME_CUTOVER_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
         "run_workflow_package_snapshots",
         "run_steps",
         "run_agent_invocations",
+        "run_forks",
         "run_operation_invocations",
     )
 }

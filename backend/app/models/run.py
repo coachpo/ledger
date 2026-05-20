@@ -136,6 +136,26 @@ class Run(IdMixin, TimestampMixin, Base):
         back_populates="lineage_root_run",
         passive_deletes=True,
     )
+    fork: Mapped[object | None] = relationship(
+        "RunFork",
+        foreign_keys="RunFork.run_id",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    source_fork_artifacts: Mapped[list[object]] = relationship(
+        "RunFork",
+        foreign_keys="RunFork.source_run_id",
+        back_populates="source_run",
+        passive_deletes=True,
+    )
+    lineage_root_fork_artifacts: Mapped[list[object]] = relationship(
+        "RunFork",
+        foreign_keys="RunFork.lineage_root_run_id",
+        back_populates="lineage_root_run",
+        passive_deletes=True,
+    )
     steps: Mapped[list[object]] = relationship(
         "RunStep",
         back_populates="run",

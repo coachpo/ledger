@@ -5,6 +5,7 @@ from typing import TypedDict, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -21,6 +22,7 @@ from app.models.platform_reference import AgentCapabilityRef, AgentMcpServerRef,
 from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_fork import RunFork
 from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
@@ -30,6 +32,7 @@ from app.repositories.mcp_server import McpServerRepository
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.run import RunRepository
+from app.repositories.run_fork import RunForkRepository
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.capability import CapabilityDraftCreate, CapabilityDraftUpdate
@@ -1518,6 +1521,109 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert [run.id for run in queued_runs] == [queued_run.id]
         assert latest_for_workflow is not None
         assert latest_for_workflow.id == queued_run.id
+
+
+def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        source_run = _build_deletable_run(target_id=9301, target_key="fork_source")
+        fork_run = _build_deletable_run(target_id=9302, target_key="fork_descendant")
+        legacy_run = _build_deletable_run(target_id=9303, target_key="legacy_replay")
+        session.add(source_run)
+        session.flush()
+
+        source_step = RunStep(
+            run_id=source_run.id,
+            step_index=2,
+            status="succeeded",
+            origin="planned",
+        )
+        session.add(source_step)
+        session.flush()
+        source_invocation = RunAgentInvocation(
+            run_step_id=source_step.id,
+            run_id=source_run.id,
+            step_index=2,
+            slot="analysis",
+            position=0,
+            agent_id=1,
+            agent_key="fork_agent",
+            agent_version=1,
+            output_schema_id=1,
+            output_schema_version=1,
+            input_mode="passthrough",
+            wiring={},
+            optional=False,
+            status="succeeded",
+            resolved_input={"ticker": "NVDA"},
+            resolved_input_origin="passthrough",
+            output={"decision": "hold"},
+            output_origin="executed",
+            tokens=13,
+        )
+        session.add(source_invocation)
+        session.flush()
+
+        fork_run.source_run_id = source_run.id
+        fork_run.lineage_root_run_id = source_run.id
+        fork_run.resume_step_index = 2
+        legacy_run.source_run_id = source_run.id
+        legacy_run.lineage_root_run_id = source_run.id
+        legacy_run.forked_from_step_index = 2
+        legacy_run.resume_step_index = 2
+        session.add_all([fork_run, legacy_run])
+        session.flush()
+        RunForkRepository(session).create_fork(
+            run_id=fork_run.id,
+            source_run_id=source_run.id,
+            lineage_root_run_id=source_run.id,
+            source_invocation_id=source_invocation.id,
+            source_step_index=2,
+            resume_step_index=2,
+            invocation_input={"ticker": "MSFT", "horizonDays": 45},
+        )
+        session.commit()
+        source_run_id = source_run.id
+        source_invocation_id = source_invocation.id
+        fork_run_id = fork_run.id
+        legacy_run_id = legacy_run.id
+        session.expunge_all()
+
+        run_repo = RunRepository(session)
+        fork_repo = RunForkRepository(session)
+
+        fork_detail = run_repo.get_detail(fork_run_id)
+        legacy_detail = run_repo.get_detail(legacy_run_id)
+        persisted_fork = fork_repo.get_by_run_id(fork_run_id)
+
+        assert fork_detail is not None
+        assert legacy_detail is not None
+        assert "fork" not in sqlalchemy_inspect(fork_detail).unloaded
+        assert "fork" not in sqlalchemy_inspect(legacy_detail).unloaded
+        assert fork_detail.fork is not None
+        fork_artifact = cast(RunFork, fork_detail.fork)
+        assert fork_artifact.run_id == fork_run_id
+        assert fork_artifact.source_run_id == source_run_id
+        assert fork_artifact.lineage_root_run_id == source_run_id
+        assert fork_artifact.source_invocation_id == source_invocation_id
+        assert fork_artifact.source_step_index == 2
+        assert fork_artifact.resume_step_index == 2
+        assert fork_artifact.invocation_input == {"ticker": "MSFT", "horizonDays": 45}
+        assert persisted_fork is not None
+        assert persisted_fork.run_id == fork_run_id
+        assert [fork.run_id for fork in fork_repo.list_by_source_run(source_run_id)] == [
+            fork_run_id
+        ]
+        assert [
+            fork.run_id for fork in fork_repo.list_by_source_invocation(source_invocation_id)
+        ] == [fork_run_id]
+        assert isinstance(fork_artifact, RunFork)
+        assert legacy_detail.fork is None
+        assert legacy_detail.source_run_id == source_run_id
+        assert legacy_detail.lineage_root_run_id == source_run_id
+        assert legacy_detail.forked_from_step_index == 2
+        assert legacy_detail.resume_step_index == 2
 
 
 def test_run_service_post_run_memory_artifact_writes_memory_native_detail(
