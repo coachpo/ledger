@@ -7,6 +7,7 @@ import {
   Code2,
   Download,
   FileCheck2,
+  FileUp,
   KeyRound,
   Loader2,
   PlayCircle,
@@ -73,7 +74,6 @@ import {
   useCreateWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackageSecretBinding,
-  useImportWorkflowPackage,
   usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
@@ -118,14 +118,12 @@ import {
 import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
-  WorkflowPackageImportRequest,
   WorkflowPackageLaunchRead,
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
   WorkflowPackageRuntimeInputEntryRead,
   WorkflowPackageSecretBindingRead,
 } from "@/lib/types/workflow-package";
-import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
 type WorkflowPackageEditorTab =
   | "overview"
@@ -1595,13 +1593,11 @@ function LaunchTab(props: {
 }
 
 function ExportsTab(props: {
-  confirmDiscardChanges: (action: string) => boolean;
   draft: WorkflowPackageDraft;
-  importPackage: ReturnType<typeof useImportWorkflowPackage>;
-  onImportComplete: (imported: WorkflowPackageRead) => void;
+  onOpenImportWorkspace: () => void;
   packageId: string | undefined;
 }) {
-  const { confirmDiscardChanges, draft, importPackage, onImportComplete, packageId } = props;
+  const { draft, onOpenImportWorkspace, packageId } = props;
   const generatedManifestSource = useMemo(() => workflowPackageDraftToManifestSource(draft), [draft]);
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
   const exportHref = packageId ? exportWorkflowPackageUrl(packageId) : undefined;
@@ -1643,25 +1639,24 @@ function ExportsTab(props: {
     };
   }, [exportHref, generatedManifestSource]);
 
-  const importManifest = async (payload: WorkflowPackageImportRequest) => {
-    if (!confirmDiscardChanges("import this package")) {
-      return null;
-    }
-    try {
-      const imported = await importPackage.mutateAsync(payload);
-      onImportComplete(imported);
-      toast.success("Imported package");
-      return imported;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to import package.");
-      return null;
-    }
-  };
-
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-exports-tab">
       <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>Package import / export</CardTitle><CardDescription>Download and import package manifests as plain YAML. Package-private MCP inline values remain visible in the manifest.</CardDescription></div><div className="flex flex-wrap gap-2">{exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}<WorkflowPackageImportDialog isPending={importPackage.isPending} onImport={importManifest} /></div></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Package import / export</CardTitle>
+            <CardDescription>
+              Download package manifests as plain YAML, or open the route-level import workspace for long pasted manifests. Package-private MCP inline values remain visible in the manifest.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {exportHref ? <Button asChild size="sm"><a href={exportHref} download><Download data-icon="inline-start" />Download YAML</a></Button> : null}
+            <Button size="sm" type="button" variant="outline" onClick={onOpenImportWorkspace}>
+              <FileUp data-icon="inline-start" />
+              Import Package
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4 p-4">
         <Textarea aria-label="Package YAML preview" className="min-h-96 font-mono text-xs" readOnly value={exportPreview} />
@@ -1694,7 +1689,6 @@ export function WorkflowPackageEditorPage() {
   const validatePackage = useValidateWorkflowPackageManifest();
   const preflightPackage = usePreflightWorkflowPackage();
   const createLaunch = useCreateWorkflowPackageLaunch();
-  const importPackage = useImportWorkflowPackage();
   const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, workflowKey.trim() || undefined);
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
@@ -1826,10 +1820,11 @@ export function WorkflowPackageEditorPage() {
     void manifestQuery.refetch();
   };
 
-  const handleImportSuccess = (imported: WorkflowPackageRead) => {
-    clearTransientEditorState();
-    setWorkflowKey("");
-    navigate(`/workflow-packages/${imported.id}`);
+  const openImportWorkspace = () => {
+    if (!confirmDiscardUnsavedChanges("open the import workspace")) {
+      return;
+    }
+    navigate("/workflow-packages/import");
   };
 
   const focusIssue = (issue: WorkflowPackageEditorIssue) => {
@@ -1970,7 +1965,7 @@ export function WorkflowPackageEditorPage() {
               <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
               <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
               <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} setWorkflowKey={setWorkflowKey} workflowKey={workflowKey} /></TabsContent>
-              <TabsContent value="exports" className="mt-0"><ExportsTab confirmDiscardChanges={confirmDiscardUnsavedChanges} draft={draft} importPackage={importPackage} onImportComplete={handleImportSuccess} packageId={packageId} /></TabsContent>
+              <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} onOpenImportWorkspace={openImportWorkspace} packageId={packageId} /></TabsContent>
             </div>
           </Tabs>
         </>

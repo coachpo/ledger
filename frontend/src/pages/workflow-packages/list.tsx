@@ -1,5 +1,6 @@
 import {
   Box,
+  FileUp,
   LayoutGrid,
   List,
   PackagePlus,
@@ -15,14 +16,10 @@ import { toast } from "sonner";
 
 import {
   useDeleteWorkflowPackage,
-  useImportWorkflowPackage,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
-import type {
-  WorkflowPackageImportRequest,
-  WorkflowPackageRead,
-} from "@/lib/types/workflow-package";
+import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,7 +39,6 @@ import {
   PlatformResourceCard,
   PlatformResourceList,
 } from "../platform-resource-shared";
-import { WorkflowPackageImportDialog } from "./workflow-package-import-dialog";
 
 function formatNullableHash(value: string | null): string {
   return value ? value.slice(0, 12) : "Not recorded";
@@ -114,7 +110,6 @@ function EmptyState({ search }: { search: string }) {
 export function WorkflowPackagesListPage() {
   const navigate = useNavigate();
   const deletePackage = useDeleteWorkflowPackage();
-  const importPackage = useImportWorkflowPackage();
   const packagesQuery = useWorkflowPackages();
   const packages = useMemo(
     () => sortPackages(packagesQuery.data?.items ?? []),
@@ -127,20 +122,6 @@ export function WorkflowPackagesListPage() {
     () => filterPackages(packages, search),
     [packages, search],
   );
-
-  const importManifest = async (payload: WorkflowPackageImportRequest) => {
-    try {
-      const imported = await importPackage.mutateAsync(payload);
-      toast.success("Imported workflow package");
-      navigate(`/workflow-packages/${imported.id}`);
-      return imported;
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to import package.",
-      );
-      return null;
-    }
-  };
 
   const deleteSelectedPackage = async () => {
     if (!deleting) {
@@ -172,11 +153,18 @@ export function WorkflowPackagesListPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <WorkflowPackageImportDialog
-            buttonTestId="workflow-packages-import"
-            isPending={importPackage.isPending}
-            onImport={importManifest}
-          />
+          <Button
+            aria-label="Import workflow package manifest"
+            className="cursor-pointer"
+            data-testid="workflow-packages-import"
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => navigate("/workflow-packages/import")}
+          >
+            <FileUp data-icon="inline-start" />
+            Import Package
+          </Button>
           <Button
             aria-label="Create new workflow package"
             className="cursor-pointer"
