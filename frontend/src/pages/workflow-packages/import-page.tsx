@@ -67,6 +67,13 @@ const DIRTY_IMPORT_CONFIRMATION_MESSAGE =
   "You have pasted workflow package YAML. Discard it and leave this page?";
 const PENDING_IMPORT_CONFIRMATION_MESSAGE =
   "An import is still in progress. Leave this page and stop following its result?";
+const IMPORT_MANIFEST_PLACEHOLDER = `apiVersion: signaldeck.workflowPackage/v1
+kind: WorkflowPackage
+metadata:
+  key: imported_package
+  name: Imported Package
+spec:
+  agents: []`;
 
 export function WorkflowPackageImportPage() {
   const navigate = useNavigate();
@@ -215,7 +222,7 @@ export function WorkflowPackageImportPage() {
             <textarea
               aria-label="Import package YAML"
               className="h-full w-full resize-none border-none bg-background px-4 py-3 font-['Fira_Code',ui-monospace,monospace] text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
-              placeholder="apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: imported_package\n  name: Imported Package\nspec:\n  agents: []"
+              placeholder={IMPORT_MANIFEST_PLACEHOLDER}
               spellCheck={false}
               value={manifestSource}
               onChange={(event) => setManifestSource(event.target.value)}
