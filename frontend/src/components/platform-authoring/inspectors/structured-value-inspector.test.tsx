@@ -53,6 +53,30 @@ describe("StructuredValueInspector", () => {
 
     expect(screen.getByText("Empty object")).toBeInTheDocument();
     expect(screen.getByText("Empty array")).toBeInTheDocument();
-    expect(textContent.indexOf("alpha")).toBeLessThan(textContent.indexOf("zebra"));
+    expect(textContent.indexOf("alpha")).toBeLessThan(
+      textContent.indexOf("zebra"),
+    );
+  });
+
+  it("can preserve object insertion order in the compact tree presentation", () => {
+    render(
+      <StructuredValueInspector
+        data-testid="structured-value-inspector"
+        label={null}
+        preserveObjectKeyOrder
+        presentation="tree"
+        value={{ zebra: [], alpha: {} }}
+      />,
+    );
+
+    const inspector = screen.getByTestId("structured-value-inspector");
+    const textContent = inspector.textContent ?? "";
+
+    expect(inspector.querySelector("pre")).toBeNull();
+    expect(screen.getByText("Empty object")).toBeInTheDocument();
+    expect(screen.getByText("Empty array")).toBeInTheDocument();
+    expect(textContent.indexOf("zebra")).toBeLessThan(
+      textContent.indexOf("alpha"),
+    );
   });
 });
