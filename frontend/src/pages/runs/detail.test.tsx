@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -372,6 +372,17 @@ function expectDraggableZoomableLineageContract(flow: HTMLElement) {
   expect(flow).toHaveAttribute("data-nodes-focusable", "false");
   expect(flow).toHaveAttribute("data-pan-on-drag", "false");
   expect(flow).toHaveAttribute("data-select-nodes-on-drag", "false");
+}
+
+function applyLatestSearchParamsUpdate(currentSearch: string) {
+  const lastCall = setSearchParamsMock.mock.calls[setSearchParamsMock.mock.calls.length - 1];
+  const updater = lastCall?.[0];
+
+  if (typeof updater !== "function") {
+    throw new Error("Expected the latest search params update to use an updater function.");
+  }
+
+  searchParamsMock = updater(new URLSearchParams(currentSearch));
 }
 
 describe("RunsDetailPage", () => {
@@ -1227,6 +1238,57 @@ describe("RunsDetailPage", () => {
     expect(screen.getByRole("dialog", { name: /start a new run from step 1/i })).toBeVisible();
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: true });
     expect(await screen.findByLabelText("New run inputs JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+  });
+
+  it("keeps the last step replay presentation while Cancel closes the dialog", async () => {
+    searchParamsMock = new URLSearchParams("stepReplay=1&stepIndex=1");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunStepReplayDraftMock.mockReturnValue(stepReplayDraftQueryResult(buildStepReplayDraft()));
+
+    const { rerender } = render(<RunsDetailPage />);
+
+    fireEvent.change(await screen.findByLabelText("New run inputs JSON"), {
+      target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    applyLatestSearchParamsUpdate("stepReplay=1&stepIndex=1");
+    rerender(<RunsDetailPage />);
+
+    expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
+    expect(screen.queryByTestId("run-step-replay-invalid-step")).not.toBeInTheDocument();
+    expect(screen.queryByText(/new run unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/step undefined/i)).not.toBeInTheDocument();
+  });
+
+  it("resets canceled replay edits after the close animation completes and the dialog reopens", async () => {
+    searchParamsMock = new URLSearchParams("stepReplay=1&stepIndex=1");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunStepReplayDraftMock.mockReturnValue(stepReplayDraftQueryResult(buildStepReplayDraft()));
+
+    const { rerender } = render(<RunsDetailPage />);
+
+    fireEvent.change(await screen.findByLabelText("New run inputs JSON"), {
+      target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
+    });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      applyLatestSearchParamsUpdate("stepReplay=1&stepIndex=1");
+      rerender(<RunsDetailPage />);
+      expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+
+      searchParamsMock = new URLSearchParams("stepReplay=1&stepIndex=1");
+      rerender(<RunsDetailPage />);
+
+      expect(screen.getByLabelText("New run inputs JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("updates URL params when a succeeded workflow step replay action is clicked", () => {

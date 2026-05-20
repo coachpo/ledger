@@ -117,6 +117,7 @@ type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
 type LineageDiagramEdge = Edge;
 
 const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "This feature is available for succeeded Workflow Package runs and succeeded steps.";
+const STEP_REPLAY_DIALOG_CLOSE_CLEANUP_DELAY_MS = 200;
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
@@ -770,22 +771,45 @@ function RunStepReplayDialog({
   runId: string;
 }) {
   const navigate = useNavigate();
-  const draftQuery = useRunStepReplayDraft(runId, replayStepIndex, { enabled: open && replayAvailability.isAvailable });
   const createStepReplay = useCreateRunStepReplay();
+  const [presentedReplayState, setPresentedReplayState] = useState(() => ({ replayAvailability, replayStepIndex }));
   const [draftTargetKey, setDraftTargetKey] = useState<string | null>(null);
   const [parametersText, setParametersText] = useState("");
   const [apiError, setApiError] = useState<string | null>(null);
+  const presentedReplayStepIndex = open ? replayStepIndex : presentedReplayState.replayStepIndex;
+  const presentedReplayAvailability = open ? replayAvailability : presentedReplayState.replayAvailability;
+  const draftQuery = useRunStepReplayDraft(runId, presentedReplayStepIndex, { enabled: open && presentedReplayAvailability.isAvailable });
 
-  const resetLocalState = () => {
+  const resetLocalState = useCallback(() => {
     setDraftTargetKey(null);
     setParametersText("");
     setApiError(null);
-  };
+  }, []);
 
   const closeDialog = () => {
-    resetLocalState();
     onClose();
   };
+
+  useEffect(() => {
+    if (open) {
+      setPresentedReplayState({
+        replayAvailability: {
+          isAvailable: replayAvailability.isAvailable,
+          reason: replayAvailability.reason,
+        },
+        replayStepIndex,
+      });
+    }
+  }, [open, replayAvailability.isAvailable, replayAvailability.reason, replayStepIndex]);
+
+  useEffect(() => {
+    if (open) {
+      return undefined;
+    }
+
+    const cleanupTimer = window.setTimeout(resetLocalState, STEP_REPLAY_DIALOG_CLOSE_CLEANUP_DELAY_MS);
+    return () => window.clearTimeout(cleanupTimer);
+  }, [open, resetLocalState]);
 
   useEffect(() => {
     if (!open || !draftQuery.data) {
@@ -854,34 +878,41 @@ function RunStepReplayDialog({
         }
       }}
     >
-      <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
+      <DialogContent
+        className="max-h-dvh overflow-y-auto sm:max-w-3xl"
+        onAnimationEnd={(event) => {
+          if (event.currentTarget === event.target && !open) {
+            resetLocalState();
+          }
+        }}
+      >
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Start a new run from Step {replayStepIndex}</DialogTitle>
-            {replayStepIndex !== undefined ? <Badge variant="outline">Step {replayStepIndex}</Badge> : null}
+            <DialogTitle>Start a new run from Step {presentedReplayStepIndex}</DialogTitle>
+            {presentedReplayStepIndex !== undefined ? <Badge variant="outline">Step {presentedReplayStepIndex}</Badge> : null}
             {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Step input edited" : "Step input unchanged"}</Badge> : null}
           </div>
           <DialogDescription>
-            A new run is created, prior context is copied, Step {replayStepIndex} and later run again, and the original run remains unchanged.
+            A new run is created, prior context is copied, Step {presentedReplayStepIndex} and later run again, and the original run remains unchanged.
           </DialogDescription>
         </DialogHeader>
 
-        {!replayAvailability.isAvailable ? (
+        {!presentedReplayAvailability.isAvailable ? (
           <Alert variant="destructive" data-testid="run-step-replay-invalid-step">
             <AlertCircle />
             <AlertTitle>New run unavailable</AlertTitle>
-            <AlertDescription>{replayAvailability.reason ?? DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON}</AlertDescription>
+            <AlertDescription>{presentedReplayAvailability.reason ?? DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON}</AlertDescription>
           </Alert>
         ) : null}
 
-        {replayAvailability.isAvailable && draftQuery.isPending ? (
+        {presentedReplayAvailability.isAvailable && draftQuery.isPending ? (
           <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-step-replay-loading">
             <Loader2 className="size-4 animate-spin" />
             Loading new run inputs...
           </div>
         ) : null}
 
-        {replayAvailability.isAvailable && draftQuery.isError ? (
+        {presentedReplayAvailability.isAvailable && draftQuery.isError ? (
           <Alert variant="destructive" data-testid="run-step-replay-draft-error">
             <AlertCircle />
             <AlertTitle>Unable to load new run inputs</AlertTitle>
@@ -930,7 +961,7 @@ function RunStepReplayDialog({
           </Button>
           <Button data-testid="run-step-replay-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
             {createStepReplay.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Start new run from Step {replayStepIndex}
+            Start new run from Step {presentedReplayStepIndex}
           </Button>
         </DialogFooter>
       </DialogContent>
