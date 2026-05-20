@@ -14,17 +14,21 @@ import { WorkflowPackagesListPage } from "./list";
 
 const {
   deletePackageMock,
+  deletePackagesMock,
   navigateMock,
   toastErrorMock,
   toastSuccessMock,
   useDeletePackageMock,
+  useDeletePackagesMock,
   useWorkflowPackagesMock,
 } = vi.hoisted(() => ({
   deletePackageMock: vi.fn(),
+  deletePackagesMock: vi.fn(),
   navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   useDeletePackageMock: vi.fn(),
+  useDeletePackagesMock: vi.fn(),
   useWorkflowPackagesMock: vi.fn(),
 }));
 
@@ -45,6 +49,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useDeleteWorkflowPackage: () => useDeletePackageMock(),
+  useDeleteWorkflowPackages: () => useDeletePackagesMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
 }));
 
@@ -75,15 +80,21 @@ function renderPage() {
 describe("WorkflowPackagesListPage", () => {
   beforeEach(() => {
     deletePackageMock.mockReset();
+    deletePackagesMock.mockReset();
     navigateMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     useDeletePackageMock.mockReset();
+    useDeletePackagesMock.mockReset();
     useWorkflowPackagesMock.mockReset();
     deletePackageMock.mockResolvedValue(undefined);
     useDeletePackageMock.mockReturnValue({
       isPending: false,
       mutateAsync: deletePackageMock,
+    });
+    useDeletePackagesMock.mockReturnValue({
+      isPending: false,
+      mutate: deletePackagesMock,
     });
   });
 
@@ -167,6 +178,10 @@ describe("WorkflowPackagesListPage", () => {
     expect(
       screen.getByRole("textbox", { name: "Search workflow packages" }),
     ).toHaveAttribute("placeholder", "Search packages by name, key, or hash...");
+    expect(
+      screen.getByRole("checkbox", { name: "Select all shown workflow packages" }),
+    ).toBeVisible();
+    expect(screen.getByText("Select all shown")).toBeVisible();
     expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
     expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
     expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
@@ -302,6 +317,75 @@ describe("WorkflowPackagesListPage", () => {
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
     expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
+  });
+
+  it("selects packages in cards and table views and bulk deletes selected packages", async () => {
+    deletePackagesMock.mockImplementation(
+      (_ids: unknown, options: { onSuccess: () => void }) => options.onSuccess(),
+    );
+    useWorkflowPackagesMock.mockReturnValue({
+      data: {
+        items: [
+          packageFixture({
+            id: 9,
+            key: "risk_review",
+            name: "Risk Review",
+            updatedAt: "2026-05-04T10:00:00Z",
+          }),
+          packageFixture({
+            id: 4,
+            key: "macro_digest",
+            name: "Macro Digest",
+            updatedAt: "2026-05-02T10:00:00Z",
+          }),
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
+    fireEvent.click(
+      within(riskRow).getByRole("checkbox", {
+        name: "Select workflow package Risk Review",
+      }),
+    );
+
+    expect(riskRow).toHaveAttribute("data-state", "selected");
+    expect(screen.getByText("1 selected")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeVisible();
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+    const tableMacroRow = screen.getByTestId("workflow-packages-row-macro_digest");
+    fireEvent.click(
+      within(tableMacroRow).getByRole("checkbox", {
+        name: "Select workflow package Macro Digest",
+      }),
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+
+    await waitFor(() => expect(deletePackagesMock).toHaveBeenCalledWith(
+      [9],
+      expect.objectContaining({
+        onError: expect.any(Function),
+        onSuccess: expect.any(Function),
+      }),
+    ));
+    expect(toastSuccessMock).toHaveBeenCalledWith("1 workflow package deleted");
   });
 
   it("permanently deletes packages and surfaces backend delete errors", async () => {

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import {
   useDeleteWorkflowPackage,
+  useDeleteWorkflowPackages,
   useWorkflowPackages,
 } from "@/hooks/use-workflow-packages";
 import { formatDateTime } from "@/lib/format";
@@ -23,6 +24,7 @@ import type { WorkflowPackageRead } from "@/lib/types/workflow-package";
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -110,6 +112,7 @@ function EmptyState({ search }: { search: string }) {
 export function WorkflowPackagesListPage() {
   const navigate = useNavigate();
   const deletePackage = useDeleteWorkflowPackage();
+  const deletePackages = useDeleteWorkflowPackages();
   const packagesQuery = useWorkflowPackages();
   const packages = useMemo(
     () => sortPackages(packagesQuery.data?.items ?? []),
@@ -117,11 +120,42 @@ export function WorkflowPackagesListPage() {
   );
   const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<WorkflowPackageRead["id"]>>(
+    new Set(),
+  );
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
   );
+  const selectedPackages = useMemo(
+    () => packages.filter((workflowPackage) => selectedPackageIds.has(workflowPackage.id)),
+    [packages, selectedPackageIds],
+  );
+  const selectedCount = selectedPackages.length;
+  const allFilteredSelected =
+    filteredPackages.length > 0 &&
+    filteredPackages.every((workflowPackage) => selectedPackageIds.has(workflowPackage.id));
+  const someFilteredSelected = filteredPackages.some((workflowPackage) =>
+    selectedPackageIds.has(workflowPackage.id),
+  );
+
+  const setPackagesSelected = (
+    packagesToUpdate: readonly WorkflowPackageRead[],
+    selected: boolean,
+  ) => {
+    setSelectedPackageIds((previous) => {
+      const next = new Set(previous);
+      packagesToUpdate.forEach((workflowPackage) => {
+        if (selected) {
+          next.add(workflowPackage.id);
+        } else {
+          next.delete(workflowPackage.id);
+        }
+      });
+      return next;
+    });
+  };
 
   const deleteSelectedPackage = async () => {
     if (!deleting) {
@@ -131,12 +165,40 @@ export function WorkflowPackagesListPage() {
     try {
       await deletePackage.mutateAsync(deleting.id);
       toast.success("Workflow package permanently deleted");
+      setSelectedPackageIds((previous) => {
+        const next = new Set(previous);
+        next.delete(deleting.id);
+        return next;
+      });
       setDeleting(null);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to delete workflow package.",
       );
     }
+  };
+
+  const deleteSelectedPackages = () => {
+    if (selectedPackages.length === 0) {
+      return;
+    }
+
+    const packageIds = selectedPackages.map((workflowPackage) => workflowPackage.id);
+    const count = selectedPackages.length;
+    deletePackages.mutate(packageIds, {
+      onError: (error) =>
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to delete workflow packages.",
+        ),
+      onSuccess: () => {
+        toast.success(
+          `${count} ${count === 1 ? "workflow package" : "workflow packages"} deleted`,
+        );
+        setSelectedPackageIds(new Set());
+      },
+    });
   };
 
   return (
@@ -217,6 +279,49 @@ export function WorkflowPackagesListPage() {
         </ToggleGroup>
       </div>
 
+      {filteredPackages.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <Checkbox
+              aria-label="Select all shown workflow packages"
+              checked={
+                allFilteredSelected
+                  ? true
+                  : someFilteredSelected
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) =>
+                setPackagesSelected(filteredPackages, checked === true)
+              }
+            />
+            Select all shown
+          </label>
+          {selectedCount > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {selectedCount} selected
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={deletePackages.isPending}
+                onClick={deleteSelectedPackages}
+              >
+                <Trash2 className="size-3.5" /> Delete selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedPackageIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {packagesQuery.isPending ? <LoadingTable /> : null}
       {packagesQuery.isError ? (
         <div
@@ -247,11 +352,22 @@ export function WorkflowPackagesListPage() {
           {filteredPackages.map((workflowPackage) => {
             const packagePath = `/workflow-packages/${workflowPackage.id}`;
             const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
+            const isSelected = selectedPackageIds.has(workflowPackage.id);
 
             return (
               <PlatformResourceCard
                 key={workflowPackage.id}
                 density="compactPlus"
+                leading={
+                  <Checkbox
+                    aria-label={`Select workflow package ${workflowPackage.name}`}
+                    checked={isSelected}
+                    onCheckedChange={(checked) =>
+                      setPackagesSelected([workflowPackage], checked === true)
+                    }
+                  />
+                }
+                selected={isSelected}
                 testId={`workflow-packages-row-${workflowPackage.key}`}
                 title={workflowPackage.name}
                 subtitle={
@@ -312,7 +428,7 @@ export function WorkflowPackagesListPage() {
                     <Button
                       aria-label={`Delete package ${workflowPackage.name}`}
                       className="cursor-pointer"
-                      disabled={deletePackage.isPending}
+                      disabled={deletePackage.isPending || deletePackages.isPending}
                       size="sm"
                       variant="destructive"
                       type="button"
@@ -335,6 +451,21 @@ export function WorkflowPackagesListPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="w-9">
+                <Checkbox
+                  aria-label="Select all shown workflow packages"
+                  checked={
+                    allFilteredSelected
+                      ? true
+                      : someFilteredSelected
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) =>
+                    setPackagesSelected(filteredPackages, checked === true)
+                  }
+                />
+              </TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>Manifest Hash</TableHead>
@@ -343,11 +474,24 @@ export function WorkflowPackagesListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredPackages.map((workflowPackage) => (
+            {filteredPackages.map((workflowPackage) => {
+              const isSelected = selectedPackageIds.has(workflowPackage.id);
+
+              return (
                 <TableRow
                   key={workflowPackage.id}
+                  data-state={isSelected ? "selected" : undefined}
                   data-testid={`workflow-packages-row-${workflowPackage.key}`}
                 >
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Select workflow package ${workflowPackage.name}`}
+                      checked={isSelected}
+                      onCheckedChange={(checked) =>
+                        setPackagesSelected([workflowPackage], checked === true)
+                      }
+                    />
+                  </TableCell>
                   <TableCell className="min-w-56 whitespace-normal">
                     <div className="space-y-1">
                       <p className="font-medium text-foreground">
@@ -401,7 +545,7 @@ export function WorkflowPackagesListPage() {
                       <Button
                         aria-label={`Delete package ${workflowPackage.name}`}
                         className="cursor-pointer"
-                        disabled={deletePackage.isPending}
+                        disabled={deletePackage.isPending || deletePackages.isPending}
                         size="sm"
                         variant="destructive"
                         type="button"
@@ -413,7 +557,8 @@ export function WorkflowPackagesListPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       ) : null}
