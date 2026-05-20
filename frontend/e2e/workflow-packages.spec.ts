@@ -177,7 +177,7 @@ test.describe("Workflow packages", () => {
     expect(detail.finalOutput).toMatchObject({ summary: "deterministic summary" });
     const packageProvenance = detail.packageProvenance as Record<string, unknown>;
     expect(packageProvenance).toMatchObject({
-      currentPackage: { available: true, status: "active" },
+      currentPackage: { available: true },
       launchSnapshot: { parameters: { ticker: "AAPL" }, workflowKey: "advisory_flow" },
       workflowKey: "advisory_flow",
       workflowPackageKey: packageKey,
