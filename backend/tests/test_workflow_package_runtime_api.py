@@ -11,13 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
-from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -1523,6 +1521,9 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "runtime input source output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = client.post(
@@ -1568,22 +1569,13 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
         )
         assert entry.payload == run.input
         assert entry.source_run_id == source_run_id
-        now = utcnow()
-        run.status = "succeeded"
-        run.finished_at = now
-        source_step = (
-            session.query(RunStep)
-            .filter_by(
-                run_id=source_run_id,
-                step_index=1,
-            )
-            .one()
-        )
-        source_step.status = "succeeded"
-        source_step.started_at = now
-        source_step.finished_at = now
-        source_step.persisted_at = now
-        session.commit()
+
+    _drain_run_queue(session_factory)
+    source_detail = _wait_for_run(client, source_run_id)
+    assert source_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+    assert source_invocation["resolvedInput"] == {"ticker": "MSFT"}
 
     rerun = client.post(
         f"/api/runs/{source_run_id}/reruns",
@@ -1592,11 +1584,23 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     assert rerun.status_code == 201, rerun.json()
     assert len(_runtime_input_history_entries(client, package_id)) == 1
 
-    replay = client.post(
-        f"/api/runs/{source_run_id}/step-replays",
-        json={"replayStepIndex": 1, "parameters": {"ticker": "TSLA"}},
+    fork_draft = client.get(
+        f"/api/runs/{source_run_id}/fork-draft",
+        params={"sourceInvocationId": source_invocation_id},
     )
-    assert replay.status_code == 201, replay.json()
+    fork = client.post(
+        f"/api/runs/{source_run_id}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA"},
+        },
+    )
+    assert fork_draft.status_code == 200, fork_draft.json()
+    fork_draft_body = cast(dict[str, Any], fork_draft.json())
+    assert fork_draft_body["sourceRunId"] == source_run_id
+    assert fork_draft_body["sourceInvocationId"] == source_invocation_id
+    assert fork_draft_body["invocationInput"] == {"ticker": "MSFT"}
+    assert fork.status_code == 201, fork.json()
     assert len(_runtime_input_history_entries(client, package_id)) == 1
 
     for index in range(RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT):

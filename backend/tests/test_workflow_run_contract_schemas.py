@@ -5,12 +5,12 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from app.schemas import run as run_schemas
 from app.schemas.run import (
+    RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
     RunStatus,
-    RunStepReplayCreateRequest,
-    RunStepReplayDraftRead,
     RunTargetKind,
 )
 from app.schemas.workflow import (
@@ -134,30 +134,165 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
         _ = RunRerunCreateRequest.model_validate({"parameters": "MSFT"})
 
 
-def test_step_replay_contracts_use_parameters_object_and_reject_extra_fields() -> None:
+def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() -> None:
+    expected_contract_names = {"RunForkDraftRead", "RunForkCreateRequest"}
+    exported_contract_names = set(getattr(run_schemas, "__all__", ()))
+    assert expected_contract_names <= exported_contract_names
+
     draft_payload = {
         "sourceRunId": 11,
-        "replayStepIndex": 2,
+        "sourceInvocationId": 77,
         "targetKind": RunTargetKind.WORKFLOW.value,
         "targetId": 42,
         "targetKey": "portfolio_review",
-        "parameters": {"ticker": "MSFT"},
+        "invocationInput": {"ticker": "MSFT", "notes": "adjust thesis"},
         "packageProvenance": None,
     }
 
-    draft = RunStepReplayDraftRead.model_validate(draft_payload)
-    create = RunStepReplayCreateRequest.model_validate(
-        {"replayStepIndex": 2, "parameters": {"ticker": "MSFT"}}
+    fork_draft_read = getattr(run_schemas, "RunForkDraftRead")
+    fork_create_request = getattr(run_schemas, "RunForkCreateRequest")
+    draft = fork_draft_read.model_validate(draft_payload)
+    create = fork_create_request.model_validate(
+        {"sourceInvocationId": 77, "invocationInput": {"ticker": "MSFT"}}
     )
 
     assert draft.model_dump(by_alias=True, mode="json") == draft_payload
     assert create.model_dump(by_alias=True, mode="json") == {
-        "replayStepIndex": 2,
-        "parameters": {"ticker": "MSFT"},
+        "sourceInvocationId": 77,
+        "invocationInput": {"ticker": "MSFT"},
     }
     with pytest.raises(ValidationError):
-        _ = RunStepReplayCreateRequest.model_validate(
-            {"replayStepIndex": 2, "parameters": {"ticker": "MSFT"}, "unexpected": True}
+        _ = fork_create_request.model_validate(
+            {
+                "sourceInvocationId": 77,
+                "invocationInput": {"ticker": "MSFT"},
+                "unexpected": True,
+            }
         )
     with pytest.raises(ValidationError):
-        _ = RunStepReplayCreateRequest.model_validate({"replayStepIndex": 2, "parameters": "MSFT"})
+        _ = fork_create_request.model_validate(
+            {"sourceInvocationId": 77, "invocationInput": "MSFT"}
+        )
+    with pytest.raises(ValidationError):
+        _ = fork_create_request.model_validate(
+            {"sourceInvocationId": 77, "parameters": {"ticker": "MSFT"}}
+        )
+    with pytest.raises(ValidationError):
+        _ = fork_create_request.model_validate(
+            {"replayStepIndex": 2, "invocationInput": {"ticker": "MSFT"}}
+        )
+
+
+def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
+    timestamp = "2026-05-03T12:00:00Z"
+    legacy_replay_lineage_payload = {
+        "id": 99,
+        "targetKind": RunTargetKind.WORKFLOW.value,
+        "targetId": 42,
+        "targetKey": "portfolio_review",
+        "input": {"ticker": "TSLA"},
+        "sourceRunId": 11,
+        "lineageRootRunId": 11,
+        "replayStepIndex": 2,
+        "resumeStepIndex": 2,
+        "finalOutput": {"summary": "legacy replay output"},
+        "status": RunStatus.SUCCEEDED.value,
+        "totalTokens": 12,
+        "inheritedTokens": 5,
+        "executedTokens": 7,
+        "traceId": "trace-legacy-replay",
+        "error": None,
+        "queuedAt": timestamp,
+        "startedAt": timestamp,
+        "finishedAt": timestamp,
+        "createdAt": timestamp,
+        "updatedAt": timestamp,
+        "steps": [
+            {
+                "id": 201,
+                "runId": 99,
+                "index": 1,
+                "status": "succeeded",
+                "origin": "copied",
+                "sourceRunStepId": 101,
+                "sourceRunId": 11,
+                "sourceStepIndex": 1,
+                "graphMetadata": None,
+                "error": None,
+                "startedAt": timestamp,
+                "finishedAt": timestamp,
+                "persistedAt": timestamp,
+                "createdAt": timestamp,
+                "updatedAt": timestamp,
+                "invocations": [
+                    {
+                        "id": 301,
+                        "runStepId": 201,
+                        "runId": 99,
+                        "stepIndex": 1,
+                        "slot": "analysis",
+                        "position": 0,
+                        "agentRef": {
+                            "scope": "packageLocal",
+                            "localId": 1,
+                            "key": "package_analyst",
+                            "version": 1,
+                        },
+                        "outputSchemaRef": {
+                            "scope": "packageLocal",
+                            "localId": 1,
+                            "key": "summary_output",
+                            "version": 1,
+                        },
+                        "agentId": 1,
+                        "agentKey": "package_analyst",
+                        "agentVersion": 1,
+                        "outputSchemaId": 1,
+                        "outputSchemaVersion": 1,
+                        "inputMode": "wired",
+                        "wiring": {"ticker": "inputs.ticker"},
+                        "graphMetadata": None,
+                        "optional": False,
+                        "status": "succeeded",
+                        "resolvedInput": {"ticker": "MSFT"},
+                        "resolvedInputOrigin": "copied",
+                        "output": {"summary": "copied source output"},
+                        "outputOrigin": "copied",
+                        "errorCode": None,
+                        "errorMessage": None,
+                        "errorDetails": [],
+                        "tokens": 5,
+                        "durationMs": 17,
+                        "traceSpanId": "span-legacy-replay",
+                        "sourceInvocationId": 77,
+                        "startedAt": timestamp,
+                        "finishedAt": timestamp,
+                        "persistedAt": timestamp,
+                        "createdAt": timestamp,
+                        "updatedAt": timestamp,
+                    }
+                ],
+                "operationInvocations": [],
+            }
+        ],
+        "memoryArtifacts": [],
+        "memoryEvents": [],
+        "extensionDependencies": [],
+        "packageProvenance": None,
+    }
+
+    read = RunRead.model_validate(legacy_replay_lineage_payload)
+    dumped = read.model_dump(by_alias=True, mode="json")
+
+    assert dumped["sourceRunId"] == 11
+    assert dumped["lineageRootRunId"] == 11
+    assert dumped["replayStepIndex"] == 2
+    assert dumped["resumeStepIndex"] == 2
+    legacy_step = dumped["steps"][0]
+    assert legacy_step["origin"] == "copied"
+    assert legacy_step["sourceRunStepId"] == 101
+    assert legacy_step["sourceRunId"] == 11
+    assert legacy_step["sourceStepIndex"] == 1
+    legacy_invocation = legacy_step["invocations"][0]
+    assert legacy_invocation["sourceInvocationId"] == 77
+    assert legacy_invocation["resolvedInputOrigin"] == "copied"
