@@ -17,7 +17,7 @@ import { Activity, AlertCircle, Database, Download, FileText, GitBranch, Loader2
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 
-import { useCreateRunStepReplay, useRun, useRunStepReplayDraft } from "@/hooks/use-runs";
+import { useCreateRunFork, useRun, useRunForkDraft } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 import type {
   RunAgentInvocationRead,
@@ -99,9 +99,14 @@ type JsonValidationResult<T> = {
   value: T | null;
 };
 
-type StepReplayAvailability = {
+type RunForkAvailability = {
   isAvailable: boolean;
   reason: string | null;
+};
+
+type ForkTargetContext = {
+  invocation: RunAgentInvocationRead;
+  step: RunStepRead;
 };
 
 type LineageDiagramNodeData = {
@@ -116,8 +121,8 @@ type LineageDiagramNodeData = {
 type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
 type LineageDiagramEdge = Edge;
 
-const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "This feature is available for succeeded Workflow Package runs and succeeded steps.";
-const STEP_REPLAY_DIALOG_CLOSE_CLEANUP_DELAY_MS = 200;
+const DEFAULT_FORK_UNAVAILABLE_REASON = "Forking is available for succeeded Workflow Package runs and succeeded agent invocations.";
+const FORK_DIALOG_CLOSE_CLEANUP_DELAY_MS = 200;
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
@@ -280,41 +285,82 @@ function aggregatedStepOutput(step: RunStepRead) {
   };
 }
 
-function getStepReplayAvailability(
-  targetKind: RunTargetKind,
+function findForkTargetContext(
   steps: RunStepRead[],
-  replayStepIndex: number | undefined,
-): StepReplayAvailability {
-  if (targetKind !== "workflowPackage") {
+  resumeStepIndex: number | undefined,
+  invocationId: number | undefined,
+): ForkTargetContext | null {
+  if (resumeStepIndex === undefined || invocationId === undefined) {
+    return null;
+  }
+
+  const step = steps.find((item) => item.index === resumeStepIndex);
+  const invocation = step?.invocations.find((item) => item.id === invocationId);
+  return step && invocation ? { invocation, step } : null;
+}
+
+function getRunForkAvailability(
+  run: RunRead,
+  steps: RunStepRead[],
+  resumeStepIndex: number | undefined,
+  invocationId: number | undefined,
+): RunForkAvailability {
+  if (run.targetKind !== "workflowPackage" || run.status !== "succeeded") {
     return {
       isAvailable: false,
-      reason: DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON,
+      reason: DEFAULT_FORK_UNAVAILABLE_REASON,
     };
   }
 
-  if (replayStepIndex === undefined) {
+  if (resumeStepIndex === undefined || invocationId === undefined) {
     return {
       isAvailable: false,
-      reason: DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON,
+      reason: DEFAULT_FORK_UNAVAILABLE_REASON,
     };
   }
 
-  const selectedStep = steps.find((step) => step.index === replayStepIndex);
+  const selectedStep = steps.find((step) => step.index === resumeStepIndex);
   if (!selectedStep) {
     return {
       isAvailable: false,
-      reason: `Step ${replayStepIndex} is not available on this run.`,
+      reason: `Step ${resumeStepIndex} is not available on this run.`,
+    };
+  }
+
+  const selectedInvocation = selectedStep.invocations.find((invocation) => invocation.id === invocationId);
+  if (!selectedInvocation) {
+    return {
+      isAvailable: false,
+      reason: `Agent invocation #${invocationId} is not available on Step ${resumeStepIndex}.`,
     };
   }
 
   if (selectedStep.status !== "succeeded") {
     return {
       isAvailable: false,
-      reason: `Step ${replayStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be used to start a new run.`,
+      reason: `Step ${resumeStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be forked.`,
+    };
+  }
+
+  if (selectedInvocation.status !== "succeeded") {
+    return {
+      isAvailable: false,
+      reason: `${selectedInvocation.slot} invocation is ${selectedInvocation.status}; only succeeded agent invocations can be forked.`,
+    };
+  }
+
+  if (!selectedInvocation.persistedAt) {
+    return {
+      isAvailable: false,
+      reason: `${selectedInvocation.slot} invocation has no persisted input snapshot to fork.`,
     };
   }
 
   return { isAvailable: true, reason: null };
+}
+
+function canForkInvocation(run: RunRead, step: RunStepRead, invocation: RunAgentInvocationRead): boolean {
+  return getRunForkAvailability(run, [step], step.index, invocation.id).isAvailable;
 }
 
 function formatJsonEditorValue(value: unknown): string {
@@ -757,32 +803,38 @@ function JsonEditorField({
   );
 }
 
-function RunStepReplayDialog({
+function RunForkDialog({
+  forkAvailability,
+  forkTarget,
+  invocationId,
   onClose,
   open,
-  replayAvailability,
-  replayStepIndex,
+  resumeStepIndex,
   runId,
 }: {
+  forkAvailability: RunForkAvailability;
+  forkTarget: ForkTargetContext | null;
+  invocationId: number | undefined;
   onClose: () => void;
   open: boolean;
-  replayAvailability: StepReplayAvailability;
-  replayStepIndex: number | undefined;
+  resumeStepIndex: number | undefined;
   runId: string;
 }) {
   const navigate = useNavigate();
-  const createStepReplay = useCreateRunStepReplay();
-  const [presentedReplayState, setPresentedReplayState] = useState(() => ({ replayAvailability, replayStepIndex }));
+  const createFork = useCreateRunFork();
+  const [presentedForkState, setPresentedForkState] = useState(() => ({ forkAvailability, forkTarget, invocationId, resumeStepIndex }));
   const [draftTargetKey, setDraftTargetKey] = useState<string | null>(null);
-  const [parametersText, setParametersText] = useState("");
+  const [invocationInputText, setInvocationInputText] = useState("");
   const [apiError, setApiError] = useState<string | null>(null);
-  const presentedReplayStepIndex = open ? replayStepIndex : presentedReplayState.replayStepIndex;
-  const presentedReplayAvailability = open ? replayAvailability : presentedReplayState.replayAvailability;
-  const draftQuery = useRunStepReplayDraft(runId, presentedReplayStepIndex, { enabled: open && presentedReplayAvailability.isAvailable });
+  const presentedAvailability = open ? forkAvailability : presentedForkState.forkAvailability;
+  const presentedTarget = open ? forkTarget : presentedForkState.forkTarget;
+  const presentedInvocationId = open ? invocationId : presentedForkState.invocationId;
+  const presentedResumeStepIndex = open ? resumeStepIndex : presentedForkState.resumeStepIndex;
+  const draftQuery = useRunForkDraft(runId, presentedInvocationId, { enabled: open && presentedAvailability.isAvailable });
 
   const resetLocalState = useCallback(() => {
     setDraftTargetKey(null);
-    setParametersText("");
+    setInvocationInputText("");
     setApiError(null);
   }, []);
 
@@ -792,22 +844,24 @@ function RunStepReplayDialog({
 
   useEffect(() => {
     if (open) {
-      setPresentedReplayState({
-        replayAvailability: {
-          isAvailable: replayAvailability.isAvailable,
-          reason: replayAvailability.reason,
+      setPresentedForkState({
+        forkAvailability: {
+          isAvailable: forkAvailability.isAvailable,
+          reason: forkAvailability.reason,
         },
-        replayStepIndex,
+        forkTarget,
+        invocationId,
+        resumeStepIndex,
       });
     }
-  }, [open, replayAvailability.isAvailable, replayAvailability.reason, replayStepIndex]);
+  }, [forkAvailability.isAvailable, forkAvailability.reason, forkTarget, invocationId, open, resumeStepIndex]);
 
   useEffect(() => {
     if (open) {
       return undefined;
     }
 
-    const cleanupTimer = window.setTimeout(resetLocalState, STEP_REPLAY_DIALOG_CLOSE_CLEANUP_DELAY_MS);
+    const cleanupTimer = window.setTimeout(resetLocalState, FORK_DIALOG_CLOSE_CLEANUP_DELAY_MS);
     return () => window.clearTimeout(cleanupTimer);
   }, [open, resetLocalState]);
 
@@ -816,56 +870,59 @@ function RunStepReplayDialog({
       return;
     }
 
-    const nextTargetKey = `${draftQuery.data.sourceRunId}:${draftQuery.data.replayStepIndex}`;
+    const nextTargetKey = `${draftQuery.data.sourceRunId}:${draftQuery.data.sourceInvocationId}`;
     if (draftTargetKey === nextTargetKey) {
       return;
     }
 
     setDraftTargetKey(nextTargetKey);
-    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
+    setInvocationInputText(formatJsonEditorValue(draftQuery.data.invocationInput));
     setApiError(null);
   }, [draftQuery.data, draftTargetKey, open]);
 
-  const parametersValidation = useMemo(
-    () => parseJsonRecord(parametersText || "{}", "New run inputs JSON"),
-    [parametersText],
+  const invocationInputValidation = useMemo(
+    () => parseJsonRecord(invocationInputText || "{}", "Target invocation input JSON"),
+    [invocationInputText],
   );
-  const replayPayload = useMemo(() => {
-    if (!draftQuery.data || parametersValidation.error || !parametersValidation.value) {
+  const forkPayload = useMemo(() => {
+    if (!draftQuery.data || invocationInputValidation.error || !invocationInputValidation.value) {
       return null;
     }
 
     return {
-      parameters: parametersValidation.value,
-      replayStepIndex: draftQuery.data.replayStepIndex,
+      invocationInput: invocationInputValidation.value,
+      sourceInvocationId: draftQuery.data.sourceInvocationId,
     };
-  }, [draftQuery.data, parametersValidation.error, parametersValidation.value]);
-  const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(parametersValidation.value, draftQuery.data.parameters));
-  const isSubmitDisabled = !replayPayload || createStepReplay.isPending || draftQuery.isPending || Boolean(parametersValidation.error);
+  }, [draftQuery.data, invocationInputValidation.error, invocationInputValidation.value]);
+  const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(invocationInputValidation.value, draftQuery.data.invocationInput));
+  const isSubmitDisabled = !forkPayload || createFork.isPending || draftQuery.isPending || Boolean(invocationInputValidation.error);
+  const targetLabel = presentedTarget
+    ? `${presentedTarget.invocation.slot} invocation`
+    : presentedInvocationId === undefined ? "selected invocation" : `invocation #${presentedInvocationId}`;
 
   const resetToDraft = () => {
     if (!draftQuery.data) {
       return;
     }
 
-    setDraftTargetKey(`${draftQuery.data.sourceRunId}:${draftQuery.data.replayStepIndex}`);
-    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
+    setDraftTargetKey(`${draftQuery.data.sourceRunId}:${draftQuery.data.sourceInvocationId}`);
+    setInvocationInputText(formatJsonEditorValue(draftQuery.data.invocationInput));
     setApiError(null);
   };
 
   const handleSubmit = async () => {
-    if (!replayPayload) {
+    if (!forkPayload) {
       return;
     }
 
     setApiError(null);
 
     try {
-      const createdRun = await createStepReplay.mutateAsync({ runId, payload: replayPayload });
+      const createdRun = await createFork.mutateAsync({ runId, payload: forkPayload });
       resetLocalState();
       navigate(`/runs/${createdRun.id}`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to create the new run.");
+      setApiError(error instanceof Error ? error.message : "Failed to create the fork.");
     }
   };
 
@@ -873,7 +930,7 @@ function RunStepReplayDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && !createStepReplay.isPending) {
+        if (!nextOpen && !createFork.isPending) {
           closeDialog();
         }
       }}
@@ -888,80 +945,92 @@ function RunStepReplayDialog({
       >
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Start a new run from Step {presentedReplayStepIndex}</DialogTitle>
-            {presentedReplayStepIndex !== undefined ? <Badge variant="outline">Step {presentedReplayStepIndex}</Badge> : null}
-            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Step input edited" : "Step input unchanged"}</Badge> : null}
+            <DialogTitle>Fork from {targetLabel}</DialogTitle>
+            {presentedResumeStepIndex !== undefined ? <Badge variant="outline">Resume at Step {presentedResumeStepIndex}</Badge> : null}
+            {presentedInvocationId !== undefined ? <Badge variant="outline">Invocation #{presentedInvocationId}</Badge> : null}
+            {presentedTarget ? <Badge variant="outline">{presentedTarget.invocation.agentKey} v{presentedTarget.invocation.agentVersion}</Badge> : null}
+            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Invocation input edited" : "Invocation input unchanged"}</Badge> : null}
           </div>
           <DialogDescription>
-            A new run is created, prior context is copied, Step {presentedReplayStepIndex} and later run again, and the original run remains unchanged.
+            Fork copies upstream context before the resume boundary, edits only the selected agent invocation input, and leaves the source run unchanged.
           </DialogDescription>
         </DialogHeader>
 
-        {!presentedReplayAvailability.isAvailable ? (
-          <Alert variant="destructive" data-testid="run-step-replay-invalid-step">
+        {!presentedAvailability.isAvailable ? (
+          <Alert variant="destructive" data-testid="run-fork-invalid-target">
             <AlertCircle />
-            <AlertTitle>New run unavailable</AlertTitle>
-            <AlertDescription>{presentedReplayAvailability.reason ?? DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON}</AlertDescription>
+            <AlertTitle>Fork unavailable</AlertTitle>
+            <AlertDescription>{presentedAvailability.reason ?? DEFAULT_FORK_UNAVAILABLE_REASON}</AlertDescription>
           </Alert>
         ) : null}
 
-        {presentedReplayAvailability.isAvailable && draftQuery.isPending ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-step-replay-loading">
+        {presentedAvailability.isAvailable && draftQuery.isPending ? (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-fork-loading">
             <Loader2 className="size-4 animate-spin" />
-            Loading new run inputs...
+            Loading target invocation input...
           </div>
         ) : null}
 
-        {presentedReplayAvailability.isAvailable && draftQuery.isError ? (
-          <Alert variant="destructive" data-testid="run-step-replay-draft-error">
+        {presentedAvailability.isAvailable && draftQuery.isError ? (
+          <Alert variant="destructive" data-testid="run-fork-draft-error">
             <AlertCircle />
-            <AlertTitle>Unable to load new run inputs</AlertTitle>
-            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The new run inputs could not be loaded."}</AlertDescription>
+            <AlertTitle>Unable to load fork draft</AlertTitle>
+            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The target invocation input could not be loaded."}</AlertDescription>
           </Alert>
         ) : null}
 
         {apiError ? (
-          <Alert variant="destructive" data-testid="run-step-replay-api-error">
+          <Alert variant="destructive" data-testid="run-fork-api-error">
             <AlertCircle />
-            <AlertTitle>New run creation failed</AlertTitle>
+            <AlertTitle>Fork creation failed</AlertTitle>
             <AlertDescription>{apiError}</AlertDescription>
           </Alert>
         ) : null}
 
         {draftQuery.data ? (
-          <Card className="gap-3" data-testid="run-step-replay-dialog-body">
+          <Card className="gap-3" data-testid="run-fork-dialog-body">
             <CardHeader>
-              <CardTitle className="text-base">Inputs for the new run</CardTitle>
-              <CardDescription>Edit the input JSON that the new run will receive.</CardDescription>
+              <CardTitle className="text-base">Target invocation input</CardTitle>
+              <CardDescription>
+                Edit the persisted input for {targetLabel}. Root run parameters stay unchanged; use rerun for root parameter edits.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <DetailGrid
+                items={[
+                  { label: "Source run", value: `Run #${draftQuery.data.sourceRunId}` },
+                  { label: "Source invocation", value: `#${draftQuery.data.sourceInvocationId}` },
+                  { label: "Resume boundary", value: presentedResumeStepIndex === undefined ? "Not recorded" : `Step ${presentedResumeStepIndex}` },
+                  { label: "Target slot", value: presentedTarget?.invocation.slot ?? "Not recorded" },
+                ]}
+              />
               <JsonEditorField
-                disabled={createStepReplay.isPending}
-                error={parametersValidation.error}
-                id="run-step-replay-parameters-json"
-                label="New run inputs JSON"
+                disabled={createFork.isPending}
+                error={invocationInputValidation.error}
+                id="run-fork-invocation-input-json"
+                label="Target invocation input JSON"
                 onChange={(value) => {
                   setApiError(null);
-                  setParametersText(value);
+                  setInvocationInputText(value);
                 }}
                 rows={10}
-                value={parametersText}
+                value={invocationInputText}
               />
             </CardContent>
           </Card>
         ) : null}
 
         <DialogFooter>
-          <Button disabled={createStepReplay.isPending} onClick={closeDialog} type="button" variant="ghost">
+          <Button disabled={createFork.isPending} onClick={closeDialog} type="button" variant="ghost">
             Cancel
           </Button>
-          <Button disabled={!draftQuery.data || createStepReplay.isPending} onClick={resetToDraft} type="button" variant="outline">
+          <Button disabled={!draftQuery.data || createFork.isPending} onClick={resetToDraft} type="button" variant="outline">
             <RotateCcw data-icon="inline-start" />
-            Reset to original inputs
+            Reset target input
           </Button>
-          <Button data-testid="run-step-replay-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
-            {createStepReplay.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Start new run from Step {presentedReplayStepIndex}
+          <Button data-testid="run-fork-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
+            {createFork.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            Create fork from invocation
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1163,16 +1232,14 @@ function StepTraceSummary({ entries, stepIndex }: { entries: TraceSpanEntry[]; s
 
 function ExecutionOutline({
   activeInspection,
-  canReplayRun,
-  onOpenReplay,
+  onOpenFork,
   onSelect,
   run,
   steps,
   traceSpanEntries,
 }: {
   activeInspection: RunInspectionState;
-  canReplayRun: boolean;
-  onOpenReplay: (stepIndex: number) => void;
+  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   run: RunRead;
   steps: RunStepRead[];
@@ -1207,7 +1274,6 @@ function ExecutionOutline({
             const allInvocations = [...invocations, ...operationInvocations];
             const stepProgress = progressForInvocations(allInvocations, step.status);
             const stepTarget: RunInspectionTarget = { type: "step", stepIndex: step.index };
-            const canReplay = canReplayRun && getStepReplayAvailability(run.targetKind, steps, step.index).isAvailable;
             const indicatorState = stepIndicatorState(step.status);
             const stepTraceEntries = traceSpanEntries.filter((entry) => entry.stepIndex === step.index);
 
@@ -1235,11 +1301,68 @@ function ExecutionOutline({
                     <StepTraceSummary entries={stepTraceEntries} stepIndex={step.index} />
                   </span>
                 </InspectionSelectorButton>
-                {canReplay ? (
-                  <div className="mt-2 rounded-lg border bg-muted/20 p-2" data-testid={`runs-step-${step.index}-replay-entry`}>
-                    <Button className="w-full cursor-pointer justify-start" onClick={() => onOpenReplay(step.index)} size="sm" type="button" variant="outline">
-                      Start new run from Step {step.index}
-                    </Button>
+                {allInvocations.length > 0 ? (
+                  <div className="mt-2 space-y-2 rounded-lg border bg-muted/20 p-2" data-testid={`runs-step-${step.index}-invocation-targets`}>
+                    {invocations.map((invocation) => {
+                      const invocationTarget: RunInspectionTarget = { type: "agentInvocation", invocationId: invocation.id };
+                      const forkable = canForkInvocation(run, step, invocation);
+
+                      return (
+                        <div className="rounded-md border bg-background/80 p-2" data-testid={`runs-invocation-${invocation.id}-outline-entry`} id={`invocation-${invocation.id}`} key={invocation.id}>
+                          <InspectionSelectorButton
+                            activeInspection={activeInspection}
+                            className="px-2 py-1.5"
+                            onSelect={onSelect}
+                            target={invocationTarget}
+                          >
+                            <span className="flex min-w-0 flex-1 flex-col gap-1">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge>
+                                <span className="font-medium">{invocation.slot} agent</span>
+                                <Badge variant="outline">#{invocation.id}</Badge>
+                              </span>
+                              <span className="text-xs text-muted-foreground">{invocation.agentKey} v{invocation.agentVersion} · input {invocation.resolvedInputOrigin}</span>
+                            </span>
+                          </InspectionSelectorButton>
+                          {forkable ? (
+                            <Button
+                              className="mt-2 w-full cursor-pointer justify-start"
+                              data-testid={`runs-invocation-${invocation.id}-fork-entry`}
+                              onClick={() => onOpenFork(step.index, invocation.id)}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <GitBranch data-icon="inline-start" />
+                              Fork from this invocation
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    {operationInvocations.map((invocation) => {
+                      const operationTarget: RunInspectionTarget = { type: "operationInvocation", invocationId: invocation.id };
+
+                      return (
+                        <div className="rounded-md border bg-background/80 p-2" data-testid={`runs-operation-${invocation.id}-outline-entry`} id={`operation-invocation-${invocation.id}`} key={invocation.id}>
+                          <InspectionSelectorButton
+                            activeInspection={activeInspection}
+                            className="px-2 py-1.5"
+                            onSelect={onSelect}
+                            target={operationTarget}
+                          >
+                            <span className="flex min-w-0 flex-1 flex-col gap-1">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <Badge variant={statusVariant(invocation.status)}>{invocation.status}</Badge>
+                                <span className="font-medium">{invocation.slot} operation</span>
+                                <Badge variant="outline">#{invocation.id}</Badge>
+                              </span>
+                              <span className="text-xs text-muted-foreground">{invocation.operationKey} · operation forks are not supported in this phase</span>
+                            </span>
+                          </InspectionSelectorButton>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
@@ -1297,10 +1420,23 @@ function EvidencePaneNav({
   );
 }
 
-function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations, plannedSteps, run }: { copiedInvocations: number; copiedSteps: number; plannedInvocations: number; plannedSteps: number; run: RunRead }) {
+function hasCurrentForkLineage(run: RunRead, steps: RunStepRead[]): boolean {
+  if (!run.sourceRunId) {
+    return false;
+  }
+
+  return steps.some(
+    (step) => step.index === run.resumeStepIndex
+      && step.invocations.some((invocation) => invocation.resolvedInputOrigin === "edited" && invocation.sourceInvocationId !== null),
+  );
+}
+
+function RunLineageEvidence({ copiedInvocations, copiedSteps, isCurrentFork, plannedInvocations, plannedSteps, run }: { copiedInvocations: number; copiedSteps: number; isCurrentFork: boolean; plannedInvocations: number; plannedSteps: number; run: RunRead }) {
   const lineageRootRunId = run.lineageRootRunId ?? run.id;
   const sourceRunValue = run.sourceRunId ? <SourceRunLink runId={run.sourceRunId}>Run #{run.sourceRunId}</SourceRunLink> : "Original run";
-  const replayStepValue = run.replayStepIndex === null ? "Not replayed" : `Step ${run.replayStepIndex}`;
+  const sourceStepValue = run.replayStepIndex === null ? "Not recorded" : `Step ${run.replayStepIndex}`;
+  const sourceKindLabel = run.sourceRunId ? (isCurrentFork ? "Fork source" : "Legacy replay source") : "Original source";
+  const sourceStepLabel = isCurrentFork ? "Fork source step" : "Legacy replay step";
   const nodes: LineageDiagramNode[] = [
     {
       data: {
@@ -1317,9 +1453,9 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
       data: {
         details: [
           { label: "Source run", value: sourceRunValue },
-          { label: "Replay step", value: replayStepValue },
+          { label: sourceStepLabel, value: sourceStepValue },
         ],
-        eyebrow: "Replay source",
+        eyebrow: sourceKindLabel,
         testId: "runs-lineage-node-source",
         title: run.sourceRunId ? `Run #${run.sourceRunId}` : "Original run",
         tone: "source",
@@ -1331,7 +1467,7 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
     {
       data: {
         details: [
-          { label: "Resume step", value: `Step ${run.resumeStepIndex}` },
+          { label: "Resume boundary", value: `Step ${run.resumeStepIndex}` },
           { label: "Step origins", value: `${copiedSteps} copied · ${plannedSteps} planned` },
           { label: "Invocation origins", value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed` },
         ],
@@ -1347,17 +1483,26 @@ function RunLineageEvidence({ copiedInvocations, copiedSteps, plannedInvocations
   ];
   const edges: LineageDiagramEdge[] = [
     { id: "root-source", label: "lineage root", source: "lineage-root", target: "lineage-source" },
-    { id: "source-current", label: run.sourceRunId ? "replay / resume" : "original / resume", source: "lineage-source", target: "lineage-current" },
+    { id: "source-current", label: run.sourceRunId ? (isCurrentFork ? "fork / resume" : "legacy replay / resume") : "original / resume", source: "lineage-source", target: "lineage-current" },
   ];
 
   return (
     <Card data-testid="runs-lineage-summary">
       <CardHeader>
         <CardTitle className="text-base">Lineage</CardTitle>
-        <CardDescription>Readonly replay and resume diagram for copied and planned execution origins.</CardDescription>
+        <CardDescription>Readonly {isCurrentFork ? "fork" : "legacy replay and resume"} diagram for copied and planned execution origins.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <LineageDiagram ariaLabel="Run replay and resume lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
+      <CardContent className="space-y-4">
+        {run.sourceRunId && !isCurrentFork ? (
+          <Alert data-testid="runs-legacy-replay-lineage">
+            <GitBranch />
+            <AlertTitle>Legacy replay lineage</AlertTitle>
+            <AlertDescription>
+              This historical run was created by the old step replay flow. It is preserved for audit only and is not the current invocation-specific fork UX.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <LineageDiagram ariaLabel="Run lineage diagram" edges={edges} nodes={nodes} testId="runs-lineage-diagram" />
       </CardContent>
     </Card>
   );
@@ -1686,6 +1831,7 @@ function EvidenceViewer({
   activeInspection,
   copiedInvocations,
   copiedSteps,
+  isCurrentFork,
   onSelect,
   plannedInvocations,
   plannedSteps,
@@ -1695,6 +1841,7 @@ function EvidenceViewer({
   activeInspection: RunInspectionState;
   copiedInvocations: number;
   copiedSteps: number;
+  isCurrentFork: boolean;
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
   plannedInvocations: number;
   plannedSteps: number;
@@ -1720,7 +1867,7 @@ function EvidenceViewer({
   } else if (activeInspection.pane === "input") {
     content = <RunPayloadPane headingId="runs-input-heading" label="Run input" testId="runs-detail-input" value={run.input} />;
   } else if (activeInspection.pane === "lineage") {
-    content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
+    content = <RunLineageEvidence copiedInvocations={copiedInvocations} copiedSteps={copiedSteps} isCurrentFork={isCurrentFork} plannedInvocations={plannedInvocations} plannedSteps={plannedSteps} run={run} />;
   } else if (activeInspection.pane === "memory") {
     content = <RunMemoryEvidence run={run} />;
   } else {
@@ -1784,22 +1931,34 @@ export function RunsDetailPage() {
       ]),
     [steps],
   );
-  const stepReplayDialogOpen = searchParams.get("stepReplay") === "1";
-  const replayStepIndexParam = searchParams.get("stepIndex");
+  const forkDialogOpen = searchParams.get("fork") === "1";
+  const resumeStepIndexParam = searchParams.get("resumeStepIndex");
+  const forkInvocationIdParam = searchParams.get("invocationId");
   const rerunDialogOpen = searchParams.get("rerun") === "1";
-  const replayStepIndex = useMemo(() => {
-    if (replayStepIndexParam === null || replayStepIndexParam.trim() === "") {
+  const resumeStepIndex = useMemo(() => {
+    if (resumeStepIndexParam === null || resumeStepIndexParam.trim() === "") {
       return undefined;
     }
 
-    const parsed = Number(replayStepIndexParam);
+    const parsed = Number(resumeStepIndexParam);
     return Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
-  }, [replayStepIndexParam]);
+  }, [resumeStepIndexParam]);
+  const forkInvocationId = useMemo(() => {
+    if (forkInvocationIdParam === null || forkInvocationIdParam.trim() === "") {
+      return undefined;
+    }
+
+    const parsed = Number(forkInvocationIdParam);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
+  }, [forkInvocationIdParam]);
 
   const openRerunDialog = () => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("rerun", "1");
+      next.delete("fork");
+      next.delete("resumeStepIndex");
+      next.delete("invocationId");
       next.delete("stepReplay");
       next.delete("stepIndex");
       return next;
@@ -1814,21 +1973,25 @@ export function RunsDetailPage() {
     });
   };
 
-  const openStepReplayDialog = (stepIndex: number) => {
+  const openForkDialog = (stepIndex: number, invocationId: number) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.set("stepReplay", "1");
-      next.set("stepIndex", String(stepIndex));
+      next.set("fork", "1");
+      next.set("resumeStepIndex", String(stepIndex));
+      next.set("invocationId", String(invocationId));
       next.delete("rerun");
+      next.delete("stepReplay");
+      next.delete("stepIndex");
       return next;
     });
   };
 
-  const closeStepReplayDialog = () => {
+  const closeForkDialog = () => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      next.delete("stepReplay");
-      next.delete("stepIndex");
+      next.delete("fork");
+      next.delete("resumeStepIndex");
+      next.delete("invocationId");
       return next;
     });
   };
@@ -1861,7 +2024,9 @@ export function RunsDetailPage() {
   const plannedInvocations = allInvocations.length - copiedInvocations;
   const runProgress = progressForRun(run.status, steps);
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
-  const replayAvailability = getStepReplayAvailability(run.targetKind, steps, replayStepIndex);
+  const forkTarget = findForkTargetContext(steps, resumeStepIndex, forkInvocationId);
+  const forkAvailability = getRunForkAvailability(run, steps, resumeStepIndex, forkInvocationId);
+  const isCurrentFork = hasCurrentForkLineage(run, steps);
   const activeInspection = resolveRunInspectionState({
     hash: location.hash,
     run,
@@ -1869,7 +2034,7 @@ export function RunsDetailPage() {
     steps,
   });
   const terminalInvocationsCount = allInvocations.filter((invocation) => isTerminalStatus(invocation.status)).length;
-  const canReplayRun = run.targetKind === "workflowPackage";
+  const canRerunRun = run.targetKind === "workflowPackage";
 
   const selectInspection = (target: RunInspectionTarget, pane?: RunInspectionPane) => {
     setSearchParams((current) => {
@@ -1894,7 +2059,7 @@ export function RunsDetailPage() {
                 <h1 className="text-xl font-semibold tracking-tight">Run #{run.id}</h1>
                 <Badge data-testid="runs-detail-target-identity" variant="outline">{run.targetKind === "workflowPackage" ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}` : run.targetKey}</Badge>
                 <Badge variant="outline">{run.targetKind === "workflowPackage" ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}` : `Target id: ${run.targetId}`}</Badge>
-                {run.sourceRunId ? <Badge variant="secondary"><GitBranch className="size-3" /> Replay lineage</Badge> : null}
+                {run.sourceRunId ? <Badge variant="secondary"><GitBranch className="size-3" /> {isCurrentFork ? "Fork lineage" : "Legacy replay lineage"}</Badge> : null}
               </div>
               <p className="text-sm text-muted-foreground">
                 {describeRunTarget(run.targetKind)} · {run.startedAt
@@ -1909,7 +2074,7 @@ export function RunsDetailPage() {
                   <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Open current package</Link>
                 </Button>
               ) : null}
-              {canReplayRun ? (
+              {canRerunRun ? (
                 <Button className="cursor-pointer" data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button" variant="outline">
                   <PlayCircle data-icon="inline-start" />
                   Run snapshot again
@@ -1943,8 +2108,7 @@ export function RunsDetailPage() {
         <ResizablePanel className="min-w-0" defaultSize={28} maxSize={45} minSize={18}>
           <ExecutionOutline
             activeInspection={activeInspection}
-            canReplayRun={canReplayRun}
-            onOpenReplay={openStepReplayDialog}
+            onOpenFork={openForkDialog}
             onSelect={selectInspection}
             run={run}
             steps={steps}
@@ -1957,6 +2121,7 @@ export function RunsDetailPage() {
             activeInspection={activeInspection}
             copiedInvocations={copiedInvocations}
             copiedSteps={copiedSteps}
+            isCurrentFork={isCurrentFork}
             onSelect={selectInspection}
             plannedInvocations={plannedInvocations}
             plannedSteps={plannedSteps}
@@ -1966,13 +2131,15 @@ export function RunsDetailPage() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && canReplayRun} runId={runId} />
+      <RunRerunDialog onClose={closeRerunDialog} open={rerunDialogOpen && canRerunRun} runId={runId} />
 
-      <RunStepReplayDialog
-        onClose={closeStepReplayDialog}
-        open={stepReplayDialogOpen}
-        replayAvailability={replayAvailability}
-        replayStepIndex={replayStepIndex}
+      <RunForkDialog
+        forkAvailability={forkAvailability}
+        forkTarget={forkTarget}
+        invocationId={forkInvocationId}
+        onClose={closeForkDialog}
+        open={forkDialogOpen}
+        resumeStepIndex={resumeStepIndex}
         runId={runId}
       />
     </div>

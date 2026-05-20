@@ -121,7 +121,7 @@ export function RunRerunDialog({
     setApiError(null);
   }, [draftQuery.data, draftSourceRunId, open]);
   const parametersValidation = useMemo(
-    () => parseJsonRecord(parametersText || "{}", "Rerun parameters JSON"),
+    () => parseJsonRecord(parametersText || "{}", "Root run parameters JSON"),
     [parametersText],
   );
   const rerunPayload = useMemo(() => {
@@ -176,7 +176,7 @@ export function RunRerunDialog({
             {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Captured snapshot"}</Badge> : null}
           </div>
           <DialogDescription>
-            Create a new run from this run's captured executable snapshot and parameters. Edit the JSON only if this snapshot rerun needs different inputs.
+            Create a new run from this run's captured executable snapshot. This dialog edits only root run parameters; invocation input changes start from fork actions on the run detail page.
           </DialogDescription>
         </DialogHeader>
 
@@ -205,15 +205,15 @@ export function RunRerunDialog({
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-rerun-dialog-body">
             <CardHeader>
-              <CardTitle className="text-base">Snapshot rerun parameters</CardTitle>
-              <CardDescription>Submit unchanged snapshot parameters or edit the JSON before creating a new run from this captured snapshot.</CardDescription>
+              <CardTitle className="text-base">Root run parameters</CardTitle>
+              <CardDescription>Submit unchanged root parameters or edit this JSON before creating a new run from the captured snapshot.</CardDescription>
             </CardHeader>
             <CardContent>
               <JsonEditorField
                 disabled={createRerun.isPending}
                 error={parametersValidation.error}
                 id="run-rerun-parameters-json"
-                label="Rerun parameters JSON"
+                label="Root run parameters JSON"
                 onChange={(value) => {
                   setApiError(null);
                   setParametersText(value);

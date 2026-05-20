@@ -19,8 +19,6 @@ import type {
   RunRead,
   RunRerunCreateRequest,
   RunRerunDraftRead,
-  RunStepReplayCreateRequest,
-  RunStepReplayDraftRead,
 } from "@/lib/types/run";
 
 type RunQueryOptions = {
@@ -57,11 +55,6 @@ export type CreateRunRerunVariables = {
 export type CreateRunForkVariables = {
   runId: IdParam;
   payload: RunForkCreateRequest;
-};
-
-export type CreateRunStepReplayVariables = {
-  runId: IdParam;
-  payload: RunStepReplayCreateRequest;
 };
 
 export function useRuns(
@@ -158,30 +151,3 @@ export function useCreateRunFork() {
   });
 }
 
-const STEP_REPLAY_REPLACED_ERROR = "Run step replay has been replaced by invocation forks.";
-
-export function useRunStepReplayDraft(
-  runId: IdParam | undefined,
-  stepIndex: number | undefined,
-  options: DraftQueryOptions = {},
-): UseQueryResult<RunStepReplayDraftRead, Error> {
-  const resolvedRunId = runId ?? "";
-  const resolvedSourceInvocationId = stepIndex ?? 0;
-
-  return useQuery({
-    queryKey: queryKeys.platform.runs.forkDraft(resolvedRunId, resolvedSourceInvocationId),
-    queryFn: async (): Promise<RunStepReplayDraftRead> => {
-      throw new Error(STEP_REPLAY_REPLACED_ERROR);
-    },
-    enabled: false,
-    refetchInterval: options.refetchInterval,
-  });
-}
-
-export function useCreateRunStepReplay() {
-  return useMutation<RunCreatedRead, Error, CreateRunStepReplayVariables>({
-    mutationFn: async (): Promise<RunCreatedRead> => {
-      throw new Error(STEP_REPLAY_REPLACED_ERROR);
-    },
-  });
-}

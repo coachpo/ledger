@@ -18,11 +18,11 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
+  useCreateRunFork: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateRunRerun: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateRunStepReplay: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useRun: () => useRunMock(),
+  useRunForkDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useRunRerunDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),
-  useRunStepReplayDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),
 }));
 
 const NOW = "2026-05-15T08:30:00Z";

@@ -339,18 +339,6 @@ export interface RunForkCreateRequest {
   invocationInput: UnknownRecord;
 }
 
-export interface RunStepReplayDraftRead extends RunTargetIdentityRead {
-  sourceRunId: number;
-  replayStepIndex: number;
-  parameters: UnknownRecord;
-  packageProvenance: RunPackageProvenanceRead | null;
-}
-
-export interface RunStepReplayCreateRequest {
-  replayStepIndex: number;
-  parameters: UnknownRecord;
-}
-
 export interface RunListParams {
   targetKind?: RunTargetKind;
   targetId?: number;
