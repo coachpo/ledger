@@ -55,6 +55,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 
@@ -488,11 +489,47 @@ function LineageDiagram({
   );
 }
 
+function formatRawPayload(value: unknown): string {
+  return JSON.stringify(value, null, 2) ?? "";
+}
+
+function RawPayloadBlock({ testId, value }: { testId?: string; value: unknown }) {
+  return (
+    <pre
+      className="overflow-x-auto rounded-md border bg-muted/20 p-3 text-xs"
+      data-testid={testId}
+    >
+      {formatRawPayload(value)}
+    </pre>
+  );
+}
+
+function PayloadViewTabs({ label, testId, value }: { label: string; testId?: string; value: unknown }) {
+  return (
+    <Tabs defaultValue="rendered" className="min-w-0 gap-3" data-testid={testId}>
+      <TabsList aria-label={`${label} payload view modes`} className="h-8 rounded-lg">
+        <TabsTrigger className="rounded-md px-2 text-xs" value="rendered">
+          Rendered
+        </TabsTrigger>
+        <TabsTrigger className="rounded-md px-2 text-xs" value="raw">
+          Raw
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="rendered">
+        <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId ? `${testId}-rendered` : undefined} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      </TabsContent>
+      <TabsContent value="raw">
+        <RawPayloadBlock testId={testId ? `${testId}-raw` : undefined} value={value} />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
 function JsonBlock({ label, testId, value }: { label?: string; testId?: string; value: unknown }) {
   return (
     <div className="min-w-0 space-y-2">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
-      <StructuredValueInspector className="max-w-full rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      <PayloadViewTabs label={label ?? "Payload"} testId={testId} value={value} />
     </div>
   );
 }
@@ -501,7 +538,7 @@ function RunPayloadPane({ headingId, label, testId, value }: { headingId: string
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
-      <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      <PayloadViewTabs label={label} testId={testId} value={value} />
     </section>
   );
 }
@@ -1674,7 +1711,7 @@ function EvidenceViewer({
           <EvidencePaneNav activeInspection={activeInspection} onSelect={onSelect} />
         </div>
       </div>
-      <ScrollArea className="min-h-0 min-w-0 flex-1">
+      <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full [&_[data-slot=scroll-area-viewport]>div]:overflow-x-hidden">
         <div className="min-h-full min-w-0 overflow-hidden p-4" data-testid="runs-active-evidence-viewer">
           {content ?? <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Selected evidence is no longer available.</div>}
         </div>

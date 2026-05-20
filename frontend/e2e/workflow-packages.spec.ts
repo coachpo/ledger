@@ -67,6 +67,55 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
   ].join("\n");
 }
 
+function wideOutputPackageManifest(packageKey: string, modelKey: string, wideFieldKey: string) {
+  return [
+    "apiVersion: signaldeck.workflowPackage/v1",
+    "kind: WorkflowPackage",
+    "metadata:",
+    `  key: ${packageKey}`,
+    `  name: E2E Wide Output Package ${packageKey}`,
+    "spec:",
+    "  inputs:",
+    "    type: object",
+    "    properties: {}",
+    "  outputSchemas:",
+    "    - key: wide_output",
+    "      name: Wide Output",
+    "      jsonSchema:",
+    "        type: object",
+    "        properties:",
+    `          ? ${wideFieldKey}`,
+    "          :",
+    "            type: string",
+    "        required:",
+    `          - ${wideFieldKey}`,
+    "  agents:",
+    "    - key: wide_analyst",
+    "      name: Wide Analyst",
+    `      modelConnection: ${modelKey}`,
+    "      systemPrompt: Return deterministic JSON.",
+    "      inputSchema:",
+    "        type: object",
+    "        properties: {}",
+    "      outputSchema: wide_output",
+    "  workflows:",
+    "    - key: wide_flow",
+    "      name: Wide Flow",
+    "      inputSchema:",
+    "        type: object",
+    "        properties: {}",
+    "      flow:",
+    "        kind: step",
+    "        id: wide_analysis",
+    "        slot: evidence",
+    "        uses: wide_analyst",
+    "        with: {}",
+    "      output:",
+    "        from: ${{ nodes.wide_analysis.outputs.evidence }}",
+    "",
+  ].join("\n");
+}
+
 async function seedModelConnection(request: APIRequestContext, key: string) {
   const list = await request.get(`${PLATFORM_API_BASE}/model-connections`, {
     params: { status: "active" },
@@ -208,5 +257,71 @@ test.describe("Workflow packages", () => {
     await expect(page.getByRole("dialog", { name: /snapshot step replay draft/i })).toBeVisible();
     await page.getByTestId("run-step-replay-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
+  });
+
+  test("keeps run step evidence width stable when aggregated output switches to raw", async ({ page, request }) => {
+    const suffix = Date.now();
+    const packageKey = `e2e_wide_output_${suffix}`;
+    const modelKey = `e2e_wide_model_${suffix}`;
+    const wideFieldKey = `wide_${"x".repeat(100)}`;
+
+    await seedModelConnection(request, modelKey);
+    const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
+      data: { manifestSource: wideOutputPackageManifest(packageKey, modelKey, wideFieldKey) },
+    });
+    const created = await createResponse.json();
+    expect(createResponse.status(), JSON.stringify(created)).toBe(201);
+
+    const launch = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`, {
+      data: { workflowKey: "wide_flow", parameters: {} },
+    });
+    const launchedText = await launch.text();
+    expect(launch.status(), launchedText).toBe(201);
+    const runId = Number(JSON.parse(launchedText).id);
+    const detail = await waitForRun(request, runId);
+    expect(detail.status).toBe("succeeded");
+
+    await page.goto(`/runs/${runId}?inspect=step:1`);
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
+    await expect(page.getByTestId("runs-step-1-summary")).toBeVisible();
+
+    const layoutMetrics = async () => page.evaluate(() => {
+      const summary = document.querySelector<HTMLElement>('[data-testid="runs-step-1-summary"]');
+      const evidence = document.querySelector<HTMLElement>('[data-testid="runs-evidence-viewer"]');
+      if (!summary || !evidence) {
+        throw new Error("Run step evidence layout elements were not found");
+      }
+      return {
+        evidenceWidth: evidence.getBoundingClientRect().width,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        summaryWidth: summary.getBoundingClientRect().width,
+        viewportWidth: window.innerWidth,
+      };
+    });
+
+    const aggregatedOutput = page.getByTestId("runs-step-1-aggregated-output");
+    await expect(aggregatedOutput.getByTestId("runs-step-1-aggregated-output-rendered")).toBeVisible();
+    const renderedMetrics = await layoutMetrics();
+
+    await aggregatedOutput.getByRole("tab", { name: "Raw" }).click();
+    const rawPayload = aggregatedOutput.getByTestId("runs-step-1-aggregated-output-raw");
+    await expect(rawPayload).toBeVisible();
+    const rawMetrics = await layoutMetrics();
+
+    expect(Math.abs(rawMetrics.summaryWidth - renderedMetrics.summaryWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rawMetrics.evidenceWidth - renderedMetrics.evidenceWidth)).toBeLessThanOrEqual(1);
+    expect(rawMetrics.pageScrollWidth).toBeLessThanOrEqual(renderedMetrics.pageScrollWidth + 20);
+    expect(rawMetrics.summaryWidth).toBeLessThan(rawMetrics.viewportWidth);
+
+    const rawPayloadMetrics = await rawPayload.evaluate((node) => {
+      node.scrollLeft = node.scrollWidth;
+      return {
+        clientWidth: node.clientWidth,
+        scrollLeft: node.scrollLeft,
+        scrollWidth: node.scrollWidth,
+      };
+    });
+    expect(rawPayloadMetrics.scrollWidth).toBeGreaterThan(rawPayloadMetrics.clientWidth + 1_000);
+    expect(rawPayloadMetrics.scrollLeft).toBeGreaterThan(0);
   });
 });
