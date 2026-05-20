@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { StructuredValueInspector } from "./structured-value-inspector";
@@ -77,6 +77,103 @@ describe("StructuredValueInspector", () => {
     expect(screen.getByText("Empty array")).toBeInTheDocument();
     expect(textContent.indexOf("zebra")).toBeLessThan(
       textContent.indexOf("alpha"),
+    );
+  });
+
+  it("renders multiline strings as raw JSON by default with a plain text view", () => {
+    render(
+      <StructuredValueInspector
+        data-testid="structured-value-inspector"
+        label={null}
+        presentation="tree"
+        value={{ message: "Line one\nLine two" }}
+      />,
+    );
+
+    const inspector = screen.getByTestId("structured-value-inspector");
+    const rawValue = inspector.querySelector(
+      '[data-structured-string-view="raw"]',
+    );
+
+    expect(
+      screen.getByRole("tablist", { name: "message string view modes" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Raw JSON" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(rawValue).toHaveTextContent('"Line one\\nLine two"');
+    expect(screen.getByRole("tab", { name: "Plain text" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Markdown" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Plain text" }), {
+      button: 0,
+    });
+
+    const plainValue = inspector.querySelector(
+      '[data-structured-string-view="plain-text"]',
+    );
+    expect(plainValue?.textContent).toBe("Line one\nLine two");
+  });
+
+  it("gates markdown preview behind an explicit inspector opt-in", () => {
+    const markdownContent = [
+      "| Symbol | Rating |",
+      "| --- | --- |",
+      "| AAPL | Buy |",
+      "",
+      "![Chart](https://example.com/chart.png)",
+      "",
+      "[Docs](https://example.com/docs)",
+    ].join("\n");
+    const { rerender } = render(
+      <StructuredValueInspector
+        data-testid="structured-value-inspector"
+        label={null}
+        presentation="tree"
+        value={{ report: markdownContent }}
+      />,
+    );
+
+    let inspector = screen.getByTestId("structured-value-inspector");
+    expect(
+      screen.getByRole("tablist", { name: "report string view modes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Markdown" }),
+    ).not.toBeInTheDocument();
+    expect(inspector.querySelector("table")).toBeNull();
+
+    rerender(
+      <StructuredValueInspector
+        data-testid="structured-value-inspector"
+        enableMarkdownStringPreview
+        label={null}
+        presentation="tree"
+        value={{ report: markdownContent }}
+      />,
+    );
+
+    inspector = screen.getByTestId("structured-value-inspector");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Markdown" }), {
+      button: 0,
+    });
+
+    expect(
+      inspector.querySelector('[data-structured-string-view="markdown"]'),
+    ).toBeInTheDocument();
+    expect(inspector.querySelector("table")).toBeInTheDocument();
+    expect(inspector.querySelector("img")).toBeNull();
+    expect(screen.getByText("[Image omitted: Chart]")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "rel",
+      "noreferrer noopener",
     );
   });
 });
