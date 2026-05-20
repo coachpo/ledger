@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-18
-**Commit:** 10ae652
+**Generated:** 2026-05-21
+**Commit:** e79236e
 **Branch:** main
 
 ## OVERVIEW
@@ -22,7 +22,7 @@ Future upgrade work must keep the platform-core versus extension-owned boundary 
 - `frontend/AGENTS.md`, `frontend/e2e/AGENTS.md` — frontend shell, browser tests, and startup conventions
 - `frontend/src/extensions/AGENTS.md`, `frontend/src/hooks/AGENTS.md`, `frontend/src/lib/**/AGENTS.md` — extension runtime, query hooks, API/type/platform-authoring contracts
 - `frontend/src/components/**/AGENTS.md`, `frontend/src/pages/AGENTS.md` — reusable UI, feature UI, and routed page-family rules
-- `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` — deeper route-family hotspots
+- `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` — deeper route-family hotspots
 - `frontend/retired/global-authoring/src/pages/AGENTS.md` — archive-only global-authoring boundary; do not treat as live route ownership
 
 ## STRUCTURE
@@ -50,12 +50,12 @@ signaldeck/
 | Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/services/extension_service.py` | bundled extension registry/state and private `signaldeck.finance` registrar ownership |
 | Backend runtime tools, MCP, and traces | `backend/app/agents/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, MCP snapshots/dispatch, Logfire trace ids/spans, memory writes |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/api_routers.py`, `backend/app/api/portfolios.py`, `backend/app/api/balances.py`, `backend/app/api/positions.py`, `backend/app/api/trading_operations.py`, `backend/app/api/market_data.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
-| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/extensions/runtime.tsx`, `frontend/src/components/layout.tsx` | query client, router provider, extension route/nav assembly, layout shell, theme toggle |
-| Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/hooks/use-extensions.ts`, `frontend/src/pages/extensions/list.tsx` | frontend route/nav/tool filtering plus bundled extension state UI |
+| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/components/layout.tsx` | query client, router provider, extension route/nav assembly, layout shell, theme toggle |
+| Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav/tool filtering plus bundled extension state UI |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
-| Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/list.tsx`, `frontend/src/pages/templates/editor.tsx`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
+| Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/generate-report-dialog.tsx`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, and report generation UI |
-| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_agent_manifest_*.py`, `backend/tests/test_workflow_manifest_*.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_memory_reports.py` | preserved v1 CRUD plus manifest, runtime, MCP, memory, platform, and cutover regression coverage |
+| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_runtime_db_upgrades.py`, `backend/tests/test_legacy_backend_cutover.py` | preserved v1 CRUD plus package validation, runtime, MCP, rerun/fork, DB-upgrade, and cutover regression coverage |
 | CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml`, `.github/workflows/cleanup.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, arm64 GHCR images, cleanup |
 
 ## CODE MAP
@@ -67,8 +67,8 @@ signaldeck/
 | `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for workflow packages, model connections, extensions, tools, and runs |
 | `get_bundled_extension_registry` | `backend/app/extensions/registry.py` | declares bundled extension identity, initial enabled seeding, and private registrar paths |
 | `ExtensionService` | `backend/app/services/extension_service.py` | resolves slim extension state, toggles `/api/extensions`, and filters ToolCatalog/runtime tool registries |
-| `router` | `frontend/src/routes.ts` | flat route table with finance routes assembled from `src/extensions/runtime.tsx` plus platform/system routes |
-| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime.tsx` | converts Finance Workspace route entries into guarded React Router entries |
+| `router` | `frontend/src/routes.ts` | flat route table with finance routes assembled from `src/extensions/runtime-helpers.ts` plus platform/system routes |
+| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime-helpers.ts` | converts Finance Workspace route entries into guarded React Router entries |
 | `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, extension-aware nav groups, template/package editor full-height layout |
 | `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
 

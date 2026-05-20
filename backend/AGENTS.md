@@ -17,8 +17,8 @@ Future backend upgrade work must keep generic platform behavior separate from ex
 - `app/api/AGENTS.md` — route-handler delegation, extension-gated `/api/v1`, and dependency wiring
 - `app/extensions/AGENTS.md` — bundled extension registry, slim state, private registrar, and ownership boundaries
 - `app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report ownership
-- `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries
-- `app/services/AGENTS.md` — service orchestration, extension state, manifests, runtime execution, core memory, historical agent-memory reports, quote-provider wiring
+- `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries, and platform memory-tool ownership
+- `app/services/AGENTS.md` — service orchestration, extension state, manifests, execution providers/lifecycle hooks, runtime execution, core memory, historical agent-memory reports, and quote-provider wiring
 - `app/schemas/AGENTS.md` — request/response validation, manifests, memory metadata, serialization
 - `app/models/AGENTS.md` — ORM entities, constraints, indexes, cache tables, manifests, runtime metadata
 - `app/repositories/AGENTS.md` — SQLAlchemy query/repository patterns and runtime lookups
@@ -46,14 +46,14 @@ backend/
 | Service construction | `app/api/dependencies.py` | constructs extension-aware CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
 | Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private bundled extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/model_connections.py`, `app/api/extensions.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
-| Runtime tools / MCP / traces | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, native runtime dispatch, MCP snapshots, Logfire trace ids/spans, memory writes |
+| Runtime tools / MCP / traces | `app/agents/AGENTS.md`, `app/services/agent_execution_service.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, extension-filtered native runtime dispatch, MCP snapshots, Logfire trace ids/spans, and memory writes |
 | Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Shared config / errors / telemetry / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, Logfire setup, decimal/symbol/currency helpers |
-| DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades |
-| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, runtime execution, core memory, historical agent-memory reports, market-data fallback |
+| DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades, startup repair, and cutover markers |
+| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler/backfills, execution providers/lifecycle hooks, runtime execution, core memory, historical agent-memory reports, and market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, memory metadata, serialization, camelCase aliasing |
-| Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, and runtime data access |
-| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, core memory and historical agent-memory reports, runtime tools, preserved legacy coverage, and DB-upgrade coverage |
+| Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, run forks, and runtime data access |
+| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, core memory and historical agent-memory reports, runtime tools, preserved legacy coverage, and DB-upgrade coverage |
 
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
@@ -103,7 +103,6 @@ uv run pytest
 ## NOTES
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and legacy-schema upgrades.
 - Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, memory-report, workflow package, tool catalog, model connection, and reset-seed tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
-- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_memory_domain_schemas.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, trace, run-owned snapshot provenance, memory DTOs, and current-package persistence contracts.
+- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_memory_domain_schemas.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, rerun/fork behavior, trace, run-owned snapshot provenance, memory DTOs, and current-package persistence contracts.
 - `tests/test_runtime_db_upgrades.py` and `tests/test_legacy_backend_cutover.py` cover startup schema repair, retired-table cleanup, and removed-route guarantees after cutover.
 - There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.
-ppears.

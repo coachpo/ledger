@@ -20,9 +20,11 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
+- `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim bundled extension contract, and toggle behavior
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
+- `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
 - `src/pages/workflow-packages/AGENTS.md` — package list, authoring-only editor, dedicated `/workflow-packages/:packageId/run` launch page, validation, import, and export flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, root-parameter rerun, invocation-input fork, package provenance, polling monitor, trace-link views, and legacy replay lineage reads
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, platform-authoring widgets, feature UI, and primitives
@@ -50,11 +52,11 @@ frontend/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/extensions/runtime.tsx`, `src/components/layout.tsx` | query client, router provider, extension route assembly, layout shell, theme toggle, sidebar navigation |
-| Extension runtime and state | `src/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/hooks/use-extensions.ts`, `src/pages/extensions/list.tsx` | bundled frontend extensions, finance route/nav/tool filtering, `/extensions` state UI |
+| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, extension route assembly, layout shell, theme toggle, sidebar navigation |
+| Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav/tool filtering, and `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
-| Template routes | `src/pages/templates/list.tsx`, `src/pages/templates/editor.tsx`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
+| Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
 | Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Model Connections, and Runs |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, portfolio feature folders |
@@ -65,7 +67,7 @@ frontend/
 
 ## CONVENTIONS
 - Routing stays flat under `Layout`; feature depth lives inside components and hooks, not in nested route trees.
-- `src/routes.ts` is the route source of truth, with Finance Workspace route entries assembled from `src/extensions/runtime.tsx`; `src/components/layout.tsx` owns the shell nav plus breadcrumb labels.
+- `src/routes.ts` is the route source of truth, with Finance Workspace route entries assembled from `src/extensions/runtime-helpers.ts`; `src/components/layout.tsx` owns the shell nav plus breadcrumb labels.
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Keep React render logic pure; use effects only for external synchronization, not derived state or local data transforms.
 - Browser-exposed env access goes through `import.meta.env`, and only `VITE_`-prefixed variables may reach frontend code.
@@ -97,7 +99,7 @@ frontend/
 - Do not change runtime-input row behavior, `inputs.*` expectations, or generation-dialog wiring without updating the editor, shared dialog, hooks, and backend compile contract together.
 - Do not change report route, slug, upload/download, or query-key shapes without updating hooks, types, and tests together.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
-- Do not hard-code Finance Workspace visibility outside `src/extensions/runtime.tsx` and `use-extensions.ts`.
+- Do not hard-code Finance Workspace visibility outside `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, and `use-extensions.ts`.
 - Do not treat `retired/**` files as live route ownership or as a shortcut for new package-first UI.
 - Do not document retired `/skills`, `/studio`, `/tryout`, `/orchestration`, `/backtests`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` routes as live surfaces.
 - Do not hide package-first route ownership inside generic UI folders or stale docs.
