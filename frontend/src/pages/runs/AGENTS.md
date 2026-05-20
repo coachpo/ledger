@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/pages/AGENTS.md`.
 
 ## OVERVIEW
-`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail page exposes progress, usage, root-parameter rerun, invocation-specific fork actions, trace linkage, and per-agent accordion drilldowns.
+`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, memory event groups, memory artifacts, and per-agent/per-operation drilldowns.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -13,33 +13,38 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Task | Location | Notes |
 |---|---|---|
 | Run inventory | `list.tsx` | filters, polling monitor, progress, token usage, and timing summary |
-| Run detail | `detail.tsx` | progress cards, rerun dialog, invocation-specific fork dialog, legacy replay lineage labels, trace linkage, final output, and per-agent accordion |
+| Run detail | `detail.tsx` | progress cards, lineage diagrams, inspection panes, rerun dialog, invocation-specific fork dialog, trace linkage, final output, memory evidence, and per-agent accordions |
+| Fork/rerun helpers | `rerun-dialog.tsx`, `inspection-state.ts` | root-parameter rerun modal plus URL-backed inspection-pane state |
 | Run hooks | `../../hooks/use-runs.ts` | list/detail queries, rerun draft/create hooks, fork draft/create hooks, and refetch intervals |
-| Shared formatting | `../../lib/format.ts`, `../platform-resource-shared.tsx` | timestamps and JSON helpers |
-| Run types | `../../lib/types/run.ts` | run status, step-agent reads, fork read/write contracts, legacy replay lineage, and trace fields |
+| Shared formatting | `../../lib/format.ts`, `../platform-resource-shared.tsx` | timestamps, badges, and JSON helpers |
+| Route coverage | `list.test.tsx`, `detail.test.tsx`, `detail-http-operations.test.tsx` | list polling, detail rendering, fork/rerun behavior, and HTTP operation coverage |
 
 ## CONVENTIONS
 - `list.tsx` keeps workflow-key and status filters local to the page and refetches on a timer.
 - `detail.tsx` computes progress from step outputs and keeps trace linkage visible even when the top-level trace id is missing.
 - Run detail renders `memoryEvents` as the canonical run-scoped evidence stream and `memoryArtifacts` as the compact artifact slice. Artifact `memoryId` values are opaque. Report open/download actions are optional audit actions sourced from `artifact.auditLinks.report.url` and `artifact.auditLinks.report.downloadUrl`, never derived from `memoryId`.
-- Per-agent details stay inside the accordion so the page can expose the full run without flattening the layout.
+- Memory event presentation is grouped into retrieved context, memory writes/reuse, review/follow-up, and audit-trail panes; keep those groupings route-owned instead of flattening everything into one raw event list.
+- Per-agent and per-operation details stay inside accordions/inspection panes so the page can expose the full run without flattening the layout.
 - Rerun is the only root-parameter editor. It opens from `rerun=1` and uses rerun draft/create hooks.
 - Fork actions are invocation-specific. Open them from agent invocation rows, use URL state `fork=1&resumeStepIndex=<n>&invocationId=<id>`, fetch drafts by `sourceInvocationId`, and submit full replacement `invocationInput`.
 - Treat `resumeStepIndex` as the execution boundary only. Do not use it as the editable target when an invocation id is required.
 - Operation and tool invocation forks are unsupported in phase 1. Show that limitation on operation rows instead of exposing ambiguous step-wide fork actions.
 - Legacy replay data is read-only lineage. Label it as legacy when rendered, and do not wire `stepReplay`, `stepIndex`, `step-replay-draft`, or `step-replays` as live run creation paths.
-- Hooks own the polling query behavior, while the page owns presentation, filters, fork URL state, and trace summaries.
+- Hooks own polling and request behavior; the page owns presentation, filters, URL state, inspection panes, fork availability messaging, and trace summaries.
 
 ## ANTI-PATTERNS
 - Do not move polling controls out of the list page.
 - Do not hide trace linkage behind a single summary string when span references exist.
-- Do not bypass the hook layer for run reads.
-- Do not collapse per-agent detail into a single monolithic block.
+- Do not bypass the hook layer for run reads, reruns, or forks.
+- Do not collapse per-agent detail or evidence panes into one monolithic block.
+- Do not derive report links or editable fork targets from opaque `memoryId` or `resumeStepIndex` values alone.
 
 ## VALIDATION
 ```bash
 cd frontend
-pnpm lint
-pnpm typecheck
-pnpm test:run
+pnpm test:run src/pages/runs/list.test.tsx src/pages/runs/detail.test.tsx src/pages/runs/detail-http-operations.test.tsx
 ```
+
+## NOTES
+- The detail page uses URL-backed route state for rerun, fork, and inspection-pane views so deep links can reopen the same context.
+- Fork edits one selected agent invocation input only; rerun edits root launch parameters only.
