@@ -56,8 +56,6 @@ from app.schemas.run import (
     RunRerunCreateRequest,
     RunRerunDraftRead,
     RunStatus,
-    RunStepReplayCreateRequest,
-    RunStepReplayDraftRead,
     RunTargetKind,
 )
 from app.schemas.workflow import (
@@ -770,61 +768,10 @@ class RunService:
             candidate_key=f"{plan.target.kind}_input",
             resource_name=plan.target.kind,
         )
-        return self._create_queued_lineage_run(
+        return self._create_queued_rerun_run(
             source_run=source_run,
             plan=plan,
             validated_input=validated_input,
-            replay_step_index=None,
-            copied_steps=[],
-            resume_step_index=1,
-            min_planned_step_index=1,
-        )
-
-    def build_step_replay_draft(
-        self,
-        source_run_id: int,
-        replay_step_index: int,
-    ) -> RunStepReplayDraftRead:
-        source_run, _plan, _copied_steps = self._prepare_step_replay_source(
-            source_run_id,
-            replay_step_index,
-        )
-        return RunStepReplayDraftRead.model_validate(
-            {
-                "sourceRunId": source_run.id,
-                "replayStepIndex": replay_step_index,
-                "targetKind": source_run.target_kind,
-                "targetId": source_run.target_id,
-                "targetKey": source_run.target_key,
-                "parameters": deepcopy(source_run.input),
-                "packageProvenance": self._package_provenance_payload(source_run),
-            }
-        )
-
-    def create_step_replay(
-        self,
-        source_run_id: int,
-        payload: RunStepReplayCreateRequest,
-    ) -> RunCreatedRead:
-        replay_step_index = payload.replay_step_index
-        source_run, plan, copied_steps = self._prepare_step_replay_source(
-            source_run_id,
-            replay_step_index,
-        )
-        validated_input = self._validate_run_input(
-            input_schema=plan.input_schema,
-            input_payload=payload.parameters,
-            candidate_key=f"{plan.target.kind}_input",
-            resource_name=plan.target.kind,
-        )
-        return self._create_queued_lineage_run(
-            source_run=source_run,
-            plan=plan,
-            validated_input=validated_input,
-            replay_step_index=replay_step_index,
-            copied_steps=copied_steps,
-            resume_step_index=replay_step_index,
-            min_planned_step_index=replay_step_index,
         )
 
     def build_fork_draft(
@@ -861,18 +808,13 @@ class RunService:
             invocation_input=invocation_input,
         )
 
-    def _create_queued_lineage_run(
+    def _create_queued_rerun_run(
         self,
         *,
         source_run: Run,
         plan: ExecutionPlan,
         validated_input: dict[str, Any],
-        replay_step_index: int | None,
-        copied_steps: list[RunStep],
-        resume_step_index: int,
-        min_planned_step_index: int,
     ) -> RunCreatedRead:
-        inherited_tokens = self._copied_invocation_token_totals(copied_steps)
         run = Run(
             agent_id=source_run.agent_id,
             target_workflow_id=source_run.target_workflow_id,
@@ -892,11 +834,11 @@ class RunService:
             started_at=None,
             source_run_id=source_run.id,
             lineage_root_run_id=source_run.lineage_root_run_id or source_run.id,
-            forked_from_step_index=replay_step_index,
-            resume_step_index=resume_step_index,
+            forked_from_step_index=None,
+            resume_step_index=1,
             final_output=None,
-            total_tokens=inherited_tokens,
-            inherited_tokens=inherited_tokens,
+            total_tokens=0,
+            inherited_tokens=0,
             executed_tokens=0,
             trace_id=None,
             error=None,
@@ -909,12 +851,10 @@ class RunService:
         try:
             _ = self.run_repository.add(run)
             self.session.flush()
-            self._copy_replay_context_rows(run=run, source_steps=copied_steps)
             self._create_planned_run_rows(
                 run=run,
                 plan=plan,
                 validated_input=validated_input,
-                min_step_index=min_planned_step_index,
             )
             self.session.commit()
             self.session.refresh(run)
@@ -973,7 +913,7 @@ class RunService:
         try:
             _ = self.run_repository.add(run)
             self.session.flush()
-            self._copy_replay_context_rows(run=run, source_steps=prepared.copied_steps)
+            self._copy_lineage_context_rows(run=run, source_steps=prepared.copied_steps)
             self._create_planned_run_rows(
                 run=run,
                 plan=prepared.plan,
@@ -1345,7 +1285,7 @@ class RunService:
         if resume_step_index not in plan_step_indexes:
             raise business_rule_error(
                 f"{error_code_prefix}_step_not_found",
-                f"Replay step {resume_step_index} does not exist on the source run plan",
+                f"Resume step {resume_step_index} does not exist on the source run plan",
             )
 
         copied_steps: list[RunStep] = []
@@ -1386,80 +1326,6 @@ class RunService:
             copied_steps.append(step)
         return copied_steps
 
-    def _prepare_step_replay_source(
-        self,
-        source_run_id: int,
-        replay_step_index: int,
-    ) -> tuple[Run, ExecutionPlan, list[RunStep]]:
-        source_run = self._get_run_or_raise(source_run_id)
-        if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
-        if source_run.status != _RUN_STATUS_SUCCEEDED:
-            raise business_rule_error(
-                "run_step_replay_source_not_succeeded",
-                "Only succeeded runs can be replayed",
-            )
-        plan = self._build_plan_for_run(source_run)
-        plan_step_indexes = {step.index for step in plan.steps}
-        if replay_step_index not in plan_step_indexes:
-            raise business_rule_error(
-                "run_step_replay_step_not_found",
-                f"Replay step {replay_step_index} does not exist on the source run plan",
-            )
-
-        source_steps_by_index = {
-            step.step_index: step for step in cast(list[RunStep], source_run.steps)
-        }
-        replay_step = source_steps_by_index.get(replay_step_index)
-        if replay_step is None:
-            raise business_rule_error(
-                "run_step_replay_step_not_found",
-                f"Replay step {replay_step_index} does not exist on the source run",
-            )
-        if replay_step.status != _RUN_STATUS_SUCCEEDED or replay_step.persisted_at is None:
-            raise business_rule_error(
-                "run_step_replay_step_not_persisted",
-                f"Replay step {replay_step_index} must be succeeded and persisted",
-            )
-
-        copied_steps: list[RunStep] = []
-        for step_index in sorted(index for index in plan_step_indexes if index < replay_step_index):
-            step = source_steps_by_index.get(step_index)
-            if step is None or step.status != _RUN_STATUS_SUCCEEDED or step.persisted_at is None:
-                raise business_rule_error(
-                    "run_step_replay_context_not_persisted",
-                    "All source context steps must be succeeded and persisted",
-                    details=[{"field": f"steps.{step_index}", "issue": "Step is not persisted"}],
-                )
-            invocations = cast(list[RunAgentInvocation], step.invocations)
-            for invocation in invocations:
-                if not self._source_context_invocation_is_persisted(invocation):
-                    raise business_rule_error(
-                        "run_step_replay_context_output_not_persisted",
-                        "All source context invocation outputs must be succeeded and persisted",
-                        details=[
-                            {
-                                "field": f"steps.{step_index}.{invocation.slot}",
-                                "issue": "Invocation output is not persisted",
-                            }
-                        ],
-                    )
-            operations = cast(list[RunOperationInvocation], step.operation_invocations)
-            for operation in operations:
-                if not self._source_context_operation_is_persisted(operation):
-                    raise business_rule_error(
-                        "run_step_replay_context_operation_not_persisted",
-                        "All source context operation outputs must be succeeded and persisted",
-                        details=[
-                            {
-                                "field": f"steps.{step_index}.{operation.slot}",
-                                "issue": "Operation output is not persisted",
-                            }
-                        ],
-                    )
-            copied_steps.append(step)
-        return source_run, plan, copied_steps
-
     @staticmethod
     def _source_context_invocation_is_persisted(invocation: RunAgentInvocation) -> bool:
         if invocation.persisted_at is None:
@@ -1484,7 +1350,7 @@ class RunService:
                 tokens += int(invocation.tokens or 0)
         return tokens
 
-    def _copy_replay_context_rows(
+    def _copy_lineage_context_rows(
         self,
         *,
         run: Run,

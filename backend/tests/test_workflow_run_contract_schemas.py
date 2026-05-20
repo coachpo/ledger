@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from app.schemas import run as run_schemas
 from app.schemas.run import (
+    RunForkCreateRequest,
+    RunForkDraftRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
@@ -149,10 +151,8 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
         "packageProvenance": None,
     }
 
-    fork_draft_read = getattr(run_schemas, "RunForkDraftRead")
-    fork_create_request = getattr(run_schemas, "RunForkCreateRequest")
-    draft = fork_draft_read.model_validate(draft_payload)
-    create = fork_create_request.model_validate(
+    draft = RunForkDraftRead.model_validate(draft_payload)
+    create = RunForkCreateRequest.model_validate(
         {"sourceInvocationId": 77, "invocationInput": {"ticker": "MSFT"}}
     )
 
@@ -162,7 +162,7 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
         "invocationInput": {"ticker": "MSFT"},
     }
     with pytest.raises(ValidationError):
-        _ = fork_create_request.model_validate(
+        _ = RunForkCreateRequest.model_validate(
             {
                 "sourceInvocationId": 77,
                 "invocationInput": {"ticker": "MSFT"},
@@ -170,15 +170,15 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
             }
         )
     with pytest.raises(ValidationError):
-        _ = fork_create_request.model_validate(
+        _ = RunForkCreateRequest.model_validate(
             {"sourceInvocationId": 77, "invocationInput": "MSFT"}
         )
     with pytest.raises(ValidationError):
-        _ = fork_create_request.model_validate(
+        _ = RunForkCreateRequest.model_validate(
             {"sourceInvocationId": 77, "parameters": {"ticker": "MSFT"}}
         )
     with pytest.raises(ValidationError):
-        _ = fork_create_request.model_validate(
+        _ = RunForkCreateRequest.model_validate(
             {"replayStepIndex": 2, "invocationInput": {"ticker": "MSFT"}}
         )
 

@@ -40,10 +40,10 @@ from app.schemas.mcp_server import McpServerCreate, McpServerTransport, McpServe
 from app.schemas.output_schema import OutputSchemaDraftCreate, OutputSchemaDraftUpdate
 from app.schemas.run import (
     RunAgentInvocationRead,
+    RunForkCreateRequest,
     RunRead,
     RunRerunCreateRequest,
     RunStatus,
-    RunStepReplayCreateRequest,
 )
 from app.services.agent_service import AgentService
 from app.services.capability_service import CapabilityService
@@ -1139,12 +1139,12 @@ def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
                 workflow_run.id,
                 RunRerunCreateRequest(parameters={"ticker": "IBM"}),
             )
-        with pytest.raises(ApiError) as workflow_replay_error:
-            service.create_step_replay(
+        with pytest.raises(ApiError) as workflow_fork_error:
+            service.create_fork(
                 workflow_run.id,
-                RunStepReplayCreateRequest(
-                    replay_step_index=1,
-                    parameters={"ticker": "AMD"},
+                RunForkCreateRequest(
+                    source_invocation_id=1,
+                    invocation_input={"ticker": "AMD"},
                 ),
             )
 
@@ -1153,7 +1153,7 @@ def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
             workflow_create_error.value,
             agent_rerun_error.value,
             workflow_rerun_error.value,
-            workflow_replay_error.value,
+            workflow_fork_error.value,
         ]
         assert {error.code for error in errors} == {"legacy_global_authoring_runtime_blocked"}
         _assert_executable_target_fk_identity(agent_run, agent_id=agent_id)

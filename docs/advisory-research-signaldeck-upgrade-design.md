@@ -47,7 +47,7 @@ These remain rejected, even where TradingAgents supports adjacent behavior:
 
 | Area | TradingAgents | SignalDeck status | Fit |
 |---|---|---|---|
-| Runtime execution | LangGraph node execution with checkpoint resume. | Persisted Runs with steps, agent invocations, operation invocations, rerun, and step replay. Recovery and audit goals are similar, but runtime semantics are intentionally different. | Medium-High |
+| Runtime execution | LangGraph node execution with checkpoint resume. | Persisted Runs with steps, agent invocations, operation invocations, root-parameter rerun, invocation-input fork, and legacy step replay read lineage. Recovery and audit goals are similar, but runtime semantics are intentionally different. | Medium-High |
 | Memory | Markdown decision log with automatic return/reflection updates and future prompt context. | Report-backed memory with pending outcome resolution, generated reflections, prompt snippets, and report audit links hidden from model-visible memory projections. | Medium-High |
 | Analyst phase | Selected analysts, staged tool loops, bull/bear debate, research manager, trader, risk debate, and portfolio manager handoff. | Workflow Packages model this through authored `sequence`, `fanout`, `loop`, local agents, structured outputs, and package-local capability profiles. | Medium |
 | External data/news/social research | Source-specific vendor data and news tools, plus Reddit and StockTwits sentiment paths. | Finance-owned native tools provide data, news, social sentiment, fundamentals, insider, position, and report context while `signaldeck.finance` is enabled. | Medium-High |
@@ -66,6 +66,25 @@ Approximate remaining-gap fit after rejecting exact graph parity: 8/10 conceptua
 - Persist operation invocations separately from agent invocations.
 - Keep package secrets referenced, encrypted, and redacted from exports, run details, diagnostics, and logs.
 - Keep exact graph parity rejected permanently.
+
+## Focused Gap Analysis: Indicators And Providers
+
+This section narrows the remaining deltas relevant to reproducing TradingAgents-style advisory workflows in SignalDeck. It intentionally ignores broader runtime and topology differences and focuses only on indicator breadth and provider breadth inside `signaldeck.finance`.
+
+| Area | What SignalDeck has | TradingAgents target | Gap | Solution proposal | Owner boundary | Key files | Priority |
+|---|---|---|---|---|---|---|---|
+| Indicator tool surface | `signaldeck.indicators.lookup` | TradingAgents-style technical-analysis tool | Contract is SMA-oriented | Keep tool key and widen schema | Runtime tool + finance extension | `backend/app/agents/runtime_tools/market_data.py`, `backend/app/extensions/signaldeck_finance/tool_specs.py` | High |
+| Indicator inputs | `smaWindows` only | Curated MACD/RSI/Bollinger/ATR/EMA/VWMA-style set | No indicator selector | Add fixed `indicators` input | Runtime tool parser | `backend/app/agents/runtime_tools/market_data.py` | High |
+| Indicator math | `close` + `sma_<window>` | Multi-indicator rows | No MACD/RSI/Bollinger path | Extend calculators in service layer | Market data service | `backend/app/services/market_data_service.py` | High |
+| Indicator output model | Generic `values[]` rows | Generic multi-indicator rows | No real model gap | Reuse current output model | Runtime types | `backend/app/agents/runtime_tools/types.py` | Low |
+| Quote/history/OHLCV provider | Yahoo or deterministic | Research-grade multi-provider coverage | Single real live backend | Add Alpha Vantage provider | Quote provider + factory | `backend/app/services/quote_provider.py`, `backend/app/extensions/signaldeck_finance/provider_factories.py` | High |
+| Fundamentals provider | Tool exists | Real fundamentals coverage | Yahoo path returns unavailable | Implement Alpha Vantage fundamentals | Quote provider | `backend/app/services/quote_provider.py` | High |
+| News provider | Yahoo-backed news | Broader provider parity | No Alpha Vantage news path | Add Alpha Vantage news adapter and fallback | Quote provider + service | `backend/app/services/quote_provider.py`, `backend/app/services/market_data_service.py` | Medium |
+| Insider provider | Tool exists | Real insider coverage | Yahoo path returns unavailable | Implement Alpha Vantage insider path | Quote provider | `backend/app/services/quote_provider.py` | High |
+| Social sentiment provider | Reddit + StockTwits | TradingAgents-adjacent sentiment coverage | Narrow but acceptable | Keep as-is unless expansion is needed | Social sentiment service | `backend/app/services/social_sentiment_provider.py`, `backend/app/extensions/signaldeck_finance/provider_factories.py` | Low |
+| Provider selection | `QUOTE_PROVIDER_BACKEND=yahoo|deterministic` | Multi-provider or fallback strategy | Config too narrow | Add `alpha_vantage` or ordered provider config | Core config + factory | `backend/app/core/config.py`, `backend/app/extensions/signaldeck_finance/provider_factories.py` | High |
+| Service fallback | Fallback helper exists | Real provider chain | Capability exists but DI does not use it | Feed ordered providers into fundamentals/news/insider | Market data service + finance DI | `backend/app/services/market_data_service.py`, `backend/app/extensions/signaldeck_finance/dependencies.py` | Medium |
+| Test coverage | Runtime/service tests exist | Safe extension growth | Missing parity coverage | Add indicator/provider regression tests | Backend tests | `backend/tests/test_runtime_tools.py`, `backend/tests/test_market_data_service.py` | High |
 
 ## Maintenance Rule
 

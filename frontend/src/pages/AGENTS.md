@@ -40,7 +40,7 @@ src/pages/
 | Extension state route | `extensions/list.tsx`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts` | bundled extension slim state and enable/disable toggle flow |
 | Workflow Package pages | `workflow-packages/AGENTS.md` | package authoring, validation, preflight, launch, import, and export |
 | Model connection pages | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts` | saved connection inventory, write-only secrets, delete flow, and connection-test UI |
-| Run pages | `runs/AGENTS.md` | run list, detail, rerun, step replay, and trace views |
+| Run pages | `runs/AGENTS.md` | run list, detail, root-parameter rerun, invocation-input fork, trace views, and legacy replay lineage reads |
 | Portfolio workspace | `portfolios/AGENTS.md`, `../components/portfolios/AGENTS.md` | portfolio list/detail workspace |
 | Template list/editor | `templates/list.tsx`, `templates/editor.tsx`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser |
 | Report routes | `reports/AGENTS.md`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts` | list/detail, upload/generate, markdown view/edit/download |

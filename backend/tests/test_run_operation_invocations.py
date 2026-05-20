@@ -177,7 +177,7 @@ def test_operation_invocation_read_schema_redacts_request_metadata(
     assert "secretPayload" not in serialized_detail
 
 
-def test_replay_copy_preserves_operation_provenance_and_redacted_metadata(
+def test_lineage_copy_preserves_operation_provenance_and_redacted_metadata(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -201,7 +201,7 @@ def test_replay_copy_preserves_operation_provenance_and_redacted_metadata(
         session.add(target_run)
         session.flush()
 
-        RunService(session, session_factory)._copy_replay_context_rows(
+        RunService(session, session_factory)._copy_lineage_context_rows(
             run=target_run,
             source_steps=[source_step],
         )

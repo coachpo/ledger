@@ -608,21 +608,6 @@ class RunForkCreateRequest(CamelModel):
     invocation_input: dict[str, object]
 
 
-class RunStepReplayDraftRead(CamelModel):
-    source_run_id: int
-    replay_step_index: int = Field(ge=1)
-    target_kind: RunTargetKind
-    target_id: int
-    target_key: str
-    parameters: dict[str, object]
-    package_provenance: RunPackageProvenanceRead | None = None
-
-
-class RunStepReplayCreateRequest(CamelModel):
-    replay_step_index: int = Field(ge=1)
-    parameters: dict[str, object]
-
-
 __all__ = [
     "RunAgentErrorRead",
     "RunAgentInvocationRead",
@@ -650,8 +635,6 @@ __all__ = [
     "RunRerunDraftRead",
     "RunForkCreateRequest",
     "RunForkDraftRead",
-    "RunStepReplayCreateRequest",
-    "RunStepReplayDraftRead",
     "RunStatus",
     "RunStepOrigin",
     "RunStepRead",

@@ -264,8 +264,7 @@ class WorkflowPackageService:
             media_type="application/yaml",
             headers={
                 "Content-Disposition": (
-                    f'attachment; filename="{filename}"; '
-                    f"filename*=UTF-8''{encoded_filename}"
+                    f'attachment; filename="{filename}"; ' f"filename*=UTF-8''{encoded_filename}"
                 )
             },
         )

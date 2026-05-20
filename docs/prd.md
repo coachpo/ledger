@@ -30,7 +30,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 4. Workflow Packages: YAML package manifest authoring with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, preflight, import, export, and launch flows. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
 6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
-7. Runs: global run list/detail, package provenance, launch snapshots, reruns, and step replays.
+7. Runs: global run list/detail, package provenance, launch snapshots, root-parameter reruns, invocation-input forks, and legacy replay lineage reads.
 
 ## Success Criteria
 
