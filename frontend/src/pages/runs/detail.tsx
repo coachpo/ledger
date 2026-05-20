@@ -116,7 +116,7 @@ type LineageDiagramNodeData = {
 type LineageDiagramNode = Node<LineageDiagramNodeData, "lineage">;
 type LineageDiagramEdge = Edge;
 
-const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "Choose a succeeded workflow step from this run snapshot to replay from.";
+const DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON = "This feature is available for succeeded Workflow Package runs and succeeded steps.";
 const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
@@ -284,10 +284,10 @@ function getStepReplayAvailability(
   steps: RunStepRead[],
   replayStepIndex: number | undefined,
 ): StepReplayAvailability {
-  if (targetKind !== "workflow" && targetKind !== "workflowPackage") {
+  if (targetKind !== "workflowPackage") {
     return {
       isAvailable: false,
-      reason: "Step replay is only available for workflow runs.",
+      reason: DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON,
     };
   }
 
@@ -309,7 +309,7 @@ function getStepReplayAvailability(
   if (selectedStep.status !== "succeeded") {
     return {
       isAvailable: false,
-      reason: `Step ${replayStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be replayed.`,
+      reason: `Step ${replayStepIndex} is ${selectedStep.status}; only succeeded workflow steps can be used to start a new run.`,
     };
   }
 
@@ -803,7 +803,7 @@ function RunStepReplayDialog({
   }, [draftQuery.data, draftTargetKey, open]);
 
   const parametersValidation = useMemo(
-    () => parseJsonRecord(parametersText || "{}", "Replay parameters JSON"),
+    () => parseJsonRecord(parametersText || "{}", "New run inputs JSON"),
     [parametersText],
   );
   const replayPayload = useMemo(() => {
@@ -841,7 +841,7 @@ function RunStepReplayDialog({
       resetLocalState();
       navigate(`/runs/${createdRun.id}`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to create step replay.");
+      setApiError(error instanceof Error ? error.message : "Failed to create the new run.");
     }
   };
 
@@ -857,19 +857,19 @@ function RunStepReplayDialog({
       <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-6">
-            <DialogTitle>Snapshot step replay draft</DialogTitle>
+            <DialogTitle>Start a new run from Step {replayStepIndex}</DialogTitle>
             {replayStepIndex !== undefined ? <Badge variant="outline">Step {replayStepIndex}</Badge> : null}
-            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Edited draft" : "Source snapshot"}</Badge> : null}
+            {draftQuery.data ? <Badge variant={hasDraftEdits ? "secondary" : "outline"}>{hasDraftEdits ? "Step input edited" : "Step input unchanged"}</Badge> : null}
           </div>
           <DialogDescription>
-            Create a new run that replays from the selected step. Edits apply only to the replay parameters; the source run remains immutable.
+            A new run is created, prior context is copied, Step {replayStepIndex} and later run again, and the original run remains unchanged.
           </DialogDescription>
         </DialogHeader>
 
         {!replayAvailability.isAvailable ? (
           <Alert variant="destructive" data-testid="run-step-replay-invalid-step">
             <AlertCircle />
-            <AlertTitle>Step replay unavailable</AlertTitle>
+            <AlertTitle>New run unavailable</AlertTitle>
             <AlertDescription>{replayAvailability.reason ?? DEFAULT_STEP_REPLAY_UNAVAILABLE_REASON}</AlertDescription>
           </Alert>
         ) : null}
@@ -877,22 +877,22 @@ function RunStepReplayDialog({
         {replayAvailability.isAvailable && draftQuery.isPending ? (
           <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground" data-testid="run-step-replay-loading">
             <Loader2 className="size-4 animate-spin" />
-            Loading step replay draft...
+            Loading new run inputs...
           </div>
         ) : null}
 
         {replayAvailability.isAvailable && draftQuery.isError ? (
           <Alert variant="destructive" data-testid="run-step-replay-draft-error">
             <AlertCircle />
-            <AlertTitle>Unable to load step replay draft</AlertTitle>
-            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The step replay draft could not be loaded."}</AlertDescription>
+            <AlertTitle>Unable to load new run inputs</AlertTitle>
+            <AlertDescription>{draftQuery.error instanceof Error ? draftQuery.error.message : "The new run inputs could not be loaded."}</AlertDescription>
           </Alert>
         ) : null}
 
         {apiError ? (
           <Alert variant="destructive" data-testid="run-step-replay-api-error">
             <AlertCircle />
-            <AlertTitle>Step replay creation failed</AlertTitle>
+            <AlertTitle>New run creation failed</AlertTitle>
             <AlertDescription>{apiError}</AlertDescription>
           </Alert>
         ) : null}
@@ -900,15 +900,15 @@ function RunStepReplayDialog({
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-step-replay-dialog-body">
             <CardHeader>
-              <CardTitle className="text-base">Replay parameters</CardTitle>
-              <CardDescription>Edit the parameter JSON that the replayed run will receive.</CardDescription>
+              <CardTitle className="text-base">Inputs for the new run</CardTitle>
+              <CardDescription>Edit the input JSON that the new run will receive.</CardDescription>
             </CardHeader>
             <CardContent>
               <JsonEditorField
                 disabled={createStepReplay.isPending}
                 error={parametersValidation.error}
                 id="run-step-replay-parameters-json"
-                label="Step replay parameters JSON"
+                label="New run inputs JSON"
                 onChange={(value) => {
                   setApiError(null);
                   setParametersText(value);
@@ -926,11 +926,11 @@ function RunStepReplayDialog({
           </Button>
           <Button disabled={!draftQuery.data || createStepReplay.isPending} onClick={resetToDraft} type="button" variant="outline">
             <RotateCcw data-icon="inline-start" />
-            Reset draft
+            Reset to original inputs
           </Button>
           <Button data-testid="run-step-replay-submit" disabled={isSubmitDisabled} onClick={() => void handleSubmit()} type="button">
             {createStepReplay.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-            Create snapshot step replay
+            Start new run from Step {replayStepIndex}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1208,7 +1208,7 @@ function ExecutionOutline({
                 {canReplay ? (
                   <div className="mt-2 rounded-lg border bg-muted/20 p-2" data-testid={`runs-step-${step.index}-replay-entry`}>
                     <Button className="w-full cursor-pointer justify-start" onClick={() => onOpenReplay(step.index)} size="sm" type="button" variant="outline">
-                      Replay snapshot step
+                      Start new run from Step {step.index}
                     </Button>
                   </div>
                 ) : null}
@@ -1840,7 +1840,7 @@ export function RunsDetailPage() {
     steps,
   });
   const terminalInvocationsCount = allInvocations.filter((invocation) => isTerminalStatus(invocation.status)).length;
-  const canReplayRun = run.targetKind === "workflow" || run.targetKind === "workflowPackage";
+  const canReplayRun = run.targetKind === "workflowPackage";
 
   const selectInspection = (target: RunInspectionTarget, pane?: RunInspectionPane) => {
     setSearchParams((current) => {
@@ -1948,4 +1948,4 @@ export function RunsDetailPage() {
       />
     </div>
   );
-}
+}          

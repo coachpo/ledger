@@ -285,6 +285,8 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
 
 function buildReplayableWorkflowRun(overrides: Partial<RunRead> = {}): RunRead {
   return buildRun({
+    targetKind: "workflowPackage",
+    targetKey: "market_review_package",
     steps: [
       buildStep(),
       buildStep({
@@ -532,7 +534,7 @@ describe("RunsDetailPage", () => {
     expect(finalOutputCard).toHaveAttribute("data-slot", "card");
     expect(finalOutputCard.querySelector("[data-slot='card-content']")).toHaveClass("space-y-5", "pt-6");
     expect(finalOutput).toHaveTextContent(/normalized/i);
-    expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
+    expect(finalOutput).toHaveClass("flex", "flex-col", "data-[orientation=vertical]:items-stretch", "min-w-0", "gap-3");
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(finalOutput.querySelector("pre")).toBeNull();
     expect(within(finalOutputCard).getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
@@ -557,7 +559,7 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByTestId("runs-step-1-slot-analysis")).not.toBeInTheDocument();
     expect(screen.queryByTestId("runs-step-2-slot-decision")).not.toBeInTheDocument();
 
-    const stepOneButton = within(screen.getByTestId("runs-step-1")).getByRole("button", { name: /step 1/i });
+    const stepOneButton = within(screen.getByTestId("runs-step-1")).getAllByRole("button", { name: /step 1/i })[0];
     fireEvent.click(stepOneButton);
     expect(within(screen.getByTestId("runs-step-1")).queryByRole("link", { name: /step 1/i })).not.toBeInTheDocument();
     const stepSelectUpdater = setSearchParamsMock.mock.calls.at(-1)?.[0] as (current: URLSearchParams) => URLSearchParams;
@@ -570,7 +572,7 @@ describe("RunsDetailPage", () => {
     const runInputRender = render(<RunsDetailPage />);
     const runInput = screen.getByTestId("runs-detail-input");
     expect(runInput).toHaveTextContent(/AAPL/i);
-    expect(runInput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
+    expect(runInput).toHaveClass("flex", "flex-col", "min-w-0", "gap-3");
     expect(runInput).not.toHaveClass("overflow-hidden", "text-xs");
     expect(screen.getByRole("heading", { name: /^run input$/i })).toHaveClass("text-base", "font-medium", "leading-none");
     expect(screen.queryByTestId("runs-detail-final-output-card")).not.toBeInTheDocument();
@@ -984,7 +986,17 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.queryByRole("button", { name: /replay step/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("run-step-replay-invalid-step")).toHaveTextContent(/only available for workflow runs/i);
+    expect(screen.getByTestId("run-step-replay-invalid-step")).toHaveTextContent(/available for succeeded workflow package runs and succeeded steps/i);
+    expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
+  });
+
+  it("shows generic workflow URL replay state as unavailable without fetching a draft", () => {
+    searchParamsMock = new URLSearchParams("stepReplay=1&stepIndex=1");
+    useRunMock.mockReturnValue(queryResult(buildRun({ replayStepIndex: 1, targetKind: "workflow" })));
+
+    render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("run-step-replay-invalid-step")).toHaveTextContent(/available for succeeded workflow package runs and succeeded steps/i);
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
   });
 
@@ -1205,16 +1217,16 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByText(/fork/i)).not.toBeInTheDocument();
   });
 
-  it("opens the step replay dialog from URL params and fetches the draft for a succeeded workflow step", async () => {
+  it("opens the step replay dialog from URL params and fetches the draft for a succeeded workflow package step", async () => {
     searchParamsMock = new URLSearchParams("stepReplay=1&stepIndex=1");
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
     useRunStepReplayDraftMock.mockReturnValue(stepReplayDraftQueryResult(buildStepReplayDraft()));
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByRole("dialog", { name: /snapshot step replay draft/i })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: /start a new run from step 1/i })).toBeVisible();
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: true });
-    expect(await screen.findByLabelText("Step replay parameters JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+    expect(await screen.findByLabelText("New run inputs JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
   });
 
   it("updates URL params when a succeeded workflow step replay action is clicked", () => {
@@ -1222,7 +1234,7 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-step-2-replay-entry")).toBeVisible();
-    fireEvent.click(within(screen.getByTestId("runs-step-1-replay-entry")).getByRole("button", { name: /replay snapshot step/i }));
+    fireEvent.click(within(screen.getByTestId("runs-step-1-replay-entry")).getByRole("button", { name: /start new run from step 1/i }));
 
     expect(setSearchParamsMock).toHaveBeenCalledTimes(1);
     const updater = setSearchParamsMock.mock.calls[0][0] as (current: URLSearchParams) => URLSearchParams;
@@ -1258,7 +1270,7 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Step replay parameters JSON"), {
+    fireEvent.change(await screen.findByLabelText("New run inputs JSON"), {
       target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
     });
     fireEvent.click(screen.getByTestId("run-step-replay-submit"));
@@ -1283,11 +1295,11 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    fireEvent.change(await screen.findByLabelText("Step replay parameters JSON"), {
+    fireEvent.change(await screen.findByLabelText("New run inputs JSON"), {
       target: { value: "{not-json" },
     });
 
-    expect(await screen.findByText(/replay parameters json must be valid json/i)).toBeVisible();
+    expect(await screen.findByText(/new run inputs json must be valid json/i)).toBeVisible();
     expect(screen.getByTestId("run-step-replay-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("run-step-replay-submit"));
     expect(createRunStepReplayMutateAsyncMock).not.toHaveBeenCalled();
