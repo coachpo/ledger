@@ -32,6 +32,7 @@ import type {
   RunStepStatus,
   RunTargetKind,
 } from "@/lib/types/run";
+import { StructuredValueInspector } from "@/components/platform-authoring/inspectors/structured-value-inspector";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -491,9 +492,7 @@ function JsonBlock({ label, testId, value }: { label?: string; testId?: string; 
   return (
     <div className="min-w-0 space-y-2">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
-      <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-xs leading-relaxed" data-testid={testId}>
-        {stringifyJson(value)}
-      </pre>
+      <StructuredValueInspector className="max-w-full rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} label={null} preserveObjectKeyOrder presentation="tree" value={value} />
     </div>
   );
 }
@@ -502,9 +501,7 @@ function RunPayloadPane({ headingId, label, testId, value }: { headingId: string
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
-      <div className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId}>
-        <div className="whitespace-pre-wrap break-words text-foreground">{stringifyJson(value)}</div>
-      </div>
+      <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} label={null} preserveObjectKeyOrder presentation="tree" value={value} />
     </section>
   );
 }

@@ -531,6 +531,7 @@ describe("RunsDetailPage", () => {
     expect(finalOutput).toHaveTextContent(/normalized/i);
     expect(finalOutput).toHaveClass("rounded-md", "border", "bg-muted/20", "p-3", "text-sm");
     expect(finalOutput).not.toHaveClass("overflow-hidden", "text-xs");
+    expect(finalOutput.querySelector("pre")).toBeNull();
     expect(screen.getByRole("heading", { name: /final output/i })).toHaveClass("text-base", "font-medium", "leading-none");
     expect(within(screen.getByTestId("runs-evidence-pane-nav")).queryByRole("button", { name: /trace/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/analysis\/span-1/i);
@@ -981,6 +982,61 @@ describe("RunsDetailPage", () => {
     expect(screen.queryByRole("button", { name: /replay step/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("run-step-replay-invalid-step")).toHaveTextContent(/only available for workflow runs/i);
     expect(useRunStepReplayDraftMock).toHaveBeenLastCalledWith("42", 1, { enabled: false });
+  });
+
+  it("renders structured final and aggregated output for nested payloads", () => {
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          finalOutput: { second: {}, first: [null, 3, "ready"], done: false },
+          steps: [
+            buildStep({
+              invocations: [
+                buildInvocation({
+                  output: { agentSecond: false, agentFirst: [null, 3, "ready"] },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const defaultRender = render(<RunsDetailPage />);
+    const finalOutput = screen.getByTestId("runs-detail-final-output");
+    const finalText = finalOutput.textContent ?? "";
+
+    expect(finalOutput.querySelector("pre")).toBeNull();
+    expect(finalOutput).toHaveTextContent("object");
+    expect(finalOutput).toHaveTextContent("array");
+    expect(finalOutput).toHaveTextContent("false");
+    expect(finalOutput).toHaveTextContent("null");
+    expect(finalOutput).toHaveTextContent("3");
+    expect(finalOutput).toHaveTextContent('"ready"');
+    expect(finalOutput).toHaveTextContent("Empty object");
+    expect(finalText.indexOf("second")).toBeLessThan(finalText.indexOf("first"));
+
+    defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1");
+    render(<RunsDetailPage />);
+
+    const aggregatedOutput = screen.getByTestId("runs-step-1-aggregated-output");
+    const aggregatedText = aggregatedOutput.textContent ?? "";
+
+    expect(aggregatedOutput.querySelector("pre")).toBeNull();
+    expect(aggregatedText.indexOf("stepIndex")).toBeLessThan(aggregatedText.indexOf("agentInvocations"));
+    expect(aggregatedText.indexOf("agentSecond")).toBeLessThan(aggregatedText.indexOf("agentFirst"));
+  });
+
+  it("renders completed null final output instead of the pending-state copy", () => {
+    useRunMock.mockReturnValue(queryResult(buildRun({ finalOutput: null, status: "succeeded" })));
+
+    render(<RunsDetailPage />);
+
+    const finalOutput = screen.getByTestId("runs-detail-final-output");
+
+    expect(finalOutput).toHaveTextContent("null");
+    expect(finalOutput).not.toHaveTextContent("Final output is not available yet.");
   });
 
   it("handles empty, running, skipped, and invalid pane URL state", () => {
