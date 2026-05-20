@@ -14,21 +14,17 @@ import { WorkflowPackagesListPage } from "./list";
 
 const {
   deletePackageMock,
-  importPackageMock,
   navigateMock,
   toastErrorMock,
   toastSuccessMock,
   useDeletePackageMock,
-  useImportPackageMock,
   useWorkflowPackagesMock,
 } = vi.hoisted(() => ({
   deletePackageMock: vi.fn(),
-  importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   useDeletePackageMock: vi.fn(),
-  useImportPackageMock: vi.fn(),
   useWorkflowPackagesMock: vi.fn(),
 }));
 
@@ -49,7 +45,6 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useDeleteWorkflowPackage: () => useDeletePackageMock(),
-  useImportWorkflowPackage: () => useImportPackageMock(),
   useWorkflowPackages: () => useWorkflowPackagesMock(),
 }));
 
@@ -80,28 +75,15 @@ function renderPage() {
 describe("WorkflowPackagesListPage", () => {
   beforeEach(() => {
     deletePackageMock.mockReset();
-    importPackageMock.mockReset();
     navigateMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     useDeletePackageMock.mockReset();
-    useImportPackageMock.mockReset();
     useWorkflowPackagesMock.mockReset();
-    importPackageMock.mockResolvedValue(
-      packageFixture({
-        id: 77,
-        key: "imported_package",
-        name: "Imported Package",
-      }),
-    );
     deletePackageMock.mockResolvedValue(undefined);
     useDeletePackageMock.mockReturnValue({
       isPending: false,
       mutateAsync: deletePackageMock,
-    });
-    useImportPackageMock.mockReturnValue({
-      isPending: false,
-      mutateAsync: importPackageMock,
     });
   });
 
@@ -274,6 +256,11 @@ describe("WorkflowPackagesListPage", () => {
     ).toBeVisible();
 
     fireEvent.click(
+      screen.getByRole("button", { name: "Import workflow package manifest" }),
+    );
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");
+
+    fireEvent.click(
       screen.getByRole("button", { name: "Create new workflow package" }),
     );
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/new");
@@ -326,40 +313,5 @@ describe("WorkflowPackagesListPage", () => {
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith("Package not found"),
     );
-  });
-
-  it("imports a package manifest from the list dialog and routes to the imported package", async () => {
-    useWorkflowPackagesMock.mockReturnValue({
-      data: { items: [] },
-      error: null,
-      isError: false,
-      isPending: false,
-    });
-
-    renderPage();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Import workflow package manifest" }),
-    );
-    fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: {
-        value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - env:\n        API_KEY: sk-import-secret\n",
-      },
-    });
-    fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: /import package/i,
-      }),
-    );
-
-    await waitFor(() =>
-      expect(importPackageMock).toHaveBeenCalledWith({
-        manifestSource: expect.stringContaining("sk-import-secret"),
-      }),
-    );
-    expect(importPackageMock.mock.calls[0][0].manifestSource).toContain(
-      "API_KEY: sk-import-secret",
-    );
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/77");
   });
 });

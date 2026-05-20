@@ -16,7 +16,6 @@ const {
   createLaunchMock,
   createRuntimeInputPersonalEntryMock,
   deleteRuntimeInputPersonalEntryMock,
-  importPackageMock,
   navigateMock,
   preflightPackageMock,
   updatePackageMock,
@@ -25,7 +24,6 @@ const {
   useCreatePackageMock,
   useCreateRuntimeInputPersonalEntryMock,
   useDeleteRuntimeInputPersonalEntryMock,
-  useImportPackageMock,
   useModelConnectionsMock,
   usePreflightPackageMock,
   useToolsMock,
@@ -41,7 +39,6 @@ const {
   createLaunchMock: vi.fn(),
   createRuntimeInputPersonalEntryMock: vi.fn(),
   deleteRuntimeInputPersonalEntryMock: vi.fn(),
-  importPackageMock: vi.fn(),
   navigateMock: vi.fn(),
   preflightPackageMock: vi.fn(),
   updatePackageMock: vi.fn(),
@@ -50,7 +47,6 @@ const {
   useCreatePackageMock: vi.fn(),
   useCreateRuntimeInputPersonalEntryMock: vi.fn(),
   useDeleteRuntimeInputPersonalEntryMock: vi.fn(),
-  useImportPackageMock: vi.fn(),
   useModelConnectionsMock: vi.fn(),
   usePreflightPackageMock: vi.fn(),
   useToolsMock: vi.fn(),
@@ -79,7 +75,6 @@ vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackageRuntimeInputPersonalEntry: () => useCreateRuntimeInputPersonalEntryMock(),
   useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => useDeleteRuntimeInputPersonalEntryMock(),
   useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useImportWorkflowPackage: () => useImportPackageMock(),
   usePreflightWorkflowPackage: () => usePreflightPackageMock(),
   useTools: () => useToolsMock(),
   useUpdateWorkflowPackage: () => useUpdatePackageMock(),
@@ -215,13 +210,11 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     createLaunchMock.mockReset();
     createRuntimeInputPersonalEntryMock.mockReset();
     deleteRuntimeInputPersonalEntryMock.mockReset();
-    importPackageMock.mockReset();
     preflightPackageMock.mockResolvedValue(launchRead);
     createLaunchMock.mockResolvedValue({ createdAt: "2026-05-08T10:00:00Z", id: 99, status: "queued", workflowKey: "market_review", workflowPackageId: 42, workflowPackageKey: "market_review_package" });
     createRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 30, name: "Saved preset", slot: "personal" }));
     updateRuntimeInputPersonalEntryMock.mockResolvedValue(runtimeInputEntry({ id: 7, name: "Updated preset", slot: "personal" }));
     deleteRuntimeInputPersonalEntryMock.mockResolvedValue(undefined);
-    importPackageMock.mockResolvedValue(packageRead);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve("apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\nmetadata:\n  key: market_review_package\nspec:\n  mcpServers:\n    - key: market_stdio\n      transport: stdio\n      command: market-mcp\n      env:\n        MARKET_DATA_API_KEY: sk-live-env-secret\n    - key: market_http\n      transport: http-sse\n      url: https://example.com/mcp\n      headers:\n        Authorization: Bearer sk-live-header-secret\n      query:\n        apiKey: sk-live-query-secret\n"),
@@ -240,7 +233,6 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     useUpdateRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: updateRuntimeInputPersonalEntryMock });
     useDeleteRuntimeInputPersonalEntryMock.mockReturnValue({ isPending: false, mutateAsync: deleteRuntimeInputPersonalEntryMock });
     useWorkflowPackageRuntimeInputRegistryMock.mockReturnValue(runtimeInputRegistry());
-    useImportPackageMock.mockReturnValue({ isPending: false, mutateAsync: importPackageMock });
     useModelConnectionsMock.mockReturnValue({ data: { items: [] }, error: null, isError: false, isPending: false });
     useToolsMock.mockReturnValue({ data: { items: [] }, error: null, isError: false, isPending: false });
   });
@@ -584,46 +576,40 @@ describe("WorkflowPackageEditorPage preflight, launch, and export flows", () => 
     }));
   });
 
-  it("auto-loads export preview and imports package YAML with inline private MCP values", async () => {
+  it("auto-loads export preview and routes import to the workspace", async () => {
     renderEditor();
     clickTab("Import / Export");
 
     expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/package-private mcp inline values remain visible in the manifest/i)).toBeVisible();
+    expect(screen.getByText(/route-level import workspace/i)).toBeVisible();
     const preview = await screen.findByLabelText("Package YAML preview");
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret"));
     expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
     expect((preview as HTMLTextAreaElement).value).toContain("apiKey: sk-live-query-secret");
-    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
-    expect(screen.getByText(/package-private mcp inline values are imported exactly as shown/i)).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: { value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - headers:\n        Authorization: Bearer sk-import-secret\n" },
-    });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /import package/i }));
 
-    await waitFor(() => expect(importPackageMock).toHaveBeenCalledWith({
-      manifestSource: expect.stringContaining("sk-import-secret"),
-    }));
-    expect(screen.queryByText(/import warnings/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("keeps import input as pasted for inline private MCP values", async () => {
+  it("protects dirty package edits before routing to the import workspace", () => {
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     renderEditor();
-    clickTab("Import / Export");
 
-    fireEvent.click(screen.getByRole("button", { name: "Import workflow package manifest" }));
-    fireEvent.change(screen.getByLabelText("Import package YAML"), {
-      target: { value: "metadata:\n  key: imported\nspec:\n  mcpServers:\n    - headers:\n        Authorization: Bearer sk-import-secret\n" },
+    fireEvent.change(screen.getByLabelText("Package name"), {
+      target: { value: "Unsaved Package Name" },
     });
+    clickTab("Import / Export");
+    fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
 
-    const importEditor = screen.getByLabelText("Import package YAML") as HTMLTextAreaElement;
-    expect(importEditor.value).toContain("sk-import-secret");
-    expect(importEditor.value).toContain("Authorization: Bearer sk-import-secret");
+    expect(confirmMock).toHaveBeenCalledWith(
+      "You have unsaved changes. Discard them and open the import workspace?",
+    );
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/import");
 
-    const preview = await screen.findByLabelText("Package YAML preview");
-    expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret");
-    expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
-    expect((preview as HTMLTextAreaElement).value).toContain("apiKey: sk-live-query-secret");
+    fireEvent.click(screen.getByRole("button", { name: "Import Package" }));
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");
+    confirmMock.mockRestore();
   });
 });
