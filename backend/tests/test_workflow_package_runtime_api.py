@@ -16,6 +16,7 @@ from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_fork import RunFork
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -1601,7 +1602,44 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     assert fork_draft_body["sourceInvocationId"] == source_invocation_id
     assert fork_draft_body["invocationInput"] == {"ticker": "MSFT"}
     assert fork.status_code == 201, fork.json()
+    fork_id = int(fork.json()["id"])
     assert len(_runtime_input_history_entries(client, package_id)) == 1
+
+    with session_factory() as session:
+        source_run = session.get(Run, source_run_id)
+        fork_run = session.get(Run, fork_id)
+        source_snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
+        fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
+        fork_artifact = session.get(RunFork, fork_id)
+        target_invocation = (
+            session.query(RunAgentInvocation)
+            .filter_by(run_id=fork_id, step_index=1, slot="analysis")
+            .one()
+        )
+        assert source_run is not None
+        assert fork_run is not None
+        assert source_snapshot is not None
+        assert fork_snapshot is not None
+        assert fork_artifact is not None
+        assert fork_run.input == source_run.input == expected_validated_payload
+        assert fork_snapshot.launch_parameters == source_snapshot.launch_parameters
+        assert fork_artifact.source_run_id == source_run_id
+        assert fork_artifact.lineage_root_run_id == source_run_id
+        assert fork_artifact.source_invocation_id == source_invocation_id
+        assert fork_artifact.source_step_index == 1
+        assert fork_artifact.resume_step_index == 1
+        assert fork_artifact.invocation_input == {"ticker": "TSLA"}
+        assert target_invocation.source_invocation_id == source_invocation_id
+        assert target_invocation.resolved_input == {"ticker": "TSLA"}
+        assert target_invocation.resolved_input_origin == "edited"
+
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(fork_id)
+    fork_detail = _wait_for_run(client, fork_id)
+    fork_invocation = cast(dict[str, Any], fork_detail["steps"][0]["invocations"][0])
+    assert fork_detail["input"] == expected_validated_payload
+    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA"}
+    assert fork_invocation["resolvedInputOrigin"] == "edited"
 
     for index in range(RUNTIME_INPUT_PERSONAL_ENTRY_LIMIT):
         next_launch = client.post(

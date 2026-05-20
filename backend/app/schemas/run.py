@@ -593,6 +593,21 @@ class RunRerunCreateRequest(CamelModel):
     parameters: dict[str, object]
 
 
+class RunForkDraftRead(CamelModel):
+    source_run_id: int
+    source_invocation_id: int = Field(ge=1)
+    target_kind: RunTargetKind
+    target_id: int
+    target_key: str
+    invocation_input: dict[str, object]
+    package_provenance: RunPackageProvenanceRead | None = None
+
+
+class RunForkCreateRequest(CamelModel):
+    source_invocation_id: int = Field(ge=1)
+    invocation_input: dict[str, object]
+
+
 class RunStepReplayDraftRead(CamelModel):
     source_run_id: int
     replay_step_index: int = Field(ge=1)
@@ -633,6 +648,8 @@ __all__ = [
     "RunRead",
     "RunRerunCreateRequest",
     "RunRerunDraftRead",
+    "RunForkCreateRequest",
+    "RunForkDraftRead",
     "RunStepReplayCreateRequest",
     "RunStepReplayDraftRead",
     "RunStatus",

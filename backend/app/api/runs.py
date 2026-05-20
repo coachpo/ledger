@@ -8,13 +8,13 @@ from app.api.dependencies import get_run_service
 from app.core.errors import validation_error
 from app.schemas.run import (
     RunCreatedRead,
+    RunForkCreateRequest,
+    RunForkDraftRead,
     RunListRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
     RunStatus,
-    RunStepReplayCreateRequest,
-    RunStepReplayDraftRead,
     RunTargetKind,
 )
 from app.services.run_service import RunService
@@ -82,26 +82,26 @@ def create_run_rerun(
     return service.create_rerun(run_id, payload)
 
 
-@router.get("/{run_id}/step-replay-draft", response_model=RunStepReplayDraftRead)
-def build_run_step_replay_draft(
+@router.get("/{run_id}/fork-draft", response_model=RunForkDraftRead)
+def build_run_fork_draft(
     run_id: int,
     service: Annotated[RunService, Depends(get_run_service)],
-    step_index: Annotated[int, Query(alias="stepIndex", ge=1)],
-) -> RunStepReplayDraftRead:
-    return service.build_step_replay_draft(run_id, step_index)
+    source_invocation_id: Annotated[int, Query(alias="sourceInvocationId", ge=1)],
+) -> RunForkDraftRead:
+    return service.build_fork_draft(run_id, source_invocation_id)
 
 
 @router.post(
-    "/{run_id}/step-replays",
+    "/{run_id}/forks",
     response_model=RunCreatedRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_run_step_replay(
+def create_run_fork(
     run_id: int,
-    payload: RunStepReplayCreateRequest,
+    payload: RunForkCreateRequest,
     service: Annotated[RunService, Depends(get_run_service)],
 ) -> RunCreatedRead:
-    return service.create_step_replay(run_id, payload)
+    return service.create_fork(run_id, payload)
 
 
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)

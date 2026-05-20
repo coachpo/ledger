@@ -145,6 +145,18 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         )
         return self._list(statement)
 
+    def mark_edited_input(
+        self,
+        invocation: RunAgentInvocation,
+        *,
+        resolved_input: dict[str, Any],
+        source_invocation_id: int,
+    ) -> RunAgentInvocation:
+        invocation.resolved_input = resolved_input
+        invocation.resolved_input_origin = "edited"
+        invocation.source_invocation_id = source_invocation_id
+        return self.add(invocation)
+
     def mark_running(
         self,
         invocation: RunAgentInvocation,

@@ -34,6 +34,7 @@ from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
+from app.repositories.run_fork import RunForkRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
@@ -44,6 +45,8 @@ from app.schemas.memory_report import (
 )
 from app.schemas.run import (
     RunCreatedRead,
+    RunForkCreateRequest,
+    RunForkDraftRead,
     RunInvocationResourceScope,
     RunListItemRead,
     RunListRead,
@@ -159,6 +162,15 @@ class _PreparedWorkflowPackageLaunch:
     preflight: WorkflowPackagePreflightResult
 
 
+@dataclass(frozen=True)
+class _PreparedRunFork:
+    source_run: Run
+    plan: ExecutionPlan
+    copied_steps: list[RunStep]
+    source_invocation: RunAgentInvocation
+    plan_agent: ExecutionPlanAgent
+
+
 @dataclass
 class _PreparedAgentInvocation:
     agent: Agent | PackageRuntimeAgentSpec
@@ -210,6 +222,7 @@ class RunService:
         self.workflow_package_repository = WorkflowPackageRepository(session)
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
+        self.run_fork_repository = RunForkRepository(session)
         self.run_operation_invocation_repository = RunOperationInvocationRepository(session)
         self.execution_plan_builder = ExecutionPlanBuilder(session)
         self.agent_execution_service = AgentExecutionService(
@@ -814,6 +827,40 @@ class RunService:
             min_planned_step_index=replay_step_index,
         )
 
+    def build_fork_draft(
+        self,
+        source_run_id: int,
+        source_invocation_id: int,
+    ) -> RunForkDraftRead:
+        prepared = self._prepare_fork_source(source_run_id, source_invocation_id)
+        source_run = prepared.source_run
+        return RunForkDraftRead.model_validate(
+            {
+                "sourceRunId": source_run.id,
+                "sourceInvocationId": prepared.source_invocation.id,
+                "targetKind": source_run.target_kind,
+                "targetId": source_run.target_id,
+                "targetKey": source_run.target_key,
+                "invocationInput": deepcopy(prepared.source_invocation.resolved_input),
+                "packageProvenance": self._package_provenance_payload(source_run),
+            }
+        )
+
+    def create_fork(
+        self,
+        source_run_id: int,
+        payload: RunForkCreateRequest,
+    ) -> RunCreatedRead:
+        prepared = self._prepare_fork_source(source_run_id, payload.source_invocation_id)
+        invocation_input = self._validate_fork_invocation_input(
+            plan_agent=prepared.plan_agent,
+            invocation_input=cast(dict[str, Any], deepcopy(payload.invocation_input)),
+        )
+        return self._create_queued_fork_run(
+            prepared=prepared,
+            invocation_input=invocation_input,
+        )
+
     def _create_queued_lineage_run(
         self,
         *,
@@ -857,7 +904,7 @@ class RunService:
         )
         run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
             source_run=source_run,
-            validated_input=validated_input,
+            launch_parameters=validated_input,
         )
         try:
             _ = self.run_repository.add(run)
@@ -878,11 +925,108 @@ class RunService:
         self._dispatch_queue_worker()
         return self._to_created_read(run)
 
+    def _create_queued_fork_run(
+        self,
+        *,
+        prepared: _PreparedRunFork,
+        invocation_input: dict[str, Any],
+    ) -> RunCreatedRead:
+        source_run = prepared.source_run
+        source_invocation = prepared.source_invocation
+        resume_step_index = source_invocation.step_index
+        inherited_tokens = self._copied_invocation_token_totals(prepared.copied_steps)
+        lineage_root_run_id = source_run.lineage_root_run_id or source_run.id
+        run = Run(
+            agent_id=source_run.agent_id,
+            target_workflow_id=source_run.target_workflow_id,
+            target_kind=source_run.target_kind,
+            target_id=source_run.target_id,
+            target_key=source_run.target_key,
+            target_version=source_run.target_version,
+            workflow_package_id=source_run.workflow_package_id,
+            workflow_package_key=source_run.workflow_package_key,
+            workflow_package_workflow_key=source_run.workflow_package_workflow_key,
+            extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
+                source_run.extension_dependencies
+            ),
+            input=deepcopy(source_run.input),
+            status=_RUN_STATUS_QUEUED,
+            queued_at=utcnow(),
+            started_at=None,
+            source_run_id=source_run.id,
+            lineage_root_run_id=lineage_root_run_id,
+            forked_from_step_index=source_invocation.step_index,
+            resume_step_index=resume_step_index,
+            final_output=None,
+            total_tokens=inherited_tokens,
+            inherited_tokens=inherited_tokens,
+            executed_tokens=0,
+            trace_id=None,
+            error=None,
+            finished_at=None,
+        )
+        source_snapshot = self._workflow_package_snapshot_for_run(source_run)
+        run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
+            source_run=source_run,
+            launch_parameters=deepcopy(source_snapshot.launch_parameters),
+        )
+        try:
+            _ = self.run_repository.add(run)
+            self.session.flush()
+            self._copy_replay_context_rows(run=run, source_steps=prepared.copied_steps)
+            self._create_planned_run_rows(
+                run=run,
+                plan=prepared.plan,
+                validated_input=deepcopy(source_run.input),
+                min_step_index=resume_step_index,
+            )
+            self.session.flush()
+            target_invocation = self.run_agent_invocation_repository.get_by_run_step_slot(
+                run.id,
+                source_invocation.step_index,
+                source_invocation.slot,
+            )
+            if target_invocation is None:
+                raise business_rule_error(
+                    "run_fork_target_not_found",
+                    "Fork target invocation was not found in the planned descendant run",
+                    details=[
+                        {
+                            "field": "sourceInvocationId",
+                            "issue": (
+                                "Source invocation does not map to a planned target invocation"
+                            ),
+                        }
+                    ],
+                )
+            _ = self.run_agent_invocation_repository.mark_edited_input(
+                target_invocation,
+                resolved_input=deepcopy(invocation_input),
+                source_invocation_id=source_invocation.id,
+            )
+            _ = self.run_fork_repository.create_fork(
+                run_id=run.id,
+                source_run_id=source_run.id,
+                lineage_root_run_id=lineage_root_run_id,
+                source_invocation_id=source_invocation.id,
+                source_step_index=source_invocation.step_index,
+                resume_step_index=resume_step_index,
+                invocation_input=deepcopy(invocation_input),
+            )
+            self.session.commit()
+            self.session.refresh(run)
+        except Exception:
+            self.session.rollback()
+            raise
+
+        self._dispatch_queue_worker()
+        return self._to_created_read(run)
+
     def _lineage_workflow_package_snapshot(
         self,
         *,
         source_run: Run,
-        validated_input: dict[str, Any],
+        launch_parameters: dict[str, Any],
     ) -> RunWorkflowPackageSnapshot:
         source_snapshot = self._workflow_package_snapshot_for_run(source_run)
         return RunWorkflowPackageSnapshot(
@@ -902,7 +1046,7 @@ class RunService:
             extension_dependencies=deepcopy(source_snapshot.extension_dependencies),
             local_resource_refs=deepcopy(source_snapshot.local_resource_refs),
             input_schema=deepcopy(source_snapshot.input_schema),
-            launch_parameters=deepcopy(validated_input),
+            launch_parameters=deepcopy(launch_parameters),
             resolved_model_connections=deepcopy(source_snapshot.resolved_model_connections),
             preflight_summary=deepcopy(source_snapshot.preflight_summary),
         )
@@ -1062,6 +1206,185 @@ class RunService:
                 version=None,
             ),
         )
+
+    def _prepare_fork_source(
+        self,
+        source_run_id: int,
+        source_invocation_id: int,
+    ) -> _PreparedRunFork:
+        source_run = self._get_run_or_raise(source_run_id)
+        if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
+        if source_run.status != _RUN_STATUS_SUCCEEDED:
+            raise business_rule_error(
+                "run_fork_source_not_succeeded",
+                "Only succeeded runs can be forked",
+            )
+
+        source_invocation = self._source_agent_invocation_for_id(
+            source_run,
+            source_invocation_id,
+        )
+        if source_invocation is None:
+            source_operation = self._source_operation_invocation_for_id(
+                source_run,
+                source_invocation_id,
+            )
+            if source_operation is not None:
+                raise self._unsupported_fork_target_error(source_invocation_id)
+            raise not_found_error("Run agent invocation")
+
+        plan = self._build_plan_for_run(source_run)
+        plan_step = self._plan_step_for_index(plan, source_invocation.step_index)
+        if plan_step is None:
+            raise business_rule_error(
+                "run_fork_step_not_found",
+                f"Fork step {source_invocation.step_index} does not exist on the source run plan",
+            )
+        plan_agent = next(
+            (agent for agent in plan_step.agents if agent.slot == source_invocation.slot),
+            None,
+        )
+        if plan_agent is None:
+            if any(operation.slot == source_invocation.slot for operation in plan_step.operations):
+                raise self._unsupported_fork_target_error(source_invocation_id)
+            raise business_rule_error(
+                "run_fork_target_not_found",
+                "Source invocation does not map to a forkable planned agent target",
+                details=[
+                    {
+                        "field": "sourceInvocationId",
+                        "issue": "Source invocation does not map to a planned agent target",
+                    }
+                ],
+            )
+
+        source_steps_by_index = {
+            step.step_index: step for step in cast(list[RunStep], source_run.steps)
+        }
+        fork_step = source_steps_by_index.get(source_invocation.step_index)
+        if fork_step is None:
+            raise business_rule_error(
+                "run_fork_step_not_found",
+                f"Fork step {source_invocation.step_index} does not exist on the source run",
+            )
+        if fork_step.status != _RUN_STATUS_SUCCEEDED or fork_step.persisted_at is None:
+            raise business_rule_error(
+                "run_fork_step_not_persisted",
+                f"Fork step {source_invocation.step_index} must be succeeded and persisted",
+            )
+
+        copied_steps = self._validated_copied_context_steps(
+            plan=plan,
+            source_steps_by_index=source_steps_by_index,
+            resume_step_index=source_invocation.step_index,
+            error_code_prefix="run_fork",
+        )
+        return _PreparedRunFork(
+            source_run=source_run,
+            plan=plan,
+            copied_steps=copied_steps,
+            source_invocation=source_invocation,
+            plan_agent=plan_agent,
+        )
+
+    @staticmethod
+    def _source_agent_invocation_for_id(
+        source_run: Run,
+        source_invocation_id: int,
+    ) -> RunAgentInvocation | None:
+        for step in cast(list[RunStep], source_run.steps):
+            for invocation in cast(list[RunAgentInvocation], step.invocations):
+                if invocation.id == source_invocation_id:
+                    return invocation
+        return None
+
+    @staticmethod
+    def _source_operation_invocation_for_id(
+        source_run: Run,
+        source_invocation_id: int,
+    ) -> RunOperationInvocation | None:
+        for step in cast(list[RunStep], source_run.steps):
+            for operation in cast(list[RunOperationInvocation], step.operation_invocations):
+                if operation.id == source_invocation_id:
+                    return operation
+        return None
+
+    @staticmethod
+    def _unsupported_fork_target_error(source_invocation_id: int) -> ApiError:
+        return business_rule_error(
+            "run_fork_target_unsupported",
+            "Only agent invocation targets can be forked in this phase",
+            details=[
+                {
+                    "field": "sourceInvocationId",
+                    "issue": (
+                        f"Invocation target {source_invocation_id} is an operation/tool target; "
+                        "only agent invocations are supported"
+                    ),
+                }
+            ],
+        )
+
+    @staticmethod
+    def _plan_step_for_index(
+        plan: ExecutionPlan,
+        step_index: int,
+    ) -> ExecutionPlanStep | None:
+        return next((step for step in plan.steps if step.index == step_index), None)
+
+    def _validated_copied_context_steps(
+        self,
+        *,
+        plan: ExecutionPlan,
+        source_steps_by_index: dict[int, RunStep],
+        resume_step_index: int,
+        error_code_prefix: str,
+    ) -> list[RunStep]:
+        plan_step_indexes = {step.index for step in plan.steps}
+        if resume_step_index not in plan_step_indexes:
+            raise business_rule_error(
+                f"{error_code_prefix}_step_not_found",
+                f"Replay step {resume_step_index} does not exist on the source run plan",
+            )
+
+        copied_steps: list[RunStep] = []
+        for step_index in sorted(index for index in plan_step_indexes if index < resume_step_index):
+            step = source_steps_by_index.get(step_index)
+            if step is None or step.status != _RUN_STATUS_SUCCEEDED or step.persisted_at is None:
+                raise business_rule_error(
+                    f"{error_code_prefix}_context_not_persisted",
+                    "All source context steps must be succeeded and persisted",
+                    details=[{"field": f"steps.{step_index}", "issue": "Step is not persisted"}],
+                )
+            invocations = cast(list[RunAgentInvocation], step.invocations)
+            for invocation in invocations:
+                if not self._source_context_invocation_is_persisted(invocation):
+                    raise business_rule_error(
+                        f"{error_code_prefix}_context_output_not_persisted",
+                        "All source context invocation outputs must be succeeded and persisted",
+                        details=[
+                            {
+                                "field": f"steps.{step_index}.{invocation.slot}",
+                                "issue": "Invocation output is not persisted",
+                            }
+                        ],
+                    )
+            operations = cast(list[RunOperationInvocation], step.operation_invocations)
+            for operation in operations:
+                if not self._source_context_operation_is_persisted(operation):
+                    raise business_rule_error(
+                        f"{error_code_prefix}_context_operation_not_persisted",
+                        "All source context operation outputs must be succeeded and persisted",
+                        details=[
+                            {
+                                "field": f"steps.{step_index}.{operation.slot}",
+                                "issue": "Operation output is not persisted",
+                            }
+                        ],
+                    )
+            copied_steps.append(step)
+        return copied_steps
 
     def _prepare_step_replay_source(
         self,
@@ -1897,10 +2220,15 @@ class RunService:
                 if not plan_agent.optional and fatal_error is None:
                     fatal_error = agent_failure.message
                 continue
+            resolved_input_origin = (
+                "edited"
+                if invocation.resolved_input_origin == "edited"
+                else self._runtime_resolved_input_origin(plan_agent)
+            )
             _ = self.run_agent_invocation_repository.mark_running(
                 invocation,
                 resolved_input=prepared_agent.resolved_input,
-                resolved_input_origin=self._runtime_resolved_input_origin(plan_agent),
+                resolved_input_origin=resolved_input_origin,
             )
             prepared_invocations.append(prepared_agent)
 
@@ -2055,18 +2383,24 @@ class RunService:
                 input_schema,
                 candidate_key=f"{agent.key}_input",
             )
-            input_node = self.schema_compiler.parse_json_schema_node(
-                input_schema,
-                path=f"steps[{step_index - 1}].{agent.key}.inputSchema",
-            )
-            resolved_input = self._resolve_agent_input(
-                step_index=step_index,
-                plan_agent=plan_agent,
-                input_node=input_node,
-                input_model=input_model,
-                initial_input=initial_input,
-                slot_outputs=slot_outputs,
-            )
+            if invocation.resolved_input_origin == "edited":
+                resolved_input = self._validate_runtime_edited_invocation_input(
+                    input_model=input_model,
+                    invocation=invocation,
+                )
+            else:
+                input_node = self.schema_compiler.parse_json_schema_node(
+                    input_schema,
+                    path=f"steps[{step_index - 1}].{agent.key}.inputSchema",
+                )
+                resolved_input = self._resolve_agent_input(
+                    step_index=step_index,
+                    plan_agent=plan_agent,
+                    input_node=input_node,
+                    input_model=input_model,
+                    initial_input=initial_input,
+                    slot_outputs=slot_outputs,
+                )
             return (
                 _PreparedAgentInvocation(
                     agent=agent,
@@ -2604,6 +2938,44 @@ class RunService:
             json_schema=output_schema.json_schema,
             registry_refs=[],
         )
+
+    def _validate_fork_invocation_input(
+        self,
+        *,
+        plan_agent: ExecutionPlanAgent,
+        invocation_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        agent = self._resolve_runtime_agent(plan_agent)
+        input_schema = self._runtime_agent_input_schema(agent)
+        input_model = self._build_input_model(
+            input_schema,
+            candidate_key=f"{agent.key}_input",
+        )
+        try:
+            validated = input_model.model_validate(invocation_input)
+        except ValidationError as exc:
+            raise business_rule_error(
+                "run_fork_invalid_invocation_input",
+                "Fork invocation input failed agent input schema validation",
+                details=self._validation_details_from_pydantic_error(exc),
+            ) from exc
+        return validated.model_dump(mode="json", exclude_none=True)
+
+    def _validate_runtime_edited_invocation_input(
+        self,
+        *,
+        input_model: type[BaseModel],
+        invocation: RunAgentInvocation,
+    ) -> dict[str, Any]:
+        try:
+            validated = input_model.model_validate(invocation.resolved_input)
+        except ValidationError as exc:
+            raise RunExecutionError(
+                code="agent_input_validation_failed",
+                message="Edited agent input failed schema validation",
+                details=self._validation_details_from_pydantic_error(exc),
+            ) from exc
+        return validated.model_dump(mode="json", exclude_none=True)
 
     def _validate_run_input(
         self,

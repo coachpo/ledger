@@ -453,6 +453,69 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
         assert operation.request_metadata == request_metadata
 
 
+def test_fork_rejects_operation_invocation_target_without_creating_run(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": http_node_package_source()},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    for key, value in {
+        "slack_webhook_token": "slack-secret-value",
+        "body_token": "body-secret-value",
+    }.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package['id']}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package['id']}/launches",
+        json={
+            "workflowKey": "notify",
+            "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "MSFT"},
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    operation = cast(
+        dict[str, Any],
+        detail_response.json()["steps"][0]["operationInvocations"][0],
+    )
+    operation_id = int(operation["id"])
+
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        run.status = "succeeded"
+        session.commit()
+        runs_before = session.query(Run).count()
+
+    draft_response = client.get(
+        f"/api/runs/{run_id}/fork-draft",
+        params={"sourceInvocationId": operation_id},
+    )
+    create_fork_response = client.post(
+        f"/api/runs/{run_id}/forks",
+        json={"sourceInvocationId": operation_id, "invocationInput": {}},
+    )
+
+    assert draft_response.status_code == 400, draft_response.json()
+    assert draft_response.json()["code"] == "run_fork_target_unsupported"
+    assert create_fork_response.status_code == 400, create_fork_response.json()
+    assert create_fork_response.json()["code"] == "run_fork_target_unsupported"
+    with session_factory() as session:
+        assert session.query(Run).count() == runs_before
+
+
 def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -728,13 +791,13 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
         assert rerun.workflow_package_snapshot.launch_parameters == {"ticker": "AAPL"}
 
 
-def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
+def test_package_deletion_preserves_snapshot_run_and_allows_fork(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot replay output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot fork output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
@@ -747,6 +810,12 @@ def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
+    source_invocation = cast(
+        dict[str, Any],
+        succeeded_detail["steps"][0]["invocations"][0],
+    )
+    source_invocation_id = int(source_invocation["id"])
+    assert source_invocation["resolvedInput"] == {"ticker": "NVDA"}
     with session_factory() as session:
         assert session.get(Run, run_id) is not None
         assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
@@ -781,41 +850,60 @@ def test_package_deletion_preserves_snapshot_run_and_allows_step_replay(
         "unavailableReason": "missingPackage",
     }
 
-    replay_response = client.post(
-        f"/api/runs/{run_id}/step-replays",
-        json={"replayStepIndex": 1, "parameters": {"ticker": "TSLA"}},
+    fork_draft_response = client.get(
+        f"/api/runs/{run_id}/fork-draft",
+        params={"sourceInvocationId": source_invocation_id},
     )
-    assert replay_response.status_code == 201, replay_response.json()
-    replay_id = int(replay_response.json()["id"])
-    replay_detail_response = client.get(f"/api/runs/{replay_id}")
-    assert replay_detail_response.status_code == 200, replay_detail_response.json()
-    replay_provenance = cast(dict[str, Any], replay_detail_response.json()["packageProvenance"])
-    assert replay_provenance["workflowPackageId"] == package_id
-    assert replay_provenance["launchSnapshot"]["parameters"] == {"ticker": "TSLA"}
-    assert replay_provenance["currentPackage"]["available"] is False
-    assert "status" not in replay_provenance["currentPackage"]
+    fork_response = client.post(
+        f"/api/runs/{run_id}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA"},
+        },
+    )
+    assert fork_draft_response.status_code == 200, fork_draft_response.json()
+    assert fork_draft_response.json()["invocationInput"] == {"ticker": "NVDA"}
+    assert fork_response.status_code == 201, fork_response.json()
+    fork_id = int(fork_response.json()["id"])
+    fork_detail_response = client.get(f"/api/runs/{fork_id}")
+    assert fork_detail_response.status_code == 200, fork_detail_response.json()
+    fork_detail = cast(dict[str, Any], fork_detail_response.json())
+    fork_provenance = cast(dict[str, Any], fork_detail["packageProvenance"])
+    fork_invocation = cast(dict[str, Any], fork_detail["steps"][0]["invocations"][0])
+    assert fork_detail["input"] == {"ticker": "NVDA"}
+    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA"}
+    assert fork_invocation["resolvedInputOrigin"] == "edited"
+    assert fork_invocation["sourceInvocationId"] == source_invocation_id
+    assert fork_provenance["workflowPackageId"] == package_id
+    assert fork_provenance["launchSnapshot"]["parameters"] == {"ticker": "NVDA"}
+    assert fork_provenance["currentPackage"]["available"] is False
+    assert "status" not in fork_provenance["currentPackage"]
     by_deleted_snapshot_model = client.get(
         "/api/runs",
         params={"modelConnectionKey": "package_runtime_model"},
     )
     assert by_deleted_snapshot_model.status_code == 200, by_deleted_snapshot_model.json()
     assert [item["id"] for item in by_deleted_snapshot_model.json()["items"]] == [
-        replay_id,
+        fork_id,
         run_id,
     ]
 
     with session_factory() as session:
         run = session.get(Run, run_id)
-        replay_run = session.get(Run, replay_id)
+        fork_run = session.get(Run, fork_id)
         assert run is not None
-        assert replay_run is not None
+        assert fork_run is not None
         assert run.workflow_package_id is None
-        assert replay_run.workflow_package_id is None
+        assert fork_run.workflow_package_id is None
         assert run.workflow_package_snapshot is not None
-        assert replay_run.workflow_package_snapshot is not None
+        assert fork_run.workflow_package_snapshot is not None
         assert run.workflow_package_snapshot.workflow_package_id == package_id
-        assert replay_run.workflow_package_snapshot.compiled_hash == (
+        assert fork_run.workflow_package_snapshot.compiled_hash == (
             run.workflow_package_snapshot.compiled_hash
+        )
+        assert fork_run.input == run.input
+        assert fork_run.workflow_package_snapshot.launch_parameters == (
+            run.workflow_package_snapshot.launch_parameters
         )
         assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0

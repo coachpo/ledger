@@ -41,8 +41,6 @@ LEGACY_ROUTE_PATHS = (
     "/api/v2/personas",
     "/api/v1/templates/seed",
     "/api/workflows/{workflow_id}/runs",
-    "/api/runs/{run_id}/fork-draft",
-    "/api/runs/{run_id}/forks",
 )
 LEGACY_BACKEND_FILES = (
     "app/api/orchestration.py",
