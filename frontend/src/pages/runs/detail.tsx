@@ -1185,7 +1185,6 @@ function ExecutionOutline({
           <Activity className="size-4 text-muted-foreground" />
           <h2 className="text-base font-semibold tracking-tight">Execution outline</h2>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Choose one run, step, or memory target to inspect.</p>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-3">
@@ -1737,7 +1736,6 @@ function EvidenceViewer({
               <h2 className="text-base font-semibold tracking-tight">{title}</h2>
               <Badge variant="outline">{inspectionPaneLabel(activeInspection.pane)}</Badge>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">One active evidence viewer is shown at a time; choose a pane to swap payloads without stacking reports.</p>
           </div>
           <EvidencePaneNav activeInspection={activeInspection} onSelect={onSelect} />
         </div>
