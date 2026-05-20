@@ -1,17 +1,19 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   buildRunsListQueryKey,
+  createRunFork,
   createRunRerun,
-  createRunStepReplay,
   getRun,
+  getRunForkDraft,
   getRunRerunDraft,
-  getRunStepReplayDraft,
   listRuns,
 } from "@/lib/api/runs";
 import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   RunCreatedRead,
+  RunForkCreateRequest,
+  RunForkDraftRead,
   RunListParams,
   RunListRead,
   RunRead,
@@ -50,6 +52,11 @@ function hasActiveDetailRun(data: RunRead | undefined): boolean {
 export type CreateRunRerunVariables = {
   runId: IdParam;
   payload: RunRerunCreateRequest;
+};
+
+export type CreateRunForkVariables = {
+  runId: IdParam;
+  payload: RunForkCreateRequest;
 };
 
 export type CreateRunStepReplayVariables = {
@@ -117,36 +124,64 @@ export function useCreateRunRerun() {
   });
 }
 
+export function useRunForkDraft(
+  runId: IdParam | undefined,
+  sourceInvocationId: number | undefined,
+  options: DraftQueryOptions = {},
+): UseQueryResult<RunForkDraftRead, Error> {
+  const resolvedRunId = runId ?? "";
+  const resolvedSourceInvocationId = sourceInvocationId ?? 0;
+
+  return useQuery({
+    queryKey: queryKeys.platform.runs.forkDraft(resolvedRunId, resolvedSourceInvocationId),
+    queryFn: ({ signal }) => getRunForkDraft(resolvedRunId, resolvedSourceInvocationId, signal),
+    enabled: Boolean(runId) && sourceInvocationId !== undefined && (options.enabled ?? true),
+    refetchInterval: options.refetchInterval,
+  });
+}
+
+export function useCreateRunFork() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RunCreatedRead, Error, CreateRunForkVariables>({
+    mutationFn: ({ runId, payload }) => createRunFork(runId, payload),
+    onSuccess: async (createdRun, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(variables.runId) }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.runs.forkDraft(variables.runId, variables.payload.sourceInvocationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(createdRun.id) }),
+      ]);
+    },
+  });
+}
+
+const STEP_REPLAY_REPLACED_ERROR = "Run step replay has been replaced by invocation forks.";
+
 export function useRunStepReplayDraft(
   runId: IdParam | undefined,
   stepIndex: number | undefined,
   options: DraftQueryOptions = {},
 ): UseQueryResult<RunStepReplayDraftRead, Error> {
   const resolvedRunId = runId ?? "";
-  const resolvedStepIndex = stepIndex ?? 0;
+  const resolvedSourceInvocationId = stepIndex ?? 0;
 
   return useQuery({
-    queryKey: queryKeys.platform.runs.stepReplayDraft(resolvedRunId, resolvedStepIndex),
-    queryFn: ({ signal }) => getRunStepReplayDraft(resolvedRunId, resolvedStepIndex, signal),
-    enabled: Boolean(runId) && stepIndex !== undefined && (options.enabled ?? true),
+    queryKey: queryKeys.platform.runs.forkDraft(resolvedRunId, resolvedSourceInvocationId),
+    queryFn: async (): Promise<RunStepReplayDraftRead> => {
+      throw new Error(STEP_REPLAY_REPLACED_ERROR);
+    },
+    enabled: false,
     refetchInterval: options.refetchInterval,
   });
 }
 
 export function useCreateRunStepReplay() {
-  const queryClient = useQueryClient();
-
   return useMutation<RunCreatedRead, Error, CreateRunStepReplayVariables>({
-    mutationFn: ({ runId, payload }) => createRunStepReplay(runId, payload),
-    onSuccess: async (createdRun, variables) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(variables.runId) }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.platform.runs.stepReplayDraft(variables.runId, variables.payload.replayStepIndex),
-        }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(createdRun.id) }),
-      ]);
+    mutationFn: async (): Promise<RunCreatedRead> => {
+      throw new Error(STEP_REPLAY_REPLACED_ERROR);
     },
   });
 }

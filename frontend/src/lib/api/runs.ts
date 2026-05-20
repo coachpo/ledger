@@ -4,11 +4,11 @@ import type {
   RunCreatedRead,
   RunListParams,
   RunListRead,
+  RunForkCreateRequest,
+  RunForkDraftRead,
   RunRead,
   RunRerunCreateRequest,
   RunRerunDraftRead,
-  RunStepReplayCreateRequest,
-  RunStepReplayDraftRead,
 } from "../types/run";
 
 function runPath(runId: IdParam): string {
@@ -67,22 +67,22 @@ export function createRunRerun(
   });
 }
 
-export function getRunStepReplayDraft(
+export function getRunForkDraft(
   runId: IdParam,
-  stepIndex: number,
+  sourceInvocationId: number,
   signal?: AbortSignal,
-): Promise<RunStepReplayDraftRead> {
-  return requestPlatform<RunStepReplayDraftRead>(`${runPath(runId)}/step-replay-draft`, {
-    query: { stepIndex },
+): Promise<RunForkDraftRead> {
+  return requestPlatform<RunForkDraftRead>(`${runPath(runId)}/fork-draft`, {
+    query: { sourceInvocationId },
     signal,
   });
 }
 
-export function createRunStepReplay(
+export function createRunFork(
   runId: IdParam,
-  payload: RunStepReplayCreateRequest,
+  payload: RunForkCreateRequest,
 ): Promise<RunCreatedRead> {
-  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/step-replays`, {
+  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/forks`, {
     body: payload,
     method: "POST",
   });
@@ -90,11 +90,11 @@ export function createRunStepReplay(
 
 export const runsApi = {
   buildListQueryKey: buildRunsListQueryKey,
+  createFork: createRunFork,
   createRerun: createRunRerun,
-  createStepReplay: createRunStepReplay,
   get: getRun,
+  getForkDraft: getRunForkDraft,
   getRerunDraft: getRunRerunDraft,
-  getStepReplayDraft: getRunStepReplayDraft,
   list: listRuns,
   normalizeListParams: normalizeRunListParams,
 } as const;

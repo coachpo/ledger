@@ -36,14 +36,6 @@ async function loadRunsApi(baseUrl: string = "") {
   return import("./runs");
 }
 
-type RunsApiWithForks = Awaited<ReturnType<typeof loadRunsApi>> & {
-  createRunFork?: (
-    runId: number,
-    payload: { invocationInput: Record<string, unknown>; sourceInvocationId: number },
-  ) => Promise<unknown>;
-  getRunForkDraft?: (runId: number, sourceInvocationId: number, signal?: AbortSignal) => Promise<unknown>;
-};
-
 let fetchMock = createFetchMock();
 
 beforeEach(() => {
@@ -199,8 +191,7 @@ describe("runs api", () => {
   });
 
   it("reads fork drafts with the source invocation query parameter", async () => {
-    const runsApi = (await loadRunsApi("https://signaldeck.example.com/api/v1/")) as RunsApiWithForks;
-    expect(runsApi.getRunForkDraft, "getRunForkDraft helper must be exported").toEqual(expect.any(Function));
+    const { getRunForkDraft } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(
       jsonResponse(
         {
@@ -216,7 +207,7 @@ describe("runs api", () => {
       ),
     );
 
-    await expect(runsApi.getRunForkDraft?.(42, 77)).resolves.toEqual({
+    await expect(getRunForkDraft(42, 77)).resolves.toEqual({
       invocationInput: { ticker: "MSFT" },
       packageProvenance: null,
       sourceInvocationId: 77,
@@ -234,12 +225,11 @@ describe("runs api", () => {
   });
 
   it("creates forks with source invocation input payloads", async () => {
-    const runsApi = (await loadRunsApi("https://signaldeck.example.com/api/v1/")) as RunsApiWithForks;
-    expect(runsApi.createRunFork, "createRunFork helper must be exported").toEqual(expect.any(Function));
+    const { createRunFork } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 100, status: "queued" }, 201));
 
     await expect(
-      runsApi.createRunFork?.(42, {
+      createRunFork(42, {
         sourceInvocationId: 77,
         invocationInput: { ticker: "TSLA" },
       }),

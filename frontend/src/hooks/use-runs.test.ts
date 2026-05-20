@@ -10,11 +10,9 @@ const runsApiState = vi.hoisted(() => ({
   buildRunsListQueryKeyMock: vi.fn((params: unknown) => ["api", "platform", "runs", "list", params]),
   createRunForkMock: vi.fn(),
   createRunRerunMock: vi.fn(),
-  legacyCreateReplayMock: vi.fn(),
   getRunForkDraftMock: vi.fn(),
   getRunMock: vi.fn(),
   getRunRerunDraftMock: vi.fn(),
-  legacyGetReplayDraftMock: vi.fn(),
   listRunsMock: vi.fn(),
 }));
 
@@ -24,20 +22,13 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: reactQueryState.invalidateQueriesMock }),
 }));
 
-const legacyReplayApiExports = vi.hoisted(() => ({
-  create: "createRun" + "StepReplay",
-  draft: "getRun" + "StepReplayDraft",
-}));
-
 vi.mock("@/lib/api/runs", () => ({
   buildRunsListQueryKey: runsApiState.buildRunsListQueryKeyMock,
   createRunFork: runsApiState.createRunForkMock,
   createRunRerun: runsApiState.createRunRerunMock,
-  [legacyReplayApiExports.create]: runsApiState.legacyCreateReplayMock,
   getRun: runsApiState.getRunMock,
   getRunForkDraft: runsApiState.getRunForkDraftMock,
   getRunRerunDraft: runsApiState.getRunRerunDraftMock,
-  [legacyReplayApiExports.draft]: runsApiState.legacyGetReplayDraftMock,
   listRuns: runsApiState.listRunsMock,
 }));
 
@@ -45,27 +36,7 @@ import { queryKeys } from "@/lib/query-keys";
 import type { RunListRead, RunRead, RunStatus } from "@/lib/types/run";
 import * as runsHooks from "./use-runs";
 
-const { useCreateRunRerun, useRun, useRunRerunDraft, useRuns } = runsHooks;
-
-type RunForkDraftHook = (
-  runId: number | string | undefined,
-  sourceInvocationId: number | undefined,
-  options?: { enabled?: boolean; refetchInterval?: false | number },
-) => unknown;
-
-type RunForkCreateHook = () => unknown;
-
-type RunForkHooks = typeof runsHooks & {
-  useCreateRunFork?: RunForkCreateHook;
-  useRunForkDraft?: RunForkDraftHook;
-};
-
-type RunForkQueryKeys = typeof queryKeys.platform.runs & {
-  forkDraft?: (runId: number | string, sourceInvocationId: number) => readonly unknown[];
-};
-
-const runForkHooks = runsHooks as RunForkHooks;
-const runForkQueryKeys = queryKeys.platform.runs as RunForkQueryKeys;
+const { useCreateRunFork, useCreateRunRerun, useRun, useRunForkDraft, useRunRerunDraft, useRuns } = runsHooks;
 
 type RefetchIntervalResolver<TData> = (query: {
   state: { data: TData | undefined };
@@ -244,33 +215,28 @@ describe("useRuns hooks", () => {
 
   it("keys fork draft queries by run id and source invocation id", () => {
     reactQueryState.useQueryMock.mockClear();
-    expect(runForkHooks.useRunForkDraft, "useRunForkDraft hook must be exported").toEqual(expect.any(Function));
-    expect(runForkQueryKeys.forkDraft, "queryKeys.platform.runs.forkDraft must be exported").toEqual(
-      expect.any(Function),
-    );
-
-    runForkHooks.useRunForkDraft?.(18, 77, { enabled: true });
+    useRunForkDraft(18, 77, { enabled: true });
 
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         enabled: true,
-        queryKey: runForkQueryKeys.forkDraft?.(18, 77),
+        queryKey: queryKeys.platform.runs.forkDraft(18, 77),
       }),
     );
 
-    runForkHooks.useRunForkDraft?.(undefined, 77);
+    useRunForkDraft(undefined, 77);
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         enabled: false,
-        queryKey: runForkQueryKeys.forkDraft?.("", 77),
+        queryKey: queryKeys.platform.runs.forkDraft("", 77),
       }),
     );
 
-    runForkHooks.useRunForkDraft?.(18, undefined, { enabled: true });
+    useRunForkDraft(18, undefined, { enabled: true });
     expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         enabled: false,
-        queryKey: runForkQueryKeys.forkDraft?.(18, 0),
+        queryKey: queryKeys.platform.runs.forkDraft(18, 0),
       }),
     );
   });
@@ -304,12 +270,7 @@ describe("useRuns hooks", () => {
   it("invalidates run list, details, and fork draft after fork create", async () => {
     reactQueryState.useMutationMock.mockClear();
     reactQueryState.invalidateQueriesMock.mockClear();
-    expect(runForkHooks.useCreateRunFork, "useCreateRunFork hook must be exported").toEqual(expect.any(Function));
-    expect(runForkQueryKeys.forkDraft, "queryKeys.platform.runs.forkDraft must be exported").toEqual(
-      expect.any(Function),
-    );
-
-    runForkHooks.useCreateRunFork?.();
+    useCreateRunFork();
 
     const mutationOptions = reactQueryState.useMutationMock.mock.calls.at(-1)?.[0] as {
       onSuccess: (
@@ -336,7 +297,7 @@ describe("useRuns hooks", () => {
       queryKey: queryKeys.platform.runs.detail(18),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: runForkQueryKeys.forkDraft?.(18, 77),
+      queryKey: queryKeys.platform.runs.forkDraft(18, 77),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.detail(100),
