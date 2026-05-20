@@ -1028,6 +1028,65 @@ describe("RunsDetailPage", () => {
     expect(aggregatedText.indexOf("agentSecond")).toBeLessThan(aggregatedText.indexOf("agentFirst"));
   });
 
+  it("enables multiline string views through runs payload wrappers", () => {
+    const markdownTable = "| Symbol | Rating |\n| --- | --- |\n| AAPL | Buy |";
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          finalOutput: { summary: "Line one\nLine two", report: markdownTable },
+          steps: [
+            buildStep({
+              invocations: [
+                buildInvocation({
+                  output: { report: markdownTable },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const defaultRender = render(<RunsDetailPage />);
+    const finalOutput = screen.getByTestId("runs-detail-final-output");
+
+    expect(
+      within(finalOutput).getAllByRole("tab", { name: "Raw JSON" })[0],
+    ).toHaveAttribute("data-state", "active");
+    expect(
+      within(finalOutput).getAllByRole("tab", { name: "Markdown" }),
+    ).toHaveLength(2);
+
+    fireEvent.mouseDown(
+      within(finalOutput).getAllByRole("tab", { name: "Plain text" })[0],
+      { button: 0 },
+    );
+    expect(
+      finalOutput.querySelector('[data-structured-string-view="plain-text"]')
+        ?.textContent,
+    ).toBe("Line one\nLine two");
+
+    fireEvent.mouseDown(
+      within(finalOutput).getAllByRole("tab", { name: "Markdown" })[1],
+      { button: 0 },
+    );
+    expect(finalOutput.querySelector("table")).toBeInTheDocument();
+
+    defaultRender.unmount();
+    searchParamsMock = new URLSearchParams("inspect=step:1");
+    render(<RunsDetailPage />);
+
+    const aggregatedOutput = screen.getByTestId(
+      "runs-step-1-aggregated-output",
+    );
+    fireEvent.mouseDown(
+      within(aggregatedOutput).getByRole("tab", { name: "Markdown" }),
+      { button: 0 },
+    );
+
+    expect(aggregatedOutput.querySelector("table")).toBeInTheDocument();
+  });
+
   it("renders completed null final output instead of the pending-state copy", () => {
     useRunMock.mockReturnValue(queryResult(buildRun({ finalOutput: null, status: "succeeded" })));
 
@@ -1036,6 +1095,7 @@ describe("RunsDetailPage", () => {
     const finalOutput = screen.getByTestId("runs-detail-final-output");
 
     expect(finalOutput).toHaveTextContent("null");
+    expect(finalOutput.querySelector("[data-structured-string-view]")).toBeNull();
     expect(finalOutput).not.toHaveTextContent("Final output is not available yet.");
   });
 

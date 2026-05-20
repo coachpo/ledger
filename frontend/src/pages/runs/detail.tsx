@@ -492,7 +492,7 @@ function JsonBlock({ label, testId, value }: { label?: string; testId?: string; 
   return (
     <div className="min-w-0 space-y-2">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
-      <StructuredValueInspector className="max-w-full rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      <StructuredValueInspector className="max-w-full rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
     </div>
   );
 }
@@ -501,7 +501,7 @@ function RunPayloadPane({ headingId, label, testId, value }: { headingId: string
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
-      <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
     </section>
   );
 }
