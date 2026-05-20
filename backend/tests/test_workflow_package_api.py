@@ -279,6 +279,11 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
     export = client.get(f"/api/workflow-packages/{created['id']}/export")
     assert export.status_code == 200, export.text
     assert export.headers["content-type"].startswith("application/yaml")
+    expected_content_disposition = (
+        'attachment; filename="tradingagents_advisory_research.yaml"; '
+        + "filename*=UTF-8''tradingagents_advisory_research.yaml"
+    )
+    assert export.headers["content-disposition"] == expected_content_disposition
     assert "apiVersion: signaldeck.workflowPackage/v1" in export.text
     assert "modelConnection: tradingagents_primary_model" in export.text
     assert "headers:" not in export.text

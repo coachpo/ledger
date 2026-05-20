@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, NoReturn, cast
+from urllib.parse import quote
 
 from fastapi import Response, status
 from sqlalchemy import select
@@ -256,7 +257,18 @@ class WorkflowPackageService:
                 "compiledPlan": package.compiled_plan,
             }
         )
-        return Response(content=exported, media_type="application/yaml")
+        filename = f"{package.key}.yaml"
+        encoded_filename = quote(filename, safe="")
+        return Response(
+            content=exported,
+            media_type="application/yaml",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{filename}"; '
+                    f"filename*=UTF-8''{encoded_filename}"
+                )
+            },
+        )
 
     def import_package(self, payload: WorkflowPackageImportRequest) -> WorkflowPackageRead:
         prepared = self._prepare_manifest_or_raise(payload.manifest_source)
