@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const reactQueryState = vi.hoisted(() => ({
   capturedMutationOptions: null as {
     mutationFn?: (variables: unknown) => unknown;
+    onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
     onSuccess?: (result: unknown, variables: unknown) => unknown;
   } | null,
   invalidateQueriesMock: vi.fn(),
@@ -12,6 +13,7 @@ const reactQueryState = vi.hoisted(() => ({
 vi.mock("@tanstack/react-query", () => ({
   useMutation: (options: {
     mutationFn?: (variables: unknown) => unknown;
+    onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
     onSuccess?: (result: unknown, variables: unknown) => unknown;
   }) => {
     reactQueryState.capturedMutationOptions = options;
@@ -56,6 +58,7 @@ import {
   useCreateWorkflowPackageLaunch,
   useCreateWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackage,
+  useDeleteWorkflowPackages,
   useDeleteWorkflowPackageRuntimeInputPersonalEntry,
   useUpdateWorkflowPackage,
   useUpdateWorkflowPackageRuntimeInputPersonalEntry,
@@ -67,6 +70,7 @@ import {
 
 type CapturedMutationOptions = {
   mutationFn?: (variables: unknown) => unknown;
+  onSettled?: (result: unknown, error: unknown, variables: unknown) => unknown;
   onSuccess?: (result: unknown, variables: unknown) => unknown;
 };
 
@@ -257,6 +261,73 @@ describe("useWorkflowPackages", () => {
     await mutationOptions.onSuccess?.(undefined, 15);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.detail(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.all,
+    });
+  });
+
+  it("composes single-package deletes for bulk workflow package deletion", async () => {
+    useDeleteWorkflowPackages();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await mutationOptions.mutationFn?.([15, 16]);
+    expect(deleteWorkflowPackage).toHaveBeenCalledWith(15);
+    expect(deleteWorkflowPackage).toHaveBeenCalledWith(16);
+
+    await mutationOptions.onSettled?.(undefined, null, [15, 16]);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.detail(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.detail(16),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(16),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.all,
+    });
+  });
+
+  it("still invalidates package scopes after partial bulk delete failure", async () => {
+    vi.mocked(deleteWorkflowPackage).mockImplementation((packageId) => {
+      if (packageId === 16) {
+        return Promise.reject(new Error("Package not found"));
+      }
+
+      return Promise.resolve(undefined);
+    });
+
+    useDeleteWorkflowPackages();
+
+    const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
+    await expect(mutationOptions.mutationFn?.([15, 16])).rejects.toThrow(
+      "Package not found",
+    );
+    await mutationOptions.onSettled?.(
+      undefined,
+      new Error("Package not found"),
+      [15, 16],
+    );
+
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.detail(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.detail(16),
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(16),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,

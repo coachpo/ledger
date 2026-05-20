@@ -212,22 +212,59 @@ export function useUpdateWorkflowPackage() {
   });
 }
 
+async function invalidateDeletedWorkflowPackageScope(
+  queryClient: QueryClient,
+  packageId: IdParam,
+) {
+  queryClient.removeQueries?.({
+    queryKey: queryKeys.platform.workflowPackages.manifest(packageId),
+  });
+
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.platform.workflowPackages.detail(packageId),
+    }),
+    invalidateWorkflowPackageRuntimeInputRegistryScope(queryClient, packageId),
+  ]);
+}
+
 export function useDeleteWorkflowPackage() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (packageId: IdParam) => deleteWorkflowPackage(packageId),
     onSuccess: async (_result, packageId) => {
-      queryClient.removeQueries?.({
-        queryKey: queryKeys.platform.workflowPackages.manifest(packageId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.platform.workflowPackages.detail(packageId),
-      });
+      await invalidateDeletedWorkflowPackageScope(queryClient, packageId);
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.workflowPackages.all,
       });
-      await invalidateWorkflowPackageRuntimeInputRegistryScope(queryClient, packageId);
+    },
+  });
+}
+
+export function useDeleteWorkflowPackages() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (packageIds: IdParam[]) => {
+      const results = await Promise.allSettled(
+        packageIds.map((packageId) => deleteWorkflowPackage(packageId)),
+      );
+      const firstRejected = results.find((result) => result.status === "rejected");
+
+      if (firstRejected?.status === "rejected") {
+        throw firstRejected.reason;
+      }
+    },
+    onSettled: async (_result, _error, packageIds) => {
+      await Promise.all(
+        packageIds.map((packageId) =>
+          invalidateDeletedWorkflowPackageScope(queryClient, packageId),
+        ),
+      );
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.platform.workflowPackages.all,
+      });
     },
   });
 }
