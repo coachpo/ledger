@@ -84,6 +84,10 @@ describe("Layout", () => {
               <Route element={<Layout />}>
                 <Route index element={<div>Dashboard content</div>} />
                 <Route
+                  path="workflow-packages/import"
+                  element={<div data-testid="workflow-package-import-content">Import workspace</div>}
+                />
+                <Route
                   path="workflow-packages/:packageId"
                   element={<div>Package detail content</div>}
                 />
@@ -173,15 +177,21 @@ describe("Layout", () => {
     );
   });
 
-  it("labels workflow package detail and launch routes", () => {
+  it("labels workflow package import, detail, and launch routes", () => {
+    renderLayout("/workflow-packages/import");
+    expect(
+      within(screen.getByRole("banner")).getByText("Import Workflow Package"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-package-import-content").parentElement).toHaveClass("h-full");
+
     renderLayout("/workflow-packages/88");
     expect(
-      within(screen.getByRole("banner")).getByText("Workflow Package Detail"),
+      within(screen.getAllByRole("banner")[1]).getByText("Workflow Package Detail"),
     ).toBeInTheDocument();
 
     renderLayout("/workflow-packages/88/run");
     expect(
-      within(screen.getAllByRole("banner")[1]).getByText(
+      within(screen.getAllByRole("banner")[2]).getByText(
         "Launch Workflow Package",
       ),
     ).toBeInTheDocument();

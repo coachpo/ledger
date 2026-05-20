@@ -82,6 +82,7 @@ describe("router", () => {
 
   it("registers workflow package routes and removes old global authoring routes", () => {
     expect(matchRoutes(router.routes, "/workflow-packages")).not.toBeNull();
+    expect(matchRoutes(router.routes, "/workflow-packages/import")).not.toBeNull();
     expect(matchRoutes(router.routes, "/workflow-packages/new")).not.toBeNull();
     expect(matchRoutes(router.routes, "/workflow-packages/123")).not.toBeNull();
     expect(
