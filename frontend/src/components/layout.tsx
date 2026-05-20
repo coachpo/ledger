@@ -26,7 +26,7 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-import { assembleNavGroups, type NavItem } from "@/extensions/runtime";
+import { assembleNavGroups, type NavItem } from "@/extensions/runtime-helpers";
 import { useExtensions } from "@/hooks/use-extensions";
 
 function isNavItemActive(pathname: string, item: NavItem) {

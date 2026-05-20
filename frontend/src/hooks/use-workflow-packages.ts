@@ -25,7 +25,7 @@ import {
   upsertWorkflowPackageSecretBinding,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
-import { filterToolsForExtensionState } from "@/extensions/runtime";
+import { filterToolsForExtensionState } from "@/extensions/runtime-helpers";
 import { useExtensions } from "@/hooks/use-extensions";
 import { listTools } from "@/lib/api/tools";
 import type { IdParam } from "@/lib/api-client";

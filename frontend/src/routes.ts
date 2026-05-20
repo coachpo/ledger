@@ -1,7 +1,7 @@
 import { createBrowserRouter } from "react-router";
 
 import { Layout } from "./components/layout";
-import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime";
+import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime-helpers";
 import { ExtensionsListPage } from "./pages/extensions/list";
 import { ModelConnectionsEditorPage } from "./pages/model-connections/editor";
 import { ModelConnectionsListPage } from "./pages/model-connections/list";

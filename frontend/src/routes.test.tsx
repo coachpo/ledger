@@ -12,7 +12,7 @@ import {
 import {
   enabledFinanceRoutePaths,
   filterToolsForExtensionState,
-} from "./extensions/runtime";
+} from "./extensions/runtime-helpers";
 import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
 import { router } from "./routes";
