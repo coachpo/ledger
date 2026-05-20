@@ -226,7 +226,7 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
   });
 
-  it("filters packages through the command search and routes primary actions", () => {
+  it("filters packages through search while keeping Open and Launch routes separate", () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
         items: [
@@ -251,29 +251,57 @@ describe("WorkflowPackagesListPage", () => {
     expect(
       screen.queryByTestId("workflow-packages-row-risk_review"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("workflow-packages-row-macro_digest"),
-    ).toBeVisible();
+    const macroRow = screen.getByTestId("workflow-packages-row-macro_digest");
+    expect(macroRow).toBeVisible();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Import workflow package manifest" }),
     );
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/import");
+    expect(navigateMock).toHaveBeenLastCalledWith("/workflow-packages/import");
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create new workflow package" }),
     );
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/new");
+    expect(navigateMock).toHaveBeenLastCalledWith("/workflow-packages/new");
 
+    navigateMock.mockClear();
     fireEvent.click(
-      screen.getByRole("button", { name: "Open package Macro Digest" }),
+      within(macroRow).getByRole("button", { name: "Open package Macro Digest" }),
     );
+    expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4/run");
 
+    navigateMock.mockClear();
     fireEvent.click(
-      screen.getByRole("button", { name: "Launch package Macro Digest" }),
+      within(macroRow).getByRole("button", { name: "Launch package Macro Digest" }),
     );
+    expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+    const tableMacroRow = screen.getByTestId("workflow-packages-row-macro_digest");
+
+    navigateMock.mockClear();
+    fireEvent.click(
+      within(tableMacroRow).getByRole("button", {
+        name: "Open package Macro Digest",
+      }),
+    );
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4/run");
+
+    navigateMock.mockClear();
+    fireEvent.click(
+      within(tableMacroRow).getByRole("button", {
+        name: "Launch package Macro Digest",
+      }),
+    );
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
   });
 
   it("permanently deletes packages and surfaces backend delete errors", async () => {

@@ -23,7 +23,7 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
-- `src/pages/workflow-packages/AGENTS.md` — package list, editor, validation, preflight, launch, import, and export flows
+- `src/pages/workflow-packages/AGENTS.md` — package list, authoring-only editor, dedicated `/workflow-packages/:packageId/run` launch page, validation, import, and export flows
 - `src/pages/runs/AGENTS.md` — runs list, detail, root-parameter rerun, invocation-input fork, package provenance, polling monitor, trace-link views, and legacy replay lineage reads
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, platform-authoring widgets, feature UI, and primitives
 - `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
@@ -71,12 +71,12 @@ frontend/
 - Browser-exposed env access goes through `import.meta.env`, and only `VITE_`-prefixed variables may reach frontend code.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
-- Template and workflow package editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container.
+- Template and workflow package editor routes stay inside the main shell, but `Layout` gives them full-height content regions instead of the usual scroll container. The Workflow Package launch page is a separate routed console, not an editor mode.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.
 - Report flows are slug-addressed, use `use-reports.ts` for server state, and rely on `downloadReportUrl()` for native markdown downloads.
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
-- Workflow package editors are YAML-manifest editors with local package-resource editing, backend validation, preflight, launch, import, export, and schema-driven run-input forms.
+- Workflow package editors are authoring-only YAML-manifest editors with local package-resource editing, backend validation, package secret bindings, import, and export. Launch, preflight gating, runtime parameters, saved inputs, and create-run state belong to the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`.
 - Agent-platform pages use dedicated hooks and route params to keep package CRUD, extension-filtered global Tools reads, global Model Connections, and Run inspection inside the routed page layer.
 - `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and tool filtering for package capability profiles.
 - The `/extensions` page is a system state surface only; render only the backend contract (`key`, `label`, `enabled`) and keep marketplace/install/remove behavior out of phase 1.

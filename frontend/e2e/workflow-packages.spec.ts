@@ -165,7 +165,60 @@ async function openPackageEditor(page: Page, packageId: number) {
   await expect(page.getByTestId("workflow-package-editor-shell")).toBeVisible();
 }
 
+async function launchPackageFromDedicatedPage(
+  page: Page,
+  packageId: number,
+  workflowKey: string,
+  parameters: Record<string, unknown>,
+) {
+  await page.goto(`/workflow-packages/${packageId}/run`);
+  await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
+  await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
+
+  const launchButton = page.getByRole("button", { name: "Launch Run" });
+  const runtimeInputs = page.getByLabel("Runtime inputs JSON");
+  await page.getByLabel("Workflow key").fill(workflowKey);
+  await expect(launchButton).toBeEnabled();
+  await runtimeInputs.fill(JSON.stringify(parameters, null, 2));
+  await expect(runtimeInputs).toHaveValue(JSON.stringify(parameters, null, 2));
+  await expect(launchButton).toBeEnabled();
+  await launchButton.click();
+
+  await expect(page).toHaveURL(/\/runs\/\d+$/, { timeout: 15_000 });
+  await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+
+  const runId = Number(new URL(page.url()).pathname.split("/").pop());
+  expect(Number.isFinite(runId)).toBeTruthy();
+  return runId;
+}
+
 test.describe("Workflow packages", () => {
+  test("launches workflow package from dedicated run page", async ({ page, request }) => {
+    const suffix = Date.now();
+    const packageKey = `e2e_launch_page_${suffix}`;
+    const modelKey = `e2e_launch_model_${suffix}`;
+
+    await seedModelConnection(request, modelKey);
+    const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
+      data: { manifestSource: packageManifest(packageKey, modelKey) },
+    });
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json();
+
+    const runId = await launchPackageFromDedicatedPage(page, Number(created.id), "advisory_flow", { ticker: "AAPL" });
+    const detail = await waitForRun(request, runId);
+
+    expect(detail.status).toBe("succeeded");
+    expect(detail.targetKind).toBe("workflowPackage");
+    expect(detail.finalOutput).toMatchObject({ summary: "deterministic summary" });
+    expect(detail.packageProvenance).toMatchObject({
+      launchSnapshot: { parameters: { ticker: "AAPL" }, workflowKey: "advisory_flow" },
+      workflowPackageKey: packageKey,
+    });
+    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
+  });
+
   test("covers current-package authoring, export, import, launch, and snapshot provenance", async ({ page, request }) => {
     const suffix = Date.now();
     const packageKey = `e2e_package_${suffix}`;
@@ -209,16 +262,12 @@ test.describe("Workflow packages", () => {
     expect(importResponse.ok()).toBeTruthy();
     expect((await importResponse.json()).key).toBe(importedKey);
 
-    await page.goto(`/workflow-packages/${created.id}/run`);
-    await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
-    const launch = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`, {
-      data: { workflowKey: "advisory_flow", parameters: { ticker: "AAPL" } },
-    });
-    expect(launch.status()).toBe(201);
-    const launched = await launch.json();
-    const runId = Number(launched.id);
-    await page.goto(`/runs/${runId}`);
-    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    const runId = await launchPackageFromDedicatedPage(
+      page,
+      Number(created.id),
+      "advisory_flow",
+      { ticker: "AAPL" },
+    );
 
     const detail = await waitForRun(request, runId);
     expect(detail.status).toBe("succeeded");

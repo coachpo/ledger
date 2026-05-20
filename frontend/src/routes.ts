@@ -9,6 +9,7 @@ import { RunsDetailPage } from "./pages/runs/detail";
 import { RunsListPage } from "./pages/runs/list";
 import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
 import { WorkflowPackageImportPage } from "./pages/workflow-packages/import-page";
+import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
 import { WorkflowPackagesListPage } from "./pages/workflow-packages/list";
 
 const financeWorkspaceRoutes = assembleFinanceWorkspaceRoutes();
@@ -24,7 +25,7 @@ export const router = createBrowserRouter([
       { path: "workflow-packages/import", Component: WorkflowPackageImportPage },
       { path: "workflow-packages/new", Component: WorkflowPackageEditorPage },
       { path: "workflow-packages/:packageId", Component: WorkflowPackageEditorPage },
-      { path: "workflow-packages/:packageId/run", Component: WorkflowPackageEditorPage },
+      { path: "workflow-packages/:packageId/run", Component: WorkflowPackageLaunchPage },
       { path: "model-connections", Component: ModelConnectionsListPage },
       { path: "model-connections/new", Component: ModelConnectionsEditorPage },
       {

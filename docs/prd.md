@@ -11,7 +11,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 - Keep portfolio balances, positions, market context, and simulated trading operations isolated and editable.
 - Let users author reusable text templates and compile them against live portfolio, report, and runtime-input data.
 - Preserve point-in-time markdown reports that can be generated, uploaded, edited, filtered, and downloaded by slug.
-- Let users author Workflow Packages without code changes while keeping Model Connections, Tools, and Runs global.
+- Let users author Workflow Packages without code changes, then launch saved packages from a dedicated `/workflow-packages/:packageId/run` page while keeping Model Connections, Tools, and Runs global.
 - Persist package runs with inspectable inputs, package provenance, per-step outputs, final output, status, timing, token usage, and trace-linkage metadata.
 - Keep local persistence authoritative when quote providers, model providers, or tracing systems are unavailable.
 
@@ -27,7 +27,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 1. Portfolio workspace: portfolio list/detail, balances, positions, CSV import, trades, quote-enriched metrics, and warnings.
 2. Template manager: global templates, placeholder browser, runtime inputs, inline compile preview, and stored-template compile.
 3. Reports workspace: compiled, uploaded, external, and agent-origin markdown reports with grouping, filters, edit, delete, and download.
-4. Workflow Packages: YAML package manifest authoring with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, preflight, import, export, and launch flows. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
+4. Workflow Packages: authoring-only YAML package manifest editor with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, import, and export. Launch is a separate console labeled `Launch Workflow Package` at `/workflow-packages/:packageId/run` in phase 1, with preflight gating and run creation outside the editor. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
 6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 7. Runs: global run list/detail, package provenance, launch snapshots, root-parameter reruns, invocation-input forks, and legacy replay lineage reads.
@@ -40,6 +40,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 - Report list/detail/download flows remain slug-addressed and source-aware across `compiled`, `uploaded`, `external`, and `agent` origins.
 - Historical agent-memory reports remain source-aware report-domain records, while canonical memory writes and lookup use platform-core memory tools and tables.
 - Workflow Packages can be authored from `signaldeck.workflowPackage/v1` YAML manifests and validated before save.
+- The Workflow Package editor stays authoring-only and does not own launch runtime state.
 - Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections remain global live bindings, global Tools remain read-only metadata, and package-private resources stay inside package versions.
-- Package launches create persisted runs with visible package provenance, per-step details, final output, and safe error states.
+- Package launches start from the dedicated `/workflow-packages/:packageId/run` page, create persisted runs with visible package provenance, per-step details, final output, and safe error states.

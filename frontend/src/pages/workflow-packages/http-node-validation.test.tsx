@@ -150,7 +150,7 @@ describe("WorkflowPackageEditorPage HTTP node validation", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Workflow YAML tab" }));
     expect((screen.getByRole("textbox", { name: "Workflow YAML" }) as HTMLTextAreaElement).value).toContain("kind: http");
-    fireEvent.click(screen.getByRole("button", { name: "Run package preflight" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     await waitFor(() => expect(validatePackageMock).toHaveBeenCalledTimes(1));
     const payload = validatePackageMock.mock.calls[0][0].manifestSource as string;

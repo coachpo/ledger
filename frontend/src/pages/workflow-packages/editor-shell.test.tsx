@@ -6,8 +6,9 @@ import type { WorkflowPackageManifestRead, WorkflowPackageRead } from "@/lib/typ
 
 import { WorkflowPackageEditorPage } from "./editor";
 
-const { navigateMock, useWorkflowPackageManifestMock, useWorkflowPackageMock } = vi.hoisted(() => ({
+const { navigateMock, updatePackageMock, useWorkflowPackageManifestMock, useWorkflowPackageMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
+  updatePackageMock: vi.fn(),
   useWorkflowPackageManifestMock: vi.fn(),
   useWorkflowPackageMock: vi.fn(),
 }));
@@ -26,27 +27,13 @@ vi.mock("@/hooks/use-model-connections", () => ({
 
 vi.mock("@/hooks/use-workflow-packages", () => ({
   useCreateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateWorkflowPackageLaunch: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDeleteWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useImportWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  usePreflightWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useTools: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
-  useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useUpdateWorkflowPackage: () => ({ isPending: false, mutateAsync: updatePackageMock }),
   useUpsertWorkflowPackageSecretBinding: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useValidateWorkflowPackageManifest: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useWorkflowPackage: (...args: unknown[]) => useWorkflowPackageMock(...args),
-  useWorkflowPackageLaunch: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useWorkflowPackageManifest: (...args: unknown[]) => useWorkflowPackageManifestMock(...args),
-  useWorkflowPackageRuntimeInputRegistry: () => ({
-    data: { currentMetadata: null, history: [], packageId: 42, packageKey: "market_review_package", personal: [], workflowKey: "market_review" },
-    error: null,
-    isError: false,
-    isFetching: false,
-    isPending: false,
-  }),
   useWorkflowPackageSecretBindings: () => ({ data: { items: [] }, error: null, isError: false, isPending: false }),
 }));
 
@@ -92,6 +79,7 @@ function renderEditor(initialEntry: string, routePath: string) {
 describe("WorkflowPackageEditorPage", () => {
   beforeEach(() => {
     navigateMock.mockReset();
+    updatePackageMock.mockReset();
     useWorkflowPackageMock.mockReset();
     useWorkflowPackageManifestMock.mockReset();
     useWorkflowPackageMock.mockReturnValue({
@@ -127,15 +115,16 @@ describe("WorkflowPackageEditorPage", () => {
       "Private MCP",
       "Workflow YAML",
       "Secret Bindings",
-      "Preflight",
-      "Launch",
       "Import / Export",
     ]) {
       expect(screen.getByRole("tab", { name: `${tabName} tab` })).toBeVisible();
     }
 
+    expect(screen.queryByRole("tab", { name: "Preflight tab" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Launch tab" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save package" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Validate package" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeEnabled();
 
     const overviewTab = screen.getByRole("tab", { name: "Overview tab" });
@@ -206,16 +195,18 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Package missing");
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Validate package" })).toBeDisabled();
   });
 
-  it("opens the same shell with Launch active for the run route", () => {
+  it("does not turn the editor shell into a launch mode when mounted on the run-shaped path", () => {
     renderEditor("/workflow-packages/42/run", "/workflow-packages/:packageId/run");
 
-    const launchTab = screen.getByRole("tab", { name: "Launch tab" });
-    expect(launchTab).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("Launch route")).toBeVisible();
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("Launch package run");
+    expect(screen.getByTestId("workflow-package-editor-shell")).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Preflight tab" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Launch tab" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Launch route")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview tab" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Package overview");
   });
 
   it("renders the new package shell without loading package detail or manifest", () => {
@@ -236,7 +227,7 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("button", { name: "Launch workflow package" })).toBeDisabled();
   });
 
-  it("switches tabs and routes launch button to the run shell", () => {
+  it("switches tabs and routes clean launch button to the run shell", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
     fireEvent.click(screen.getByRole("tab", { name: "Private MCP tab" }));
@@ -244,6 +235,30 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Private MCP servers");
 
     fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
+    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
+  });
+
+  it("confirms dirty launch handoff without saving unsaved editor changes", () => {
+    renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
+
+    fireEvent.change(screen.getByLabelText("Package name"), {
+      target: { value: "Unsaved Market Review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("Unsaved editor changes are excluded until you save them.");
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Launch saved package" })).toBeVisible();
+    expect(updatePackageMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/42/run");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Launch workflow package" }));
+    fireEvent.click(screen.getByRole("button", { name: "Launch saved package" }));
+
+    expect(updatePackageMock).not.toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/42/run");
   });
 
@@ -266,6 +281,6 @@ describe("WorkflowPackageEditorPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("sufficiently indented");
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByRole("button", { name: "Save package" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Run package preflight" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Validate package" })).toBeDisabled();
   });
 });

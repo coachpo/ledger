@@ -4,7 +4,7 @@
 
 ## Scope
 
-SignalDeck ships a package-first agent platform beside the preserved portfolio, template, and report product areas. Users author Workflow Packages, bind package agents to global Model Connections, reference read-only global Tools, launch package runs, and inspect persisted Runs from the browser.
+SignalDeck ships a package-first agent platform beside the preserved portfolio, template, and report product areas. Users author Workflow Packages, bind package agents to global Model Connections, reference read-only global Tools, launch saved package runs from the dedicated `/workflow-packages/:packageId/run` page, and inspect persisted Runs from the browser.
 
 This document describes shipped behavior only. Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, and retired legacy global authoring routes are not live surfaces.
 
@@ -12,8 +12,8 @@ This document describes shipped behavior only. Studio, Tryout, orchestration, ru
 
 | Area | Backend | Frontend |
 |---|---|---|
-| Workflow Packages | `/api/workflow-packages*` | `/workflow-packages*` |
-| Package Secret Bindings | `/api/workflow-packages/{packageId}/secret-bindings*` | Secret Bindings tab inside `/workflow-packages/{packageId}` |
+| Workflow Packages | `/api/workflow-packages*` | authoring at `/workflow-packages*`, dedicated launch at `/workflow-packages/:packageId/run` |
+| Package Secret Bindings | `/api/workflow-packages/{packageId}/secret-bindings*` | Secret Bindings tab inside the authoring-only `/workflow-packages/{packageId}` editor |
 | Model Connections | `/api/model-connections*` | `/model-connections*` |
 | Extensions | `/api/extensions*` | extension state consumers |
 | Tools | `/api/tools` | surfaced inside package capability-profile editors |
@@ -29,7 +29,7 @@ Backend registry and frontend scaffold data are private wiring. They may hold th
 
 ## Workflow Packages
 
-Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition without a live status lifecycle. Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
+Workflow Packages are the only live platform authoring root. Manifests use `signaldeck.workflowPackage/v1` YAML and store one mutable current package definition without a live status lifecycle. The editor is authoring-only: package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes live inside that current package artifact until the next save replaces it.
 
 Package-local refs use local keys. Model bindings use global Model Connection keys. Tool grants use global server-declared tool keys inside package-local capability profiles. Workflow graph nodes currently ship as `kind: step`, `kind: sequence`, `kind: fanout`, `kind: loop`, and `kind: http`.
 
@@ -94,6 +94,8 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 ## Runs
 
+The browser launch surface is the dedicated `Launch Workflow Package` page at `/workflow-packages/:packageId/run` in phase 1. It is separate from the authoring editor and owns launch metadata, preflight gating, runtime parameters, saved inputs, and create-run state. The `/workflow-packages/:packageId/launch` browser rename is deferred follow-up only.
+
 Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{workflowKey, parameters}`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
 
 Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, dependency-only extension requirements, and snapshot-based package provenance. Current detail payloads include steps, agent invocations, operation invocations, legacy replay lineage fields when present, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. The `run_forks` artifact is persisted for forked descendants, but `RunRead` does not currently expose a top-level `fork` field. Reruns and forks execute the stored run snapshot, not the current package state. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
@@ -116,9 +118,9 @@ Run memory evidence is persisted as `memoryEvents[]`, a generic stream of retrie
 
 `frontend/src/routes.ts` is the route source of truth. `frontend/src/components/layout.tsx` owns sidebar entries and breadcrumbs for Workflow Packages, Model Connections, and Runs.
 
-List pages provide create/import actions, current-readiness badges, and archive/delete actions where supported. Editors use hooks and API modules rather than direct fetch calls from view code. Validation appears as inline alerts, field messages, toasts, and backend error-envelope messages.
+List pages provide create/import actions, current-readiness badges, launch handoff actions, and archive/delete actions where supported. Editors use hooks and API modules rather than direct fetch calls from view code. Validation appears as inline alerts, field messages, toasts, and backend error-envelope messages.
 
-Workflow Package and Template editor routes use the full-height layout region inside the normal shell. Workflow Package editing remains YAML-first for workflow graph changes; `kind: http` authoring lives in the manifest YAML, package secret binding editing lives in the Secret Bindings tab, and run detail renders operation invocation cards separately from agent invocation cards.
+Workflow Package and Template editor routes use the full-height layout region inside the normal shell. Workflow Package editing remains YAML-first and authoring-only for workflow graph changes; `kind: http` authoring lives in the manifest YAML, package secret binding editing lives in the Secret Bindings tab, launch runs on the separate `/workflow-packages/:packageId/run` console, and run detail renders operation invocation cards separately from agent invocation cards.
 
 ## Backend Shape
 

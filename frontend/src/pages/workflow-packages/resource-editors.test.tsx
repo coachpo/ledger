@@ -457,7 +457,7 @@ spec:
     clickTab("Overview");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Run package preflight" }),
+      screen.getByRole("button", { name: "Validate package" }),
     );
 
     expect(
@@ -503,7 +503,7 @@ spec:
     clickTab("Overview");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Run package preflight" }),
+      screen.getByRole("button", { name: "Validate package" }),
     );
 
     expect(
@@ -561,7 +561,7 @@ spec:
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     clickTab("Overview");
     fireEvent.click(
-      screen.getByRole("button", { name: "Run package preflight" }),
+      screen.getByRole("button", { name: "Validate package" }),
     );
 
     expect(
@@ -584,7 +584,7 @@ spec:
     });
     clickTab("Overview");
     fireEvent.click(
-      screen.getByRole("button", { name: "Run package preflight" }),
+      screen.getByRole("button", { name: "Validate package" }),
     );
 
     expect(

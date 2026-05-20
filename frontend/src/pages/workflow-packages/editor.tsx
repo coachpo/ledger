@@ -3,7 +3,6 @@ import {
   Boxes,
   Braces,
   Cable,
-  CheckCircle2,
   Code2,
   Download,
   FileCheck2,
@@ -21,7 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { SchemaComposer } from "@/components/platform-authoring/schema-composer/schema-composer";
@@ -38,6 +37,14 @@ import {
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -70,23 +77,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { useModelConnections } from "@/hooks/use-model-connections";
 import {
   useCreateWorkflowPackage,
-  useCreateWorkflowPackageLaunch,
-  useCreateWorkflowPackageRuntimeInputPersonalEntry,
-  useDeleteWorkflowPackageRuntimeInputPersonalEntry,
   useDeleteWorkflowPackageSecretBinding,
-  usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
-  useUpdateWorkflowPackageRuntimeInputPersonalEntry,
   useUpsertWorkflowPackageSecretBinding,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
-  useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
-  useWorkflowPackageRuntimeInputRegistry,
   useWorkflowPackageSecretBindings,
 } from "@/hooks/use-workflow-packages";
-import { ApiRequestError } from "@/lib/api-client";
 import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -109,19 +108,10 @@ import {
   type WorkflowPackageDraft,
   type WorkflowPackageEditorIssue,
 } from "@/lib/platform-authoring/workflow-packages/manifest";
-import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
-import {
-  createLaunchParametersTemplate,
-  parseLaunchParametersJson,
-  resetLaunchParametersTemplate,
-} from "@/lib/platform-authoring/schema/schema-template";
-import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type { ModelConnectionKind } from "@/lib/types/model-connection";
 import type {
-  WorkflowPackageLaunchRead,
   WorkflowPackageManifestRead,
   WorkflowPackageRead,
-  WorkflowPackageRuntimeInputEntryRead,
   WorkflowPackageSecretBindingRead,
 } from "@/lib/types/workflow-package";
 
@@ -133,8 +123,6 @@ type WorkflowPackageEditorTab =
   | "private-mcp"
   | "workflow-yaml"
   | "secret-bindings"
-  | "preflight"
-  | "launch"
   | "exports";
 
 type WorkflowPackageEditorTabDefinition = {
@@ -161,6 +149,24 @@ type DiagnosticTarget = {
   field: string;
   tab: WorkflowPackageEditorTab;
 } | null;
+
+function diagnosticToAuthoringTarget(path: string): Exclude<DiagnosticTarget, null> {
+  const target = diagnosticToEditorTarget(path);
+  switch (target.tab) {
+    case "agents":
+    case "capability-profiles":
+    case "exports":
+    case "overview":
+    case "output-schemas":
+    case "private-mcp":
+    case "secret-bindings":
+    case "workflow-yaml":
+      return { field: target.field, tab: target.tab };
+    case "launch":
+    case "preflight":
+      return { field: target.field, tab: "overview" };
+  }
+}
 
 function agentIndexFromPath(path: string): number | null {
   const match = /^spec\.agents\[(\d+)]/.exec(path);
@@ -212,14 +218,8 @@ const editorTabs: WorkflowPackageEditorTabDefinition[] = [
   { description: "Private MCP server bindings stay portable and secret-reference driven.", icon: Cable, label: "Private MCP", value: "private-mcp" },
   { description: "Author workflow graphs as raw YAML, including kind:http operation nodes.", icon: Code2, label: "Workflow YAML", value: "workflow-yaml" },
   { description: "Bind package-local secret references without exposing stored values.", icon: KeyRound, label: "Secret Bindings", value: "secret-bindings" },
-  { description: "Run package readiness checks before launch without mutating runtime state.", icon: FileCheck2, label: "Preflight", value: "preflight" },
-  { description: "Launch a selected package workflow after preflight readiness passes.", icon: PlayCircle, label: "Launch", value: "launch" },
   { description: "Import or export clean package YAML without database ids or secret values.", icon: Download, label: "Import / Export", value: "exports" },
 ];
-
-function routeTab(pathname: string): WorkflowPackageEditorTab {
-  return pathname.endsWith("/run") ? "launch" : "overview";
-}
 
 function packageTitle(workflowPackage: WorkflowPackageRead | undefined, isNew: boolean) {
   return workflowPackage ? workflowPackage.name : isNew ? "New Workflow Package" : "Workflow Package";
@@ -236,45 +236,6 @@ function manifestIdentity(manifest: WorkflowPackageManifestRead) {
   return `package:${manifest.packageId}:${manifest.manifestHash}`;
 }
 
-type PackageDiagnostic = {
-  connectionKind?: ModelConnectionKind;
-  field: string;
-  issue: string;
-  severity: "error" | "warning";
-};
-
-function diagnosticFromRecord(value: unknown, severity: "error" | "warning"): PackageDiagnostic {
-  const record = isUnknownRecord(value) ? value : {};
-  const field = stringValue(record.field) || stringValue(record.path) || "$";
-  const connectionKind = modelConnectionKindValue(record.connectionKind);
-  return {
-    ...(connectionKind ? { connectionKind } : {}),
-    field,
-    issue: stringValue(record.issue) || stringValue(record.message) || "Review this package diagnostic.",
-    severity,
-  };
-}
-
-function diagnosticsFromLaunch(read: WorkflowPackageLaunchRead | undefined): PackageDiagnostic[] {
-  if (!read) {
-    return [];
-  }
-  const blockingErrors = Array.isArray(read.blockingErrors) ? read.blockingErrors : [];
-  const warnings = Array.isArray(read.warnings) ? read.warnings : [];
-  return [
-    ...blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
-    ...warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
-  ];
-}
-
-function diagnosticBadge(diagnostic: PackageDiagnostic) {
-  return diagnostic.severity === "error" ? (
-    <Badge variant="destructive">Blocking</Badge>
-  ) : (
-    <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
-  );
-}
-
 const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
   deterministic_smoke: "Deterministic smoke",
   provider: "Provider-backed",
@@ -282,22 +243,6 @@ const CONNECTION_KIND_LABELS: Record<ModelConnectionKind, string> = {
 
 function connectionKindLabel(value: ModelConnectionKind | null | undefined): string {
   return CONNECTION_KIND_LABELS[value ?? "provider"];
-}
-
-function modelConnectionKindValue(value: unknown): ModelConnectionKind | null {
-  return value === "provider" || value === "deterministic_smoke" ? value : null;
-}
-
-function isSmokeDiagnostic(diagnostic: PackageDiagnostic): boolean {
-  return diagnostic.connectionKind === "deterministic_smoke";
-}
-
-function isUnknownRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }
 
 function collectSecretReferenceKeys(value: unknown): string[] {
@@ -1076,522 +1021,6 @@ function SecretBindingsTab(props: {
   );
 }
 
-function DiagnosticRows({ diagnostics, onOpenField }: { diagnostics: PackageDiagnostic[]; onOpenField: (diagnostic: PackageDiagnostic) => void }) {
-  if (diagnostics.length === 0) {
-    return <div className="rounded-xl border border-dashed bg-background/50 p-4 text-sm text-muted-foreground">No diagnostics returned for this package selection.</div>;
-  }
-  return (
-    <div className="overflow-hidden rounded-xl border">
-      <div className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] gap-3 bg-muted/40 px-3 py-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        <span>Severity</span><span>Field</span><span>Diagnostic</span><span>Action</span>
-      </div>
-      {diagnostics.map((diagnostic, index) => (
-        <div className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] items-center gap-3 border-t px-3 py-3 text-sm" key={`${diagnostic.field}-${diagnostic.issue}-${index}`}>
-          <div className="flex flex-wrap items-center gap-2">
-            {diagnosticBadge(diagnostic)}
-            {diagnostic.connectionKind ? (
-              <Badge variant={diagnostic.connectionKind === "deterministic_smoke" ? "secondary" : "outline"}>
-                {connectionKindLabel(diagnostic.connectionKind)}
-              </Badge>
-            ) : null}
-          </div>
-          <code className="break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
-          <span className="break-words text-muted-foreground">{diagnostic.issue}</span>
-          <Button size="sm" type="button" variant="outline" onClick={() => onOpenField(diagnostic)}>Open field</Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ModelConnectionModeSummary({ diagnostics, read }: { diagnostics: PackageDiagnostic[]; read: WorkflowPackageLaunchRead | undefined }) {
-  if (!read) {
-    return null;
-  }
-
-  const smokeCount = diagnostics.filter(isSmokeDiagnostic).length;
-  return (
-    <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" data-testid="workflow-package-model-connection-modes">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-foreground">Model connection modes:</span>
-        <Badge variant="outline">{connectionKindLabel("provider")}</Badge>
-        {smokeCount > 0 ? <Badge variant="secondary">{connectionKindLabel("deterministic_smoke")}</Badge> : null}
-      </div>
-      <p className="mt-2">
-        {smokeCount > 0
-          ? `${smokeCount} deterministic smoke connection${smokeCount === 1 ? "" : "s"} will run offline; remaining saved model connections stay provider-backed.`
-          : "No deterministic smoke warnings were reported; saved model connections are provider-backed for this launch metadata."}
-      </p>
-    </div>
-  );
-}
-
-function RuntimeInputValidationAlert({ errors }: { errors: readonly ApiErrorDetail[] }) {
-  if (errors.length === 0) {
-    return null;
-  }
-
-  return (
-    <Alert data-testid="runtime-input-validation-feedback" variant="destructive">
-      <AlertCircle />
-      <AlertTitle>Runtime inputs need attention</AlertTitle>
-      <AlertDescription>
-        <ul className="list-disc space-y-1 pl-5">
-          {errors.map((error) => (
-            <li key={`${error.field}-${error.issue}`}>
-              <code className="rounded bg-muted/40 px-1 py-0.5 text-xs">{error.field}</code>: {error.issue}
-            </li>
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-function PreflightTab(props: {
-  diagnostics: PackageDiagnostic[];
-  launchRead: WorkflowPackageLaunchRead | undefined;
-  loading: boolean;
-  onOpenField: (diagnostic: PackageDiagnostic) => void;
-  onRunPreflight: () => void;
-  preflightRead: WorkflowPackageLaunchRead | undefined;
-  workflowPackage: WorkflowPackageRead | undefined;
-}) {
-  const { diagnostics, launchRead, loading, onOpenField, onRunPreflight, preflightRead, workflowPackage } = props;
-  const read = preflightRead ?? launchRead;
-  const blockingCount = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
-  const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
-  const ready = read?.ready === true && blockingCount === 0;
-  return (
-    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-preflight-tab">
-      <CardHeader className="border-b pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle>Package preflight</CardTitle>
-            <CardDescription>Run launch readiness checks and deep-link diagnostics back into package-local editor fields.</CardDescription>
-          </div>
-          <Button disabled={!workflowPackage || loading} size="sm" type="button" variant="outline" onClick={onRunPreflight}>
-            {loading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <FileCheck2 data-icon="inline-start" />}
-            Run preflight
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <Alert className={ready ? "border-positive/30 bg-positive/10" : blockingCount > 0 ? "border-destructive/30" : "border-chart-3/30 bg-chart-3/10"} variant={blockingCount > 0 ? "destructive" : "default"}>
-          {ready ? <CheckCircle2 /> : <AlertCircle />}
-          <AlertTitle>{ready ? "Ready to launch" : "Needs attention"}</AlertTitle>
-          <AlertDescription>
-            {read ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} for ${read.packageKey}.` : "Run preflight to check current package readiness."}
-          </AlertDescription>
-        </Alert>
-        <ModelConnectionModeSummary diagnostics={diagnostics} read={read} />
-        <DiagnosticRows diagnostics={diagnostics} onOpenField={onOpenField} />
-      </CardContent>
-    </Card>
-  );
-}
-
-const SAVED_INPUT_ENTRY_LIMIT = 20;
-
-type SavedInputEntryMode = "history" | "personal";
-
-function newestRuntimeInputEntries(
-  entries: readonly WorkflowPackageRuntimeInputEntryRead[],
-  timestampKey: "createdAt" | "updatedAt",
-): WorkflowPackageRuntimeInputEntryRead[] {
-  return [...entries].sort((left, right) => {
-    const timestampDelta = Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
-    return timestampDelta === 0 ? right.id - left.id : timestampDelta;
-  });
-}
-
-function savedInputEntryLabel(entry: WorkflowPackageRuntimeInputEntryRead, mode: SavedInputEntryMode) {
-  const name = entry.name?.trim();
-  if (name) {
-    return name;
-  }
-  if (mode === "history" && entry.sourceRunId) {
-    return `Run #${entry.sourceRunId}`;
-  }
-  return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
-}
-
-function SavedInputEntryRow(props: {
-  deletePending: boolean;
-  entry: WorkflowPackageRuntimeInputEntryRead;
-  mode: SavedInputEntryMode;
-  updatePending: boolean;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const { deletePending, entry, mode, onDelete, onLoad, onUpdate, updatePending } = props;
-  const label = savedInputEntryLabel(entry, mode);
-  const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
-  const staleReasons = entry.stale.reasons;
-
-  return (
-    <div className="space-y-2 rounded-lg border bg-background/60 p-3" data-testid={`saved-input-${mode}-${entry.id}`}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{label}</p>
-            {entry.stale.stale ? <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Stale</Badge> : null}
-          </div>
-          <p className="text-xs text-muted-foreground">{mode === "history" ? "Captured" : "Updated"} {formatDateTime(timestamp)}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button className="h-7 px-2 text-xs" size="sm" type="button" variant="outline" aria-label={`Load ${mode} input ${label}`} onClick={() => onLoad(entry)}>
-            Load
-          </Button>
-          {mode === "personal" ? (
-            <>
-              <Button className="h-7 px-2 text-xs" disabled={updatePending} size="sm" type="button" variant="outline" aria-label={`Overwrite personal input ${label}`} onClick={() => onUpdate(entry)}>
-                {updatePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
-                Overwrite
-              </Button>
-              <Button className="h-7 px-2 text-xs" disabled={deletePending} size="sm" type="button" variant="ghost" aria-label={`Delete personal input ${label}`} onClick={() => onDelete(entry)}>
-                {deletePending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Trash2 className="size-3" data-icon="inline-start" />}
-                Delete
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
-      {entry.stale.stale ? (
-        <div className="rounded-md border border-chart-3/30 bg-chart-3/10 px-2 py-1 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">Saved against older workflow metadata.</p>
-          {staleReasons.length > 0 ? (
-            <ul className="mt-1 list-disc space-y-0.5 pl-4">
-              {staleReasons.map((reason) => (
-                <li key={`${entry.id}-${reason.field}-${reason.issue}`}>{reason.field}: {reason.issue}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SavedInputsHelper(props: {
-  createDisabled: boolean;
-  createPending: boolean;
-  deletePending: boolean;
-  error: Error | null;
-  historyEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  loading: boolean;
-  personalEntries: readonly WorkflowPackageRuntimeInputEntryRead[];
-  presetName: string;
-  updatePending: boolean;
-  workflowKey: string;
-  onCreate: () => void;
-  onDelete: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onLoad: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-  onPresetNameChange: (value: string) => void;
-  onUpdate: (entry: WorkflowPackageRuntimeInputEntryRead) => void;
-}) {
-  const {
-    createDisabled,
-    createPending,
-    deletePending,
-    error,
-    historyEntries,
-    loading,
-    onCreate,
-    onDelete,
-    onLoad,
-    onPresetNameChange,
-    onUpdate,
-    personalEntries,
-    presetName,
-    updatePending,
-    workflowKey,
-  } = props;
-  const personalLimitReached = personalEntries.length >= SAVED_INPUT_ENTRY_LIMIT;
-  const sortedPersonal = newestRuntimeInputEntries(personalEntries, "updatedAt");
-  const sortedHistory = newestRuntimeInputEntries(historyEntries, "createdAt");
-
-  return (
-    <div className="space-y-3 rounded-xl border bg-muted/20 p-3" data-testid="runtime-input-saved-inputs-helper">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold">Saved Inputs</h4>
-          <Badge variant="outline">{workflowKey || "workflow"}</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">Load presets or prior launch inputs into the raw JSON editor. Loading never queues a run.</p>
-      </div>
-      {loading ? (
-        <div className="flex items-center gap-2 rounded-lg border bg-background/60 p-3 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          Loading saved inputs for {workflowKey || "this workflow"}...
-        </div>
-      ) : null}
-      {error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>Saved inputs unavailable</AlertTitle>
-          <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
-      ) : null}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Personal</h5>
-          <Badge variant="secondary">{personalEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}</Badge>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input className="h-8 text-xs" aria-label="Personal preset name" placeholder="Preset name" value={presetName} onChange={(event) => onPresetNameChange(event.target.value)} />
-          <Button className="h-8 text-xs" disabled={createDisabled || createPending || personalLimitReached} size="sm" type="button" onClick={onCreate}>
-            {createPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-            Save current JSON
-          </Button>
-        </div>
-        {personalLimitReached ? <p className="text-xs text-destructive">Personal presets are capped at 20 per workflow. Delete one before saving another.</p> : null}
-        {sortedPersonal.length === 0 ? <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No personal presets saved for this workflow.</p> : null}
-        <div className="space-y-2">
-          {sortedPersonal.map((entry) => (
-            <SavedInputEntryRow key={entry.id} deletePending={deletePending} entry={entry} mode="personal" updatePending={updatePending} onDelete={onDelete} onLoad={onLoad} onUpdate={onUpdate} />
-          ))}
-        </div>
-      </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">History</h5>
-          <Badge variant="secondary">{historyEntries.length}/{SAVED_INPUT_ENTRY_LIMIT}</Badge>
-        </div>
-        {sortedHistory.length === 0 ? <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No launch history captured for this workflow yet.</p> : null}
-        <div className="space-y-2">
-          {sortedHistory.map((entry) => (
-            <SavedInputEntryRow key={entry.id} deletePending={false} entry={entry} mode="history" updatePending={false} onDelete={onDelete} onLoad={onLoad} onUpdate={onUpdate} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LaunchTab(props: {
-  createLaunch: ReturnType<typeof useCreateWorkflowPackageLaunch>;
-  launchRead: WorkflowPackageLaunchRead | undefined;
-  launchLoading: boolean;
-  onRunPreflight: () => Promise<WorkflowPackageLaunchRead | null>;
-  packageId: string | undefined;
-  setWorkflowKey: (workflowKey: string) => void;
-  workflowKey: string;
-}) {
-  const { createLaunch, launchRead, launchLoading, onRunPreflight, packageId, setWorkflowKey, workflowKey } = props;
-  const navigate = useNavigate();
-  const [parametersText, setParametersText] = useState(() => stringifyJson({}));
-  const [runtimeInputErrors, setRuntimeInputErrors] = useState<ApiErrorDetail[]>([]);
-  const [personalPresetName, setPersonalPresetName] = useState("");
-  const resolvedWorkflowKey = workflowKey.trim();
-  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(packageId, resolvedWorkflowKey);
-  const createPersonalEntry = useCreateWorkflowPackageRuntimeInputPersonalEntry();
-  const updatePersonalEntry = useUpdateWorkflowPackageRuntimeInputPersonalEntry();
-  const deletePersonalEntry = useDeleteWorkflowPackageRuntimeInputPersonalEntry();
-  const inputSchemaFingerprint = useMemo(() => stringifyJson(launchRead?.inputSchema), [launchRead?.inputSchema]);
-  const inputSchemaSnapshot = useMemo(() => inputSchemaFingerprint ? JSON.parse(inputSchemaFingerprint) as unknown : undefined, [inputSchemaFingerprint]);
-  const inputTemplate = useMemo(() => createLaunchParametersTemplate(inputSchemaSnapshot), [inputSchemaSnapshot]);
-  const launchDiagnostics = useMemo(() => diagnosticsFromLaunch(launchRead), [launchRead]);
-  const launchFormIdentity = `${packageId ?? ""}:${workflowKey}:${inputSchemaFingerprint}`;
-
-  useEffect(() => {
-    setParametersText(resetLaunchParametersTemplate(inputTemplate));
-    setRuntimeInputErrors([]);
-  }, [inputTemplate, launchFormIdentity]);
-
-  const resetParameters = () => {
-    setParametersText(resetLaunchParametersTemplate(inputTemplate));
-    setRuntimeInputErrors([]);
-  };
-
-  const parseCurrentRuntimeInputs = () => {
-    setRuntimeInputErrors([]);
-    try {
-      return parseLaunchParametersJson(parametersText);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Runtime inputs JSON must be a valid object.";
-      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
-      toast.error(message);
-      return null;
-    }
-  };
-
-  const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
-    setParametersText(stringifyJson(entry.payload));
-    setRuntimeInputErrors([]);
-    toast.success("Saved input loaded into the JSON editor");
-  };
-
-  const savePersonalInput = async () => {
-    if (!packageId || !resolvedWorkflowKey) {
-      return;
-    }
-    const name = personalPresetName.trim();
-    if (!name) {
-      toast.error("Name this personal preset before saving it.");
-      return;
-    }
-    const payload = parseCurrentRuntimeInputs();
-    if (!payload) {
-      return;
-    }
-    try {
-      await createPersonalEntry.mutateAsync({
-        packageId,
-        payload: { name, payload },
-        workflowKey: resolvedWorkflowKey,
-      });
-      setPersonalPresetName("");
-      toast.success("Saved personal runtime input preset");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save personal runtime input preset.");
-    }
-  };
-
-  const overwritePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
-    if (!packageId || !resolvedWorkflowKey) {
-      return;
-    }
-    const payload = parseCurrentRuntimeInputs();
-    if (!payload) {
-      return;
-    }
-    const name = personalPresetName.trim() || entry.name;
-    try {
-      await updatePersonalEntry.mutateAsync({
-        entryId: entry.id,
-        packageId,
-        payload: { name: name || null, payload },
-        workflowKey: resolvedWorkflowKey,
-      });
-      setPersonalPresetName("");
-      toast.success("Updated personal runtime input preset");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update personal runtime input preset.");
-    }
-  };
-
-  const deletePersonalInput = async (entry: WorkflowPackageRuntimeInputEntryRead) => {
-    if (!packageId || !resolvedWorkflowKey) {
-      return;
-    }
-    try {
-      await deletePersonalEntry.mutateAsync({
-        entryId: entry.id,
-        packageId,
-        workflowKey: resolvedWorkflowKey,
-      });
-      toast.success("Deleted personal runtime input preset");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete personal runtime input preset.");
-    }
-  };
-
-  const launchPackage = async () => {
-    if (!packageId) {
-      return;
-    }
-    setRuntimeInputErrors([]);
-    let parameters: UnknownRecord;
-    try {
-      parameters = parseLaunchParametersJson(parametersText);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Runtime inputs JSON must be a valid object.";
-      setRuntimeInputErrors([{ field: "parameters", issue: message }]);
-      toast.error(message);
-      return;
-    }
-    try {
-      const preflight = await onRunPreflight();
-      if (preflight && !preflight.ready) {
-        toast.error("Resolve blocking preflight diagnostics before launch.");
-        return;
-      }
-      const run = await createLaunch.mutateAsync({
-        packageId,
-        payload: { parameters, workflowKey: workflowKey || null },
-      });
-      toast.success("Package run queued");
-      navigate(`/runs/${run.id}`);
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.details.length > 0) {
-        setRuntimeInputErrors(error.details);
-      }
-      toast.error(error instanceof Error ? error.message : "Failed to launch workflow package.");
-    }
-  };
-
-  return (
-    <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-launch-tab">
-      <CardHeader className="border-b pb-4">
-        <CardTitle>Launch package run</CardTitle>
-        <CardDescription>Select a workflow key, provide runtime inputs, preflight, then queue a run from the current package.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4">
-        <div className="space-y-2"><Label htmlFor="workflow-key">Workflow key</Label><Input id="workflow-key" aria-label="Workflow key" placeholder="Workflow key" value={workflowKey} onChange={(event) => setWorkflowKey(event.target.value)} /></div>
-        {launchLoading ? <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">Loading launch metadata...</div> : null}
-        <ModelConnectionModeSummary diagnostics={launchDiagnostics} read={launchRead} />
-        <Card className="bg-background/60">
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1">
-                <CardTitle className="text-base">Runtime inputs</CardTitle>
-                <CardDescription>Edit the schema-derived template as raw JSON. Launch parameters must remain a JSON object.</CardDescription>
-              </div>
-              <Button size="sm" type="button" variant="outline" onClick={resetParameters}>Reset to template</Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!inputTemplate.schemaSupported ? (
-              <Alert className="border-chart-3/30 bg-chart-3/10">
-                <AlertCircle />
-                <AlertTitle>Schema template started empty</AlertTitle>
-                <AlertDescription>
-                  <p>{inputTemplate.reason}</p>
-                  {inputTemplate.issues.length > 0 ? (
-                    <ul className="list-disc pl-5">
-                      {inputTemplate.issues.map((issue) => <li key={`${issue.field}-${issue.issue}`}>{issue.field}: {issue.issue}</li>)}
-                    </ul>
-                  ) : null}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            <RuntimeInputValidationAlert errors={runtimeInputErrors} />
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-              <div className="space-y-2">
-                <Label htmlFor="runtime-json">Runtime inputs JSON</Label>
-                <Textarea id="runtime-json" aria-label="Runtime inputs JSON" className="min-h-72 font-mono text-xs" rows={14} value={parametersText} onChange={(event) => setParametersText(event.target.value)} />
-              </div>
-              <SavedInputsHelper
-                createDisabled={!packageId || !resolvedWorkflowKey || !personalPresetName.trim() || runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
-                createPending={createPersonalEntry.isPending}
-                deletePending={deletePersonalEntry.isPending}
-                error={runtimeInputRegistry.isError ? runtimeInputRegistry.error : null}
-                historyEntries={runtimeInputRegistry.data?.history ?? []}
-                loading={runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching}
-                personalEntries={runtimeInputRegistry.data?.personal ?? []}
-                presetName={personalPresetName}
-                updatePending={updatePersonalEntry.isPending}
-                workflowKey={resolvedWorkflowKey}
-                onCreate={() => void savePersonalInput()}
-                onDelete={(entry) => void deletePersonalInput(entry)}
-                onLoad={loadSavedInput}
-                onPresetNameChange={setPersonalPresetName}
-                onUpdate={(entry) => void overwritePersonalInput(entry)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button disabled={!packageId || launchLoading} type="button" variant="outline" onClick={() => void onRunPreflight()}><FileCheck2 data-icon="inline-start" />Run preflight</Button>
-          <Button disabled={!packageId || createLaunch.isPending || launchLoading} type="button" onClick={() => void launchPackage()}>{createLaunch.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <PlayCircle data-icon="inline-start" />}Launch Run</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function ExportsTab(props: {
   draft: WorkflowPackageDraft;
   onOpenImportWorkspace: () => void;
@@ -1666,30 +1095,24 @@ function ExportsTab(props: {
 }
 
 export function WorkflowPackageEditorPage() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { packageId } = useParams<{ packageId: string }>();
-  const isNew = location.pathname === "/workflow-packages/new";
+  const isNew = packageId === undefined;
   const packageQuery = useWorkflowPackage(isNew ? undefined : packageId);
   const manifestQuery = useWorkflowPackageManifest(isNew ? undefined : packageId);
   const workflowPackage = packageQuery.data;
   const editorShellRef = useRef<HTMLDivElement>(null);
   const pendingTabScrollTop = useRef<number | null>(null);
-  const previousPathname = useRef(location.pathname);
-  const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>(() => routeTab(location.pathname));
+  const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>("overview");
   const [draft, setDraft] = useState<WorkflowPackageDraft>(() => createWorkflowPackageDraft());
   const [isDirty, setIsDirty] = useState(false);
+  const [launchConfirmationOpen, setLaunchConfirmationOpen] = useState(false);
   const [issues, setIssues] = useState<WorkflowPackageEditorIssue[]>([]);
   const [diagnosticTarget, setDiagnosticTarget] = useState<DiagnosticTarget>(null);
   const [initializedManifestIdentity, setInitializedManifestIdentity] = useState<string | null>(isNew ? "new" : null);
-  const [workflowKey, setWorkflowKey] = useState("");
-  const [preflightRead, setPreflightRead] = useState<WorkflowPackageLaunchRead | undefined>(undefined);
   const createPackage = useCreateWorkflowPackage();
   const updatePackage = useUpdateWorkflowPackage();
   const validatePackage = useValidateWorkflowPackageManifest();
-  const preflightPackage = usePreflightWorkflowPackage();
-  const createLaunch = useCreateWorkflowPackageLaunch();
-  const launchQuery = useWorkflowPackageLaunch(isNew ? undefined : packageId, workflowKey.trim() || undefined);
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
   const secretBindingsQuery = useWorkflowPackageSecretBindings(isNew ? undefined : packageId);
@@ -1717,14 +1140,6 @@ export function WorkflowPackageEditorPage() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeTab]);
-
-  useEffect(() => {
-    if (previousPathname.current === location.pathname) {
-      return;
-    }
-    previousPathname.current = location.pathname;
-    setActiveTab(routeTab(location.pathname));
-  }, [location.pathname]);
 
   const parsedManifest = useMemo(() => {
     if (isNew || !manifestQuery.data) {
@@ -1758,17 +1173,10 @@ export function WorkflowPackageEditorPage() {
     setIsDirty(false);
   }, [initializedManifestIdentity, isDirty, isNew, manifestQuery.data, parsedManifest]);
 
-  useEffect(() => {
-    if (launchQuery.data?.workflowKey && !workflowKey) {
-      setWorkflowKey(launchQuery.data.workflowKey);
-    }
-  }, [launchQuery.data?.workflowKey, workflowKey]);
-
-  const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, MCP bindings, and launch flows." : "Package-local authoring shell for resources that must not become standalone global pages.");
+  const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, and MCP bindings." : "Package-local authoring shell for resources that must not become standalone global pages.");
   const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
   const combinedIssues = [...localIssues, ...issues];
   const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`, label: connection.name, value: connection.key }));
-  const launchDiagnostics = diagnosticsFromLaunch(preflightRead ?? launchQuery.data);
   const referencedSecretKeys = useMemo(() => collectSecretReferenceKeys(draft.spec.workflows), [draft.spec.workflows]);
   const isSaving = createPackage.isPending || updatePackage.isPending;
   const manifestParseErrors = parsedManifest?.errors ?? [];
@@ -1789,7 +1197,6 @@ export function WorkflowPackageEditorPage() {
   };
 
   const clearTransientEditorState = () => {
-    setPreflightRead(undefined);
     setIssues([]);
     setDiagnosticTarget(null);
     setIsDirty(false);
@@ -1828,7 +1235,7 @@ export function WorkflowPackageEditorPage() {
   };
 
   const focusIssue = (issue: WorkflowPackageEditorIssue) => {
-    const target = diagnosticToEditorTarget(issue.field);
+    const target = diagnosticToAuthoringTarget(issue.field);
     setDiagnosticTarget(target);
     setActiveTab(target.tab);
     window.setTimeout(() => {
@@ -1836,10 +1243,6 @@ export function WorkflowPackageEditorPage() {
       field?.focus();
       field?.scrollIntoView({ block: "center", inline: "nearest" });
     }, 50);
-  };
-
-  const focusPackageDiagnostic = (diagnostic: PackageDiagnostic) => {
-    focusIssue({ field: diagnostic.field, issue: diagnostic.issue, tab: diagnosticToEditorTarget(diagnostic.field).tab });
   };
 
   const saveSecretBinding = async (key: string, value: string) => {
@@ -1864,28 +1267,6 @@ export function WorkflowPackageEditorPage() {
       toast.success(`Secret binding ${key} deleted`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Secret binding delete failed.");
-    }
-  };
-
-  const runPackagePreflight = async (): Promise<WorkflowPackageLaunchRead | null> => {
-    if (!packageId) {
-      return null;
-    }
-    try {
-      const result = await preflightPackage.mutateAsync({ packageId, payload: { workflowKey: workflowKey || null, parameters: {} } });
-      setPreflightRead(result);
-      const diagnostics = diagnosticsFromLaunch(result);
-      const blockingIssue = diagnostics.find((diagnostic) => diagnostic.severity === "error");
-      if (blockingIssue) {
-        focusPackageDiagnostic(blockingIssue);
-        toast.warning("Package preflight found blocking diagnostics");
-      } else {
-        toast.success(result.warnings.length > 0 ? "Package preflight passed with warnings" : "Package preflight passed");
-      }
-      return result;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Package preflight failed.");
-      return null;
     }
   };
 
@@ -1920,7 +1301,6 @@ export function WorkflowPackageEditorPage() {
     if (isNew) {
       const created = await createPackage.mutateAsync({ manifestSource });
       clearTransientEditorState();
-      setWorkflowKey("");
       toast.success("Workflow package created");
       navigate(`/workflow-packages/${created.id}`);
       return;
@@ -1932,6 +1312,25 @@ export function WorkflowPackageEditorPage() {
     }
   };
 
+  const launchSavedPackage = () => {
+    if (!packageId) {
+      return;
+    }
+    setLaunchConfirmationOpen(false);
+    navigate(`/workflow-packages/${packageId}/run`);
+  };
+
+  const requestLaunchSavedPackage = () => {
+    if (!packageId) {
+      return;
+    }
+    if (isDirty) {
+      setLaunchConfirmationOpen(true);
+      return;
+    }
+    launchSavedPackage();
+  };
+
   if (!isNew && (packageQuery.isPending || manifestQuery.isPending)) {
     return <EditorSkeleton />;
   }
@@ -1940,10 +1339,24 @@ export function WorkflowPackageEditorPage() {
     <div ref={editorShellRef} className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
       <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{location.pathname.endsWith("/run") ? <Badge variant="secondary">Launch route</Badge> : null}{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button><Button aria-label="Run package preflight" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={() => packageId ? navigate(`/workflow-packages/${packageId}/run`) : undefined}><PlayCircle data-icon="inline-start" />Launch</Button></div>
+          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
+          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button><Button aria-label="Validate package" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={requestLaunchSavedPackage}><PlayCircle data-icon="inline-start" />Launch</Button></div>
         </CardContent>
       </Card>
+      <Dialog open={launchConfirmationOpen} onOpenChange={setLaunchConfirmationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Launch saved package?</DialogTitle>
+            <DialogDescription>
+              This will open the launch page for the last saved version of this package. Unsaved editor changes are excluded until you save them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setLaunchConfirmationOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={launchSavedPackage}><PlayCircle data-icon="inline-start" />Launch saved package</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {editorBlocker ? (
         <ManifestBlockingState errors={editorBlocker.errors} loading={packageQuery.isFetching || manifestQuery.isFetching} onRetry={retryManifestLoad} title={editorBlocker.title} />
       ) : (
@@ -1963,8 +1376,6 @@ export function WorkflowPackageEditorPage() {
               <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
               <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
               <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
-              <TabsContent value="preflight" className="mt-0"><PreflightTab diagnostics={launchDiagnostics} launchRead={launchQuery.data} loading={preflightPackage.isPending || launchQuery.isPending} onOpenField={focusPackageDiagnostic} onRunPreflight={() => void runPackagePreflight()} preflightRead={preflightRead} workflowPackage={workflowPackage} /></TabsContent>
-              <TabsContent value="launch" className="mt-0"><LaunchTab createLaunch={createLaunch} launchRead={launchQuery.data} launchLoading={launchQuery.isPending} onRunPreflight={runPackagePreflight} packageId={packageId} setWorkflowKey={setWorkflowKey} workflowKey={workflowKey} /></TabsContent>
               <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} onOpenImportWorkspace={openImportWorkspace} packageId={packageId} /></TabsContent>
             </div>
           </Tabs>

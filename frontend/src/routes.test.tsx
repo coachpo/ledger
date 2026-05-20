@@ -15,6 +15,8 @@ import {
 } from "./extensions/runtime-helpers";
 import { queryKeys } from "./lib/query-keys";
 import type { ExtensionListRead } from "./lib/types/extension";
+import { WorkflowPackageEditorPage } from "./pages/workflow-packages/editor";
+import { WorkflowPackageLaunchPage } from "./pages/workflow-packages/launch";
 import { router } from "./routes";
 
 Object.defineProperty(globalThis, "localStorage", {
@@ -64,6 +66,16 @@ function extensionList(enabled: boolean): ExtensionListRead {
   };
 }
 
+type RouteWithComponent = {
+  Component?: unknown;
+  element?: { type?: unknown } | null;
+};
+
+function matchedRouteComponent(path: string) {
+  const match = matchRoutes(router.routes, path)?.at(-1)?.route as RouteWithComponent | undefined;
+  return match?.Component ?? match?.element?.type;
+}
+
 describe("router", () => {
   it("does not register removed legacy route families", () => {
     expect(matchRoutes(router.routes, "/tryout")).toBeNull();
@@ -84,10 +96,10 @@ describe("router", () => {
     expect(matchRoutes(router.routes, "/workflow-packages")).not.toBeNull();
     expect(matchRoutes(router.routes, "/workflow-packages/import")).not.toBeNull();
     expect(matchRoutes(router.routes, "/workflow-packages/new")).not.toBeNull();
-    expect(matchRoutes(router.routes, "/workflow-packages/123")).not.toBeNull();
-    expect(
-      matchRoutes(router.routes, "/workflow-packages/123/run"),
-    ).not.toBeNull();
+    expect(matchedRouteComponent("/workflow-packages/123")).toBe(WorkflowPackageEditorPage);
+    expect(matchedRouteComponent("/workflow-packages/123/run")).toBe(WorkflowPackageLaunchPage);
+    expect(matchedRouteComponent("/workflow-packages/123/run")).not.toBe(WorkflowPackageEditorPage);
+    expect(matchRoutes(router.routes, "/workflow-packages/123/launch")).toBeNull();
 
     for (const retiredRoute of retiredAuthoringRoutes) {
       expect(matchRoutes(router.routes, retiredRoute)).toBeNull();

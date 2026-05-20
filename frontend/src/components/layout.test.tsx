@@ -93,7 +93,7 @@ describe("Layout", () => {
                 />
                 <Route
                   path="workflow-packages/:packageId/run"
-                  element={<div>Package launch content</div>}
+                  element={<div data-testid="workflow-package-launch-page">Package launch content</div>}
                 />
                 <Route
                   path="runs/:runId"
@@ -195,6 +195,7 @@ describe("Layout", () => {
         "Launch Workflow Package",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-package-launch-page").parentElement).toHaveClass("h-full");
   });
 
   it("gives run detail routes full-height workspace treatment", () => {

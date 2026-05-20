@@ -34,7 +34,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs.
+- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Model Connections, and Runs. Phase 1 keeps `/workflow-packages/:packageId/run` as the dedicated `Launch Workflow Package` page.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
 - Platform authoring helpers under `frontend/src/lib/platform-authoring/` keep schema/value/ref/manifest transforms out of routed pages.
@@ -56,8 +56,8 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 3. Report generation compiles templates into immutable markdown snapshots with generated slug/name values.
 4. Reusable report-series loops use a stable runtime input such as `inputs.analysis_tag` plus matching report `metadata.tags`; `reports.by_tag(inputs.analysis_tag).latest.*` selects the latest prior report in the same series.
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
-6. Workflow package editors validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
-7. Package launch reads launch metadata, posts `{version, workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
+6. Workflow package editors are authoring-only surfaces that validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
+7. The dedicated launch page at `/workflow-packages/:packageId/run` reads launch metadata, runs preflight gating, posts `{workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
 8. Rerun drafts from root launch parameters and creates a descendant run with edited `parameters`; fork drafts from a selected source agent invocation and creates a descendant run with edited `invocationInput`, copied upstream context, and `resumeStepIndex` as the execution boundary.
 
 ## CI And Verification
@@ -67,5 +67,3 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 - Frontend CI runs lint, typecheck, build, unit tests, and Playwright after `pnpm install --frozen-lockfile`.
 - Docker image publishing builds backend and frontend linux/arm64 images for GHCR.
 - Cleanup keeps at least 3 recent workflow runs and removes untagged backend/frontend package versions.
-moves untagged backend/frontend package versions.
-.
