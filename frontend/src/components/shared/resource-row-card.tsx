@@ -16,8 +16,10 @@ export type ResourceRowCardProps = {
   className?: string;
   density?: ResourceRowCardDensity;
   description?: ReactNode;
+  leading?: ReactNode;
   metadata?: ReactNode;
   primaryAction?: ResourceRowCardPrimaryAction;
+  selected?: boolean;
   subtitle?: ReactNode;
   testId?: string;
   title: ReactNode;
@@ -120,16 +122,25 @@ export function ResourceRowCard({
   actions,
   className,
   density = "compact",
+  leading,
+  selected = false,
   testId,
   ...bodyProps
 }: ResourceRowCardProps) {
   return (
     <Card
-      className={cn("overflow-hidden transition-colors hover:bg-accent/50", className)}
+      className={cn(
+        "overflow-hidden transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted",
+        className,
+      )}
+      data-state={selected ? "selected" : undefined}
       data-testid={testId}
     >
       <CardContent className={contentClassByDensity[density]}>
-        {renderPrimaryBody({ ...bodyProps, density })}
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+          {leading ? <div className="shrink-0 pt-0.5 sm:pt-0">{leading}</div> : null}
+          {renderPrimaryBody({ ...bodyProps, density })}
+        </div>
         {actions ? <div className={actionsClassByDensity[density]}>{actions}</div> : null}
       </CardContent>
     </Card>

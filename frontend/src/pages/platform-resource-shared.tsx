@@ -20,8 +20,10 @@ type PlatformResourceCardProps = {
   badges?: ReactNode;
   density?: PlatformResourceCardDensity;
   description?: ReactNode;
+  leading?: ReactNode;
   metadata?: ReactNode;
   primaryAction?: ResourceRowCardPrimaryAction;
+  selected?: boolean;
   subtitle?: ReactNode;
   testId: string;
   title: ReactNode;
@@ -39,8 +41,10 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
     badges,
     density = "legacy",
     description,
+    leading,
     metadata,
     primaryAction,
+    selected = false,
     subtitle,
     testId,
     title,
@@ -53,8 +57,10 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
         badges={badges}
         density={density}
         description={description}
+        leading={leading}
         metadata={metadata}
         primaryAction={primaryAction}
+        selected={selected}
         subtitle={subtitle}
         testId={testId}
         title={title}
