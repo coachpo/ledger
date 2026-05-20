@@ -66,3 +66,5 @@ tmp/
 .omo/
 .playwright-mcp/
 backend/results/
+
+*.png
