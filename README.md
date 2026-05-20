@@ -14,13 +14,15 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 
 - Frontend routes for `portfolios`, `templates`, `reports`, `workflow-packages`, `model-connections`, and `runs`
 - Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
-- Backend `/api/*` platform routes for workflow packages, model connections, tools, and runs
+- Backend `/api/*` platform routes for workflow packages, model connections, tools, and runs, including reruns and invocation-input forks
 
 ## Workflow Package Contract
 
 Workflow Packages are the only live platform authoring root. Package manifests use `signaldeck.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 
-Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable executable snapshots with copied package id, key, hashes, workflow identity, and launch evidence.
+Model Connections remain global live bindings for provider credentials. Global Tools are read-only server-declared metadata from `/api/tools`; packages reference tool keys through local capability profiles. Package exports keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history. Runs store immutable executable snapshots with copied package id, key, hashes, workflow identity, launch evidence, rerun metadata, and fork artifacts.
+
+Rerun and fork are separate run-descendant flows. Rerun edits root launch `parameters` through `/api/runs/{runId}/reruns`. Fork edits one selected agent invocation input through `/api/runs/{runId}/fork-draft?sourceInvocationId=...` and `/api/runs/{runId}/forks`, preserves the source run input, copies upstream context, and resumes from `resumeStepIndex`. Historical step replay data may still appear as legacy read lineage, but it is not a live write surface.
 
 Legacy global authoring routes are unsupported. `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are removed surfaces, not compatibility aliases. Runtime tool keys and OpenAI function names stay unchanged.
 
@@ -114,7 +116,7 @@ Visit `http://127.0.0.1:25173/`.
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes.
+- The normal browser-facing execution surfaces are Workflow Packages, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters and fork is for one agent invocation input.
 - Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, and workflow graphs are authored inside one package. Private MCP configs use inline `env`, `headers`, and `query` fields, and the export/import contract is intentionally breaking.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.

@@ -40,7 +40,9 @@ Template/report series can be built by creating a template, previewing with `POS
 | Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
 | Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for slim bundled extension state. List responses expose only `key`, `label`, and `enabled`; toggle requests accept only `enabled`. |
 | Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by currently enabled extensions |
-| Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/step-replay-draft?stepIndex=...`, `POST /api/runs/{runId}/step-replays` |
+| Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks` |
+
+Rerun drafts expose root launch `parameters`, and rerun creates are the only run-descendant write flow that edits root parameters. Fork drafts expose the selected source agent invocation's persisted input by `sourceInvocationId`. Fork creates accept `sourceInvocationId` and full replacement `invocationInput`, preserve the source run input, copy upstream context, persist `run_forks`, and resume execution at `resumeStepIndex`. Historical step replay fields can still appear in read payloads for legacy lineage, but `/step-replay-draft` and `/step-replays` are not live write routes.
 
 ## Workflow Package HTTP Nodes and Secret Bindings
 
@@ -66,7 +68,7 @@ Run detail payloads expose operations separately from agents. Each `steps[]` ite
 
 Run list and detail payloads include `extensionDependencies`, a dependency-only array used to explain which extension-owned surfaces the run needed at launch. Each record contains only `extensionKey`, `surfaces`, and `fields`. It is not a plugin manifest, state snapshot, audit log, or public extension metadata carrier.
 
-Operation invocation rows persist in `run_operation_invocations`, not `run_agent_invocations`. Agent-only steps keep `operationInvocations: []`; HTTP-only steps keep `invocations: []`; mixed execution steps may contain both arrays. Reruns and step replays copy operation rows with source-operation provenance while keeping redacted request metadata and response metadata secret-safe.
+Operation invocation rows persist in `run_operation_invocations`, not `run_agent_invocations`. Agent-only steps keep `operationInvocations: []`; HTTP-only steps keep `invocations: []`; mixed execution steps may contain both arrays. Reruns copy operation rows with source-operation provenance while keeping redacted request metadata and response metadata secret-safe. Fork creation copies upstream operation rows before the resume boundary, but phase 1 rejects operation and tool invocation fork targets.
 
 ## Runtime Tool Contract Notes
 

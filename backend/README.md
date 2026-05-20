@@ -27,7 +27,9 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 - `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
 - `/api/model-connections` for global live provider bindings and secret-safe connection testing
 - `/api/tools` for read-only server-declared tool metadata
-- `/api/runs` for global run list/detail, rerun, step replay, and immutable run-owned executable snapshot provenance
+- `/api/runs` for global run list/detail, root-parameter reruns, invocation-input forks, legacy replay lineage reads, and immutable run-owned executable snapshot provenance
+
+Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{runId}/reruns`; they work with root launch `parameters`. Fork endpoints are `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...` and `POST /api/runs/{runId}/forks`; they work with one agent invocation `invocationInput`, persist `run_forks`, and use `resumeStepIndex` only as the execution boundary.
 
 ## Tests
 

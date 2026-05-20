@@ -96,7 +96,15 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{workflowKey, parameters}`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
 
-Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, step replay metadata, dependency-only extension requirements, and snapshot-based package provenance. Detail payloads include steps, agent invocations, operation invocations, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. Reruns and step replays execute that stored run snapshot, not the current package state. The browser labels the step flow `Start new run from Step N`; the API and internal contract stay step replay based because execution uses the stored run snapshot. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
+Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, dependency-only extension requirements, and snapshot-based package provenance. Detail payloads include steps, agent invocations, operation invocations, optional `fork` data from `run_forks`, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. Reruns and forks execute the stored run snapshot, not the current package state. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
+
+Rerun is the root-parameter flow. `GET /api/runs/{runId}/rerun-draft` returns root launch parameters, and `POST /api/runs/{runId}/reruns` creates a new run with edited `parameters`.
+
+Fork is the invocation-input flow. `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...` returns the selected source agent invocation's persisted actual input, and `POST /api/runs/{runId}/forks` creates a descendant run that preserves the source run input, copies upstream context, edits that one target invocation input, and resumes from `resumeStepIndex`. Phase 1 supports agent invocation targets only. Operation and tool invocation forks are rejected rather than treated as step-wide forks.
+
+`resumeStepIndex` is an execution boundary, not the editable target. The editable target is `sourceInvocationId`, and the create payload uses `invocationInput` as a full replacement for that target invocation input. Browser URL state mirrors this separation with `fork=1&resumeStepIndex=<n>&invocationId=<id>`.
+
+Historical step replay records remain readable as legacy lineage through legacy replay fields and copied source links. They are audit history only and are not the live write path for new run descendants.
 
 Run extension requirements appear as `extensionDependencies`. Each dependency record contains only `extensionKey`, `surfaces`, and `fields`. These records help explain launch-time requirements and are not public extension snapshots or a place to carry labels, enabled state, versioning, phase, categories, disabled reasons, or registrar metadata.
 
@@ -121,8 +129,8 @@ backend/app/services/{workflow_package_service,workflow_package_preflight,workfl
 backend/app/core/{config,telemetry}.py
 backend/app/services/workflow_package_manifest_{parser,compiler,decompiler}.py
 backend/app/schemas/{workflow_package,workflow_package_manifest,model_connection,run}.py
-backend/app/models/{workflow_package,model_connection,run,run_step,run_agent_invocation,run_operation_invocation}.py
-backend/app/repositories/{workflow_package_secret_binding,run_operation_invocation}.py
+backend/app/models/{workflow_package,model_connection,run,run_fork,run_step,run_agent_invocation,run_operation_invocation}.py
+backend/app/repositories/{workflow_package_secret_binding,run_fork,run_operation_invocation}.py
 ```
 
 ## Frontend Shape

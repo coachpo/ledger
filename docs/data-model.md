@@ -27,10 +27,11 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 | `run_workflow_package_snapshots` | one immutable executable snapshot per workflow-package run, keyed by `run_id`, with copied package identity, nullable historical `workflow_package_status`, workflow identity, hashes, manifest/export material, compiled plan, local refs, launch inputs, model-connection audit refs, and preflight summary |
 | `model_connections` | global saved provider/model endpoint config, encrypted API keys, health/test metadata, and archive state |
 | `extension_states` | operational bundled-extension state keyed by `extension_key`, storing only `enabled` |
-| `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun/replay metadata, package provenance, launch snapshots, and dependency-only extension requirements |
-| `run_steps` | persisted workflow step status, copied replay context, graph metadata, errors, and timestamps |
-| `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, and copied replay context |
-| `run_operation_invocations` | persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional trace span ids, and copied replay context |
+| `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun metadata, legacy replay lineage fields, package provenance, launch snapshots, and dependency-only extension requirements |
+| `run_forks` | first-class runtime fork artifact for descendant runs, keyed by `run_id`, with source run lineage, source invocation id, source and resume step indexes, and the edited invocation input snapshot |
+| `run_steps` | persisted workflow step status, copied rerun/fork context, graph metadata, errors, and timestamps |
+| `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, copied context, and edited fork target provenance |
+| `run_operation_invocations` | persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional trace span ids, and copied context |
 | `agent_memory_entries` | canonical platform-core memory entries keyed by opaque `memory_id`, with scope, kind, subject refs, status, content hash, idempotency key, and trusted provenance |
 | `agent_memory_revisions` | immutable content revisions keyed by opaque `revision_id`, with model-safe summary/content, attributes, revision action, supersession links, and content hash |
 | `run_memory_events` | append-only run-scoped memory evidence for retrieval, injection, writes/reuse, supersession, review, and failure facts |
@@ -48,7 +49,9 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`, while platform-core memory tools stay visible independent of finance extension state.
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
 - Runs store snapshot-based package id, package key, package hashes, workflow key, local resource refs, resolved model connection refs, launch inputs, and `extension_dependencies` records containing only extension key, surfaces, and fields. Run provenance may include nullable `workflowPackageStatus` only as historical snapshot data; it is not live package state.
-- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `run_workflow_package_snapshots`, `extension_states`, `runs`, `run_steps`, `run_agent_invocations`, `run_operation_invocations`, `agent_memory_entries`, `agent_memory_revisions`, and `run_memory_events`. Repair must not recreate package-side history or treat report rows as canonical memory.
+- Reruns may edit root launch parameters. Forks must preserve source run input, copy upstream context, persist one `run_forks` artifact, and mark the selected target agent invocation as edited with source invocation provenance. `resume_step_index` is the execution boundary only; `source_invocation_id` identifies the editable target.
+- Historical step replay lineage fields remain readable on old run rows for audit context, but they are not the live write-side artifact for new forks.
+- Startup repair handles current platform tables through `backend/app/db/upgrades.py`, including `workflow_packages`, `run_workflow_package_snapshots`, `extension_states`, `runs`, `run_forks`, `run_steps`, `run_agent_invocations`, `run_operation_invocations`, `agent_memory_entries`, `agent_memory_revisions`, and `run_memory_events`. Repair must not recreate package-side history or treat report rows as canonical memory.
 
 ## Retired Data
 

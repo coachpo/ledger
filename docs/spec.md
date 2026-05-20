@@ -27,7 +27,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 ## Key Backend Services
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, report, and provider services are finance workspace contributions. Core memory services are platform-owned and remain available when finance is disabled.
-- Workflow package, model connection, extension-state, tool catalog, core memory, and run services own platform authoring, validation, live bindings, enable/disable state, execution evidence, reruns, and step replays.
+- Workflow package, model connection, extension-state, tool catalog, core memory, and run services own platform authoring, validation, live bindings, enable/disable state, execution evidence, reruns, forks, and legacy replay lineage reads.
 - Runtime tool and MCP boundaries live under `backend/app/agents/`; package-private MCP configs are validated and dispatched only through service-owned security boundaries.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
@@ -47,7 +47,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 - Model Connections own live provider endpoint/key/default runtime settings and preserve secret-safe behavior.
 - Tools are read-only server-declared metadata exposed through the core `/api/tools` host and referenced by package-local capability profiles. Current finance tool entries appear only while `signaldeck.finance` is enabled; `signaldeck.memory.write` and `signaldeck.memory.lookup` are platform-core tools.
 - `signaldeck.finance` supports enable/disable state only and is enabled by default during `init_db()` and reset/seed startup. `/api/extensions` exposes only `key`, `label`, and `enabled`.
-- Runs persist package lineage in `runs`, `run_steps`, `run_agent_invocations`, and `run_operation_invocations`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token. Run memory evidence persists in `run_memory_events`, and run extension data is dependency-only with only extension key, surfaces, and fields.
+- Runs persist package lineage in `runs`, `run_steps`, `run_agent_invocations`, `run_operation_invocations`, and `run_forks`; optional Logfire spans populate stored trace ids and invocation span ids, but execution still works without a Logfire token. Run memory evidence persists in `run_memory_events`, and run extension data is dependency-only with only extension key, surfaces, and fields.
 
 ## Data Flow Highlights
 
@@ -58,7 +58,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
 6. Workflow package editors validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
 7. Package launch reads launch metadata, posts `{version, workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
-8. Rerun and step replay flows draft from persisted run state, then create new run/replay records through platform routes.
+8. Rerun drafts from root launch parameters and creates a descendant run with edited `parameters`; fork drafts from a selected source agent invocation and creates a descendant run with edited `invocationInput`, copied upstream context, and `resumeStepIndex` as the execution boundary.
 
 ## CI And Verification
 

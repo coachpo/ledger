@@ -17,7 +17,7 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 - Package import/export with no secrets, no encrypted credential payloads, no database ids, and no run history.
 - Model Connection CRUD, encrypted stored secrets, OpenAI-family URL normalization, and connection testing as global live bindings.
 - Global read-only Tools metadata from the server-declared catalog.
-- Run list/detail, package provenance, rerun drafts, reruns, step replay drafts, and step replays.
+- Run list/detail, package provenance, rerun drafts, reruns, fork drafts, and invocation-input forks.
 
 ### Out Of Scope
 
@@ -51,7 +51,8 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 - Package launches must use the strict launch envelope and create queued global runs with immutable package provenance.
-- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun metadata, and step replay metadata.
+- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun metadata, fork metadata, and legacy replay lineage when a historical run has it.
+- Rerun must be the root-parameter descendant flow. Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, with `resumeStepIndex` used only as the execution boundary.
 
 ## Non-Functional Requirements
 
