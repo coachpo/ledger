@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, `ExtensionService` owns bundled extension state/filtering, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, `ExtensionService` owns bundled extension state/filtering, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Model Connections, Extensions, Tools, memory, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -18,17 +18,18 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | CSV import preview/commit | `csv_import_service.py` | atomic preview/commit contract |
 | Trading simulation rules | `trading_operation_service.py` | BUY/SELL/DIVIDEND/SPLIT + balance/position effects |
 | Quote/history/cache logic | `market_data_service.py` | `QuoteProvider`, fallback cache, stale/warning behavior |
-| Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, report re-compilation |
+| Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, and report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Memory workflows | `memory_service.py`, `memory_context_service.py`, `memory_store.py`, `memory_report_service.py`, `report_backed_memory_store.py` | core memory DTO lifecycle, Postgres persistence, prompt snippets, run evidence, and historical report-domain readers |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
-| Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | slim bundled extension state, ToolCatalog/runtime registry filtering, dependency-only run extension records |
+| Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | slim bundled extension state, ToolCatalog/runtime registry filtering, dependency-only run extension records, execution providers, and lifecycle hooks |
 | Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `workflow_package_manifest_decompiler.py` | package-first authoring, validation, import/export, preflight, and immutable package artifacts |
-| Run execution service | `run_service.py` | persisted global run lifecycle, package provenance, Logfire trace/span metadata, per-step detail, and background execution |
+| Run execution service | `run_service.py`, `run_lifecycle.py`, `execution_providers.py` | persisted run lifecycle, package provenance, dependency-only extension hooks, provider bundles, and background execution |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
+| Legacy cutover helpers | `legacy_authoring.py` | upgrade-only legacy authoring context, not a live service surface |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_memory_service.py`, `../../tests/test_social_sentiment_service.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, extension state, platform execution, core memory, historical agent-memory reports, provider warnings, run artifacts, and cutover assertions |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_memory_service.py`, `../../tests/test_social_sentiment_service.py`, `../../tests/test_legacy_backend_cutover.py` | preserved-product regressions, extension state, platform execution, core memory, provider warnings, run artifacts, and cutover assertions |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -43,8 +44,8 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Phase 1 memory is platform-core. `MemoryService` defaults to `PostgresMemoryStore`, `memoryId` and `revisionId` values are opaque, and run evidence persists in `run_memory_events`.
 - Phase 1 does not have vector search, embeddings, or chunk tables. Memory lookup remains scoped and deterministic over core memory entries and revisions.
 - Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links. API/UI projections may include nested `auditLinks.report` only for human audit actions.
-- Workflow package services keep one mutable current package artifact, validate typed contracts before save, keep private MCP `env`, `headers`, and `query` values inline through import/export, and keep run persistence detailed enough for snapshot provenance and the run monitor.
-- `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, and extension-filtered ToolCatalog/runtime registries.
+- Workflow package services keep one mutable current package artifact, validate typed contracts before save, keep private MCP `env`, `headers`, and `query` values inline through import/export, and keep run persistence detailed enough for snapshot provenance, rerun/fork lineage, and the run monitor.
+- `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, extension-filtered ToolCatalog/runtime registries, execution provider bundles, and run lifecycle hooks.
 - `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records dependency-only extension requirements, and falls back to trace-free execution when telemetry setup fails.
 - Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
@@ -68,13 +69,13 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_memory_reports.py tests/test_legacy_backend_cutover.py
+uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_memory_reports.py tests/test_legacy_backend_cutover.py
 ```
 
 ## NOTES
 - `TradingOperationService` may delete positions on full sell-down and supports DIVIDEND/SPLIT as well as BUY/SELL.
 - `MarketDataService` caches quotes by provider/symbol/as-of and recomputes staleness when falling back to cached rows.
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
-- `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, rerun/step-replay lineage, memory artifact report links, and per-step/per-agent detail for the run monitor.
+- `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, rerun/fork lineage, dependency-only extension records, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.
 - `ExtensionService` reads private bundled registry wiring, persists slim toggle state when changed, and keeps tool discovery/runtime dispatch aligned with enabled extensions.

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers route modules and dependency wiring in `app/api/`.
 
 ## OVERVIEW
-`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts `/api/v1` finance routes through `signaldeck.finance` registrations plus current `/api/*` platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts preserved `/api/v1` finance routes through `signaldeck.finance` registrations plus current `/api/*` platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -13,7 +13,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Task | Location | Notes |
 |---|---|---|
 | Router composition | `router.py`, `platform_router.py`, `../main.py` | `router.py` includes `signaldeck.finance` `/api/v1` registrations, `platform_router.py` composes `/api/*`, and `main.py` mounts both |
-| Service construction | `dependencies.py` | request-scoped session plus finance extension, extension state, model-connection, and agent-platform service factories |
+| Service construction | `dependencies.py` | request-scoped session plus finance extension, extension state, model-connection, tool-catalog, workflow-package, and run service factories |
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD, symbol lookup, CSV preview, and CSV commit imports |
@@ -21,21 +21,24 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Agent-platform routes | `workflow_packages.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs |
+| Platform routes | `workflow_packages.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs, including rerun/fork endpoints under Runs |
 | Finance route registrations | `../extensions/signaldeck_finance/api_routers.py` | extension-gated `/api/v1` registration list for preserved finance routes |
+| Legacy cutover modules on disk | `agents.py`, `capabilities.py`, `mcp_servers.py`, `output_schemas.py`, `workflows.py` | unmounted cutover/regression context only, not live routers |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
-- Each module declares one `APIRouter(prefix=..., tags=[...])`.
+- Each live module declares one `APIRouter(prefix=..., tags=[...])`.
 - `main.py` mounts `/api/v1` via `router.py` and `/api/*` via `platform_router.py`; `/api/v1` route registrations come from `app.extensions.signaldeck_finance.api_routers` and carry `require_extension_enabled()` dependencies.
 - Route handlers accept integer ids from the path and typed Pydantic bodies where applicable, then delegate to a service.
 - Use `Depends(get_...)` factories from `dependencies.py` rather than constructing services inline.
 - Keep routes RESTful: HTTP verbs express intent, and success responses match the declared `response_model`.
 - Routes should let service-layer `ApiError` exceptions and request-validation failures bubble to the handlers in `app/main.py`.
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
-- Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only. Agent-created reports use `source="agent"`; `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"` describe memory-report purpose/type, and server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.
+- Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
-- Workflow package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Model Connections, Extensions, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private. Legacy global authoring modules such as `agents.py`, `capabilities.py`, `mcp_servers.py`, `output_schemas.py`, and `workflows.py` are unmounted cutover context only. Do not change runtime tool keys or OpenAI function names.
+- Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Model Connections, Extensions, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
+- Legacy global authoring route modules still exist on disk for cutover and regression coverage only. Do not remount them, document them as live, or treat them as compatibility aliases.
+- Do not change runtime tool keys or OpenAI function names here.
 
 ## ANTI-PATTERNS
 - Do not put business rules or DB logic in route handlers.
