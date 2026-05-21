@@ -73,8 +73,49 @@ describe("RunsListPage", () => {
     });
   });
 
+  it("keeps monitor-specific empty and error states", () => {
+    useRunsMock.mockReturnValue({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isPending: false,
+      refetch: refetchMock,
+    });
+    const { rerender } = render(<RunsListPage />);
+
+    expect(screen.getByTestId("runs-monitor-filter-card")).toHaveTextContent(
+      "operational triage rather than generic CRUD inventory browsing",
+    );
+    expect(
+      screen.getByText("No runs match the current monitor filters."),
+    ).toBeVisible();
+    expect(screen.getByText(/widen the polling window/i)).toBeVisible();
+
+    useRunsMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Runs API unavailable"),
+      isError: true,
+      isPending: false,
+      refetch: refetchMock,
+    });
+    rerender(<RunsListPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Runs API unavailable");
+  });
+
   it("renders run rows, refreshes, and routes to detail", () => {
     render(<RunsListPage />);
+
+    expect(
+      screen.getByText(/inventory-monitor hybrid for recent agent and workflow executions/i),
+    ).toBeVisible();
+    const filterCard = screen.getByTestId("runs-monitor-filter-card");
+    expect(filterCard).toHaveTextContent("Monitor filters");
+    expect(filterCard).toHaveTextContent(
+      "Runs intentionally keep this filter card because the route polls every two seconds",
+    );
+    expect(screen.getByLabelText("Target kind")).toBeVisible();
+    expect(screen.getByLabelText("Run status")).toBeVisible();
 
     expect(screen.getByTestId("runs-row-14")).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
@@ -104,12 +145,13 @@ describe("RunsListPage", () => {
     expect(refetchMock).toHaveBeenCalled();
 
     const runsRow = screen.getByTestId("runs-row-15");
+    const primaryLink = within(runsRow).getByTestId("runs-row-primary-15");
+    const visibleOpen = within(runsRow).getByTestId("runs-row-action-15");
 
-    fireEvent.click(within(runsRow).getByTestId("runs-row-action-15"));
-    expect(navigateMock).toHaveBeenCalledWith("/runs/15");
-
-    navigateMock.mockClear();
-    fireEvent.click(within(runsRow).getByRole("button", { name: "Open Run" }));
-    expect(navigateMock).toHaveBeenCalledWith("/runs/15");
+    expect(primaryLink).toHaveAccessibleName("Open run #15");
+    expect(primaryLink).toHaveAttribute("href", "/runs/15");
+    expect(visibleOpen).toHaveAccessibleName("Open Run");
+    expect(visibleOpen).toHaveAttribute("href", "/runs/15");
+    expect(within(runsRow).queryByRole("button", { name: "Open Run" })).not.toBeInTheDocument();
   });
 });

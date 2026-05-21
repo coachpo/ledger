@@ -1,6 +1,6 @@
 import { ArrowRight, RefreshCcw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
@@ -63,7 +63,6 @@ function formatUnfinishedRunStatus(status: RunStatus): string {
 }
 
 export function RunsListPage() {
-  const navigate = useNavigate();
   const [targetKind, setTargetKind] = useState<RunTargetKind | undefined>(
     undefined,
   );
@@ -89,9 +88,9 @@ export function RunsListPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor recent agent and workflow executions with live status,
-            captured snapshot identity, total token summaries, and direct links
-            into per-run detail.
+            Inventory-monitor hybrid for recent agent and workflow executions,
+            with polling status, captured snapshot identity, token summaries, and
+            direct links into per-run detail.
           </p>
         </div>
         <Button
@@ -105,16 +104,18 @@ export function RunsListPage() {
         </Button>
       </div>
 
-      <Card>
+      <Card data-testid="runs-monitor-filter-card">
         <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
+          <CardTitle className="text-base">Monitor filters</CardTitle>
           <CardDescription>
-            Filter the monitor by target kind, target key, or terminal status.
+            Runs intentionally keep this filter card because the route polls every
+            two seconds and supports operational triage rather than generic CRUD
+            inventory browsing.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <div className="flex flex-col gap-2">
-            <Label>Target kind</Label>
+            <Label htmlFor="runs-target-kind">Target kind</Label>
             <Select
               value={targetKind ?? ALL_TARGET_KINDS}
               onValueChange={(value) =>
@@ -125,7 +126,7 @@ export function RunsListPage() {
                 )
               }
             >
-              <SelectTrigger aria-label="Target kind">
+              <SelectTrigger id="runs-target-kind" aria-label="Target kind">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -151,7 +152,7 @@ export function RunsListPage() {
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label>Run status</Label>
+            <Label htmlFor="runs-status">Run status</Label>
             <Select
               value={status ?? ALL_STATUSES}
               onValueChange={(value) =>
@@ -160,7 +161,7 @@ export function RunsListPage() {
                 )
               }
             >
-              <SelectTrigger aria-label="Run status">
+              <SelectTrigger id="runs-status" aria-label="Run status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -185,7 +186,7 @@ export function RunsListPage() {
       ) : null}
 
       {runsQuery.isError ? (
-        <Card>
+        <Card role="alert" aria-live="polite">
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             {runsQuery.error instanceof Error
               ? runsQuery.error.message
@@ -196,8 +197,14 @@ export function RunsListPage() {
 
       {!runsQuery.isPending && !runsQuery.isError && runs.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No runs match the current filter set.
+          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">
+              No runs match the current monitor filters.
+            </p>
+            <p className="text-xs">
+              Adjust target kind, target key, or status to widen the polling
+              window.
+            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -229,6 +236,12 @@ export function RunsListPage() {
                     : formatUnfinishedRunStatus(run.status)}
                 </>
               }
+              primaryAction={{
+                kind: "link",
+                label: `Open run #${run.id}`,
+                testId: `runs-row-primary-${run.id}`,
+                to: `/runs/${run.id}`,
+              }}
               metadata={
                 <div className="flex flex-col gap-2 text-xs text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -250,13 +263,15 @@ export function RunsListPage() {
               }
               actions={
                 <Button
+                  asChild
                   className="w-full cursor-pointer sm:w-auto"
                   data-testid={`runs-row-action-${run.id}`}
                   size="sm"
-                  onClick={() => navigate(`/runs/${run.id}`)}
                 >
-                  Open Run
-                  <ArrowRight data-icon="inline-end" />
+                  <Link to={`/runs/${run.id}`}>
+                    Open Run
+                    <ArrowRight data-icon="inline-end" />
+                  </Link>
                 </Button>
               }
             />
