@@ -121,7 +121,32 @@ describe("ModelConnectionsListPage", () => {
     });
   });
 
-  it("renders rows, deletes connections, and navigates to create and edit routes", async () => {
+  it("renders compact inventory empty and error states", () => {
+    useModelConnectionsMock.mockReturnValue({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    const { rerender } = render(<ModelConnectionsListPage />);
+
+    expect(screen.getByText("No model connections exist yet.")).toBeVisible();
+    expect(
+      screen.getByText(/create a saved endpoint before launching workflow packages/i),
+    ).toBeVisible();
+
+    useModelConnectionsMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Model API unavailable"),
+      isError: true,
+      isPending: false,
+    });
+    rerender(<ModelConnectionsListPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Model API unavailable");
+  });
+
+  it("renders rows, confirms deletes, and exposes create and edit routes", async () => {
     deleteModelConnectionMock.mockResolvedValue(undefined);
 
     render(<ModelConnectionsListPage />);
@@ -152,16 +177,23 @@ describe("ModelConnectionsListPage", () => {
       { key: "Enter" },
     );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Delete Primary OpenAI?",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
     await waitFor(() =>
       expect(deleteModelConnectionMock).toHaveBeenCalledWith(9),
     );
     expect(toastSuccessMock).toHaveBeenCalledWith("Model connection deleted");
 
-    fireEvent.click(screen.getByTestId("model-connections-new"));
-    expect(navigateMock).toHaveBeenCalledWith("/model-connections/new");
-
-    fireEvent.click(screen.getByTestId("model-connections-open-9"));
-    expect(navigateMock).toHaveBeenCalledWith("/model-connections/9/edit");
+    expect(screen.getByTestId("model-connections-new")).toHaveAttribute(
+      "href",
+      "/model-connections/new",
+    );
+    expect(screen.getByTestId("model-connections-open-9")).toHaveAttribute(
+      "href",
+      "/model-connections/9/edit",
+    );
   });
 
   it("renders search and table controls while keeping cards browse-only", () => {
@@ -217,6 +249,15 @@ describe("ModelConnectionsListPage", () => {
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
     }
+
+    expect(screen.getByTestId("model-connections-open-9")).toHaveAttribute(
+      "href",
+      "/model-connections/9/edit",
+    );
+    fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Delete Primary OpenAI?",
+    );
   });
 
   it("filters the sorted model connection inventory locally", () => {
@@ -358,6 +399,7 @@ describe("ModelConnectionsListPage", () => {
       { key: "Enter" },
     );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
 
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith(

@@ -8,7 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -16,6 +16,7 @@ import {
   useDeleteModelConnections,
   useModelConnections,
 } from "@/hooks/use-model-connections";
+import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { formatDateTime } from "@/lib/format";
 import type {
   ModelConnectionApiStyle,
@@ -146,7 +147,6 @@ function ModelConnectionMetadata({
 }
 
 export function ModelConnectionsListPage() {
-  const navigate = useNavigate();
   const connectionsQuery = useModelConnections();
   const deleteMutation = useDeleteModelConnection();
   const deleteConnectionsMutation = useDeleteModelConnections();
@@ -159,6 +159,8 @@ export function ModelConnectionsListPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<
     Set<ModelConnectionListItemRead["id"]>
   >(new Set());
+  const [deleting, setDeleting] =
+    useState<ModelConnectionListItemRead | null>(null);
   const filteredConnections = useMemo(
     () => filterConnections(connections, search),
     [connections, search],
@@ -197,7 +199,13 @@ export function ModelConnectionsListPage() {
     });
   };
 
-  const handleDelete = async (modelConnectionId: number) => {
+  const handleDelete = async () => {
+    if (!deleting) {
+      return;
+    }
+
+    const modelConnectionId = deleting.id;
+
     try {
       await deleteMutation.mutateAsync(modelConnectionId);
       toast.success("Model connection deleted");
@@ -206,6 +214,7 @@ export function ModelConnectionsListPage() {
         next.delete(modelConnectionId);
         return next;
       });
+      setDeleting(null);
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -258,14 +267,11 @@ export function ModelConnectionsListPage() {
             workflow packages reference by stable key.
           </p>
         </div>
-        <Button
-          className="cursor-pointer"
-          data-testid="model-connections-new"
-          size="sm"
-          onClick={() => navigate("/model-connections/new")}
-        >
-          <Plus data-icon="inline-start" />
-          New Model Connection
+        <Button asChild data-testid="model-connections-new" size="sm">
+          <Link to="/model-connections/new">
+            <Plus data-icon="inline-start" />
+            New Model Connection
+          </Link>
         </Button>
       </div>
 
@@ -318,7 +324,7 @@ export function ModelConnectionsListPage() {
       ) : null}
 
       {connectionsQuery.isError ? (
-        <Card>
+        <Card role="alert" aria-live="polite">
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             {connectionsQuery.error instanceof Error
               ? connectionsQuery.error.message
@@ -331,10 +337,17 @@ export function ModelConnectionsListPage() {
       !connectionsQuery.isError &&
       filteredConnections.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {search.trim()
-              ? "No model connections match this search."
-              : "No model connections exist yet."}
+          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">
+              {search.trim()
+                ? "No model connections match this search."
+                : "No model connections exist yet."}
+            </p>
+            <p className="text-xs">
+              {search.trim()
+                ? "Refine the search by connection name, stable key, model, or base URL."
+                : "Create a saved endpoint before launching workflow packages that need model access."}
+            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -366,15 +379,15 @@ export function ModelConnectionsListPage() {
                 metadata={<ModelConnectionMetadata connection={connection} />}
                 actions={
                   <>
-                    <Button
-                      data-testid={`model-connections-open-${connection.id}`}
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/model-connections/${connection.id}/edit`)
-                      }
-                    >
-                      <SquarePen data-icon="inline-start" />
-                      Edit
+                    <Button asChild size="sm">
+                      <Link
+                        aria-label={`Edit model connection ${connection.name}`}
+                        data-testid={`model-connections-open-${connection.id}`}
+                        to={`/model-connections/${connection.id}/edit`}
+                      >
+                        <SquarePen data-icon="inline-start" />
+                        Edit
+                      </Link>
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -395,7 +408,7 @@ export function ModelConnectionsListPage() {
                             deleteMutation.isPending ||
                             deleteConnectionsMutation.isPending
                           }
-                          onSelect={() => void handleDelete(connection.id)}
+                          onSelect={() => setDeleting(connection)}
                           variant="destructive"
                         >
                           <Trash2 className="size-3.5" />
@@ -502,16 +515,15 @@ export function ModelConnectionsListPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button
-                        data-testid={`model-connections-open-${connection.id}`}
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          navigate(`/model-connections/${connection.id}/edit`)
-                        }
-                      >
-                        <SquarePen data-icon="inline-start" />
-                        Edit
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          aria-label={`Edit model connection ${connection.name}`}
+                          data-testid={`model-connections-open-${connection.id}`}
+                          to={`/model-connections/${connection.id}/edit`}
+                        >
+                          <SquarePen data-icon="inline-start" />
+                          Edit
+                        </Link>
                       </Button>
                       <Button
                         data-testid={`model-connections-delete-${connection.id}`}
@@ -521,7 +533,7 @@ export function ModelConnectionsListPage() {
                         }
                         size="sm"
                         variant="outline"
-                        onClick={() => void handleDelete(connection.id)}
+                        onClick={() => setDeleting(connection)}
                       >
                         <Trash2 data-icon="inline-start" />
                         Delete
@@ -562,6 +574,19 @@ export function ModelConnectionsListPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDeleteDialog
+        open={deleting !== null}
+        title="Delete model connection"
+        description={`Delete ${deleting?.name ?? "this model connection"}? Workflow packages that reference its stable key may fail until updated. This cannot be undone.`}
+        confirmLabel="Delete connection"
+        isPending={deleteMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleting(null);
+          }
+        }}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
