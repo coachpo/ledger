@@ -34,10 +34,10 @@ Template/report series can be built by creating a template, previewing with `POS
 
 | Resource | Routes |
 |---|---|
-| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import`. Live package reads and writes do not include `status`; stale `status` filters or update fields return `422`. |
+| Workflow packages | `GET/POST /api/workflow-packages`, `GET/PATCH/DELETE /api/workflow-packages/{packageId}`, `GET /api/workflow-packages/{packageId}/manifest`, `POST /api/workflow-packages/validate-manifest`, `POST /api/workflow-packages/import`. Live package reads and writes do not include `status`; stale `status` filters or update fields return `422`. Deleting a package deletes its owned runs. |
 | Package secret bindings | `GET /api/workflow-packages/{packageId}/secret-bindings`, `PUT/DELETE /api/workflow-packages/{packageId}/secret-bindings/{key}` |
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches` |
-| Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test` |
+| Model connections | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`. Deletion is blocked by current Workflow Packages that reference the stable key, not by historical run snapshots. |
 | Extensions | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}` for slim bundled extension state. List responses expose only `key`, `label`, and `enabled`; toggle requests accept only `enabled`. |
 | Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by currently enabled extensions |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks` |
