@@ -83,21 +83,27 @@ export function PortfolioDetailPage() {
 
   return (
     <div className="max-w-7xl space-y-3 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-0.5">
-          <Button size="sm" variant="ghost" className="-ml-2 h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => navigate("/portfolios")}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between" data-testid="portfolio-detail-header">
+        <div className="min-w-0 space-y-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-2 h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/portfolios")}
+          >
             <ArrowLeft className="mr-1 size-3.5" /> Portfolios
           </Button>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">{portfolio.name}</h1>
-            <p className="text-xs text-muted-foreground">{portfolio.description || "No description"} · Updated {formatDateTime(portfolio.updatedAt)}</p>
+          <div className="min-w-0 space-y-1" data-testid="portfolio-detail-identity">
+            <h1 className="break-words text-xl font-semibold tracking-tight">{portfolio.name}</h1>
+            <p className="max-w-4xl break-words text-sm text-muted-foreground">{portfolio.description || "No description"}</p>
+            <p className="text-xs text-muted-foreground">Updated {formatDateTime(portfolio.updatedAt)}</p>
           </div>
         </div>
-        <div className="flex gap-1.5">
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowEditForm(true)}>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end" data-testid="portfolio-detail-actions">
+          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setShowEditForm(true)}>
             <Pencil className="mr-1 size-3" /> Edit
           </Button>
-          <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setShowDeleteDialog(true)}>
+          <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => setShowDeleteDialog(true)}>
             <Trash2 className="mr-1 size-3" /> Delete
           </Button>
         </div>
