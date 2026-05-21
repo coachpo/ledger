@@ -7,7 +7,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { useDeleteTemplate, useTemplates } from "@/hooks/use-templates";
@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -35,15 +36,26 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
+type TemplateListData = TextTemplateRead[] | { items?: TextTemplateRead[] };
+
+function getTemplateItems(
+  data: TemplateListData | undefined,
+): TextTemplateRead[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data?.items ?? [];
+}
+
 export function TemplateListPage() {
-  const navigate = useNavigate();
   const templatesQuery = useTemplates();
   const deleteMutation = useDeleteTemplate();
   const [deleting, setDeleting] = useState<TextTemplateRead | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
-  const templates = templatesQuery.data ?? [];
+  const templates = getTemplateItems(templatesQuery.data);
   const query = search.trim().toLowerCase();
   const filteredTemplates = !query
     ? templates
@@ -54,25 +66,33 @@ export function TemplateListPage() {
       );
 
   return (
-    <div className="max-w-6xl space-y-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="space-y-0.5">
+    <div className="space-y-4 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Templates</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Manage text templates with portfolio data placeholders.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => navigate("/templates/new")}>
-            <Plus data-icon="inline-start" />
-            New Template
+          <Button asChild size="sm">
+            <Link to="/templates/new">
+              <Plus data-icon="inline-start" />
+              New Template
+            </Link>
           </Button>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-2.5 top-2 size-4 text-muted-foreground" />
+        <div className="relative max-w-sm flex-1" role="search">
+          <Label htmlFor="template-search" className="sr-only">
+            Search templates
+          </Label>
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             id="template-search"
             name="templateSearch"
@@ -106,7 +126,7 @@ export function TemplateListPage() {
         </ToggleGroup>
       </div>
 
-      <div className="space-y-2">
+      <div className="grid gap-2 sm:gap-3">
         {templatesQuery.isPending ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
@@ -115,7 +135,7 @@ export function TemplateListPage() {
           </Card>
         ) : null}
         {templatesQuery.isError ? (
-          <Card>
+          <Card role="alert">
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
               {templatesQuery.error instanceof Error
                 ? templatesQuery.error.message
@@ -148,19 +168,27 @@ export function TemplateListPage() {
               key={template.id}
               title={template.name}
               metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
+              primaryAction={{
+                kind: "link",
+                label: `Open editor for ${template.name}`,
+                to: `/templates/${template.id}/edit`,
+              }}
               actions={
                 <>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/templates/${template.id}/edit`)}
-                  >
-                    Open Editor
+                  <Button asChild size="sm">
+                    <Link
+                      aria-label={`Open editor for ${template.name}`}
+                      to={`/templates/${template.id}/edit`}
+                    >
+                      Open Editor
+                    </Link>
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         aria-label={`Open actions for ${template.name}`}
                         size="icon"
+                        type="button"
                         variant="ghost"
                       >
                         <MoreHorizontal className="size-4" />
@@ -201,12 +229,21 @@ export function TemplateListPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1.5">
+                        <Button asChild size="sm">
+                          <Link
+                            aria-label={`Open editor for ${template.name}`}
+                            to={`/templates/${template.id}/edit`}
+                          >
+                            Open Editor
+                          </Link>
+                        </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               aria-label={`Open actions for ${template.name}`}
                               className="size-7"
                               size="icon"
+                              type="button"
                               variant="ghost"
                             >
                               <MoreHorizontal className="size-3.5" />
@@ -222,14 +259,6 @@ export function TemplateListPage() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            navigate(`/templates/${template.id}/edit`)
-                          }
-                        >
-                          Open Editor
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
