@@ -122,10 +122,31 @@ describe("report source labels", () => {
     expect(screen.getByText("Memory Snapshot")).toBeVisible();
     expect(screen.getByText("Agent")).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /select report memory snapshot/i,
+      }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(
+      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
+    ).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
+    expect(
+      within(table).getAllByRole("checkbox", {
+        name: /select reports in memory/i,
+      }),
+    ).toHaveLength(1);
+    expect(
+      within(table).getByRole("checkbox", {
+        name: /select report memory snapshot/i,
+      }),
+    ).toBeVisible();
     expect(within(table).getByText("Memory Snapshot")).toBeVisible();
     expect(within(table).getByText("Agent")).toBeVisible();
     expect(within(table).queryByText("External")).not.toBeInTheDocument();
@@ -146,21 +167,114 @@ describe("report source labels", () => {
 
     renderReportRoute("/reports");
 
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(
+      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("checkbox", { name: /select reports in memory/i }),
+    ).toHaveLength(1);
+    const table = screen.getByRole("table");
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /select all shown reports/i }),
+      screen.getByRole("checkbox", { name: /select reports in memory/i }),
     );
-    expect(screen.getByText("2 selected")).toBeVisible();
+    const bulkActions = screen.getByTestId("reports-bulk-actions");
+    expect(
+      within(bulkActions).getByText("2 of 2 reports selected"),
+    ).toBeVisible();
+    expect(
+      table.compareDocumentPosition(bulkActions) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      within(table).queryByText("2 of 2 reports selected"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /download selected/i }),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+    fireEvent.click(
+      within(bulkActions).getByRole("button", { name: /delete selected/i }),
+    );
 
     expect(deleteReportsMutateMock).toHaveBeenCalledWith(
       ["agent_memory_snapshot", "uploaded_snapshot"],
       expect.any(Object),
     );
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("hides bulk actions when the current search filters away selected reports", () => {
+    renderReportRoute("/reports");
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
+    );
+    expect(
+      within(screen.getByTestId("reports-bulk-actions")).getByText(
+        "1 of 1 reports selected",
+      ),
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText("Search reports..."), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByText("No reports match your search.")).toBeVisible();
+    expect(
+      screen.queryByTestId("reports-bulk-actions"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search reports..."), {
+      target: { value: "" },
+    });
+
+    expect(
+      within(screen.getByTestId("reports-bulk-actions")).getByText(
+        "1 of 1 reports selected",
+      ),
+    ).toBeVisible();
+  });
+
+  it("clears active report selection when switching from table to cards", () => {
+    renderReportRoute("/reports");
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
+    );
+    const bulkActions = screen.getByTestId("reports-bulk-actions");
+    expect(
+      within(bulkActions).getByText("1 of 1 reports selected"),
+    ).toBeVisible();
+    expect(
+      within(bulkActions).getByRole("button", { name: "Clear" }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("radio", { name: /cards view/i }));
+    expect(
+      screen.queryByTestId("reports-bulk-actions"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /select all shown reports/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /select report memory snapshot/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(
+      screen.getByRole("checkbox", { name: /select report memory snapshot/i }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders Agent source badge on report detail", () => {

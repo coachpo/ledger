@@ -122,17 +122,10 @@ export function ReportListPage() {
     [filtered, groupBy],
   );
   const selectedReports = useMemo(
-    () => reports.filter((report) => selectedSlugs.has(report.slug)),
-    [reports, selectedSlugs],
+    () => filtered.filter((report) => selectedSlugs.has(report.slug)),
+    [filtered, selectedSlugs],
   );
   const selectedCount = selectedReports.length;
-  const allFilteredSelected =
-    filtered.length > 0 &&
-    filtered.every((report) => selectedSlugs.has(report.slug));
-  const someFilteredSelected = filtered.some((report) =>
-    selectedSlugs.has(report.slug),
-  );
-
   const toggleGroup = (label: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -311,7 +304,11 @@ export function ReportListPage() {
         <ToggleGroup
           type="single"
           value={viewMode}
-          onValueChange={(v) => v && setViewMode(v as "cards" | "table")}
+          onValueChange={(v) => {
+            if (!v) return;
+            setViewMode(v as "cards" | "table");
+            if (v === "cards") setSelectedSlugs(new Set());
+          }}
         >
           <ToggleGroupItem
             value="cards"
@@ -329,49 +326,6 @@ export function ReportListPage() {
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-
-      {filtered.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <label className="flex items-center gap-2 text-xs font-medium">
-            <Checkbox
-              aria-label="Select all shown reports"
-              checked={
-                allFilteredSelected
-                  ? true
-                  : someFilteredSelected
-                    ? "indeterminate"
-                    : false
-              }
-              onCheckedChange={(checked) =>
-                setReportsSelected(filtered, checked === true)
-              }
-            />
-            Select all shown
-          </label>
-          {selectedCount > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {selectedCount} selected
-              </span>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={deleteReportsMutation.isPending}
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 className="size-3.5" /> Delete selected
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedSlugs(new Set())}
-              >
-                Clear
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       <div className="space-y-4">
         {reportsQuery.isPending ? (
@@ -461,22 +415,13 @@ export function ReportListPage() {
                     const sourceLabel = getReportSourceLabel(report.source);
                     const sourceBadgeVariant =
                       report.source === "uploaded" ? "secondary" : "outline";
-                    const isSelected = selectedSlugs.has(report.slug);
 
                     return (
                       <Card
                         key={report.id}
-                        data-state={isSelected ? "selected" : undefined}
-                        className="transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted"
+                        className="transition-colors hover:bg-accent/50"
                       >
                         <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
-                          <Checkbox
-                            aria-label={`Select report ${report.name}`}
-                            checked={isSelected}
-                            onCheckedChange={(checked) =>
-                              setReportsSelected([report], checked === true)
-                            }
-                          />
                           <div
                             className="min-w-0 flex-1 cursor-pointer space-y-0.5"
                             onClick={() => navigate(`/reports/${report.slug}`)}
@@ -693,6 +638,34 @@ export function ReportListPage() {
           );
         })}
       </div>
+
+      {viewMode === "table" && selectedCount > 0 ? (
+        <div
+          data-testid="reports-bulk-actions"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+        >
+          <span className="text-xs text-muted-foreground">
+            {selectedCount} of {filtered.length} reports selected
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleteReportsMutation.isPending}
+              onClick={handleDeleteSelected}
+            >
+              <Trash2 className="size-3.5" /> Delete selected
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedSlugs(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDeleteDialog
         open={Boolean(deleting)}
