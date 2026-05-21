@@ -201,7 +201,16 @@ describe("WorkflowPackagesListPage", () => {
 
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
-    expect(riskRow).toHaveTextContent("risk_review");
+    const packageKey = within(riskRow).getByText("risk_review");
+    expect(packageKey).toHaveClass("font-['Fira_Code',ui-monospace,monospace]");
+    expect(packageKey).not.toHaveClass("text-xs");
+    expect(packageKey.parentElement).toHaveClass("text-[11px]");
+    expect(
+      within(riskRow).getByText("Risk review workflow bundle"),
+    ).toHaveClass("text-[11px]");
+    const metadataGrid = within(riskRow).getByText("Manifest Hash:")
+      .parentElement?.parentElement;
+    expect(metadataGrid).toHaveClass("text-sm", "text-muted-foreground");
     expect(riskRow).toHaveTextContent("manifest-has");
     expect(riskRow).not.toHaveTextContent("Active");
     expect(riskRow).not.toHaveTextContent("Draft");

@@ -328,7 +328,7 @@ export function WorkflowPackagesListPage() {
                 testId={`workflow-packages-row-${workflowPackage.key}`}
                 title={workflowPackage.name}
                 subtitle={
-                  <span className="font-['Fira_Code',ui-monospace,monospace] text-xs">
+                  <span className="font-['Fira_Code',ui-monospace,monospace]">
                     {workflowPackage.key}
                   </span>
                 }
@@ -341,7 +341,7 @@ export function WorkflowPackagesListPage() {
                   onClick: () => navigate(packagePath),
                 }}
                 metadata={
-                  <div className="grid min-w-0 gap-x-5 gap-y-2 sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Manifest Hash:
