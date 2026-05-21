@@ -184,7 +184,6 @@ describe("WorkflowPackageLaunchPage", () => {
     expect(screen.getByText("Saved package launch")).toBeVisible();
     expect(screen.getByText("Market Review Package")).toBeVisible();
     expect(screen.getAllByText("market_review_package").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Launch uses persisted package state/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Open authoring editor" })).toHaveAttribute("href", "/workflow-packages/42");
     expect(screen.getByTestId("workflow-package-launch-actions")).toHaveClass("flex", "w-full", "sm:w-auto");
     expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/ready to launch/i);

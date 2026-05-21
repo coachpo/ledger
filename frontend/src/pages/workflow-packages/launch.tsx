@@ -664,13 +664,6 @@ export function WorkflowPackageLaunchPage() {
         </CardContent>
       </Card>
 
-      <Alert className="border-chart-3/30 bg-chart-3/10">
-        <AlertCircle />
-        <AlertTitle>Launch uses persisted package state</AlertTitle>
-        <AlertDescription>
-          This route reads the saved package summary and launch metadata from the backend. Unsaved changes in the authoring editor are not included until that package is saved.
-        </AlertDescription>
-      </Alert>
 
       <Card className="min-w-0 border-border/70 bg-card/80 shadow-sm backdrop-blur" data-testid="workflow-package-launch-context">
         <CardHeader className="border-b pb-4">
