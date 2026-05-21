@@ -155,6 +155,12 @@ describe("report source labels", () => {
     ).not.toBeInTheDocument();
 
     const table = screen.getByRole("table");
+    expect(table.parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
     expect(
       within(table).getByRole("button", { name: /sort reports by name/i }),
     ).toBeVisible();

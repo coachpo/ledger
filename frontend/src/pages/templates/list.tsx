@@ -272,7 +272,7 @@ export function TemplateListPage() {
             />
           ))
         ) : filteredTemplates.length > 0 ? (
-          <div className="rounded-md border">
+          <div className="min-w-0 max-w-full rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">

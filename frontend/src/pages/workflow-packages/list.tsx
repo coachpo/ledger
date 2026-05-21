@@ -125,6 +125,7 @@ export function WorkflowPackagesListPage() {
     [packagesQuery.data?.items],
   );
   const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedPackageIds, setSelectedPackageIds] = useState<
     Set<WorkflowPackageRead["id"]>
@@ -191,7 +192,7 @@ export function WorkflowPackagesListPage() {
     }
   };
 
-  const deleteSelectedPackages = () => {
+  const confirmDeleteSelectedPackages = () => {
     if (selectedPackages.length === 0) {
       return;
     }
@@ -212,6 +213,7 @@ export function WorkflowPackagesListPage() {
           `${count} ${count === 1 ? "workflow package" : "workflow packages"} deleted`,
         );
         setSelectedPackageIds(new Set());
+        setIsBulkDeleting(false);
       },
     });
   };
@@ -531,7 +533,7 @@ export function WorkflowPackagesListPage() {
               size="sm"
               variant="destructive"
               disabled={deletePackages.isPending}
-              onClick={deleteSelectedPackages}
+              onClick={() => setIsBulkDeleting(true)}
             >
               <Trash2 className="size-3.5" /> Delete selected
             </Button>
@@ -545,6 +547,15 @@ export function WorkflowPackagesListPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDeleteDialog
+        open={isBulkDeleting}
+        title="Delete selected workflow packages"
+        description={`Permanently delete ${selectedCount} selected ${selectedCount === 1 ? "workflow package" : "workflow packages"}? This removes the current packages and related package resources. Historical run snapshots are preserved. This cannot be undone.`}
+        confirmLabel="Delete selected"
+        isPending={deletePackages.isPending}
+        onOpenChange={setIsBulkDeleting}
+        onConfirm={confirmDeleteSelectedPackages}
+      />
       <ConfirmDeleteDialog
         open={deleting !== null}
         title="Delete workflow package"

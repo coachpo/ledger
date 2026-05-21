@@ -144,8 +144,8 @@ export function Layout() {
               <Outlet />
             </div>
           ) : (
-            <ScrollArea className="h-full">
-              <div className="min-h-full [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-7xl">
+            <ScrollArea className="h-full min-w-0 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:max-w-full">
+              <div className="min-h-full min-w-0 max-w-full [&>*]:mx-auto [&>*]:min-w-0 [&>*]:w-full [&>*]:max-w-7xl">
                 <Outlet />
               </div>
             </ScrollArea>

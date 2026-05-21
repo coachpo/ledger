@@ -195,6 +195,12 @@ describe("PortfolioListPage", () => {
     render(<PortfolioListPage />);
 
     fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(screen.getByRole("table").parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
     fireEvent.click(
       screen.getByRole("checkbox", { name: /select all shown portfolios/i }),
     );

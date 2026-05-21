@@ -150,6 +150,14 @@ describe("Layout", () => {
                   }
                 />
                 <Route
+                  path="model-connections"
+                  element={
+                    <div data-testid="model-connections-list-content">
+                      Model connections inventory content
+                    </div>
+                  }
+                />
+                <Route
                   path="workflow-packages/import"
                   element={
                     <div data-testid="workflow-package-import-content">
@@ -193,6 +201,32 @@ describe("Layout", () => {
       expectSinglePageMain(container, pathname);
     },
   );
+
+  it("constrains inventory scroll content to the shell width", () => {
+    const { container } = renderLayout("/model-connections");
+    const scrollArea = container.querySelector<HTMLElement>(
+      '[data-slot="scroll-area"]',
+    );
+    const contentWrapper = screen.getByTestId(
+      "model-connections-list-content",
+    ).parentElement;
+
+    expect(scrollArea).not.toBeNull();
+    expect(scrollArea).toHaveClass(
+      "min-w-0",
+      "[&_[data-slot=scroll-area-viewport]>div]:!block",
+      "[&_[data-slot=scroll-area-viewport]>div]:!min-w-0",
+      "[&_[data-slot=scroll-area-viewport]>div]:w-full",
+      "[&_[data-slot=scroll-area-viewport]>div]:max-w-full",
+    );
+    expect(contentWrapper).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "[&>*]:min-w-0",
+      "[&>*]:w-full",
+      "[&>*]:max-w-7xl",
+    );
+  });
 
   it("shows extension-aware grouped shell navigation when finance is enabled", () => {
     const { container } = renderLayout("/");

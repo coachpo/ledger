@@ -180,6 +180,9 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Delete Primary OpenAI?",
     );
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Deletion is blocked while current workflow packages or historical rerunnable run snapshots reference its stable key.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
     await waitFor(() =>
       expect(deleteModelConnectionMock).toHaveBeenCalledWith(9),
@@ -226,6 +229,10 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByLabelText("Table view")).toHaveAttribute(
       "data-state",
       "on",
+    );
+    expect(screen.getByRole("table").parentElement).toHaveClass(
+      "min-w-0",
+      "overflow-x-auto",
     );
     expect(
       screen.getAllByRole("checkbox", {

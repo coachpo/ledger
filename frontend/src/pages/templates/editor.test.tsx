@@ -300,6 +300,12 @@ describe("TemplateEditorPage", () => {
     fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
 
     const table = screen.getByRole("table");
+    expect(table.parentElement?.parentElement).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "rounded-md",
+      "border",
+    );
     const editorLink = within(table).getByRole("link", {
       name: "Open editor for Quarterly Review",
     });

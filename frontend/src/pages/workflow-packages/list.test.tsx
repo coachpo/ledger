@@ -260,6 +260,10 @@ describe("WorkflowPackagesListPage", () => {
       "data-state",
       "on",
     );
+    expect(screen.getByRole("table").parentElement).toHaveClass(
+      "min-w-0",
+      "overflow-x-auto",
+    );
     expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("checkbox", {
@@ -439,6 +443,16 @@ describe("WorkflowPackagesListPage", () => {
     expect(screen.getByText("1 of 1 workflow packages selected")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+
+    expect(deletePackagesMock).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
+      "Permanently delete 1 selected workflow package?",
+    );
+    expect(dialog).toHaveTextContent("Historical run snapshots are preserved.");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete selected" }),
+    );
 
     await waitFor(() =>
       expect(deletePackagesMock).toHaveBeenCalledWith(
