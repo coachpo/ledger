@@ -4,9 +4,12 @@ import { Link } from "react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 
-export type ResourceRowCardPrimaryAction =
-  | { kind: "button"; label: string; onClick: () => void; testId?: string }
-  | { kind: "link"; label: string; to: string; testId?: string };
+export type ResourceRowCardPrimaryAction = {
+  kind: "link";
+  label: string;
+  to: string;
+  testId?: string;
+};
 
 export type ResourceRowCardDensity = "compact" | "compactPlus";
 
@@ -74,11 +77,35 @@ const legacyActionsClassByDensity: Record<ResourceRowCardDensity, string> = {
     "flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end [&_button]:cursor-pointer",
 };
 
+const titleActionLinkClassName =
+  "rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
+function renderTitleAction(
+  title: ReactNode,
+  action?: ResourceRowCardPrimaryAction,
+) {
+  if (!action) {
+    return title;
+  }
+
+  return (
+    <Link
+      aria-label={action.label}
+      className={titleActionLinkClassName}
+      data-testid={action.testId}
+      to={action.to}
+    >
+      {title}
+    </Link>
+  );
+}
+
 type ListCardBodyProps = Pick<
   EntityListCardProps,
   "badges" | "description" | "metadata" | "subtitle" | "title"
 > & {
   className?: string;
+  titleAction?: ResourceRowCardPrimaryAction;
   variant: ListCardVariant;
 };
 
@@ -89,6 +116,7 @@ function ListCardBody({
   metadata,
   subtitle,
   title,
+  titleAction,
   variant,
 }: ListCardBodyProps) {
   const descriptionClassName = descriptionClassByVariant[variant];
@@ -96,7 +124,9 @@ function ListCardBody({
   return (
     <div className={cn("min-w-0 space-y-1", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className={titleClassByVariant[variant]}>{title}</div>
+        <div className={titleClassByVariant[variant]}>
+          {renderTitleAction(title, titleAction)}
+        </div>
         {badges ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {badges}
@@ -121,42 +151,11 @@ function ListCardBody({
 }
 
 function renderBody(props: EntityListCardProps, variant: ListCardVariant) {
-  const bodyClassName = "min-w-0 flex-1 text-left";
   const action = props.bodyAction ?? props.primaryAction;
 
-  if (action?.kind === "link") {
-    return (
-      <Link
-        aria-label={action.label}
-        className={bodyClassName}
-        data-testid={action.testId}
-        to={action.to}
-      >
-        <ListCardBody {...props} variant={variant} />
-      </Link>
-    );
-  }
-
-  if (action?.kind === "button") {
-    return (
-      <div className={cn("relative", bodyClassName)}>
-        <div className="[&_a]:relative [&_a]:z-10 [&_button]:relative [&_button]:z-10">
-          <ListCardBody {...props} variant={variant} />
-        </div>
-        <button
-          aria-label={action.label}
-          className="absolute inset-0 cursor-pointer text-left"
-          data-testid={action.testId}
-          onClick={action.onClick}
-          type="button"
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className={bodyClassName}>
-      <ListCardBody {...props} variant={variant} />
+    <div className="min-w-0 flex-1 text-left">
+      <ListCardBody {...props} titleAction={action} variant={variant} />
     </div>
   );
 }
@@ -166,6 +165,7 @@ type LegacyResourceRowCardBodyProps = Pick<
   "badges" | "description" | "metadata" | "subtitle" | "title"
 > & {
   className?: string;
+  titleAction?: ResourceRowCardPrimaryAction;
 };
 
 function LegacyResourceRowCardBody({
@@ -175,12 +175,13 @@ function LegacyResourceRowCardBody({
   metadata,
   subtitle,
   title,
+  titleAction,
 }: LegacyResourceRowCardBodyProps) {
   return (
     <div className={cn("min-w-0 space-y-0.5", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className="min-w-0 break-words text-sm font-medium leading-5 tracking-tight text-foreground">
-          {title}
+          {renderTitleAction(title, titleAction)}
         </div>
         {badges ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -208,42 +209,11 @@ function LegacyResourceRowCardBody({
 }
 
 function renderLegacyBody(props: ResourceRowCardProps) {
-  const bodyClassName = "min-w-0 flex-1 text-left";
   const action = props.bodyAction ?? props.primaryAction;
 
-  if (action?.kind === "link") {
-    return (
-      <Link
-        aria-label={action.label}
-        className={bodyClassName}
-        data-testid={action.testId}
-        to={action.to}
-      >
-        <LegacyResourceRowCardBody {...props} />
-      </Link>
-    );
-  }
-
-  if (action?.kind === "button") {
-    return (
-      <div className={cn("relative", bodyClassName)}>
-        <div className="[&_a]:relative [&_a]:z-10 [&_button]:relative [&_button]:z-10">
-          <LegacyResourceRowCardBody {...props} />
-        </div>
-        <button
-          aria-label={action.label}
-          className="absolute inset-0 cursor-pointer text-left"
-          data-testid={action.testId}
-          onClick={action.onClick}
-          type="button"
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className={bodyClassName}>
-      <LegacyResourceRowCardBody {...props} />
+    <div className="min-w-0 flex-1 text-left">
+      <LegacyResourceRowCardBody {...props} titleAction={action} />
     </div>
   );
 }

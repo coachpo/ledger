@@ -1,10 +1,11 @@
+import type { ReactElement } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
-import { ResourceRowCard } from "./resource-row-card";
+import { EntityListCard, ResourceRowCard } from "./resource-row-card";
 
-function renderResourceRowCard(element: React.ReactElement) {
+function renderResourceRowCard(element: ReactElement) {
   return render(<MemoryRouter>{element}</MemoryRouter>);
 }
 
@@ -25,33 +26,7 @@ describe("ResourceRowCard", () => {
     expect(within(row).queryByRole("link", { name: /quarterly report/i })).not.toBeInTheDocument();
   });
 
-  it("calls the button primary action handler", () => {
-    const onClick = vi.fn();
-
-    renderResourceRowCard(
-      <ResourceRowCard
-        badges={<span>Draft</span>}
-        description={<div data-testid="rich-description">Prepared for review</div>}
-        metadata="Updated today"
-        primaryAction={{ kind: "button", label: "Open Quarterly Report", onClick, testId: "primary-action" }}
-        subtitle="Financial reports"
-        title="Quarterly Report"
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Open Quarterly Report" }));
-
-    const primaryAction = screen.getByTestId("primary-action");
-    expect(onClick).toHaveBeenCalledTimes(1);
-    expect(primaryAction).toHaveAttribute("type", "button");
-    expect(primaryAction).toHaveClass("absolute", "inset-0", "cursor-pointer", "text-left");
-    expect(primaryAction.parentElement).toHaveClass("relative", "min-w-0", "flex-1", "text-left");
-    expect(primaryAction.querySelector("div")).not.toBeInTheDocument();
-    expect(screen.getByTestId("rich-description")).not.toBe(primaryAction);
-    expect(primaryAction.contains(screen.getByTestId("rich-description"))).toBe(false);
-  });
-
-  it("renders link primary actions with an href", () => {
+  it("renders link primary actions as focusable title links", () => {
     renderResourceRowCard(
       <ResourceRowCard
         primaryAction={{ kind: "link", label: "Open Resource", to: "/resources/research", testId: "resource-link" }}
@@ -62,10 +37,13 @@ describe("ResourceRowCard", () => {
     const link = screen.getByRole("link", { name: "Open Resource" });
     expect(link).toHaveAttribute("href", "/resources/research");
     expect(link).toHaveAttribute("data-testid", "resource-link");
+    expect(link).toHaveTextContent("Research Resource");
+    expect(link).toHaveClass("rounded-sm", "hover:underline", "focus-visible:ring-2");
+    expect(link).not.toHaveClass("absolute", "inset-0", "cursor-pointer", "text-left");
+    expect(screen.queryByRole("button", { name: "Open Resource" })).not.toBeInTheDocument();
   });
 
-  it("keeps sibling actions isolated from the primary button", () => {
-    const primaryClick = vi.fn();
+  it("keeps sibling action buttons isolated from the primary link", () => {
     const actionClick = vi.fn();
 
     renderResourceRowCard(
@@ -75,36 +53,51 @@ describe("ResourceRowCard", () => {
             Archive
           </button>
         )}
-        primaryAction={{ kind: "button", label: "Open Workflow", onClick: primaryClick }}
+        primaryAction={{ kind: "link", label: "Open Workflow", to: "/workflow-packages/7" }}
         title="Workflow"
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    const primaryLink = screen.getByRole("link", { name: "Open Workflow" });
+    const archiveButton = screen.getByRole("button", { name: "Archive" });
+
+    fireEvent.click(archiveButton);
 
     expect(actionClick).toHaveBeenCalledTimes(1);
-    expect(primaryClick).not.toHaveBeenCalled();
+    expect(primaryLink).toHaveAttribute("href", "/workflow-packages/7");
+    expect(primaryLink).not.toContainElement(archiveButton);
+    expect(archiveButton.closest("a")).toBeNull();
   });
 
-  it("keeps nested body links above the primary button overlay", () => {
+  it("keeps nested body controls outside the primary title link", () => {
+    const metadataClick = vi.fn();
+
     renderResourceRowCard(
-      <ResourceRowCard
-        metadata={<a href="/workflow-packages/7">Package link</a>}
-        primaryAction={{ kind: "button", label: "Open Run", onClick: vi.fn() }}
+      <EntityListCard
+        metadata={(
+          <div>
+            <a href="/workflow-packages/7">Package link</a>
+            <button onClick={metadataClick} type="button">
+              Inspect metadata
+            </button>
+          </div>
+        )}
+        primaryAction={{ kind: "link", label: "Open Run", to: "/runs/12", testId: "run-primary" }}
         title="Workflow"
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Package link" })).toHaveAttribute(
-      "href",
-      "/workflow-packages/7",
-    );
-    expect(screen.getByRole("button", { name: "Open Run" }).previousElementSibling).toHaveClass(
-      "[&_a]:relative",
-      "[&_a]:z-10",
-      "[&_button]:relative",
-      "[&_button]:z-10",
-    );
+    const primaryLink = screen.getByTestId("run-primary");
+    const metadataLink = screen.getByRole("link", { name: "Package link" });
+    const metadataButton = screen.getByRole("button", { name: "Inspect metadata" });
+
+    fireEvent.click(metadataButton);
+
+    expect(primaryLink).toHaveAttribute("href", "/runs/12");
+    expect(primaryLink).not.toContainElement(metadataLink);
+    expect(primaryLink).not.toContainElement(metadataButton);
+    expect(metadataLink).toHaveAttribute("href", "/workflow-packages/7");
+    expect(metadataClick).toHaveBeenCalledTimes(1);
   });
 
   it("applies compact density classes", () => {
@@ -166,7 +159,7 @@ describe("ResourceRowCard", () => {
       <ResourceRowCard
         description="A long description that should remain inside the primary body."
         metadata="Created by SignalDeck"
-        primaryAction={{ kind: "button", label: "Inspect Resource", onClick: vi.fn(), testId: "inspect-resource" }}
+        primaryAction={{ kind: "link", label: "Inspect Resource", to: "/resources/shared", testId: "inspect-resource" }}
         subtitle="Reusable primitive"
         testId="resource-card"
         title="Shared Resource"
@@ -176,8 +169,8 @@ describe("ResourceRowCard", () => {
     expect(screen.getByTestId("resource-card")).toBeInTheDocument();
     const inspectResource = screen.getByTestId("inspect-resource");
     expect(inspectResource).toHaveAccessibleName("Inspect Resource");
-    expect(inspectResource.parentElement).toHaveTextContent("Shared Resource");
-    expect(screen.getByText("Shared Resource")).toHaveClass(
+    expect(inspectResource).toHaveAttribute("href", "/resources/shared");
+    expect(inspectResource.parentElement).toHaveClass(
       "text-sm",
       "font-medium",
       "leading-5",
