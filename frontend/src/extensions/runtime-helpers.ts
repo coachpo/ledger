@@ -20,16 +20,15 @@ import { ReportDetailPage } from "@/pages/reports/detail";
 import { ReportListPage } from "@/pages/reports/list";
 import { TemplateEditorPage } from "@/pages/templates/editor";
 import { TemplateListPage } from "@/pages/templates/list";
+import {
+  getSidebarRouteMetadataGroups,
+  type RouteMetadata,
+  type RouteNavIconName,
+} from "@/routes.metadata";
 
 import { FinanceWorkspaceRouteGate } from "./runtime";
-import {
-  financeWorkspaceFrontendExtension,
-  FINANCE_WORKSPACE_LABEL,
-} from "./signaldeck-finance";
-import type {
-  FrontendExtensionGateTag,
-  FrontendNavContribution,
-} from "./types";
+import { financeWorkspaceFrontendExtension } from "./signaldeck-finance";
+import type { FrontendExtensionGateTag } from "./types";
 
 export type NavItem = {
   icon: LucideIcon;
@@ -59,7 +58,7 @@ const financeRouteComponents: Record<string, ComponentType> = {
   "@/pages/reports/detail#ReportDetailPage": ReportDetailPage,
 };
 
-const navIconByName: Record<string, LucideIcon> = {
+const navIconByName: Record<RouteNavIconName, LucideIcon> = {
   Briefcase,
   ClipboardList,
   FileText,
@@ -70,35 +69,20 @@ const navIconByName: Record<string, LucideIcon> = {
   Workflow,
 };
 
-export const agentPlatformNavItems: readonly NavItem[] = [
-  {
-    icon: Workflow,
-    label: "Workflow Packages",
-    testId: "nav-workflow-packages",
-    to: "/workflow-packages",
-  },
-  {
-    icon: Link2,
-    label: "Model Connections",
-    testId: "nav-model-connections",
-    to: "/model-connections",
-  },
-  { icon: PlayCircle, label: "Runs", testId: "nav-runs", to: "/runs" },
-];
+function navItemFromMetadata(metadata: RouteMetadata): NavItem {
+  const icon = navIconByName[metadata.nav.iconName];
 
-export const systemNavItems: readonly NavItem[] = [
-  {
-    icon: Puzzle,
-    label: "Extensions",
-    testId: "nav-extensions",
-    to: "/extensions",
-  },
-];
+  if (!metadata.nav.path) {
+    throw new Error(`Sidebar route metadata is missing a nav path: ${metadata.pattern}`);
+  }
 
-export const coreNavItems: readonly NavItem[] = [
-  ...agentPlatformNavItems,
-  ...systemNavItems,
-];
+  return {
+    icon,
+    label: metadata.nav.label,
+    testId: metadata.nav.testId,
+    to: metadata.nav.path,
+  };
+}
 
 function extensionStateFromList(
   extensionList: ExtensionListRead | undefined,
@@ -126,49 +110,30 @@ function isGateTagEnabled(
   );
 }
 
-function navItemFromContribution(
-  contribution: FrontendNavContribution,
-): NavItem {
-  const icon = navIconByName[contribution.iconName];
-
-  if (!icon) {
-    throw new Error(`Unknown extension nav icon: ${contribution.iconName}`);
+function isRouteMetadataVisibleForExtensionState(
+  metadata: RouteMetadata,
+  extensionList: ExtensionListRead | undefined,
+): boolean {
+  if (metadata.owner.kind !== "extension") {
+    return true;
   }
 
-  return {
-    icon,
-    label: contribution.label,
-    testId: contribution.testId,
-    to: contribution.to,
-  };
-}
-
-function financeNavItems(
-  extensionList: ExtensionListRead | undefined,
-): NavItem[] {
-  return financeWorkspaceFrontendExtension.navContributions
-    .filter((contribution) => isGateTagEnabled(extensionList, contribution))
-    .map(navItemFromContribution);
+  return isFrontendExtensionEnabled(extensionList, metadata.owner.extensionKey);
 }
 
 export function assembleNavGroups(
   extensionList: ExtensionListRead | undefined,
 ): NavGroup[] {
-  const enabledFinanceNavItems = financeNavItems(extensionList);
-  const navGroups: NavGroup[] = [];
-
-  navGroups.push({ label: "Agent Platform", items: agentPlatformNavItems });
-
-  if (enabledFinanceNavItems.length > 0) {
-    navGroups.push({
-      label: FINANCE_WORKSPACE_LABEL,
-      items: enabledFinanceNavItems,
-    });
-  }
-
-  navGroups.push({ label: "System", items: systemNavItems });
-
-  return navGroups;
+  return getSidebarRouteMetadataGroups()
+    .map((group) => ({
+      items: group.items
+        .filter((metadata) =>
+          isRouteMetadataVisibleForExtensionState(metadata, extensionList),
+        )
+        .map(navItemFromMetadata),
+      label: group.label,
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 export function assembleNavItems(

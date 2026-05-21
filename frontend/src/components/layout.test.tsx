@@ -1,22 +1,34 @@
 import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { FINANCE_WORKSPACE_EXTENSION_KEY } from "@/extensions";
 import { queryKeys } from "@/lib/query-keys";
 import type { ExtensionListRead } from "@/lib/types/extension";
+import {
+  FINANCE_WORKSPACE_NAV_GROUP,
+  getRouteMetadataForPathname,
+  getSidebarRouteMetadataGroups,
+} from "@/routes.metadata";
 
 import { Layout } from "./layout";
+
+const localStorageState = new Map<string, string>();
 
 Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
   value: {
-    getItem: () => null,
-    removeItem: () => undefined,
-    setItem: () => undefined,
+    getItem: (key: string) => localStorageState.get(key) ?? null,
+    removeItem: (key: string) => localStorageState.delete(key),
+    setItem: (key: string, value: string) => localStorageState.set(key, value),
   },
+});
+
+beforeEach(() => {
+  localStorageState.clear();
+  document.documentElement.classList.remove("dark");
 });
 
 function extensionList(enabled: boolean): ExtensionListRead {
@@ -24,35 +36,42 @@ function extensionList(enabled: boolean): ExtensionListRead {
     items: [
       {
         key: FINANCE_WORKSPACE_EXTENSION_KEY,
-        label: "Finance Workspace",
+        label: FINANCE_WORKSPACE_NAV_GROUP,
         enabled,
       },
     ],
   };
 }
 
-const groupedSidebarItems = [
-  {
-    hrefs: ["/workflow-packages", "/model-connections", "/runs"],
-    label: "Agent Platform",
-    testIds: ["nav-workflow-packages", "nav-model-connections", "nav-runs"],
-  },
-  {
-    hrefs: ["/", "/portfolios", "/templates", "/reports"],
-    label: "Finance Workspace",
-    testIds: ["nav-dashboard", "nav-portfolios", "nav-templates", "nav-reports"],
-  },
-  {
-    hrefs: ["/extensions"],
-    label: "System",
-    testIds: ["nav-extensions"],
-  },
-] as const;
+const groupedSidebarItems = getSidebarRouteMetadataGroups().map((group) => ({
+  items: group.items.map((metadata) => {
+    if (!metadata.nav.path) {
+      throw new Error(
+        `Sidebar metadata is missing a nav path for ${metadata.pattern}`,
+      );
+    }
+
+    return {
+      href: metadata.nav.path,
+      label: metadata.nav.label,
+      testId: metadata.nav.testId,
+    };
+  }),
+  label: group.label,
+}));
+
+const financeSidebarGroup = groupedSidebarItems.find(
+  (group) => group.label === FINANCE_WORKSPACE_NAV_GROUP,
+);
+
+if (!financeSidebarGroup) {
+  throw new Error("Finance sidebar metadata group was not registered.");
+}
 
 function groupLabels(container: HTMLElement): (string | null)[] {
-  return Array.from(container.querySelectorAll('[data-sidebar="group-label"]')).map(
-    (label) => label.textContent,
-  );
+  return Array.from(
+    container.querySelectorAll('[data-sidebar="group-label"]'),
+  ).map((label) => label.textContent);
 }
 
 function sidebarGroup(label: string): HTMLElement {
@@ -64,6 +83,37 @@ function sidebarGroup(label: string): HTMLElement {
   }
 
   return group;
+}
+
+const representativeShellRoutes = [
+  { label: "dashboard", pathname: "/" },
+  { label: "inventory", pathname: "/workflow-packages" },
+  { label: "editor", pathname: "/workflow-packages/import" },
+  { label: "workflow launch console", pathname: "/workflow-packages/88/run" },
+  { label: "run detail console", pathname: "/runs/42" },
+  { label: "system state", pathname: "/extensions" },
+] as const;
+
+function expectSinglePageMain(container: HTMLElement, pathname: string) {
+  const metadata = getRouteMetadataForPathname(pathname);
+  const pageMains = screen.getAllByRole("main");
+  const sidebarInset = container.querySelector<HTMLElement>(
+    '[data-slot="sidebar-inset"]',
+  );
+
+  expect(pageMains).toHaveLength(1);
+  expect(pageMains[0]).toBe(screen.getByTestId(metadata.testId));
+  expect(pageMains[0]).toHaveAttribute(
+    "data-route-shell-mode",
+    metadata.shellMode,
+  );
+  expect(pageMains[0].querySelector("main")).toBeNull();
+  expect(sidebarInset).not.toBeNull();
+  expect(sidebarInset?.tagName).toBe("DIV");
+  expect(sidebarInset).toContainElement(pageMains[0]);
+  expect(
+    within(screen.getByRole("banner")).getByText(metadata.breadcrumb.title),
+  ).toBeInTheDocument();
 }
 
 describe("Layout", () => {
@@ -84,8 +134,28 @@ describe("Layout", () => {
               <Route element={<Layout />}>
                 <Route index element={<div>Dashboard content</div>} />
                 <Route
+                  path="extensions"
+                  element={
+                    <div data-testid="extensions-content">
+                      Extensions system state
+                    </div>
+                  }
+                />
+                <Route
+                  path="workflow-packages"
+                  element={
+                    <div data-testid="workflow-packages-list-content">
+                      Package inventory content
+                    </div>
+                  }
+                />
+                <Route
                   path="workflow-packages/import"
-                  element={<div data-testid="workflow-package-import-content">Import workspace</div>}
+                  element={
+                    <div data-testid="workflow-package-import-content">
+                      Import workspace
+                    </div>
+                  }
                 />
                 <Route
                   path="workflow-packages/:packageId"
@@ -93,11 +163,19 @@ describe("Layout", () => {
                 />
                 <Route
                   path="workflow-packages/:packageId/run"
-                  element={<div data-testid="workflow-package-launch-page">Package launch content</div>}
+                  element={
+                    <div data-testid="workflow-package-launch-page">
+                      Package launch content
+                    </div>
+                  }
                 />
                 <Route
                   path="runs/:runId"
-                  element={<div data-testid="run-detail-content">Run detail workspace</div>}
+                  element={
+                    <div data-testid="run-detail-content">
+                      Run detail workspace
+                    </div>
+                  }
                 />
               </Route>
             </Routes>
@@ -107,6 +185,15 @@ describe("Layout", () => {
     );
   }
 
+  it.each(representativeShellRoutes)(
+    "exposes one page main landmark for the $label route",
+    ({ pathname }) => {
+      const { container } = renderLayout(pathname);
+
+      expectSinglePageMain(container, pathname);
+    },
+  );
+
   it("shows extension-aware grouped shell navigation when finance is enabled", () => {
     const { container } = renderLayout("/");
 
@@ -115,7 +202,11 @@ describe("Layout", () => {
     );
     expect(
       screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-    ).toEqual(groupedSidebarItems.flatMap((group) => group.hrefs));
+    ).toEqual(
+      groupedSidebarItems.flatMap((group) =>
+        group.items.map((item) => item.href),
+      ),
+    );
 
     for (const group of groupedSidebarItems) {
       const renderedGroup = sidebarGroup(group.label);
@@ -123,10 +214,12 @@ describe("Layout", () => {
         within(renderedGroup)
           .getAllByRole("link")
           .map((link) => link.getAttribute("href")),
-      ).toEqual(group.hrefs);
+      ).toEqual(group.items.map((item) => item.href));
 
-      for (const testId of group.testIds) {
-        expect(within(renderedGroup).getByTestId(testId)).toBeInTheDocument();
+      for (const item of group.items) {
+        expect(
+          within(renderedGroup).getByTestId(item.testId),
+        ).toHaveTextContent(item.label);
       }
     }
 
@@ -138,15 +231,19 @@ describe("Layout", () => {
   it("hides finance navigation while preserving grouped core entries when disabled", () => {
     const { container } = renderLayout("/workflow-packages/88", false);
     const coreGroups = groupedSidebarItems.filter(
-      (group) => group.label !== "Finance Workspace",
+      (group) => group.label !== FINANCE_WORKSPACE_NAV_GROUP,
     );
 
-    expect(groupLabels(container)).toEqual(coreGroups.map((group) => group.label));
-    expect(screen.queryByText("Finance Workspace")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-dashboard")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-portfolios")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-templates")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-reports")).not.toBeInTheDocument();
+    expect(groupLabels(container)).toEqual(
+      coreGroups.map((group) => group.label),
+    );
+    expect(
+      screen.queryByText(FINANCE_WORKSPACE_NAV_GROUP),
+    ).not.toBeInTheDocument();
+
+    for (const item of financeSidebarGroup.items) {
+      expect(screen.queryByTestId(item.testId)).not.toBeInTheDocument();
+    }
 
     for (const group of coreGroups) {
       const renderedGroup = sidebarGroup(group.label);
@@ -154,55 +251,119 @@ describe("Layout", () => {
         within(renderedGroup)
           .getAllByRole("link")
           .map((link) => link.getAttribute("href")),
-      ).toEqual(group.hrefs);
+      ).toEqual(group.items.map((item) => item.href));
     }
+  });
+
+  it("keeps metadata-owned shell chrome visible in dark mode", () => {
+    localStorageState.set("signaldeck-theme", "dark");
+    renderLayout("/workflow-packages");
+
+    const metadata = getRouteMetadataForPathname("/workflow-packages");
+    expect(document.documentElement).toHaveClass("dark");
+    expect(screen.getByRole("banner")).toBeVisible();
+    expect(screen.getByTestId(metadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      metadata.shellMode,
+    );
+    expect(screen.getByTestId("nav-workflow-packages")).toHaveTextContent(
+      metadata.nav.label,
+    );
   });
 
   it("restores the finance group after re-enable", () => {
     const enabled = renderLayout("/");
-    expect(sidebarGroup("Finance Workspace")).toBeInTheDocument();
+    expect(sidebarGroup(FINANCE_WORKSPACE_NAV_GROUP)).toBeInTheDocument();
     enabled.unmount();
 
     const disabled = renderLayout("/workflow-packages/88", false);
-    expect(screen.queryByText("Finance Workspace")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-dashboard")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("nav-portfolios")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(FINANCE_WORKSPACE_NAV_GROUP),
+    ).not.toBeInTheDocument();
+    for (const item of financeSidebarGroup.items) {
+      expect(screen.queryByTestId(item.testId)).not.toBeInTheDocument();
+    }
     disabled.unmount();
 
     renderLayout("/");
-    expect(sidebarGroup("Finance Workspace")).toBeInTheDocument();
-    expect(screen.getByTestId("nav-reports")).toHaveAttribute(
+    expect(sidebarGroup(FINANCE_WORKSPACE_NAV_GROUP)).toBeInTheDocument();
+    const reportsItem = financeSidebarGroup.items.find(
+      (item) => item.href === getRouteMetadataForPathname("/reports").nav.path,
+    );
+
+    if (!reportsItem) {
+      throw new Error("Reports sidebar metadata was not registered.");
+    }
+
+    expect(screen.getByTestId(reportsItem.testId)).toHaveAttribute(
       "href",
-      "/reports",
+      reportsItem.href,
     );
   });
 
   it("labels workflow package import, detail, and launch routes", () => {
+    const importMetadata = getRouteMetadataForPathname(
+      "/workflow-packages/import",
+    );
     renderLayout("/workflow-packages/import");
     expect(
-      within(screen.getByRole("banner")).getByText("Import Workflow Package"),
+      within(screen.getByRole("banner")).getByText(
+        importMetadata.breadcrumb.title,
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("workflow-package-import-content").parentElement).toHaveClass("h-full");
+    expect(screen.getByTestId(importMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      importMetadata.shellMode,
+    );
+    expect(
+      screen.getByTestId("workflow-package-import-content").parentElement,
+    ).toHaveClass("h-full");
 
+    const detailMetadata = getRouteMetadataForPathname("/workflow-packages/88");
     renderLayout("/workflow-packages/88");
     expect(
-      within(screen.getAllByRole("banner")[1]).getByText("Workflow Package Detail"),
+      within(screen.getAllByRole("banner")[1]).getByText(
+        detailMetadata.breadcrumb.title,
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByTestId(detailMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      detailMetadata.shellMode,
+    );
 
+    const launchMetadata = getRouteMetadataForPathname(
+      "/workflow-packages/88/run",
+    );
     renderLayout("/workflow-packages/88/run");
     expect(
       within(screen.getAllByRole("banner")[2]).getByText(
-        "Launch Workflow Package",
+        launchMetadata.breadcrumb.title,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("workflow-package-launch-page").parentElement).toHaveClass("h-full");
+    expect(screen.getByTestId(launchMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      launchMetadata.shellMode,
+    );
+    expect(
+      screen.getByTestId("workflow-package-launch-page").parentElement,
+    ).toHaveClass("h-full");
   });
 
   it("gives run detail routes full-height workspace treatment", () => {
+    const runMetadata = getRouteMetadataForPathname("/runs/42");
     renderLayout("/runs/42");
 
     const workspace = screen.getByTestId("run-detail-content");
-    expect(within(screen.getByRole("banner")).getByText("Run Detail")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("banner")).getByText(
+        runMetadata.breadcrumb.title,
+      ),
+    ).toBeInTheDocument();
+    expect(runMetadata.shellMode).toBe("fullHeight");
+    expect(screen.getByTestId(runMetadata.testId)).toHaveAttribute(
+      "data-route-shell-mode",
+      runMetadata.shellMode,
+    );
     expect(workspace.parentElement).toHaveClass("h-full");
   });
 });

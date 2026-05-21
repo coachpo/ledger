@@ -28,115 +28,12 @@ import { useSidebar } from "./ui/sidebar-context";
 
 import { assembleNavGroups, type NavItem } from "@/extensions/runtime-helpers";
 import { useExtensions } from "@/hooks/use-extensions";
+import { getRouteMetadataForPathname } from "@/routes.metadata";
 
 function isNavItemActive(pathname: string, item: NavItem) {
   return item.to === "/"
     ? pathname === "/"
     : pathname === item.to || pathname.startsWith(`${item.to}/`);
-}
-
-function getPageMeta(pathname: string) {
-  if (pathname === "/") {
-    return { section: "Dashboard", title: "Dashboard" };
-  }
-
-  if (pathname === "/portfolios") {
-    return { section: "Portfolios", title: "Portfolios" };
-  }
-
-  if (pathname.startsWith("/portfolios/")) {
-    return { section: "Portfolios", sectionHref: "/portfolios", title: "Portfolio Detail" };
-  }
-
-  if (pathname === "/templates") {
-    return { section: "Templates", title: "Templates" };
-  }
-
-  if (pathname === "/templates/new") {
-    return { section: "Templates", sectionHref: "/templates", title: "New Template" };
-  }
-
-  if (pathname.startsWith("/templates/") && pathname.endsWith("/edit")) {
-    return { section: "Templates", sectionHref: "/templates", title: "Edit Template" };
-  }
-
-  if (pathname === "/reports") {
-    return { section: "Reports", title: "Reports" };
-  }
-
-  if (pathname.startsWith("/reports/")) {
-    return { section: "Reports", sectionHref: "/reports", title: "Report Detail" };
-  }
-
-  if (pathname === "/extensions") {
-    return { section: "Extensions", title: "Extensions" };
-  }
-
-  if (pathname === "/workflow-packages") {
-    return { section: "Workflow Packages", title: "Workflow Packages" };
-  }
-
-  if (pathname === "/workflow-packages/import") {
-    return {
-      section: "Workflow Packages",
-      sectionHref: "/workflow-packages",
-      title: "Import Workflow Package",
-    };
-  }
-
-  if (pathname === "/workflow-packages/new") {
-    return {
-      section: "Workflow Packages",
-      sectionHref: "/workflow-packages",
-      title: "New Workflow Package",
-    };
-  }
-
-  if (pathname.startsWith("/workflow-packages/") && pathname.endsWith("/run")) {
-    return {
-      section: "Workflow Packages",
-      sectionHref: "/workflow-packages",
-      title: "Launch Workflow Package",
-    };
-  }
-
-  if (pathname.startsWith("/workflow-packages/")) {
-    return {
-      section: "Workflow Packages",
-      sectionHref: "/workflow-packages",
-      title: "Workflow Package Detail",
-    };
-  }
-
-  if (pathname === "/model-connections") {
-    return { section: "Model Connections", title: "Model Connections" };
-  }
-
-  if (pathname === "/model-connections/new") {
-    return {
-      section: "Model Connections",
-      sectionHref: "/model-connections",
-      title: "New Model Connection",
-    };
-  }
-
-  if (pathname.startsWith("/model-connections/") && pathname.endsWith("/edit")) {
-    return {
-      section: "Model Connections",
-      sectionHref: "/model-connections",
-      title: "Edit Model Connection",
-    };
-  }
-
-  if (pathname === "/runs") {
-    return { section: "Runs", title: "Runs" };
-  }
-
-  if (pathname.startsWith("/runs/")) {
-    return { section: "Runs", sectionHref: "/runs", title: "Run Detail" };
-  }
-
-  return { section: "Workspace", title: "Workspace" };
 }
 
 function AppSidebar() {
@@ -199,14 +96,9 @@ function AppSidebar() {
 
 export function Layout() {
   const location = useLocation();
-  const pageMeta = getPageMeta(location.pathname);
-  const isTemplateEditorRoute =
-    location.pathname === "/templates/new" ||
-    (location.pathname.startsWith("/templates/") && location.pathname.endsWith("/edit"));
-  const isWorkflowPackageEditorRoute =
-    location.pathname === "/workflow-packages/new" ||
-    location.pathname.startsWith("/workflow-packages/");
-  const isRunDetailWorkspaceRoute = /^\/runs\/[^/]+$/.test(location.pathname);
+  const routeMetadata = getRouteMetadataForPathname(location.pathname);
+  const breadcrumbMetadata = routeMetadata.breadcrumb;
+  const usesFullHeightShell = routeMetadata.shellMode === "fullHeight";
 
   return (
     <SidebarProvider>
@@ -217,21 +109,23 @@ export function Layout() {
           <div className="min-w-0 flex-1">
             <Breadcrumb>
               <BreadcrumbList>
-                {pageMeta.sectionHref ? (
+                {breadcrumbMetadata.parent ? (
                   <>
                     <BreadcrumbItem>
                       <BreadcrumbLink asChild>
-                        <Link to={pageMeta.sectionHref}>{pageMeta.section}</Link>
+                        <Link to={breadcrumbMetadata.parent.href}>
+                          {breadcrumbMetadata.parent.title}
+                        </Link>
                       </BreadcrumbLink>
                     </BreadcrumbItem>
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
-                      <BreadcrumbPage>{pageMeta.title}</BreadcrumbPage>
+                      <BreadcrumbPage>{breadcrumbMetadata.title}</BreadcrumbPage>
                     </BreadcrumbItem>
                   </>
                 ) : (
                   <BreadcrumbItem>
-                    <BreadcrumbPage>{pageMeta.title}</BreadcrumbPage>
+                    <BreadcrumbPage>{breadcrumbMetadata.title}</BreadcrumbPage>
                   </BreadcrumbItem>
                 )}
               </BreadcrumbList>
@@ -240,8 +134,12 @@ export function Layout() {
           <ThemeToggle />
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {isTemplateEditorRoute || isWorkflowPackageEditorRoute || isRunDetailWorkspaceRoute ? (
+        <main
+          className="min-h-0 min-w-0 flex-1 overflow-hidden"
+          data-route-shell-mode={routeMetadata.shellMode}
+          data-testid={routeMetadata.testId}
+        >
+          {usesFullHeightShell ? (
             <div className="h-full [&>*]:h-full [&>*]:w-full">
               <Outlet />
             </div>
