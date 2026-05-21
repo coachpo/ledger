@@ -1,9 +1,19 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
 
 const PLATFORM_API_BASE = "http://127.0.0.1:8001/api";
-const DETERMINISTIC_MODEL_BASE_URL = "https://signaldeck-deterministic-model.local/v1";
+const DETERMINISTIC_MODEL_BASE_URL =
+  "https://signaldeck-deterministic-model.local/v1";
 
-function packageManifest(packageKey: string, modelKey: string, agentName = "Package Analyst") {
+function packageManifest(
+  packageKey: string,
+  modelKey: string,
+  agentName = "Package Analyst",
+) {
   return [
     "apiVersion: signaldeck.workflowPackage/v1",
     "kind: WorkflowPackage",
@@ -67,7 +77,11 @@ function packageManifest(packageKey: string, modelKey: string, agentName = "Pack
   ].join("\n");
 }
 
-function wideOutputPackageManifest(packageKey: string, modelKey: string, wideFieldKey: string) {
+function wideOutputPackageManifest(
+  packageKey: string,
+  modelKey: string,
+  wideFieldKey: string,
+) {
   return [
     "apiVersion: signaldeck.workflowPackage/v1",
     "kind: WorkflowPackage",
@@ -121,7 +135,9 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
     params: { status: "active" },
   });
   expect(list.ok()).toBeTruthy();
-  const existing = (await list.json()).items.find((item: { id: number; key: string }) => item.key === key);
+  const existing = (await list.json()).items.find(
+    (item: { id: number; key: string }) => item.key === key,
+  );
   const payload = {
     key,
     name: `E2E deterministic model ${key}`,
@@ -136,11 +152,17 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
   };
   if (existing) {
     const { key: _key, ...updatePayload } = payload;
-    const response = await request.patch(`${PLATFORM_API_BASE}/model-connections/${existing.id}`, { data: updatePayload });
+    const response = await request.patch(
+      `${PLATFORM_API_BASE}/model-connections/${existing.id}`,
+      { data: updatePayload },
+    );
     expect(response.ok()).toBeTruthy();
     return;
   }
-  const response = await request.post(`${PLATFORM_API_BASE}/model-connections`, { data: payload });
+  const response = await request.post(
+    `${PLATFORM_API_BASE}/model-connections`,
+    { data: payload },
+  );
   expect(response.ok()).toBeTruthy();
 }
 
@@ -173,7 +195,9 @@ async function launchPackageFromDedicatedPage(
 ) {
   await page.goto(`/workflow-packages/${packageId}/run`);
   await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Launch Workflow Package" }),
+  ).toBeVisible();
   await expect(page.getByTestId("workflow-package-launch-tab")).toBeVisible();
 
   const launchButton = page.getByRole("button", { name: "Launch Run" });
@@ -194,40 +218,65 @@ async function launchPackageFromDedicatedPage(
 }
 
 test.describe("Workflow packages", () => {
-  test("launches workflow package from dedicated run page", async ({ page, request }) => {
+  test("launches workflow package from dedicated run page", async ({
+    page,
+    request,
+  }) => {
     const suffix = Date.now();
     const packageKey = `e2e_launch_page_${suffix}`;
     const modelKey = `e2e_launch_model_${suffix}`;
 
     await seedModelConnection(request, modelKey);
-    const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
-      data: { manifestSource: packageManifest(packageKey, modelKey) },
-    });
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: { manifestSource: packageManifest(packageKey, modelKey) },
+      },
+    );
     expect(createResponse.status()).toBe(201);
     const created = await createResponse.json();
 
-    const runId = await launchPackageFromDedicatedPage(page, Number(created.id), "advisory_flow", { ticker: "AAPL" });
+    const runId = await launchPackageFromDedicatedPage(
+      page,
+      Number(created.id),
+      "advisory_flow",
+      { ticker: "AAPL" },
+    );
     const detail = await waitForRun(request, runId);
 
     expect(detail.status).toBe("succeeded");
     expect(detail.targetKind).toBe("workflowPackage");
-    expect(detail.finalOutput).toMatchObject({ summary: "deterministic summary" });
+    expect(detail.finalOutput).toMatchObject({
+      summary: "deterministic summary",
+    });
     expect(detail.packageProvenance).toMatchObject({
-      launchSnapshot: { parameters: { ticker: "AAPL" }, workflowKey: "advisory_flow" },
+      launchSnapshot: {
+        parameters: { ticker: "AAPL" },
+        workflowKey: "advisory_flow",
+      },
       workflowPackageKey: packageKey,
     });
-    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
+    await expect(page.getByTestId("runs-detail-status")).toContainText(
+      "succeeded",
+      { timeout: 15_000 },
+    );
   });
 
-  test("covers current-package authoring, export, import, launch, and snapshot provenance", async ({ page, request }) => {
+  test("covers current-package authoring, export, import, launch, and snapshot provenance", async ({
+    page,
+    request,
+  }) => {
     const suffix = Date.now();
     const packageKey = `e2e_package_${suffix}`;
     const modelKey = `e2e_model_${suffix}`;
 
     await seedModelConnection(request, modelKey);
-    const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
-      data: { manifestSource: packageManifest(packageKey, modelKey) },
-    });
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: { manifestSource: packageManifest(packageKey, modelKey) },
+      },
+    );
     expect(createResponse.status()).toBe(201);
     const created = await createResponse.json();
 
@@ -235,30 +284,59 @@ test.describe("Workflow packages", () => {
     await page.getByRole("tab", { name: "Agents tab" }).click();
     await expect(page.getByTestId("workflow-package-agents-tab")).toBeVisible();
 
-    const editedSource = packageManifest(packageKey, modelKey, "Edited Package Analyst");
-    const updateResponse = await request.patch(`${PLATFORM_API_BASE}/workflow-packages/${created.id}`, {
-      data: { manifestSource: editedSource },
-    });
+    const editedSource = packageManifest(
+      packageKey,
+      modelKey,
+      "Edited Package Analyst",
+    );
+    const updateResponse = await request.patch(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}`,
+      {
+        data: { manifestSource: editedSource },
+      },
+    );
     expect(updateResponse.ok()).toBeTruthy();
 
-    const preflight = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/preflight`, {
-      params: { workflowKey: "advisory_flow" },
-    });
+    const preflight = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/preflight`,
+      {
+        params: { workflowKey: "advisory_flow" },
+      },
+    );
     expect(preflight.ok()).toBeTruthy();
-    expect(await preflight.json()).toMatchObject({ ready: true, workflowKey: "advisory_flow" });
+    expect(await preflight.json()).toMatchObject({
+      ready: true,
+      workflowKey: "advisory_flow",
+    });
 
-    const exportResponse = await request.get(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/export`);
+    const exportResponse = await request.get(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/export`,
+    );
     expect(exportResponse.ok()).toBeTruthy();
     const exported = await exportResponse.text();
     expect(exported).toContain(`modelConnection: ${modelKey}`);
-    for (const forbidden of ["secretPayload", "encrypted", "password", "modelConnectionId", "outputSchemaId"]) {
+    for (const forbidden of [
+      "secretPayload",
+      "encrypted",
+      "password",
+      "modelConnectionId",
+      "outputSchemaId",
+    ]) {
       expect(exported).not.toContain(forbidden);
     }
 
     const importedKey = `${packageKey}_imported`;
-    const importResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages/import`, {
-      data: { manifestSource: exported.replace(`key: ${packageKey}`, `key: ${importedKey}`) },
-    });
+    const importResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/import`,
+      {
+        data: {
+          manifestSource: exported.replace(
+            `key: ${packageKey}`,
+            `key: ${importedKey}`,
+          ),
+        },
+      },
+    );
     expect(importResponse.ok()).toBeTruthy();
     expect((await importResponse.json()).key).toBe(importedKey);
 
@@ -272,112 +350,212 @@ test.describe("Workflow packages", () => {
     const detail = await waitForRun(request, runId);
     expect(detail.status).toBe("succeeded");
     expect(detail.targetKind).toBe("workflowPackage");
-    expect(detail.finalOutput).toMatchObject({ summary: "deterministic summary" });
-    const packageProvenance = detail.packageProvenance as Record<string, unknown>;
+    expect(detail.finalOutput).toMatchObject({
+      summary: "deterministic summary",
+    });
+    const packageProvenance = detail.packageProvenance as Record<
+      string,
+      unknown
+    >;
     expect(packageProvenance).toMatchObject({
       currentPackage: { available: true },
-      launchSnapshot: { parameters: { ticker: "AAPL" }, workflowKey: "advisory_flow" },
+      launchSnapshot: {
+        parameters: { ticker: "AAPL" },
+        workflowKey: "advisory_flow",
+      },
       workflowKey: "advisory_flow",
       workflowPackageKey: packageKey,
     });
-    expect(packageProvenance.workflowPackageManifestHash).toEqual(expect.any(String));
-    expect(packageProvenance.workflowPackageCompiledHash).toEqual(expect.any(String));
+    expect(packageProvenance.workflowPackageManifestHash).toEqual(
+      expect.any(String),
+    );
+    expect(packageProvenance.workflowPackageCompiledHash).toEqual(
+      expect.any(String),
+    );
 
     const runSteps = detail.steps as Array<{
       index: number;
-      invocations: Array<{ id: number; persistedAt: string | null; slot: string; status: string }>;
+      invocations: Array<{
+        id: number;
+        persistedAt: string | null;
+        slot: string;
+        status: string;
+      }>;
     }>;
     const forkTarget = runSteps
-      .flatMap((step) => step.invocations.map((invocation) => ({ invocation, stepIndex: step.index })))
-      .find(({ invocation }) => invocation.status === "succeeded" && invocation.persistedAt);
+      .flatMap((step) =>
+        step.invocations.map((invocation) => ({
+          invocation,
+          stepIndex: step.index,
+        })),
+      )
+      .find(
+        ({ invocation }) =>
+          invocation.status === "succeeded" && invocation.persistedAt,
+      );
     if (!forkTarget) {
-      throw new Error(`Run ${runId} did not expose a persisted agent invocation to fork.`);
+      throw new Error(
+        `Run ${runId} did not expose a persisted agent invocation to fork.`,
+      );
     }
     const forkInvocationId = forkTarget.invocation.id;
     const forkStepIndex = forkTarget.stepIndex;
 
     await page.reload();
-    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
-    await expect(page.getByTestId("runs-detail-final-output")).toContainText("deterministic summary");
-    await expect(page.getByTestId("runs-detail-target-identity")).toContainText(packageKey);
-    await expect(page.getByText(`Captured package id: ${created.id}`)).toBeVisible();
-    await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute("href", `/workflow-packages/${created.id}`);
+    await expect(page.getByTestId("runs-detail-status")).toContainText(
+      "succeeded",
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("runs-detail-final-output")).toContainText(
+      "deterministic summary",
+    );
+    await expect(page.getByTestId("runs-detail-target-identity")).toContainText(
+      packageKey,
+    );
+    await expect(
+      page.getByText(`Captured package id: ${created.id}`),
+    ).toBeVisible();
+    await expect(page.getByTestId("runs-detail-package-link")).toHaveAttribute(
+      "href",
+      `/workflow-packages/${created.id}`,
+    );
 
-    await page.getByTestId("runs-evidence-pane-nav").getByRole("button", { name: "Memory" }).click();
-    await expect(page.getByTestId("runs-memory-evidence-empty")).toContainText("No run memory evidence was recorded");
-    await expect(page.getByTestId("runs-memory-artifacts-empty")).toContainText("No compact memory artifacts were written");
-    await expect(page.getByTestId("runs-memory-compact-artifacts")).toContainText("Compact artifact slice");
+    await page
+      .getByTestId("runs-evidence-pane-nav")
+      .getByRole("button", { name: "Memory" })
+      .click();
+    await expect(page.getByTestId("runs-memory-evidence-empty")).toContainText(
+      "No run memory evidence was recorded",
+    );
+    await expect(page.getByTestId("runs-memory-artifacts-empty")).toContainText(
+      "No compact memory artifacts were written",
+    );
+    await expect(
+      page.getByTestId("runs-memory-compact-artifacts"),
+    ).toContainText("Compact artifact slice");
 
     await page.getByTestId("runs-detail-rerun").click();
-    await expect(page.getByRole("dialog", { name: /run snapshot again/i })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: /run snapshot again/i }),
+    ).toBeVisible();
     await page.getByTestId("run-rerun-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
 
     await page.goto(`/runs/${runId}`);
-    const forkAction = page.getByTestId(`runs-invocation-${forkInvocationId}-fork-entry`);
+    const forkAction = page.getByTestId(
+      `runs-invocation-${forkInvocationId}-fork-entry`,
+    );
     await expect(forkAction).toContainText("Fork from this invocation");
     await forkAction.click();
-    await expect(page.getByRole("dialog", { name: /fork from .+ invocation/i })).toBeVisible();
-    await expect(page.getByText(`Resume at Step ${forkStepIndex}`)).toBeVisible();
-    await expect(page.getByText(`Invocation #${forkInvocationId}`)).toBeVisible();
-    await expect(page.getByText(/edits only the selected agent invocation input/i)).toBeVisible();
-    await expect(page.getByLabel("Target invocation input JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
+    await expect(
+      page.getByRole("dialog", { name: /fork from .+ invocation/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`Resume at Step ${forkStepIndex}`),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`Invocation #${forkInvocationId}`),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/edits only the selected agent invocation input/i),
+    ).toBeVisible();
+    await expect(page.getByLabel("Target invocation input JSON")).toHaveValue(
+      JSON.stringify({ ticker: "AAPL" }, null, 2),
+    );
     await page.getByTestId("run-fork-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
   });
 
-  test("keeps run step evidence width stable when aggregated output switches to raw", async ({ page, request }) => {
+  test("keeps run step evidence width stable when aggregated output switches to raw", async ({
+    page,
+    request,
+  }) => {
     const suffix = Date.now();
     const packageKey = `e2e_wide_output_${suffix}`;
     const modelKey = `e2e_wide_model_${suffix}`;
     const wideFieldKey = `wide_${"x".repeat(100)}`;
 
     await seedModelConnection(request, modelKey);
-    const createResponse = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
-      data: { manifestSource: wideOutputPackageManifest(packageKey, modelKey, wideFieldKey) },
-    });
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: {
+          manifestSource: wideOutputPackageManifest(
+            packageKey,
+            modelKey,
+            wideFieldKey,
+          ),
+        },
+      },
+    );
     const created = await createResponse.json();
     expect(createResponse.status(), JSON.stringify(created)).toBe(201);
 
-    const launch = await request.post(`${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`, {
-      data: { workflowKey: "wide_flow", parameters: {} },
-    });
+    const launch = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+      {
+        data: { workflowKey: "wide_flow", parameters: {} },
+      },
+    );
     const launchedText = await launch.text();
     expect(launch.status(), launchedText).toBe(201);
     const runId = Number(JSON.parse(launchedText).id);
     const detail = await waitForRun(request, runId);
     expect(detail.status).toBe("succeeded");
 
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/runs/${runId}?inspect=step:1`);
-    await expect(page.getByTestId("runs-detail-status")).toContainText("succeeded", { timeout: 15_000 });
+    await expect(page.getByTestId("route-run-detail")).toHaveAttribute(
+      "data-route-shell-mode",
+      "fullHeight",
+    );
+    await expect(page.getByTestId("runs-detail-status")).toContainText(
+      "succeeded",
+      { timeout: 15_000 },
+    );
     await expect(page.getByTestId("runs-step-1-summary")).toBeVisible();
 
-    const layoutMetrics = async () => page.evaluate(() => {
-      const summary = document.querySelector<HTMLElement>('[data-testid="runs-step-1-summary"]');
-      const evidence = document.querySelector<HTMLElement>('[data-testid="runs-evidence-viewer"]');
-      if (!summary || !evidence) {
-        throw new Error("Run step evidence layout elements were not found");
-      }
-      return {
-        evidenceWidth: evidence.getBoundingClientRect().width,
-        pageScrollWidth: document.documentElement.scrollWidth,
-        summaryWidth: summary.getBoundingClientRect().width,
-        viewportWidth: window.innerWidth,
-      };
-    });
+    const layoutMetrics = async () =>
+      page.evaluate(() => {
+        const summary = document.querySelector<HTMLElement>(
+          '[data-testid="runs-step-1-summary"]',
+        );
+        const evidence = document.querySelector<HTMLElement>(
+          '[data-testid="runs-evidence-viewer"]',
+        );
+        if (!summary || !evidence) {
+          throw new Error("Run step evidence layout elements were not found");
+        }
+        return {
+          evidenceWidth: evidence.getBoundingClientRect().width,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          summaryWidth: summary.getBoundingClientRect().width,
+          viewportWidth: window.innerWidth,
+        };
+      });
 
     const aggregatedOutput = page.getByTestId("runs-step-1-aggregated-output");
-    await expect(aggregatedOutput.getByTestId("runs-step-1-aggregated-output-rendered")).toBeVisible();
+    await expect(
+      aggregatedOutput.getByTestId("runs-step-1-aggregated-output-rendered"),
+    ).toBeVisible();
     const renderedMetrics = await layoutMetrics();
 
     await aggregatedOutput.getByRole("tab", { name: "Raw" }).click();
-    const rawPayload = aggregatedOutput.getByTestId("runs-step-1-aggregated-output-raw");
+    const rawPayload = aggregatedOutput.getByTestId(
+      "runs-step-1-aggregated-output-raw",
+    );
     await expect(rawPayload).toBeVisible();
     const rawMetrics = await layoutMetrics();
 
-    expect(Math.abs(rawMetrics.summaryWidth - renderedMetrics.summaryWidth)).toBeLessThanOrEqual(1);
-    expect(Math.abs(rawMetrics.evidenceWidth - renderedMetrics.evidenceWidth)).toBeLessThanOrEqual(1);
-    expect(rawMetrics.pageScrollWidth).toBeLessThanOrEqual(renderedMetrics.pageScrollWidth + 20);
+    expect(
+      Math.abs(rawMetrics.summaryWidth - renderedMetrics.summaryWidth),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(rawMetrics.evidenceWidth - renderedMetrics.evidenceWidth),
+    ).toBeLessThanOrEqual(1);
+    expect(rawMetrics.pageScrollWidth).toBeLessThanOrEqual(
+      renderedMetrics.pageScrollWidth + 20,
+    );
     expect(rawMetrics.summaryWidth).toBeLessThan(rawMetrics.viewportWidth);
 
     const rawPayloadMetrics = await rawPayload.evaluate((node) => {
@@ -388,7 +566,9 @@ test.describe("Workflow packages", () => {
         scrollWidth: node.scrollWidth,
       };
     });
-    expect(rawPayloadMetrics.scrollWidth).toBeGreaterThan(rawPayloadMetrics.clientWidth + 1_000);
+    expect(rawPayloadMetrics.scrollWidth).toBeGreaterThan(
+      rawPayloadMetrics.clientWidth + 1_000,
+    );
     expect(rawPayloadMetrics.scrollLeft).toBeGreaterThan(0);
   });
 });

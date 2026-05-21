@@ -86,6 +86,10 @@ test.describe("Extension lifecycle browser matrix", () => {
     await expect(page.getByTestId("nav-reports")).toBeVisible();
 
     await page.goto("/extensions");
+    await expect(page.getByTestId("route-extensions")).toHaveAttribute(
+      "data-route-shell-mode",
+      "scroll",
+    );
     const row = page.getByTestId(`extension-row-${FINANCE_EXTENSION_SEGMENT}`);
     await expect(row).toContainText("Finance Workspace");
     await expect(row).toContainText("Enabled");

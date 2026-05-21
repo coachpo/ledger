@@ -1,17 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const platformRoutes = [
   {
     pageTestId: "workflow-packages-list-page",
+    routeTestId: "route-workflow-packages-list",
+    shellMode: "scroll",
     testId: "nav-workflow-packages",
     url: /\/workflow-packages$/,
   },
   {
     pageTestId: "platform-model-connections-page",
+    routeTestId: "route-model-connections-list",
+    shellMode: "scroll",
     testId: "nav-model-connections",
     url: /\/model-connections$/,
   },
-  { pageTestId: "runs-list-page", testId: "nav-runs", url: /\/runs$/ },
+  {
+    pageTestId: "runs-list-page",
+    routeTestId: "route-runs-list",
+    shellMode: "scroll",
+    testId: "nav-runs",
+    url: /\/runs$/,
+  },
 ] as const;
 
 const retiredNavTestIds = [
@@ -25,14 +35,37 @@ const retiredNavTestIds = [
   "nav-orchestration",
 ] as const;
 
+async function expectSingleRouteMain(
+  page: Page,
+  testId: string,
+  shellMode: string,
+) {
+  const main = page.getByRole("main");
+  await expect(main).toHaveCount(1);
+  await expect(main).toHaveAttribute("data-testid", testId);
+  await expect(main).toHaveAttribute("data-route-shell-mode", shellMode);
+}
+
+async function expectNoDocumentOverflow(page: Page) {
+  const metrics = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+}
+
 test.describe("Primary workspace navigation", () => {
-  test("shows the new platform shell and hides legacy shell entries", async ({ page }) => {
+  test("shows the new platform shell and hides legacy shell entries", async ({
+    page,
+  }) => {
     await page.goto("/");
 
     await expect(page.getByTestId("nav-dashboard")).toBeVisible();
     await expect(page.getByTestId("nav-portfolios")).toBeVisible();
     await expect(page.getByTestId("nav-templates")).toBeVisible();
     await expect(page.getByTestId("nav-reports")).toBeVisible();
+    await expectSingleRouteMain(page, "route-dashboard", "scroll");
 
     for (const route of platformRoutes) {
       await expect(page.getByTestId(route.testId)).toBeVisible();
@@ -46,19 +79,70 @@ test.describe("Primary workspace navigation", () => {
       await page.getByTestId(route.testId).click();
       await expect(page).toHaveURL(route.url);
       await expect(page.getByTestId(route.pageTestId)).toBeVisible();
+      await expectSingleRouteMain(page, route.routeTestId, route.shellMode);
     }
   });
 
-  test("template seed removal hides the Reset Workspace entry point and retires /templates/seed", async ({ page }) => {
+  test("template seed removal routes to the product-owned 404", async ({
+    page,
+  }) => {
     await page.goto("/templates");
 
-    await expect(page.getByRole("button", { name: "Reset Workspace" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Reset Workspace" }),
+    ).toHaveCount(0);
 
     await page.goto("/templates/seed");
 
     await expect(page.getByTestId("template-seed-page")).toHaveCount(0);
+    await expect(page.getByTestId("not-found-page")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Page not found" }),
+    ).toBeVisible();
+    await expectSingleRouteMain(page, "route-unknown", "scroll");
     await expect(page.locator("body")).not.toContainText(
       "Run the existing starter workspace reset-and-seed flow from the Web UI.",
     );
+  });
+
+  test("renders a product-owned unknown-route shell", async ({ page }) => {
+    await page.goto("/does-not-exist");
+
+    await expect(page.getByTestId("not-found-page")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Page not found" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open workflow packages" }),
+    ).toHaveAttribute("href", "/workflow-packages");
+    await expectSingleRouteMain(page, "route-unknown", "scroll");
+    await expect(page.locator("body")).not.toContainText(
+      "Unexpected Application Error!",
+    );
+  });
+
+  test("keeps navigation semantics, dark chrome, and mobile overflow stable", async ({
+    page,
+  }) => {
+    await page.goto("/workflow-packages");
+
+    await expect(
+      page.getByRole("link", { name: "Import workflow package manifest" }),
+    ).toHaveAttribute("href", "/workflow-packages/import");
+    await expect(
+      page.getByRole("link", { name: "Create new workflow package" }),
+    ).toHaveAttribute("href", "/workflow-packages/new");
+    await expect(page.getByRole("radio", { name: "Cards view" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Table view" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Toggle theme" }).click();
+    await page.getByRole("menuitem", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(page.getByRole("banner")).toBeVisible();
+    await expectSingleRouteMain(page, "route-workflow-packages-list", "scroll");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("workflow-packages-list-page")).toBeVisible();
+    await expectNoDocumentOverflow(page);
   });
 });

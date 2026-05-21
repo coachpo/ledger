@@ -18,9 +18,20 @@ async function expectReportDeleted(
   cardText: string,
 ) {
   await expect
-    .poll(async () => (await request.get(`${API_BASE}/reports/${slug}`)).status())
+    .poll(async () =>
+      (await request.get(`${API_BASE}/reports/${slug}`)).status(),
+    )
     .toBe(404);
   await expect(reportCardByText(page, cardText)).toHaveCount(0);
+}
+
+async function expectNoDocumentOverflow(page: Page) {
+  const metrics = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
 test.describe("Reports", () => {
@@ -51,9 +62,7 @@ test.describe("Reports", () => {
     ).toBeVisible();
 
     await page.getByRole("combobox").click();
-    await page
-      .getByRole("option", { name: new RegExp(template.name) })
-      .click();
+    await page.getByRole("option", { name: new RegExp(template.name) }).click();
     await page.getByRole("button", { name: /^generate$/i }).click();
 
     await page.waitForURL(/\/reports\/[a-z0-9_]+/);
@@ -61,7 +70,9 @@ test.describe("Reports", () => {
     const generatedSlug = page.url().split("/reports/")[1];
     expect(generatedSlug).toMatch(/^[a-z0-9_]+$/);
 
-    const reportResponse = await request.get(`${API_BASE}/reports/${generatedSlug}`);
+    const reportResponse = await request.get(
+      `${API_BASE}/reports/${generatedSlug}`,
+    );
     expect(reportResponse.ok()).toBeTruthy();
     const report = await reportResponse.json();
 
@@ -177,7 +188,9 @@ test.describe("Reports", () => {
     await expect(generateBtn).toBeEnabled({ timeout: 5000 });
     await generateBtn.click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByRole("heading", { name: "Generate Report" })).toBeVisible();
+    await expect(
+      dialog.getByRole("heading", { name: "Generate Report" }),
+    ).toBeVisible();
     await dialog.getByRole("button", { name: /add input/i }).click();
     await dialog.getByPlaceholder("ticker").fill("ticker");
     await dialog.getByPlaceholder("AAPL").fill("AAPL");
@@ -193,7 +206,61 @@ test.describe("Reports", () => {
     await expect(page.getByText("Ticker: AAPL")).toBeVisible();
 
     const generatedSlug = page.url().split("/reports/")[1];
-    const deleteResponse = await request.delete(`${API_BASE}/reports/${generatedSlug}`);
+    const deleteResponse = await request.delete(
+      `${API_BASE}/reports/${generatedSlug}`,
+    );
     expect(deleteResponse.ok()).toBeTruthy();
+  });
+
+  test("covers report list empty and API-error states", async ({ page }) => {
+    let reportsMode: "empty" | "error" = "empty";
+
+    await page.route(
+      /127\.0\.0\.1:8001\/api\/v1\/reports(?:\?.*)?$/,
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+
+        if (reportsMode === "error") {
+          await route.fulfill({
+            contentType: "application/json",
+            json: {
+              code: "reports_unavailable",
+              message: "Reports API unavailable",
+            },
+            status: 500,
+          });
+          return;
+        }
+
+        await route.fulfill({ json: [] });
+      },
+    );
+    await page.route(
+      /127\.0\.0\.1:8001\/api\/v1\/templates(?:\?.*)?$/,
+      async (route) => {
+        await route.fulfill({ json: [] });
+      },
+    );
+
+    await page.goto("/reports");
+    await expect(page.getByTestId("route-reports-list")).toHaveAttribute(
+      "data-route-shell-mode",
+      "scroll",
+    );
+    await expect(page.getByText(/No reports yet/)).toBeVisible();
+    await expectNoDocumentOverflow(page);
+
+    reportsMode = "error";
+    await page.reload();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText(
+      "Reports API unavailable",
+    );
+    await expect(page.locator("body")).not.toContainText(
+      "Unexpected Application Error!",
+    );
   });
 });
