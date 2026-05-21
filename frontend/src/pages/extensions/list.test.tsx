@@ -76,8 +76,11 @@ describe("ExtensionsListPage", () => {
     expect(screen.getByTestId("extensions-list-page")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeVisible();
     expect(
-      screen.queryByText("Manage bundled extension availability from the backend state registry."),
-    ).not.toBeInTheDocument();
+      screen.getByText(/system-state surface for bundled extension availability/i),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/route visibility and tool filtering stay owned by the extension runtime/i),
+    ).toBeVisible();
     const row = screen.getByTestId("extension-row-signaldeck-finance");
     expect(row).toHaveTextContent("Finance Workspace");
     expect(row).toHaveTextContent("signaldeck.finance");
@@ -166,4 +169,33 @@ describe("ExtensionsListPage", () => {
       screen.getByTestId("extension-row-signaldeck-finance"),
     ).toHaveTextContent("Enabled");
   });
+
+  it("keeps sparse system-state copy for empty and error states", () => {
+    useExtensionsMock.mockReturnValue({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+    const { rerender } = render(<ExtensionsListPage />);
+
+    expect(screen.getByText("No bundled extensions are registered.")).toBeVisible();
+    expect(
+      screen.getByText(/backend exposes slim bundled state with a key, label, and enabled flag/i),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /install/i })).not.toBeInTheDocument();
+
+    useExtensionsMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Extension API unavailable"),
+      isError: true,
+      isPending: false,
+    });
+    rerender(<ExtensionsListPage />);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Unable to load extension state.");
+    expect(alert).toHaveTextContent("Extension API unavailable");
+  });
 });
+

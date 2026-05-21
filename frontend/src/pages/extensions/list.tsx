@@ -95,6 +95,11 @@ export function ExtensionsListPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Extensions</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            System-state surface for bundled extension availability. This page
+            only reflects backend enablement state; route visibility and tool
+            filtering stay owned by the extension runtime.
+          </p>
         </div>
       </div>
 
@@ -107,11 +112,16 @@ export function ExtensionsListPage() {
       ) : null}
 
       {extensionsQuery.isError ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {extensionsQuery.error instanceof Error
-              ? extensionsQuery.error.message
-              : "Failed to load extensions."}
+        <Card role="alert" aria-live="polite">
+          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">
+              Unable to load extension state.
+            </p>
+            <p className="text-xs">
+              {extensionsQuery.error instanceof Error
+                ? extensionsQuery.error.message
+                : "Failed to load extensions."}
+            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -120,8 +130,14 @@ export function ExtensionsListPage() {
       !extensionsQuery.isError &&
       extensions.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No bundled extensions are registered.
+          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">
+              No bundled extensions are registered.
+            </p>
+            <p className="text-xs">
+              Extension rows appear only when the backend exposes slim bundled
+              state with a key, label, and enabled flag.
+            </p>
           </CardContent>
         </Card>
       ) : null}
