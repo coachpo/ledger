@@ -83,6 +83,33 @@ describe("ModelConnectionsEditorPage", () => {
     );
   });
 
+  it("renders a full-height semantic form shell with labeled core controls", () => {
+    render(<ModelConnectionsEditorPage />);
+
+    const shell = screen.getByTestId("model-connections-editor");
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-y-auto");
+    expect(shell).toHaveAttribute("aria-labelledby", "model-connection-editor-title");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create Model Connection" })).toBeVisible();
+
+    for (const label of [
+      "Key",
+      "Name",
+      "Model ID",
+      "Description",
+      "Base URL",
+      "API Style",
+      "Timeout Seconds",
+      "Reasoning Effort",
+      "API Key",
+    ]) {
+      expect(screen.getByLabelText(label)).toBeVisible();
+    }
+
+    expect(screen.getByRole("button", { name: /test connection/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /save model connection/i })).toBeEnabled();
+  });
+
   it("submits a create body without apiKey until one is entered", async () => {
     createModelConnectionMock.mockResolvedValue({ id: 9 });
 

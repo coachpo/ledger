@@ -275,12 +275,16 @@ export function ModelConnectionsEditorPage() {
   };
 
   if (isEditing && connectionQuery.isPending) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading model connection details...</div>;
+    return (
+      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
+        Loading model connection details...
+      </div>
+    );
   }
 
   if (isEditing && connectionQuery.isError) {
     return (
-      <div className="p-4 text-sm text-muted-foreground">
+      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
         {connectionQuery.error instanceof Error
           ? connectionQuery.error.message
           : "Model connection not found."}
@@ -295,10 +299,14 @@ export function ModelConnectionsEditorPage() {
       : "Optional for create; you can add or rotate it later.";
 
   return (
-    <div className="space-y-4 p-4" data-testid="model-connections-editor">
+    <div
+      aria-labelledby="model-connection-editor-title"
+      className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden p-4 font-sans"
+      data-testid="model-connections-editor"
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 id="model-connection-editor-title" className="text-xl font-semibold tracking-tight">
             {isEditing ? "Edit Model Connection" : "Create Model Connection"}
           </h1>
           <p className="text-sm text-muted-foreground">
