@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -26,6 +26,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 import { PortfolioFormDialog } from "@/components/forms/portfolio-form-dialog";
@@ -39,6 +41,7 @@ export function PortfolioListPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<PortfolioRead | null>(null);
   const [deleting, setDeleting] = useState<PortfolioRead | null>(null);
+  const [search, setSearch] = useState("");
 
   const portfolios = useMemo(
     () =>
@@ -47,13 +50,28 @@ export function PortfolioListPage() {
       ),
     [portfoliosQuery.data],
   );
+  const query = search.trim().toLowerCase();
+  const filteredPortfolios = !query
+    ? portfolios
+    : portfolios.filter((portfolio) =>
+        [
+          portfolio.name,
+          portfolio.description,
+          portfolio.baseCurrency,
+          String(portfolio.positionCount),
+          String(portfolio.balanceCount),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      );
 
   return (
-    <div className="max-w-6xl space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
+    <div className="space-y-4 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Portfolios</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Manage live portfolio records and jump into detailed position,
             balance, and trade views.
           </p>
@@ -65,11 +83,31 @@ export function PortfolioListPage() {
             setShowForm(true);
           }}
         >
-          <Plus className="mr-1 size-3.5" /> New Portfolio
+          <Plus data-icon="inline-start" /> New Portfolio
         </Button>
       </div>
 
-      <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative max-w-sm flex-1" role="search">
+          <Label htmlFor="portfolio-search" className="sr-only">
+            Search portfolios
+          </Label>
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            id="portfolio-search"
+            name="portfolioSearch"
+            placeholder="Search portfolios by name, currency, or holdings..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:gap-3">
         {portfoliosQuery.isPending ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
@@ -78,8 +116,8 @@ export function PortfolioListPage() {
           </Card>
         ) : null}
         {portfoliosQuery.isError ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          <Card role="alert">
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
               {portfoliosQuery.error instanceof Error
                 ? portfoliosQuery.error.message
                 : "Failed to load portfolios."}
@@ -95,7 +133,17 @@ export function PortfolioListPage() {
             </CardContent>
           </Card>
         ) : null}
-        {portfolios.map((portfolio) => (
+        {!portfoliosQuery.isPending &&
+        !portfoliosQuery.isError &&
+        portfolios.length > 0 &&
+        filteredPortfolios.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
+              No portfolios match your search.
+            </CardContent>
+          </Card>
+        ) : null}
+        {filteredPortfolios.map((portfolio) => (
           <EntityListCard
             key={portfolio.id}
             title={portfolio.name}
@@ -108,19 +156,22 @@ export function PortfolioListPage() {
             }
             description={portfolio.description || "No description"}
             metadata={<>Updated {formatDateTime(portfolio.updatedAt)}</>}
+            primaryAction={{
+              kind: "link",
+              label: `Open portfolio ${portfolio.name}`,
+              to: `/portfolios/${portfolio.id}`,
+            }}
             actions={
               <>
-                <Button
-                  size="sm"
-                  onClick={() => navigate(`/portfolios/${portfolio.id}`)}
-                >
-                  Open
+                <Button asChild size="sm">
+                  <Link to={`/portfolios/${portfolio.id}`}>Open</Link>
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       aria-label={`Open actions for ${portfolio.name}`}
                       size="icon"
+                      type="button"
                       variant="ghost"
                     >
                       <MoreHorizontal className="size-4" />

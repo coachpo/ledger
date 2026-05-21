@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PortfolioListPage } from "./list";
@@ -67,9 +67,82 @@ describe("PortfolioListPage", () => {
 
     const emptyState = screen.getByText("No portfolios yet.");
     expect(emptyState).toBeVisible();
-    expect(emptyState).toHaveClass("py-8", "text-center", "text-xs", "text-muted-foreground");
+    expect(emptyState).toHaveClass(
+      "py-8",
+      "text-center",
+      "text-xs",
+      "text-muted-foreground",
+    );
     expect(emptyState).not.toHaveClass("text-sm");
     expect(screen.queryByText("Loading portfolios...")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Search portfolios")).toBeVisible();
     expect(screen.getByRole("button", { name: /new portfolio/i })).toBeVisible();
+  });
+
+  it("renders a filtered-empty state while preserving the full empty-state copy", () => {
+    usePortfoliosMock.mockReturnValue({
+      data: [
+        {
+          balanceCount: 2,
+          baseCurrency: "USD",
+          description: "Long-term allocation",
+          id: 42,
+          name: "Growth Fund",
+          positionCount: 3,
+          updatedAt: "2026-04-20T10:00:00Z",
+        },
+      ],
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    render(<PortfolioListPage />);
+
+    fireEvent.change(screen.getByLabelText("Search portfolios"), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByText("No portfolios match your search.")).toBeVisible();
+    expect(screen.queryByText("No portfolios yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Growth Fund")).not.toBeInTheDocument();
+  });
+
+  it("renders portfolio card navigation as links and keeps menu actions isolated", () => {
+    usePortfoliosMock.mockReturnValue({
+      data: [
+        {
+          balanceCount: 2,
+          baseCurrency: "USD",
+          description: "Long-term allocation",
+          id: 42,
+          name: "Growth Fund",
+          positionCount: 3,
+          updatedAt: "2026-04-20T10:00:00Z",
+        },
+      ],
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    render(<PortfolioListPage />);
+
+    const primaryLink = screen.getByRole("link", { name: "Open portfolio Growth Fund" });
+    const card = primaryLink.closest("[data-slot='card']");
+    expect(primaryLink).toHaveAttribute("href", "/portfolios/42");
+    expect(card).not.toBeNull();
+
+    const visibleOpen = within(card as HTMLElement).getByRole("link", { name: "Open" });
+    expect(visibleOpen).toHaveAttribute("href", "/portfolios/42");
+    expect(within(card as HTMLElement).queryByRole("button", { name: "Open" })).not.toBeInTheDocument();
+
+    const menuButton = within(card as HTMLElement).getByRole("button", {
+      name: "Open actions for Growth Fund",
+    });
+    fireEvent.click(menuButton);
+
+    expect(menuButton.closest("a")).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
