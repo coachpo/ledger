@@ -25,6 +25,18 @@ type UpdateTemplateVariables = {
   data: TextTemplateUpdateInput;
 };
 
+function clearDeletedTemplateQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  templateId: IdParam,
+) {
+  queryClient.removeQueries({
+    queryKey: queryKeys.templates.detail(templateId),
+  });
+  queryClient.removeQueries({
+    queryKey: queryKeys.templates.compile(templateId),
+  });
+}
+
 export function useTemplates() {
   return useQuery({
     queryKey: queryKeys.templates.list(),
@@ -58,8 +70,33 @@ export function useDeleteTemplate() {
 
   return useMutation({
     mutationFn: (templateId: IdParam) => deleteTemplate(templateId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.templates.list() }),
+    onSuccess: async (_result, templateId) => {
+      clearDeletedTemplateQueries(queryClient, templateId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.templates.list() });
+    },
+  });
+}
+
+export function useDeleteTemplates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (templateIds: IdParam[]) => {
+      const results = await Promise.allSettled(
+        templateIds.map((templateId) => deleteTemplate(templateId)),
+      );
+      const firstRejected = results.find((result) => result.status === "rejected");
+
+      if (firstRejected?.status === "rejected") {
+        throw firstRejected.reason;
+      }
+    },
+    onSettled: async (_result, _error, templateIds) => {
+      templateIds.forEach((templateId) => {
+        clearDeletedTemplateQueries(queryClient, templateId);
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.templates.list() });
+    },
   });
 }
 
@@ -77,7 +114,7 @@ export function useTemplate(templateId: IdParam | undefined) {
   const resolvedId = templateId ?? "";
 
   return useQuery({
-    queryKey: [...queryKeys.templates.all, "detail", String(resolvedId)],
+    queryKey: queryKeys.templates.detail(resolvedId),
     queryFn: ({ signal }) => getTemplate(resolvedId, signal),
     enabled: Boolean(templateId),
   });

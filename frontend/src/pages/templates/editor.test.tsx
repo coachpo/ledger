@@ -12,6 +12,8 @@ const navigateMock = vi.fn();
 const compileInlineMock = vi.fn();
 const compileReportMutateMock = vi.fn();
 const deleteTemplateMutateMock = vi.fn();
+const deleteTemplatesMutateMock = vi.fn();
+const useTemplateMock = vi.fn();
 const useTemplatesListMock = vi.fn();
 
 vi.mock("react-router", () => ({
@@ -40,13 +42,17 @@ vi.mock("@/lib/markdown-format", () => ({
 }));
 
 vi.mock("@/hooks/use-templates", () => ({
-  useTemplate: () => ({ data: undefined, isLoading: false }),
+  useTemplate: (templateId?: string) => useTemplateMock(templateId),
   useTemplates: () => useTemplatesListMock(),
   useCreateTemplate: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useUpdateTemplate: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDeleteTemplate: () => ({
     isPending: false,
     mutate: deleteTemplateMutateMock,
+  }),
+  useDeleteTemplates: () => ({
+    isPending: false,
+    mutate: deleteTemplatesMutateMock,
   }),
   useCompileInline: () => ({
     mutate: compileInlineMock,
@@ -98,6 +104,21 @@ describe("TemplateEditorPage", () => {
     compileInlineMock.mockReset();
     compileReportMutateMock.mockReset();
     deleteTemplateMutateMock.mockReset();
+    deleteTemplatesMutateMock.mockReset();
+    useTemplateMock.mockReset();
+    const savedTemplate = {
+      id: 42,
+      name: "Saved Template",
+      content: "Existing content",
+      createdAt: "2026-05-01T10:00:00Z",
+      updatedAt: "2026-05-02T10:00:00Z",
+    };
+    useTemplateMock.mockImplementation((templateId?: string) => ({
+      data: templateId ? savedTemplate : undefined,
+      error: null,
+      isError: false,
+      isLoading: false,
+    }));
     useTemplatesListMock.mockReset();
     useTemplatesListMock.mockReturnValue(queryResult([]));
   });
@@ -109,34 +130,60 @@ describe("TemplateEditorPage", () => {
     expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
     expect(shell).toHaveAttribute("aria-labelledby", "template-editor-title");
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Create Template" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Create Template" }),
+    ).toBeVisible();
     expect(screen.getByLabelText(/^Template name$/i)).toHaveAttribute(
       "placeholder",
       "Name this template...",
     );
-    expect(screen.getByRole("textbox", { name: /^Template content$/i })).toHaveAttribute(
-      "placeholder",
-      "Enter template content…",
-    );
+    expect(
+      screen.getByRole("textbox", { name: /^Template content$/i }),
+    ).toHaveAttribute("placeholder", "Enter template content…");
     expect(screen.getByRole("button", { name: "Close editor" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Generate Report" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Generate Report" }),
+    ).toBeDisabled();
+  });
+
+  it("renders a deterministic not-found state for missing saved templates", () => {
+    paramsMock.templateId = "42";
+    useTemplateMock.mockReturnValue({
+      data: undefined,
+      error: new Error("Template not found."),
+      isError: true,
+      isLoading: false,
+    });
+
+    render(<TemplateEditorPage />);
+
+    expect(screen.getByText("Template not found.")).toBeVisible();
+    expect(screen.queryByTestId("template-editor-shell")).not.toBeInTheDocument();
   });
 
   it("shows dynamic report selector guidance and inserts a selector example", () => {
     render(<TemplateEditorPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /dynamic report selectors/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /dynamic report selectors/i }),
+    );
 
     expect(
       screen.getByText(
         /Use these when the latest matching report matters more than a fixed saved name\./i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/`reports\[0\]` is the newest report\./i)).toBeInTheDocument();
-    expect(screen.getByText('reports.latest("AAPL").content')).toBeInTheDocument();
-    expect(screen.getByText('reports.by_tag("weekly_review").latest.content')).toBeInTheDocument();
+    expect(
+      screen.getByText(/`reports\[0\]` is the newest report\./i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('reports.latest("AAPL").content'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('reports.by_tag("weekly_review").latest.content'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('reports.latest("AAPL").content'));
 
@@ -162,9 +209,13 @@ describe("TemplateEditorPage", () => {
       target: { value: "Ticker {{inputs.ticker}}" },
     });
 
-    const rawRuntimeInputPreview = screen.getByLabelText(/exact raw runtime input json/i);
+    const rawRuntimeInputPreview = screen.getByLabelText(
+      /exact raw runtime input json/i,
+    );
 
-    expect(rawRuntimeInputPreview).toHaveValue(stringifyJson({ ticker: "MSFT" }));
+    expect(rawRuntimeInputPreview).toHaveValue(
+      stringifyJson({ ticker: "MSFT" }),
+    );
     expect(rawRuntimeInputPreview).toHaveAttribute("readonly");
 
     expect(compileInlineMock).toHaveBeenLastCalledWith({
@@ -177,7 +228,9 @@ describe("TemplateEditorPage", () => {
 
     expect(within(dialog).getByDisplayValue("ticker")).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue("MSFT")).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: /^generate$/i }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /^generate$/i }),
+    );
 
     expect(compileReportMutateMock).toHaveBeenCalledWith(
       {
@@ -276,5 +329,104 @@ describe("TemplateEditorPage", () => {
       7,
       expect.any(Object),
     );
+  });
+
+  it("supports table-only template selection, scoped bulk delete, and clear", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            id: 7,
+            name: "Quarterly Review",
+            content: "Portfolio summary",
+            createdAt: "2026-05-01T10:00:00Z",
+            updatedAt: "2026-05-02T10:00:00Z",
+          },
+          {
+            id: 8,
+            name: "Monthly Snapshot",
+            content: "Risk summary",
+            createdAt: "2026-05-03T10:00:00Z",
+            updatedAt: "2026-05-04T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    render(<TemplateListPage />);
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all shown templates/i }),
+    );
+
+    expect(
+      within(screen.getByTestId("templates-bulk-actions")).getByText(
+        "2 of 2 templates selected",
+      ),
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Search templates"), {
+      target: { value: "Monthly" },
+    });
+
+    const bulkActions = screen.getByTestId("templates-bulk-actions");
+    expect(
+      within(bulkActions).getByText("1 of 1 templates selected"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(bulkActions).getByRole("button", { name: /delete selected/i }),
+    );
+
+    expect(deleteTemplatesMutateMock).toHaveBeenCalledWith(
+      [8],
+      expect.any(Object),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    fireEvent.click(within(bulkActions).getByRole("button", { name: "Clear" }));
+    expect(
+      screen.queryByTestId("templates-bulk-actions"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears template selection when switching back to cards", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            id: 7,
+            name: "Quarterly Review",
+            content: "Portfolio summary",
+            createdAt: "2026-05-01T10:00:00Z",
+            updatedAt: "2026-05-02T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    render(<TemplateListPage />);
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /select template quarterly review/i,
+      }),
+    );
+    expect(screen.getByTestId("templates-bulk-actions")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("radio", { name: /cards view/i }));
+    expect(
+      screen.queryByTestId("templates-bulk-actions"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+    expect(
+      screen.getByRole("checkbox", {
+        name: /select template quarterly review/i,
+      }),
+    ).toHaveAttribute("aria-checked", "false");
   });
 });

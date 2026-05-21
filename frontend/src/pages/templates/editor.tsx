@@ -54,7 +54,12 @@ export function TemplateEditorPage() {
   const [runtimeInputRows, setRuntimeInputRows] = useState<RuntimeInputRow[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: template, isLoading: isLoadingTemplate } = useTemplate(templateId);
+  const {
+    data: template,
+    error: templateError,
+    isError: isTemplateError,
+    isLoading: isLoadingTemplate,
+  } = useTemplate(templateId);
   const { data: placeholderTree, isLoading: isLoadingPlaceholders } = usePlaceholders();
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
@@ -212,6 +217,14 @@ export function TemplateEditorPage() {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isEditing && (isTemplateError || !template)) {
+    return (
+      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
+        {templateError instanceof Error ? templateError.message : "Template not found."}
       </div>
     );
   }

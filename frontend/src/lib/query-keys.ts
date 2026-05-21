@@ -104,6 +104,8 @@ const templatesQueryKeys = {
   all: [...apiRoot, "templates"] as const,
   compile: (templateId: IdParam) =>
     [...apiRoot, "templates", "compile", normalizeId(templateId)] as const,
+  detail: (templateId: IdParam) =>
+    [...apiRoot, "templates", "detail", normalizeId(templateId)] as const,
   list: () => [...apiRoot, "templates", "list"] as const,
 } as const;
 
