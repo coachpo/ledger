@@ -149,7 +149,7 @@ describe("WorkflowPackagesListPage", () => {
             id: 9,
             key: "risk_review",
             name: "Risk Review",
-                    updatedAt: "2026-05-04T10:00:00Z",
+            updatedAt: "2026-05-04T10:00:00Z",
           }),
           packageFixture({
             description: "Draft allocation bundle",
@@ -177,11 +177,16 @@ describe("WorkflowPackagesListPage", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("textbox", { name: "Search workflow packages" }),
-    ).toHaveAttribute("placeholder", "Search packages by name, key, or hash...");
+    ).toHaveAttribute(
+      "placeholder",
+      "Search packages by name, key, or hash...",
+    );
     expect(
-      screen.getByRole("checkbox", { name: "Select all shown workflow packages" }),
-    ).toBeVisible();
-    expect(screen.getByText("Select all shown")).toBeVisible();
+      screen.queryByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
     expect(screen.queryByText("Package Inventory")).not.toBeInTheDocument();
     expect(screen.queryByText("Total Packages")).not.toBeInTheDocument();
     expect(screen.queryByText("Validation Warnings")).not.toBeInTheDocument();
@@ -202,6 +207,11 @@ describe("WorkflowPackagesListPage", () => {
     expect(riskRow).not.toHaveTextContent("Draft");
     expect(riskRow).toHaveTextContent("May 4, 2026");
     expect(
+      within(riskRow).queryByRole("checkbox", {
+        name: "Select workflow package Risk Review",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
       within(riskRow).getByRole("button", { name: "Open package Risk Review" }),
     ).toBeVisible();
     expect(
@@ -221,13 +231,27 @@ describe("WorkflowPackagesListPage", () => {
     expect(allocationRow).toHaveTextContent("Allocation Draft");
     expect(allocationRow).toHaveTextContent("allocation_draft");
     expect(allocationRow).not.toHaveTextContent("Active");
-    expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Status" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Table view"));
     expect(screen.getByLabelText("Table view")).toHaveAttribute(
       "data-state",
       "on",
     );
+    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    ).toHaveLength(1);
+    expect(
+      within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
+        "checkbox",
+        { name: "Select workflow package Risk Review" },
+      ),
+    ).toBeVisible();
 
     for (const column of [
       "Name",
@@ -238,7 +262,9 @@ describe("WorkflowPackagesListPage", () => {
     ]) {
       expect(screen.getByRole("columnheader", { name: column })).toBeVisible();
     }
-    expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Status" }),
+    ).not.toBeInTheDocument();
   });
 
   it("filters packages through search while keeping Open and Launch routes separate", () => {
@@ -281,7 +307,9 @@ describe("WorkflowPackagesListPage", () => {
 
     navigateMock.mockClear();
     fireEvent.click(
-      within(macroRow).getByRole("button", { name: "Open package Macro Digest" }),
+      within(macroRow).getByRole("button", {
+        name: "Open package Macro Digest",
+      }),
     );
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
@@ -289,14 +317,18 @@ describe("WorkflowPackagesListPage", () => {
 
     navigateMock.mockClear();
     fireEvent.click(
-      within(macroRow).getByRole("button", { name: "Launch package Macro Digest" }),
+      within(macroRow).getByRole("button", {
+        name: "Launch package Macro Digest",
+      }),
     );
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
     expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
 
     fireEvent.click(screen.getByLabelText("Table view"));
-    const tableMacroRow = screen.getByTestId("workflow-packages-row-macro_digest");
+    const tableMacroRow = screen.getByTestId(
+      "workflow-packages-row-macro_digest",
+    );
 
     navigateMock.mockClear();
     fireEvent.click(
@@ -319,9 +351,10 @@ describe("WorkflowPackagesListPage", () => {
     expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
   });
 
-  it("selects packages in cards and table views and bulk deletes selected packages", async () => {
+  it("selects packages in table view and bulk deletes selected packages", async () => {
     deletePackagesMock.mockImplementation(
-      (_ids: unknown, options: { onSuccess: () => void }) => options.onSuccess(),
+      (_ids: unknown, options: { onSuccess: () => void }) =>
+        options.onSuccess(),
     );
     useWorkflowPackagesMock.mockReturnValue({
       data: {
@@ -347,6 +380,7 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
+    fireEvent.click(screen.getByLabelText("Table view"));
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     fireEvent.click(
       within(riskRow).getByRole("checkbox", {
@@ -355,43 +389,139 @@ describe("WorkflowPackagesListPage", () => {
     );
 
     expect(riskRow).toHaveAttribute("data-state", "selected");
-    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      screen.getByText("1 of 2 workflow packages selected"),
+    ).toBeVisible();
+    const bulkActions = screen.getByTestId("workflow-packages-bulk-actions");
+    expect(bulkActions).toBeVisible();
+    expect(screen.getByRole("table").compareDocumentPosition(bulkActions)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search workflow packages" }),
+      { target: { value: "macro" } },
+    );
+    expect(
+      screen.queryByTestId("workflow-packages-row-risk_review"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("workflow-packages-bulk-actions"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete selected" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search workflow packages" }),
+      { target: { value: "" } },
+    );
+    expect(
+      screen.getByText("1 of 2 workflow packages selected"),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("1 of 2 workflow packages selected"),
+    ).not.toBeInTheDocument();
 
+    expect(
+      screen.getAllByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    ).toHaveLength(1);
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: "Select all shown workflow packages",
       }),
     );
-    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(
+      screen.getByText("2 of 2 workflow packages selected"),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByLabelText("Table view"));
-    const tableMacroRow = screen.getByTestId("workflow-packages-row-macro_digest");
-    fireEvent.click(
-      within(tableMacroRow).getByRole("checkbox", {
-        name: "Select workflow package Macro Digest",
-      }),
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search workflow packages" }),
+      { target: { value: "macro" } },
     );
-    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      screen.getByText("1 of 1 workflow packages selected"),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
 
-    await waitFor(() => expect(deletePackagesMock).toHaveBeenCalledWith(
-      [9],
-      expect.objectContaining({
-        onError: expect.any(Function),
-        onSuccess: expect.any(Function),
-      }),
-    ));
+    await waitFor(() =>
+      expect(deletePackagesMock).toHaveBeenCalledWith(
+        [4],
+        expect.objectContaining({
+          onError: expect.any(Function),
+          onSuccess: expect.any(Function),
+        }),
+      ),
+    );
     expect(toastSuccessMock).toHaveBeenCalledWith("1 workflow package deleted");
+  });
+
+  it("clears active package selection when switching from table to cards", () => {
+    useWorkflowPackagesMock.mockReturnValue({
+      data: {
+        items: [
+          packageFixture({ id: 9, key: "risk_review", name: "Risk Review" }),
+        ],
+      },
+      error: null,
+      isError: false,
+      isPending: false,
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+    fireEvent.click(
+      within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
+        "checkbox",
+        { name: "Select workflow package Risk Review" },
+      ),
+    );
+    expect(
+      screen.getByText("1 of 1 workflow packages selected"),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByLabelText("Cards view"));
+    expect(
+      screen.queryByText("1 of 1 workflow packages selected"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Select all shown")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Select all shown workflow packages",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByTestId("workflow-packages-row-risk_review"),
+      ).queryByRole("checkbox", {
+        name: "Select workflow package Risk Review",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Table view"));
+    expect(
+      within(screen.getByTestId("workflow-packages-row-risk_review")).getByRole(
+        "checkbox",
+        { name: "Select workflow package Risk Review" },
+      ),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.queryByRole("button", { name: "Delete selected" }),
+    ).not.toBeInTheDocument();
   });
 
   it("permanently deletes packages and surfaces backend delete errors", async () => {
     useWorkflowPackagesMock.mockReturnValue({
       data: {
-        items: [packageFixture({ id: 9, key: "risk_review", name: "Risk Review" })],
+        items: [
+          packageFixture({ id: 9, key: "risk_review", name: "Risk Review" }),
+        ],
       },
       error: null,
       isError: false,

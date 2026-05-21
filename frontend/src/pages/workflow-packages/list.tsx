@@ -120,22 +120,27 @@ export function WorkflowPackagesListPage() {
   );
   const [deleting, setDeleting] = useState<WorkflowPackageRead | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<WorkflowPackageRead["id"]>>(
-    new Set(),
-  );
+  const [selectedPackageIds, setSelectedPackageIds] = useState<
+    Set<WorkflowPackageRead["id"]>
+  >(new Set());
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
   );
   const selectedPackages = useMemo(
-    () => packages.filter((workflowPackage) => selectedPackageIds.has(workflowPackage.id)),
-    [packages, selectedPackageIds],
+    () =>
+      filteredPackages.filter((workflowPackage) =>
+        selectedPackageIds.has(workflowPackage.id),
+      ),
+    [filteredPackages, selectedPackageIds],
   );
   const selectedCount = selectedPackages.length;
   const allFilteredSelected =
     filteredPackages.length > 0 &&
-    filteredPackages.every((workflowPackage) => selectedPackageIds.has(workflowPackage.id));
+    filteredPackages.every((workflowPackage) =>
+      selectedPackageIds.has(workflowPackage.id),
+    );
   const someFilteredSelected = filteredPackages.some((workflowPackage) =>
     selectedPackageIds.has(workflowPackage.id),
   );
@@ -173,7 +178,9 @@ export function WorkflowPackagesListPage() {
       setDeleting(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete workflow package.",
+        error instanceof Error
+          ? error.message
+          : "Failed to delete workflow package.",
       );
     }
   };
@@ -183,7 +190,9 @@ export function WorkflowPackagesListPage() {
       return;
     }
 
-    const packageIds = selectedPackages.map((workflowPackage) => workflowPackage.id);
+    const packageIds = selectedPackages.map(
+      (workflowPackage) => workflowPackage.id,
+    );
     const count = selectedPackages.length;
     deletePackages.mutate(packageIds, {
       onError: (error) =>
@@ -258,9 +267,11 @@ export function WorkflowPackagesListPage() {
         <ToggleGroup
           type="single"
           value={viewMode}
-          onValueChange={(value) =>
-            value && setViewMode(value as "cards" | "table")
-          }
+          onValueChange={(value) => {
+            if (!value) return;
+            setViewMode(value as "cards" | "table");
+            if (value === "cards") setSelectedPackageIds(new Set());
+          }}
         >
           <ToggleGroupItem
             value="cards"
@@ -278,49 +289,6 @@ export function WorkflowPackagesListPage() {
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-
-      {filteredPackages.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <label className="flex items-center gap-2 text-xs font-medium">
-            <Checkbox
-              aria-label="Select all shown workflow packages"
-              checked={
-                allFilteredSelected
-                  ? true
-                  : someFilteredSelected
-                    ? "indeterminate"
-                    : false
-              }
-              onCheckedChange={(checked) =>
-                setPackagesSelected(filteredPackages, checked === true)
-              }
-            />
-            Select all shown
-          </label>
-          {selectedCount > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {selectedCount} selected
-              </span>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={deletePackages.isPending}
-                onClick={deleteSelectedPackages}
-              >
-                <Trash2 className="size-3.5" /> Delete selected
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedPackageIds(new Set())}
-              >
-                Clear
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       {packagesQuery.isPending ? <LoadingTable /> : null}
       {packagesQuery.isError ? (
@@ -352,22 +320,11 @@ export function WorkflowPackagesListPage() {
           {filteredPackages.map((workflowPackage) => {
             const packagePath = `/workflow-packages/${workflowPackage.id}`;
             const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
-            const isSelected = selectedPackageIds.has(workflowPackage.id);
 
             return (
               <PlatformResourceCard
                 key={workflowPackage.id}
                 density="compactPlus"
-                leading={
-                  <Checkbox
-                    aria-label={`Select workflow package ${workflowPackage.name}`}
-                    checked={isSelected}
-                    onCheckedChange={(checked) =>
-                      setPackagesSelected([workflowPackage], checked === true)
-                    }
-                  />
-                }
-                selected={isSelected}
                 testId={`workflow-packages-row-${workflowPackage.key}`}
                 title={workflowPackage.name}
                 subtitle={
@@ -428,7 +385,9 @@ export function WorkflowPackagesListPage() {
                     <Button
                       aria-label={`Delete package ${workflowPackage.name}`}
                       className="cursor-pointer"
-                      disabled={deletePackage.isPending || deletePackages.isPending}
+                      disabled={
+                        deletePackage.isPending || deletePackages.isPending
+                      }
                       size="sm"
                       variant="destructive"
                       type="button"
@@ -545,7 +504,9 @@ export function WorkflowPackagesListPage() {
                       <Button
                         aria-label={`Delete package ${workflowPackage.name}`}
                         className="cursor-pointer"
-                        disabled={deletePackage.isPending || deletePackages.isPending}
+                        disabled={
+                          deletePackage.isPending || deletePackages.isPending
+                        }
                         size="sm"
                         variant="destructive"
                         type="button"
@@ -561,6 +522,34 @@ export function WorkflowPackagesListPage() {
             })}
           </TableBody>
         </Table>
+      ) : null}
+      {viewMode === "table" && selectedCount > 0 ? (
+        <div
+          data-testid="workflow-packages-bulk-actions"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+        >
+          <span className="text-xs text-muted-foreground">
+            {selectedCount} of {filteredPackages.length} workflow packages
+            selected
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deletePackages.isPending}
+              onClick={deleteSelectedPackages}
+            >
+              <Trash2 className="size-3.5" /> Delete selected
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedPackageIds(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
       ) : null}
       <ConfirmDeleteDialog
         open={deleting !== null}
