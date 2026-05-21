@@ -181,7 +181,7 @@ describe("ModelConnectionsListPage", () => {
       "Delete Primary OpenAI?",
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Deletion is blocked while current workflow packages or historical rerunnable run snapshots reference its stable key.",
+      "Deletion is blocked while current workflow packages reference its stable key.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
     await waitFor(() =>

@@ -577,7 +577,7 @@ export function ModelConnectionsListPage() {
       <ConfirmDeleteDialog
         open={deleting !== null}
         title="Delete model connection"
-        description={`Delete ${deleting?.name ?? "this model connection"}? Deletion is blocked while current workflow packages or historical rerunnable run snapshots reference its stable key. This cannot be undone.`}
+        description={`Delete ${deleting?.name ?? "this model connection"}? Deletion is blocked while current workflow packages reference its stable key. This cannot be undone.`}
         confirmLabel="Delete connection"
         isPending={deleteMutation.isPending}
         onOpenChange={(open) => {
