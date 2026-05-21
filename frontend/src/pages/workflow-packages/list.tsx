@@ -12,7 +12,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -117,7 +117,6 @@ function EmptyState({ search }: { search: string }) {
 }
 
 export function WorkflowPackagesListPage() {
-  const navigate = useNavigate();
   const deletePackage = useDeleteWorkflowPackage();
   const deletePackages = useDeleteWorkflowPackages();
   const packagesQuery = useWorkflowPackages();
@@ -231,28 +230,25 @@ export function WorkflowPackagesListPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button
-            aria-label="Import workflow package manifest"
-            className="cursor-pointer"
-            data-testid="workflow-packages-import"
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/workflow-packages/import")}
-          >
-            <FileUp data-icon="inline-start" />
-            Import Package
+          <Button asChild size="sm" variant="outline">
+            <Link
+              aria-label="Import workflow package manifest"
+              data-testid="workflow-packages-import"
+              to="/workflow-packages/import"
+            >
+              <FileUp data-icon="inline-start" />
+              Import Package
+            </Link>
           </Button>
-          <Button
-            aria-label="Create new workflow package"
-            className="cursor-pointer"
-            data-testid="workflow-packages-new"
-            size="sm"
-            type="button"
-            onClick={() => navigate("/workflow-packages/new")}
-          >
-            <PackagePlus data-icon="inline-start" />
-            New Package
+          <Button asChild size="sm">
+            <Link
+              aria-label="Create new workflow package"
+              data-testid="workflow-packages-new"
+              to="/workflow-packages/new"
+            >
+              <PackagePlus data-icon="inline-start" />
+              New Package
+            </Link>
           </Button>
         </div>
       </div>
@@ -299,20 +295,19 @@ export function WorkflowPackagesListPage() {
 
       {packagesQuery.isPending ? <LoadingTable /> : null}
       {packagesQuery.isError ? (
-        <div
-          className="flex items-start gap-3 p-6 text-sm text-muted-foreground"
-          role="alert"
-        >
-          <TriangleAlert
-            className="mt-0.5 size-4 shrink-0 text-destructive"
-            aria-hidden="true"
-          />
-          <span>
-            {packagesQuery.error instanceof Error
-              ? packagesQuery.error.message
-              : "Failed to load workflow packages."}
-          </span>
-        </div>
+        <Card role="alert" aria-live="polite">
+          <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
+            <TriangleAlert
+              className="mt-0.5 size-4 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <span>
+              {packagesQuery.error instanceof Error
+                ? packagesQuery.error.message
+                : "Failed to load workflow packages."}
+            </span>
+          </CardContent>
+        </Card>
       ) : null}
       {!packagesQuery.isPending &&
       !packagesQuery.isError &&
@@ -335,25 +330,20 @@ export function WorkflowPackagesListPage() {
                 testId={`workflow-packages-row-${workflowPackage.key}`}
                 title={workflowPackage.name}
                 subtitle={
-                  <span className="font-['Fira_Code',ui-monospace,monospace]">
+                  <span className="font-mono">
                     {workflowPackage.key}
                   </span>
                 }
                 description={
                   workflowPackage.description || "No description provided."
                 }
-                primaryAction={{
-                  kind: "button",
-                  label: `Open package details for ${workflowPackage.name}`,
-                  onClick: () => navigate(packagePath),
-                }}
                 metadata={
                   <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Manifest Hash:
                       </span>{" "}
-                      <span className="font-['Fira_Code',ui-monospace,monospace]">
+                      <span className="font-mono">
                         {formatNullableHash(workflowPackage.manifestHash)}
                       </span>
                     </div>
@@ -367,15 +357,23 @@ export function WorkflowPackagesListPage() {
                 }
                 actions={
                   <>
-                    <Button
-                      aria-label={`Launch package ${workflowPackage.name}`}
-                      className="cursor-pointer"
-                      size="sm"
-                      type="button"
-                      onClick={() => navigate(launchPath)}
-                    >
-                      <PlayCircle data-icon="inline-start" />
-                      Launch
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        aria-label={`Open package ${workflowPackage.name}`}
+                        to={packagePath}
+                      >
+                        <SquarePen data-icon="inline-start" />
+                        Open
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm">
+                      <Link
+                        aria-label={`Launch package ${workflowPackage.name}`}
+                        to={launchPath}
+                      >
+                        <PlayCircle data-icon="inline-start" />
+                        Launch
+                      </Link>
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -390,12 +388,6 @@ export function WorkflowPackagesListPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={() => navigate(packagePath)}
-                        >
-                          <SquarePen className="size-3.5" />
-                          Open
-                        </DropdownMenuItem>
                         <DropdownMenuItem
                           disabled={
                             deletePackage.isPending || deletePackages.isPending
@@ -474,10 +466,10 @@ export function WorkflowPackagesListPage() {
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">
+                  <TableCell className="font-mono text-xs text-muted-foreground">
                     {workflowPackage.key}
                   </TableCell>
-                  <TableCell className="font-['Fira_Code',ui-monospace,monospace] text-xs">
+                  <TableCell className="font-mono text-xs">
                     {formatNullableHash(workflowPackage.manifestHash)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
@@ -485,33 +477,23 @@ export function WorkflowPackagesListPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button
-                        aria-label={`Open package ${workflowPackage.name}`}
-                        className="cursor-pointer"
-                        size="sm"
-                        variant="outline"
-                        type="button"
-                        onClick={() =>
-                          navigate(`/workflow-packages/${workflowPackage.id}`)
-                        }
-                      >
-                        <SquarePen data-icon="inline-start" />
-                        Open
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          aria-label={`Open package ${workflowPackage.name}`}
+                          to={`/workflow-packages/${workflowPackage.id}`}
+                        >
+                          <SquarePen data-icon="inline-start" />
+                          Open
+                        </Link>
                       </Button>
-                      <Button
-                        aria-label={`Launch package ${workflowPackage.name}`}
-                        className="cursor-pointer"
-                        size="sm"
-                        variant="outline"
-                        type="button"
-                        onClick={() =>
-                          navigate(
-                            `/workflow-packages/${workflowPackage.id}/run`,
-                          )
-                        }
-                      >
-                        <PlayCircle data-icon="inline-start" />
-                        Launch
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          aria-label={`Launch package ${workflowPackage.name}`}
+                          to={`/workflow-packages/${workflowPackage.id}/run`}
+                        >
+                          <PlayCircle data-icon="inline-start" />
+                          Launch
+                        </Link>
                       </Button>
                       <Button
                         aria-label={`Delete package ${workflowPackage.name}`}

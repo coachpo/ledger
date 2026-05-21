@@ -170,11 +170,11 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByRole("heading", { name: "Workflow Packages" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Create new workflow package" }),
-    ).toBeVisible();
+      screen.getByRole("link", { name: "Create new workflow package" }),
+    ).toHaveAttribute("href", "/workflow-packages/new");
     expect(
-      screen.getByRole("button", { name: "Import workflow package manifest" }),
-    ).toBeVisible();
+      screen.getByRole("link", { name: "Import workflow package manifest" }),
+    ).toHaveAttribute("href", "/workflow-packages/import");
     expect(
       screen.getByRole("textbox", { name: "Search workflow packages" }),
     ).toHaveAttribute(
@@ -202,7 +202,7 @@ describe("WorkflowPackagesListPage", () => {
     const riskRow = screen.getByTestId("workflow-packages-row-risk_review");
     expect(riskRow).toHaveTextContent("Risk Review");
     const packageKey = within(riskRow).getByText("risk_review");
-    expect(packageKey).toHaveClass("font-['Fira_Code',ui-monospace,monospace]");
+    expect(packageKey).toHaveClass("font-mono");
     expect(packageKey.parentElement).toHaveClass("text-xs");
     expect(
       within(riskRow).getByText("Risk review workflow bundle"),
@@ -220,10 +220,15 @@ describe("WorkflowPackagesListPage", () => {
       }),
     ).not.toBeInTheDocument();
     expect(
-      within(riskRow).getByRole("button", {
+      within(riskRow).getByRole("link", {
+        name: "Open package Risk Review",
+      }),
+    ).toHaveAttribute("href", "/workflow-packages/9");
+    expect(
+      within(riskRow).getByRole("link", {
         name: "Launch package Risk Review",
       }),
-    ).toBeVisible();
+    ).toHaveAttribute("href", "/workflow-packages/9/run");
     expect(
       within(riskRow).getByRole("button", {
         name: "Open actions for package Risk Review",
@@ -231,7 +236,7 @@ describe("WorkflowPackagesListPage", () => {
     ).toBeVisible();
     expect(
       within(riskRow).queryByRole("button", {
-        name: "Open package Risk Review",
+        name: "Open package details for Risk Review",
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -310,60 +315,39 @@ describe("WorkflowPackagesListPage", () => {
     const macroRow = screen.getByTestId("workflow-packages-row-macro_digest");
     expect(macroRow).toBeVisible();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Import workflow package manifest" }),
-    );
-    expect(navigateMock).toHaveBeenLastCalledWith("/workflow-packages/import");
+    expect(
+      screen.getByRole("link", { name: "Import workflow package manifest" }),
+    ).toHaveAttribute("href", "/workflow-packages/import");
+    expect(
+      screen.getByRole("link", { name: "Create new workflow package" }),
+    ).toHaveAttribute("href", "/workflow-packages/new");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create new workflow package" }),
-    );
-    expect(navigateMock).toHaveBeenLastCalledWith("/workflow-packages/new");
-
-    navigateMock.mockClear();
-    fireEvent.click(
-      within(macroRow).getByRole("button", {
-        name: "Open package details for Macro Digest",
+    expect(
+      within(macroRow).getByRole("link", {
+        name: "Open package Macro Digest",
       }),
-    );
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
-    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4/run");
-
-    navigateMock.mockClear();
-    fireEvent.click(
-      within(macroRow).getByRole("button", {
+    ).toHaveAttribute("href", "/workflow-packages/4");
+    expect(
+      within(macroRow).getByRole("link", {
         name: "Launch package Macro Digest",
       }),
-    );
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
-    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
+    ).toHaveAttribute("href", "/workflow-packages/4/run");
 
     fireEvent.click(screen.getByLabelText("Table view"));
     const tableMacroRow = screen.getByTestId(
       "workflow-packages-row-macro_digest",
     );
 
-    navigateMock.mockClear();
-    fireEvent.click(
-      within(tableMacroRow).getByRole("button", {
+    expect(
+      within(tableMacroRow).getByRole("link", {
         name: "Open package Macro Digest",
       }),
-    );
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4");
-    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4/run");
-
-    navigateMock.mockClear();
-    fireEvent.click(
-      within(tableMacroRow).getByRole("button", {
+    ).toHaveAttribute("href", "/workflow-packages/4");
+    expect(
+      within(tableMacroRow).getByRole("link", {
         name: "Launch package Macro Digest",
       }),
-    );
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith("/workflow-packages/4/run");
-    expect(navigateMock).not.toHaveBeenCalledWith("/workflow-packages/4");
+    ).toHaveAttribute("href", "/workflow-packages/4/run");
   });
 
   it("selects packages in table view and bulk deletes selected packages", async () => {
