@@ -26,9 +26,10 @@ import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
 import type { ReportRead } from "@/lib/types/report";
+import { GroupedListCard } from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -398,12 +399,7 @@ export function ReportListPage() {
                     <span className="text-xs font-medium text-muted-foreground">
                       {groupLabel}
                     </span>
-                    <Badge
-                      variant="secondary"
-                      className="h-5 px-1.5 text-[10px]"
-                    >
-                      {groupReports.length}
-                    </Badge>
+                    <Badge variant="outline">{groupReports.length}</Badge>
                   </Button>
                 </CollapsibleTrigger>
               )}
@@ -413,55 +409,38 @@ export function ReportListPage() {
                 {viewMode === "cards" ? (
                   sortedReports.map((report) => {
                     const sourceLabel = getReportSourceLabel(report.source);
-                    const sourceBadgeVariant =
-                      report.source === "uploaded" ? "secondary" : "outline";
 
                     return (
-                      <Card
+                      <GroupedListCard
                         key={report.id}
-                        className="transition-colors hover:bg-accent/50"
-                      >
-                        <CardContent className="flex items-center justify-between gap-3 px-4 py-3">
-                          <div
-                            className="min-w-0 flex-1 cursor-pointer space-y-0.5"
-                            onClick={() => navigate(`/reports/${report.slug}`)}
-                          >
-                            <div className="flex items-center gap-2">
-                              <CardTitle className="text-sm font-medium tracking-tight">
-                                {report.name}
-                              </CardTitle>
-                              <Badge
-                                variant={sourceBadgeVariant}
-                                className="h-4 px-1.5 text-[10px]"
-                              >
-                                {sourceLabel}
-                              </Badge>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground">
-                              Created {formatDateTime(report.createdAt)}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
+                        testId={`reports-row-${report.slug}`}
+                        title={report.name}
+                        badges={<Badge variant="outline">{sourceLabel}</Badge>}
+                        metadata={
+                          <>Created {formatDateTime(report.createdAt)}</>
+                        }
+                        actions={
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                navigate(`/reports/${report.slug}`)
+                              }
+                            >
+                              <Eye data-icon="inline-start" />
+                              View
+                            </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   aria-label={`Open actions for ${report.name}`}
                                   size="icon"
                                   variant="ghost"
-                                  className="size-7"
                                 >
-                                  <MoreHorizontal className="size-3.5" />
+                                  <MoreHorizontal className="size-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    navigate(`/reports/${report.slug}`)
-                                  }
-                                >
-                                  <Eye className="size-3.5" />
-                                  View
-                                </DropdownMenuItem>
                                 <DropdownMenuItem asChild>
                                   <a
                                     href={downloadReportUrl(report.slug)}
@@ -480,9 +459,9 @@ export function ReportListPage() {
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          </div>
-                        </CardContent>
-                      </Card>
+                          </>
+                        }
+                      />
                     );
                   })
                 ) : (
@@ -533,7 +512,9 @@ export function ReportListPage() {
                             {sortField === "createdAt" &&
                               (sortDir === "asc" ? "↑" : "↓")}
                           </TableHead>
-                          <TableHead className="w-[50px]"></TableHead>
+                          <TableHead className="w-[132px] text-right">
+                            Actions
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -541,10 +522,6 @@ export function ReportListPage() {
                           const sourceLabel = getReportSourceLabel(
                             report.source,
                           );
-                          const sourceBadgeVariant =
-                            report.source === "uploaded"
-                              ? "secondary"
-                              : "outline";
                           const isSelected = selectedSlugs.has(report.slug);
 
                           return (
@@ -564,21 +541,11 @@ export function ReportListPage() {
                                   }
                                 />
                               </TableCell>
-                              <TableCell
-                                className="font-medium cursor-pointer"
-                                onClick={() =>
-                                  navigate(`/reports/${report.slug}`)
-                                }
-                              >
+                              <TableCell className="font-medium">
                                 {report.name}
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={sourceBadgeVariant}
-                                  className="h-4 px-1.5 text-[10px]"
-                                >
-                                  {sourceLabel}
-                                </Badge>
+                                <Badge variant="outline">{sourceLabel}</Badge>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">
                                 {report.metadata?.tags?.join(", ") || "—"}
@@ -587,44 +554,46 @@ export function ReportListPage() {
                                 {formatDateTime(report.createdAt)}
                               </TableCell>
                               <TableCell>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      aria-label={`Open actions for ${report.name}`}
-                                      size="icon"
-                                      variant="ghost"
-                                      className="size-7"
-                                    >
-                                      <MoreHorizontal className="size-3.5" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onSelect={() =>
-                                        navigate(`/reports/${report.slug}`)
-                                      }
-                                    >
-                                      <Eye className="size-3.5" />
-                                      View
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                      <a
-                                        href={downloadReportUrl(report.slug)}
-                                        download
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      navigate(`/reports/${report.slug}`)
+                                    }
+                                  >
+                                    <Eye data-icon="inline-start" />
+                                    View
+                                  </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        aria-label={`Open actions for ${report.name}`}
+                                        size="icon"
+                                        variant="ghost"
                                       >
-                                        <Download className="size-3.5" />
-                                        Download
-                                      </a>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() => setDeleting(report)}
-                                      variant="destructive"
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                        <MoreHorizontal className="size-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem asChild>
+                                        <a
+                                          href={downloadReportUrl(report.slug)}
+                                          download
+                                        >
+                                          <Download className="size-3.5" />
+                                          Download
+                                        </a>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onSelect={() => setDeleting(report)}
+                                        variant="destructive"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
