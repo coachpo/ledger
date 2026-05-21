@@ -194,6 +194,17 @@ class WorkflowPackageService:
     def delete_package(self, package_id: int) -> None:
         package = self._get_package(package_id)
         try:
+            RunService(
+                self.session,
+                self.session_factory,
+                provider_bundle=self.provider_bundle,
+            ).delete_runs_for_target(
+                target_kind="workflowPackage",
+                target_id=package.id,
+                workflow_package_id=package.id,
+                commit=False,
+            )
+            self.session.flush()
             self.repository.delete(package)
             self.session.commit()
         except Exception:

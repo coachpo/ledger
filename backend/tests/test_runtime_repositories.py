@@ -892,9 +892,9 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
             workflow_package_id=9001,
             workflow_package_key=package_key,
-            workflow_package_name="Snapshot Delete Blocker",
+            workflow_package_name="Snapshot Delete Ignored",
             workflow_package_description="",
-            workflow_package_status="active",
+            workflow_package_status=None,
             workflow_key=workflow_key,
             workflow_name="Runtime Workflow",
             workflow_description="",
@@ -925,24 +925,13 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
         run_id = run.id
 
     response = client.delete(f"/api/model-connections/{connection_id}")
-    body = cast(dict[str, object], response.json())
 
-    assert response.status_code == 409, body
-    assert body["code"] == "model_connection_in_use"
-    assert body["details"] == [
-        {
-            "field": "modelConnection",
-            "issue": "Model connection is referenced",
-            "refType": "workflowPackageRunSnapshot",
-            "refId": run_id,
-            "refKey": "snapshot_delete_blocker:runtime_workflow",
-        }
-    ]
-    assert secret_value not in str(body)
-    assert "secretPayload" not in str(body)
-
+    assert response.status_code == 204, response.text
+    assert response.content == b""
     with session_factory() as session:
-        assert session.get(ModelConnection, connection_id) is not None
+        assert session.get(ModelConnection, connection_id) is None
+        assert session.get(Run, run_id) is not None
+        assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
 
 
 def test_agent_platform_workflow_version_pinning_repositories_preserve_saved_versions(
@@ -1161,7 +1150,7 @@ def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
         _assert_executable_target_fk_identity(workflow_run, workflow_id=workflow_id)
 
 
-def test_delete_target_with_queued_running_runs_preserves_package_snapshot_runs(
+def test_delete_target_with_queued_running_runs_deletes_package_runs(
     session_factory: sessionmaker[Session],
 ) -> None:
     statuses = ("queued", "running", "succeeded", "failed")
@@ -1226,7 +1215,6 @@ def test_delete_target_with_queued_running_runs_preserves_package_snapshot_runs(
         agent_id = agent.id
         workflow_id = workflow.id
         package_id = package.id
-        package_key = package.key
 
         session.expunge_all()
         for target_model, target_id in (
@@ -1242,13 +1230,10 @@ def test_delete_target_with_queued_running_runs_preserves_package_snapshot_runs(
 
         assert all(session.get(Run, run_id) is None for run_id in agent_run_ids)
         assert all(session.get(Run, run_id) is None for run_id in workflow_run_ids)
-        for run_id in package_run_ids:
-            package_run = session.get(Run, run_id)
-            assert package_run is not None
-            assert package_run.workflow_package_id is None
-            assert package_run.workflow_package_key == package_key
-            assert package_run.workflow_package_snapshot is not None
-            assert package_run.workflow_package_snapshot.workflow_package_id == package_id
+        assert all(session.get(Run, run_id) is None for run_id in package_run_ids)
+        assert all(
+            session.get(RunWorkflowPackageSnapshot, run_id) is None for run_id in package_run_ids
+        )
 
 
 def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(

@@ -22,6 +22,7 @@ from app.core.telemetry import (
 )
 from app.db.engine import get_session_factory
 from app.models.agent import Agent
+from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -30,6 +31,7 @@ from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.agent import AgentRepository
+from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
@@ -214,6 +216,7 @@ class RunService:
         )
         self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
         self.agent_repository = AgentRepository(session)
+        self.model_connection_repository = ModelConnectionRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
@@ -285,8 +288,7 @@ class RunService:
         if run is None:
             raise not_found_error("Run")
         try:
-            _ = self.report_repository.delete_agent_memory_by_run_ids([run.id])
-            self.run_repository.delete(run)
+            self._delete_run_rows([run])
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -298,6 +300,7 @@ class RunService:
         target_kind: str,
         target_id: int,
         workflow_package_id: int | None = None,
+        commit: bool = True,
     ) -> None:
         runs = self.run_repository.list_for_target_owner(
             target_kind=target_kind,
@@ -306,15 +309,21 @@ class RunService:
         )
         if not runs:
             return
-        run_ids = [run.id for run in runs]
+        if not commit:
+            self._delete_run_rows(runs)
+            return
         try:
-            _ = self.report_repository.delete_agent_memory_by_run_ids(run_ids)
-            for run in runs:
-                self.run_repository.delete(run)
+            self._delete_run_rows(runs)
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
+
+    def _delete_run_rows(self, runs: list[Run]) -> None:
+        run_ids = [run.id for run in runs]
+        _ = self.report_repository.delete_agent_memory_by_run_ids(run_ids)
+        for run in runs:
+            self.run_repository.delete(run)
 
     def get_workflow_launch(
         self,
@@ -1117,6 +1126,101 @@ class RunService:
             )
         return bindings
 
+    def _assert_snapshot_model_connections_available(self, plan: ExecutionPlan) -> None:
+        bindings_by_key: dict[str, PackageResolvedModelBinding] = {}
+        for step in plan.steps:
+            for plan_agent in step.agents:
+                package_agent = plan_agent.package_runtime_agent
+                if package_agent is None:
+                    continue
+                binding = package_agent.model_binding
+                if binding is None:
+                    raise business_rule_error(
+                        "run_model_connection_missing",
+                        "Run cannot be replayed because a model connection snapshot is missing",
+                        details=[
+                            {
+                                "field": "modelConnection",
+                                "issue": (
+                                    f"Package agent {package_agent.key!r} is missing its "
+                                    "resolved model connection"
+                                ),
+                                "agentKey": package_agent.key,
+                            }
+                        ],
+                    )
+                bindings_by_key.setdefault(binding.key, binding)
+
+        for binding in bindings_by_key.values():
+            self._assert_snapshot_model_connection_available(binding)
+
+    def _assert_snapshot_model_connection_available(
+        self,
+        binding: PackageResolvedModelBinding,
+    ) -> None:
+        connection = self.model_connection_repository.get_by_key(binding.key)
+        if connection is None:
+            raise business_rule_error(
+                "run_model_connection_missing",
+                f"Run cannot be replayed because model connection {binding.key!r} is missing",
+                details=[
+                    {
+                        "field": "modelConnection",
+                        "issue": "Referenced live model connection was not found",
+                        "modelConnectionKey": binding.key,
+                    }
+                ],
+            )
+        if connection.status != "active":
+            raise business_rule_error(
+                "run_model_connection_unavailable",
+                (
+                    f"Run cannot be replayed because model connection {binding.key!r} "
+                    f"is {connection.status!r}"
+                ),
+                details=[
+                    {
+                        "field": "modelConnection",
+                        "issue": "Referenced live model connection is not active",
+                        "modelConnectionKey": binding.key,
+                        "status": connection.status,
+                    }
+                ],
+            )
+        mismatches = self._snapshot_model_connection_mismatches(binding, connection)
+        if mismatches:
+            raise business_rule_error(
+                "run_model_connection_incompatible",
+                (
+                    f"Run cannot be replayed because model connection {binding.key!r} "
+                    "no longer matches the run snapshot"
+                ),
+                details=mismatches,
+            )
+
+    @staticmethod
+    def _snapshot_model_connection_mismatches(
+        binding: PackageResolvedModelBinding,
+        connection: ModelConnection,
+    ) -> list[dict[str, object]]:
+        expected_actual = {
+            "connectionKind": (binding.connection_kind, connection.connection_kind),
+            "baseUrl": (binding.base_url, connection.base_url),
+            "modelId": (binding.model_id, connection.model_id),
+            "reasoningEffort": (binding.reasoning_effort, connection.reasoning_effort),
+            "apiStyle": (binding.api_style, connection.api_style),
+            "timeoutSeconds": (binding.timeout_seconds, connection.timeout_seconds),
+        }
+        return [
+            {
+                "field": f"modelConnection.{field_name}",
+                "issue": "Live model connection no longer matches the run snapshot",
+                "modelConnectionKey": binding.key,
+            }
+            for field_name, (expected, actual) in expected_actual.items()
+            if expected != actual
+        ]
+
     def _build_plan_for_run(self, run: Run) -> ExecutionPlan:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             raise_legacy_global_authoring_runtime_blocked(run.target_kind)
@@ -1137,7 +1241,7 @@ class RunService:
                 message=exc.message,
                 details=exc.details,
             ) from exc
-        return replace(
+        plan = replace(
             package_plan,
             target=ExecutionPlanTarget(
                 kind="workflow_package",
@@ -1146,6 +1250,8 @@ class RunService:
                 version=None,
             ),
         )
+        self._assert_snapshot_model_connections_available(plan)
+        return plan
 
     def _prepare_fork_source(
         self,
@@ -1479,8 +1585,8 @@ class RunService:
             )
 
     async def _execute_claimed_run_async(self, run_id: int) -> None:
-        run = self._get_run_or_raise(run_id)
-        if run.status != _RUN_STATUS_RUNNING:
+        run = self.run_repository.get_detail(run_id)
+        if run is None or run.status != _RUN_STATUS_RUNNING:
             return
         self._assert_run_extension_dependencies_enabled(run)
         if run.started_at is None:

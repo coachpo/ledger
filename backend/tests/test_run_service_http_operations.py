@@ -178,7 +178,7 @@ def test_final_output_resolves_from_http_operation_slot(
         assert persisted_operation.output == {"ok": True, "message": "queued"}
 
 
-def test_deleted_package_rerun_does_not_fallback_to_replacement_secret_bindings(
+def test_package_delete_removes_http_operation_run_and_snapshot(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -229,32 +229,7 @@ def test_deleted_package_rerun_does_not_fallback_to_replacement_secret_bindings(
 
     delete_response = client.delete(f"/api/workflow-packages/{package_id}")
     assert delete_response.status_code == 204, delete_response.text
-    replacement_response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _package_source(package_key)},
-    )
-    assert replacement_response.status_code == 201, replacement_response.json()
-    replacement = cast(dict[str, Any], replacement_response.json())
-    for key, value in {
-        "slack_webhook_token": "replacement-slack-secret",
-        "body_token": "replacement-body-secret",
-    }.items():
-        secret_response = client.put(
-            f"/api/workflow-packages/{replacement['id']}/secret-bindings/{key}",
-            json={"value": value},
-        )
-        assert secret_response.status_code == 200, secret_response.json()
-
-    with session_factory() as session:
-        source_run = session.get(Run, source_run_id)
-        snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
-        assert source_run is not None
-        assert snapshot is not None
-        assert source_run.workflow_package_id is None
-        assert snapshot.workflow_package_id == package_id
-        serialized_snapshot = str(snapshot.package_definition) + str(snapshot.compiled_plan)
-        assert "original-slack-secret" not in serialized_snapshot
-        assert "replacement-slack-secret" not in serialized_snapshot
+    assert delete_response.content == b""
 
     rerun_response = client.post(
         f"/api/runs/{source_run_id}/reruns",
@@ -265,30 +240,11 @@ def test_deleted_package_rerun_does_not_fallback_to_replacement_secret_bindings(
             }
         },
     )
-    assert rerun_response.status_code == 201, rerun_response.json()
-    rerun_id = int(rerun_response.json()["id"])
-    rerun_transport = _CapturingTransport(
-        httpx.Response(200, json={"ok": True}, headers={"content-type": "application/json"})
-    )
-    _claim_run(session_factory, rerun_id)
-    _execute_claimed_run_with_http_service(
-        session_factory,
-        run_id=rerun_id,
-        transport=rerun_transport,
-    )
-    rerun_detail_response = client.get(f"/api/runs/{rerun_id}")
-    assert rerun_detail_response.status_code == 200, rerun_detail_response.json()
-    rerun_detail = cast(dict[str, Any], rerun_detail_response.json())
-    operation = cast(dict[str, Any], rerun_detail["steps"][0]["operationInvocations"][0])
-    provenance = cast(dict[str, Any], rerun_detail["packageProvenance"])
-
-    assert rerun_detail["status"] == "failed"
-    assert rerun_detail["error"] == "HTTP secret binding 'slack_webhook_token' was not found"
-    assert operation["status"] == "failed"
-    assert operation["errorCode"] == "http_operation_secret_missing"
-    assert provenance["workflowPackageId"] == package_id
-    assert provenance["currentPackage"]["available"] is False
-    assert rerun_transport.requests == []
+    assert rerun_response.status_code == 404, rerun_response.json()
+    with session_factory() as session:
+        assert session.get(Run, source_run_id) is None
+        assert session.get(RunWorkflowPackageSnapshot, source_run_id) is None
+        assert session.query(RunOperationInvocation).filter_by(run_id=source_run_id).count() == 0
 
 
 def _schema(local_id: int, key: str, properties: dict[str, Any]) -> PackageLocalOutputSchemaSpec:

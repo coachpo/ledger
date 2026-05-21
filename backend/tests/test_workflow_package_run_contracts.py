@@ -13,7 +13,7 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.models.agent_memory import RunMemoryEvent
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
-from app.models.run import Run
+from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
@@ -257,6 +257,43 @@ def _launch_package_run(
     )
     assert response.status_code == 201, response.json()
     return cast(dict[str, Any], response.json())
+
+
+def _assert_replay_model_connection_rejected(
+    client: TestClient,
+    *,
+    run_id: int,
+    source_invocation_id: int,
+    expected_code: str,
+    expected_detail_field: str,
+) -> None:
+    responses = [
+        client.get(f"/api/runs/{run_id}/rerun-draft"),
+        client.post(
+            f"/api/runs/{run_id}/reruns",
+            json={"parameters": {"ticker": "AAPL"}},
+        ),
+        client.get(
+            f"/api/runs/{run_id}/fork-draft",
+            params={"sourceInvocationId": source_invocation_id},
+        ),
+        client.post(
+            f"/api/runs/{run_id}/forks",
+            json={
+                "sourceInvocationId": source_invocation_id,
+                "invocationInput": {"ticker": "TSLA"},
+            },
+        ),
+    ]
+    for response in responses:
+        body = response.json()
+        assert response.status_code == 400, body
+        assert body["code"] == expected_code
+        assert body["message"].startswith("Run cannot be replayed")
+        assert any(
+            detail.get("field") == expected_detail_field
+            for detail in cast(list[dict[str, Any]], body["details"])
+        )
 
 
 def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
@@ -791,21 +828,20 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
         assert rerun.workflow_package_snapshot.launch_parameters == {"ticker": "AAPL"}
 
 
-def test_package_deletion_preserves_snapshot_run_and_allows_fork(
+def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "snapshot fork output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package deletion output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
     monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="deleted_snapshot_package")
+    package = _create_package(client, package_key="deleted_owned_runs_package")
     package_id = cast(int, package["id"])
     launched = _launch_package_run(client, package, ticker="NVDA")
     run_id = int(launched["id"])
-    memory_slug = f"agent_memory_deleted_snapshot_run_{run_id}"
 
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
@@ -816,44 +852,7 @@ def test_package_deletion_preserves_snapshot_run_and_allows_fork(
     )
     source_invocation_id = int(source_invocation["id"])
     assert source_invocation["resolvedInput"] == {"ticker": "NVDA"}
-    with session_factory() as session:
-        assert session.get(Run, run_id) is not None
-        assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
-        assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
-        session.add(
-            Report(
-                name=f"Agent Memory Deleted Snapshot Run {run_id}",
-                slug=memory_slug,
-                source="agent",
-                content="# Agent memory",
-                metadata_={
-                    "analysis": {"reviewType": "agent_memory", "runId": run_id},
-                },
-            )
-        )
-        session.commit()
 
-    deleted = client.delete(f"/api/workflow-packages/{package_id}")
-    assert deleted.status_code == 204, deleted.text
-    assert deleted.content == b""
-
-    detail_response = client.get(f"/api/runs/{run_id}")
-    assert detail_response.status_code == 200, detail_response.json()
-    provenance = cast(dict[str, Any], detail_response.json()["packageProvenance"])
-    assert provenance["workflowPackageId"] == package_id
-    assert provenance["currentPackage"] == {
-        "available": False,
-        "manifestHash": None,
-        "compiledHash": None,
-        "manifestHashMatchesSnapshot": None,
-        "compiledHashMatchesSnapshot": None,
-        "unavailableReason": "missingPackage",
-    }
-
-    fork_draft_response = client.get(
-        f"/api/runs/{run_id}/fork-draft",
-        params={"sourceInvocationId": source_invocation_id},
-    )
     fork_response = client.post(
         f"/api/runs/{run_id}/forks",
         json={
@@ -861,53 +860,151 @@ def test_package_deletion_preserves_snapshot_run_and_allows_fork(
             "invocationInput": {"ticker": "TSLA"},
         },
     )
-    assert fork_draft_response.status_code == 200, fork_draft_response.json()
-    assert fork_draft_response.json()["invocationInput"] == {"ticker": "NVDA"}
     assert fork_response.status_code == 201, fork_response.json()
     fork_id = int(fork_response.json()["id"])
-    fork_detail_response = client.get(f"/api/runs/{fork_id}")
-    assert fork_detail_response.status_code == 200, fork_detail_response.json()
-    fork_detail = cast(dict[str, Any], fork_detail_response.json())
-    fork_provenance = cast(dict[str, Any], fork_detail["packageProvenance"])
-    fork_invocation = cast(dict[str, Any], fork_detail["steps"][0]["invocations"][0])
-    assert fork_detail["input"] == {"ticker": "NVDA"}
-    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA"}
-    assert fork_invocation["resolvedInputOrigin"] == "edited"
-    assert fork_invocation["sourceInvocationId"] == source_invocation_id
-    assert fork_provenance["workflowPackageId"] == package_id
-    assert fork_provenance["launchSnapshot"]["parameters"] == {"ticker": "NVDA"}
-    assert fork_provenance["currentPackage"]["available"] is False
-    assert "status" not in fork_provenance["currentPackage"]
-    by_deleted_snapshot_model = client.get(
-        "/api/runs",
-        params={"modelConnectionKey": "package_runtime_model"},
-    )
-    assert by_deleted_snapshot_model.status_code == 200, by_deleted_snapshot_model.json()
-    assert [item["id"] for item in by_deleted_snapshot_model.json()["items"]] == [
-        fork_id,
-        run_id,
-    ]
+    memory_slugs = {
+        run_id: f"agent_memory_deleted_owned_run_{run_id}",
+        fork_id: f"agent_memory_deleted_owned_run_{fork_id}",
+    }
 
     with session_factory() as session:
-        run = session.get(Run, run_id)
+        source_run = session.get(Run, run_id)
         fork_run = session.get(Run, fork_id)
-        assert run is not None
+        assert source_run is not None
         assert fork_run is not None
-        assert run.workflow_package_id is None
-        assert fork_run.workflow_package_id is None
-        assert run.workflow_package_snapshot is not None
-        assert fork_run.workflow_package_snapshot is not None
-        assert run.workflow_package_snapshot.workflow_package_id == package_id
-        assert fork_run.workflow_package_snapshot.compiled_hash == (
-            run.workflow_package_snapshot.compiled_hash
-        )
-        assert fork_run.input == run.input
-        assert fork_run.workflow_package_snapshot.launch_parameters == (
-            run.workflow_package_snapshot.launch_parameters
-        )
+        assert source_run.workflow_package_id == package_id
+        assert fork_run.workflow_package_id == package_id
         assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
-        assert session.query(Report).filter_by(slug=memory_slug).count() == 1
+        fork_run.status = "running"
+        for owned_run_id, slug in memory_slugs.items():
+            session.add(
+                Report(
+                    name=f"Agent Memory Deleted Owned Run {owned_run_id}",
+                    slug=slug,
+                    source="agent",
+                    content="# Agent memory",
+                    metadata_={
+                        "analysis": {"reviewType": "agent_memory", "runId": owned_run_id},
+                    },
+                )
+            )
+        session.commit()
+
+    deleted = client.delete(f"/api/workflow-packages/{package_id}")
+    assert deleted.status_code == 204, deleted.text
+    assert deleted.content == b""
+    assert client.get(f"/api/runs/{run_id}").status_code == 404
+    assert client.get(f"/api/runs/{fork_id}").status_code == 404
+
+    with session_factory() as session:
+        assert session.get(WorkflowPackage, package_id) is None
+        assert session.get(Run, run_id) is None
+        assert session.get(Run, fork_id) is None
+        assert session.get(RunWorkflowPackageSnapshot, run_id) is None
+        assert session.get(RunWorkflowPackageSnapshot, fork_id) is None
+        assert session.query(RunStep).filter(RunStep.run_id.in_([run_id, fork_id])).count() == 0
+        assert (
+            session.query(RunAgentInvocation)
+            .filter(RunAgentInvocation.run_id.in_([run_id, fork_id]))
+            .count()
+            == 0
+        )
+        assert session.query(Report).filter(Report.slug.in_(memory_slugs.values())).count() == 0
+
+
+def test_deleted_model_connection_preserves_run_detail_but_blocks_replay(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "deleted connection source output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="deleted_connection_snapshot_package")
+    package_id = cast(int, package["id"])
+    launched = _launch_package_run(client, package, ticker="NVDA")
+    run_id = int(launched["id"])
+
+    _drain_run_queue(session_factory)
+    succeeded_detail = _wait_for_run(client, run_id)
+    assert succeeded_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+
+    with session_factory() as session:
+        package_row = session.get(WorkflowPackage, package_id)
+        assert package_row is not None
+        package_row.compiled_plan = {"agents": [], "workflows": []}
+        connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
+        connection_id = connection.id
+        session.commit()
+
+    deleted_connection = client.delete(f"/api/model-connections/{connection_id}")
+    assert deleted_connection.status_code == 204, deleted_connection.text
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    provenance = cast(dict[str, Any], detail["packageProvenance"])
+    assert provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
+
+    with session_factory() as session:
+        assert session.get(ModelConnection, connection_id) is None
+        assert session.get(Run, run_id) is not None
+        assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
+        runs_before = session.query(Run).count()
+
+    _assert_replay_model_connection_rejected(
+        client,
+        run_id=run_id,
+        source_invocation_id=source_invocation_id,
+        expected_code="run_model_connection_missing",
+        expected_detail_field="modelConnection",
+    )
+
+    with session_factory() as session:
+        assert session.query(Run).count() == runs_before
+
+
+def test_rerun_and_fork_reject_incompatible_live_model_connection_before_queueing(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "incompatible source output"}'
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="incompatible_connection_snapshot_package")
+    launched = _launch_package_run(client, package, ticker="NVDA")
+    run_id = int(launched["id"])
+
+    _drain_run_queue(session_factory)
+    succeeded_detail = _wait_for_run(client, run_id)
+    assert succeeded_detail["status"] == "succeeded"
+    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
+    source_invocation_id = int(source_invocation["id"])
+
+    with session_factory() as session:
+        connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
+        connection.base_url = "https://runtime-incompatible.example.com/v1"
+        session.commit()
+        runs_before = session.query(Run).count()
+
+    _assert_replay_model_connection_rejected(
+        client,
+        run_id=run_id,
+        source_invocation_id=source_invocation_id,
+        expected_code="run_model_connection_incompatible",
+        expected_detail_field="modelConnection.baseUrl",
+    )
+
+    with session_factory() as session:
+        assert session.query(Run).count() == runs_before
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
