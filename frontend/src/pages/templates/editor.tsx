@@ -17,6 +17,7 @@ import { ExactJsonPreview } from "@/components/platform-authoring/inspectors/exa
 import { Button } from "@/components/ui/button";
 import { GenerateReportDialog } from "@/components/forms/generate-report-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
@@ -219,32 +220,51 @@ export function TemplateEditorPage() {
   const isGenerating = compileReportMutation.isPending;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div
+      aria-labelledby="template-editor-title"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
+      data-testid="template-editor-shell"
+    >
       <div className="border-b border-border bg-card px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={handleClose}
-              aria-label="Close editor"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <Separator orientation="vertical" className="hidden h-5 sm:block" />
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Code2 className="h-3 w-3" />
-              <span>{isEditing ? "Edit" : "New"}</span>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+          <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-start">
+            <div className="flex min-w-0 items-start gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={handleClose}
+                aria-label="Close editor"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+              <Separator orientation="vertical" className="mt-1.5 hidden h-5 sm:block" />
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Code2 className="h-3 w-3" />
+                  <span>{isEditing ? "Edit" : "New"}</span>
+                </div>
+                <h1 id="template-editor-title" className="text-xl font-semibold tracking-tight">
+                  {isEditing ? "Edit Template" : "Create Template"}
+                </h1>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  Author markdown, compile placeholders, and generate reports from a saved template.
+                </p>
+              </div>
             </div>
-            <Input
-              id="template-name"
-              name="templateName"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Template name…"
-              className="h-9 min-w-[14rem] flex-1 basis-full border-border/70 bg-background px-3 text-sm font-medium shadow-none focus-visible:ring-1 sm:basis-auto xl:max-w-lg"
-            />
+            <div className="min-w-[14rem] flex-1 space-y-1 lg:max-w-lg">
+              <Label htmlFor="template-name" className="text-xs text-muted-foreground">
+                Template name
+              </Label>
+              <Input
+                id="template-name"
+                name="templateName"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name this template..."
+                className="h-9 border-border/70 bg-background px-3 text-sm font-medium shadow-none focus-visible:ring-1"
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:justify-end xl:ml-auto xl:border-t-0 xl:pt-0">
             <Button
@@ -349,9 +369,12 @@ export function TemplateEditorPage() {
         <div className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border">
           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2">
             <Code2 className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Editor
-            </span>
+            <Label
+              htmlFor="content"
+              className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+            >
+              Template content
+            </Label>
             <span className="ml-auto text-[10px] text-muted-foreground">
               Markdown + {"{{placeholders}}"}
             </span>

@@ -1,16 +1,25 @@
+import type { ComponentProps } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stringifyJson } from "@/lib/platform-authoring/common/serialization";
 
 import { TemplateEditorPage } from "./editor";
+import { TemplateListPage } from "./list";
 
 const paramsMock: { templateId?: string } = {};
 const navigateMock = vi.fn();
 const compileInlineMock = vi.fn();
 const compileReportMutateMock = vi.fn();
+const deleteTemplateMutateMock = vi.fn();
+const useTemplatesListMock = vi.fn();
 
 vi.mock("react-router", () => ({
+  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   useNavigate: () => navigateMock,
   useParams: () => paramsMock,
 }));
@@ -32,8 +41,13 @@ vi.mock("@/lib/markdown-format", () => ({
 
 vi.mock("@/hooks/use-templates", () => ({
   useTemplate: () => ({ data: undefined, isLoading: false }),
+  useTemplates: () => useTemplatesListMock(),
   useCreateTemplate: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useUpdateTemplate: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useDeleteTemplate: () => ({
+    isPending: false,
+    mutate: deleteTemplateMutateMock,
+  }),
   useCompileInline: () => ({
     mutate: compileInlineMock,
     data: undefined,
@@ -68,12 +82,46 @@ vi.mock("@/hooks/use-reports", () => ({
   }),
 }));
 
+function queryResult<T>(data: T) {
+  return {
+    data,
+    error: null,
+    isError: false,
+    isPending: false,
+  };
+}
+
 describe("TemplateEditorPage", () => {
   beforeEach(() => {
     paramsMock.templateId = undefined;
     navigateMock.mockReset();
     compileInlineMock.mockReset();
     compileReportMutateMock.mockReset();
+    deleteTemplateMutateMock.mockReset();
+    useTemplatesListMock.mockReset();
+    useTemplatesListMock.mockReturnValue(queryResult([]));
+  });
+
+  it("renders a full-height semantic editor shell with labeled core controls", () => {
+    render(<TemplateEditorPage />);
+
+    const shell = screen.getByTestId("template-editor-shell");
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
+    expect(shell).toHaveAttribute("aria-labelledby", "template-editor-title");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create Template" })).toBeVisible();
+    expect(screen.getByLabelText(/^Template name$/i)).toHaveAttribute(
+      "placeholder",
+      "Name this template...",
+    );
+    expect(screen.getByRole("textbox", { name: /^Template content$/i })).toHaveAttribute(
+      "placeholder",
+      "Enter template content…",
+    );
+    expect(screen.getByRole("button", { name: "Close editor" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Generate Report" })).toBeDisabled();
   });
 
   it("shows dynamic report selector guidance and inserts a selector example", () => {
@@ -147,6 +195,86 @@ describe("TemplateEditorPage", () => {
       screen.queryByRole("button", { name: /mention assistance/i }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /inputs/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dynamic report selectors/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /dynamic report selectors/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("labels template inventory controls and distinguishes filtered-empty from empty", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            id: 7,
+            name: "Quarterly Review",
+            content: "Portfolio summary",
+            createdAt: "2026-05-01T10:00:00Z",
+            updatedAt: "2026-05-02T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    render(<TemplateListPage />);
+
+    expect(screen.getByLabelText("Search templates")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Search templates"), {
+      target: { value: "missing" },
+    });
+
+    expect(screen.getByText("No templates match your search.")).toBeVisible();
+    expect(screen.queryByText("No templates yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quarterly Review")).not.toBeInTheDocument();
+  });
+
+  it("renders template table navigation as explicit links with confirmed row deletes", () => {
+    useTemplatesListMock.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            id: 7,
+            name: "Quarterly Review",
+            content: "Portfolio summary",
+            createdAt: "2026-05-01T10:00:00Z",
+            updatedAt: "2026-05-02T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    render(<TemplateListPage />);
+
+    fireEvent.click(screen.getByRole("radio", { name: /table view/i }));
+
+    const table = screen.getByRole("table");
+    const editorLink = within(table).getByRole("link", {
+      name: "Open editor for Quarterly Review",
+    });
+    const actionsButton = within(table).getByRole("button", {
+      name: "Open actions for Quarterly Review",
+    });
+    expect(editorLink).toHaveAttribute("href", "/templates/7/edit");
+    expect(
+      editorLink.compareDocumentPosition(actionsButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    fireEvent.keyDown(
+      within(table).getByRole("button", {
+        name: "Open actions for Quarterly Review",
+      }),
+      { key: "Enter" },
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "Delete Quarterly Review?",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(deleteTemplateMutateMock).toHaveBeenCalledWith(
+      7,
+      expect.any(Object),
+    );
   });
 });
