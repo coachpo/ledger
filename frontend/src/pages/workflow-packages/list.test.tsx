@@ -203,14 +203,13 @@ describe("WorkflowPackagesListPage", () => {
     expect(riskRow).toHaveTextContent("Risk Review");
     const packageKey = within(riskRow).getByText("risk_review");
     expect(packageKey).toHaveClass("font-['Fira_Code',ui-monospace,monospace]");
-    expect(packageKey).not.toHaveClass("text-xs");
-    expect(packageKey.parentElement).toHaveClass("text-[11px]");
+    expect(packageKey.parentElement).toHaveClass("text-xs");
     expect(
       within(riskRow).getByText("Risk review workflow bundle"),
-    ).toHaveClass("text-[11px]");
-    const metadataGrid = within(riskRow).getByText("Manifest Hash:")
-      .parentElement?.parentElement;
-    expect(metadataGrid).toHaveClass("text-sm", "text-muted-foreground");
+    ).toHaveClass("text-sm");
+    const metadataGrid =
+      within(riskRow).getByText("Manifest Hash:").parentElement?.parentElement;
+    expect(metadataGrid).toHaveClass("text-xs", "text-muted-foreground");
     expect(riskRow).toHaveTextContent("manifest-has");
     expect(riskRow).not.toHaveTextContent("Active");
     expect(riskRow).not.toHaveTextContent("Draft");
@@ -221,18 +220,25 @@ describe("WorkflowPackagesListPage", () => {
       }),
     ).not.toBeInTheDocument();
     expect(
-      within(riskRow).getByRole("button", { name: "Open package Risk Review" }),
-    ).toBeVisible();
-    expect(
       within(riskRow).getByRole("button", {
         name: "Launch package Risk Review",
       }),
     ).toBeVisible();
     expect(
       within(riskRow).getByRole("button", {
-        name: "Delete package Risk Review",
+        name: "Open actions for package Risk Review",
       }),
     ).toBeVisible();
+    expect(
+      within(riskRow).queryByRole("button", {
+        name: "Open package Risk Review",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(riskRow).queryByRole("button", {
+        name: "Delete package Risk Review",
+      }),
+    ).not.toBeInTheDocument();
 
     const allocationRow = screen.getByTestId(
       "workflow-packages-row-allocation_draft",
@@ -317,7 +323,7 @@ describe("WorkflowPackagesListPage", () => {
     navigateMock.mockClear();
     fireEvent.click(
       within(macroRow).getByRole("button", {
-        name: "Open package Macro Digest",
+        name: "Open package details for Macro Digest",
       }),
     );
     expect(navigateMock).toHaveBeenCalledTimes(1);
@@ -398,9 +404,7 @@ describe("WorkflowPackagesListPage", () => {
     );
 
     expect(riskRow).toHaveAttribute("data-state", "selected");
-    expect(
-      screen.getByText("1 of 2 workflow packages selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 2 workflow packages selected")).toBeVisible();
     const bulkActions = screen.getByTestId("workflow-packages-bulk-actions");
     expect(bulkActions).toBeVisible();
     expect(screen.getByRole("table").compareDocumentPosition(bulkActions)).toBe(
@@ -425,9 +429,7 @@ describe("WorkflowPackagesListPage", () => {
       screen.getByRole("textbox", { name: "Search workflow packages" }),
       { target: { value: "" } },
     );
-    expect(
-      screen.getByText("1 of 2 workflow packages selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 2 workflow packages selected")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(
@@ -444,17 +446,13 @@ describe("WorkflowPackagesListPage", () => {
         name: "Select all shown workflow packages",
       }),
     );
-    expect(
-      screen.getByText("2 of 2 workflow packages selected"),
-    ).toBeVisible();
+    expect(screen.getByText("2 of 2 workflow packages selected")).toBeVisible();
 
     fireEvent.change(
       screen.getByRole("textbox", { name: "Search workflow packages" }),
       { target: { value: "macro" } },
     );
-    expect(
-      screen.getByText("1 of 1 workflow packages selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 1 workflow packages selected")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
 
@@ -491,9 +489,7 @@ describe("WorkflowPackagesListPage", () => {
         { name: "Select workflow package Risk Review" },
       ),
     );
-    expect(
-      screen.getByText("1 of 1 workflow packages selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 1 workflow packages selected")).toBeVisible();
 
     fireEvent.click(screen.getByLabelText("Cards view"));
     expect(
@@ -539,9 +535,13 @@ describe("WorkflowPackagesListPage", () => {
 
     renderPage();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Delete package Risk Review" }),
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: "Open actions for package Risk Review",
+      }),
+      { key: "Enter" },
     );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
       "Permanently delete Risk Review?",
     );
@@ -556,9 +556,13 @@ describe("WorkflowPackagesListPage", () => {
     );
 
     deletePackageMock.mockRejectedValueOnce(new Error("Package not found"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Delete package Risk Review" }),
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: "Open actions for package Risk Review",
+      }),
+      { key: "Enter" },
     );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
 
     await waitFor(() =>

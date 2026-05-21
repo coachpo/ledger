@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import {
-  ResourceRowCard,
+  EntityListCard,
   type ResourceRowCardPrimaryAction,
 } from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
@@ -52,14 +52,13 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
 
   if (density !== "legacy") {
     return (
-      <ResourceRowCard
+      <EntityListCard
         actions={actions}
         badges={badges}
-        density={density}
+        bodyAction={primaryAction}
         description={description}
         leading={leading}
         metadata={metadata}
-        primaryAction={primaryAction}
         selected={selected}
         subtitle={subtitle}
         testId={testId}
@@ -75,15 +74,21 @@ export function PlatformResourceCard(props: PlatformResourceCardProps) {
           <div className="min-w-0 flex-1 space-y-2">
             <div className="space-y-1">
               <div className="flex min-w-0 items-center gap-1.5">
-                <div className="min-w-0 truncate text-base font-medium text-foreground">{title}</div>
+                <div className="min-w-0 truncate text-base font-medium text-foreground">
+                  {title}
+                </div>
                 {badges ? <div className="shrink-0">{badges}</div> : null}
               </div>
               {subtitle ? (
-                <div className="break-all text-sm text-muted-foreground">{subtitle}</div>
+                <div className="break-all text-sm text-muted-foreground">
+                  {subtitle}
+                </div>
               ) : null}
             </div>
             {description ? (
-              <p className="break-words text-sm text-muted-foreground">{description}</p>
+              <p className="break-words text-sm text-muted-foreground">
+                {description}
+              </p>
             ) : null}
             {metadata ? <div>{metadata}</div> : null}
           </div>
@@ -107,7 +112,9 @@ export function PlatformResourceBadges(props: {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {typeof version === "number" ? <Badge variant="outline">v{version}</Badge> : null}
+      {typeof version === "number" ? (
+        <Badge variant="outline">v{version}</Badge>
+      ) : null}
       <Badge variant="secondary" className="capitalize">
         {formatStatusLabel(status)}
       </Badge>

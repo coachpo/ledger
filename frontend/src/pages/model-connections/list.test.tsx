@@ -132,7 +132,7 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-9")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
-    expect(screen.getAllByText("Responses API")).toHaveLength(2);
+    expect(screen.getAllByText("Responses API")).toHaveLength(4);
     expect(
       screen.getByText("Chat Completions API - legacy / OpenAI-compatible"),
     ).toBeVisible();
@@ -142,9 +142,15 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.queryByText(/^medium$/)).not.toBeInTheDocument();
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
     expect(screen.queryByText("Deterministic smoke")).not.toBeInTheDocument();
-    expect(screen.getByText(/^passed$/i)).toBeVisible();
-    expect(screen.getByText(/^failed$/i)).toBeVisible();
+    expect(screen.getAllByText(/^passed$/i)[0]).toBeVisible();
+    expect(screen.getAllByText(/^failed$/i)[0]).toBeVisible();
 
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: "Open actions for model connection Primary OpenAI",
+      }),
+      { key: "Enter" },
+    );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
     await waitFor(() =>
       expect(deleteModelConnectionMock).toHaveBeenCalledWith(9),
@@ -253,9 +259,7 @@ describe("ModelConnectionsListPage", () => {
         { name: "Select model connection Primary OpenAI" },
       ),
     );
-    expect(
-      screen.getByText("1 of 3 model connections selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 3 model connections selected")).toBeVisible();
     const bulkActions = screen.getByTestId("model-connections-bulk-actions");
     expect(bulkActions).toBeVisible();
     expect(screen.getByRole("table").compareDocumentPosition(bulkActions)).toBe(
@@ -278,9 +282,7 @@ describe("ModelConnectionsListPage", () => {
         name: "Select all shown model connections",
       }),
     );
-    expect(
-      screen.getByText("1 of 1 model connections selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 1 model connections selected")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-4")).toHaveAttribute(
       "data-state",
       "selected",
@@ -311,9 +313,7 @@ describe("ModelConnectionsListPage", () => {
         { name: "Select model connection Primary OpenAI" },
       ),
     );
-    expect(
-      screen.getByText("1 of 3 model connections selected"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 3 model connections selected")).toBeVisible();
 
     fireEvent.click(screen.getByLabelText("Cards view"));
 
@@ -351,6 +351,12 @@ describe("ModelConnectionsListPage", () => {
     deleteModelConnectionMock.mockRejectedValue(blockedError);
 
     render(<ModelConnectionsListPage />);
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: "Open actions for model connection Primary OpenAI",
+      }),
+      { key: "Enter" },
+    );
     fireEvent.click(screen.getByTestId("model-connections-delete-9"));
 
     await waitFor(() =>

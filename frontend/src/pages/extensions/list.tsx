@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 
-import { PlatformResourceCard, PlatformResourceList } from "../platform-resource-shared";
+import {
+  PlatformResourceCard,
+  PlatformResourceList,
+} from "../platform-resource-shared";
 
 function sortExtensions(items: readonly ExtensionRead[]) {
   return [...items].sort((left, right) => {
@@ -23,19 +26,7 @@ function toExtensionTestSegment(extensionKey: string) {
 }
 
 function ExtensionStatusBadge({ enabled }: { enabled: boolean }) {
-  if (enabled) {
-    return (
-      <Badge className="border-positive/30 bg-positive/10 text-positive" variant="outline">
-        Enabled
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge className="border-negative/30 bg-negative/10 text-negative" variant="outline">
-      Disabled
-    </Badge>
-  );
+  return <Badge variant="secondary">{enabled ? "Enabled" : "Disabled"}</Badge>;
 }
 
 type ExtensionRowProps = {
@@ -44,7 +35,11 @@ type ExtensionRowProps = {
   togglePending: boolean;
 };
 
-function ExtensionRow({ extension, onToggle, togglePending }: ExtensionRowProps) {
+function ExtensionRow({
+  extension,
+  onToggle,
+  togglePending,
+}: ExtensionRowProps) {
   const testSegment = toExtensionTestSegment(extension.key);
 
   return (
@@ -72,7 +67,10 @@ export function ExtensionsListPage() {
   const toggleExtension = useToggleExtension();
   const extensions = sortExtensions(extensionsQuery.data?.items ?? []);
 
-  const handleToggle = async (extension: ExtensionRead, nextEnabled: boolean) => {
+  const handleToggle = async (
+    extension: ExtensionRead,
+    nextEnabled: boolean,
+  ) => {
     try {
       await toggleExtension.mutateAsync({
         extensionKey: extension.key,
@@ -84,7 +82,11 @@ export function ExtensionsListPage() {
           : `${extension.label} disabled`,
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update extension state.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update extension state.",
+      );
     }
   };
 
@@ -114,7 +116,9 @@ export function ExtensionsListPage() {
         </Card>
       ) : null}
 
-      {!extensionsQuery.isPending && !extensionsQuery.isError && extensions.length === 0 ? (
+      {!extensionsQuery.isPending &&
+      !extensionsQuery.isError &&
+      extensions.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             No bundled extensions are registered.
@@ -122,7 +126,9 @@ export function ExtensionsListPage() {
         </Card>
       ) : null}
 
-      {!extensionsQuery.isPending && !extensionsQuery.isError && extensions.length > 0 ? (
+      {!extensionsQuery.isPending &&
+      !extensionsQuery.isError &&
+      extensions.length > 0 ? (
         <PlatformResourceList>
           {extensions.map((extension) => (
             <ExtensionRow

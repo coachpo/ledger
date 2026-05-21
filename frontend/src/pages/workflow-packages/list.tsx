@@ -3,6 +3,7 @@ import {
   FileUp,
   LayoutGrid,
   List,
+  MoreHorizontal,
   PackagePlus,
   PlayCircle,
   Search,
@@ -25,6 +26,12 @@ import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dial
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -341,7 +348,7 @@ export function WorkflowPackagesListPage() {
                   onClick: () => navigate(packagePath),
                 }}
                 metadata={
-                  <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
                     <div className="min-w-0">
                       <span className="font-medium text-foreground">
                         Manifest Hash:
@@ -361,41 +368,46 @@ export function WorkflowPackagesListPage() {
                 actions={
                   <>
                     <Button
-                      aria-label={`Open package ${workflowPackage.name}`}
-                      className="cursor-pointer"
-                      size="sm"
-                      variant="outline"
-                      type="button"
-                      onClick={() => navigate(packagePath)}
-                    >
-                      <SquarePen data-icon="inline-start" />
-                      Open
-                    </Button>
-                    <Button
                       aria-label={`Launch package ${workflowPackage.name}`}
                       className="cursor-pointer"
                       size="sm"
-                      variant="outline"
                       type="button"
                       onClick={() => navigate(launchPath)}
                     >
                       <PlayCircle data-icon="inline-start" />
                       Launch
                     </Button>
-                    <Button
-                      aria-label={`Delete package ${workflowPackage.name}`}
-                      className="cursor-pointer"
-                      disabled={
-                        deletePackage.isPending || deletePackages.isPending
-                      }
-                      size="sm"
-                      variant="destructive"
-                      type="button"
-                      onClick={() => setDeleting(workflowPackage)}
-                    >
-                      <Trash2 data-icon="inline-start" />
-                      Delete
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Open actions for package ${workflowPackage.name}`}
+                          className="cursor-pointer"
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onSelect={() => navigate(packagePath)}
+                        >
+                          <SquarePen className="size-3.5" />
+                          Open
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={
+                            deletePackage.isPending || deletePackages.isPending
+                          }
+                          onSelect={() => setDeleting(workflowPackage)}
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 }
               />

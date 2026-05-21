@@ -1,6 +1,7 @@
 import {
   LayoutGrid,
   List,
+  MoreHorizontal,
   Plus,
   Search,
   SquarePen,
@@ -20,9 +21,16 @@ import type {
   ModelConnectionApiStyle,
   ModelConnectionListItemRead,
 } from "@/lib/types/model-connection";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -41,6 +49,11 @@ import {
 
 const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
+  responses: "Responses API",
+};
+
+const API_STYLE_BADGE_LABELS: Record<ModelConnectionApiStyle, string> = {
+  chat_completions: "Chat Completions",
   responses: "Responses API",
 };
 
@@ -100,7 +113,7 @@ function ModelConnectionMetadata({
   connection: ModelConnectionListItemRead;
 }) {
   return (
-    <div className="grid min-w-0 gap-x-5 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
       <div className="min-w-0">
         <span className="font-medium text-foreground">Base URL:</span>{" "}
         <span className="break-all">{connection.baseUrl}</span>
@@ -336,14 +349,19 @@ export function ModelConnectionsListPage() {
               <PlatformResourceCard
                 key={connection.id}
                 density="compactPlus"
-                primaryAction={{
-                  kind: "link",
-                  label: `Open model connection ${connection.name}`,
-                  to: `/model-connections/${connection.id}/edit`,
-                }}
                 testId={`model-connections-row-${connection.id}`}
                 title={connection.name}
                 subtitle={connection.modelId}
+                badges={
+                  <>
+                    <Badge variant="secondary">
+                      {formatLastTestStatus(connection)}
+                    </Badge>
+                    <Badge variant="outline">
+                      {API_STYLE_BADGE_LABELS[connection.apiStyle]}
+                    </Badge>
+                  </>
+                }
                 description={connection.description}
                 metadata={<ModelConnectionMetadata connection={connection} />}
                 actions={
@@ -351,7 +369,6 @@ export function ModelConnectionsListPage() {
                     <Button
                       data-testid={`model-connections-open-${connection.id}`}
                       size="sm"
-                      variant="outline"
                       onClick={() =>
                         navigate(`/model-connections/${connection.id}/edit`)
                       }
@@ -359,19 +376,33 @@ export function ModelConnectionsListPage() {
                       <SquarePen data-icon="inline-start" />
                       Edit
                     </Button>
-                    <Button
-                      data-testid={`model-connections-delete-${connection.id}`}
-                      disabled={
-                        deleteMutation.isPending ||
-                        deleteConnectionsMutation.isPending
-                      }
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleDelete(connection.id)}
-                    >
-                      <Trash2 data-icon="inline-start" />
-                      Delete
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Open actions for model connection ${connection.name}`}
+                          className="cursor-pointer"
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          data-testid={`model-connections-delete-${connection.id}`}
+                          disabled={
+                            deleteMutation.isPending ||
+                            deleteConnectionsMutation.isPending
+                          }
+                          onSelect={() => void handleDelete(connection.id)}
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 }
               />
