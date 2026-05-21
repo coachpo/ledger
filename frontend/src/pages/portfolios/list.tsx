@@ -16,7 +16,7 @@ import type {
   PortfolioWriteInput,
 } from "@/lib/types/portfolio";
 
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { EntityListCard } from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,7 +41,10 @@ export function PortfolioListPage() {
   const [deleting, setDeleting] = useState<PortfolioRead | null>(null);
 
   const portfolios = useMemo(
-    () => [...(portfoliosQuery.data ?? [])].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    () =>
+      [...(portfoliosQuery.data ?? [])].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      ),
     [portfoliosQuery.data],
   );
 
@@ -51,10 +54,17 @@ export function PortfolioListPage() {
         <div className="space-y-0.5">
           <h1 className="text-xl font-semibold tracking-tight">Portfolios</h1>
           <p className="text-xs text-muted-foreground">
-            Manage live portfolio records and jump into detailed position, balance, and trade views.
+            Manage live portfolio records and jump into detailed position,
+            balance, and trade views.
           </p>
         </div>
-        <Button size="sm" onClick={() => { setEditing(null); setShowForm(true); }}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setEditing(null);
+            setShowForm(true);
+          }}
+        >
           <Plus className="mr-1 size-3.5" /> New Portfolio
         </Button>
       </div>
@@ -62,52 +72,58 @@ export function PortfolioListPage() {
       <div className="space-y-2">
         {portfoliosQuery.isPending ? (
           <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">Loading portfolios...</CardContent>
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
+              Loading portfolios...
+            </CardContent>
           </Card>
         ) : null}
         {portfoliosQuery.isError ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              {portfoliosQuery.error instanceof Error ? portfoliosQuery.error.message : "Failed to load portfolios."}
+              {portfoliosQuery.error instanceof Error
+                ? portfoliosQuery.error.message
+                : "Failed to load portfolios."}
             </CardContent>
           </Card>
         ) : null}
-        {!portfoliosQuery.isPending && !portfoliosQuery.isError && portfolios.length === 0 ? (
+        {!portfoliosQuery.isPending &&
+        !portfoliosQuery.isError &&
+        portfolios.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">No portfolios yet.</CardContent>
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
+              No portfolios yet.
+            </CardContent>
           </Card>
         ) : null}
         {portfolios.map((portfolio) => (
-          <ResourceRowCard
+          <EntityListCard
             key={portfolio.id}
-            density="compact"
             title={portfolio.name}
-            badges={(
+            badges={
               <>
-                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-medium">
-                  {portfolio.baseCurrency}
-                </Badge>
-                <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-medium">
-                  {portfolio.positionCount} pos
-                </Badge>
-                <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-medium">
-                  {portfolio.balanceCount} bal
-                </Badge>
+                <Badge variant="outline">{portfolio.baseCurrency}</Badge>
+                <Badge variant="outline">{portfolio.positionCount} pos</Badge>
+                <Badge variant="outline">{portfolio.balanceCount} bal</Badge>
               </>
-            )}
+            }
             description={portfolio.description || "No description"}
             metadata={<>Updated {formatDateTime(portfolio.updatedAt)}</>}
-            primaryAction={{
-              kind: "link",
-              label: `Open portfolio ${portfolio.name}`,
-              to: `/portfolios/${portfolio.id}`,
-            }}
-            actions={(
+            actions={
               <>
+                <Button
+                  size="sm"
+                  onClick={() => navigate(`/portfolios/${portfolio.id}`)}
+                >
+                  Open
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button aria-label={`Open actions for ${portfolio.name}`} size="icon" variant="ghost" className="size-7">
-                      <MoreHorizontal className="size-3.5" />
+                    <Button
+                      aria-label={`Open actions for ${portfolio.name}`}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <MoreHorizontal className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -120,17 +136,17 @@ export function PortfolioListPage() {
                       <Pencil className="size-3.5" />
                       Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDeleting(portfolio)} variant="destructive">
+                    <DropdownMenuItem
+                      onSelect={() => setDeleting(portfolio)}
+                      variant="destructive"
+                    >
                       <Trash2 className="size-3.5" />
                       Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => navigate(`/portfolios/${portfolio.id}`)}>
-                  Open
-                </Button>
               </>
-            )}
+            }
           />
         ))}
       </div>
@@ -150,7 +166,12 @@ export function PortfolioListPage() {
             updateMutation.mutate(
               { portfolioId: editing.id, data: data as PortfolioUpdateInput },
               {
-                onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to update portfolio"),
+                onError: (error) =>
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to update portfolio",
+                  ),
                 onSuccess: () => {
                   toast.success("Portfolio updated");
                   setShowForm(false);
@@ -162,12 +183,18 @@ export function PortfolioListPage() {
           }
 
           try {
-            const portfolio = await createMutation.mutateAsync(data as PortfolioWriteInput);
+            const portfolio = await createMutation.mutateAsync(
+              data as PortfolioWriteInput,
+            );
             toast.success("Portfolio created");
             setShowForm(false);
             navigate(`/portfolios/${portfolio.id}`);
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to create portfolio");
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Failed to create portfolio",
+            );
           }
         }}
       />
@@ -188,7 +215,12 @@ export function PortfolioListPage() {
           }
 
           deleteMutation.mutate(deleting.id, {
-            onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to delete portfolio"),
+            onError: (error) =>
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to delete portfolio",
+              ),
             onSuccess: () => {
               toast.success("Portfolio deleted");
               setDeleting(null);
