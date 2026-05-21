@@ -179,12 +179,20 @@ describe("WorkflowPackageLaunchPage", () => {
     renderLaunchPage();
 
     expect(screen.getByTestId("workflow-package-launch-page")).toBeVisible();
+    expect(screen.getByTestId("workflow-package-launch-page")).toHaveClass("min-w-0", "overflow-x-hidden");
     expect(screen.getByRole("heading", { name: "Launch Workflow Package" })).toBeVisible();
     expect(screen.getByText("Saved package launch")).toBeVisible();
     expect(screen.getByText("Market Review Package")).toBeVisible();
     expect(screen.getAllByText("market_review_package").length).toBeGreaterThan(0);
     expect(screen.getByText(/Launch uses persisted package state/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Open authoring editor" })).toHaveAttribute("href", "/workflow-packages/42");
+    expect(screen.getByTestId("workflow-package-launch-actions")).toHaveClass("flex", "w-full", "sm:w-auto");
+    expect(screen.getByTestId("workflow-package-preflight-status")).toHaveTextContent(/ready to launch/i);
+    expect(screen.getByTestId("runtime-input-console-grid")).toHaveClass("grid", "min-w-0");
+    expect(screen.getByTestId("runtime-input-json-panel")).toHaveClass("min-w-0");
+    expect(screen.getByLabelText("Runtime inputs JSON")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
+    expect(screen.getByTestId("workflow-package-run-actions")).toHaveClass("flex", "min-w-0", "flex-col", "sm:flex-row");
+    expect(within(screen.getByTestId("workflow-package-run-actions")).getByRole("button", { name: /launch run/i })).toHaveClass("w-full", "sm:w-auto");
     expect(screen.queryByTestId("workflow-package-editor-shell")).not.toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(useWorkflowPackageMock).toHaveBeenCalledWith("42");

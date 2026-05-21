@@ -126,6 +126,7 @@ describe("WorkflowPackageEditorPage import and export flows", () => {
     expect(screen.queryByRole("button", { name: /preview export/i })).not.toBeInTheDocument();
     expect(screen.getByText(/route-level import workspace/i)).toBeVisible();
     const preview = await screen.findByLabelText("Package YAML preview");
+    expect(preview).toHaveClass("min-h-96", "font-mono", "text-xs");
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     await waitFor(() => expect((preview as HTMLTextAreaElement).value).toContain("sk-live-env-secret"));
     expect((preview as HTMLTextAreaElement).value).toContain("Authorization: Bearer sk-live-header-secret");
