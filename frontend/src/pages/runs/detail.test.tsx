@@ -404,6 +404,7 @@ describe("RunsDetailPage", () => {
     });
     useRunForkDraftMock.mockReset();
     useRunForkDraftMock.mockReturnValue(forkDraftQueryResult());
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
     useRunRerunDraftMock.mockReset();
     useRunRerunDraftMock.mockReturnValue(draftQueryResult<RunRerunDraftRead>());
     useRunMock.mockReset();
@@ -532,14 +533,19 @@ describe("RunsDetailPage", () => {
     const defaultRender = render(<RunsDetailPage />);
 
     expect(screen.getByTestId("runs-detail-page")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-page")).toHaveClass("min-w-0", "overflow-hidden");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-inspection-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("runs-inspection-workspace")).toHaveAttribute("data-console-layout", "split");
     expect(screen.getByTestId("runs-evidence-viewer")).toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/succeeded/i);
     expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: market_review_package/i);
     expect(screen.getByRole("link", { name: /open current package/i })).toHaveAttribute("href", "/workflow-packages/7");
     expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("runs-detail-actions")).toHaveClass("flex", "min-w-0", "flex-col", "sm:flex-row");
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/run snapshot again/i);
+    expect(screen.getByTestId("runs-detail-rerun")).toHaveClass("bg-primary", "text-primary-foreground", "w-full", "sm:w-auto");
     const finalOutputCard = screen.getByTestId("runs-detail-final-output-card");
     const finalOutput = within(finalOutputCard).getByTestId("runs-detail-final-output");
     expect(finalOutputCard).toHaveAttribute("data-slot", "card");
@@ -672,6 +678,27 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText("model_error")).toBeVisible();
     expect(screen.getByText("Provider failed")).toBeVisible();
     expect(screen.getByText(/rate_limit/i)).toBeVisible();
+  });
+
+  it("stacks the inspection console and keeps raw payloads scrollable on mobile", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    useRunMock.mockReturnValue(queryResult(buildRun({ finalOutput: { payload: "x".repeat(240) } })));
+
+    render(<RunsDetailPage />);
+
+    const workspace = screen.getByTestId("runs-inspection-workspace");
+    await waitFor(() => expect(workspace).toHaveAttribute("data-console-layout", "stacked"));
+    expect(workspace).toHaveClass("min-w-0");
+    expect(screen.getByTestId("runs-execution-outline")).toHaveClass("min-w-0");
+    expect(screen.getByTestId("runs-evidence-viewer")).toHaveClass("min-w-0");
+    expect(screen.getByTestId("runs-evidence-pane-nav")).toHaveClass("min-w-0", "flex-wrap");
+
+    const finalOutput = screen.getByTestId("runs-detail-final-output");
+    fireEvent.mouseDown(within(finalOutput).getByRole("tab", { name: "Raw" }), { button: 0 });
+
+    expect(screen.getByTestId("runs-detail-final-output-tab-scroll")).toHaveClass("max-w-full", "overflow-x-auto");
+    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveAttribute("data-wide-payload", "scroll");
+    expect(screen.getByTestId("runs-detail-final-output-raw")).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-pre");
   });
 
   it("groups graph metadata and renders compact memory artifact audit links", () => {

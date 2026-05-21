@@ -56,6 +56,7 @@ import { Progress } from "@/components/ui/progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIsMobile } from "@/components/ui/use-mobile";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 
@@ -543,8 +544,9 @@ function formatRawPayload(value: unknown): string {
 function RawPayloadBlock({ testId, value }: { testId?: string; value: unknown }) {
   return (
     <pre
-      className="overflow-x-auto rounded-md border bg-muted/20 p-3 text-xs"
+      className="max-w-full overflow-x-auto whitespace-pre rounded-md border bg-muted/20 p-3 text-xs"
       data-testid={testId}
+      data-wide-payload="scroll"
     >
       {formatRawPayload(value)}
     </pre>
@@ -554,18 +556,20 @@ function RawPayloadBlock({ testId, value }: { testId?: string; value: unknown })
 function PayloadViewTabs({ label, testId, value }: { label: string; testId?: string; value: unknown }) {
   return (
     <Tabs defaultValue="rendered" className="min-w-0 gap-3" data-testid={testId}>
-      <TabsList aria-label={`${label} payload view modes`} className="h-8 rounded-lg">
-        <TabsTrigger className="rounded-md px-2 text-xs" value="rendered">
-          Rendered
-        </TabsTrigger>
-        <TabsTrigger className="rounded-md px-2 text-xs" value="raw">
-          Raw
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="rendered">
-        <StructuredValueInspector className="rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId ? `${testId}-rendered` : undefined} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
+      <div className="max-w-full overflow-x-auto pb-1" data-testid={testId ? `${testId}-tab-scroll` : undefined}>
+        <TabsList aria-label={`${label} payload view modes`} className="h-8 rounded-lg">
+          <TabsTrigger className="rounded-md px-2 text-xs" value="rendered">
+            Rendered
+          </TabsTrigger>
+          <TabsTrigger className="rounded-md px-2 text-xs" value="raw">
+            Raw
+          </TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent className="min-w-0" value="rendered">
+        <StructuredValueInspector className="min-w-0 rounded-md border bg-muted/20 p-3 text-sm" data-testid={testId ? `${testId}-rendered` : undefined} enableMarkdownStringPreview label={null} preserveObjectKeyOrder presentation="tree" value={value} />
       </TabsContent>
-      <TabsContent value="raw">
+      <TabsContent className="min-w-0" value="raw">
         <RawPayloadBlock testId={testId ? `${testId}-raw` : undefined} value={value} />
       </TabsContent>
     </Tabs>
@@ -583,7 +587,7 @@ function JsonBlock({ label, testId, value }: { label?: string; testId?: string; 
 
 function RunPayloadPane({ headingId, label, testId, value }: { headingId: string; label: string; testId: string; value: unknown }) {
   return (
-    <section aria-labelledby={headingId} className="space-y-3">
+    <section aria-labelledby={headingId} className="min-w-0 space-y-3">
       <h3 className="text-base font-medium leading-none" id={headingId}>{label}</h3>
       <PayloadViewTabs label={label} testId={testId} value={value} />
     </section>
@@ -595,7 +599,7 @@ function RunFinalOutputPane({ run }: { run: RunRead }) {
 
   return (
     <Card data-testid="runs-detail-final-output-card">
-      <CardContent className="space-y-5 pt-6">
+      <CardContent className="min-w-0 space-y-5 pt-6">
         {!isPendingFinalOutput ? (
           <RunPayloadPane headingId="runs-final-output-heading" label="Final output" testId="runs-detail-final-output" value={run.finalOutput} />
         ) : (
@@ -1144,20 +1148,20 @@ function RunContextStrip({
   terminalInvocationsCount: number;
 }) {
   return (
-    <Card className="overflow-hidden bg-muted/20" data-testid="runs-workspace-context">
-      <CardContent className="grid gap-3 p-3 text-sm">
+    <Card className="min-w-0 overflow-hidden bg-muted/20" data-testid="runs-workspace-context">
+      <CardContent className="grid min-w-0 gap-3 p-3 text-sm">
         <div
-          className="flex flex-wrap items-center gap-x-4 gap-y-2"
+          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
           data-testid="runs-summary-execution-row"
         >
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Execution</span>
           <Badge data-testid="runs-detail-status" variant={statusVariant(run.status)}>{run.status}</Badge>
           <Badge data-testid="runs-detail-target-kind" variant="outline">{targetKindLabel}</Badge>
-          <span className="text-muted-foreground">{terminalInvocationsCount} of {allInvocationsCount} invocation(s) terminal.</span>
+          <span className="min-w-0 break-words text-muted-foreground">{terminalInvocationsCount} of {allInvocationsCount} invocation(s) terminal.</span>
         </div>
 
         <dl
-          className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground"
+          className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground"
           data-testid="runs-summary-usage-row"
         >
           <div className="flex items-center gap-2">
@@ -1175,7 +1179,7 @@ function RunContextStrip({
         </dl>
 
         <div
-          className="flex flex-col gap-2 sm:flex-row sm:items-center"
+          className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center"
           data-testid="runs-summary-progress-row"
         >
           <div className="flex items-center justify-between gap-3 text-muted-foreground sm:w-44 sm:justify-start">
@@ -1403,10 +1407,10 @@ function EvidencePaneNav({
   onSelect: (target: RunInspectionTarget, pane?: RunInspectionPane) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2" data-testid="runs-evidence-pane-nav">
+    <div className="flex min-w-0 flex-wrap gap-2" data-testid="runs-evidence-pane-nav">
       {inspectionPanesForTarget(activeInspection.target).map((pane) => (
         <Button
-          className="cursor-pointer"
+          className="max-w-full cursor-pointer"
           key={pane}
           onClick={() => onSelect(activeInspection.target, pane)}
           size="sm"
@@ -1671,7 +1675,7 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
 
   return (
     <Card data-testid={`runs-step-${step.index}-summary`}>
-      <CardContent className="space-y-5 pt-6">
+      <CardContent className="min-w-0 space-y-5 pt-6">
         <section aria-labelledby={`runs-step-${step.index}-metadata-heading`} className="space-y-3">
           <h3 className="text-base font-medium leading-none" id={`runs-step-${step.index}-metadata-heading`}>Step metadata</h3>
           <dl className="grid gap-x-5 gap-y-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 xl:grid-cols-3" data-testid={`runs-step-${step.index}-metadata`}>
@@ -1805,7 +1809,7 @@ function InvocationEvidence({ invocation, pane, step }: { invocation: RunAgentIn
     return <DetailGrid items={[{ label: "Source invocation", value: <SourceInvocationLink invocation={invocation} step={step} /> }, { label: "Input origin", value: invocation.resolvedInputOrigin }, { label: "Output origin", value: invocation.outputOrigin ?? "pending" }]} />;
   }
   if (pane === "error") {
-    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Invocation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="overflow-x-auto rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No invocation error recorded.</div>;
+    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Invocation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs" data-wide-payload="scroll">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No invocation error recorded.</div>;
   }
   return <JsonBlock label="Output" value={invocation.output} />;
 }
@@ -1822,7 +1826,7 @@ function OperationEvidence({ invocation, pane }: { invocation: RunOperationInvoc
     return <DetailGrid items={[{ label: "Source operation", value: <SourceOperationInvocationLink invocation={invocation} /> }, { label: "Source run", value: invocation.sourceRunId ? `Run #${invocation.sourceRunId}` : "Not recorded" }, { label: "Source step", value: invocation.sourceStepIndex === null ? "Not recorded" : `Step ${invocation.sourceStepIndex}` }]} />;
   }
   if (pane === "error") {
-    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="overflow-x-auto rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No operation error recorded.</div>;
+    return hasError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>{invocation.errorCode ?? "Operation failed"}</AlertTitle><AlertDescription className="space-y-2"><p>{invocation.errorMessage ?? "No error message recorded."}</p>{invocation.errorDetails.length > 0 ? <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md border border-destructive/30 bg-muted/30 p-3 text-xs" data-wide-payload="scroll">{stringifyJson(invocation.errorDetails)}</pre> : null}</AlertDescription></Alert> : <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">No operation error recorded.</div>;
   }
   return <JsonBlock label="Output preview" testId={`runs-operation-${invocation.id}-output-preview`} value={invocation.output} />;
 }
@@ -1901,6 +1905,7 @@ export function RunsDetailPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const runQuery = useRun(runId, { refetchInterval: 2_000 });
+  const isMobileConsole = useIsMobile();
 
   const steps = useMemo(
     () => [...(runQuery.data?.steps ?? [])].sort((left, right) => left.index - right.index),
@@ -2035,6 +2040,8 @@ export function RunsDetailPage() {
   });
   const terminalInvocationsCount = allInvocations.filter((invocation) => isTerminalStatus(invocation.status)).length;
   const canRerunRun = run.targetKind === "workflowPackage";
+  const consoleLayout = isMobileConsole ? "stacked" : "split";
+  const consoleDirection = isMobileConsole ? "vertical" : "horizontal";
 
   const selectInspection = (target: RunInspectionTarget, pane?: RunInspectionPane) => {
     setSearchParams((current) => {
@@ -2050,15 +2057,15 @@ export function RunsDetailPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background" data-testid="runs-detail-page">
-      <div className="shrink-0 border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background" data-testid="runs-detail-page">
+      <div className="min-w-0 shrink-0 border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 className="text-xl font-semibold tracking-tight">Run #{run.id}</h1>
-                <Badge data-testid="runs-detail-target-identity" variant="outline">{run.targetKind === "workflowPackage" ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}` : run.targetKey}</Badge>
-                <Badge variant="outline">{run.targetKind === "workflowPackage" ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}` : `Target id: ${run.targetId}`}</Badge>
+                <Badge className="max-w-full min-w-0 break-all" data-testid="runs-detail-target-identity" variant="outline">{run.targetKind === "workflowPackage" ? `Snapshot: ${run.packageProvenance?.workflowPackageKey ?? run.targetKey}` : run.targetKey}</Badge>
+                <Badge className="max-w-full min-w-0 break-all" variant="outline">{run.targetKind === "workflowPackage" ? `Captured package id: ${run.packageProvenance?.workflowPackageId ?? run.targetId}` : `Target id: ${run.targetId}`}</Badge>
                 {run.sourceRunId ? <Badge variant="secondary"><GitBranch className="size-3" /> {isCurrentFork ? "Fork lineage" : "Legacy replay lineage"}</Badge> : null}
               </div>
               <p className="text-sm text-muted-foreground">
@@ -2068,19 +2075,19 @@ export function RunsDetailPage() {
                 {run.finishedAt ? ` · Finished ${formatDateTime(run.finishedAt)}` : formatUnfinishedRunStatus(run.status)}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end" data-testid="runs-detail-actions">
               {run.targetKind === "workflowPackage" && run.packageProvenance?.currentPackage?.available ? (
-                <Button asChild data-testid="runs-detail-package-link" size="sm" variant="outline">
+                <Button asChild className="w-full sm:w-auto" data-testid="runs-detail-package-link" size="sm" variant="outline">
                   <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>Open current package</Link>
                 </Button>
               ) : null}
               {canRerunRun ? (
-                <Button className="cursor-pointer" data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button" variant="outline">
+                <Button className="w-full cursor-pointer sm:w-auto" data-testid="runs-detail-rerun" onClick={openRerunDialog} size="sm" type="button">
                   <PlayCircle data-icon="inline-start" />
                   Run snapshot again
                 </Button>
               ) : null}
-              <Button asChild size="sm" variant="outline"><Link to="/runs">Back to runs</Link></Button>
+              <Button asChild className="w-full sm:w-auto" size="sm" variant="outline"><Link to="/runs">Back to runs</Link></Button>
             </div>
           </div>
           {run.error ? (
@@ -2101,11 +2108,12 @@ export function RunsDetailPage() {
       </div>
 
       <ResizablePanelGroup
-        className="min-h-0 flex-1"
+        className="min-h-0 min-w-0 flex-1"
+        data-console-layout={consoleLayout}
         data-testid="runs-inspection-workspace"
-        direction="horizontal"
+        direction={consoleDirection}
       >
-        <ResizablePanel className="min-w-0" defaultSize={28} maxSize={45} minSize={18}>
+        <ResizablePanel className="min-h-0 min-w-0" defaultSize={isMobileConsole ? 36 : 28} maxSize={isMobileConsole ? 55 : 45} minSize={isMobileConsole ? 24 : 18}>
           <ExecutionOutline
             activeInspection={activeInspection}
             onOpenFork={openForkDialog}
@@ -2116,7 +2124,7 @@ export function RunsDetailPage() {
           />
         </ResizablePanel>
         <ResizableHandle className="bg-border/80" data-testid="runs-inspection-resize-handle" withHandle />
-        <ResizablePanel className="min-w-0" defaultSize={72} minSize={45}>
+        <ResizablePanel className="min-h-0 min-w-0" defaultSize={isMobileConsole ? 64 : 72} minSize={isMobileConsole ? 45 : 45}>
           <EvidenceViewer
             activeInspection={activeInspection}
             copiedInvocations={copiedInvocations}

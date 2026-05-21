@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -177,7 +177,11 @@ describe("RunsDetailPage HTTP operation invocations", () => {
     stepSummaryRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=request");
     const requestRender = render(<RunsDetailPage />);
-    expect(screen.getByTestId("runs-operation-2001-request-metadata")).toHaveTextContent(/redacted/i);
+    const requestMetadata = screen.getByTestId("runs-operation-2001-request-metadata");
+    expect(requestMetadata).toHaveTextContent(/redacted/i);
+    expect(screen.getByTestId("runs-operation-2001-request-metadata-tab-scroll")).toHaveClass("max-w-full", "overflow-x-auto");
+    fireEvent.mouseDown(within(requestMetadata).getByRole("tab", { name: "Raw" }), { button: 0 });
+    expect(screen.getByTestId("runs-operation-2001-request-metadata-raw")).toHaveAttribute("data-wide-payload", "scroll");
     requestRender.unmount();
 
     searchParamsMock = new URLSearchParams("inspect=operation:2001&pane=response");
