@@ -859,19 +859,20 @@ def test_model_connection_delete_blocked_by_current_package_ref(
         assert session.get(ModelConnection, connection_id) is not None
 
 
-def test_model_connection_delete_blocked_by_rerunnable_run_snapshot_ref(
+@pytest.mark.parametrize("run_status", ["queued", "running", "succeeded", "failed"])
+def test_model_connection_delete_ignores_run_snapshot_refs(
     client: TestClient,
     session_factory: sessionmaker[Session],
+    run_status: str,
 ) -> None:
-    secret_value = "sk-snapshot-blocker-4444"
-    package_key = "snapshot_delete_blocker"
+    package_key = f"snapshot_delete_ignored_{run_status}"
     workflow_key = "runtime_workflow"
     with session_factory() as session:
         connection = _build_model_connection(
-            name="Snapshot Referenced Model",
-            key="snapshot_referenced_model",
+            name=f"Snapshot Ignored Model {run_status}",
+            key=f"snapshot_ignored_model_{run_status}",
             status="active",
-            api_key=secret_value,
+            api_key="sk-snapshot-ignored",
         )
         session.add(connection)
         session.flush()

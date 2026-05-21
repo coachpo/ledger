@@ -221,10 +221,7 @@ class ModelConnectionService:
 
     def _connection_reference_details(self, connection: ModelConnection) -> list[dict[str, object]]:
         references_by_identity: dict[tuple[str, int], ModelConnectionReference] = {}
-        for reference in [
-            *self.repository.list_current_package_refs(connection.key),
-            *self.repository.list_rerunnable_run_snapshot_refs(connection.key),
-        ]:
+        for reference in self.repository.list_current_package_refs(connection.key):
             references_by_identity[(reference.ref_type, reference.ref_id)] = reference
         return [
             self._reference_detail(reference)
