@@ -28,6 +28,7 @@ retired/global-authoring/src/pages/
 ## CONVENTIONS
 - Treat this tree as archive-only reference material.
 - Read it only to understand removed flows, old tests, or cutover history.
+- Keep the broader retired boundary explicit: `/skills*`, `/studio*`, `/tryout*`, `/orchestration*`, runtime-v2, simulations, and backtests are non-live even when they do not map to files in this tree.
 - When upgrade design touches an archived concept, decide whether it belongs in Workflow Packages, global Model Connections, global Tools, Runs, or an extension-owned surface before reviving anything.
 
 ## ANTI-PATTERNS
