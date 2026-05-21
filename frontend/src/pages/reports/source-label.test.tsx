@@ -113,13 +113,31 @@ describe("report source labels", () => {
     useTemplatesMock.mockReset();
     useReportMock.mockReturnValue(queryResult(buildReport()));
     useReportsMock.mockReturnValue(queryResult([buildReport()]));
-    useTemplatesMock.mockReturnValue(queryResult([]));
+    useTemplatesMock.mockReturnValue(queryResult({ items: [] }));
   });
 
   it("renders Agent source badge on report list", () => {
     renderReportRoute("/reports");
 
+    expect(screen.getByLabelText("Search reports")).toBeVisible();
+    expect(screen.getByLabelText("Group reports")).toBeVisible();
+    const generateAction = screen.getByRole("button", {
+      name: /generate report/i,
+    });
+    const uploadAction = screen.getByRole("button", {
+      name: /upload report/i,
+    });
+    expect(
+      generateAction.compareDocumentPosition(uploadAction) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("Memory Snapshot")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Open report Memory Snapshot" }),
+    ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
+    expect(
+      screen.getByRole("link", { name: "View report Memory Snapshot" }),
+    ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
     expect(screen.getByText("Agent")).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
     expect(
@@ -138,6 +156,12 @@ describe("report source labels", () => {
 
     const table = screen.getByRole("table");
     expect(
+      within(table).getByRole("button", { name: /sort reports by name/i }),
+    ).toBeVisible();
+    expect(
+      within(table).getByRole("link", { name: "View report Memory Snapshot" }),
+    ).toHaveAttribute("href", "/reports/agent_memory_snapshot");
+    expect(
       within(table).getAllByRole("checkbox", {
         name: /select reports in memory/i,
       }),
@@ -150,6 +174,26 @@ describe("report source labels", () => {
     expect(within(table).getByText("Memory Snapshot")).toBeVisible();
     expect(within(table).getByText("Agent")).toBeVisible();
     expect(within(table).queryByText("External")).not.toBeInTheDocument();
+  });
+
+  it("keeps single report delete in an overflow confirmation path", () => {
+    renderReportRoute("/reports");
+
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Open actions for Memory Snapshot" }),
+      { key: "Enter" },
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      'Delete "Memory Snapshot"?',
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(deleteReportMutateMock).toHaveBeenCalledWith(
+      "agent_memory_snapshot",
+      expect.any(Object),
+    );
   });
 
   it("supports selecting multiple reports and batch deleting them", () => {
@@ -217,11 +261,12 @@ describe("report source labels", () => {
       ),
     ).toBeVisible();
 
-    fireEvent.change(screen.getByPlaceholderText("Search reports..."), {
+    fireEvent.change(screen.getByLabelText("Search reports"), {
       target: { value: "missing" },
     });
 
     expect(screen.getByText("No reports match your search.")).toBeVisible();
+    expect(screen.queryByText(/No reports yet/i)).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("reports-bulk-actions"),
     ).not.toBeInTheDocument();
@@ -229,7 +274,7 @@ describe("report source labels", () => {
       screen.queryByRole("button", { name: /delete selected/i }),
     ).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Search reports..."), {
+    fireEvent.change(screen.getByLabelText("Search reports"), {
       target: { value: "" },
     });
 
@@ -281,10 +326,27 @@ describe("report source labels", () => {
     renderReportRoute("/reports/agent_memory_snapshot");
 
     expect(useReportMock).toHaveBeenCalledWith("agent_memory_snapshot");
-    expect(
-      screen.getAllByRole("heading", { name: "Memory Snapshot" })[0],
-    ).toBeVisible();
+    const detailHeading = screen.getAllByRole("heading", {
+      name: "Memory Snapshot",
+    })[0];
+    expect(detailHeading).toBeVisible();
+    expect(detailHeading).toHaveClass(
+      "break-words",
+      "text-xl",
+      "font-semibold",
+      "tracking-tight",
+    );
+    expect(detailHeading).not.toHaveClass("truncate", "text-lg");
     expect(screen.getByText("Agent")).toBeVisible();
     expect(screen.queryByText("External")).not.toBeInTheDocument();
+
+    const actions = screen.getByTestId("report-detail-actions");
+    expect(actions).toHaveClass("flex-wrap", "sm:w-auto");
+    expect(within(actions).getByRole("link", { name: /download/i })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/reports/agent_memory_snapshot/download"),
+    );
+    expect(within(actions).getByRole("button", { name: /edit/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /reports/i })).toBeVisible();
   });
 });

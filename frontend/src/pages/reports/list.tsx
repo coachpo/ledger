@@ -12,7 +12,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -26,6 +26,7 @@ import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
 import { downloadReportUrl } from "@/lib/api/reports";
 import type { ReportRead } from "@/lib/types/report";
+import type { TextTemplateRead } from "@/lib/types/text-template";
 import { GroupedListCard } from "@/components/shared/resource-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,18 @@ import {
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
 
+type TemplateListData = TextTemplateRead[] | { items?: TextTemplateRead[] };
+
+function getTemplateItems(
+  data: TemplateListData | undefined,
+): TextTemplateRead[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data?.items ?? [];
+}
+
 export function ReportListPage() {
   const navigate = useNavigate();
   const reportsQuery = useReports();
@@ -112,7 +125,7 @@ export function ReportListPage() {
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
 
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
-  const templates = templatesQuery.data ?? [];
+  const templates = getTemplateItems(templatesQuery.data);
 
   const filtered = useMemo(
     () => filterReports(reports, search),
@@ -143,6 +156,42 @@ export function ReportListPage() {
       setSortField(field);
       setSortDir("desc");
     }
+  };
+
+  const getSortDirection = (
+    field: SortField,
+  ): "ascending" | "descending" | undefined => {
+    if (sortField !== field) {
+      return undefined;
+    }
+
+    return sortDir === "asc" ? "ascending" : "descending";
+  };
+
+  const renderSortButton = (field: SortField, label: string) => {
+    const direction = getSortDirection(field);
+
+    return (
+      <Button
+        aria-label={
+          direction
+            ? `Sort reports by ${label} (${direction})`
+            : `Sort reports by ${label}`
+        }
+        className="-ml-2 h-8 px-2 text-xs font-medium"
+        onClick={() => handleSort(field)}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <span>{label}</span>
+        {direction ? (
+          <span aria-hidden="true" className="ml-1">
+            {sortDir === "asc" ? "↑" : "↓"}
+          </span>
+        ) : null}
+      </Button>
+    );
   };
 
   const setReportsSelected = (
@@ -253,31 +302,37 @@ export function ReportListPage() {
   };
 
   return (
-    <div className="max-w-6xl space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
+    <div className="space-y-4 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Compiled template snapshots — point-in-time deliverables.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button size="sm" onClick={() => setGenerateOpen(true)}>
+            <Plus data-icon="inline-start" /> Generate Report
+          </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setUploadOpen(true)}
           >
-            <Upload className="mr-1 size-3.5" /> Upload Report
-          </Button>
-          <Button size="sm" onClick={() => setGenerateOpen(true)}>
-            <Plus className="mr-1 size-3.5" /> Generate Report
+            <Upload data-icon="inline-start" /> Upload Report
           </Button>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2 size-4 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative max-w-sm flex-1" role="search">
+          <Label htmlFor="report-search" className="sr-only">
+            Search reports
+          </Label>
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             id="report-search"
             name="reportSearch"
@@ -287,21 +342,26 @@ export function ReportListPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <Select
-          value={groupBy}
-          onValueChange={(v) => setGroupBy(v as GroupByOption)}
-        >
-          <SelectTrigger className="h-8 w-[140px] text-xs">
-            <SelectValue placeholder="Group by" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value} className="text-xs">
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="w-36">
+          <Label htmlFor="report-group-by" className="sr-only">
+            Group reports
+          </Label>
+          <Select
+            value={groupBy}
+            onValueChange={(v) => setGroupBy(v as GroupByOption)}
+          >
+            <SelectTrigger id="report-group-by" className="h-8 text-xs">
+              <SelectValue placeholder="Group by" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value} className="text-xs">
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <ToggleGroup
           type="single"
           value={viewMode}
@@ -337,7 +397,7 @@ export function ReportListPage() {
           </Card>
         ) : null}
         {reportsQuery.isError ? (
-          <Card>
+          <Card role="alert">
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
               {reportsQuery.error instanceof Error
                 ? reportsQuery.error.message
@@ -419,22 +479,28 @@ export function ReportListPage() {
                         metadata={
                           <>Created {formatDateTime(report.createdAt)}</>
                         }
+                        primaryAction={{
+                          kind: "link",
+                          label: `Open report ${report.name}`,
+                          to: `/reports/${report.slug}`,
+                        }}
                         actions={
                           <>
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                navigate(`/reports/${report.slug}`)
-                              }
-                            >
-                              <Eye data-icon="inline-start" />
-                              View
+                            <Button asChild size="sm">
+                              <Link
+                                aria-label={`View report ${report.name}`}
+                                to={`/reports/${report.slug}`}
+                              >
+                                <Eye data-icon="inline-start" />
+                                View
+                              </Link>
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   aria-label={`Open actions for ${report.name}`}
                                   size="icon"
+                                  type="button"
                                   variant="ghost"
                                 >
                                   <MoreHorizontal className="size-4" />
@@ -487,30 +553,15 @@ export function ReportListPage() {
                               }
                             />
                           </TableHead>
-                          <TableHead
-                            className="cursor-pointer"
-                            onClick={() => handleSort("name")}
-                          >
-                            Name{" "}
-                            {sortField === "name" &&
-                              (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead aria-sort={getSortDirection("name")}>
+                            {renderSortButton("name", "Name")}
                           </TableHead>
-                          <TableHead
-                            className="cursor-pointer"
-                            onClick={() => handleSort("source")}
-                          >
-                            Source{" "}
-                            {sortField === "source" &&
-                              (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead aria-sort={getSortDirection("source")}>
+                            {renderSortButton("source", "Source")}
                           </TableHead>
                           <TableHead>Tags</TableHead>
-                          <TableHead
-                            className="cursor-pointer"
-                            onClick={() => handleSort("createdAt")}
-                          >
-                            Created{" "}
-                            {sortField === "createdAt" &&
-                              (sortDir === "asc" ? "↑" : "↓")}
+                          <TableHead aria-sort={getSortDirection("createdAt")}>
+                            {renderSortButton("createdAt", "Created")}
                           </TableHead>
                           <TableHead className="w-[132px] text-right">
                             Actions
@@ -555,20 +606,21 @@ export function ReportListPage() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex justify-end gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    onClick={() =>
-                                      navigate(`/reports/${report.slug}`)
-                                    }
-                                  >
-                                    <Eye data-icon="inline-start" />
-                                    View
+                                  <Button asChild size="sm">
+                                    <Link
+                                      aria-label={`View report ${report.name}`}
+                                      to={`/reports/${report.slug}`}
+                                    >
+                                      <Eye data-icon="inline-start" />
+                                      View
+                                    </Link>
                                   </Button>
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button
                                         aria-label={`Open actions for ${report.name}`}
                                         size="icon"
+                                        type="button"
                                         variant="ghost"
                                       >
                                         <MoreHorizontal className="size-4" />

@@ -11,7 +11,6 @@ import { downloadReportUrl } from "@/lib/api/reports";
 import { getReportSourceLabel } from "@/lib/report-grouping";
 
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
 export function ReportDetailPage() {
@@ -69,61 +68,62 @@ export function ReportDetailPage() {
 
   return (
     <div className="max-w-5xl space-y-4 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => navigate("/reports")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <Separator orientation="vertical" className="h-5" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-lg font-semibold tracking-tight">{report.name}</h1>
-            <Badge variant={sourceBadgeVariant} className="text-[10px]">
-              {sourceLabel}
-            </Badge>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between" data-testid="report-detail-header">
+        <div className="min-w-0 space-y-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/reports")}
+          >
+            <ArrowLeft className="mr-1 size-3.5" /> Reports
+          </Button>
+          <div className="min-w-0 space-y-1" data-testid="report-detail-identity">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="break-words text-xl font-semibold tracking-tight">{report.name}</h1>
+              <Badge variant={sourceBadgeVariant} className="text-[10px]">
+                {sourceLabel}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Created {formatDateTime(report.createdAt)} · Updated {formatDateTime(report.updatedAt)}
+            </p>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Created {formatDateTime(report.createdAt)}
-          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-8 text-sm" asChild>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end" data-testid="report-detail-actions">
+          <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
             <a href={downloadReportUrl(report.slug)} download>
-              <Download className="mr-1 h-3 w-3" />
+              <Download className="mr-1 size-3" />
               Download
             </a>
           </Button>
           {isEditing ? (
             <>
-              <Button variant="ghost" size="sm" className="h-8 text-sm" onClick={handleCancelEdit}>
+              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={handleCancelEdit}>
                 Cancel
               </Button>
               <Button
                 size="sm"
-                className="h-8 gap-1.5 text-sm"
+                className="h-8 gap-1.5 text-xs"
                 onClick={handleSave}
                 disabled={updateMutation.isPending}
               >
                 {updateMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="size-3 animate-spin" />
                 ) : (
-                  <Save className="h-3 w-3" />
+                  <Save className="size-3" />
                 )}
                 Save
               </Button>
             </>
           ) : (
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-8 text-sm"
+              className="h-8 text-xs"
               onClick={() => setIsEditing(true)}
             >
-              <Pencil className="mr-1 h-3 w-3" />
+              <Pencil className="mr-1 size-3" />
               Edit
             </Button>
           )}
