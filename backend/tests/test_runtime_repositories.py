@@ -883,7 +883,7 @@ def test_model_connection_delete_blocked_by_rerunnable_run_snapshot_ref(
             workflow_package_key=package_key,
             workflow_package_workflow_key=workflow_key,
             input={"ticker": "MSFT"},
-            status="succeeded",
+            status=run_status,
             total_tokens=0,
             inherited_tokens=0,
             executed_tokens=0,

@@ -2655,7 +2655,7 @@ def _ensure_platform_foreign_keys(engine: Engine, table_names: set[str]) -> None
             "fk_runs_workflow_package_id": (
                 "runs_workflow_package_id_fkey",
                 "FOREIGN KEY (workflow_package_id) "
-                "REFERENCES workflow_packages(id) ON DELETE SET NULL",
+                "REFERENCES workflow_packages(id) ON DELETE CASCADE",
             ),
         }
         for constraint_name, (default_name, constraint_sql) in run_constraints.items():

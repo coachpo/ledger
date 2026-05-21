@@ -56,7 +56,7 @@ class Run(IdMixin, TimestampMixin, Base):
     target_key: Mapped[str] = mapped_column(String(120), nullable=False)
     target_version: Mapped[int] = mapped_column(nullable=False)
     workflow_package_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflow_packages.id", ondelete="SET NULL"),
+        ForeignKey("workflow_packages.id", ondelete="CASCADE"),
         nullable=True,
     )
     workflow_package_key: Mapped[str | None] = mapped_column(String(120), nullable=True)

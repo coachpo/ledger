@@ -1603,7 +1603,7 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert (("lineage_root_run_id",), "runs", "SET NULL") in run_foreign_keys
     assert (("agent_id",), "agents", "CASCADE") in run_foreign_keys
     assert (("workflow_id",), "workflows", "CASCADE") in run_foreign_keys
-    assert (("workflow_package_id",), "workflow_packages", "SET NULL") in run_foreign_keys
+    assert (("workflow_package_id",), "workflow_packages", "CASCADE") in run_foreign_keys
     assert not any(
         foreign_key[0]
         for foreign_key in run_foreign_keys
