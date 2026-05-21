@@ -1,6 +1,6 @@
 # SignalDeck Agent Platform Reference
 
-> Status: Live package-first platform reference for branch `main` at `69e809e`. This is the canonical platform reference.
+> Status: Live package-first platform reference for branch `main` at `e2c635f`. This is the canonical platform reference.
 
 ## Scope
 
@@ -183,7 +183,7 @@ Each milestone has a deterministic targeted command, and the combined command is
 rg -n "kind: http|signaldeck.social_sentiment.lookup|operation invocation|secret binding" docs/api-design.md docs/signaldeck-agent-platform.md
 
 # Extension metadata absence guard, live docs and guidance should not match removed public tokens
-rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" docs AGENTS.md backend/AGENTS.md backend/app/**/AGENTS.md frontend/AGENTS.md frontend/src/**/AGENTS.md .sisyphus/plans/ledger-bundled-extension-migration.md
+rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" docs AGENTS.md backend/AGENTS.md backend/app/**/AGENTS.md frontend/AGENTS.md frontend/src/**/AGENTS.md
 ```
 
 Security override coverage stays focused and test-only:

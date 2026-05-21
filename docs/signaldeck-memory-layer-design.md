@@ -1,6 +1,6 @@
 # SignalDeck Memory Layer Design Note
 
-> Status: Core memory infrastructure phase-1 contract for branch `main` at `10ae652`.
+> Status: Core memory infrastructure phase-1 contract for branch `main` at `e2c635f`.
 
 ## Scope
 
