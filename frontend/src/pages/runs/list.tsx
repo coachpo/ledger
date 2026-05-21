@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { EntityListCard } from "@/components/shared/resource-row-card";
 import {
   Select,
   SelectContent,
@@ -41,7 +41,9 @@ function describeRunTarget(targetKind: RunTargetKind): string {
   if (targetKind === "workflowPackage") {
     return "Captured package snapshot execution";
   }
-  return targetKind === "agent" ? "Standalone agent execution" : "Multi-step workflow execution";
+  return targetKind === "agent"
+    ? "Standalone agent execution"
+    : "Multi-step workflow execution";
 }
 
 function progressForStatus(status: RunStatus): number {
@@ -62,7 +64,9 @@ function formatUnfinishedRunStatus(status: RunStatus): string {
 
 export function RunsListPage() {
   const navigate = useNavigate();
-  const [targetKind, setTargetKind] = useState<RunTargetKind | undefined>(undefined);
+  const [targetKind, setTargetKind] = useState<RunTargetKind | undefined>(
+    undefined,
+  );
   const [targetKey, setTargetKey] = useState("");
   const [status, setStatus] = useState<RunStatus | undefined>(undefined);
   const runsQuery = useRuns(
@@ -74,7 +78,10 @@ export function RunsListPage() {
     },
     { refetchInterval: 2_000 },
   );
-  const runs = useMemo(() => runsQuery.data?.items ?? [], [runsQuery.data?.items]);
+  const runs = useMemo(
+    () => runsQuery.data?.items ?? [],
+    [runsQuery.data?.items],
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="runs-list-page">
@@ -82,8 +89,9 @@ export function RunsListPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Runs</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor recent agent and workflow executions with live status, captured snapshot identity,
-            total token summaries, and direct links into per-run detail.
+            Monitor recent agent and workflow executions with live status,
+            captured snapshot identity, total token summaries, and direct links
+            into per-run detail.
           </p>
         </div>
         <Button
@@ -110,7 +118,11 @@ export function RunsListPage() {
             <Select
               value={targetKind ?? ALL_TARGET_KINDS}
               onValueChange={(value) =>
-                setTargetKind(value === ALL_TARGET_KINDS ? undefined : (value as RunTargetKind))
+                setTargetKind(
+                  value === ALL_TARGET_KINDS
+                    ? undefined
+                    : (value as RunTargetKind),
+                )
               }
             >
               <SelectTrigger aria-label="Target kind">
@@ -121,7 +133,9 @@ export function RunsListPage() {
                   <SelectItem value={ALL_TARGET_KINDS}>All targets</SelectItem>
                   <SelectItem value="agent">agent</SelectItem>
                   <SelectItem value="workflow">workflow</SelectItem>
-                  <SelectItem value="workflowPackage">workflow package</SelectItem>
+                  <SelectItem value="workflowPackage">
+                    workflow package
+                  </SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -141,7 +155,9 @@ export function RunsListPage() {
             <Select
               value={status ?? ALL_STATUSES}
               onValueChange={(value) =>
-                setStatus(value === ALL_STATUSES ? undefined : (value as RunStatus))
+                setStatus(
+                  value === ALL_STATUSES ? undefined : (value as RunStatus),
+                )
               }
             >
               <SelectTrigger aria-label="Run status">
@@ -171,7 +187,9 @@ export function RunsListPage() {
       {runsQuery.isError ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {runsQuery.error instanceof Error ? runsQuery.error.message : "Failed to load runs."}
+            {runsQuery.error instanceof Error
+              ? runsQuery.error.message
+              : "Failed to load runs."}
           </CardContent>
         </Card>
       ) : null}
@@ -187,21 +205,23 @@ export function RunsListPage() {
       {!runsQuery.isPending && !runsQuery.isError && runs.length > 0 ? (
         <div className="grid gap-2 sm:gap-3">
           {runs.map((run) => (
-            <ResourceRowCard
+            <EntityListCard
               key={run.id}
-              density="compactPlus"
               testId={`runs-row-${run.id}`}
               title={`Run #${run.id}`}
               badges={
                 <>
                   <Badge variant="secondary">{run.status}</Badge>
-                  <Badge variant="outline">{formatTargetKindLabel(run.targetKind)}</Badge>
+                  <Badge variant="outline">
+                    {formatTargetKindLabel(run.targetKind)}
+                  </Badge>
                   <Badge variant="outline">{run.targetKey}</Badge>
                 </>
               }
               description={
                 <>
-                  {describeRunTarget(run.targetKind)} · {run.startedAt
+                  {describeRunTarget(run.targetKind)} ·{" "}
+                  {run.startedAt
                     ? `Started ${formatDateTime(run.startedAt)}`
                     : `Queued ${formatDateTime(run.queuedAt)}`}
                   {run.finishedAt
@@ -210,7 +230,7 @@ export function RunsListPage() {
                 </>
               }
               metadata={
-                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-col gap-2 text-xs text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     {run.targetKind === "workflowPackage" ? (
                       <span className="min-w-0 break-words">{`Captured snapshot: ${run.targetKey} · Package id at launch: #${run.targetId}`}</span>
@@ -228,17 +248,11 @@ export function RunsListPage() {
                   </div>
                 </div>
               }
-              primaryAction={{
-                kind: "button",
-                label: `Open Run #${run.id}`,
-                onClick: () => navigate(`/runs/${run.id}`),
-                testId: `runs-row-action-${run.id}`,
-              }}
               actions={
                 <Button
                   className="w-full cursor-pointer sm:w-auto"
+                  data-testid={`runs-row-action-${run.id}`}
                   size="sm"
-                  variant="outline"
                   onClick={() => navigate(`/runs/${run.id}`)}
                 >
                   Open Run
