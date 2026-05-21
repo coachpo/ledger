@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useImportWorkflowPackage } from "@/hooks/use-workflow-packages";
@@ -160,7 +161,11 @@ export function WorkflowPackageImportPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-import-page">
+    <div
+      aria-labelledby="workflow-package-import-title"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background font-sans"
+      data-testid="workflow-package-import-page"
+    >
       <div className="border-b border-border bg-card px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-2">
@@ -182,7 +187,9 @@ export function WorkflowPackageImportPage() {
                 <span>Workflow Packages</span>
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight">Import workflow package YAML</h1>
+                <h1 id="workflow-package-import-title" className="text-xl font-semibold tracking-tight">
+                  Import workflow package YAML
+                </h1>
                 <p className="max-w-3xl text-sm text-muted-foreground">
                   Paste a complete package manifest for a full-height review before it enters the package-first authoring surface.
                 </p>
@@ -211,17 +218,21 @@ export function WorkflowPackageImportPage() {
         <section className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border" aria-labelledby="workflow-package-import-editor-title">
           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2">
             <FileUp className="h-3 w-3 text-muted-foreground" />
-            <span id="workflow-package-import-editor-title" className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <Label
+              htmlFor="workflow-package-import-yaml"
+              id="workflow-package-import-editor-title"
+              className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+            >
               Import package YAML
-            </span>
+            </Label>
             <span className="ml-auto text-[10px] text-muted-foreground">
               signaldeck.workflowPackage/v1
             </span>
           </div>
           <div className="relative min-h-0 flex-1">
             <textarea
-              aria-label="Import package YAML"
-              className="h-full w-full resize-none border-none bg-background px-4 py-3 font-['Fira_Code',ui-monospace,monospace] text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
+              id="workflow-package-import-yaml"
+              className="h-full w-full resize-none border-none bg-background px-4 py-3 font-mono text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none"
               placeholder={IMPORT_MANIFEST_PLACEHOLDER}
               spellCheck={false}
               value={manifestSource}

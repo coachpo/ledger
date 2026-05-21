@@ -111,9 +111,13 @@ describe("WorkflowPackageImportPage", () => {
   it("renders a full-height YAML import workspace and returns to the package list on cancel", () => {
     renderPage();
 
-    expect(screen.getByTestId("workflow-package-import-page")).toHaveClass("h-full");
+    const shell = screen.getByTestId("workflow-package-import-page");
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0");
+    expect(shell).toHaveAttribute("aria-labelledby", "workflow-package-import-title");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Import workflow package YAML" })).toBeVisible();
     const editor = screen.getByRole("textbox", { name: "Import package YAML" });
+    expect(editor).toHaveAttribute("id", "workflow-package-import-yaml");
     expect(editor).toHaveClass("h-full");
     expect(editor).toHaveAttribute(
       "placeholder",
