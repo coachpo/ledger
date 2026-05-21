@@ -1,6 +1,6 @@
 # TradingAgents-Informed SignalDeck Upgrade Design
 
-> Status: Research and design note for branch `main` at `69e809e`. Keeps TradingAgents/SignalDeck comparison and settled design rationale; live code and the owner docs remain the source of truth.
+> Status: Research and design note for branch `main` at `e2c635f`. Keeps TradingAgents/SignalDeck comparison and settled design rationale; live code and the owner docs remain the source of truth.
 
 ## Intent
 
