@@ -629,7 +629,7 @@ function MultiKeyPicker({ keys, label, onChange, selectedKeys }: { keys: string[
         {keys.map((key) => (
           <label key={key} className="flex cursor-pointer items-center gap-2 text-sm">
             <Checkbox checked={selectedKeys.includes(key)} onCheckedChange={(checked) => onChange(toggleString(selectedKeys, key, checked === true))} />
-            <span className="font-['Fira_Code',ui-monospace,monospace] text-xs">{key}</span>
+            <span className="font-mono text-xs">{key}</span>
           </label>
         ))}
       </div>
@@ -683,7 +683,7 @@ function AgentsTab(props: {
             <div key={`${agent.key}-${index}`} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`package-agent-row-${agent.key}`}>
               <div className="min-w-0 space-y-1">
                 <p className="font-medium">{agent.name || "Untitled agent"}</p>
-                <p className="break-all font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{agent.key || "missing_key"}</p>
+                <p className="break-all font-mono text-xs text-muted-foreground">{agent.key || "missing_key"}</p>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">model: {agent.modelConnection || "missing"}</Badge>
                   <Badge variant="outline">schema: {agent.outputSchema || "missing"}</Badge>
@@ -725,7 +725,7 @@ function OutputSchemasTab({ draft, issues, onChange }: { draft: WorkflowPackageD
             <Card key={`${schema.key}-${index}`} className="bg-background/60" data-field={`spec.outputSchemas[${index}]`} tabIndex={-1} data-testid={`package-output-schema-card-${schema.key}`}>
               <CardHeader>
                 <CardTitle>{schema.name || "Untitled schema"}</CardTitle>
-                <CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{schema.key || "missing_key"}</CardDescription>
+                <CardDescription className="font-mono text-xs">{schema.key || "missing_key"}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-2">
@@ -760,7 +760,7 @@ function CapabilityProfilesTab(props: { draft: WorkflowPackageDraft; issues: rea
         {toolsError ? <Alert variant="destructive"><AlertTitle>Tool catalog unavailable</AlertTitle><AlertDescription>{toolsError}</AlertDescription></Alert> : null}
         {draft.spec.capabilityProfiles.map((profile, index) => (
           <Card key={`${profile.key}-${index}`} className="bg-background/60" data-field={`spec.capabilityProfiles[${index}]`} tabIndex={-1} data-testid={`package-capability-profile-card-${profile.key}`}>
-            <CardHeader><CardTitle>{profile.name || "Untitled profile"}</CardTitle><CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{profile.key || "missing_key"}</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{profile.name || "Untitled profile"}</CardTitle><CardDescription className="font-mono text-xs">{profile.key || "missing_key"}</CardDescription></CardHeader>
             <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
               <div className="space-y-3">
                 <div className="space-y-2"><Label>Local key</Label><Input aria-label={`Capability profile ${index + 1} local key`} data-field={`spec.capabilityProfiles[${index}].key`} value={profile.key} onChange={(event) => updateProfiles(updateArrayItem(draft.spec.capabilityProfiles, index, (item) => ({ ...item, key: event.target.value })))} /><FieldMessage message={issueMessageForField(issues, `spec.capabilityProfiles[${index}].key`)} /></div>
@@ -805,7 +805,7 @@ function PrivateMcpTab({ draft, issues, onChange }: { draft: WorkflowPackageDraf
         <ResourceChecks issues={issues} tab="private-mcp" />
         {draft.spec.mcpServers.map((server, index) => (
           <Card key={`${server.key}-${index}`} className="bg-background/60" data-field={`spec.mcpServers[${index}]`} tabIndex={-1} data-testid={`package-private-mcp-card-${server.key}`}>
-            <CardHeader><CardTitle>{server.name || "Untitled MCP"}</CardTitle><CardDescription className="font-['Fira_Code',ui-monospace,monospace] text-xs">{server.key || "missing_key"}</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{server.name || "Untitled MCP"}</CardTitle><CardDescription className="font-mono text-xs">{server.key || "missing_key"}</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-3"><div className="space-y-2"><Label>Local key</Label><Input aria-label={`Private MCP ${index + 1} local key`} data-field={`spec.mcpServers[${index}].key`} value={server.key} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, key: event.target.value })))} /></div><div className="space-y-2"><Label>Name</Label><Input aria-label={`Private MCP ${index + 1} name`} value={server.name} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, name: event.target.value })))} /></div><div className="space-y-2"><Label>Transport</Label><Select value={server.transport} onValueChange={(transport: "stdio" | "http-sse") => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, transport })))}><SelectTrigger aria-label={`Private MCP ${index + 1} transport`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="stdio">stdio</SelectItem><SelectItem value="http-sse">http-sse</SelectItem></SelectContent></Select></div></div>
               <div className="space-y-2"><Label>Description</Label><Input aria-label={`Private MCP ${index + 1} description`} value={server.description} onChange={(event) => updateServers(updateArrayItem(draft.spec.mcpServers, index, (item) => ({ ...item, description: event.target.value })))} /></div>
@@ -1336,11 +1336,31 @@ export function WorkflowPackageEditorPage() {
   }
 
   return (
-    <div ref={editorShellRef} className="flex h-full flex-col gap-4 overflow-y-auto p-4 font-['Fira_Sans',ui-sans-serif,system-ui,sans-serif]" data-testid="workflow-package-editor-shell">
+    <div
+      ref={editorShellRef}
+      aria-labelledby="workflow-package-editor-title"
+      className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden p-4 font-sans"
+      data-testid="workflow-package-editor-shell"
+    >
       <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center gap-2">{combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}</div><div className="space-y-1"><h1 className="text-xl font-semibold tracking-tight">{packageTitle(workflowPackage, isNew)}</h1><p className="font-['Fira_Code',ui-monospace,monospace] text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p><p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p></div></div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end"><Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button><Button aria-label="Validate package" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button><Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={requestLaunchSavedPackage}><PlayCircle data-icon="inline-start" />Launch</Button></div>
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}
+            </div>
+            <div className="space-y-1">
+              <h1 id="workflow-package-editor-title" className="text-xl font-semibold tracking-tight">
+                {packageTitle(workflowPackage, isNew)}
+              </h1>
+              <p className="font-mono text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p>
+              <p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
+            <Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button>
+            <Button aria-label="Validate package" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button>
+            <Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={requestLaunchSavedPackage}><PlayCircle data-icon="inline-start" />Launch</Button>
+          </div>
         </CardContent>
       </Card>
       <Dialog open={launchConfirmationOpen} onOpenChange={setLaunchConfirmationOpen}>

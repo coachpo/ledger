@@ -102,7 +102,11 @@ describe("WorkflowPackageEditorPage", () => {
   it("renders the editor shell with all package-local tabs and accessible action labels", () => {
     renderEditor("/workflow-packages/42", "/workflow-packages/:packageId");
 
-    expect(screen.getByTestId("workflow-package-editor-shell")).toBeVisible();
+    const shell = screen.getByTestId("workflow-package-editor-shell");
+    expect(shell).toBeVisible();
+    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-y-auto", "overflow-x-hidden");
+    expect(shell).toHaveAttribute("aria-labelledby", "workflow-package-editor-title");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Market Review Package" })).toBeVisible();
     expect(screen.getByText("market_review_package")).toBeVisible();
     expect(screen.getAllByText("Private package for multi-agent market review.")[0]).toBeVisible();
