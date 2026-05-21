@@ -449,7 +449,9 @@ describe("WorkflowPackagesListPage", () => {
     expect(dialog).toHaveTextContent(
       "Permanently delete 1 selected workflow package?",
     );
-    expect(dialog).toHaveTextContent("Historical run snapshots are preserved.");
+    expect(dialog).toHaveTextContent(
+      "This deletes the package, related package resources, and its owned runs.",
+    );
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Delete selected" }),
     );
@@ -544,7 +546,7 @@ describe("WorkflowPackagesListPage", () => {
       "Permanently delete Risk Review?",
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "Historical run snapshots are preserved.",
+      "This deletes the package, related package resources, and its owned runs.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete package" }));
 

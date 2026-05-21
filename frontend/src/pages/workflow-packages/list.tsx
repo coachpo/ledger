@@ -550,7 +550,7 @@ export function WorkflowPackagesListPage() {
       <ConfirmDeleteDialog
         open={isBulkDeleting}
         title="Delete selected workflow packages"
-        description={`Permanently delete ${selectedCount} selected ${selectedCount === 1 ? "workflow package" : "workflow packages"}? This removes the current packages and related package resources. Historical run snapshots are preserved. This cannot be undone.`}
+        description={`Permanently delete ${selectedCount} selected ${selectedCount === 1 ? "workflow package" : "workflow packages"}? This deletes ${selectedCount === 1 ? "the package" : "the selected packages"}, related package resources, and ${selectedCount === 1 ? "its" : "their"} owned runs. This cannot be undone.`}
         confirmLabel="Delete selected"
         isPending={deletePackages.isPending}
         onOpenChange={setIsBulkDeleting}
@@ -559,7 +559,7 @@ export function WorkflowPackagesListPage() {
       <ConfirmDeleteDialog
         open={deleting !== null}
         title="Delete workflow package"
-        description={`Permanently delete ${deleting?.name ?? "this workflow package"}? This removes the current package and related package resources. Historical run snapshots are preserved. This cannot be undone.`}
+        description={`Permanently delete ${deleting?.name ?? "this workflow package"}? This deletes the package, related package resources, and its owned runs. This cannot be undone.`}
         confirmLabel="Delete package"
         isPending={deletePackage.isPending}
         onOpenChange={(open) => {
