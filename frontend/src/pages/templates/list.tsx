@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { LayoutGrid, List, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -8,7 +15,7 @@ import { formatDateTime } from "@/lib/format";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 
 import { ConfirmDeleteDialog } from "@/components/portfolios/confirm-delete-dialog";
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
+import { EntityListCard } from "@/components/shared/resource-row-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -18,7 +25,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function TemplateListPage() {
@@ -33,9 +47,10 @@ export function TemplateListPage() {
   const query = search.trim().toLowerCase();
   const filteredTemplates = !query
     ? templates
-    : templates.filter((template) =>
-        template.name.toLowerCase().includes(query)
-        || template.content.toLowerCase().includes(query),
+    : templates.filter(
+        (template) =>
+          template.name.toLowerCase().includes(query) ||
+          template.content.toLowerCase().includes(query),
       );
 
   return (
@@ -67,11 +82,25 @@ export function TemplateListPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as "cards" | "table")}>
-          <ToggleGroupItem value="cards" aria-label="Cards view" className="h-8 w-8 px-0">
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(value) =>
+            value && setViewMode(value as "cards" | "table")
+          }
+        >
+          <ToggleGroupItem
+            value="cards"
+            aria-label="Cards view"
+            className="h-8 w-8 px-0"
+          >
             <LayoutGrid className="size-3.5" />
           </ToggleGroupItem>
-          <ToggleGroupItem value="table" aria-label="Table view" className="h-8 w-8 px-0">
+          <ToggleGroupItem
+            value="table"
+            aria-label="Table view"
+            className="h-8 w-8 px-0"
+          >
             <List className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
@@ -94,14 +123,19 @@ export function TemplateListPage() {
             </CardContent>
           </Card>
         ) : null}
-        {!templatesQuery.isPending && !templatesQuery.isError && templates.length === 0 ? (
+        {!templatesQuery.isPending &&
+        !templatesQuery.isError &&
+        templates.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
               No templates yet.
             </CardContent>
           </Card>
         ) : null}
-        {!templatesQuery.isPending && !templatesQuery.isError && templates.length > 0 && filteredTemplates.length === 0 ? (
+        {!templatesQuery.isPending &&
+        !templatesQuery.isError &&
+        templates.length > 0 &&
+        filteredTemplates.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-xs text-muted-foreground">
               No templates match your search.
@@ -110,36 +144,40 @@ export function TemplateListPage() {
         ) : null}
         {viewMode === "cards" ? (
           filteredTemplates.map((template) => (
-            <ResourceRowCard
+            <EntityListCard
               key={template.id}
-              density="compact"
               title={template.name}
               metadata={<>Updated {formatDateTime(template.updatedAt)}</>}
-              primaryAction={{
-                kind: "link",
-                label: `Open editor for ${template.name}`,
-                to: `/templates/${template.id}/edit`,
-              }}
-              actions={(
+              actions={
                 <>
                   <Button
-                    className="h-7 text-xs"
                     size="sm"
-                    variant="destructive"
-                    onClick={() => setDeleting(template)}
-                  >
-                    Delete
-                  </Button>
-                  <Button
-                    className="h-7 text-xs"
-                    size="sm"
-                    variant="secondary"
                     onClick={() => navigate(`/templates/${template.id}/edit`)}
                   >
                     Open Editor
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={`Open actions for ${template.name}`}
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() => setDeleting(template)}
+                        variant="destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </>
-              )}
+              }
             />
           ))
         ) : filteredTemplates.length > 0 ? (
@@ -155,10 +193,7 @@ export function TemplateListPage() {
               <TableBody>
                 {filteredTemplates.map((template) => (
                   <TableRow key={template.id}>
-                    <TableCell
-                      className="cursor-pointer font-medium"
-                      onClick={() => navigate(`/templates/${template.id}/edit`)}
-                    >
+                    <TableCell className="font-medium">
                       {template.name}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -178,21 +213,20 @@ export function TemplateListPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => navigate(`/templates/${template.id}/edit`)}>
-                              <Pencil className="size-3.5" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setDeleting(template)} variant="destructive">
+                            <DropdownMenuItem
+                              onSelect={() => setDeleting(template)}
+                              variant="destructive"
+                            >
                               <Trash2 className="size-3.5" />
                               Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <Button
-                          className="h-7 text-xs"
                           size="sm"
-                          variant="secondary"
-                          onClick={() => navigate(`/templates/${template.id}/edit`)}
+                          onClick={() =>
+                            navigate(`/templates/${template.id}/edit`)
+                          }
                         >
                           Open Editor
                         </Button>
@@ -223,7 +257,11 @@ export function TemplateListPage() {
 
           deleteMutation.mutate(deleting.id, {
             onError: (error) =>
-              toast.error(error instanceof Error ? error.message : "Failed to delete template"),
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to delete template",
+              ),
             onSuccess: () => {
               toast.success("Template deleted");
               setDeleting(null);
