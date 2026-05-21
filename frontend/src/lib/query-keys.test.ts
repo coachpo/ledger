@@ -118,6 +118,12 @@ describe("query keys", () => {
   });
 
   it("normalizes package run filters", () => {
+    expect(queryKeys.platform.runs.lists()).toEqual([
+      "api",
+      "platform",
+      "runs",
+      "list",
+    ]);
     expect(
       queryKeys.platform.runs.list({
         offset: 0,

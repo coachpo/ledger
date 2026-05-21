@@ -228,13 +228,27 @@ async function invalidateDeletedWorkflowPackageScope(
   ]);
 }
 
+function clearDeletedWorkflowPackageRunLists(queryClient: QueryClient) {
+  queryClient.removeQueries?.({
+    queryKey: queryKeys.platform.runs.lists(),
+    type: "inactive",
+  });
+
+  return queryClient.invalidateQueries({
+    queryKey: queryKeys.platform.runs.lists(),
+  });
+}
+
 export function useDeleteWorkflowPackage() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (packageId: IdParam) => deleteWorkflowPackage(packageId),
     onSuccess: async (_result, packageId) => {
-      await invalidateDeletedWorkflowPackageScope(queryClient, packageId);
+      await Promise.all([
+        invalidateDeletedWorkflowPackageScope(queryClient, packageId),
+        clearDeletedWorkflowPackageRunLists(queryClient),
+      ]);
       await queryClient.invalidateQueries({
         queryKey: queryKeys.platform.workflowPackages.all,
       });
@@ -262,9 +276,12 @@ export function useDeleteWorkflowPackages() {
           invalidateDeletedWorkflowPackageScope(queryClient, packageId),
         ),
       );
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.platform.workflowPackages.all,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.platform.workflowPackages.all,
+        }),
+        clearDeletedWorkflowPackageRunLists(queryClient),
+      ]);
     },
   });
 }

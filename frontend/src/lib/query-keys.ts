@@ -189,6 +189,7 @@ const platformQueryKeys = {
   },
   runs: {
     all: [...platformApiRoot, "runs"] as const,
+    lists: () => [...platformApiRoot, "runs", "list"] as const,
     detail: (runId: IdParam) =>
       [...platformApiRoot, "runs", "detail", normalizeId(runId)] as const,
     rerunDraft: (runId: IdParam) =>

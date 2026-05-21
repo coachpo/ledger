@@ -7,6 +7,7 @@ const reactQueryState = vi.hoisted(() => ({
     onSuccess?: (result: unknown, variables: unknown) => unknown;
   } | null,
   invalidateQueriesMock: vi.fn(),
+  removeQueriesMock: vi.fn(),
   useQueryMock: vi.fn((options: unknown) => options),
 }));
 
@@ -22,6 +23,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: reactQueryState.useQueryMock,
   useQueryClient: () => ({
     invalidateQueries: reactQueryState.invalidateQueriesMock,
+    removeQueries: reactQueryState.removeQueriesMock,
   }),
 }));
 
@@ -77,6 +79,7 @@ type CapturedMutationOptions = {
 describe("useWorkflowPackages", () => {
   beforeEach(() => {
     reactQueryState.invalidateQueriesMock.mockReset();
+    reactQueryState.removeQueriesMock.mockReset();
     reactQueryState.useQueryMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     vi.mocked(createWorkflowPackageRuntimeInputPersonalEntry).mockReset();
@@ -251,7 +254,7 @@ describe("useWorkflowPackages", () => {
     });
   });
 
-  it("invalidates package list and detail scopes after delete", async () => {
+  it("invalidates package and run list scopes after delete", async () => {
     useDeleteWorkflowPackage();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
@@ -264,6 +267,13 @@ describe("useWorkflowPackages", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
+    });
+    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
+      type: "inactive",
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,
@@ -293,6 +303,13 @@ describe("useWorkflowPackages", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,
+    });
+    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
+      type: "inactive",
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
     });
   });
 
@@ -331,6 +348,13 @@ describe("useWorkflowPackages", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,
+    });
+    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
+      type: "inactive",
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.lists(),
     });
   });
 });
