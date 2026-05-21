@@ -7,7 +7,10 @@ import {
   updatePortfolio,
 } from "@/lib/api/portfolios";
 import { invalidatePortfolioScope, queryKeys } from "@/lib/query-keys";
-import type { PortfolioUpdateInput, PortfolioWriteInput } from "@/lib/types/portfolio";
+import type {
+  PortfolioUpdateInput,
+  PortfolioWriteInput,
+} from "@/lib/types/portfolio";
 
 type IdParam = number | string;
 
@@ -60,8 +63,39 @@ export function useDeletePortfolio() {
   return useMutation({
     mutationFn: (portfolioId: IdParam) => deletePortfolio(portfolioId),
     onSuccess: async (_, portfolioId) => {
-      queryClient.removeQueries({ queryKey: queryKeys.portfolios.detail(portfolioId) });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.portfolios.lists() });
+      queryClient.removeQueries({
+        queryKey: queryKeys.portfolios.detail(portfolioId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolios.lists(),
+      });
+    },
+  });
+}
+
+export function useDeletePortfolios() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (portfolioIds: IdParam[]) => {
+      const results = await Promise.allSettled(
+        portfolioIds.map((portfolioId) => deletePortfolio(portfolioId)),
+      );
+      const firstRejected = results.find((result) => result.status === "rejected");
+
+      if (firstRejected?.status === "rejected") {
+        throw firstRejected.reason;
+      }
+    },
+    onSettled: async (_, _error, portfolioIds) => {
+      portfolioIds.forEach((portfolioId) => {
+        queryClient.removeQueries({
+          queryKey: queryKeys.portfolios.detail(portfolioId),
+        });
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolios.lists(),
+      });
     },
   });
 }
