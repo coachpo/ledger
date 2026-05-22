@@ -41,24 +41,26 @@ import {
 import {
   AgentsTab,
   CapabilityProfilesTab,
-  collectSecretReferenceKeys,
-  connectionKindLabel,
-  diagnosticToAuthoringTarget,
   EditorSkeleton,
-  editorTabs,
   ExportsTab,
   ManifestBlockingState,
-  manifestIdentity,
   OverviewEditor,
   OutputSchemasTab,
-  packageSubtitle,
-  packageTitle,
   PrivateMcpTab,
   SecretBindingsTab,
   WorkflowYamlTab,
+} from "./editor-sections";
+import {
+  collectSecretReferenceKeys,
+  connectionKindLabel,
+  diagnosticToAuthoringTarget,
+  editorTabs,
+  manifestIdentity,
+  packageSubtitle,
+  packageTitle,
   type DiagnosticTarget,
   type WorkflowPackageEditorTab,
-} from "./editor-sections";
+} from "./editor-sections.shared";
 
 export function WorkflowPackageEditorPage() {
   const navigate = useNavigate();
