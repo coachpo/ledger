@@ -177,6 +177,6 @@ def test_report_backed_memory_id_parsing_is_not_reintroduced() -> None:
         for line_number, line in enumerate(source.splitlines(), start=1):
             if any(pattern.search(line) for pattern in MEMORY_ID_FORBIDDEN_PATTERNS):
                 violations.append(f"{relative_path}:{line_number}: {line.strip()}")
-    assert not violations, (
-        "mem_<report_id> parsing/formatting was reintroduced: " + repr(violations)
+    assert not violations, "mem_<report_id> parsing/formatting was reintroduced: " + repr(
+        violations
     )
