@@ -185,10 +185,8 @@ export interface RunAgentInvocationRead {
   position: number;
   agentRef: RunInvocationScopedRef;
   outputSchemaRef: RunInvocationScopedRef;
-  agentId: number;
   agentKey: string;
   agentVersion: number;
-  outputSchemaId: number;
   outputSchemaVersion: number;
   inputMode: RunInvocationInputMode;
   wiring: UnknownRecord;
@@ -223,7 +221,6 @@ export interface RunOperationInvocationRead {
   operationKey: string;
   operationKind: RunOperationKind;
   outputSchemaRef: RunInvocationScopedRef;
-  outputSchemaId: number;
   outputSchemaVersion: number;
   method: string | null;
   timeoutSeconds: number | null;

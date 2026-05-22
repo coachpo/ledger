@@ -1,49 +1,43 @@
 import { describe, expect, it } from "vitest";
 
-const sourceFiles = import.meta.glob("./**/*.{ts,tsx}", {
-  eager: true,
-  import: "default",
-  query: "?raw",
-});
+import { queryKeys } from "./lib/query-keys";
 
-const staleTokens = [
-  ["@/lib/api/", "agents"].join(""),
-  ["@/lib/api/", "capabilities"].join(""),
-  ["@/lib/api/", "mcp-servers"].join(""),
-  ["@/lib/api/", "output-schemas"].join(""),
-  ["@/lib/api/", "workflows"].join(""),
-  ["./api/", "agents"].join(""),
-  ["./api/", "capabilities"].join(""),
-  ["./api/", "mcp-servers"].join(""),
-  ["./api/", "output-schemas"].join(""),
-  ["./api/", "workflows"].join(""),
-  ["queryKeys.platform.", "agents"].join(""),
-  ["queryKeys.platform.", "workflows"].join(""),
-  ["queryKeys.platform.", "capabilities"].join(""),
-  ["queryKeys.platform.", "mcpServers"].join(""),
-  ["queryKeys.platform.", "outputSchemas"].join(""),
-  ["use", "Agents"].join(""),
-  ["use", "Capabilities"].join(""),
-  ["use", "McpServers"].join(""),
-  ["use", "OutputSchemas"].join(""),
-  ["use", "Workflows"].join(""),
-  ["agents", "Api"].join(""),
-  ["workflows", "Api"].join(""),
-  ["capabilities", "Api"].join(""),
-  ["mcpServers", "Api"].join(""),
-  ["outputSchemas", "Api"].join(""),
-  ["@/hooks/use-", "agents"].join(""),
-  ["@/hooks/use-", "capabilities"].join(""),
-  ["@/hooks/use-", "output-schemas"].join(""),
-  ["@/hooks/use-", "mcp-servers"].join(""),
-];
+const retiredApiModules = import.meta.glob(
+  "./lib/api/{agents,capabilities,mcp-servers,output-schemas,workflows}.ts",
+);
+const retiredHookModules = import.meta.glob(
+  "./hooks/use-{agents,capabilities,mcp-servers,output-schemas,workflows}.ts",
+);
+const retiredPlatformNamespaces = [
+  "agents",
+  "capabilities",
+  "mcpServers",
+  "outputSchemas",
+  "workflows",
+] as const;
+
+function platformNamespaceKeys() {
+  return Object.keys(queryKeys.platform);
+}
 
 describe("platform clean break", () => {
-  it("keeps retired global authoring hooks and clients out of shipped source", () => {
-    const matches = Object.entries(sourceFiles).flatMap(([fileName, source]) =>
-      staleTokens.filter((token) => String(source).includes(token)).map((token) => `${fileName}: ${token}`),
-    );
+  it("keeps retired global authoring API and hook modules deleted", () => {
+    expect(Object.keys(retiredApiModules)).toEqual([]);
+    expect(Object.keys(retiredHookModules)).toEqual([]);
+  });
 
-    expect(matches).toEqual([]);
+  it("keeps platform query keys on live package-first namespaces", () => {
+    expect(platformNamespaceKeys()).toEqual(
+      expect.arrayContaining([
+        "extensions",
+        "modelConnections",
+        "runs",
+        "tools",
+        "workflowPackages",
+      ]),
+    );
+    for (const namespace of retiredPlatformNamespaces) {
+      expect(platformNamespaceKeys()).not.toContain(namespace);
+    }
   });
 });

@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
-from app.extensions.signaldeck_finance.grant_policy import REPORT_MEMORY_WRITE_GRANT_POLICY
 from app.models.agent_memory import AgentMemoryEntry, AgentMemoryRevision, RunMemoryEvent
 from app.models.report import Report
 from app.models.run import Run
@@ -25,13 +24,11 @@ from app.schemas.memory_report import (
     AGENT_MEMORY_REVIEW_TYPE,
     AGENT_MEMORY_VERSION_GROUP,
     AgentMemoryModelInput,
-    AgentMemoryReportCreateMetadata,
     AgentMemoryReportMetadata,
     AgentMemoryTrustedCreateContext,
 )
 from app.services.memory_report_service import MemoryReportService
 from app.services.memory_service import MemoryLookupContext, MemoryService
-from app.services.report_backed_memory_store import ReportBackedMemoryStore
 
 
 def _decision_payload() -> dict[str, str]:
@@ -135,37 +132,6 @@ def _core_memory_write_request(run_id: int) -> MemoryWriteRequest:
     )
 
 
-def _pending_create_metadata() -> AgentMemoryReportCreateMetadata:
-    return AgentMemoryReportCreateMetadata.model_validate(
-        {
-            "analysis": {
-                "ticker": "NVDA",
-                "portfolioSlug": "core_us",
-                "horizonDays": 14,
-                "confidence": "high",
-                "decisionSummary": "Legacy write should be retired.",
-                "decision": _decision_payload(),
-            }
-        }
-    )
-
-
-def _trusted_context() -> AgentMemoryTrustedCreateContext:
-    return AgentMemoryTrustedCreateContext.model_validate(
-        {
-            "runId": 101,
-            "agentKey": "analyst",
-            "agentVersion": 1,
-            "agentName": "Analyst",
-            "workflowKey": "platform_graph_daily_review",
-            "workflowVersion": 5,
-            "stepId": "portfolio_decision",
-            "slot": "decision",
-            "traceId": "trace-memory-report-retirement",
-        }
-    )
-
-
 def _count(session: Session, model: type[object]) -> int:
     return int(session.scalar(select(func.count()).select_from(model)) or 0)
 
@@ -180,6 +146,7 @@ def test_legacy_agent_memory_reports_are_historical_report_domain_artifacts(
         slug = report.slug
 
     list_response = client.get("/api/v1/reports", params={"source": "agent"})
+    list_payload = cast(list[dict[str, object]], list_response.json())
     get_response = client.get(f"/api/v1/reports/{slug}")
     download_response = client.get(f"/api/v1/reports/{slug}/download")
     patch_response = client.patch(
@@ -190,7 +157,7 @@ def test_legacy_agent_memory_reports_are_historical_report_domain_artifacts(
     missing_response = client.get(f"/api/v1/reports/{slug}")
 
     assert list_response.status_code == 200, list_response.json()
-    assert [item["id"] for item in list_response.json()] == [report_id]
+    assert [item["id"] for item in list_payload] == [report_id]
     assert get_response.status_code == 200, get_response.json()
     assert get_response.json()["metadata"]["analysis"]["reviewType"] == "agent_memory"
     assert download_response.status_code == 200
@@ -211,34 +178,19 @@ def test_memory_report_service_is_read_only_historical_adapter(
         read_report, metadata = service.get_memory_report_with_metadata(report.id)
         read_payload = service.read_historical_memory_report(report.id)
 
-        with pytest.raises(ApiError) as create_error:
-            _ = service.create_pending_report(
-                capability_references=[],
-                grant_policy=REPORT_MEMORY_WRITE_GRANT_POLICY,
-                payload=_pending_create_metadata(),
-                trusted_context=_trusted_context(),
-            )
-
         reports = list(session.scalars(select(Report).order_by(Report.id)))
 
     assert read_report.id == report.id
     assert metadata.analysis.review_type == AGENT_MEMORY_REVIEW_TYPE
     assert read_payload.slug == report.slug
-    assert create_error.value.status_code == 410
-    assert create_error.value.code == "memory_report_lifecycle_retired"
+    for removed_write_method in (
+        "create_pending_report",
+        "update_memory_report",
+        "resolve_memory_report",
+        "append_reflection",
+    ):
+        assert not hasattr(service, removed_write_method)
     assert [item.id for item in reports] == [report.id]
-
-
-def test_retired_report_backed_memory_store_fails_closed(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        store = ReportBackedMemoryStore(session)
-        with pytest.raises(ApiError) as exc_info:
-            _ = store.get("mem_123")
-
-    assert exc_info.value.status_code == 410
-    assert exc_info.value.code == "report_backed_memory_retired"
 
 
 def test_core_memory_ignores_legacy_agent_memory_reports(

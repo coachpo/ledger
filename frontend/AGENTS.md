@@ -5,9 +5,9 @@
 ## OVERVIEW
 React 19 + Vite frontend with a flat route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, and Runs, plus shared UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface.
 
-The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
 Future frontend upgrade work must keep platform-core route, query, and authoring behavior separate from extension-owned route/nav/tool contributions. Do not let Finance Workspace assumptions leak into generic frontend contracts without an explicit shared-contract change.
 
@@ -26,14 +26,13 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
 - `src/pages/workflow-packages/AGENTS.md` — package list, authoring-only editor, dedicated `/workflow-packages/:packageId/run` launch page, validation, import, and export flows
-- `src/pages/runs/AGENTS.md` — runs list, detail, root-parameter rerun, invocation-input fork, package provenance, polling monitor, trace-link views, and legacy replay lineage reads
+- `src/pages/runs/AGENTS.md` — runs list, detail, root-parameter rerun, invocation-input fork, package provenance, polling monitor, trace-link views, and historical replay lineage reads
 - `src/components/AGENTS.md` — layout shell, theme system, shared components, platform-authoring widgets, feature UI, and primitives
 - `src/components/platform-authoring/AGENTS.md` — schema composer, generated form, refs, inspectors, and workflow-builder widgets
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
 - `src/components/shared/AGENTS.md` — reusable tables, ResourceRowCard, metrics, error boundaries, and field schemas
 - `src/components/portfolios/AGENTS.md` — portfolio feature sections, dialogs, tables, and trading forms
-- `retired/global-authoring/src/pages/AGENTS.md` — archive-only global-authoring guide tree; do not treat as live route ownership
 
 ## STRUCTURE
 ```text
@@ -63,7 +62,6 @@ frontend/
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
 | E2E flow setup | `playwright.config.ts`, `scripts/start-playwright-*.mjs` | backend `8001`, frontend `4173` |
-| Archive-only global authoring context | `retired/global-authoring/src/pages/AGENTS.md` | removed standalone authoring surfaces; cutover context only |
 
 ## CONVENTIONS
 - Routing stays flat under `Layout`; feature depth lives inside components and hooks, not in nested route trees.
@@ -100,8 +98,8 @@ frontend/
 - Do not change report route, slug, upload/download, or query-key shapes without updating hooks, types, and tests together.
 - Do not add dead routes or unused API modules without wiring them into the actual router and tests.
 - Do not hard-code Finance Workspace visibility outside `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, and `use-extensions.ts`.
-- Do not treat `retired/**` files as live route ownership or as a shortcut for new package-first UI.
-- Do not document retired `/skills`, `/studio`, `/tryout`, `/orchestration`, `/backtests`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` routes as live surfaces.
+- Do not treat deleted route-family files as live route ownership or as a shortcut for new package-first UI.
+- Do not document removed `/skills`, `/studio`, `/tryout`, `/orchestration`, `/backtests`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` routes as live surfaces.
 - Do not hide package-first route ownership inside generic UI folders or stale docs.
 
 ## COMMANDS
@@ -125,4 +123,4 @@ pnpm test:e2e
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001` and frontend `4173`.
 - Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, template-editor, and layout pages.
 - `src/styles/fonts.css` is empty/unreferenced; theme tokens live in `src/styles/theme.css` and Tailwind import/source control lives in `src/styles/tailwind.css`.
-- The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Model Connections, and Runs; retired route families are guarded in `src/routes.test.tsx`.
+- The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Model Connections, and Runs; removed route families are guarded in `src/routes.test.tsx`.

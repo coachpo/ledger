@@ -7,7 +7,7 @@
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -64,8 +64,8 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `extension.py` exposes bundled extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
 - `memory.py` defines phase 1 projection boundaries. Model-visible payloads expose `memoryId`, status, summary, provenance, and warnings without report identity, raw markdown, URLs, downloads, or `auditLinks`; API/UI projections may include nested `auditLinks.report`; report routes stay report-shaped.
-- `memoryId` is opaque outside `ReportBackedMemoryStore`. Do not parse `mem_<report_id>` in schemas, services, runtime tools, routes, or frontend callers.
+- `memoryId` is an opaque platform-core memory identifier. Do not parse it in schemas, services, runtime tools, routes, or frontend callers.
 - Phase 1 does not have vector search, embeddings, or a memory table, so schema contracts must not imply public memory search or storage routes.
-- `run.py` carries global run list/detail, package provenance, rerun, invocation-input fork, legacy step replay read lineage, memory-shaped artifacts, and per-step execution payloads.
+- `run.py` carries global run list/detail, package provenance, rerun, invocation-input fork, historical replay lineage reads, memory-shaped artifacts, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation. `ReportSource` accepts canonical origin values `compiled`, `uploaded`, `external`, and `agent`, while public `ReportCreate` stays true external only. Agent memory metadata keeps purpose/type in `metadata.analysis.reviewType="agent_memory"` and `metadata.analysis.versionGroup="agent_memory/v1"`; server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.

@@ -5,9 +5,9 @@
 ## OVERVIEW
 `src/lib/api/` contains resource-specific request helpers layered on top of `api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
 
-The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
 ## STRUCTURE
 ```text
@@ -50,6 +50,6 @@ src/lib/api/
 - Do not bypass `request()` or `requestPlatform()` for shipped routes.
 
 ## NOTES
-- The frontend no longer ships legacy v2, Studio, Tryout, or orchestration API helpers in this folder.
+- The frontend does not ship v2, Studio, Tryout, or orchestration API helpers in this folder.
 - Platform resources, including extension state and global tool discovery, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

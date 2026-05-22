@@ -1,14 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
-import {
-  X,
-  Save,
-  Loader2,
-  Eye,
-  Code2,
-  Braces,
-  FileOutput,
-} from "lucide-react";
+import { X, Save, Loader2, Eye, Code2, Braces, FileOutput } from "lucide-react";
 import { toast } from "sonner";
 
 import { TemplatePlaceholderReference } from "@/components/templates/template-placeholder-reference";
@@ -40,6 +32,145 @@ import {
 } from "@/lib/runtime-inputs";
 import type { TemplateRuntimeInputs } from "@/lib/types/text-template";
 
+function TemplateEditorHeader({
+  isEditing,
+  isFormatting,
+  isGenerating,
+  isSaving,
+  name,
+  onClose,
+  onFormat,
+  onGenerateOpen,
+  onNameChange,
+  onSave,
+  onTogglePlaceholders,
+}: {
+  isEditing: boolean;
+  isFormatting: boolean;
+  isGenerating: boolean;
+  isSaving: boolean;
+  name: string;
+  onClose: () => void;
+  onFormat: () => void;
+  onGenerateOpen: () => void;
+  onNameChange: (value: string) => void;
+  onSave: () => void;
+  onTogglePlaceholders: () => void;
+}) {
+  return (
+    <div className="border-b border-border bg-card px-4 py-3">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-start">
+          <div className="flex min-w-0 items-start gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={onClose}
+              aria-label="Close editor"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            <Separator
+              orientation="vertical"
+              className="mt-1.5 hidden h-5 sm:block"
+            />
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Code2 className="h-3 w-3" />
+                <span>{isEditing ? "Edit" : "New"}</span>
+              </div>
+              <h1
+                id="template-editor-title"
+                className="text-xl font-semibold tracking-tight"
+              >
+                {isEditing ? "Edit Template" : "Create Template"}
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Author markdown, compile placeholders, and generate reports from
+                a saved template.
+              </p>
+            </div>
+          </div>
+          <div className="min-w-[14rem] flex-1 space-y-1 lg:max-w-lg">
+            <Label
+              htmlFor="template-name"
+              className="text-xs text-muted-foreground"
+            >
+              Template name
+            </Label>
+            <Input
+              id="template-name"
+              name="templateName"
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="Name this template..."
+              className="h-9 border-border/70 bg-background px-3 text-sm font-medium shadow-none focus-visible:ring-1"
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:justify-end xl:ml-auto xl:border-t-0 xl:pt-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-sm"
+            onClick={onFormat}
+            disabled={isFormatting}
+          >
+            {isFormatting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            {isFormatting ? "Formatting" : "Format"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-sm"
+            onClick={onTogglePlaceholders}
+          >
+            <Braces className="h-3 w-3" />
+            Vars
+          </Button>
+          <Separator orientation="vertical" className="hidden h-5 xl:block" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-3 text-sm"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 px-3.5 text-sm"
+            onClick={onSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Save className="h-3 w-3" />
+            )}
+            Save
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 gap-1.5 px-3.5 text-sm"
+            onClick={onGenerateOpen}
+            disabled={!isEditing || isGenerating}
+          >
+            {isGenerating ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <FileOutput className="h-3 w-3" />
+            )}
+            Generate Report
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TemplateEditorPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
@@ -51,7 +182,9 @@ export function TemplateEditorPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [placeholdersOpen, setPlaceholdersOpen] = useState(true);
   const [runtimeInputsOpen, setRuntimeInputsOpen] = useState(false);
-  const [runtimeInputRows, setRuntimeInputRows] = useState<RuntimeInputRow[]>([]);
+  const [runtimeInputRows, setRuntimeInputRows] = useState<RuntimeInputRow[]>(
+    [],
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -60,15 +193,22 @@ export function TemplateEditorPage() {
     isError: isTemplateError,
     isLoading: isLoadingTemplate,
   } = useTemplate(templateId);
-  const { data: placeholderTree, isLoading: isLoadingPlaceholders } = usePlaceholders();
+  const { data: placeholderTree, isLoading: isLoadingPlaceholders } =
+    usePlaceholders();
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const { mutate: compileInline, ...compileMutation } = useCompileInline();
   const compileReportMutation = useCompileReport();
 
   const debouncedContent = useDebounce(content, 500);
-  const runtimeInputs = useMemo(() => buildRuntimeInputs(runtimeInputRows), [runtimeInputRows]);
-  const runtimeInputsPreview = useMemo(() => stringifyJson(runtimeInputs), [runtimeInputs]);
+  const runtimeInputs = useMemo(
+    () => buildRuntimeInputs(runtimeInputRows),
+    [runtimeInputRows],
+  );
+  const runtimeInputsPreview = useMemo(
+    () => stringifyJson(runtimeInputs),
+    [runtimeInputs],
+  );
   const debouncedRuntimeInputs = useDebounce(runtimeInputs, 500);
   const handleClose = () => navigate("/templates");
 
@@ -81,7 +221,10 @@ export function TemplateEditorPage() {
 
   useEffect(() => {
     if (debouncedContent) {
-      compileInline({ content: debouncedContent, inputs: debouncedRuntimeInputs });
+      compileInline({
+        content: debouncedContent,
+        inputs: debouncedRuntimeInputs,
+      });
     }
   }, [compileInline, debouncedContent, debouncedRuntimeInputs]);
 
@@ -145,18 +288,21 @@ export function TemplateEditorPage() {
       setRuntimeInputsOpen(true);
     }
 
-    compileReportMutation.mutate({ templateId: selectedTemplateId, input: { inputs } }, {
-      onError: () => toast.error("Failed to generate report"),
-      onSuccess: (report) => {
-        setGenerateOpen(false);
-        toast.success(`Report "${report.name}" generated`, {
-          action: {
-            label: "View",
-            onClick: () => navigate(`/reports/${report.slug}`),
-          },
-        });
+    compileReportMutation.mutate(
+      { templateId: selectedTemplateId, input: { inputs } },
+      {
+        onError: () => toast.error("Failed to generate report"),
+        onSuccess: (report) => {
+          setGenerateOpen(false);
+          toast.success(`Report "${report.name}" generated`, {
+            action: {
+              label: "View",
+              onClick: () => navigate(`/reports/${report.slug}`),
+            },
+          });
+        },
       },
-    });
+    );
   };
 
   const handleFormat = async () => {
@@ -224,7 +370,9 @@ export function TemplateEditorPage() {
   if (isEditing && (isTemplateError || !template)) {
     return (
       <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
-        {templateError instanceof Error ? templateError.message : "Template not found."}
+        {templateError instanceof Error
+          ? templateError.message
+          : "Template not found."}
       </div>
     );
   }
@@ -238,118 +386,19 @@ export function TemplateEditorPage() {
       className="flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="template-editor-shell"
     >
-      <div className="border-b border-border bg-card px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
-          <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-start">
-            <div className="flex min-w-0 items-start gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={handleClose}
-                aria-label="Close editor"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <Separator orientation="vertical" className="mt-1.5 hidden h-5 sm:block" />
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <Code2 className="h-3 w-3" />
-                  <span>{isEditing ? "Edit" : "New"}</span>
-                </div>
-                <h1 id="template-editor-title" className="text-xl font-semibold tracking-tight">
-                  {isEditing ? "Edit Template" : "Create Template"}
-                </h1>
-                <p className="max-w-2xl text-sm text-muted-foreground">
-                  Author markdown, compile placeholders, and generate reports from a saved template.
-                </p>
-              </div>
-            </div>
-            <div className="min-w-[14rem] flex-1 space-y-1 lg:max-w-lg">
-              <Label htmlFor="template-name" className="text-xs text-muted-foreground">
-                Template name
-              </Label>
-              <Input
-                id="template-name"
-                name="templateName"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name this template..."
-                className="h-9 border-border/70 bg-background px-3 text-sm font-medium shadow-none focus-visible:ring-1"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:justify-end xl:ml-auto xl:border-t-0 xl:pt-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 px-3 text-sm"
-              onClick={handleFormat}
-              disabled={isFormatting}
-            >
-              {isFormatting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              {isFormatting ? "Formatting" : "Format"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 px-3 text-sm"
-              onClick={() => setPlaceholdersOpen((o) => !o)}
-            >
-              <Braces className="h-3 w-3" />
-              Vars
-            </Button>
-            <Separator orientation="vertical" className="hidden h-5 xl:block" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-3 text-sm"
-              onClick={handleClose}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 gap-1.5 px-3.5 text-sm"
-              onClick={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Save className="h-3 w-3" />
-              )}
-              Save
-            </Button>
-            {isEditing && templateId ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1.5 px-3.5 text-sm"
-                onClick={() => setGenerateOpen(true)}
-                disabled={isGenerating}
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <FileOutput className="h-3 w-3" />
-                )}
-                Generate Report
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1.5 px-3.5 text-sm"
-                disabled
-              >
-                <FileOutput className="h-3 w-3" />
-                Generate Report
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+      <TemplateEditorHeader
+        isEditing={isEditing && Boolean(templateId)}
+        isFormatting={isFormatting}
+        isGenerating={isGenerating}
+        isSaving={isSaving}
+        name={name}
+        onClose={handleClose}
+        onFormat={() => void handleFormat()}
+        onGenerateOpen={() => setGenerateOpen(true)}
+        onNameChange={setName}
+        onSave={() => void handleSave()}
+        onTogglePlaceholders={() => setPlaceholdersOpen((open) => !open)}
+      />
 
       <TemplateRuntimeInputsSection
         open={runtimeInputsOpen}
@@ -366,7 +415,8 @@ export function TemplateEditorPage() {
             Exact Runtime Input JSON
           </span>
           <p className="text-xs text-muted-foreground">
-            Read-only canonical JSON built from the same runtime-input object used for inline compile and report generation.
+            Read-only canonical JSON built from the same runtime-input object
+            used for inline compile and report generation.
           </p>
         </div>
         <ExactJsonPreview

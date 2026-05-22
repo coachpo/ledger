@@ -66,16 +66,16 @@ def test_parse_valid_agent_manifest_returns_typed_manifest() -> None:
     assert dumped["spec"]["mcpServers"] == ["market_data@1"]
 
 
-def test_parse_rejects_legacy_skills_manifest() -> None:
+def test_parse_rejects_unsupported_skills_manifest() -> None:
     source = _valid_manifest_source().replace("  capabilities:", "  skills:", 1)
 
     diagnostic = _single_diagnostic(source)
 
     assert diagnostic.path == "spec.skills"
-    assert "spec.skills is no longer supported" in diagnostic.message
+    assert "spec.skills is not supported in agent manifests" in diagnostic.message
 
 
-def test_parse_rejects_capabilities_and_legacy_skills_together() -> None:
+def test_parse_rejects_capabilities_and_unsupported_skills_together() -> None:
     source = _valid_manifest_source().replace(
         "  capabilities:\n    - sec_filing_lookup@2\n",
         "  capabilities:\n    - sec_filing_lookup@2\n  skills:\n    - sec_filing_lookup@2\n",
@@ -85,7 +85,7 @@ def test_parse_rejects_capabilities_and_legacy_skills_together() -> None:
     diagnostic = _single_diagnostic(source)
 
     assert diagnostic.path == "spec.skills"
-    assert "spec.skills is no longer supported" in diagnostic.message
+    assert "spec.skills is not supported in agent manifests" in diagnostic.message
 
 
 def test_parser_rejects_malformed_yaml_with_location() -> None:

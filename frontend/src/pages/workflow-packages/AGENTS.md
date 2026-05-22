@@ -8,7 +8,7 @@
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
 ## WHERE TO LOOK
 
@@ -18,7 +18,6 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Package editor shell              | `editor.tsx`                                                                                                      | authoring-only overview, agents, output schemas, capability profiles, private MCP, secret bindings, validation, and export tabs |
 | Import workspace                  | `import-page.tsx`                                                                                                 | pasted YAML import, before-unload and route-leave confirmation, and backend validation-detail rendering                         |
 | Package launch page               | `launch.tsx`                                                                                                      | dedicated `/workflow-packages/:packageId/run` console for preflight, runtime parameters, saved inputs, and run creation         |
-| Placeholder shell                 | `placeholder.tsx`                                                                                                 | unrouted leftover placeholder retained only if tests/imports still reference it                                                 |
 | Editor and resource coverage      | `editor-shell.test.tsx`, `resource-editors.test.tsx`, `secret-bindings.test.tsx`, `http-node-validation.test.tsx` | full-height editor shell, resource editing, secret bindings, and private MCP HTTP/SSE validation                                |
 | Import / launch / export coverage | `import-page.test.tsx`, `launch.test.tsx`, `preflight-launch-export.test.tsx`, `list.test.tsx`                    | import workspace behavior, launch console, preflight/export flows, and inventory behavior                                       |
 
@@ -57,4 +56,3 @@ pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workfl
 - `import-page.tsx` is the only live full-height pasted-manifest import surface.
 - `launch.tsx` owns the dedicated `/workflow-packages/:packageId/run` launch console for phase 1.
 - `list.tsx` shows current packages only; delete actions permanently remove packages and rely on query invalidation for list refresh.
-- `placeholder.tsx` is not routed by `src/routes.ts`; treat it as leftover placeholder code unless a test explicitly imports it.

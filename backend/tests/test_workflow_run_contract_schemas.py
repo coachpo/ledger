@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -116,7 +117,7 @@ def test_workflow_launch_create_response_contract_uses_queued_status() -> None:
 def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None:
     draft_payload = {
         "sourceRunId": 11,
-        "targetKind": RunTargetKind.WORKFLOW.value,
+        "targetKind": RunTargetKind.WORKFLOW_PACKAGE.value,
         "targetId": 42,
         "targetKey": "portfolio_review",
         "parameters": {"ticker": "MSFT"},
@@ -144,7 +145,7 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
     draft_payload = {
         "sourceRunId": 11,
         "sourceInvocationId": 77,
-        "targetKind": RunTargetKind.WORKFLOW.value,
+        "targetKind": RunTargetKind.WORKFLOW_PACKAGE.value,
         "targetId": 42,
         "targetKey": "portfolio_review",
         "invocationInput": {"ticker": "MSFT", "notes": "adjust thesis"},
@@ -183,9 +184,9 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
         )
 
 
-def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
+def test_run_read_preserves_historical_lineage_as_read_only_fields() -> None:
     timestamp = "2026-05-03T12:00:00Z"
-    legacy_replay_lineage_payload = {
+    historical_lineage_payload: dict[str, object] = {
         "id": 99,
         "targetKind": RunTargetKind.WORKFLOW.value,
         "targetId": 42,
@@ -195,12 +196,12 @@ def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
         "lineageRootRunId": 11,
         "replayStepIndex": 2,
         "resumeStepIndex": 2,
-        "finalOutput": {"summary": "legacy replay output"},
+        "finalOutput": {"summary": "historical lineage output"},
         "status": RunStatus.SUCCEEDED.value,
         "totalTokens": 12,
         "inheritedTokens": 5,
         "executedTokens": 7,
-        "traceId": "trace-legacy-replay",
+        "traceId": "trace-historical-lineage",
         "error": None,
         "queuedAt": timestamp,
         "startedAt": timestamp,
@@ -244,10 +245,8 @@ def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
                             "key": "summary_output",
                             "version": 1,
                         },
-                        "agentId": 1,
                         "agentKey": "package_analyst",
                         "agentVersion": 1,
-                        "outputSchemaId": 1,
                         "outputSchemaVersion": 1,
                         "inputMode": "wired",
                         "wiring": {"ticker": "inputs.ticker"},
@@ -263,7 +262,7 @@ def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
                         "errorDetails": [],
                         "tokens": 5,
                         "durationMs": 17,
-                        "traceSpanId": "span-legacy-replay",
+                        "traceSpanId": "span-historical-lineage",
                         "sourceInvocationId": 77,
                         "startedAt": timestamp,
                         "finishedAt": timestamp,
@@ -281,18 +280,22 @@ def test_run_read_preserves_legacy_replay_lineage_as_read_only_fields() -> None:
         "packageProvenance": None,
     }
 
-    read = RunRead.model_validate(legacy_replay_lineage_payload)
+    read = RunRead.model_validate(historical_lineage_payload)
     dumped = read.model_dump(by_alias=True, mode="json")
 
     assert dumped["sourceRunId"] == 11
     assert dumped["lineageRootRunId"] == 11
     assert dumped["replayStepIndex"] == 2
     assert dumped["resumeStepIndex"] == 2
-    legacy_step = dumped["steps"][0]
-    assert legacy_step["origin"] == "copied"
-    assert legacy_step["sourceRunStepId"] == 101
-    assert legacy_step["sourceRunId"] == 11
-    assert legacy_step["sourceStepIndex"] == 1
-    legacy_invocation = legacy_step["invocations"][0]
-    assert legacy_invocation["sourceInvocationId"] == 77
-    assert legacy_invocation["resolvedInputOrigin"] == "copied"
+    steps = cast(list[dict[str, object]], dumped["steps"])
+    historical_step = steps[0]
+    assert historical_step["origin"] == "copied"
+    assert historical_step["sourceRunStepId"] == 101
+    assert historical_step["sourceRunId"] == 11
+    assert historical_step["sourceStepIndex"] == 1
+    invocations = cast(list[dict[str, object]], historical_step["invocations"])
+    historical_invocation = invocations[0]
+    assert "agentId" not in historical_invocation
+    assert "outputSchemaId" not in historical_invocation
+    assert historical_invocation["sourceInvocationId"] == 77
+    assert historical_invocation["resolvedInputOrigin"] == "copied"

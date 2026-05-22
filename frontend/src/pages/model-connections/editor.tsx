@@ -46,7 +46,7 @@ type ConnectionFeedback = {
 };
 
 const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
-  chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
+  chat_completions: "Chat Completions API",
   responses: "Responses API",
 };
 
@@ -424,7 +424,7 @@ export function ModelConnectionsEditorPage() {
               </Select>
               <p className="text-sm text-muted-foreground">
                 Keep <code>baseUrl</code> at the provider&apos;s `/v1` root. Chat Completions is for
-                legacy/OpenAI-compatible third-party models.
+                third-party chat models.
               </p>
             </div>
             <div className="space-y-2">

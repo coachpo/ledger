@@ -27,7 +27,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 ## Key Backend Services
 
 - Portfolio, balance, position, CSV import, trading operation, market data, template, report, and provider services are finance workspace contributions. Core memory services are platform-owned and remain available when finance is disabled.
-- Workflow package, model connection, extension-state, tool catalog, core memory, and run services own platform authoring, validation, live bindings, enable/disable state, execution evidence, reruns, forks, and legacy replay lineage reads.
+- Workflow package, model connection, extension-state, tool catalog, core memory, and run services own platform authoring, validation, live bindings, enable/disable state, execution evidence, reruns, forks, and read-only historical replay lineage.
 - Runtime tool and MCP boundaries live under `backend/app/agents/`; package-private MCP configs are validated and dispatched only through service-owned security boundaries.
 - Application LLM calls go through official SDK clients inside service-owned integration boundaries.
 
@@ -57,7 +57,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 4. Reusable report-series loops use a stable runtime input such as `inputs.analysis_tag` plus matching report `metadata.tags`; `reports.by_tag(inputs.analysis_tag).latest.*` selects the latest prior report in the same series.
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
 6. Workflow package editors are authoring-only surfaces that validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
-7. The dedicated launch page at `/workflow-packages/:packageId/run` reads launch metadata, runs preflight gating, posts `{workflowKey, parameters}`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
+7. The dedicated launch page at `/workflow-packages/:packageId/run` reads launch metadata, runs preflight gating, posts the selected workflow key with `parameters`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
 8. Rerun drafts from root launch parameters and creates a descendant run with edited `parameters`; fork drafts from a selected source agent invocation and creates a descendant run with edited `invocationInput`, copied upstream context, and `resumeStepIndex` as the execution boundary.
 
 ## CI And Verification

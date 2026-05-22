@@ -61,8 +61,8 @@ describe("runs api", () => {
         offset: 0,
         status: "running",
         targetId: 17,
-        targetKey: " market_review ",
-        targetKind: "workflow",
+        targetKey: " market_review_package ",
+        targetKind: "workflowPackage",
       }),
     ).resolves.toEqual({ items: [] });
 
@@ -75,8 +75,8 @@ describe("runs api", () => {
       offset: "0",
       status: "running",
       targetId: "17",
-      targetKey: "market_review",
-      targetKind: "workflow",
+      targetKey: "market_review_package",
+      targetKind: "workflowPackage",
     });
   });
 
@@ -134,13 +134,13 @@ describe("runs api", () => {
     expect(init?.body).toBe(JSON.stringify({ parameters: { ticker: "MSFT" } }));
   });
 
-  it("preserves legacy replay lineage fields on run detail reads", async () => {
+  it("preserves historical lineage fields on run detail reads", async () => {
     const { getRun } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
-    const legacyReplayLineage = {
+    const historicalLineage = {
       createdAt: "2026-05-15T10:00:00Z",
       error: null,
       executedTokens: 7,
-      finalOutput: { summary: "legacy replay output" },
+      finalOutput: { summary: "historical lineage output" },
       finishedAt: "2026-05-15T10:02:00Z",
       id: 42,
       inheritedTokens: 5,
@@ -174,20 +174,20 @@ describe("runs api", () => {
       targetKey: "runtime_package",
       targetKind: "workflowPackage" as RunTargetKind,
       totalTokens: 12,
-      traceId: "trace-legacy-replay",
+      traceId: "trace-historical-lineage",
       updatedAt: "2026-05-15T10:00:00Z",
     };
-    fetchMock.mockResolvedValueOnce(jsonResponse(legacyReplayLineage, 200));
+    fetchMock.mockResolvedValueOnce(jsonResponse(historicalLineage, 200));
 
-    await expect(getRun(42)).resolves.toEqual(legacyReplayLineage);
+    await expect(getRun(42)).resolves.toEqual(historicalLineage);
 
     const { init, url } = getLastFetchCall(fetchMock);
 
     expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42");
     expect(init?.method).toBe("GET");
-    expect(legacyReplayLineage.replayStepIndex).toBe(2);
-    expect(legacyReplayLineage.resumeStepIndex).toBe(2);
-    expect(legacyReplayLineage.steps[0].invocations[0].sourceInvocationId).toBe(77);
+    expect(historicalLineage.replayStepIndex).toBe(2);
+    expect(historicalLineage.resumeStepIndex).toBe(2);
+    expect(historicalLineage.steps[0].invocations[0].sourceInvocationId).toBe(77);
   });
 
   it("reads fork drafts with the source invocation query parameter", async () => {

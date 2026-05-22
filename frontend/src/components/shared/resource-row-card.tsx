@@ -65,13 +65,13 @@ const descriptionClassByVariant: Record<ListCardVariant, string> = {
   grouped: "min-w-0 break-words text-xs text-muted-foreground",
 };
 
-const legacyContentClassByDensity: Record<ResourceRowCardDensity, string> = {
+const contentClassByDensity: Record<ResourceRowCardDensity, string> = {
   compact: "flex items-center justify-between gap-3 px-4 py-3",
   compactPlus:
     "flex min-w-0 flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4",
 };
 
-const legacyActionsClassByDensity: Record<ResourceRowCardDensity, string> = {
+const actionsClassByDensity: Record<ResourceRowCardDensity, string> = {
   compact: "flex shrink-0 items-center gap-1.5",
   compactPlus:
     "flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0 sm:justify-end [&_button]:cursor-pointer",
@@ -160,7 +160,7 @@ function renderBody(props: EntityListCardProps, variant: ListCardVariant) {
   );
 }
 
-type LegacyResourceRowCardBodyProps = Pick<
+type ResourceRowCardBodyProps = Pick<
   ResourceRowCardProps,
   "badges" | "description" | "metadata" | "subtitle" | "title"
 > & {
@@ -168,7 +168,7 @@ type LegacyResourceRowCardBodyProps = Pick<
   titleAction?: ResourceRowCardPrimaryAction;
 };
 
-function LegacyResourceRowCardBody({
+function ResourceRowCardBody({
   badges,
   className,
   description,
@@ -176,7 +176,7 @@ function LegacyResourceRowCardBody({
   subtitle,
   title,
   titleAction,
-}: LegacyResourceRowCardBodyProps) {
+}: ResourceRowCardBodyProps) {
   return (
     <div className={cn("min-w-0 space-y-0.5", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -208,12 +208,12 @@ function LegacyResourceRowCardBody({
   );
 }
 
-function renderLegacyBody(props: ResourceRowCardProps) {
+function renderResourceRowBody(props: ResourceRowCardProps) {
   const action = props.bodyAction ?? props.primaryAction;
 
   return (
     <div className="min-w-0 flex-1 text-left">
-      <LegacyResourceRowCardBody {...props} titleAction={action} />
+      <ResourceRowCardBody {...props} titleAction={action} />
     </div>
   );
 }
@@ -275,13 +275,13 @@ export function ResourceRowCard({
       data-state={selected ? "selected" : undefined}
       data-testid={testId}
     >
-      <CardContent className={legacyContentClassByDensity[density]}>
+      <CardContent className={contentClassByDensity[density]}>
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           {leading ? <div className="shrink-0 pt-0.5 sm:pt-0">{leading}</div> : null}
-          {renderLegacyBody(bodyProps)}
+          {renderResourceRowBody(bodyProps)}
         </div>
         {actions ? (
-          <div className={legacyActionsClassByDensity[density]}>{actions}</div>
+          <div className={actionsClassByDensity[density]}>{actions}</div>
         ) : null}
       </CardContent>
     </Card>

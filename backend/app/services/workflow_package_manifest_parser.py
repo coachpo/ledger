@@ -116,9 +116,9 @@ class WorkflowPackageManifestParser:
         if json_diagnostics:
             return WorkflowPackageManifestParseResult(diagnostics=json_diagnostics)
 
-        legacy_diagnostics = self._validate_legacy_skill_refs(data)
-        if legacy_diagnostics:
-            return WorkflowPackageManifestParseResult(diagnostics=legacy_diagnostics)
+        unsupported_skill_diagnostics = self._validate_unsupported_skill_refs(data)
+        if unsupported_skill_diagnostics:
+            return WorkflowPackageManifestParseResult(diagnostics=unsupported_skill_diagnostics)
 
         forbidden_diagnostics = self._validate_forbidden_keys(data, ())
         if forbidden_diagnostics:
@@ -425,7 +425,10 @@ class WorkflowPackageManifestParser:
             )
         return diagnostics
 
-    def _validate_legacy_skill_refs(self, data: object) -> list[WorkflowPackageManifestDiagnostic]:
+    def _validate_unsupported_skill_refs(
+        self,
+        data: object,
+    ) -> list[WorkflowPackageManifestDiagnostic]:
         if not isinstance(data, Mapping):
             return []
         spec = cast(Mapping[object, object], data).get("spec")
@@ -435,7 +438,8 @@ class WorkflowPackageManifestParser:
             return []
         return [
             self._diagnostic(
-                "spec.skills is no longer supported; use spec.capabilityProfiles",
+                "spec.skills is not supported in workflow package manifests; "
+                + "use spec.capabilityProfiles",
                 path="spec.skills",
                 location=self._location_for(data, ("spec", "skills")),
             )
@@ -770,7 +774,7 @@ class WorkflowPackageManifestParser:
             return "Field required"
         if isinstance(api_version, str) and api_version.startswith("signaldeck.workflow/"):
             return (
-                "Workflow roots are not package manifests; use "
+                "Workflow manifests are not workflow package manifests; use "
                 f"'{WORKFLOW_PACKAGE_MANIFEST_API_VERSION}'"
             )
         return f"Input should be '{WORKFLOW_PACKAGE_MANIFEST_API_VERSION}'"

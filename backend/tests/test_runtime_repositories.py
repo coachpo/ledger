@@ -119,7 +119,6 @@ def _build_mcp_server(
         transport=transport,
         command="python -m market_data" if transport == "stdio" else None,
         url="https://example.com/mcp" if transport == "http-sse" else None,
-        auth={"apiKey": f"token-{version}"},
         enabled=enabled,
     )
 
@@ -1460,10 +1459,8 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "position",
             "agentRef",
             "outputSchemaRef",
-            "agentId",
             "agentKey",
             "agentVersion",
-            "outputSchemaId",
             "outputSchemaVersion",
             "inputMode",
             "wiring",

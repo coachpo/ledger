@@ -132,7 +132,9 @@ describe("ModelConnectionsListPage", () => {
 
     expect(screen.getByText("No model connections exist yet.")).toBeVisible();
     expect(
-      screen.getByText(/create a saved endpoint before launching workflow packages/i),
+      screen.getByText(
+        /create a saved endpoint before launching workflow packages/i,
+      ),
     ).toBeVisible();
 
     useModelConnectionsMock.mockReturnValue({
@@ -143,7 +145,9 @@ describe("ModelConnectionsListPage", () => {
     });
     rerender(<ModelConnectionsListPage />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Model API unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Model API unavailable",
+    );
   });
 
   it("renders rows, confirms deletes, and exposes create and edit routes", async () => {
@@ -158,9 +162,7 @@ describe("ModelConnectionsListPage", () => {
     expect(screen.getByTestId("model-connections-row-4")).toBeVisible();
     expect(screen.getByTestId("model-connections-row-12")).toBeVisible();
     expect(screen.getAllByText("Responses API")).toHaveLength(4);
-    expect(
-      screen.getByText("Chat Completions API - legacy / OpenAI-compatible"),
-    ).toBeVisible();
+    expect(screen.getByText("Chat Completions API")).toBeVisible();
     expect(screen.getByText(/^Omitted$/)).toBeVisible();
     expect(screen.getByText(/^xhigh$/)).toBeVisible();
     expect(screen.getByText(/^none$/)).toBeVisible();

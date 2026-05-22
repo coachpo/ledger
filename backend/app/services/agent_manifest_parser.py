@@ -74,9 +74,9 @@ class AgentManifestParser:
         if json_diagnostics:
             return AgentManifestParseResult(diagnostics=json_diagnostics)
 
-        legacy_skill_diagnostics = self._validate_legacy_skill_refs(data)
-        if legacy_skill_diagnostics:
-            return AgentManifestParseResult(diagnostics=legacy_skill_diagnostics)
+        unsupported_skill_diagnostics = self._validate_unsupported_skill_refs(data)
+        if unsupported_skill_diagnostics:
+            return AgentManifestParseResult(diagnostics=unsupported_skill_diagnostics)
 
         try:
             manifest = AgentManifest.model_validate(data)
@@ -249,7 +249,7 @@ class AgentManifestParser:
             seen_mcp_servers.add(identity)
         return diagnostics
 
-    def _validate_legacy_skill_refs(self, data: object) -> list[AgentManifestDiagnostic]:
+    def _validate_unsupported_skill_refs(self, data: object) -> list[AgentManifestDiagnostic]:
         if not isinstance(data, Mapping):
             return []
         spec = cast(Mapping[object, object], data).get("spec")
@@ -260,7 +260,7 @@ class AgentManifestParser:
             return []
         return [
             self._diagnostic(
-                "spec.skills is no longer supported; use spec.capabilities",
+                "spec.skills is not supported in agent manifests; use spec.capabilities",
                 path="spec.skills",
                 location=self._location_for(data, ("spec", "skills")),
             )

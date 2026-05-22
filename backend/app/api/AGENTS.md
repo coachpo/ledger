@@ -7,7 +7,7 @@
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -23,7 +23,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
 | Platform routes | `workflow_packages.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs, including rerun/fork endpoints under Runs |
 | Finance route registrations | `../extensions/signaldeck_finance/api_routers.py` | extension-gated `/api/v1` registration list for preserved finance routes |
-| Legacy cutover modules on disk | `agents.py`, `capabilities.py`, `mcp_servers.py`, `output_schemas.py`, `workflows.py` | unmounted cutover/regression context only, not live routers |
+| Removed global authoring APIs | `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows` | deleted after cutover proof; keep only removed-surface absence guards, not route modules |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
 
 ## CONVENTIONS
@@ -37,7 +37,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 - Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Model Connections, Extensions, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
-- Legacy global authoring route modules still exist on disk for cutover and regression coverage only. Do not remount them, document them as live, or treat them as compatibility aliases.
+- Legacy global authoring route modules have been deleted after cutover proof. Do not recreate them, remount them, document them as live, or treat them as compatibility aliases.
 - Do not change runtime tool keys or OpenAI function names here.
 
 ## ANTI-PATTERNS

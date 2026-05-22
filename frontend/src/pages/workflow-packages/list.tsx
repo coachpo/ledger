@@ -102,7 +102,7 @@ function EmptyState({ search }: { search: string }) {
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">
             {search.trim()
-              ? "No packages match this command."
+              ? "No packages match this search."
               : "No workflow packages yet."}
           </p>
           <p className="max-w-md text-sm text-muted-foreground">
@@ -113,6 +113,426 @@ function EmptyState({ search }: { search: string }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+type ViewMode = "cards" | "table";
+
+type PackageSelectionHandlers = {
+  onDelete: (workflowPackage: WorkflowPackageRead) => void;
+  onSelect: (
+    packagesToUpdate: readonly WorkflowPackageRead[],
+    selected: boolean,
+  ) => void;
+};
+
+function WorkflowPackagesHeader() {
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold tracking-tight">
+          Workflow Packages
+        </h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Package-first authoring for private agents, output schemas, capability
+          profiles, MCP bindings, artifact updates, and controlled launches.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button asChild size="sm" variant="outline">
+          <Link
+            aria-label="Import workflow package manifest"
+            data-testid="workflow-packages-import"
+            to="/workflow-packages/import"
+          >
+            <FileUp data-icon="inline-start" />
+            Import Package
+          </Link>
+        </Button>
+        <Button asChild size="sm">
+          <Link
+            aria-label="Create new workflow package"
+            data-testid="workflow-packages-new"
+            to="/workflow-packages/new"
+          >
+            <PackagePlus data-icon="inline-start" />
+            New Package
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowPackagesToolbar({
+  search,
+  viewMode,
+  onSearchChange,
+  onViewModeChange,
+}: {
+  search: string;
+  viewMode: ViewMode;
+  onSearchChange: (value: string) => void;
+  onViewModeChange: (value: ViewMode) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative max-w-sm flex-1" role="search">
+        <Search
+          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          aria-label="Search workflow packages"
+          className="h-8 pl-8 text-xs"
+          placeholder="Search packages by name, key, or hash..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
+      </div>
+      <ToggleGroup
+        type="single"
+        value={viewMode}
+        onValueChange={(value) => {
+          if (value) {
+            onViewModeChange(value as ViewMode);
+          }
+        }}
+      >
+        <ToggleGroupItem
+          value="cards"
+          aria-label="Cards view"
+          className="h-8 w-8 px-0"
+        >
+          <LayoutGrid className="size-3.5" />
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="table"
+          aria-label="Table view"
+          className="h-8 w-8 px-0"
+        >
+          <List className="size-3.5" />
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </div>
+  );
+}
+
+function WorkflowPackagesStateCards({
+  error,
+  filteredCount,
+  isError,
+  isPending,
+  search,
+}: {
+  error: unknown;
+  filteredCount: number;
+  isError: boolean;
+  isPending: boolean;
+  search: string;
+}) {
+  if (isPending) {
+    return <LoadingTable />;
+  }
+
+  if (isError) {
+    return (
+      <Card role="alert" aria-live="polite">
+        <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
+          <TriangleAlert
+            className="mt-0.5 size-4 shrink-0 text-destructive"
+            aria-hidden="true"
+          />
+          <span>
+            {error instanceof Error
+              ? error.message
+              : "Failed to load workflow packages."}
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return filteredCount === 0 ? <EmptyState search={search} /> : null;
+}
+
+function WorkflowPackageMetadata({
+  workflowPackage,
+}: {
+  workflowPackage: WorkflowPackageRead;
+}) {
+  return (
+    <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+      <div className="min-w-0">
+        <span className="font-medium text-foreground">Manifest Hash:</span>{" "}
+        <span className="font-mono">
+          {formatNullableHash(workflowPackage.manifestHash)}
+        </span>
+      </div>
+      <div className="min-w-0">
+        <span className="font-medium text-foreground">Updated:</span>{" "}
+        <span>{formatDateTime(workflowPackage.updatedAt)}</span>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowPackageActions({
+  deletePending,
+  workflowPackage,
+  onDelete,
+}: {
+  deletePending: boolean;
+  workflowPackage: WorkflowPackageRead;
+  onDelete: (workflowPackage: WorkflowPackageRead) => void;
+}) {
+  const packagePath = `/workflow-packages/${workflowPackage.id}`;
+  const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
+
+  return (
+    <>
+      <Button asChild size="sm" variant="outline">
+        <Link
+          aria-label={`Open package ${workflowPackage.name}`}
+          to={packagePath}
+        >
+          <SquarePen data-icon="inline-start" />
+          Open
+        </Link>
+      </Button>
+      <Button asChild size="sm">
+        <Link
+          aria-label={`Launch package ${workflowPackage.name}`}
+          to={launchPath}
+        >
+          <PlayCircle data-icon="inline-start" />
+          Launch
+        </Link>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label={`Open actions for package ${workflowPackage.name}`}
+            className="cursor-pointer"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            disabled={deletePending}
+            onSelect={() => onDelete(workflowPackage)}
+            variant="destructive"
+          >
+            <Trash2 className="size-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+}
+
+function WorkflowPackageCards({
+  deletePending,
+  packages,
+  onDelete,
+}: {
+  deletePending: boolean;
+  packages: readonly WorkflowPackageRead[];
+  onDelete: (workflowPackage: WorkflowPackageRead) => void;
+}) {
+  return (
+    <PlatformResourceList>
+      {packages.map((workflowPackage) => (
+        <PlatformResourceCard
+          key={workflowPackage.id}
+          density="compactPlus"
+          testId={`workflow-packages-row-${workflowPackage.key}`}
+          title={workflowPackage.name}
+          subtitle={<span className="font-mono">{workflowPackage.key}</span>}
+          description={
+            workflowPackage.description || "No description provided."
+          }
+          metadata={
+            <WorkflowPackageMetadata workflowPackage={workflowPackage} />
+          }
+          actions={
+            <WorkflowPackageActions
+              deletePending={deletePending}
+              workflowPackage={workflowPackage}
+              onDelete={onDelete}
+            />
+          }
+        />
+      ))}
+    </PlatformResourceList>
+  );
+}
+
+function WorkflowPackagesTable({
+  allFilteredSelected,
+  deletePending,
+  packages,
+  selectedPackageIds,
+  someFilteredSelected,
+  onDelete,
+  onSelect,
+}: {
+  allFilteredSelected: boolean;
+  deletePending: boolean;
+  packages: readonly WorkflowPackageRead[];
+  selectedPackageIds: ReadonlySet<WorkflowPackageRead["id"]>;
+  someFilteredSelected: boolean;
+} & PackageSelectionHandlers) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableHead className="w-9">
+            <Checkbox
+              aria-label="Select all shown workflow packages"
+              checked={
+                allFilteredSelected
+                  ? true
+                  : someFilteredSelected
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) =>
+                onSelect(packages, checked === true)
+              }
+            />
+          </TableHead>
+          <TableHead>Name</TableHead>
+          <TableHead>Key</TableHead>
+          <TableHead>Manifest Hash</TableHead>
+          <TableHead>Updated</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {packages.map((workflowPackage) => {
+          const isSelected = selectedPackageIds.has(workflowPackage.id);
+
+          return (
+            <TableRow
+              key={workflowPackage.id}
+              data-state={isSelected ? "selected" : undefined}
+              data-testid={`workflow-packages-row-${workflowPackage.key}`}
+            >
+              <TableCell>
+                <Checkbox
+                  aria-label={`Select workflow package ${workflowPackage.name}`}
+                  checked={isSelected}
+                  onCheckedChange={(checked) =>
+                    onSelect([workflowPackage], checked === true)
+                  }
+                />
+              </TableCell>
+              <TableCell className="min-w-56 whitespace-normal">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">
+                    {workflowPackage.name}
+                  </p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {workflowPackage.description || "No description provided."}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {workflowPackage.key}
+              </TableCell>
+              <TableCell className="font-mono text-xs">
+                {formatNullableHash(workflowPackage.manifestHash)}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {formatDateTime(workflowPackage.updatedAt)}
+              </TableCell>
+              <TableCell>
+                <div className="flex justify-end gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      aria-label={`Open package ${workflowPackage.name}`}
+                      to={`/workflow-packages/${workflowPackage.id}`}
+                    >
+                      <SquarePen data-icon="inline-start" />
+                      Open
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      aria-label={`Launch package ${workflowPackage.name}`}
+                      to={`/workflow-packages/${workflowPackage.id}/run`}
+                    >
+                      <PlayCircle data-icon="inline-start" />
+                      Launch
+                    </Link>
+                  </Button>
+                  <Button
+                    aria-label={`Delete package ${workflowPackage.name}`}
+                    className="cursor-pointer"
+                    disabled={deletePending}
+                    size="sm"
+                    variant="destructive"
+                    type="button"
+                    onClick={() => onDelete(workflowPackage)}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+function WorkflowPackagesBulkActions({
+  filteredCount,
+  selectedCount,
+  isPending,
+  onClear,
+  onDeleteSelected,
+}: {
+  filteredCount: number;
+  selectedCount: number;
+  isPending: boolean;
+  onClear: () => void;
+  onDeleteSelected: () => void;
+}) {
+  if (selectedCount === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="workflow-packages-bulk-actions"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+    >
+      <span className="text-xs text-muted-foreground">
+        {selectedCount} of {filteredCount} workflow packages selected
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={isPending}
+          onClick={onDeleteSelected}
+        >
+          <Trash2 className="size-3.5" /> Delete selected
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -130,7 +550,7 @@ export function WorkflowPackagesListPage() {
   const [selectedPackageIds, setSelectedPackageIds] = useState<
     Set<WorkflowPackageRead["id"]>
   >(new Set());
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const filteredPackages = useMemo(
     () => filterPackages(packages, search),
     [packages, search],
@@ -152,6 +572,18 @@ export function WorkflowPackagesListPage() {
     selectedPackageIds.has(workflowPackage.id),
   );
 
+  const deletePending = deletePackage.isPending || deletePackages.isPending;
+  const showCards =
+    !packagesQuery.isPending &&
+    !packagesQuery.isError &&
+    filteredPackages.length > 0 &&
+    viewMode === "cards";
+  const showTable =
+    !packagesQuery.isPending &&
+    !packagesQuery.isError &&
+    filteredPackages.length > 0 &&
+    viewMode === "table";
+
   const setPackagesSelected = (
     packagesToUpdate: readonly WorkflowPackageRead[],
     selected: boolean,
@@ -167,6 +599,13 @@ export function WorkflowPackagesListPage() {
       });
       return next;
     });
+  };
+
+  const handleViewModeChange = (value: ViewMode) => {
+    setViewMode(value);
+    if (value === "cards") {
+      setSelectedPackageIds(new Set());
+    }
   };
 
   const deleteSelectedPackage = async () => {
@@ -220,332 +659,46 @@ export function WorkflowPackagesListPage() {
 
   return (
     <div className="space-y-4 p-4" data-testid="workflow-packages-list-page">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            Workflow Packages
-          </h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Package-first authoring for private agents, output schemas,
-            capability profiles, MCP bindings, artifact updates, and controlled
-            launches.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button asChild size="sm" variant="outline">
-            <Link
-              aria-label="Import workflow package manifest"
-              data-testid="workflow-packages-import"
-              to="/workflow-packages/import"
-            >
-              <FileUp data-icon="inline-start" />
-              Import Package
-            </Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link
-              aria-label="Create new workflow package"
-              data-testid="workflow-packages-new"
-              to="/workflow-packages/new"
-            >
-              <PackagePlus data-icon="inline-start" />
-              New Package
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-sm flex-1" role="search">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            aria-label="Search workflow packages"
-            className="h-8 pl-8 text-xs"
-            placeholder="Search packages by name, key, or hash..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => {
-            if (!value) return;
-            setViewMode(value as "cards" | "table");
-            if (value === "cards") setSelectedPackageIds(new Set());
-          }}
-        >
-          <ToggleGroupItem
-            value="cards"
-            aria-label="Cards view"
-            className="h-8 w-8 px-0"
-          >
-            <LayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="table"
-            aria-label="Table view"
-            className="h-8 w-8 px-0"
-          >
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-
-      {packagesQuery.isPending ? <LoadingTable /> : null}
-      {packagesQuery.isError ? (
-        <Card role="alert" aria-live="polite">
-          <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
-            <TriangleAlert
-              className="mt-0.5 size-4 shrink-0 text-destructive"
-              aria-hidden="true"
-            />
-            <span>
-              {packagesQuery.error instanceof Error
-                ? packagesQuery.error.message
-                : "Failed to load workflow packages."}
-            </span>
-          </CardContent>
-        </Card>
+      <WorkflowPackagesHeader />
+      <WorkflowPackagesToolbar
+        search={search}
+        viewMode={viewMode}
+        onSearchChange={setSearch}
+        onViewModeChange={handleViewModeChange}
+      />
+      <WorkflowPackagesStateCards
+        error={packagesQuery.error}
+        filteredCount={filteredPackages.length}
+        isError={packagesQuery.isError}
+        isPending={packagesQuery.isPending}
+        search={search}
+      />
+      {showCards ? (
+        <WorkflowPackageCards
+          deletePending={deletePending}
+          packages={filteredPackages}
+          onDelete={setDeleting}
+        />
       ) : null}
-      {!packagesQuery.isPending &&
-      !packagesQuery.isError &&
-      filteredPackages.length === 0 ? (
-        <EmptyState search={search} />
+      {showTable ? (
+        <WorkflowPackagesTable
+          allFilteredSelected={allFilteredSelected}
+          deletePending={deletePending}
+          packages={filteredPackages}
+          selectedPackageIds={selectedPackageIds}
+          someFilteredSelected={someFilteredSelected}
+          onDelete={setDeleting}
+          onSelect={setPackagesSelected}
+        />
       ) : null}
-      {!packagesQuery.isPending &&
-      !packagesQuery.isError &&
-      filteredPackages.length > 0 &&
-      viewMode === "cards" ? (
-        <PlatformResourceList>
-          {filteredPackages.map((workflowPackage) => {
-            const packagePath = `/workflow-packages/${workflowPackage.id}`;
-            const launchPath = `/workflow-packages/${workflowPackage.id}/run`;
-
-            return (
-              <PlatformResourceCard
-                key={workflowPackage.id}
-                density="compactPlus"
-                testId={`workflow-packages-row-${workflowPackage.key}`}
-                title={workflowPackage.name}
-                subtitle={
-                  <span className="font-mono">
-                    {workflowPackage.key}
-                  </span>
-                }
-                description={
-                  workflowPackage.description || "No description provided."
-                }
-                metadata={
-                  <div className="grid min-w-0 gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">
-                        Manifest Hash:
-                      </span>{" "}
-                      <span className="font-mono">
-                        {formatNullableHash(workflowPackage.manifestHash)}
-                      </span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-medium text-foreground">
-                        Updated:
-                      </span>{" "}
-                      <span>{formatDateTime(workflowPackage.updatedAt)}</span>
-                    </div>
-                  </div>
-                }
-                actions={
-                  <>
-                    <Button asChild size="sm" variant="outline">
-                      <Link
-                        aria-label={`Open package ${workflowPackage.name}`}
-                        to={packagePath}
-                      >
-                        <SquarePen data-icon="inline-start" />
-                        Open
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm">
-                      <Link
-                        aria-label={`Launch package ${workflowPackage.name}`}
-                        to={launchPath}
-                      >
-                        <PlayCircle data-icon="inline-start" />
-                        Launch
-                      </Link>
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label={`Open actions for package ${workflowPackage.name}`}
-                          className="cursor-pointer"
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          disabled={
-                            deletePackage.isPending || deletePackages.isPending
-                          }
-                          onSelect={() => setDeleting(workflowPackage)}
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                }
-              />
-            );
-          })}
-        </PlatformResourceList>
-      ) : null}
-      {!packagesQuery.isPending &&
-      !packagesQuery.isError &&
-      filteredPackages.length > 0 &&
-      viewMode === "table" ? (
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="w-9">
-                <Checkbox
-                  aria-label="Select all shown workflow packages"
-                  checked={
-                    allFilteredSelected
-                      ? true
-                      : someFilteredSelected
-                        ? "indeterminate"
-                        : false
-                  }
-                  onCheckedChange={(checked) =>
-                    setPackagesSelected(filteredPackages, checked === true)
-                  }
-                />
-              </TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>Manifest Hash</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredPackages.map((workflowPackage) => {
-              const isSelected = selectedPackageIds.has(workflowPackage.id);
-
-              return (
-                <TableRow
-                  key={workflowPackage.id}
-                  data-state={isSelected ? "selected" : undefined}
-                  data-testid={`workflow-packages-row-${workflowPackage.key}`}
-                >
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`Select workflow package ${workflowPackage.name}`}
-                      checked={isSelected}
-                      onCheckedChange={(checked) =>
-                        setPackagesSelected([workflowPackage], checked === true)
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="min-w-56 whitespace-normal">
-                    <div className="space-y-1">
-                      <p className="font-medium text-foreground">
-                        {workflowPackage.name}
-                      </p>
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
-                        {workflowPackage.description ||
-                          "No description provided."}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {workflowPackage.key}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {formatNullableHash(workflowPackage.manifestHash)}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatDateTime(workflowPackage.updatedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          aria-label={`Open package ${workflowPackage.name}`}
-                          to={`/workflow-packages/${workflowPackage.id}`}
-                        >
-                          <SquarePen data-icon="inline-start" />
-                          Open
-                        </Link>
-                      </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          aria-label={`Launch package ${workflowPackage.name}`}
-                          to={`/workflow-packages/${workflowPackage.id}/run`}
-                        >
-                          <PlayCircle data-icon="inline-start" />
-                          Launch
-                        </Link>
-                      </Button>
-                      <Button
-                        aria-label={`Delete package ${workflowPackage.name}`}
-                        className="cursor-pointer"
-                        disabled={
-                          deletePackage.isPending || deletePackages.isPending
-                        }
-                        size="sm"
-                        variant="destructive"
-                        type="button"
-                        onClick={() => setDeleting(workflowPackage)}
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      ) : null}
-      {viewMode === "table" && selectedCount > 0 ? (
-        <div
-          data-testid="workflow-packages-bulk-actions"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-        >
-          <span className="text-xs text-muted-foreground">
-            {selectedCount} of {filteredPackages.length} workflow packages
-            selected
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={deletePackages.isPending}
-              onClick={() => setIsBulkDeleting(true)}
-            >
-              <Trash2 className="size-3.5" /> Delete selected
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedPackageIds(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
+      {viewMode === "table" ? (
+        <WorkflowPackagesBulkActions
+          filteredCount={filteredPackages.length}
+          selectedCount={selectedCount}
+          isPending={deletePackages.isPending}
+          onClear={() => setSelectedPackageIds(new Set())}
+          onDeleteSelected={() => setIsBulkDeleting(true)}
+        />
       ) : null}
       <ConfirmDeleteDialog
         open={isBulkDeleting}

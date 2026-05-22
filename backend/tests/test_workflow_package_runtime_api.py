@@ -1247,8 +1247,8 @@ def test_workflow_package_launch_executes_with_live_model_connection(
         "key": "summary_output",
         "version": 1,
     }
-    assert invocation["agentId"] == 1
-    assert invocation["outputSchemaId"] == 1
+    assert "agentId" not in invocation
+    assert "outputSchemaId" not in invocation
     assert detail["finalOutput"] == {"summary": "package live runtime output"}
     assert detail["executedTokens"] == 23
     assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {

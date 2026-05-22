@@ -6,7 +6,7 @@
 
 SignalDeck ships a package-first agent platform beside the preserved portfolio, template, and report product areas. Users author Workflow Packages, bind package agents to global Model Connections, reference read-only global Tools, launch saved package runs from the dedicated `/workflow-packages/:packageId/run` page, and inspect persisted Runs from the browser.
 
-This document describes shipped behavior only. Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, and retired legacy global authoring routes are not live surfaces.
+This document describes shipped behavior only. Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, and removed global authoring routes are not live surfaces.
 
 ## Live Surfaces
 
@@ -96,9 +96,9 @@ The canonical TradingAgents-style advisory package grants native data/news/socia
 
 The browser launch surface is the dedicated `Launch Workflow Package` page at `/workflow-packages/:packageId/run` in phase 1. It is separate from the authoring editor and owns launch metadata, preflight gating, runtime parameters, saved inputs, and create-run state. The `/workflow-packages/:packageId/launch` browser rename is deferred follow-up only.
 
-Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using `{workflowKey, parameters}`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
+Package launch reads metadata from `GET /api/workflow-packages/{packageId}/launch`, then creates a run with `POST /api/workflow-packages/{packageId}/launches` using the selected workflow key and `parameters`. Launch captures the current package artifact into a run-owned executable snapshot before dispatch.
 
-Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, dependency-only extension requirements, and snapshot-based package provenance. Current detail payloads include steps, agent invocations, operation invocations, legacy replay lineage fields when present, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. The `run_forks` artifact is persisted for forked descendants, but `RunRead` does not currently expose a top-level `fork` field. Reruns and forks execute the stored run snapshot, not the current package state. Deleting a Workflow Package deletes its owned runs and their run-owned snapshots. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
+Runs persist run status, inputs, final output, token/timing totals, optional Logfire trace ids, per-agent invocation span ids, per-operation invocation span ids, rerun metadata, fork metadata, dependency-only extension requirements, and snapshot-based package provenance. Current detail payloads include steps, agent invocations, operation invocations, read-only historical replay lineage when present, and the captured executable snapshot for review without requiring a separate tracing product or Logfire token. They expose invocation refs, not scalar internal `agent` or `output schema` ids. The `run_forks` artifact is persisted for forked descendants, but `RunRead` does not currently expose a top-level `fork` field. Reruns and forks execute the stored run snapshot, not the current package state. Deleting a Workflow Package deletes its owned runs and their run-owned snapshots. `packageProvenance.workflowPackageStatus` is nullable historical snapshot data only; `packageProvenance.currentPackage` does not carry live package status.
 
 Rerun is the root-parameter flow. `GET /api/runs/{runId}/rerun-draft` returns root launch parameters, and `POST /api/runs/{runId}/reruns` creates a new run with edited `parameters`.
 
@@ -106,7 +106,7 @@ Fork is the invocation-input flow. `GET /api/runs/{runId}/fork-draft?sourceInvoc
 
 `resumeStepIndex` is an execution boundary, not the editable target. The editable target is `sourceInvocationId`, and the create payload uses `invocationInput` as a full replacement for that target invocation input. Browser URL state mirrors this separation with `fork=1&resumeStepIndex=<n>&invocationId=<id>`.
 
-Historical step replay records remain readable as legacy lineage through legacy replay fields and copied source links. They are audit history only and are not the live write path for new run descendants.
+Historical step replay records remain readable through copied source links. They are audit history only and are not the live write path for new run descendants.
 
 Run extension requirements appear as `extensionDependencies`. Each dependency record contains only `extensionKey`, `surfaces`, and `fields`. These records help explain launch-time requirements and are not public extension snapshots or a place to carry labels, enabled state, versioning, phase, categories, disabled reasons, or registrar metadata.
 
@@ -147,11 +147,11 @@ frontend/src/lib/types/{workflow-package,model-connection,tool,run}.ts
 frontend/src/lib/platform-authoring/**
 ```
 
-## Retired Surfaces
+## Removed Surfaces
 
-The retired legacy global authoring routes `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are absent from the mounted app and the live router. They are not compatibility aliases or redirects.
+The removed global authoring routes `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*` are absent from the mounted app and the live router. They are not compatibility aliases or redirects.
 
-Legacy/unmounted backend modules may still exist for cutover regression context, but current docs must not present them as live routes. Current guardrails live in `backend/tests/test_legacy_backend_cutover.py`, `backend/tests/test_workflow_package_openapi.py`, `frontend/src/routes.test.tsx`, and `frontend/src/platform-clean-break.test.ts`.
+The old backend route modules are deleted. Current guardrails live in `backend/tests/test_legacy_backend_cutover.py`, `backend/tests/test_workflow_package_openapi.py`, `frontend/src/routes.test.tsx`, and `frontend/src/platform-clean-break.test.ts`.
 
 ## Validation
 
@@ -173,7 +173,7 @@ Each milestone has a deterministic targeted command, and the combined command is
 
 ```bash
 # Combined targeted backend validation from the implementation plan
-(cd backend && uv run pytest tests/test_runtime_tools.py tests/test_runtime_tools_social_sentiment.py tests/test_market_data_service.py tests/test_social_sentiment_service.py tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_report_backed_memory_store.py tests/test_workflow_package_preflight.py tests/test_workflow_package_manifest_http_node.py tests/test_workflow_manifest_compiler.py tests/test_workflow_package_execution_plan_http.py tests/test_workflow_package_run_contracts.py tests/test_run_operation_invocations.py tests/test_http_operation_execution_service.py tests/test_run_service_http_operations.py tests/test_runtime_db_upgrades.py)
+(cd backend && uv run pytest tests/test_runtime_tools.py tests/test_runtime_tools_social_sentiment.py tests/test_market_data_service.py tests/test_social_sentiment_service.py tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_memory_reports.py tests/test_workflow_package_preflight.py tests/test_workflow_package_manifest_http_node.py tests/test_workflow_manifest_compiler.py tests/test_workflow_package_execution_plan_http.py tests/test_workflow_package_run_contracts.py tests/test_run_operation_invocations.py tests/test_http_operation_execution_service.py tests/test_run_service_http_operations.py tests/test_runtime_db_upgrades.py)
 
 # Frontend HTTP authoring, secret binding, and run-detail operation rendering
 (cd frontend && pnpm test:run src/pages/workflow-packages/http-node-validation.test.tsx src/pages/workflow-packages/secret-bindings.test.tsx src/pages/runs/detail-http-operations.test.tsx)

@@ -97,21 +97,21 @@ describe("agent manifest helpers", () => {
     expect(result.outline.refs.every((ref) => ref.line !== null)).toBe(true);
   });
 
-  it("rejects legacy spec.skills instead of exposing compatibility refs", () => {
-    const legacyManifest = fullAgentManifest.replace(
+  it("rejects unsupported spec.skills instead of exposing compatibility refs", () => {
+    const unsupportedSkillsManifest = fullAgentManifest.replace(
       "capabilities:\n    - summarize_capability@3\n    - filings_capability@2",
       "skills:\n    - summarize_skill@3",
     );
 
-    const parsed = parseAgentManifestLocallyForEditor(legacyManifest);
-    const outline = extractAgentManifestOutline(legacyManifest);
+    const parsed = parseAgentManifestLocallyForEditor(unsupportedSkillsManifest);
+    const outline = extractAgentManifestOutline(unsupportedSkillsManifest);
 
     expect(parsed.isValidYaml).toBe(false);
     expect(parsed.value).toBeNull();
     expect(parsed.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: "Use spec.capabilities; legacy spec.skills is not supported",
+          message: "Use spec.capabilities; spec.skills is unsupported",
           origin: "local",
           path: "spec.skills",
           severity: "error",
@@ -121,7 +121,7 @@ describe("agent manifest helpers", () => {
     expect(outline.outline.refs).toEqual([]);
   });
 
-  it("rejects manifests that mix spec.capabilities with legacy spec.skills", () => {
+  it("rejects manifests that mix spec.capabilities with unsupported spec.skills", () => {
     const mixedManifest = fullAgentManifest.replace(
       "  mcpServers:",
       "  skills:\n    - summarize_skill@3\n  mcpServers:",

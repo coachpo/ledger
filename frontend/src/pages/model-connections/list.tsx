@@ -49,7 +49,7 @@ import {
 } from "../platform-resource-shared";
 
 const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
-  chat_completions: "Chat Completions API - legacy / OpenAI-compatible",
+  chat_completions: "Chat Completions API",
   responses: "Responses API",
 };
 
@@ -59,6 +59,14 @@ const API_STYLE_BADGE_LABELS: Record<ModelConnectionApiStyle, string> = {
 };
 
 type ViewMode = "cards" | "table";
+
+type ModelConnectionSelectionHandlers = {
+  onDelete: (connection: ModelConnectionListItemRead) => void;
+  onSelect: (
+    connectionsToUpdate: readonly ModelConnectionListItemRead[],
+    selected: boolean,
+  ) => void;
+};
 
 function sortConnections(items: readonly ModelConnectionListItemRead[]) {
   return [...items].sort((left, right) => {
@@ -102,6 +110,7 @@ function formatLastTestStatus(connection: ModelConnectionListItemRead): string {
 
   return "Not tested";
 }
+
 function formatReasoningEffort(
   value: ModelConnectionListItemRead["reasoningEffort"],
 ): string {
@@ -146,6 +155,404 @@ function ModelConnectionMetadata({
   );
 }
 
+function ModelConnectionsHeader() {
+  return (
+    <div
+      className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+      data-testid="model-connections-list"
+    >
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold tracking-tight">
+          Model Connections
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Manage live model endpoints, credentials, and runtime defaults that
+          workflow packages reference by stable key.
+        </p>
+      </div>
+      <Button asChild data-testid="model-connections-new" size="sm">
+        <Link to="/model-connections/new">
+          <Plus data-icon="inline-start" />
+          New Model Connection
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+function ModelConnectionsToolbar({
+  search,
+  viewMode,
+  onSearchChange,
+  onViewModeChange,
+}: {
+  search: string;
+  viewMode: ViewMode;
+  onSearchChange: (value: string) => void;
+  onViewModeChange: (value: ViewMode) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative max-w-sm flex-1" role="search">
+        <Search
+          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          aria-label="Search model connections"
+          className="h-8 pl-8 text-xs"
+          placeholder="Search connections by name, key, model, or URL..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
+      </div>
+      <ToggleGroup
+        type="single"
+        value={viewMode}
+        onValueChange={(value) => {
+          if (value) {
+            onViewModeChange(value as ViewMode);
+          }
+        }}
+      >
+        <ToggleGroupItem
+          value="cards"
+          aria-label="Cards view"
+          className="h-8 w-8 px-0"
+        >
+          <LayoutGrid className="size-3.5" />
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="table"
+          aria-label="Table view"
+          className="h-8 w-8 px-0"
+        >
+          <List className="size-3.5" />
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </div>
+  );
+}
+
+function ModelConnectionsStateCards({
+  error,
+  isError,
+  isPending,
+  filteredCount,
+  search,
+}: {
+  error: unknown;
+  isError: boolean;
+  isPending: boolean;
+  filteredCount: number;
+  search: string;
+}) {
+  if (isPending) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Loading model connections...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card role="alert" aria-live="polite">
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {error instanceof Error
+            ? error.message
+            : "Failed to load model connections."}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (filteredCount > 0) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">
+          {search.trim()
+            ? "No model connections match this search."
+            : "No model connections exist yet."}
+        </p>
+        <p className="text-xs">
+          {search.trim()
+            ? "Refine the search by connection name, stable key, model, or base URL."
+            : "Create a saved endpoint before launching workflow packages that need model access."}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModelConnectionsCards({
+  connections,
+  deletePending,
+  onDelete,
+}: {
+  connections: readonly ModelConnectionListItemRead[];
+  deletePending: boolean;
+  onDelete: (connection: ModelConnectionListItemRead) => void;
+}) {
+  return (
+    <PlatformResourceList>
+      {connections.map((connection) => (
+        <PlatformResourceCard
+          key={connection.id}
+          density="compactPlus"
+          testId={`model-connections-row-${connection.id}`}
+          title={connection.name}
+          subtitle={connection.modelId}
+          badges={
+            <>
+              <Badge variant="secondary">
+                {formatLastTestStatus(connection)}
+              </Badge>
+              <Badge variant="outline">
+                {API_STYLE_BADGE_LABELS[connection.apiStyle]}
+              </Badge>
+            </>
+          }
+          description={connection.description}
+          metadata={<ModelConnectionMetadata connection={connection} />}
+          actions={
+            <ModelConnectionActions
+              connection={connection}
+              deletePending={deletePending}
+              onDelete={onDelete}
+            />
+          }
+        />
+      ))}
+    </PlatformResourceList>
+  );
+}
+
+function ModelConnectionActions({
+  connection,
+  deletePending,
+  onDelete,
+}: {
+  connection: ModelConnectionListItemRead;
+  deletePending: boolean;
+  onDelete: (connection: ModelConnectionListItemRead) => void;
+}) {
+  return (
+    <>
+      <Button asChild size="sm">
+        <Link
+          aria-label={`Edit model connection ${connection.name}`}
+          data-testid={`model-connections-open-${connection.id}`}
+          to={`/model-connections/${connection.id}/edit`}
+        >
+          <SquarePen data-icon="inline-start" />
+          Edit
+        </Link>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label={`Open actions for model connection ${connection.name}`}
+            className="cursor-pointer"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            data-testid={`model-connections-delete-${connection.id}`}
+            disabled={deletePending}
+            onSelect={() => onDelete(connection)}
+            variant="destructive"
+          >
+            <Trash2 className="size-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+}
+
+function ModelConnectionsTable({
+  allFilteredSelected,
+  connections,
+  deletePending,
+  selectedConnectionIds,
+  someFilteredSelected,
+  onDelete,
+  onSelect,
+}: {
+  allFilteredSelected: boolean;
+  connections: readonly ModelConnectionListItemRead[];
+  deletePending: boolean;
+  selectedConnectionIds: ReadonlySet<ModelConnectionListItemRead["id"]>;
+  someFilteredSelected: boolean;
+} & ModelConnectionSelectionHandlers) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableHead className="w-9">
+            <Checkbox
+              aria-label="Select all shown model connections"
+              checked={
+                allFilteredSelected
+                  ? true
+                  : someFilteredSelected
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) =>
+                onSelect(connections, checked === true)
+              }
+            />
+          </TableHead>
+          <TableHead>Name</TableHead>
+          <TableHead>Model</TableHead>
+          <TableHead>Base URL</TableHead>
+          <TableHead>Runtime Defaults</TableHead>
+          <TableHead>Last Test</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {connections.map((connection) => {
+          const isSelected = selectedConnectionIds.has(connection.id);
+
+          return (
+            <TableRow
+              key={connection.id}
+              data-state={isSelected ? "selected" : undefined}
+              data-testid={`model-connections-row-${connection.id}`}
+            >
+              <TableCell>
+                <Checkbox
+                  aria-label={`Select model connection ${connection.name}`}
+                  checked={isSelected}
+                  onCheckedChange={(checked) =>
+                    onSelect([connection], checked === true)
+                  }
+                />
+              </TableCell>
+              <TableCell className="min-w-56 whitespace-normal">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">
+                    {connection.name}
+                  </p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {connection.description || "No description provided."}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {connection.modelId}
+              </TableCell>
+              <TableCell className="max-w-72 whitespace-normal break-all text-xs text-muted-foreground">
+                {connection.baseUrl}
+              </TableCell>
+              <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
+                <span>{formatReasoningEffort(connection.reasoningEffort)}</span>{" "}
+                <span aria-hidden="true">·</span>{" "}
+                <span>{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
+                <span aria-hidden="true">·</span>{" "}
+                <span>{connection.timeoutSeconds}s timeout</span>
+              </TableCell>
+              <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
+                <span>{formatLastTestStatus(connection)}</span>{" "}
+                <span>
+                  ·{" "}
+                  {connection.lastTestedAt
+                    ? formatDateTime(connection.lastTestedAt)
+                    : "No connection test recorded."}
+                </span>
+                {connection.lastTestMessage ? (
+                  <span> · {connection.lastTestMessage}</span>
+                ) : null}
+              </TableCell>
+              <TableCell>
+                <div className="flex justify-end gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      aria-label={`Edit model connection ${connection.name}`}
+                      data-testid={`model-connections-open-${connection.id}`}
+                      to={`/model-connections/${connection.id}/edit`}
+                    >
+                      <SquarePen data-icon="inline-start" />
+                      Edit
+                    </Link>
+                  </Button>
+                  <Button
+                    data-testid={`model-connections-delete-${connection.id}`}
+                    disabled={deletePending}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onDelete(connection)}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+function ModelConnectionsBulkActions({
+  filteredCount,
+  isPending,
+  selectedCount,
+  onClear,
+  onDeleteSelected,
+}: {
+  filteredCount: number;
+  isPending: boolean;
+  selectedCount: number;
+  onClear: () => void;
+  onDeleteSelected: () => void;
+}) {
+  if (selectedCount === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="model-connections-bulk-actions"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+    >
+      <span className="text-xs text-muted-foreground">
+        {selectedCount} of {filteredCount} model connections selected
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={isPending}
+          onClick={onDeleteSelected}
+        >
+          <Trash2 className="size-3.5" /> Delete selected
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ModelConnectionsListPage() {
   const connectionsQuery = useModelConnections();
   const deleteMutation = useDeleteModelConnection();
@@ -159,8 +566,9 @@ export function ModelConnectionsListPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<
     Set<ModelConnectionListItemRead["id"]>
   >(new Set());
-  const [deleting, setDeleting] =
-    useState<ModelConnectionListItemRead | null>(null);
+  const [deleting, setDeleting] = useState<ModelConnectionListItemRead | null>(
+    null,
+  );
   const filteredConnections = useMemo(
     () => filterConnections(connections, search),
     [connections, search],
@@ -182,6 +590,19 @@ export function ModelConnectionsListPage() {
     selectedConnectionIds.has(connection.id),
   );
 
+  const deletePending =
+    deleteMutation.isPending || deleteConnectionsMutation.isPending;
+  const showCards =
+    !connectionsQuery.isPending &&
+    !connectionsQuery.isError &&
+    filteredConnections.length > 0 &&
+    viewMode === "cards";
+  const showTable =
+    !connectionsQuery.isPending &&
+    !connectionsQuery.isError &&
+    filteredConnections.length > 0 &&
+    viewMode === "table";
+
   const setConnectionsSelected = (
     connectionsToUpdate: readonly ModelConnectionListItemRead[],
     selected: boolean,
@@ -197,6 +618,13 @@ export function ModelConnectionsListPage() {
       });
       return next;
     });
+  };
+
+  const handleViewModeChange = (value: ViewMode) => {
+    setViewMode(value);
+    if (value === "cards") {
+      setSelectedConnectionIds(new Set());
+    }
   };
 
   const handleDelete = async () => {
@@ -254,325 +682,46 @@ export function ModelConnectionsListPage() {
       className="space-y-4 p-4"
       data-testid="platform-model-connections-page"
     >
-      <div
-        className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-        data-testid="model-connections-list"
-      >
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            Model Connections
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage live model endpoints, credentials, and runtime defaults that
-            workflow packages reference by stable key.
-          </p>
-        </div>
-        <Button asChild data-testid="model-connections-new" size="sm">
-          <Link to="/model-connections/new">
-            <Plus data-icon="inline-start" />
-            New Model Connection
-          </Link>
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-sm flex-1" role="search">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            aria-label="Search model connections"
-            className="h-8 pl-8 text-xs"
-            placeholder="Search connections by name, key, model, or URL..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => {
-            if (!value) return;
-            setViewMode(value as ViewMode);
-            if (value === "cards") setSelectedConnectionIds(new Set());
-          }}
-        >
-          <ToggleGroupItem
-            value="cards"
-            aria-label="Cards view"
-            className="h-8 w-8 px-0"
-          >
-            <LayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="table"
-            aria-label="Table view"
-            className="h-8 w-8 px-0"
-          >
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-
-      {connectionsQuery.isPending ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Loading model connections...
-          </CardContent>
-        </Card>
+      <ModelConnectionsHeader />
+      <ModelConnectionsToolbar
+        search={search}
+        viewMode={viewMode}
+        onSearchChange={setSearch}
+        onViewModeChange={handleViewModeChange}
+      />
+      <ModelConnectionsStateCards
+        error={connectionsQuery.error}
+        filteredCount={filteredConnections.length}
+        isError={connectionsQuery.isError}
+        isPending={connectionsQuery.isPending}
+        search={search}
+      />
+      {showCards ? (
+        <ModelConnectionsCards
+          connections={filteredConnections}
+          deletePending={deletePending}
+          onDelete={setDeleting}
+        />
       ) : null}
-
-      {connectionsQuery.isError ? (
-        <Card role="alert" aria-live="polite">
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {connectionsQuery.error instanceof Error
-              ? connectionsQuery.error.message
-              : "Failed to load model connections."}
-          </CardContent>
-        </Card>
+      {showTable ? (
+        <ModelConnectionsTable
+          allFilteredSelected={allFilteredSelected}
+          connections={filteredConnections}
+          deletePending={deletePending}
+          selectedConnectionIds={selectedConnectionIds}
+          someFilteredSelected={someFilteredSelected}
+          onDelete={setDeleting}
+          onSelect={setConnectionsSelected}
+        />
       ) : null}
-
-      {!connectionsQuery.isPending &&
-      !connectionsQuery.isError &&
-      filteredConnections.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-1 py-8 text-center text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">
-              {search.trim()
-                ? "No model connections match this search."
-                : "No model connections exist yet."}
-            </p>
-            <p className="text-xs">
-              {search.trim()
-                ? "Refine the search by connection name, stable key, model, or base URL."
-                : "Create a saved endpoint before launching workflow packages that need model access."}
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {!connectionsQuery.isPending &&
-      !connectionsQuery.isError &&
-      filteredConnections.length > 0 &&
-      viewMode === "cards" ? (
-        <PlatformResourceList>
-          {filteredConnections.map((connection) => {
-            return (
-              <PlatformResourceCard
-                key={connection.id}
-                density="compactPlus"
-                testId={`model-connections-row-${connection.id}`}
-                title={connection.name}
-                subtitle={connection.modelId}
-                badges={
-                  <>
-                    <Badge variant="secondary">
-                      {formatLastTestStatus(connection)}
-                    </Badge>
-                    <Badge variant="outline">
-                      {API_STYLE_BADGE_LABELS[connection.apiStyle]}
-                    </Badge>
-                  </>
-                }
-                description={connection.description}
-                metadata={<ModelConnectionMetadata connection={connection} />}
-                actions={
-                  <>
-                    <Button asChild size="sm">
-                      <Link
-                        aria-label={`Edit model connection ${connection.name}`}
-                        data-testid={`model-connections-open-${connection.id}`}
-                        to={`/model-connections/${connection.id}/edit`}
-                      >
-                        <SquarePen data-icon="inline-start" />
-                        Edit
-                      </Link>
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label={`Open actions for model connection ${connection.name}`}
-                          className="cursor-pointer"
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          data-testid={`model-connections-delete-${connection.id}`}
-                          disabled={
-                            deleteMutation.isPending ||
-                            deleteConnectionsMutation.isPending
-                          }
-                          onSelect={() => setDeleting(connection)}
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                }
-              />
-            );
-          })}
-        </PlatformResourceList>
-      ) : null}
-
-      {!connectionsQuery.isPending &&
-      !connectionsQuery.isError &&
-      filteredConnections.length > 0 &&
-      viewMode === "table" ? (
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="w-9">
-                <Checkbox
-                  aria-label="Select all shown model connections"
-                  checked={
-                    allFilteredSelected
-                      ? true
-                      : someFilteredSelected
-                        ? "indeterminate"
-                        : false
-                  }
-                  onCheckedChange={(checked) =>
-                    setConnectionsSelected(
-                      filteredConnections,
-                      checked === true,
-                    )
-                  }
-                />
-              </TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead>Base URL</TableHead>
-              <TableHead>Runtime Defaults</TableHead>
-              <TableHead>Last Test</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredConnections.map((connection) => {
-              const isSelected = selectedConnectionIds.has(connection.id);
-
-              return (
-                <TableRow
-                  key={connection.id}
-                  data-state={isSelected ? "selected" : undefined}
-                  data-testid={`model-connections-row-${connection.id}`}
-                >
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`Select model connection ${connection.name}`}
-                      checked={isSelected}
-                      onCheckedChange={(checked) =>
-                        setConnectionsSelected([connection], checked === true)
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="min-w-56 whitespace-normal">
-                    <div className="space-y-1">
-                      <p className="font-medium text-foreground">
-                        {connection.name}
-                      </p>
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
-                        {connection.description || "No description provided."}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {connection.modelId}
-                  </TableCell>
-                  <TableCell className="max-w-72 whitespace-normal break-all text-xs text-muted-foreground">
-                    {connection.baseUrl}
-                  </TableCell>
-                  <TableCell className="min-w-64 whitespace-normal text-xs text-muted-foreground">
-                    <span>
-                      {formatReasoningEffort(connection.reasoningEffort)}
-                    </span>{" "}
-                    <span aria-hidden="true">·</span>{" "}
-                    <span>{API_STYLE_LABELS[connection.apiStyle]}</span>{" "}
-                    <span aria-hidden="true">·</span>{" "}
-                    <span>{connection.timeoutSeconds}s timeout</span>
-                  </TableCell>
-                  <TableCell className="min-w-56 whitespace-normal text-xs text-muted-foreground">
-                    <span>{formatLastTestStatus(connection)}</span>{" "}
-                    <span>
-                      ·{" "}
-                      {connection.lastTestedAt
-                        ? formatDateTime(connection.lastTestedAt)
-                        : "No connection test recorded."}
-                    </span>
-                    {connection.lastTestMessage ? (
-                      <span> · {connection.lastTestMessage}</span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          aria-label={`Edit model connection ${connection.name}`}
-                          data-testid={`model-connections-open-${connection.id}`}
-                          to={`/model-connections/${connection.id}/edit`}
-                        >
-                          <SquarePen data-icon="inline-start" />
-                          Edit
-                        </Link>
-                      </Button>
-                      <Button
-                        data-testid={`model-connections-delete-${connection.id}`}
-                        disabled={
-                          deleteMutation.isPending ||
-                          deleteConnectionsMutation.isPending
-                        }
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setDeleting(connection)}
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      ) : null}
-      {viewMode === "table" && selectedCount > 0 ? (
-        <div
-          data-testid="model-connections-bulk-actions"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
-        >
-          <span className="text-xs text-muted-foreground">
-            {selectedCount} of {filteredConnections.length} model connections
-            selected
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={deleteConnectionsMutation.isPending}
-              onClick={handleDeleteSelected}
-            >
-              <Trash2 className="size-3.5" /> Delete selected
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedConnectionIds(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
+      {viewMode === "table" ? (
+        <ModelConnectionsBulkActions
+          filteredCount={filteredConnections.length}
+          isPending={deleteConnectionsMutation.isPending}
+          selectedCount={selectedCount}
+          onClear={() => setSelectedConnectionIds(new Set())}
+          onDeleteSelected={handleDeleteSelected}
+        />
       ) : null}
       <ConfirmDeleteDialog
         open={deleting !== null}

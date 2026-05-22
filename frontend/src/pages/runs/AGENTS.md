@@ -6,9 +6,9 @@
 
 `src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, memory event groups, memory artifacts, and per-agent/per-operation drilldowns.
 
-The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
 ## WHERE TO LOOK
 
@@ -28,11 +28,12 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Run detail renders `memoryEvents` as the canonical run-scoped evidence stream and `memoryArtifacts` as the compact artifact slice. Artifact `memoryId` values are opaque. Report open/download actions are optional audit actions sourced from `artifact.auditLinks.report.url` and `artifact.auditLinks.report.downloadUrl`, never derived from `memoryId`.
 - Memory event presentation is grouped into retrieved context, memory writes/reuse, review/follow-up, and audit-trail panes; keep those groupings route-owned instead of flattening everything into one raw event list.
 - Per-agent and per-operation details stay inside accordions/inspection panes so the page can expose the full run without flattening the layout.
+- Run detail expects ref-based invocation payloads such as `agentRef` and `outputSchemaRef`, not scalar internal ids.
 - Rerun is the only root-parameter editor. It opens from `rerun=1` and uses rerun draft/create hooks.
 - Fork actions are invocation-specific. Open them from agent invocation rows, use URL state `fork=1&resumeStepIndex=<n>&invocationId=<id>`, fetch drafts by `sourceInvocationId`, and submit full replacement `invocationInput`.
 - Treat `resumeStepIndex` as the execution boundary only. Do not use it as the editable target when an invocation id is required.
 - Operation and tool invocation forks are unsupported in phase 1. Show that limitation on operation rows instead of exposing ambiguous step-wide fork actions.
-- Legacy replay data is read-only lineage. Label it as legacy when rendered, and do not wire `stepReplay`, `stepIndex`, `step-replay-draft`, or `step-replays` as live run creation paths.
+- Historical replay data is read-only lineage. Label it as historical when rendered, and do not wire `stepReplay`, `stepIndex`, `step-replay-draft`, or `step-replays` as live run creation paths.
 - Hooks own polling and request behavior; the page owns presentation, filters, URL state, inspection panes, fork availability messaging, and trace summaries.
 - Route metadata intentionally treats `/runs` as an `inventory` polling monitor with scroll shell and `/runs/:runId` as a `console` with full-height shell. Preserve that split instead of turning run detail into a generic detail page.
 - Wide evidence, trace ids, JSON payloads, operation URLs, badges, and lineage nodes must use internal scrolling or wrapping so mobile viewports do not gain document-level horizontal overflow.

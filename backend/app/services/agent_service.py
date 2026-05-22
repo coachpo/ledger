@@ -46,7 +46,6 @@ from app.schemas.run import RunCreatedRead
 from app.services.agent_manifest_compiler import AgentManifestCompiler, AgentManifestCompilerError
 from app.services.agent_manifest_parser import locate_agent_manifest_path, parse_agent_manifest
 from app.services.capability_service import CapabilityService
-from app.services.legacy_authoring import LEGACY_AUTHORING_RUNTIME_BLOCKED
 from app.services.mcp_server_service import McpServerService
 from app.services.model_connection_snapshot import (
     build_model_connection_runtime_snapshot,
@@ -63,8 +62,6 @@ from app.services.run_service import RunService
 
 type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 type JsonObject = dict[str, JsonValue]
-
-LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_RUNTIME_BLOCKED
 
 
 @dataclass
@@ -792,4 +789,4 @@ class AgentService:
         return {"field": mapped_field, "issue": issue.get("issue", "Invalid schema")}
 
 
-__all__ = ["AgentService", "LEGACY_AUTHORING_CLASSIFICATION"]
+__all__ = ["AgentService"]

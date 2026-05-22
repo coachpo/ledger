@@ -47,7 +47,7 @@ These remain rejected, even where TradingAgents supports adjacent behavior:
 
 | Area | TradingAgents | SignalDeck status | Fit |
 |---|---|---|---|
-| Runtime execution | LangGraph node execution with checkpoint resume. | Persisted Runs with steps, agent invocations, operation invocations, root-parameter rerun, invocation-input fork, and legacy step replay read lineage. Recovery and audit goals are similar, but runtime semantics are intentionally different. | Medium-High |
+| Runtime execution | LangGraph node execution with checkpoint resume. | Persisted Runs with steps, agent invocations, operation invocations, root-parameter rerun, invocation-input fork, and historical step replay read lineage. Recovery and audit goals are similar, but runtime semantics are intentionally different. | Medium-High |
 | Memory | Markdown decision log with automatic return/reflection updates and future prompt context. | Report-backed memory with pending outcome resolution, generated reflections, prompt snippets, and report audit links hidden from model-visible memory projections. | Medium-High |
 | Analyst phase | Selected analysts, staged tool loops, bull/bear debate, research manager, trader, risk debate, and portfolio manager handoff. | Workflow Packages model this through authored `sequence`, `fanout`, `loop`, local agents, structured outputs, and package-local capability profiles. | Medium |
 | External data/news/social research | Source-specific vendor data and news tools, plus Reddit and StockTwits sentiment paths. | Finance-owned native tools provide data, news, social sentiment, fundamentals, insider, position, and report context while `signaldeck.finance` is enabled. | Medium-High |

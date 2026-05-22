@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 from app.db.engine import get_db_session, get_engine, get_session_factory, reset_db_caches
-from app.db.upgrades import (
-    build_unique_legacy_portfolio_slug,
-    normalize_legacy_portfolio_slug,
-    upgrade_legacy_schema,
-)
+from app.db.upgrades import upgrade_legacy_schema as _upgrade_legacy_schema
 from app.db.validation import (
     SupportsDialect,
     SupportsDialectName,
@@ -32,20 +28,17 @@ def init_db(database_url: str | None = None) -> None:
             if table.name not in _OPTIONAL_PGVECTOR_TABLE_NAMES
         ],
     )
-    upgrade_legacy_schema(engine)
+    _upgrade_legacy_schema(engine)
 
 
 __all__ = [
     "SupportsDialect",
     "SupportsDialectName",
-    "build_unique_legacy_portfolio_slug",
     "get_db_session",
     "get_engine",
     "get_session_factory",
     "init_db",
-    "normalize_legacy_portfolio_slug",
     "reset_db_caches",
-    "upgrade_legacy_schema",
     "validate_supported_database_engine",
     "validate_supported_id_schema",
 ]

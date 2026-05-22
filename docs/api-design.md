@@ -42,7 +42,7 @@ Template/report series can be built by creating a template, previewing with `POS
 | Tools | `GET /api/tools` for read-only server-declared market-data, position, report, memory-write, news, insider-data, and `signaldeck.social_sentiment.lookup` tool metadata contributed by currently enabled extensions |
 | Runs | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks` |
 
-Rerun drafts expose root launch `parameters`, and rerun creates are the only run-descendant write flow that edits root parameters. Fork drafts expose the selected source agent invocation's persisted input by `sourceInvocationId`. Fork creates accept `sourceInvocationId` and full replacement `invocationInput`, preserve the source run input, copy upstream context, persist `run_forks`, and resume execution at `resumeStepIndex`. Historical step replay fields can still appear in read payloads for legacy lineage, but `/step-replay-draft` and `/step-replays` are not live write routes.
+Rerun drafts expose root launch `parameters`, and rerun creates are the only run-descendant write flow that edits root parameters. Fork drafts expose the selected source agent invocation's persisted input by `sourceInvocationId`. Fork creates accept `sourceInvocationId` and full replacement `invocationInput`, preserve the source run input, copy upstream context, persist `run_forks`, and resume execution at `resumeStepIndex`. Historical step replay fields can still appear in read payloads for old run lineage, but `/step-replay-draft` and `/step-replays` are not live write routes.
 
 ## Workflow Package HTTP Nodes and Secret Bindings
 
@@ -64,7 +64,7 @@ Runtime request metadata redacts sensitive URL query names and all secret-backed
 
 ## Run Detail Shape for Operation Invocations
 
-Run detail payloads expose operations separately from agents. Each `steps[]` item has `invocations` for agent invocations and `operationInvocations` for non-agent operations. Operation invocation records use the operation invocation shape: `id`, `runStepId`, `runId`, `stepIndex`, `slot`, `position`, `operationKey`, `operationKind`, `outputSchemaId`, `outputSchemaVersion`, `method`, `timeoutSeconds`, `requestMetadata`, `responseMetadata`, `graphMetadata`, `optional`, `status`, `output`, `outputOrigin`, `errorCode`, `errorMessage`, `errorDetails`, `durationMs`, `traceSpanId`, replay source fields (`sourceOperationInvocationId`, `sourceRunId`, `sourceRunStepId`, `sourceStepIndex`), timestamps, and update timestamps.
+Run detail payloads expose operations separately from agents. Each `steps[]` item has `invocations` for agent invocations and `operationInvocations` for non-agent operations. Public invocation records expose refs such as `agentRef` and `outputSchemaRef`, not scalar internal ids. Operation invocation records use the operation invocation shape: `id`, `runStepId`, `runId`, `stepIndex`, `slot`, `position`, `operationKey`, `operationKind`, `outputSchemaRef`, `outputSchemaVersion`, `method`, `timeoutSeconds`, `requestMetadata`, `responseMetadata`, `graphMetadata`, `optional`, `status`, `output`, `outputOrigin`, `errorCode`, `errorMessage`, `errorDetails`, `durationMs`, `traceSpanId`, replay source fields (`sourceOperationInvocationId`, `sourceRunId`, `sourceRunStepId`, `sourceStepIndex`), timestamps, and update timestamps.
 
 Run list and detail payloads include `extensionDependencies`, a dependency-only array used to explain which extension-owned surfaces the run needed at launch. Each record contains only `extensionKey`, `surfaces`, and `fields`. It is not a plugin manifest, state snapshot, audit log, or public extension metadata carrier.
 
@@ -82,7 +82,7 @@ Operation invocation rows persist in `run_operation_invocations`, not `run_agent
 - Model Connections are global live bindings; package manifests store model connection keys, not provider credentials.
 - Tools are global read-only metadata from `/api/tools`; finance native tool entries are bundled in `signaldeck.finance`, while runtime tool keys and OpenAI function names stay stable when the extension is enabled.
 - `signaldeck.finance` is created enabled by default at startup/reset and supports enable/disable state only. Do not add phase, contribution inventory, versioning, disabled-reason, or state-version fields to public extension responses.
-- Runs persist snapshot-based package provenance including copied package id, package key, hashes, workflow key, nullable historical `workflowPackageStatus`, dependency-only `extensionDependencies`, launch parameters, optional Logfire trace ids, per-agent span ids, and per-operation span ids. Current package lookups in provenance do not include live package status.
+- Runs persist snapshot-based package provenance including copied package id, package key, hashes, workflow key, nullable historical `workflowPackageStatus`, dependency-only `extensionDependencies`, launch parameters, optional Logfire trace ids, per-agent span ids, and per-operation span ids. Current package lookups in provenance do not include live package status, and run reads do not coerce old target identity aliases.
 
 ## HTTP Status Guidelines
 

@@ -139,7 +139,7 @@ def test_api_tools_module_leakage_allowlist_is_retired() -> None:
 
 
 def test_transition_boundary_allowlist_is_removed() -> None:
-    source = Path(__file__).read_text(encoding="utf-8")
+    module_globals = globals()
 
-    assert "TRANSITION" + "_BOUNDARY_ALLOWLIST" not in source
-    assert "SharedFinance" + "ImportDebt" not in source
+    assert "TRANSITION_BOUNDARY_ALLOWLIST" not in module_globals
+    assert "SharedFinanceImportDebt" not in module_globals

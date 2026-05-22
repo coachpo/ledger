@@ -133,7 +133,7 @@ def _build_mcp_server(
         transport=transport,
         command="python -m market_data" if transport == "stdio" else None,
         url="https://example.com/mcp" if transport == "http-sse" else None,
-        auth={"apiKey": "secret-token", "header": "Authorization"},
+        headers={"Authorization": "secret-token"},
         enabled=enabled,
     )
 
@@ -1447,7 +1447,7 @@ def test_agent_platform_schema_compiler_keeps_unsupported_keywords_rejected(
     )
 
 
-def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_factory) -> None:
+def test_agent_platform_mcp_models_encrypt_headers_and_enforce_constraints(session_factory) -> None:
     with session_factory() as session:
         server = _build_mcp_server(
             key="market_data",
@@ -1469,7 +1469,6 @@ def test_agent_platform_mcp_models_encrypt_auth_and_enforce_constraints(session_
         stored_server = session.get(McpServer, server.id)
         assert stored_server is not None
         assert stored_server.headers == {"Authorization": "secret-token"}
-        assert stored_server.auth == {"apiKey": "secret-token", "header": "Authorization"}
 
         session.add(
             _build_mcp_server(

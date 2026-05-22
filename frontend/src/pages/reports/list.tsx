@@ -96,6 +96,216 @@ function getTemplateItems(
   return data?.items ?? [];
 }
 
+type ReportViewMode = "cards" | "table";
+
+function ReportListHeader({
+  onGenerate,
+  onUpload,
+}: {
+  onGenerate: () => void;
+  onUpload: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
+        <p className="text-sm text-muted-foreground">
+          Compiled template snapshots — point-in-time deliverables.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button size="sm" onClick={onGenerate}>
+          <Plus data-icon="inline-start" /> Generate Report
+        </Button>
+        <Button size="sm" variant="outline" onClick={onUpload}>
+          <Upload data-icon="inline-start" /> Upload Report
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ReportListToolbar({
+  groupBy,
+  search,
+  viewMode,
+  onGroupByChange,
+  onSearchChange,
+  onViewModeChange,
+}: {
+  groupBy: GroupByOption;
+  search: string;
+  viewMode: ReportViewMode;
+  onGroupByChange: (value: GroupByOption) => void;
+  onSearchChange: (value: string) => void;
+  onViewModeChange: (value: ReportViewMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative max-w-sm flex-1" role="search">
+        <Label htmlFor="report-search" className="sr-only">
+          Search reports
+        </Label>
+        <Search
+          className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          id="report-search"
+          name="reportSearch"
+          placeholder="Search reports..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="h-8 pl-8 text-xs"
+        />
+      </div>
+      <div className="w-36">
+        <Label htmlFor="report-group-by" className="sr-only">
+          Group reports
+        </Label>
+        <Select
+          value={groupBy}
+          onValueChange={(value) => onGroupByChange(value as GroupByOption)}
+        >
+          <SelectTrigger id="report-group-by" className="h-8 text-xs">
+            <SelectValue placeholder="Group by" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value} className="text-xs">
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <ToggleGroup
+        type="single"
+        value={viewMode}
+        onValueChange={(value) => {
+          if (value) {
+            onViewModeChange(value as ReportViewMode);
+          }
+        }}
+      >
+        <ToggleGroupItem
+          value="cards"
+          aria-label="Cards view"
+          className="h-8 w-8 px-0"
+        >
+          <LayoutGrid className="size-3.5" />
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="table"
+          aria-label="Table view"
+          className="h-8 w-8 px-0"
+        >
+          <List className="size-3.5" />
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </div>
+  );
+}
+
+function UploadReportDialog({
+  author,
+  description,
+  isPending,
+  open,
+  slug,
+  tags,
+  uploadFile,
+  onAuthorChange,
+  onDescriptionChange,
+  onFileChange,
+  onOpenChange,
+  onSlugChange,
+  onTagsChange,
+  onUpload,
+}: {
+  author: string;
+  description: string;
+  isPending: boolean;
+  open: boolean;
+  slug: string;
+  tags: string;
+  uploadFile: File | null;
+  onAuthorChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onOpenChange: (open: boolean) => void;
+  onSlugChange: (value: string) => void;
+  onTagsChange: (value: string) => void;
+  onUpload: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Upload Report</DialogTitle>
+          <DialogDescription>
+            Upload a markdown file to create a new report.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="file">Markdown File</Label>
+            <Input id="file" type="file" accept=".md" onChange={onFileChange} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="slug">Slug</Label>
+            <Input
+              id="slug"
+              value={slug}
+              onChange={(event) => onSlugChange(event.target.value)}
+              placeholder="my_report_slug"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="author">Author (optional)</Label>
+            <Input
+              id="author"
+              value={author}
+              onChange={(event) => onAuthorChange(event.target.value)}
+              placeholder="John Doe"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Description (optional)</Label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(event) => onDescriptionChange(event.target.value)}
+              placeholder="Brief description of the report..."
+              rows={3}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tags">Tags (optional)</Label>
+            <Input
+              id="tags"
+              value={tags}
+              onChange={(event) => onTagsChange(event.target.value)}
+              placeholder="q1, finance, summary (comma-separated)"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={onUpload}
+            disabled={!uploadFile || !slug || isPending}
+          >
+            {isPending ? "Uploading…" : "Upload"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ReportListPage() {
   const navigate = useNavigate();
   const reportsQuery = useReports();
@@ -303,90 +513,21 @@ export function ReportListPage() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            Compiled template snapshots — point-in-time deliverables.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button size="sm" onClick={() => setGenerateOpen(true)}>
-            <Plus data-icon="inline-start" /> Generate Report
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setUploadOpen(true)}
-          >
-            <Upload data-icon="inline-start" /> Upload Report
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1" role="search">
-          <Label htmlFor="report-search" className="sr-only">
-            Search reports
-          </Label>
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="report-search"
-            name="reportSearch"
-            placeholder="Search reports..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-        <div className="w-36">
-          <Label htmlFor="report-group-by" className="sr-only">
-            Group reports
-          </Label>
-          <Select
-            value={groupBy}
-            onValueChange={(v) => setGroupBy(v as GroupByOption)}
-          >
-            <SelectTrigger id="report-group-by" className="h-8 text-xs">
-              <SelectValue placeholder="Group by" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(GROUP_BY_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value} className="text-xs">
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(v) => {
-            if (!v) return;
-            setViewMode(v as "cards" | "table");
-            if (v === "cards") setSelectedSlugs(new Set());
-          }}
-        >
-          <ToggleGroupItem
-            value="cards"
-            aria-label="Cards view"
-            className="h-8 w-8 px-0"
-          >
-            <LayoutGrid className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="table"
-            aria-label="Table view"
-            className="h-8 w-8 px-0"
-          >
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+      <ReportListHeader
+        onGenerate={() => setGenerateOpen(true)}
+        onUpload={() => setUploadOpen(true)}
+      />
+      <ReportListToolbar
+        groupBy={groupBy}
+        search={search}
+        viewMode={viewMode}
+        onGroupByChange={setGroupBy}
+        onSearchChange={setSearch}
+        onViewModeChange={(value) => {
+          setViewMode(value);
+          if (value === "cards") setSelectedSlugs(new Set());
+        }}
+      />
 
       <div className="space-y-4">
         {reportsQuery.isPending ? (
@@ -730,75 +871,22 @@ export function ReportListPage() {
         onGenerate={handleGenerate}
       />
 
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Report</DialogTitle>
-            <DialogDescription>
-              Upload a markdown file to create a new report.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="file">Markdown File</Label>
-              <Input
-                id="file"
-                type="file"
-                accept=".md"
-                onChange={handleFileChange}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="slug">Slug</Label>
-              <Input
-                id="slug"
-                value={uploadSlug}
-                onChange={(e) => setUploadSlug(e.target.value)}
-                placeholder="my_report_slug"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="author">Author (optional)</Label>
-              <Input
-                id="author"
-                value={uploadAuthor}
-                onChange={(e) => setUploadAuthor(e.target.value)}
-                placeholder="John Doe"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                value={uploadDescription}
-                onChange={(e) => setUploadDescription(e.target.value)}
-                placeholder="Brief description of the report..."
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tags">Tags (optional)</Label>
-              <Input
-                id="tags"
-                value={uploadTags}
-                onChange={(e) => setUploadTags(e.target.value)}
-                placeholder="q1, finance, summary (comma-separated)"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setUploadOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={!uploadFile || !uploadSlug || uploadMutation.isPending}
-            >
-              {uploadMutation.isPending ? "Uploading…" : "Upload"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <UploadReportDialog
+        author={uploadAuthor}
+        description={uploadDescription}
+        isPending={uploadMutation.isPending}
+        open={uploadOpen}
+        slug={uploadSlug}
+        tags={uploadTags}
+        uploadFile={uploadFile}
+        onAuthorChange={setUploadAuthor}
+        onDescriptionChange={setUploadDescription}
+        onFileChange={handleFileChange}
+        onOpenChange={setUploadOpen}
+        onSlugChange={setUploadSlug}
+        onTagsChange={setUploadTags}
+        onUpload={handleUpload}
+      />
     </div>
   );
 }

@@ -381,7 +381,7 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
                 1,
             ),
             "spec.skills",
-            "spec.skills is no longer supported",
+            "spec.skills is not supported in workflow package manifests",
             True,
         ),
         (
@@ -413,7 +413,7 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
                 "signaldeck.workflowPackage/v1", "signaldeck.workflow/v2", 1
             ),
             "apiVersion",
-            "Workflow roots are not package manifests",
+            "Workflow manifests are not workflow package manifests",
             True,
         ),
         (
@@ -458,7 +458,7 @@ def test_parse_rejects_transport_specific_mcp_inline_map_mismatch(
         ),
     ],
 )
-def test_parse_rejects_unsafe_yaml_and_legacy_global_refs(
+def test_parse_rejects_unsafe_yaml_and_unsupported_global_refs(
     source: str,
     expected_path: str,
     expected_message: str,

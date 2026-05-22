@@ -268,7 +268,7 @@ describe("ModelConnectionsEditorPage", () => {
     apiStyleSelect.focus();
     fireEvent.keyDown(apiStyleSelect, { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("option", {
-      name: /chat completions api - legacy \/ openai-compatible/i,
+      name: /^chat completions api$/i,
     }));
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
 
@@ -291,7 +291,7 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByText(/leave blank to keep the offline path credential-free\./i)).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
-      "Chat Completions API - legacy / OpenAI-compatible",
+      "Chat Completions API",
     );
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));

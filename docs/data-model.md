@@ -27,7 +27,7 @@ SignalDeck uses PostgreSQL for preserved portfolio/report/template data and the 
 | `run_workflow_package_snapshots` | one immutable executable snapshot per workflow-package run, keyed by `run_id`, with copied package identity, nullable historical `workflow_package_status`, workflow identity, hashes, manifest/export material, compiled plan, local refs, launch inputs, model-connection audit refs, and preflight summary |
 | `model_connections` | global saved provider/model endpoint config, encrypted API keys, health/test metadata, and archive state |
 | `extension_states` | operational bundled-extension state keyed by `extension_key`, storing only `enabled` |
-| `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun metadata, legacy replay lineage fields, package provenance, launch snapshots, and dependency-only extension requirements |
+| `runs` | global persisted package execution input/output, status, totals, optional Logfire trace ids, rerun metadata, read-only historical replay lineage, package provenance, launch snapshots, and dependency-only extension requirements |
 | `run_forks` | first-class runtime fork artifact for descendant runs, keyed by `run_id`, with source run lineage, source invocation id, source and resume step indexes, and the edited invocation input snapshot |
 | `run_steps` | persisted workflow step status, copied rerun/fork context, graph metadata, errors, and timestamps |
 | `run_agent_invocations` | persisted agent invocation lineage, resolved inputs, outputs, token usage, durations, optional trace span ids, copied context, and edited fork target provenance |
@@ -55,4 +55,4 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 
 ## Retired Data
 
-Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, legacy skill-contract tables, and retired legacy global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract. Do not reintroduce them as live schema documentation targets.
+Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, skill-contract tables, and removed global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract. Do not reintroduce them as live schema documentation targets.

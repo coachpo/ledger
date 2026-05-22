@@ -26,7 +26,6 @@ PROMPT_FORBIDDEN = (
 )
 FRONTEND_REMOVED_ARTIFACT_READ_RE = re.compile(r"\bartifact\.(?:reportId|slug|name)\b")
 CANONICAL_MEMORY_STORE = "backend/app/services/memory_store.py"
-MEMORY_ID_OWNER = BACKEND / "app/services/report_backed_memory_store.py"
 MEMORY_ID_FORBIDDEN_PATTERNS = (
     re.compile(r"\bdef\s+(?:format|parse)_report_backed_memory_id\b"),
     re.compile(r"\bdef\s+report_id_from_memory_id\b"),
@@ -169,15 +168,15 @@ def test_frontend_run_memory_artifacts_do_not_read_removed_report_fields() -> No
         assert not matches, f"{relative_path} reads removed artifact fields: {matches}"
 
 
-def test_report_backed_memory_store_owns_mem_id_parsing_and_formatting() -> None:
+def test_report_backed_memory_id_parsing_is_not_reintroduced() -> None:
     production_files = sorted((BACKEND / "app").rglob("*.py"))
     violations: list[str] = []
     for path in production_files:
-        if path == MEMORY_ID_OWNER:
-            continue
         relative_path = path.relative_to(ROOT)
         source = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(source.splitlines(), start=1):
             if any(pattern.search(line) for pattern in MEMORY_ID_FORBIDDEN_PATTERNS):
                 violations.append(f"{relative_path}:{line_number}: {line.strip()}")
-    assert not violations, "mem_<report_id> parsing/formatting escaped store: " + repr(violations)
+    assert not violations, (
+        "mem_<report_id> parsing/formatting was reintroduced: " + repr(violations)
+    )

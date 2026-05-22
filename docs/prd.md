@@ -19,7 +19,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 
 - Authentication, authorization, or multi-tenant account management.
 - Live broker integration, order routing, realtime quotes, alerts, or autonomous schedulers.
-- Retired Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or retired legacy global authoring browser/API surfaces.
+- Removed Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or global authoring browser/API surfaces.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 
 ## Product Areas
@@ -30,7 +30,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 4. Workflow Packages: authoring-only YAML package manifest editor with inline private MCP `env`, `headers`, and `query` fields, package-local agents, output schemas, capability profiles, workflow graphs, validation, import, and export. Launch is a separate console labeled `Launch Workflow Package` at `/workflow-packages/:packageId/run` in phase 1, with preflight gating and run creation outside the editor. Export/import is an intentional breaking change, and the old binding-based private MCP contract no longer applies.
 5. Model Connections: global saved OpenAI-family endpoints, encrypted secrets, connection tests, and secret-safe read payloads.
 6. Tools: global read-only server-declared tool metadata exposed through `/api/tools` and referenced by package-local capability profiles, covering market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
-7. Runs: global run list/detail, package provenance, launch snapshots, root-parameter reruns, invocation-input forks, and legacy replay lineage reads.
+7. Runs: global run list/detail, package provenance, launch snapshots, root-parameter reruns, invocation-input forks, and historical replay lineage reads.
 
 ## Success Criteria
 

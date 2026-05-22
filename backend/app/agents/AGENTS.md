@@ -7,7 +7,7 @@
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
 ## STRUCTURE
 ```text
@@ -35,7 +35,7 @@ app/agents/
 - Server-declared finance tool keys currently cover market quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and report lookup. Core memory tools are platform-owned.
 - `signaldeck.reports.lookup` remains a finance-owned report lookup anchor. `signaldeck.reports.write` remains importable only as a retired fail-closed boundary; do not route new core memory behavior through finance registrars.
 - Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Runtime memory write output may expose `memoryId`, `revisionId`, status, revision action, provenance, and warnings.
-- Runtime tools and prompt builders treat `memoryId` values as opaque. Only `ReportBackedMemoryStore` may parse the legacy `mem_<report_id>` format.
+- Runtime tools and prompt builders treat `memoryId` values as opaque platform-core memory identifiers.
 - MCP boundary code owns URL/stdio safety, saved config normalization, snapshots, and dispatch wrapping; keep that safety logic here instead of scattering it through routes or services.
 - Do not recreate a `skills/` namespace here; package-private skills are not a live backend app/agents contract.
 

@@ -7,7 +7,7 @@
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are retired/archive context, not live acceptance paths.
+Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -21,7 +21,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, and report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
-| Memory workflows | `memory_service.py`, `memory_context_service.py`, `memory_store.py`, `memory_report_service.py`, `report_backed_memory_store.py` | core memory DTO lifecycle, Postgres persistence, prompt snippets, run evidence, and historical report-domain readers |
+| Memory workflows | `memory_service.py`, `memory_context_service.py`, `memory_store.py`, `memory_report_service.py` | core memory DTO lifecycle, Postgres persistence, prompt snippets, run evidence, and historical report-domain readers |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
 | Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | slim bundled extension state, ToolCatalog/runtime registry filtering, dependency-only run extension records, execution providers, and lifecycle hooks |
 | Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `workflow_package_manifest_decompiler.py` | package-first authoring, validation, import/export, preflight, and immutable package artifacts |

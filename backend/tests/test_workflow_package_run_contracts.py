@@ -469,7 +469,7 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
         "key": "webhook_response",
         "version": 1,
     }
-    assert operation_invocations[0]["outputSchemaId"] == 1
+    assert "outputSchemaId" not in operation_invocations[0]
     assert operation_invocations[0]["status"] == "pending"
     assert request_metadata["headers"]["Authorization"] == {
         "from": "secret",

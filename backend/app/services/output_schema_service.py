@@ -20,15 +20,12 @@ from app.schemas.output_schema import (
     OutputSchemaRead,
     OutputSchemaStatus,
 )
-from app.services.legacy_authoring import LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
     OutputSchemaCompilerError,
     OutputSchemaValidationFailure,
     PreparedOutputSchema,
 )
-
-LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 
 
 class OutputSchemaService:
@@ -256,4 +253,4 @@ class OutputSchemaService:
         )
 
 
-__all__ = ["OutputSchemaService", "LEGACY_AUTHORING_CLASSIFICATION"]
+__all__ = ["OutputSchemaService"]

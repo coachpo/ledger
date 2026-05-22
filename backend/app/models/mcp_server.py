@@ -92,46 +92,6 @@ def _decrypt_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return decoded_payload
 
 
-def flatten_mcp_server_config(config: object, *, key: str) -> dict[str, Any] | None:
-    if not isinstance(config, Mapping):
-        return {}
-
-    raw_config = dict(config)
-    if "mcpServers" not in raw_config:
-        return raw_config
-
-    raw_servers = raw_config.get("mcpServers")
-    if not isinstance(raw_servers, Mapping):
-        return None
-
-    raw_entry = raw_servers.get(key)
-    if not isinstance(raw_entry, Mapping):
-        return None
-    return dict(raw_entry)
-
-
-def flatten_mcp_server_storage_payload(
-    payload: object,
-    *,
-    key: str,
-) -> tuple[dict[str, Any], bool] | None:
-    if not isinstance(payload, Mapping):
-        return None
-
-    raw_payload = dict(payload)
-    decrypted_payload = (
-        _decrypt_payload(raw_payload) if _is_encrypted_payload(raw_payload) else raw_payload
-    )
-    flattened_payload = flatten_mcp_server_config(decrypted_payload, key=key)
-    if flattened_payload is None:
-        return None
-    if flattened_payload == decrypted_payload:
-        return raw_payload, False
-    if _is_encrypted_payload(raw_payload):
-        return _encrypt_payload(flattened_payload), True
-    return flattened_payload, True
-
-
 def _normalize_string_sequence(value: object) -> list[str]:
     if value is None:
         return []
@@ -153,16 +113,6 @@ def _normalize_string_mapping(value: object) -> dict[str, str]:
         if normalized_key and normalized_value:
             normalized[normalized_key] = normalized_value
     return normalized
-
-
-def _legacy_auth_to_headers(value: object) -> dict[str, str]:
-    if not isinstance(value, Mapping):
-        return {}
-    header_name = str(value.get("header", "")).strip()
-    api_key = str(value.get("apiKey", "")).strip()
-    if not header_name or not api_key:
-        return {}
-    return {header_name: api_key}
 
 
 class EncryptedJSONB(TypeDecorator[dict[str, Any]]):
@@ -236,16 +186,8 @@ class McpServer(IdMixin, TimestampMixin, Base):
         server_default=sql_text("'{}'::jsonb"),
     )
 
-    def _flat_config_key(self) -> str:
-        raw_key = getattr(self, "key", "")
-        return str(raw_key).strip()
-
     def _mutable_flat_config(self) -> dict[str, Any]:
-        raw_config = self.config if isinstance(self.config, dict) else {}
-        flattened_config = flatten_mcp_server_config(raw_config, key=self._flat_config_key())
-        if flattened_config is None:
-            return {}
-        return dict(flattened_config)
+        return dict(self.config) if isinstance(self.config, dict) else {}
 
     def _set_flat_field(self, field_name: str, value: object) -> None:
         next_config = self._mutable_flat_config()
@@ -257,8 +199,7 @@ class McpServer(IdMixin, TimestampMixin, Base):
 
     @property
     def flat_config(self) -> dict[str, Any]:
-        flattened_config = flatten_mcp_server_config(self.config, key=self._flat_config_key())
-        return flattened_config if flattened_config is not None else {}
+        return self._mutable_flat_config()
 
     @property
     def name(self) -> str:
@@ -336,22 +277,5 @@ class McpServer(IdMixin, TimestampMixin, Base):
     def headers(self, value: object) -> None:
         self._set_flat_field("headers", _normalize_string_mapping(value))
 
-    @property
-    def auth(self) -> dict[str, str]:
-        headers = self.headers
-        if not headers:
-            return {}
-        header_name, api_key = next(iter(headers.items()))
-        return {"header": header_name, "apiKey": api_key}
 
-    @auth.setter
-    def auth(self, value: object) -> None:
-        self.headers = _legacy_auth_to_headers(value)
-
-
-__all__ = [
-    "EncryptedJSONB",
-    "McpServer",
-    "flatten_mcp_server_config",
-    "flatten_mcp_server_storage_payload",
-]
+__all__ = ["EncryptedJSONB", "McpServer"]

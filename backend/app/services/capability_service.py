@@ -26,9 +26,6 @@ from app.schemas.capability import (
     CapabilityStatus,
     CapabilityToolListRead,
 )
-from app.services.legacy_authoring import LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
-
-LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,7 +343,6 @@ class CapabilityService:
 
 __all__ = [
     "CapabilityService",
-    "LEGACY_AUTHORING_CLASSIFICATION",
     "RuntimeToolGrantError",
     "RuntimeToolGrantPolicy",
 ]

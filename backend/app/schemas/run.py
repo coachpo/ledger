@@ -160,37 +160,75 @@ def _redact_memory_event_payload(value: Any) -> Any:
     return value
 
 
-def _coerce_legacy_target_identity(value: Any) -> Any:
-    if not isinstance(value, dict):
+def _read_schema_payload(
+    value: Any,
+    *,
+    field_names: tuple[str, ...],
+    extra_names: tuple[str, ...] = (),
+) -> Any:
+    if isinstance(value, dict):
+        return dict(value)
+
+    data: dict[str, Any] = {}
+    for name in (*field_names, *extra_names):
+        try:
+            data[name] = getattr(value, name)
+        except AttributeError:
+            continue
+    if data:
+        return data
+    return value
+
+
+def _payload_value(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _payload_has(data: dict[str, Any], *keys: str) -> bool:
+    return any(key in data for key in keys)
+
+
+def _drop_payload_keys(data: dict[str, Any], *keys: str) -> None:
+    for key in keys:
+        data.pop(key, None)
+
+
+def _payload_resource_scope(data: dict[str, Any]) -> RunInvocationResourceScope:
+    value = _payload_value(data, "identityScope", "identity_scope")
+    if value is None:
+        return RunInvocationResourceScope.GLOBAL
+    if isinstance(value, RunInvocationResourceScope):
         return value
+    return RunInvocationResourceScope(str(value))
 
-    data = dict(value)
-    legacy_keys = (
-        "workflowId",
-        "workflowKey",
-        "workflowVersion",
-        "workflow_id",
-        "workflow_key",
-        "workflow_version",
-    )
-    has_legacy_identity = any(legacy_key in data for legacy_key in legacy_keys)
-    legacy_pairs = (
-        ("workflowId", "targetId"),
-        ("workflowKey", "targetKey"),
-        ("workflow_id", "target_id"),
-        ("workflow_key", "target_key"),
-    )
-    for legacy_key, target_key in legacy_pairs:
-        if target_key not in data and legacy_key in data:
-            data[target_key] = data[legacy_key]
-        data.pop(legacy_key, None)
-    data.pop("workflowVersion", None)
-    data.pop("workflow_version", None)
 
-    has_target_kind = "targetKind" in data or "target_kind" in data
-    if not has_target_kind and has_legacy_identity:
-        data["targetKind"] = RunTargetKind.WORKFLOW.value
-    return data
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
+def _scoped_resource_ref_from_payload(
+    data: dict[str, Any],
+    *,
+    id_keys: tuple[str, ...],
+    key_keys: tuple[str, ...],
+    version_keys: tuple[str, ...],
+) -> dict[str, object]:
+    identifier = _payload_value(data, *id_keys)
+    if identifier is None:
+        return {}
+
+    key = _payload_value(data, *key_keys)
+    return _scoped_resource_ref(
+        scope=_payload_resource_scope(data),
+        identifier=int(identifier),
+        key=None if key is None else str(key),
+        version=_optional_int(_payload_value(data, *version_keys)),
+    )
 
 
 class RunAgentErrorRead(CamelModel):
@@ -208,22 +246,9 @@ class RunAgentInvocationRead(CamelModel):
     position: int = Field(ge=0)
     agent_ref: dict[str, object] = Field(default_factory=dict)
     output_schema_ref: dict[str, object] = Field(default_factory=dict)
-    agent_id: int = Field(
-        description="Transitional compatibility field; prefer agentRef for scoped identity.",
-        json_schema_extra={"deprecated": True},
-    )
     agent_key: str
     agent_version: int = Field(ge=1)
-    output_schema_id: int = Field(
-        description="Transitional compatibility field; prefer outputSchemaRef for scoped identity.",
-        json_schema_extra={"deprecated": True},
-    )
     output_schema_version: int = Field(ge=1)
-    identity_scope: RunInvocationResourceScope = Field(
-        default=RunInvocationResourceScope.GLOBAL,
-        exclude=True,
-    )
-    output_schema_key: str | None = Field(default=None, exclude=True)
     input_mode: RunInvocationInputMode
     wiring: dict[str, Any] = Field(default_factory=dict)
     graph_metadata: dict[str, Any] | None = None
@@ -246,22 +271,55 @@ class RunAgentInvocationRead(CamelModel):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_scoped_refs(cls, value: Any) -> Any:
+        data = _read_schema_payload(
+            value,
+            field_names=tuple(cls.model_fields),
+            extra_names=(
+                "agent_id",
+                "output_schema_id",
+                "identity_scope",
+                "output_schema_key",
+            ),
+        )
+        if not isinstance(data, dict):
+            return value
+
+        if not _payload_has(data, "agentRef", "agent_ref"):
+            data["agentRef"] = _scoped_resource_ref_from_payload(
+                data,
+                id_keys=("agentId", "agent_id"),
+                key_keys=("agentKey", "agent_key"),
+                version_keys=("agentVersion", "agent_version"),
+            )
+        if not _payload_has(data, "outputSchemaRef", "output_schema_ref"):
+            data["outputSchemaRef"] = _scoped_resource_ref_from_payload(
+                data,
+                id_keys=("outputSchemaId", "output_schema_id"),
+                key_keys=("outputSchemaKey", "output_schema_key"),
+                version_keys=("outputSchemaVersion", "output_schema_version"),
+            )
+        _drop_payload_keys(
+            data,
+            "agentId",
+            "agent_id",
+            "outputSchemaId",
+            "output_schema_id",
+            "identityScope",
+            "identity_scope",
+            "outputSchemaKey",
+            "output_schema_key",
+        )
+        return data
+
     @model_validator(mode="after")
-    def populate_scoped_refs(self) -> Self:
+    def require_scoped_refs(self) -> Self:
         if not self.agent_ref:
-            self.agent_ref = _scoped_resource_ref(
-                scope=self.identity_scope,
-                identifier=self.agent_id,
-                key=self.agent_key,
-                version=self.agent_version,
-            )
+            raise ValueError("agentRef is required")
         if not self.output_schema_ref:
-            self.output_schema_ref = _scoped_resource_ref(
-                scope=self.identity_scope,
-                identifier=self.output_schema_id,
-                key=self.output_schema_key,
-                version=self.output_schema_version,
-            )
+            raise ValueError("outputSchemaRef is required")
         return self
 
     @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
@@ -282,17 +340,7 @@ class RunOperationInvocationRead(CamelModel):
     operation_key: str
     operation_kind: RunOperationKind
     output_schema_ref: dict[str, object] = Field(default_factory=dict)
-    output_schema_id: int = Field(
-        ge=1,
-        description="Transitional compatibility field; prefer outputSchemaRef for scoped identity.",
-        json_schema_extra={"deprecated": True},
-    )
     output_schema_version: int = Field(ge=1)
-    identity_scope: RunInvocationResourceScope = Field(
-        default=RunInvocationResourceScope.GLOBAL,
-        exclude=True,
-    )
-    output_schema_key: str | None = Field(default=None, exclude=True)
     method: str | None = None
     timeout_seconds: int | None = Field(default=None, ge=1)
     request_metadata: dict[str, Any] = Field(default_factory=dict)
@@ -317,15 +365,39 @@ class RunOperationInvocationRead(CamelModel):
     created_at: datetime
     updated_at: datetime
 
-    @model_validator(mode="after")
-    def populate_scoped_refs(self) -> Self:
-        if not self.output_schema_ref:
-            self.output_schema_ref = _scoped_resource_ref(
-                scope=self.identity_scope,
-                identifier=self.output_schema_id,
-                key=self.output_schema_key,
-                version=self.output_schema_version,
+    @model_validator(mode="before")
+    @classmethod
+    def populate_scoped_refs(cls, value: Any) -> Any:
+        data = _read_schema_payload(
+            value,
+            field_names=tuple(cls.model_fields),
+            extra_names=("output_schema_id", "identity_scope", "output_schema_key"),
+        )
+        if not isinstance(data, dict):
+            return value
+
+        if not _payload_has(data, "outputSchemaRef", "output_schema_ref"):
+            data["outputSchemaRef"] = _scoped_resource_ref_from_payload(
+                data,
+                id_keys=("outputSchemaId", "output_schema_id"),
+                key_keys=("outputSchemaKey", "output_schema_key"),
+                version_keys=("outputSchemaVersion", "output_schema_version"),
             )
+        _drop_payload_keys(
+            data,
+            "outputSchemaId",
+            "output_schema_id",
+            "identityScope",
+            "identity_scope",
+            "outputSchemaKey",
+            "output_schema_key",
+        )
+        return data
+
+    @model_validator(mode="after")
+    def require_scoped_ref(self) -> Self:
+        if not self.output_schema_ref:
+            raise ValueError("outputSchemaRef is required")
         return self
 
     @field_validator("started_at", "finished_at", "persisted_at", "created_at", "updated_at")
@@ -372,11 +444,6 @@ class RunCreatedRead(CamelModel):
     trace_id: str | None = None
     created_at: datetime
 
-    @model_validator(mode="before")
-    @classmethod
-    def coerce_target_identity(cls, value: Any) -> Any:
-        return _coerce_legacy_target_identity(value)
-
     @field_validator("created_at")
     @classmethod
     def validate_created_at(cls, value: datetime) -> datetime:
@@ -394,11 +461,6 @@ class RunListItemRead(CamelModel):
     queued_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def coerce_target_identity(cls, value: Any) -> Any:
-        return _coerce_legacy_target_identity(value)
 
     @field_validator("queued_at", "started_at", "finished_at")
     @classmethod
@@ -558,11 +620,6 @@ class RunRead(CamelModel):
     memory_events: list[RunMemoryEventRead] = Field(default_factory=list)
     extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def coerce_target_identity(cls, value: Any) -> Any:
-        return _coerce_legacy_target_identity(value)
 
     @model_validator(mode="after")
     def require_workflow_package_snapshot_provenance(self) -> Self:

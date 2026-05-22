@@ -27,9 +27,6 @@ from app.schemas.mcp_server import (
     McpServerTransport,
     McpServerUpdate,
 )
-from app.services.legacy_authoring import LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
-
-LEGACY_AUTHORING_CLASSIFICATION = LEGACY_AUTHORING_SCHEMA_CANDIDATE_ONLY
 
 
 class McpServerService:
@@ -192,7 +189,7 @@ class McpServerService:
         )
 
     def _validated_config_payload(self, payload: McpServerBase, *, key: str) -> dict[str, object]:
-        config_payload = self._flat_payload_to_wrapped_config(payload, key=key)
+        config_payload = self._payload_to_config(payload)
         candidate = McpServer(
             key=key,
             version=1,
@@ -203,8 +200,7 @@ class McpServerService:
         return config_payload
 
     @staticmethod
-    def _flat_payload_to_wrapped_config(payload: McpServerBase, *, key: str) -> dict[str, object]:
-        del key
+    def _payload_to_config(payload: McpServerBase) -> dict[str, object]:
         resource: dict[str, object] = {
             "name": payload.name,
             "description": payload.description,
@@ -227,27 +223,6 @@ class McpServerService:
                 }
             )
         return resource
-
-    @staticmethod
-    def _validate_flat_config(payload: McpServerBase) -> None:
-        if payload.transport == McpServerTransport.STDIO:
-            if not getattr(payload, "command", None):
-                raise validation_error(
-                    "MCP server validation failed",
-                    [{"field": "command", "issue": "command is required"}],
-                )
-            args = getattr(payload, "args", [])
-            if not isinstance(args, list) or not args:
-                raise validation_error(
-                    "MCP server validation failed",
-                    [{"field": "args", "issue": "args must contain at least one item"}],
-                )
-        elif payload.transport == McpServerTransport.HTTP_SSE:
-            if not getattr(payload, "url", None):
-                raise validation_error(
-                    "MCP server validation failed",
-                    [{"field": "url", "issue": "url is required"}],
-                )
 
     def _next_version(self, key: str) -> int:
         versions = self.repository.list_versions(key)
@@ -320,4 +295,4 @@ class McpServerService:
         )
 
 
-__all__ = ["McpServerService", "LEGACY_AUTHORING_CLASSIFICATION"]
+__all__ = ["McpServerService"]

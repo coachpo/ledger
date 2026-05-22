@@ -23,7 +23,7 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, and tax-lot accounting.
-- Retired `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and retired legacy global authoring routes.
+- Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, and global authoring routes.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
 
@@ -46,13 +46,13 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 
 ### FR-3 Package-First Agent Platform
 
-- Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and retired `spec.skills` fields.
+- Workflow Packages must be YAML-manifest based and reject aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw model connection ids, and unsupported `spec.skills` fields.
 - Package-private agents, output schemas, capability profiles, and workflow graphs must stay inside immutable package versions. Private MCP configs must stay inline as `env`, `headers`, and `query` manifest text.
 - Package exports must keep private MCP `env`, `headers`, and `query` values inline and still omit database ids and run history.
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 - Package launches must use the strict launch envelope from the dedicated `/workflow-packages/:packageId/run` page and create queued global runs with immutable package provenance. The editor must remain authoring-only and must not own launch runtime state.
-- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun lineage, invocation-input fork lineage, and legacy replay lineage when a historical run has it.
+- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun lineage, invocation-input fork lineage, and historical replay lineage when an old run has it.
 - Rerun must be the root-parameter descendant flow. Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary. `RunRead` does not expose a top-level `fork` metadata field today.
 
 ## Non-Functional Requirements
@@ -68,4 +68,4 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 
 - A user can manage portfolio records and reports without provider availability.
 - A user can author Workflow Packages, configure Model Connections, view Tools, launch saved package runs from `/workflow-packages/:packageId/run`, and inspect Runs from the browser.
-- Retired Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and retired legacy global authoring routes are not presented as current product surfaces.
+- Removed Studio, Tryout, orchestration, runtime-v2, simulation, backtest, `/api/skills`, `/skills*`, and global authoring routes are not presented as current product surfaces.

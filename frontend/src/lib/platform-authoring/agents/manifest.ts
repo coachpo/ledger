@@ -278,13 +278,13 @@ function collectLocalManifestDiagnostics(
         ),
       );
     }
-    const legacySkillsNode = getMapKey(specNode, "skills");
-    if (legacySkillsNode) {
+    const unsupportedSkillsNode = getMapKey(specNode, "skills");
+    if (unsupportedSkillsNode) {
       diagnostics.push(
         createLocalDiagnostic(
-          "Use spec.capabilities; legacy spec.skills is not supported",
+          "Use spec.capabilities; spec.skills is unsupported",
           "spec.skills",
-          locationFromNode(legacySkillsNode, lineCounter),
+          locationFromNode(unsupportedSkillsNode, lineCounter),
         ),
       );
     }

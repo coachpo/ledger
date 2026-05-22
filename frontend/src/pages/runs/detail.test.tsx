@@ -166,7 +166,6 @@ const NOW = "2026-04-20T10:00:00Z";
 function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAgentInvocationRead {
   return {
     agentRef: { scope: "global", id: 11, key: "research_agent", version: 3 },
-    agentId: 11,
     agentKey: "research_agent",
     agentVersion: 3,
     createdAt: NOW,
@@ -182,7 +181,6 @@ function buildInvocation(overrides: Partial<RunAgentInvocationRead> = {}): RunAg
     output: { summary: "analysis" },
     outputOrigin: "executed",
     outputSchemaRef: { scope: "global", id: 21, version: 4 },
-    outputSchemaId: 21,
     outputSchemaVersion: 4,
     persistedAt: "2026-04-20T10:00:03Z",
     position: 1,
@@ -274,8 +272,8 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     status: "succeeded",
     steps: [buildStep()],
     targetId: 7,
-    targetKey: "market_review",
-    targetKind: "workflow",
+    targetKey: "market_review_package",
+    targetKind: "workflowPackage",
     totalTokens: 51,
     traceId: "trace-42",
     updatedAt: "2026-04-20T10:00:04Z",
@@ -313,8 +311,8 @@ function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDr
     parameters: { ticker: "AAPL" },
     sourceRunId: 42,
     targetId: 7,
-    targetKey: "market_review",
-    targetKind: "workflow",
+    targetKey: "market_review_package",
+    targetKind: "workflowPackage",
     packageProvenance: null,
     ...overrides,
   };
@@ -419,7 +417,7 @@ describe("RunsDetailPage", () => {
       traceSpanId: "span-1",
     });
     const failedInvocation = buildInvocation({
-      agentId: 12,
+      agentRef: { scope: "packageLocal", localId: 12, key: "consumer_agent", version: 2 },
       agentKey: "consumer_agent",
       agentVersion: 2,
       durationMs: 12,
@@ -542,7 +540,6 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
     expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: market_review_package/i);
     expect(screen.getByRole("link", { name: /open current package/i })).toHaveAttribute("href", "/workflow-packages/7");
-    expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-detail-actions")).toHaveClass("flex", "min-w-0", "flex-col", "sm:flex-row");
     expect(screen.getByTestId("runs-detail-rerun")).toHaveTextContent(/run snapshot again/i);
     expect(screen.getByTestId("runs-detail-rerun")).toHaveClass("bg-primary", "text-primary-foreground", "w-full", "sm:w-auto");
@@ -662,15 +659,15 @@ describe("RunsDetailPage", () => {
     expect(within(lineage).getByTestId("runs-lineage-node-root")).toHaveTextContent(/run #40/i);
     expect(within(lineage).getByRole("link", { name: /run #41/i })).toHaveAttribute("href", "/runs/41");
     expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/source run/i);
-    expect(within(lineage).getByTestId("runs-legacy-replay-lineage")).toHaveTextContent(/historical run was created by the old step replay flow/i);
-    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/legacy replay step/i);
+    expect(within(lineage).getByTestId("runs-historical-lineage")).toHaveTextContent(/read-only historical lineage/i);
+    expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/historical lineage step/i);
     expect(within(lineage).getByTestId("runs-lineage-node-source")).toHaveTextContent(/step 1/i);
     expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/resume boundary/i);
     expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/step 2/i);
     expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned/i);
     expect(within(lineage).getByTestId("runs-lineage-node-current")).toHaveTextContent(/1 copied · 1 planned\/executed/i);
     expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-root-source")).toHaveTextContent(/lineage root/i);
-    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/legacy replay \/ resume/i);
+    expect(within(runLineageDiagram).getByTestId("mock-react-flow-edge-source-current")).toHaveTextContent(/historical lineage \/ resume/i);
 
     lineageRender.unmount();
     searchParamsMock = new URLSearchParams("inspect=invocation:1002&pane=error");
@@ -964,7 +961,7 @@ describe("RunsDetailPage", () => {
     expect(within(stepLineageDiagram).queryByTestId("mock-react-flow-edge-source-current")).not.toBeInTheDocument();
   });
 
-  it("renders standalone agent target identity and span-only outline trace summary", () => {
+  it("renders package target identity and span-only outline trace summary", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -976,12 +973,12 @@ describe("RunsDetailPage", () => {
               id: 201,
               invocations: [
                 buildInvocation({
-                  agentId: 20,
+                  agentRef: { scope: "packageLocal", localId: 20, key: "macro_agent", version: 9 },
                   agentKey: "macro_agent",
                   agentVersion: 9,
                   id: 2001,
                   output: { summary: "Macro complete" },
-                  outputSchemaId: 31,
+                  outputSchemaRef: { scope: "packageLocal", localId: 31, version: 1 },
                   outputSchemaVersion: 1,
                   resolvedInput: { topic: "macro" },
                   runId: 43,
@@ -996,8 +993,8 @@ describe("RunsDetailPage", () => {
             }),
           ],
           targetId: 12,
-          targetKey: "macro_agent",
-          targetKind: "agent",
+          targetKey: "macro_package",
+          targetKind: "workflowPackage",
           totalTokens: 18,
           traceId: null,
         }),
@@ -1006,37 +1003,12 @@ describe("RunsDetailPage", () => {
 
     render(<RunsDetailPage />);
 
-    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/agent/i);
-    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/^macro_agent$/i);
-    expect(screen.getByText(/target id: 12/i)).toBeVisible();
-    expect(screen.getByText(/standalone agent execution/i)).toBeVisible();
+    expect(screen.getByTestId("runs-detail-target-kind")).toHaveTextContent(/workflow package/i);
+    expect(screen.getByTestId("runs-detail-target-identity")).toHaveTextContent(/snapshot: macro_package/i);
+    expect(screen.getByText(/captured package id: 12/i)).toBeVisible();
     expect(screen.getByTestId("runs-step-1-trace-summary")).toHaveTextContent(/result\/span-agent-1/i);
     expect(screen.getByTestId("runs-step-1-completed-indicator")).toBeInTheDocument();
     expect(screen.queryByText(/captured through invocation spans/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /back to workflow/i })).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-detail-rerun")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /fork from this invocation/i })).not.toBeInTheDocument();
-  });
-
-  it("shows agent-run URL fork state as unavailable without fetching a draft", () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
-    useRunMock.mockReturnValue(queryResult(buildRun({ targetKind: "agent" })));
-
-    render(<RunsDetailPage />);
-
-    expect(screen.queryByRole("button", { name: /fork from this invocation/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("run-fork-invalid-target")).toHaveTextContent(/available for succeeded workflow package runs and succeeded agent invocations/i);
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: false });
-  });
-
-  it("shows generic workflow URL fork state as unavailable without fetching a draft", () => {
-    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
-    useRunMock.mockReturnValue(queryResult(buildRun({ replayStepIndex: 1, targetKind: "workflow" })));
-
-    render(<RunsDetailPage />);
-
-    expect(screen.getByTestId("run-fork-invalid-target")).toHaveTextContent(/available for succeeded workflow package runs and succeeded agent invocations/i);
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, { enabled: false });
   });
 
   it("renders structured final and aggregated output for nested payloads", () => {
@@ -1369,7 +1341,6 @@ describe("RunsDetailPage", () => {
                   output: { ok: true },
                   outputOrigin: "executed",
                   outputSchemaRef: { scope: "packageLocal", localId: 31, version: 1 },
-                  outputSchemaId: 31,
                   outputSchemaVersion: 1,
                   persistedAt: "2026-04-20T10:00:03Z",
                   position: 3,
