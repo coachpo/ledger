@@ -91,9 +91,7 @@ class RunRerunForkPreparation:
     ) -> None:
         self.session: Session = session
         self.run_repository: RunRepository = run_repository
-        self.model_connection_repository: ModelConnectionRepository = (
-            model_connection_repository
-        )
+        self.model_connection_repository: ModelConnectionRepository = model_connection_repository
         self.run_agent_invocation_repository: RunAgentInvocationRepository = (
             run_agent_invocation_repository
         )
@@ -119,9 +117,7 @@ class RunRerunForkPreparation:
                 "targetId": source_run.target_id,
                 "targetKey": source_run.target_key,
                 "parameters": deepcopy(source_run.input),
-                "packageProvenance": self.read_projection.package_provenance_payload(
-                    source_run
-                ),
+                "packageProvenance": self.read_projection.package_provenance_payload(source_run),
             }
         )
 
@@ -159,9 +155,7 @@ class RunRerunForkPreparation:
                 "targetId": source_run.target_id,
                 "targetKey": source_run.target_key,
                 "invocationInput": deepcopy(prepared.source_invocation.resolved_input),
-                "packageProvenance": self.read_projection.package_provenance_payload(
-                    source_run
-                ),
+                "packageProvenance": self.read_projection.package_provenance_payload(source_run),
             }
         )
 

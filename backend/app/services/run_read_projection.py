@@ -45,9 +45,7 @@ class RunReadProjection:
     ) -> None:
         self.session: Session = session
         self.run_repository: RunRepository = run_repository
-        self.workflow_package_repository: WorkflowPackageRepository = (
-            workflow_package_repository
-        )
+        self.workflow_package_repository: WorkflowPackageRepository = workflow_package_repository
         self._workflow_package_snapshot_for_run: _WorkflowPackageSnapshotResolver = (
             workflow_package_snapshot_for_run
         )
