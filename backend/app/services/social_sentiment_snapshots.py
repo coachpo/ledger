@@ -116,7 +116,7 @@ class SocialSentimentSourceBlock(CamelModel):
         return _normalize_symbols(value)
 
 
-class SocialSentimentLookupSnapshot(CamelModel):
+class SocialSentimentLookupResult(CamelModel):
     symbol: str
     sources: list[str] = Field(default_factory=list)
     start_date: datetime | None = None
@@ -163,7 +163,7 @@ class SocialSentimentLookupSnapshot(CamelModel):
 
 
 __all__ = [
-    "SocialSentimentLookupSnapshot",
+    "SocialSentimentLookupResult",
     "SocialSentimentMetric",
     "SocialSentimentSourceBlock",
 ]

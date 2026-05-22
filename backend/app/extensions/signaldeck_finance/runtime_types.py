@@ -37,7 +37,7 @@ from app.services.market_data_snapshots import (
 )
 from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlcvRow
 from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries
-from app.services.social_sentiment_snapshots import SocialSentimentLookupSnapshot
+from app.services.social_sentiment_snapshots import SocialSentimentLookupResult
 from app.services.social_sentiment_snapshots import (
     SocialSentimentMetric as RuntimeSocialSentimentMetric,
 )
@@ -143,7 +143,7 @@ class RuntimeNewsLookupResult(MarketDataNewsLookupResult):
     tool_key: Literal["signaldeck.news.lookup"] = "signaldeck.news.lookup"
 
 
-class RuntimeSocialSentimentLookupResult(SocialSentimentLookupSnapshot):
+class RuntimeSocialSentimentLookupResult(SocialSentimentLookupResult):
     tool_key: Literal["signaldeck.social_sentiment.lookup"] = "signaldeck.social_sentiment.lookup"
 
 

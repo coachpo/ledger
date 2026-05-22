@@ -31,7 +31,7 @@ from app.services.social_sentiment_provider import (
     SocialSentimentSource,
 )
 from app.services.social_sentiment_service import SocialSentimentService
-from app.services.social_sentiment_snapshots import SocialSentimentLookupSnapshot
+from app.services.social_sentiment_snapshots import SocialSentimentLookupResult
 
 
 class _SocialAdapter:
@@ -78,7 +78,7 @@ def _failing_session_factory() -> object:
 
 
 def _payload(
-    result: RuntimeSocialSentimentLookupResult | SocialSentimentLookupSnapshot,
+    result: RuntimeSocialSentimentLookupResult | SocialSentimentLookupResult,
 ) -> dict[str, object]:
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True))
 

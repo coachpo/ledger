@@ -16,7 +16,7 @@ from app.services.social_sentiment_provider import (
     SocialSentimentSourceAdapter,
 )
 from app.services.social_sentiment_snapshots import (
-    SocialSentimentLookupSnapshot as RuntimeSocialSentimentLookupResult,
+    SocialSentimentLookupResult as RuntimeSocialSentimentLookupResult,
 )
 from app.services.social_sentiment_snapshots import (
     SocialSentimentMetric as RuntimeSocialSentimentMetric,
