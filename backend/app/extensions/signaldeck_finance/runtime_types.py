@@ -21,19 +21,19 @@ from app.services.market_data_snapshots import (
     MarketDataFundamentalMetric as RuntimeFundamentalMetric,
 )
 from app.services.market_data_snapshots import (
-    MarketDataFundamentalsLookupSnapshot,
-    MarketDataIndicatorLookupSnapshot,
+    MarketDataFundamentalsLookupResult,
+    MarketDataIndicatorLookupResult,
 )
 from app.services.market_data_snapshots import MarketDataIndicatorRow as RuntimeIndicatorRow
 from app.services.market_data_snapshots import MarketDataIndicatorValue as RuntimeIndicatorValue
-from app.services.market_data_snapshots import MarketDataInsiderDataLookupSnapshot
+from app.services.market_data_snapshots import MarketDataInsiderDataLookupResult
 from app.services.market_data_snapshots import (
     MarketDataInsiderTransaction as RuntimeInsiderTransaction,
 )
 from app.services.market_data_snapshots import MarketDataNewsItem as RuntimeNewsItem
 from app.services.market_data_snapshots import (
-    MarketDataNewsLookupSnapshot,
-    MarketDataOhlcvLookupSnapshot,
+    MarketDataNewsLookupResult,
+    MarketDataOhlcvLookupResult,
 )
 from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlcvRow
 from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries
@@ -127,19 +127,19 @@ class RuntimeHistoryLookupResult(CamelModel):
         return self
 
 
-class RuntimeOhlcvLookupResult(MarketDataOhlcvLookupSnapshot):
+class RuntimeOhlcvLookupResult(MarketDataOhlcvLookupResult):
     tool_key: Literal["signaldeck.market_data.ohlcv_lookup"] = "signaldeck.market_data.ohlcv_lookup"
 
 
-class RuntimeIndicatorLookupResult(MarketDataIndicatorLookupSnapshot):
+class RuntimeIndicatorLookupResult(MarketDataIndicatorLookupResult):
     tool_key: Literal["signaldeck.indicators.lookup"] = "signaldeck.indicators.lookup"
 
 
-class RuntimeFundamentalsLookupResult(MarketDataFundamentalsLookupSnapshot):
+class RuntimeFundamentalsLookupResult(MarketDataFundamentalsLookupResult):
     tool_key: Literal["signaldeck.fundamentals.lookup"] = "signaldeck.fundamentals.lookup"
 
 
-class RuntimeNewsLookupResult(MarketDataNewsLookupSnapshot):
+class RuntimeNewsLookupResult(MarketDataNewsLookupResult):
     tool_key: Literal["signaldeck.news.lookup"] = "signaldeck.news.lookup"
 
 
@@ -147,7 +147,7 @@ class RuntimeSocialSentimentLookupResult(SocialSentimentLookupSnapshot):
     tool_key: Literal["signaldeck.social_sentiment.lookup"] = "signaldeck.social_sentiment.lookup"
 
 
-class RuntimeInsiderDataLookupResult(MarketDataInsiderDataLookupSnapshot):
+class RuntimeInsiderDataLookupResult(MarketDataInsiderDataLookupResult):
     tool_key: Literal["signaldeck.insider_data.lookup"] = "signaldeck.insider_data.lookup"
 
 

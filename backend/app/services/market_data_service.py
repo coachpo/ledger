@@ -38,25 +38,23 @@ from app.services.market_data_snapshots import (
     MarketDataFundamentalMetric as RuntimeFundamentalMetric,
 )
 from app.services.market_data_snapshots import (
-    MarketDataFundamentalsLookupSnapshot as RuntimeFundamentalsLookupResult,
+    MarketDataFundamentalsLookupResult as RuntimeFundamentalsLookupResult,
 )
 from app.services.market_data_snapshots import (
-    MarketDataIndicatorLookupSnapshot as RuntimeIndicatorLookupResult,
+    MarketDataIndicatorLookupResult as RuntimeIndicatorLookupResult,
 )
 from app.services.market_data_snapshots import MarketDataIndicatorRow as RuntimeIndicatorRow
 from app.services.market_data_snapshots import MarketDataIndicatorValue as RuntimeIndicatorValue
 from app.services.market_data_snapshots import (
-    MarketDataInsiderDataLookupSnapshot as RuntimeInsiderDataLookupResult,
+    MarketDataInsiderDataLookupResult as RuntimeInsiderDataLookupResult,
 )
 from app.services.market_data_snapshots import (
     MarketDataInsiderTransaction as RuntimeInsiderTransaction,
 )
 from app.services.market_data_snapshots import MarketDataNewsItem as RuntimeNewsItem
+from app.services.market_data_snapshots import MarketDataNewsLookupResult as RuntimeNewsLookupResult
 from app.services.market_data_snapshots import (
-    MarketDataNewsLookupSnapshot as RuntimeNewsLookupResult,
-)
-from app.services.market_data_snapshots import (
-    MarketDataOhlcvLookupSnapshot as RuntimeOhlcvLookupResult,
+    MarketDataOhlcvLookupResult as RuntimeOhlcvLookupResult,
 )
 from app.services.market_data_snapshots import MarketDataOhlcvRow as RuntimeOhlcvRow
 from app.services.market_data_snapshots import MarketDataOhlcvSeries as RuntimeOhlcvSeries

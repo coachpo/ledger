@@ -26,12 +26,12 @@ def _validate_chronological_datetimes(rows: Sequence[datetime]) -> None:
         previous = current
 
 
-class MarketDataQuoteLookupSnapshot(CamelModel):
+class MarketDataQuoteLookupResult(CamelModel):
     quotes: list[MarketQuoteRead]
     warnings: list[RuntimeToolWarning] = Field(default_factory=list)
 
 
-class MarketDataHistoryLookupSnapshot(CamelModel):
+class MarketDataHistoryLookupResult(CamelModel):
     range: str
     interval: str
     start_date: datetime | None = None
@@ -84,7 +84,7 @@ class MarketDataOhlcvSeries(CamelModel):
         return self
 
 
-class MarketDataOhlcvLookupSnapshot(CamelModel):
+class MarketDataOhlcvLookupResult(CamelModel):
     start_date: datetime
     end_date: datetime
     series: list[MarketDataOhlcvSeries]
@@ -126,7 +126,7 @@ class MarketDataIndicatorRow(CamelModel):
         return ensure_timezone(value)
 
 
-class MarketDataIndicatorLookupSnapshot(CamelModel):
+class MarketDataIndicatorLookupResult(CamelModel):
     symbol: str
     provider: str
     current_date: datetime
@@ -184,7 +184,7 @@ class MarketDataFinancialStatement(CamelModel):
         return ensure_timezone(value)
 
 
-class MarketDataFundamentalsLookupSnapshot(CamelModel):
+class MarketDataFundamentalsLookupResult(CamelModel):
     symbol: str
     provider: str
     as_of: datetime
@@ -213,7 +213,7 @@ class MarketDataNewsItem(CamelModel):
         return ensure_timezone(value)
 
 
-class MarketDataNewsLookupSnapshot(CamelModel):
+class MarketDataNewsLookupResult(CamelModel):
     query: str | None = None
     symbols: list[str] = Field(default_factory=list)
     start_date: datetime | None = None
@@ -243,7 +243,7 @@ class MarketDataInsiderTransaction(CamelModel):
         return _validate_datetime(value)
 
 
-class MarketDataInsiderDataLookupSnapshot(CamelModel):
+class MarketDataInsiderDataLookupResult(CamelModel):
     symbol: str
     provider: str
     start_date: datetime | None = None
@@ -261,17 +261,17 @@ __all__ = [
     "MarketDataFinancialStatement",
     "MarketDataFinancialStatementLine",
     "MarketDataFundamentalMetric",
-    "MarketDataFundamentalsLookupSnapshot",
-    "MarketDataHistoryLookupSnapshot",
-    "MarketDataIndicatorLookupSnapshot",
+    "MarketDataFundamentalsLookupResult",
+    "MarketDataHistoryLookupResult",
+    "MarketDataIndicatorLookupResult",
     "MarketDataIndicatorRow",
     "MarketDataIndicatorValue",
-    "MarketDataInsiderDataLookupSnapshot",
+    "MarketDataInsiderDataLookupResult",
     "MarketDataInsiderTransaction",
     "MarketDataNewsItem",
-    "MarketDataNewsLookupSnapshot",
-    "MarketDataOhlcvLookupSnapshot",
+    "MarketDataNewsLookupResult",
+    "MarketDataOhlcvLookupResult",
     "MarketDataOhlcvRow",
     "MarketDataOhlcvSeries",
-    "MarketDataQuoteLookupSnapshot",
+    "MarketDataQuoteLookupResult",
 ]
