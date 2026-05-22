@@ -12,8 +12,6 @@ import { formatDateTime } from "@/lib/format";
 
 import {
   describeRunTarget,
-  EvidenceViewer,
-  ExecutionOutline,
   findForkTargetContext,
   formatTargetKindLabel,
   formatUnfinishedRunStatus,
@@ -21,10 +19,14 @@ import {
   hasCurrentForkLineage,
   isTerminalStatus,
   progressForRun,
-  RunContextStrip,
-  RunForkDialog,
   sortedInvocations,
   sortedOperationInvocations,
+} from "./detail-helpers";
+import {
+  EvidenceViewer,
+  ExecutionOutline,
+  RunContextStrip,
+  RunForkDialog,
 } from "./detail-sections";
 import {
   resolveRunInspectionState,
