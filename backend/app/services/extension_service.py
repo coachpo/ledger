@@ -21,11 +21,11 @@ from app.services.run_lifecycle import ExtensionRunLifecycleHooks
 
 
 @dataclass(frozen=True, slots=True)
-class ExtensionStateSnapshot:
+class ResolvedExtensionState:
     extension_key: str
     enabled: bool
 
-    def require_enabled(self, *, surface: str) -> ExtensionStateSnapshot:
+    def require_enabled(self, *, surface: str) -> ResolvedExtensionState:
         if not self.enabled:
             raise extension_disabled_error(extension_key=self.extension_key, surface=surface)
         return self
@@ -79,7 +79,7 @@ class ExtensionService:
             raise
         return self._to_read_model(extension, state)
 
-    def resolve_state(self, extension_key: str) -> ExtensionStateSnapshot:
+    def resolve_state(self, extension_key: str) -> ResolvedExtensionState:
         extension = self._get_extension_definition(extension_key)
         return self._snapshot(extension, self._get_state(extension.key))
 
@@ -88,7 +88,7 @@ class ExtensionService:
         extension_key: str,
         *,
         surface: str,
-    ) -> ExtensionStateSnapshot:
+    ) -> ResolvedExtensionState:
         return self.resolve_state(extension_key).require_enabled(surface=surface)
 
     def get_tool_catalog(self) -> ToolCatalog:
@@ -156,8 +156,8 @@ class ExtensionService:
     def _snapshot(
         extension: BundledExtensionDefinition,
         state: ExtensionState | None,
-    ) -> ExtensionStateSnapshot:
-        return ExtensionStateSnapshot(
+    ) -> ResolvedExtensionState:
+        return ResolvedExtensionState(
             extension_key=extension.key,
             enabled=extension.default_enabled if state is None else state.enabled,
         )
@@ -177,4 +177,4 @@ class ExtensionService:
         )
 
 
-__all__ = ["ExtensionService", "ExtensionStateSnapshot"]
+__all__ = ["ExtensionService", "ResolvedExtensionState"]

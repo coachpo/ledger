@@ -4,7 +4,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from app.services.extension_service import ExtensionService, ExtensionStateSnapshot
+from app.services.extension_service import ExtensionService, ResolvedExtensionState
 
 FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance"
 
@@ -30,7 +30,7 @@ class ExtensionGate(Protocol):
         extension_key: str,
         *,
         surface: str,
-    ) -> ExtensionStateSnapshot: ...
+    ) -> ResolvedExtensionState: ...
 
 
 def require_extension_enabled(
@@ -38,7 +38,7 @@ def require_extension_enabled(
     *,
     extension_key: str,
     surface: str,
-) -> ExtensionStateSnapshot:
+) -> ResolvedExtensionState:
     return ExtensionService(session).require_enabled(extension_key, surface=surface)
 
 
@@ -46,7 +46,7 @@ def require_finance_workspace_enabled(
     session: Session,
     *,
     surface: str,
-) -> ExtensionStateSnapshot:
+) -> ResolvedExtensionState:
     return require_extension_enabled(
         session,
         extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,

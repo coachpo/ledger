@@ -11,7 +11,7 @@ from app.agents import ToolCatalog
 from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.extension_service import ExtensionService, ExtensionStateSnapshot
+from app.services.extension_service import ExtensionService, ResolvedExtensionState
 from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
@@ -41,10 +41,10 @@ def require_extension_enabled(
     *,
     extension_key: str,
     surface: str,
-) -> Callable[[ExtensionService], ExtensionStateSnapshot]:
+) -> Callable[[ExtensionService], ResolvedExtensionState]:
     def dependency(
         service: Annotated[ExtensionService, Depends(get_extension_service)],
-    ) -> ExtensionStateSnapshot:
+    ) -> ResolvedExtensionState:
         return service.require_enabled(extension_key, surface=surface)
 
     return dependency
