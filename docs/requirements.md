@@ -1,6 +1,6 @@
 # Requirements Document
 
-> Status: Live requirements reference for branch `main` at `e2c635f`.
+> Status: Live requirements reference for branch `main` at `f9ae90d`.
 
 ## Purpose
 
@@ -52,7 +52,7 @@ Define the shipped SignalDeck requirements for a trusted single-user portfolio w
 - Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, and runtime.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles for market data, indicators, fundamentals, news, insider data, positions, report lookup, and platform-core memory write/lookup.
 - Package launches must use the strict launch envelope from the dedicated `/workflow-packages/:packageId/run` page and create queued global runs with immutable package provenance. The editor must remain authoring-only and must not own launch runtime state.
-- Runs must expose input, per-step outputs, final output, status, timing, token usage, optional Logfire trace/span ids, package provenance, rerun lineage, invocation-input fork lineage, and historical replay lineage when an old run has it.
+- Runs must expose input, per-step outputs, final output, status, backend-owned progress, queue reason, timing, token usage, optional Logfire trace/span ids, package provenance, rerun lineage, invocation-input fork lineage, and historical replay lineage when an old run has it.
 - Rerun must be the root-parameter descendant flow. Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary. `RunRead` does not expose a top-level `fork` metadata field today.
 
 ## Non-Functional Requirements

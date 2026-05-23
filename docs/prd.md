@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-> Status: Live product-scope reference for branch `main` at `e2c635f`.
+> Status: Live product-scope reference for branch `main` at `f9ae90d`.
 
 ## Product Summary
 
@@ -18,7 +18,7 @@ SignalDeck is a trusted single-user portfolio workspace with preserved portfolio
 ## Non-Goals
 
 - Authentication, authorization, or multi-tenant account management.
-- Live broker integration, order routing, realtime quotes, alerts, or autonomous schedulers.
+- Live broker integration, order routing, realtime quotes, alerts, or user-facing autonomous scheduling products. The backend run scheduler is internal queue infrastructure only.
 - Removed Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract, or global authoring browser/API surfaces.
 - TradingAgents-specific platform behavior. TradingAgents is smoke/demo package data only.
 
