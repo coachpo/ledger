@@ -16,7 +16,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Request-scoped sessions | `engine.py` | `get_db_session()` generator used by API dependencies |
 | App startup DB init | `session.py` | `init_db()` composes model import, validation, table creation, and upgrade helpers |
 | Engine / id validation | `validation.py` | PostgreSQL requirement and numeric-id guardrails |
-| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` repair/seeding, platform reference tables, `run_forks`, startup recovery, and legacy-table cleanup |
+| Schema upgrades | `upgrades.py` | preserved-table backfills, `extension_states` repair/seeding, platform reference tables, run scheduler metadata/indexes, `run_forks`, startup recovery, and legacy-table cleanup |
 | Test cache resets | `engine.py` | `reset_db_caches()` for isolated test databases |
 
 ## CONVENTIONS
