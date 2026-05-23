@@ -3,7 +3,9 @@
 > Inherits root rules from `/AGENTS.md`. Local layer docs live under `app/*/AGENTS.md` and `tests/AGENTS.md`.
 
 ## OVERVIEW
-FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the bundled `signaldeck.finance` Finance Workspace extension plus platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the statically resident `signaldeck.finance` Finance Workspace extension plus platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
+
+Extension model: SignalDeck Core ships statically resident extensions in code, while backend state and gates decide which routes, tools, providers, and hooks are exposed.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -15,7 +17,7 @@ Future backend upgrade work must keep generic platform behavior separate from ex
 - `app/core/AGENTS.md` — settings, error envelope, telemetry, normalization helpers
 - `app/db/AGENTS.md` — engine/session lifecycle and PostgreSQL-only upgrade rules
 - `app/api/AGENTS.md` — route-handler delegation, extension-gated `/api/v1`, and dependency wiring
-- `app/extensions/AGENTS.md` — bundled extension registry, slim state, private registrar, and ownership boundaries
+- `app/extensions/AGENTS.md` — statically resident extension registry, slim state, private registrar, and ownership boundaries
 - `app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report ownership
 - `app/agents/AGENTS.md` — tool catalog, native runtime tools, MCP security/runtime boundaries, and platform memory-tool ownership
 - `app/services/AGENTS.md` — service orchestration, extension state, manifests, execution providers/lifecycle hooks, runtime execution, core memory, historical agent-memory reports, and quote-provider wiring
@@ -30,7 +32,7 @@ backend/
 ├── app/core/                   # config, errors, formatting, telemetry, constants
 ├── app/db/                     # engine/session/init + PostgreSQL upgrade helpers
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
-├── app/extensions/             # bundled extension registry and signaldeck.finance private registrar ownership
+├── app/extensions/             # statically resident extension registry and signaldeck.finance private registrar ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
 ├── app/services/               # CRUD, extension state, manifests, execution, queueing, memory, templates, market data, trading rules
 ├── app/workers/                # long-lived scheduler worker entrypoints for queued package runs
@@ -45,7 +47,7 @@ backend/
 |---|---|---|
 | API route handlers | `app/api/AGENTS.md` | route handler rules, service delegation, error translation |
 | Service construction | `app/api/dependencies.py` | constructs extension-aware CRUD, template, report, ToolCatalog, MCP tester, platform, run, and quote-provider services |
-| Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private bundled extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
+| Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private statically resident extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/model_connections.py`, `app/api/extensions.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Model Connections, Extensions, Tools, and Runs |
 | Runtime tools / MCP / scheduler / traces | `app/agents/AGENTS.md`, `app/workers/run_scheduler.py`, `app/services/run_queue_service.py`, `app/services/run_read_projection.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, extension-filtered native runtime dispatch, explicit queued-run worker, backend progress/queue read models, MCP snapshots, Logfire trace ids/spans, and memory writes |
 | Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
@@ -59,7 +61,7 @@ backend/
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
 - `app/api/dependencies.py` is the composition root for request-scoped `Session` objects, finance-scoped service factories imported from `app.extensions.signaldeck_finance.dependencies`, `ExtensionService`, `ToolCatalog`, MCP connection testing, platform services, `RunService`, and quote providers.
-- `app/extensions/registry.py` declares bundled extension identity, initial enabled seeding, and private registrar paths; `ExtensionService` resolves persisted/default state and supplies enabled ToolCatalog/runtime registries.
+- `app/extensions/registry.py` declares statically resident extension identity, initial enabled seeding, and private registrar paths; `ExtensionService` resolves persisted/default state and supplies enabled ToolCatalog/runtime registries.
 - Schemas inherit `CamelModel`; external JSON is camelCase, extra fields are forbidden, decimals serialize to strings, and datetimes serialize as UTC `Z` timestamps.
 - Shared normalization and decimal parsing live in `app/core/formatting.py`; use `normalize_symbol`, `normalize_currency`, `parse_decimal_string`, `to_utc`, and `utcnow` instead of ad-hoc helpers.
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.

@@ -1,6 +1,6 @@
 # SIGNALDECK FINANCE EXTENSION GUIDE
 
-> Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`. This file covers the bundled `signaldeck.finance` extension only.
+> Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`. This file covers the statically resident `signaldeck.finance` extension only.
 
 ## OVERVIEW
 `signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance runtime tools, report lookup, and historical agent-memory report readers.
