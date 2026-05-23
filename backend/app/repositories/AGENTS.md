@@ -53,5 +53,5 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 - `ReportRepository` keeps slug and name lookups simple, exposes metadata-based filters, and leaves name-generation policy to `ReportService`.
 - `WorkflowPackageRepository` keeps current package persistence and lookup behavior centralized.
 - `ModelConnectionRepository` filters saved provider connections by status for list/editor/package-binding flows.
-- `RunRepository` backs the current run list/detail surfaces and keeps persisted package-run lookup behavior centralized.
+- `RunRepository` backs current run list/detail surfaces, backend progress/queue projections, package-qualified queue claims, and persisted package-run lookup behavior.
 - `TradingOperationRepository` retains historical attribution helpers where preserved legacy columns still matter, but there is no active `SimulationRepository` in the shipped package.
