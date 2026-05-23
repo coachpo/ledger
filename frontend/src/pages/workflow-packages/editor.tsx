@@ -67,23 +67,32 @@ export function WorkflowPackageEditorPage() {
   const { packageId } = useParams<{ packageId: string }>();
   const isNew = packageId === undefined;
   const packageQuery = useWorkflowPackage(isNew ? undefined : packageId);
-  const manifestQuery = useWorkflowPackageManifest(isNew ? undefined : packageId);
+  const manifestQuery = useWorkflowPackageManifest(
+    isNew ? undefined : packageId,
+  );
   const workflowPackage = packageQuery.data;
   const editorShellRef = useRef<HTMLDivElement>(null);
   const pendingTabScrollTop = useRef<number | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkflowPackageEditorTab>("overview");
-  const [draft, setDraft] = useState<WorkflowPackageDraft>(() => createWorkflowPackageDraft());
+  const [activeTab, setActiveTab] =
+    useState<WorkflowPackageEditorTab>("overview");
+  const [draft, setDraft] = useState<WorkflowPackageDraft>(() =>
+    createWorkflowPackageDraft(),
+  );
   const [isDirty, setIsDirty] = useState(false);
   const [launchConfirmationOpen, setLaunchConfirmationOpen] = useState(false);
   const [issues, setIssues] = useState<WorkflowPackageEditorIssue[]>([]);
-  const [diagnosticTarget, setDiagnosticTarget] = useState<DiagnosticTarget>(null);
-  const [initializedManifestIdentity, setInitializedManifestIdentity] = useState<string | null>(isNew ? "new" : null);
+  const [diagnosticTarget, setDiagnosticTarget] =
+    useState<DiagnosticTarget>(null);
+  const [initializedManifestIdentity, setInitializedManifestIdentity] =
+    useState<string | null>(isNew ? "new" : null);
   const createPackage = useCreateWorkflowPackage();
   const updatePackage = useUpdateWorkflowPackage();
   const validatePackage = useValidateWorkflowPackageManifest();
   const modelConnectionsQuery = useModelConnections();
   const toolsQuery = useTools();
-  const secretBindingsQuery = useWorkflowPackageSecretBindings(isNew ? undefined : packageId);
+  const secretBindingsQuery = useWorkflowPackageSecretBindings(
+    isNew ? undefined : packageId,
+  );
   const upsertSecretBinding = useUpsertWorkflowPackageSecretBinding();
   const deleteSecretBinding = useDeleteWorkflowPackageSecretBinding();
 
@@ -127,11 +136,18 @@ export function WorkflowPackageEditorPage() {
       }
       return;
     }
-    if (!manifestQuery.data || !parsedManifest || parsedManifest.errors.length > 0) {
+    if (
+      !manifestQuery.data ||
+      !parsedManifest ||
+      parsedManifest.errors.length > 0
+    ) {
       return;
     }
     const nextIdentity = manifestIdentity(manifestQuery.data);
-    if (initializedManifestIdentity === nextIdentity || (isDirty && initializedManifestIdentity !== null)) {
+    if (
+      initializedManifestIdentity === nextIdentity ||
+      (isDirty && initializedManifestIdentity !== null)
+    ) {
       return;
     }
     setDraft(parsedManifest.draft);
@@ -139,24 +155,60 @@ export function WorkflowPackageEditorPage() {
     setDiagnosticTarget(null);
     setInitializedManifestIdentity(nextIdentity);
     setIsDirty(false);
-  }, [initializedManifestIdentity, isDirty, isNew, manifestQuery.data, parsedManifest]);
+  }, [
+    initializedManifestIdentity,
+    isDirty,
+    isNew,
+    manifestQuery.data,
+    parsedManifest,
+  ]);
 
-  const headerDescription = workflowPackage?.description || (isNew ? "Create a package manifest shell before adding private agents, schemas, profiles, and MCP bindings." : "Package-local authoring shell for resources that must not become standalone global pages.");
-  const localIssues = useMemo(() => validateWorkflowPackageDraft(draft), [draft]);
+  const headerDescription =
+    workflowPackage?.description ||
+    (isNew ? "Create a package manifest." : "Edit package-local resources.");
+  const localIssues = useMemo(
+    () => validateWorkflowPackageDraft(draft),
+    [draft],
+  );
   const combinedIssues = [...localIssues, ...issues];
-  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map((connection) => ({ description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`, label: connection.name, value: connection.key }));
-  const referencedSecretKeys = useMemo(() => collectSecretReferenceKeys(draft.spec.workflows), [draft.spec.workflows]);
+  const modelConnectionOptions = (modelConnectionsQuery.data?.items ?? []).map(
+    (connection) => ({
+      description: `${connection.modelId} · ${connection.apiStyle} · ${connectionKindLabel(connection.connectionKind)}`,
+      label: connection.name,
+      value: connection.key,
+    }),
+  );
+  const referencedSecretKeys = useMemo(
+    () => collectSecretReferenceKeys(draft.spec.workflows),
+    [draft.spec.workflows],
+  );
   const isSaving = createPackage.isPending || updatePackage.isPending;
   const manifestParseErrors = parsedManifest?.errors ?? [];
-  const manifestLoadError = manifestQuery.error instanceof Error ? manifestQuery.error.message : "Failed to load package manifest.";
-  const packageLoadError = packageQuery.error instanceof Error ? packageQuery.error.message : "Failed to load workflow package.";
-  const editorBlocker = !isNew && packageQuery.isError
-    ? { errors: [packageLoadError], title: "Package identity could not be loaded" }
-    : !isNew && manifestQuery.isError
-      ? { errors: [manifestLoadError], title: "Package manifest could not be loaded" }
-      : !isNew && manifestParseErrors.length > 0
-        ? { errors: manifestParseErrors, title: "Package manifest could not be parsed" }
-        : null;
+  const manifestLoadError =
+    manifestQuery.error instanceof Error
+      ? manifestQuery.error.message
+      : "Failed to load package manifest.";
+  const packageLoadError =
+    packageQuery.error instanceof Error
+      ? packageQuery.error.message
+      : "Failed to load workflow package.";
+  const editorBlocker =
+    !isNew && packageQuery.isError
+      ? {
+          errors: [packageLoadError],
+          title: "Package identity could not be loaded",
+        }
+      : !isNew && manifestQuery.isError
+        ? {
+            errors: [manifestLoadError],
+            title: "Package manifest could not be loaded",
+          }
+        : !isNew && manifestParseErrors.length > 0
+          ? {
+              errors: manifestParseErrors,
+              title: "Package manifest could not be parsed",
+            }
+          : null;
   const isEditorBlocked = editorBlocker !== null;
 
   const updateDraft = (nextDraft: WorkflowPackageDraft) => {
@@ -179,7 +231,9 @@ export function WorkflowPackageEditorPage() {
     if (!isDirty) {
       return true;
     }
-    return window.confirm(`You have unsaved changes. Discard them and ${action}?`);
+    return window.confirm(
+      `You have unsaved changes. Discard them and ${action}?`,
+    );
   };
 
   const retryManifestLoad = () => {
@@ -207,7 +261,13 @@ export function WorkflowPackageEditorPage() {
     setDiagnosticTarget(target);
     setActiveTab(target.tab);
     window.setTimeout(() => {
-      const field = document.querySelector<HTMLElement>(`[data-field="${CSS.escape(issue.field)}"]`) ?? document.querySelector<HTMLElement>(`[data-field="${CSS.escape(target.field)}"]`);
+      const field =
+        document.querySelector<HTMLElement>(
+          `[data-field="${CSS.escape(issue.field)}"]`,
+        ) ??
+        document.querySelector<HTMLElement>(
+          `[data-field="${CSS.escape(target.field)}"]`,
+        );
       field?.focus();
       field?.scrollIntoView({ block: "center", inline: "nearest" });
     }, 50);
@@ -219,10 +279,16 @@ export function WorkflowPackageEditorPage() {
       return;
     }
     try {
-      await upsertSecretBinding.mutateAsync({ key, packageId, payload: { value } });
+      await upsertSecretBinding.mutateAsync({
+        key,
+        packageId,
+        payload: { value },
+      });
       toast.success(`Secret binding ${key} saved`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Secret binding save failed.");
+      toast.error(
+        error instanceof Error ? error.message : "Secret binding save failed.",
+      );
     }
   };
 
@@ -234,7 +300,11 @@ export function WorkflowPackageEditorPage() {
       await deleteSecretBinding.mutateAsync({ key, packageId });
       toast.success(`Secret binding ${key} deleted`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Secret binding delete failed.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Secret binding delete failed.",
+      );
     }
   };
 
@@ -250,7 +320,11 @@ export function WorkflowPackageEditorPage() {
     if (backendIssues[0]) {
       focusIssue(backendIssues[0]);
     }
-    toast[backendIssues.some((issue) => issue.issue) ? "warning" : "success"](backendIssues.length > 0 ? "Package validation returned diagnostics" : "Package validation passed");
+    toast[backendIssues.some((issue) => issue.issue) ? "warning" : "success"](
+      backendIssues.length > 0
+        ? "Package validation returned diagnostics"
+        : "Package validation passed",
+    );
   };
 
   const savePackage = async () => {
@@ -274,7 +348,10 @@ export function WorkflowPackageEditorPage() {
       return;
     }
     if (packageId) {
-      await updatePackage.mutateAsync({ packageId, payload: { manifestSource } });
+      await updatePackage.mutateAsync({
+        packageId,
+        payload: { manifestSource },
+      });
       clearTransientEditorState();
       toast.success("Workflow package saved");
     }
@@ -314,57 +391,223 @@ export function WorkflowPackageEditorPage() {
         <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              {combinedIssues.length > 0 ? <Badge variant="destructive">{combinedIssues.length} diagnostics</Badge> : null}
+              {combinedIssues.length > 0 ? (
+                <Badge variant="destructive">
+                  {combinedIssues.length} diagnostics
+                </Badge>
+              ) : null}
             </div>
             <div className="space-y-1">
-              <h1 id="workflow-package-editor-title" className="text-xl font-semibold tracking-tight">
+              <h1
+                id="workflow-package-editor-title"
+                className="text-xl font-semibold tracking-tight"
+              >
                 {packageTitle(workflowPackage, isNew)}
               </h1>
-              <p className="font-mono text-xs text-muted-foreground">{packageSubtitle(workflowPackage, isNew)}</p>
-              <p className="max-w-3xl text-sm text-muted-foreground">{headerDescription}</p>
+              <p className="font-mono text-xs text-muted-foreground">
+                {packageSubtitle(workflowPackage, isNew)}
+              </p>
+              <p className="max-w-3xl text-sm text-muted-foreground">
+                {headerDescription}
+              </p>
             </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
-            <Button aria-label="Save package" className="cursor-pointer" disabled={isSaving || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void savePackage()}><Save data-icon="inline-start" />Save</Button>
-            <Button aria-label="Validate package" className="cursor-pointer" disabled={validatePackage.isPending || isEditorBlocked} type="button" size="sm" variant="outline" onClick={() => void validateCurrentDraft()}><FileCheck2 data-icon="inline-start" />Validate</Button>
-            <Button aria-label="Launch workflow package" className="cursor-pointer" disabled={isNew || isEditorBlocked} type="button" size="sm" onClick={requestLaunchSavedPackage}><PlayCircle data-icon="inline-start" />Launch</Button>
+            <Button
+              aria-label="Save package"
+              className="cursor-pointer"
+              disabled={isSaving || isEditorBlocked}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void savePackage()}
+            >
+              <Save data-icon="inline-start" />
+              Save
+            </Button>
+            <Button
+              aria-label="Validate package"
+              className="cursor-pointer"
+              disabled={validatePackage.isPending || isEditorBlocked}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void validateCurrentDraft()}
+            >
+              <FileCheck2 data-icon="inline-start" />
+              Validate
+            </Button>
+            <Button
+              aria-label="Launch workflow package"
+              className="cursor-pointer"
+              disabled={isNew || isEditorBlocked}
+              type="button"
+              size="sm"
+              onClick={requestLaunchSavedPackage}
+            >
+              <PlayCircle data-icon="inline-start" />
+              Launch
+            </Button>
           </div>
         </CardContent>
       </Card>
-      <Dialog open={launchConfirmationOpen} onOpenChange={setLaunchConfirmationOpen}>
+      <Dialog
+        open={launchConfirmationOpen}
+        onOpenChange={setLaunchConfirmationOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Launch saved package?</DialogTitle>
             <DialogDescription>
-              This will open the launch page for the last saved version of this package. Unsaved editor changes are excluded until you save them.
+              This will open the launch page for the last saved version of this
+              package. Unsaved editor changes are excluded until you save them.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setLaunchConfirmationOpen(false)}>Cancel</Button>
-            <Button type="button" onClick={launchSavedPackage}><PlayCircle data-icon="inline-start" />Launch saved package</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setLaunchConfirmationOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={launchSavedPackage}>
+              <PlayCircle data-icon="inline-start" />
+              Launch saved package
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       {editorBlocker ? (
-        <ManifestBlockingState errors={editorBlocker.errors} loading={packageQuery.isFetching || manifestQuery.isFetching} onRetry={retryManifestLoad} title={editorBlocker.title} />
+        <ManifestBlockingState
+          errors={editorBlocker.errors}
+          loading={packageQuery.isFetching || manifestQuery.isFetching}
+          onRetry={retryManifestLoad}
+          title={editorBlocker.title}
+        />
       ) : (
         <>
-          {packageDraftFromManifestSource(workflowPackageDraftToManifestSource(draft)).errors.length > 0 ? <Alert variant="destructive"><AlertTitle>Generated manifest cannot be parsed</AlertTitle><AlertDescription>Review package-local resource fields before saving.</AlertDescription></Alert> : null}
-          <Tabs orientation="vertical" value={activeTab} onValueChange={(value) => selectEditorTab(value as WorkflowPackageEditorTab)} className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start">
+          {packageDraftFromManifestSource(
+            workflowPackageDraftToManifestSource(draft),
+          ).errors.length > 0 ? (
+            <Alert variant="destructive">
+              <AlertTitle>Generated manifest cannot be parsed</AlertTitle>
+              <AlertDescription>
+                Review package-local resource fields before saving.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <Tabs
+            orientation="vertical"
+            value={activeTab}
+            onValueChange={(value) =>
+              selectEditorTab(value as WorkflowPackageEditorTab)
+            }
+            className="min-h-0 flex-1 gap-4 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start"
+          >
             <div className="shrink-0">
-              <TabsList aria-label="Workflow package editor sections" className="relative z-10 h-auto w-full justify-start bg-muted/60 p-1">
-                {editorTabs.map((tab) => { const Icon = tab.icon; return <TabsTrigger key={tab.value} value={tab.value} aria-label={`${tab.label} tab`} className="px-3 py-2" onClick={() => selectEditorTab(tab.value)}><Icon className="size-4" aria-hidden="true" />{tab.label}</TabsTrigger>; })}
+              <TabsList
+                aria-label="Workflow package editor sections"
+                className="relative z-10 h-auto w-full justify-start bg-muted/60 p-1"
+              >
+                {editorTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      aria-label={`${tab.label} tab`}
+                      className="px-3 py-2"
+                      onClick={() => selectEditorTab(tab.value)}
+                    >
+                      <Icon className="size-4" aria-hidden="true" />
+                      {tab.label}
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
             </div>
             <div className="min-w-0">
-              <TabsContent value="overview" className="mt-0"><OverviewEditor draft={draft} issues={combinedIssues} isNew={isNew} onChange={updateDraft} /></TabsContent>
-              <TabsContent value="agents" className="mt-0"><AgentsTab diagnosticTarget={diagnosticTarget} draft={draft} issues={combinedIssues} modelConnectionOptions={modelConnectionOptions} onChange={updateDraft} /></TabsContent>
-              <TabsContent value="output-schemas" className="mt-0"><OutputSchemasTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-              <TabsContent value="capability-profiles" className="mt-0"><CapabilityProfilesTab draft={draft} issues={combinedIssues} onChange={updateDraft} tools={(toolsQuery.data?.items ?? []).map((tool) => ({ description: tool.description, displayName: tool.displayName, key: tool.key }))} toolsError={toolsQuery.error instanceof Error ? toolsQuery.error.message : null} toolsLoading={toolsQuery.isPending} /></TabsContent>
-              <TabsContent value="private-mcp" className="mt-0"><PrivateMcpTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-              <TabsContent value="workflow-yaml" className="mt-0"><WorkflowYamlTab draft={draft} issues={combinedIssues} onChange={updateDraft} /></TabsContent>
-              <TabsContent value="secret-bindings" className="mt-0"><SecretBindingsTab bindings={secretBindingsQuery.data?.items ?? []} bindingsError={secretBindingsQuery.error instanceof Error ? secretBindingsQuery.error.message : null} bindingsLoading={secretBindingsQuery.isPending} deleting={deleteSecretBinding.isPending} onDelete={removeSecretBinding} onSave={saveSecretBinding} packageId={packageId} referencedSecretKeys={referencedSecretKeys} saving={upsertSecretBinding.isPending} /></TabsContent>
-              <TabsContent value="exports" className="mt-0"><ExportsTab draft={draft} onOpenImportWorkspace={openImportWorkspace} packageId={packageId} /></TabsContent>
+              <TabsContent value="overview" className="mt-0">
+                <OverviewEditor
+                  draft={draft}
+                  issues={combinedIssues}
+                  isNew={isNew}
+                  onChange={updateDraft}
+                />
+              </TabsContent>
+              <TabsContent value="agents" className="mt-0">
+                <AgentsTab
+                  diagnosticTarget={diagnosticTarget}
+                  draft={draft}
+                  issues={combinedIssues}
+                  modelConnectionOptions={modelConnectionOptions}
+                  onChange={updateDraft}
+                />
+              </TabsContent>
+              <TabsContent value="output-schemas" className="mt-0">
+                <OutputSchemasTab
+                  draft={draft}
+                  issues={combinedIssues}
+                  onChange={updateDraft}
+                />
+              </TabsContent>
+              <TabsContent value="capability-profiles" className="mt-0">
+                <CapabilityProfilesTab
+                  draft={draft}
+                  issues={combinedIssues}
+                  onChange={updateDraft}
+                  tools={(toolsQuery.data?.items ?? []).map((tool) => ({
+                    description: tool.description,
+                    displayName: tool.displayName,
+                    key: tool.key,
+                  }))}
+                  toolsError={
+                    toolsQuery.error instanceof Error
+                      ? toolsQuery.error.message
+                      : null
+                  }
+                  toolsLoading={toolsQuery.isPending}
+                />
+              </TabsContent>
+              <TabsContent value="private-mcp" className="mt-0">
+                <PrivateMcpTab
+                  draft={draft}
+                  issues={combinedIssues}
+                  onChange={updateDraft}
+                />
+              </TabsContent>
+              <TabsContent value="workflow-yaml" className="mt-0">
+                <WorkflowYamlTab
+                  draft={draft}
+                  issues={combinedIssues}
+                  onChange={updateDraft}
+                />
+              </TabsContent>
+              <TabsContent value="secret-bindings" className="mt-0">
+                <SecretBindingsTab
+                  bindings={secretBindingsQuery.data?.items ?? []}
+                  bindingsError={
+                    secretBindingsQuery.error instanceof Error
+                      ? secretBindingsQuery.error.message
+                      : null
+                  }
+                  bindingsLoading={secretBindingsQuery.isPending}
+                  deleting={deleteSecretBinding.isPending}
+                  onDelete={removeSecretBinding}
+                  onSave={saveSecretBinding}
+                  packageId={packageId}
+                  referencedSecretKeys={referencedSecretKeys}
+                  saving={upsertSecretBinding.isPending}
+                />
+              </TabsContent>
+              <TabsContent value="exports" className="mt-0">
+                <ExportsTab
+                  draft={draft}
+                  onOpenImportWorkspace={openImportWorkspace}
+                  packageId={packageId}
+                />
+              </TabsContent>
             </div>
           </Tabs>
         </>

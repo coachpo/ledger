@@ -265,11 +265,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByTestId(/package-private-mcp-card-/)).toHaveTextContent(
       "Environment values",
     );
-    expect(
-      screen.getByText(
-        "Configure package-local MCP transport values inline for the selected transport.",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText("Package-local transport values.")).toBeVisible();
   });
 
   it("hides disabled finance tools from authoring discovery and restores them", () => {
@@ -456,9 +452,7 @@ spec:
     fireEvent.click(screen.getByRole("button", { name: "Close agent editor" }));
     clickTab("Overview");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Validate package" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     expect(
       await screen.findByRole("tab", { name: "Agents tab" }),
@@ -502,9 +496,7 @@ spec:
     fireEvent.click(screen.getByRole("button", { name: "Add Schema" }));
     clickTab("Overview");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Validate package" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     expect(
       await screen.findByRole("tab", { name: "Output Schemas tab" }),
@@ -560,9 +552,7 @@ spec:
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     fireEvent.click(screen.getByRole("button", { name: "Add Profile" }));
     clickTab("Overview");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Validate package" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     expect(
       await screen.findByRole("tab", { name: "Capability Profiles tab" }),
@@ -583,9 +573,7 @@ spec:
       target: { value: "MARKET_DATA_API_KEY" },
     });
     clickTab("Overview");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Validate package" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Validate package" }));
 
     expect(
       await screen.findByRole("tab", { name: "Private MCP tab" }),
@@ -600,5 +588,4 @@ spec:
       ),
     );
   });
-
 });

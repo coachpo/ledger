@@ -1,11 +1,23 @@
-import { AlertCircle, ArrowLeft, CheckCircle2, FileUp, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  FileUp,
+  Loader2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useBeforeUnload, useBlocker, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -45,7 +57,11 @@ function ImportFailureAlert({ failure }: { failure: ImportFailure | null }) {
   }
 
   return (
-    <Alert variant="destructive" role="alert" data-testid="workflow-package-import-error">
+    <Alert
+      variant="destructive"
+      role="alert"
+      data-testid="workflow-package-import-error"
+    >
       <AlertCircle />
       <AlertTitle>Import failed</AlertTitle>
       <AlertDescription className="space-y-2">
@@ -89,8 +105,8 @@ export function WorkflowPackageImportPage() {
   const navigationConfirmationMessage = importPackage.isPending
     ? PENDING_IMPORT_CONFIRMATION_MESSAGE
     : DIRTY_IMPORT_CONFIRMATION_MESSAGE;
-  const blocker = useBlocker(() =>
-    shouldBlockNavigation && !skipNavigationBlockRef.current,
+  const blocker = useBlocker(
+    () => shouldBlockNavigation && !skipNavigationBlockRef.current,
   );
 
   useEffect(() => {
@@ -126,7 +142,10 @@ export function WorkflowPackageImportPage() {
       return;
     }
 
-    if (hasUnsavedManifest && !window.confirm(DIRTY_IMPORT_CONFIRMATION_MESSAGE)) {
+    if (
+      hasUnsavedManifest &&
+      !window.confirm(DIRTY_IMPORT_CONFIRMATION_MESSAGE)
+    ) {
       return;
     }
 
@@ -187,11 +206,14 @@ export function WorkflowPackageImportPage() {
                 <span>Workflow Packages</span>
               </div>
               <div>
-                <h1 id="workflow-package-import-title" className="text-xl font-semibold tracking-tight">
+                <h1
+                  id="workflow-package-import-title"
+                  className="text-xl font-semibold tracking-tight"
+                >
                   Import workflow package YAML
                 </h1>
                 <p className="max-w-3xl text-sm text-muted-foreground">
-                  Paste a complete package manifest for a full-height review before it enters the package-first authoring surface.
+                  Paste a workflow package manifest.
                 </p>
               </div>
             </div>
@@ -206,8 +228,17 @@ export function WorkflowPackageImportPage() {
             >
               Cancel
             </Button>
-            <Button disabled={!canSubmit} size="sm" type="button" onClick={() => void submitImport()}>
-              {importPackage.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <FileUp data-icon="inline-start" />}
+            <Button
+              disabled={!canSubmit}
+              size="sm"
+              type="button"
+              onClick={() => void submitImport()}
+            >
+              {importPackage.isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <FileUp data-icon="inline-start" />
+              )}
               Import package
             </Button>
           </div>
@@ -215,7 +246,10 @@ export function WorkflowPackageImportPage() {
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border" aria-labelledby="workflow-package-import-editor-title">
+        <section
+          className="flex min-h-0 min-w-0 flex-col xl:border-r xl:border-border"
+          aria-labelledby="workflow-package-import-editor-title"
+        >
           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2">
             <FileUp className="h-3 w-3 text-muted-foreground" />
             <Label
@@ -249,31 +283,26 @@ export function WorkflowPackageImportPage() {
                 <CardHeader>
                   <CardTitle>Before importing</CardTitle>
                   <CardDescription>
-                    The YAML is sent unchanged to the existing Workflow Package import API.
+                    The YAML is sent unchanged to the existing Workflow Package
+                    import API.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex gap-2">
                     <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" />
-                    <p>Package-private MCP env, headers, and query values stay inline exactly as pasted.</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" />
-                    <p>Imports create a new package only when the manifest key is unused. Existing active keys are rejected.</p>
+                    <p>
+                      Imports create a new package only when the manifest key is
+                      unused. Existing active keys are rejected.
+                    </p>
                   </div>
                   <div className="flex gap-2">
                     <AlertCircle className="mt-0.5 size-4 shrink-0 text-chart-3" />
-                    <p>Review long manifests here before import; validation details remain visible if the backend rejects the YAML.</p>
+                    <p>
+                      Review long manifests here before import; validation
+                      details remain visible if the backend rejects the YAML.
+                    </p>
                   </div>
                 </CardContent>
-              </Card>
-              <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur">
-                <CardHeader>
-                  <CardTitle>Navigation</CardTitle>
-                  <CardDescription>
-                    Cancel returns to the Workflow Packages list. If pasted YAML is present, leaving asks for confirmation. A successful import opens the imported package editor.
-                  </CardDescription>
-                </CardHeader>
               </Card>
             </div>
           </ScrollArea>

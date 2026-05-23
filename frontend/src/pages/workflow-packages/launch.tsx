@@ -715,8 +715,7 @@ function SavedInputsHelper(props: {
           <Badge variant="outline">{workflowKey || "workflow"}</Badge>
         </div>
         <p className="text-xs text-muted-foreground">
-          Load presets or prior launch inputs into the raw JSON editor. Loading
-          never queues a run.
+          Load presets or prior launch inputs.
         </p>
       </div>
       {loading ? (
@@ -801,7 +800,7 @@ function SavedInputsHelper(props: {
         </div>
         {sortedHistory.length === 0 ? (
           <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            No launch history captured for this workflow yet.
+            No launch history yet.
           </p>
         ) : null}
         <div className="space-y-2">
@@ -1175,8 +1174,7 @@ export function WorkflowPackageLaunchPage() {
         <CardHeader className="border-b pb-4">
           <CardTitle>Launch package run</CardTitle>
           <CardDescription>
-            Select a workflow key, provide runtime inputs, preflight, then queue
-            a run from the saved package.
+            Select a workflow, provide inputs, and queue a run.
           </CardDescription>
         </CardHeader>
         <CardContent className="min-w-0 space-y-4 p-4">
@@ -1196,8 +1194,7 @@ export function WorkflowPackageLaunchPage() {
                 <div className="min-w-0 space-y-1">
                   <CardTitle className="text-base">Runtime inputs</CardTitle>
                   <CardDescription>
-                    Edit the schema-derived template as raw JSON. Launch
-                    parameters must remain a JSON object.
+                    Runtime inputs must be a JSON object.
                   </CardDescription>
                 </div>
                 <Button
