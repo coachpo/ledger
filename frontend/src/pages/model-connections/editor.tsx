@@ -395,7 +395,7 @@ export function ModelConnectionsEditorPage() {
         <CardHeader>
           <CardTitle>Connection details</CardTitle>
           <CardDescription>
-            Keep the base URL at the provider&apos;s `/v1` root.
+            Enter the provider base URL exactly.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

@@ -14,7 +14,7 @@ const toastSuccessMock = vi.fn();
 
 const existingConnection = {
   apiStyle: "chat_completions",
-  baseUrl: "https://api.openai.com/v1",
+  baseUrl: "https://provider.example.test/v1/",
   connectionKind: "deterministic_smoke",
   createdAt: "2026-04-21T12:00:00Z",
   description: "Production OpenAI connection.",
@@ -367,6 +367,9 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^API Key$/i)).toHaveValue("");
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^Base URL$/i)).toHaveValue(
+      "https://provider.example.test/v1/",
+    );
 
     expect(
       screen.getByText(/optional for deterministic smoke\./i),
@@ -389,7 +392,7 @@ describe("ModelConnectionsEditorPage", () => {
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
       apiStyle: "chat_completions",
-      baseUrl: "https://api.openai.com/v1",
+      baseUrl: "https://provider.example.test/v1/",
       description: "Production OpenAI connection.",
       modelId: "gpt-4.1",
       name: "Primary OpenAI Updated",
