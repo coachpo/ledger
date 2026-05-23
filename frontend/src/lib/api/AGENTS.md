@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/lib/api/` contains resource-specific request helpers layered on top of `api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
 
+Extension model: statically resident extension state.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
@@ -19,7 +21,7 @@ src/lib/api/
 ├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-├── extensions.ts          # bundled extension list/toggle state
+├── extensions.ts          # statically resident extension list/toggle state
 ├── workflow-packages.ts   # package manifest, version, preflight, launch, import, export
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing

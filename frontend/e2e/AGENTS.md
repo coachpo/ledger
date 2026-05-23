@@ -5,6 +5,8 @@
 ## OVERVIEW
 Playwright specs exercise the built frontend against dedicated test servers. Coverage is route-family based across smoke/navigation, preserved portfolios/templates/reports, Extensions, Workflow Packages, Model Connections, Runs, and guards for removed global authoring routes, hidden removed nav entries, and `/templates/seed`.
 
+Extension model: statically resident extension gates.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
