@@ -25,7 +25,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
 | Extension state/filtering | `extension_service.py`, `extension_dependency_service.py` | slim bundled extension state, ToolCatalog/runtime registry filtering, dependency-only run extension records, execution providers, and lifecycle hooks |
 | Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `workflow_package_manifest_decompiler.py` | package-first authoring, validation, import/export, preflight, and immutable package artifacts |
-| Run execution service | `run_service.py`, `run_lifecycle.py`, `execution_providers.py` | persisted run lifecycle, package provenance, dependency-only extension hooks, provider bundles, and background execution |
+| Run execution and queueing | `run_service.py`, `run_queue_service.py`, `run_read_projection.py`, `../workers/run_scheduler.py`, `run_lifecycle.py`, `execution_providers.py` | persisted run lifecycle, package provenance, backend progress/queue read models, explicit scheduler claims/leases, dependency-only extension hooks, and provider bundles |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | Legacy cutover helpers | `legacy_authoring.py` | upgrade-only legacy authoring context, not a live service surface |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
@@ -47,6 +47,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Workflow package services keep one mutable current package artifact, validate typed contracts before save, keep private MCP `env`, `headers`, and `query` values inline through import/export, and keep run persistence detailed enough for snapshot provenance, rerun/fork lineage, and the run monitor.
 - `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, extension-filtered ToolCatalog/runtime registries, execution provider bundles, and run lifecycle hooks.
 - `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records dependency-only extension requirements, and falls back to trace-free execution when telemetry setup fails.
+- API launch/rerun/fork paths create durable queued rows only; `RunSchedulerWorker` and `RunQueueService` own later claim, lease heartbeat, stale-lease recovery, and claimed execution.
 - Tools are global read-only server-declared metadata; package-local capability profiles store `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
 
