@@ -5,6 +5,8 @@
 ## OVERVIEW
 `docs/` is the live product, requirements, spec, API, data-model, test, platform, run-input, memory, and advisory-research reference set. Live code remains source of truth; docs mirror the mounted browser/API surfaces and current persistence/runtime contracts.
 
+Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
