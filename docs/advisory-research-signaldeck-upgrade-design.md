@@ -1,6 +1,6 @@
 # TradingAgents-Informed SignalDeck Upgrade Design
 
-> Status: Research and design note for branch `main` at `e2c635f`. Keeps TradingAgents/SignalDeck comparison and settled design rationale; live code and the owner docs remain the source of truth.
+> Status: Research and design note for branch `main` at `f9ae90d`. Keeps TradingAgents/SignalDeck comparison and settled design rationale; live code and the owner docs remain the source of truth.
 
 ## Intent
 
@@ -41,14 +41,14 @@ These remain rejected, even where TradingAgents supports adjacent behavior:
 - LangGraph-compatible node, edge, checkpoint, and resume semantics.
 - MCP-backed built-in data collection. MCP remains a user customization surface for Workflow Packages.
 - Agent-initiated trading execution or automatic trade-operation drafts.
-- Public memory APIs, dedicated memory tables, vector search, or embeddings for phase 1 memory.
+- Public browser memory APIs, vector search, embeddings, or chunk tables for phase 1 memory.
 
 ## Remaining Comparison
 
 | Area | TradingAgents | SignalDeck status | Fit |
 |---|---|---|---|
 | Runtime execution | LangGraph node execution with checkpoint resume. | Persisted Runs with steps, agent invocations, operation invocations, root-parameter rerun, invocation-input fork, and historical step replay read lineage. Recovery and audit goals are similar, but runtime semantics are intentionally different. | Medium-High |
-| Memory | Markdown decision log with automatic return/reflection updates and future prompt context. | Report-backed memory with pending outcome resolution, generated reflections, prompt snippets, and report audit links hidden from model-visible memory projections. | Medium-High |
+| Memory | Markdown decision log with automatic return/reflection updates and future prompt context. | Platform-core memory entries/revisions with run evidence, prompt snippets, scoped lookup, and optional human audit links hidden from model-visible memory projections. Historical agent reports remain report-domain records only. | Medium-High |
 | Analyst phase | Selected analysts, staged tool loops, bull/bear debate, research manager, trader, risk debate, and portfolio manager handoff. | Workflow Packages model this through authored `sequence`, `fanout`, `loop`, local agents, structured outputs, and package-local capability profiles. | Medium |
 | External data/news/social research | Source-specific vendor data and news tools, plus Reddit and StockTwits sentiment paths. | Finance-owned native tools provide data, news, social sentiment, fundamentals, insider, position, and report context while `signaldeck.finance` is enabled. | Medium-High |
 | True graph parity | Compiled LangGraph `StateGraph`, conditional edges, tool loops, and checkpoint behavior. | Rejected permanently because it would turn Workflow Packages into a LangGraph clone. | Rejected |
