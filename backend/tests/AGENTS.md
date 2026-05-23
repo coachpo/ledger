@@ -14,7 +14,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 |---|---|---|
 | Fixture setup | `conftest.py` | isolated PostgreSQL `DATABASE_URL`, `init_db()`, `TestClient`, dependency override cleanup |
 | API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, extension gating, platform validation, and neutral stub workflow coverage |
-| Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | slim bundled extension state, private registry wiring, route/tool filtering, and lifecycle matrix behavior |
+| Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | slim statically resident extension state, private registry wiring, route/tool filtering, and lifecycle matrix behavior |
 | Package preflight and tool-contract coverage | `test_workflow_package_preflight.py`, `test_workflow_run_contract_schemas.py` | package validation, duplicate tool keys, memory tool contracts, and run payload schema rules |
 | Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_run_service_http_operations.py` | package execution, scheduler defaults/worker queue semantics, run detail/list progress and queue read models, model-binding provenance, reruns, invocation-input forks, HTTP/tool operations, and historical step replay read-lineage coverage |
 | Runtime artifact coverage | `test_workflow_package_runtime_artifacts.py`, `test_memory_domain_schemas.py` | persisted step outputs, Logfire trace linkage, run-detail artifacts, and memory DTO projections |
@@ -46,6 +46,6 @@ uv run pytest
 ## NOTES
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
-- Extension, tool-catalog, social-sentiment, and lifecycle tests lock bundled `signaldeck.finance` state, enabled-tool filtering, and provider/runtime-tool contracts.
+- Extension, tool-catalog, social-sentiment, and lifecycle tests lock statically resident `signaldeck.finance` state, enabled-tool filtering, and provider/runtime-tool contracts.
 - `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_memory_domain_schemas.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, saved model-connection, trace metadata, memory DTOs, run-fork behavior, upgrade, and execution contracts.
 - `test_legacy_backend_cutover.py` proves removed backend routes return `404` and removed modules stay absent.
