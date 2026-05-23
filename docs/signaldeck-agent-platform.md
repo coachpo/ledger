@@ -1,6 +1,6 @@
 # SignalDeck Agent Platform Reference
 
-> Status: Live package-first platform reference for branch `main` at `e2c635f`. This is the canonical platform reference.
+> Status: Live package-first platform reference for branch `main` at `f9ae90d`. This is the canonical platform reference.
 
 ## Scope
 
@@ -209,39 +209,4 @@ The old backend route modules are deleted. Current guardrails live in `backend/t
 
 ## Validation
 
-Each milestone has a deterministic targeted command, and the combined command is the contract gate for this upgrade. Backend tests use in-process fakes, deterministic smoke model connections, local mock transports, and bounded provider fixtures rather than live third-party networks.
-
-```bash
-# Milestone 1: native data/news/social runtime tools and provider normalization
-(cd backend && uv run pytest tests/test_runtime_tools.py tests/test_runtime_tools_social_sentiment.py tests/test_market_data_service.py tests/test_social_sentiment_service.py -k "social_sentiment or news_lookup_contract or news_adapter or social_adapter or timeout or rate_limit or empty_result or partial_result")
-
-# Milestone 2: core memory tools and run evidence
-(cd backend && uv run pytest tests/test_memory_domain_schemas.py tests/test_tool_catalog_api.py tests/test_memory_service.py tests/test_runtime_tools.py tests/test_workflow_package_run_contracts.py -k "memory or run_detail_exposes_persisted_memory_event_evidence")
-
-# Milestone 3: canonical advisory package fixture behavior
-(cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_smoke_fixture.py tests/test_workflow_package_run_contracts.py -k "tradingagents_advisory_research or advisory_only_output or portfolio_decision")
-
-# Milestone 4: HTTP node security, mixed execution, and run-detail rendering
-(cd backend && uv run pytest tests/test_workflow_package_manifest_http_node.py tests/test_workflow_manifest_compiler.py tests/test_workflow_package_execution_plan_http.py tests/test_workflow_package_run_contracts.py tests/test_run_operation_invocations.py tests/test_http_operation_execution_service.py tests/test_run_service_http_operations.py tests/test_runtime_db_upgrades.py)
-```
-
-```bash
-# Combined targeted backend validation from the implementation plan
-(cd backend && uv run pytest tests/test_runtime_tools.py tests/test_runtime_tools_social_sentiment.py tests/test_market_data_service.py tests/test_social_sentiment_service.py tests/test_memory_service.py tests/test_memory_follow_up_service.py tests/test_memory_reports.py tests/test_workflow_package_preflight.py tests/test_workflow_package_manifest_http_node.py tests/test_workflow_manifest_compiler.py tests/test_workflow_package_execution_plan_http.py tests/test_workflow_package_run_contracts.py tests/test_run_operation_invocations.py tests/test_http_operation_execution_service.py tests/test_run_service_http_operations.py tests/test_runtime_db_upgrades.py)
-
-# Frontend HTTP authoring, secret binding, and run-detail operation rendering
-(cd frontend && pnpm test:run src/pages/workflow-packages/http-node-validation.test.tsx src/pages/workflow-packages/secret-bindings.test.tsx src/pages/runs/detail-http-operations.test.tsx)
-(cd frontend && pnpm typecheck)
-
-# Public contract docs grep check
-rg -n "kind: http|signaldeck.social_sentiment.lookup|operation invocation|secret binding" docs/api-design.md docs/signaldeck-agent-platform.md
-
-# Extension metadata absence guard, live docs and guidance should not match removed public tokens
-rg -n "disabled""Reason|disabled_""reason|state""Version|state_""version|contribution""Categories|contribution_""categories|versioning""Rule|versioning_""rule|default""Enabled|Extension""ContributionRead|extension""Snapshots|extension_""snapshots|Run""ExtensionSnapshotRead" docs AGENTS.md backend/AGENTS.md backend/app/**/AGENTS.md frontend/AGENTS.md frontend/src/**/AGENTS.md
-```
-
-Security override coverage stays focused and test-only:
-
-```bash
-(cd backend && uv run pytest tests/test_http_operation_execution_service.py -k "dev_override or localhost_blocking")
-```
+`docs/test-plan.md` owns the live validation matrix. For this platform surface, use targeted backend coverage around workflow package preflight/runtime/run contracts, scheduler queue behavior, HTTP operation execution, memory services, runtime tools, and runtime DB upgrades, plus frontend coverage for Workflow Package launch/secret-binding flows and Runs list/detail rendering.

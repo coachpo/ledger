@@ -1,6 +1,6 @@
 # Technical Specification
 
-> Status: Live technical reference for branch `main` at `e2c635f`.
+> Status: Live technical reference for branch `main` at `f9ae90d`.
 
 ## Overview
 
@@ -8,9 +8,9 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 
 ## Runtime Topology
 
-- Root startup is managed by `start.sh` with PostgreSQL `25432`, backend `28000`, and frontend `25173` defaults plus fallback ports `25433/25434`, `28001/28002`, and `25174`.
-- Manual backend startup expects PostgreSQL from `backend/docker-compose.yml`, which defines only the `db` service.
-- Playwright starts dedicated E2E servers on backend `8001` and frontend `4173` through frontend startup scripts.
+- Root startup is managed by `start.sh` with PostgreSQL `25432`, backend `28000`, frontend `25173`, and the scheduler worker as a sibling backend process; fallback ports are `25433/25434`, `28001/28002`, and `25174`.
+- Manual backend startup expects PostgreSQL from `backend/docker-compose.yml`, which defines only the `db` service, plus a separate `uv run python -m app.workers.run_scheduler` process when queued Workflow Package runs should execute.
+- Playwright starts dedicated E2E servers on backend `8001` and frontend `4173` through frontend startup scripts; the backend helper also launches the scheduler worker.
 - Backend requires Python 3.13+, frontend targets Node 24 and pnpm 10.
 
 ## Backend Architecture
@@ -57,7 +57,7 @@ SignalDeck is a dual-stack FastAPI and React/Vite application with preserved por
 4. Reusable report-series loops use a stable runtime input such as `inputs.analysis_tag` plus matching report `metadata.tags`; `reports.by_tag(inputs.analysis_tag).latest.*` selects the latest prior report in the same series.
 5. Report content selected through `.content` is recompiled, so edited historical reports can affect later compiles; circular report references render explicit sentinels instead of looping.
 6. Workflow package editors are authoring-only surfaces that validate `signaldeck.workflowPackage/v1` YAML, package-local references, global tool keys, and model connection keys before save.
-7. The dedicated launch page at `/workflow-packages/:packageId/run` reads launch metadata, runs preflight gating, posts the selected workflow key with `parameters`, queues a run, and polls run detail/list state with package provenance and persisted memory evidence.
+7. The dedicated launch page at `/workflow-packages/:packageId/run` reads launch metadata, runs preflight gating, posts the selected workflow key with `parameters`, queues a run, and polls backend-owned progress/queue state with package provenance and persisted memory evidence while the scheduler worker claims queued runs.
 8. Rerun drafts from root launch parameters and creates a descendant run with edited `parameters`; fork drafts from a selected source agent invocation and creates a descendant run with edited `invocationInput`, copied upstream context, and `resumeStepIndex` as the execution boundary.
 
 ## CI And Verification

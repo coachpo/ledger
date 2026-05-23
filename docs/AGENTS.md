@@ -35,7 +35,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - PRD and requirements overlap is intentional: product framing lives in `prd.md`, testable requirements live in `requirements.md`.
 
 ## OBSOLETE CONTENT RULES
-- No docs files currently need deletion.
+- No whole docs files currently need deletion; merge or delete obsolete passages inside their owner docs instead.
 - Preserve the current ten-file docs set unless live code proves a file has no remaining owner.
 - Merge stale live-surface claims into the correct owner file instead of duplicating details.
 - Convert useful removed-surface material into explicit non-goals or removed-route guarantees.
