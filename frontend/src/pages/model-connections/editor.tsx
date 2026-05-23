@@ -13,7 +13,13 @@ import { SecretInput } from "@/components/forms/secret-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -50,11 +56,16 @@ const API_STYLE_LABELS: Record<ModelConnectionApiStyle, string> = {
   responses: "Responses API",
 };
 
-
-
 const REASONING_EFFORT_OMIT_VALUE = "__omit__";
 const REASONING_EFFORT_CUSTOM_VALUE = "__custom__";
-const REASONING_EFFORT_PRESETS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+const REASONING_EFFORT_PRESETS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
 const CUSTOM_REASONING_EFFORT_MAX_LENGTH = 128;
 
 type ReasoningEffortPreset = (typeof REASONING_EFFORT_PRESETS)[number];
@@ -89,11 +100,15 @@ const initialValues: ModelConnectionEditorValues = {
   timeoutSeconds: "60",
 };
 
-function isReasoningEffortPreset(value: string | null): value is ReasoningEffortPreset {
+function isReasoningEffortPreset(
+  value: string | null,
+): value is ReasoningEffortPreset {
   return REASONING_EFFORT_PRESETS.includes(value as ReasoningEffortPreset);
 }
 
-function getReasoningEffortSelection(value: ModelConnectionReasoningEffort | null): ReasoningEffortSelection {
+function getReasoningEffortSelection(
+  value: ModelConnectionReasoningEffort | null,
+): ReasoningEffortSelection {
   if (value === null) {
     return REASONING_EFFORT_OMIT_VALUE;
   }
@@ -101,11 +116,15 @@ function getReasoningEffortSelection(value: ModelConnectionReasoningEffort | nul
   return isReasoningEffortPreset(value) ? value : REASONING_EFFORT_CUSTOM_VALUE;
 }
 
-function getCustomReasoningEffort(value: ModelConnectionReasoningEffort | null) {
+function getCustomReasoningEffort(
+  value: ModelConnectionReasoningEffort | null,
+) {
   return value !== null && !isReasoningEffortPreset(value) ? value : "";
 }
 
-function buildValuesFromConnection(connection: ModelConnectionRead): ModelConnectionEditorValues {
+function buildValuesFromConnection(
+  connection: ModelConnectionRead,
+): ModelConnectionEditorValues {
   return {
     apiKey: "",
     apiStyle: connection.apiStyle,
@@ -133,7 +152,9 @@ function parseTimeoutSeconds(value: string) {
   return timeoutSeconds;
 }
 
-function getReasoningEffortValue(values: ModelConnectionEditorValues): string | null {
+function getReasoningEffortValue(
+  values: ModelConnectionEditorValues,
+): string | null {
   if (values.reasoningEffort === REASONING_EFFORT_OMIT_VALUE) {
     return null;
   }
@@ -162,7 +183,9 @@ function parseReasoningEffort(value: string | null): string | null {
   return trimmedValue;
 }
 
-function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectionCreateInput {
+function buildCreatePayload(
+  values: ModelConnectionEditorValues,
+): ModelConnectionCreateInput {
   const apiKey = values.apiKey.trim();
 
   return {
@@ -178,7 +201,9 @@ function buildCreatePayload(values: ModelConnectionEditorValues): ModelConnectio
   };
 }
 
-function buildUpdatePayload(values: ModelConnectionEditorValues): ModelConnectionUpdateInput {
+function buildUpdatePayload(
+  values: ModelConnectionEditorValues,
+): ModelConnectionUpdateInput {
   const apiKey = values.apiKey.trim();
 
   return {
@@ -201,8 +226,10 @@ export function ModelConnectionsEditorPage() {
   const createMutation = useCreateModelConnection();
   const updateMutation = useUpdateModelConnection();
   const testConnectionMutation = useTestModelConnection(modelConnectionId);
-  const [values, setValues] = useState<ModelConnectionEditorValues>(initialValues);
-  const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
+  const [values, setValues] =
+    useState<ModelConnectionEditorValues>(initialValues);
+  const [connectionFeedback, setConnectionFeedback] =
+    useState<ConnectionFeedback | null>(null);
 
   useEffect(() => {
     if (!connectionQuery.data) {
@@ -215,7 +242,8 @@ export function ModelConnectionsEditorPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isBusy = isSaving || testConnectionMutation.isPending;
-  const currentConnectionKind = connectionQuery.data?.connectionKind ?? "provider";
+  const currentConnectionKind =
+    connectionQuery.data?.connectionKind ?? "provider";
 
   const updateValue = <Key extends keyof ModelConnectionEditorValues>(
     key: Key,
@@ -236,11 +264,17 @@ export function ModelConnectionsEditorPage() {
         return;
       }
 
-      const created = await createMutation.mutateAsync(buildCreatePayload(values));
+      const created = await createMutation.mutateAsync(
+        buildCreatePayload(values),
+      );
       toast.success("Model connection created");
       navigate(`/model-connections/${created.id}/edit`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save model connection");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to save model connection",
+      );
     }
   };
 
@@ -264,7 +298,9 @@ export function ModelConnectionsEditorPage() {
       toast[result.ok ? "success" : "error"](result.message);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to test model connection";
+        error instanceof Error
+          ? error.message
+          : "Failed to test model connection";
       setConnectionFeedback({
         message,
         title: "Connection test failed",
@@ -292,11 +328,12 @@ export function ModelConnectionsEditorPage() {
     );
   }
 
-  const apiKeyHelpText = currentConnectionKind === "deterministic_smoke"
-    ? "Optional for deterministic smoke; leave blank to keep the offline path credential-free."
-    : isEditing
-      ? "Leave blank to keep the current key. Enter a new value only to rotate it."
-      : "Optional for create; you can add or rotate it later.";
+  const apiKeyHelpText =
+    currentConnectionKind === "deterministic_smoke"
+      ? "Optional for deterministic smoke."
+      : isEditing
+        ? "Leave blank to keep the current key."
+        : "Optional; add or rotate it later.";
 
   return (
     <div
@@ -306,11 +343,14 @@ export function ModelConnectionsEditorPage() {
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 id="model-connection-editor-title" className="text-xl font-semibold tracking-tight">
+          <h1
+            id="model-connection-editor-title"
+            className="text-xl font-semibold tracking-tight"
+          >
             {isEditing ? "Edit Model Connection" : "Create Model Connection"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Save an OpenAI-family endpoint, credentials, and runtime defaults for reuse across agents.
+            Save provider endpoints and runtime defaults.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -324,7 +364,12 @@ export function ModelConnectionsEditorPage() {
             <PlugZap data-icon="inline-start" />
             Test Connection
           </Button>
-          <Button data-testid="model-connection-save" disabled={isSaving} size="sm" onClick={handleSave}>
+          <Button
+            data-testid="model-connection-save"
+            disabled={isSaving}
+            size="sm"
+            onClick={handleSave}
+          >
             <Save data-icon="inline-start" />
             Save Model Connection
           </Button>
@@ -332,8 +377,15 @@ export function ModelConnectionsEditorPage() {
       </div>
 
       {connectionFeedback ? (
-        <Alert data-testid="model-connection-feedback" variant={connectionFeedback.variant}>
-          {connectionFeedback.variant === "default" ? <CheckCircle2 /> : <XCircle />}
+        <Alert
+          data-testid="model-connection-feedback"
+          variant={connectionFeedback.variant}
+        >
+          {connectionFeedback.variant === "default" ? (
+            <CheckCircle2 />
+          ) : (
+            <XCircle />
+          )}
           <AlertTitle>{connectionFeedback.title}</AlertTitle>
           <AlertDescription>{connectionFeedback.message}</AlertDescription>
         </Alert>
@@ -343,7 +395,7 @@ export function ModelConnectionsEditorPage() {
         <CardHeader>
           <CardTitle>Connection details</CardTitle>
           <CardDescription>
-            Base URL should stay at the provider&apos;s `/v1` root. Saved connections remain available to workflow packages by stable key.
+            Keep the base URL at the provider&apos;s `/v1` root.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -388,7 +440,9 @@ export function ModelConnectionsEditorPage() {
               disabled={isSaving}
               rows={3}
               value={values.description}
-              onChange={(event) => updateValue("description", event.target.value)}
+              onChange={(event) =>
+                updateValue("description", event.target.value)
+              }
             />
           </div>
 
@@ -408,14 +462,21 @@ export function ModelConnectionsEditorPage() {
               <Select
                 value={values.apiStyle}
                 disabled={isSaving}
-                onValueChange={(value: ModelConnectionApiStyle) => updateValue("apiStyle", value)}
+                onValueChange={(value: ModelConnectionApiStyle) =>
+                  updateValue("apiStyle", value)
+                }
               >
-                <SelectTrigger id="model-connection-api-style" aria-label="API Style">
+                <SelectTrigger
+                  id="model-connection-api-style"
+                  aria-label="API Style"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="responses">{API_STYLE_LABELS.responses}</SelectItem>
+                    <SelectItem value="responses">
+                      {API_STYLE_LABELS.responses}
+                    </SelectItem>
                     <SelectItem value="chat_completions">
                       {API_STYLE_LABELS.chat_completions}
                     </SelectItem>
@@ -423,60 +484,82 @@ export function ModelConnectionsEditorPage() {
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                Keep <code>baseUrl</code> at the provider&apos;s `/v1` root. Chat Completions is for
-                third-party chat models.
+                Chat Completions is for third-party chat models.
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="model-connection-timeout-seconds">Timeout Seconds</Label>
+              <Label htmlFor="model-connection-timeout-seconds">
+                Timeout Seconds
+              </Label>
               <Input
                 id="model-connection-timeout-seconds"
                 aria-label="Timeout Seconds"
                 disabled={isSaving}
                 inputMode="numeric"
                 value={values.timeoutSeconds}
-                onChange={(event) => updateValue("timeoutSeconds", event.target.value)}
+                onChange={(event) =>
+                  updateValue("timeoutSeconds", event.target.value)
+                }
               />
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="model-connection-reasoning-effort">Reasoning Effort</Label>
+              <Label htmlFor="model-connection-reasoning-effort">
+                Reasoning Effort
+              </Label>
               <Select
                 value={values.reasoningEffort}
                 disabled={isSaving}
-                onValueChange={(value) => updateValue("reasoningEffort", value as ReasoningEffortSelection)}
+                onValueChange={(value) =>
+                  updateValue(
+                    "reasoningEffort",
+                    value as ReasoningEffortSelection,
+                  )
+                }
               >
-                <SelectTrigger id="model-connection-reasoning-effort" aria-label="Reasoning Effort">
+                <SelectTrigger
+                  id="model-connection-reasoning-effort"
+                  aria-label="Reasoning Effort"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value={REASONING_EFFORT_OMIT_VALUE}>Omit reasoning parameter</SelectItem>
+                    <SelectItem value={REASONING_EFFORT_OMIT_VALUE}>
+                      Omit reasoning parameter
+                    </SelectItem>
                     {REASONING_EFFORT_PRESETS.map((preset) => (
-                      <SelectItem key={preset} value={preset}>{preset}</SelectItem>
+                      <SelectItem key={preset} value={preset}>
+                        {preset}
+                      </SelectItem>
                     ))}
-                    <SelectItem value={REASONING_EFFORT_CUSTOM_VALUE}>Custom...</SelectItem>
+                    <SelectItem value={REASONING_EFFORT_CUSTOM_VALUE}>
+                      Custom...
+                    </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
               {values.reasoningEffort === REASONING_EFFORT_CUSTOM_VALUE ? (
                 <div className="space-y-2">
-                  <Label htmlFor="model-connection-custom-reasoning-effort">Custom Reasoning Effort</Label>
+                  <Label htmlFor="model-connection-custom-reasoning-effort">
+                    Custom Reasoning Effort
+                  </Label>
                   <Input
                     id="model-connection-custom-reasoning-effort"
                     aria-label="Custom Reasoning Effort"
                     disabled={isSaving}
                     maxLength={CUSTOM_REASONING_EFFORT_MAX_LENGTH + 1}
                     value={values.customReasoningEffort}
-                    onChange={(event) => updateValue("customReasoningEffort", event.target.value)}
+                    onChange={(event) =>
+                      updateValue("customReasoningEffort", event.target.value)
+                    }
                   />
                 </div>
               ) : null}
               <p className="text-sm text-muted-foreground">
-                Sent to Responses API as reasoning.effort and to Chat Completions as reasoning_effort. Choose Omit for providers that reject reasoning.
-                The literal value "none" is sent as a string; Omit sends no reasoning parameter. Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings.
+                Choose Omit for providers that reject reasoning.
               </p>
             </div>
           </div>
@@ -499,7 +582,9 @@ export function ModelConnectionsEditorPage() {
             helperText={apiKeyHelpText}
             id="model-connection-api-key"
             label="API Key"
-            placeholder={isEditing ? "Enter a new key to rotate it" : "Enter an API key"}
+            placeholder={
+              isEditing ? "Enter a new key to rotate it" : "Enter an API key"
+            }
             value={values.apiKey}
             onValueChange={(value) => updateValue("apiKey", value)}
           />
@@ -507,8 +592,16 @@ export function ModelConnectionsEditorPage() {
           {connectionQuery.data?.lastTestedAt ? (
             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={connectionQuery.data.lastTestOk ? "secondary" : "destructive"}>
-                  {connectionQuery.data.lastTestOk ? "Last test passed" : "Last test failed"}
+                <Badge
+                  variant={
+                    connectionQuery.data.lastTestOk
+                      ? "secondary"
+                      : "destructive"
+                  }
+                >
+                  {connectionQuery.data.lastTestOk
+                    ? "Last test passed"
+                    : "Last test failed"}
                 </Badge>
                 <span>{formatDateTime(connectionQuery.data.lastTestedAt)}</span>
               </div>

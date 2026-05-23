@@ -48,16 +48,32 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 });
 
 vi.mock("@/hooks/use-model-connections", () => ({
-  useCreateModelConnection: () => ({ isPending: false, mutateAsync: createModelConnectionMock }),
-  useModelConnection: (modelConnectionId?: string) => useModelConnectionMock(modelConnectionId),
-  useTestModelConnection: () => ({ isPending: false, mutateAsync: testModelConnectionMock }),
-  useUpdateModelConnection: () => ({ isPending: false, mutateAsync: updateModelConnectionMock }),
+  useCreateModelConnection: () => ({
+    isPending: false,
+    mutateAsync: createModelConnectionMock,
+  }),
+  useModelConnection: (modelConnectionId?: string) =>
+    useModelConnectionMock(modelConnectionId),
+  useTestModelConnection: () => ({
+    isPending: false,
+    mutateAsync: testModelConnectionMock,
+  }),
+  useUpdateModelConnection: () => ({
+    isPending: false,
+    mutateAsync: updateModelConnectionMock,
+  }),
 }));
 
 function fillRequiredCreateFields() {
-  fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
-  fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
-  fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
+  fireEvent.change(screen.getByLabelText(/^Name$/i), {
+    target: { value: "Primary OpenAI" },
+  });
+  fireEvent.change(screen.getByLabelText(/^Key$/i), {
+    target: { value: "primary_openai" },
+  });
+  fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
+    target: { value: "gpt-4.1" },
+  });
 }
 
 async function chooseReasoningEffort(name: RegExp) {
@@ -78,7 +94,12 @@ describe("ModelConnectionsEditorPage", () => {
     updateModelConnectionMock.mockReset();
     useModelConnectionMock.mockImplementation((modelConnectionId?: string) =>
       modelConnectionId
-        ? { data: existingConnection, error: null, isError: false, isPending: false }
+        ? {
+            data: existingConnection,
+            error: null,
+            isError: false,
+            isPending: false,
+          }
         : { data: undefined, error: null, isError: false, isPending: false },
     );
   });
@@ -87,10 +108,20 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
 
     const shell = screen.getByTestId("model-connections-editor");
-    expect(shell).toHaveClass("h-full", "min-h-0", "min-w-0", "overflow-y-auto");
-    expect(shell).toHaveAttribute("aria-labelledby", "model-connection-editor-title");
+    expect(shell).toHaveClass(
+      "h-full",
+      "min-h-0",
+      "min-w-0",
+      "overflow-y-auto",
+    );
+    expect(shell).toHaveAttribute(
+      "aria-labelledby",
+      "model-connection-editor-title",
+    );
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Create Model Connection" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Create Model Connection" }),
+    ).toBeVisible();
 
     for (const label of [
       "Key",
@@ -106,8 +137,12 @@ describe("ModelConnectionsEditorPage", () => {
       expect(screen.getByLabelText(label)).toBeVisible();
     }
 
-    expect(screen.getByRole("button", { name: /test connection/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /save model connection/i })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /test connection/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /save model connection/i }),
+    ).toBeEnabled();
   });
 
   it("submits a create body without apiKey until one is entered", async () => {
@@ -117,13 +152,23 @@ describe("ModelConnectionsEditorPage", () => {
 
     expect(screen.queryByText("Connection mode:")).not.toBeInTheDocument();
     expect(screen.queryByText("Provider-backed")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI" } });
-    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "primary_openai" } });
-    fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "gpt-4.1" } });
+    fireEvent.change(screen.getByLabelText(/^Name$/i), {
+      target: { value: "Primary OpenAI" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Key$/i), {
+      target: { value: "primary_openai" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
+      target: { value: "gpt-4.1" },
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     expect(createModelConnectionMock).toHaveBeenCalledWith({
       apiStyle: "responses",
       baseUrl: "https://api.openai.com/v1",
@@ -143,21 +188,19 @@ describe("ModelConnectionsEditorPage", () => {
     reasoningSelect.focus();
     fireEvent.keyDown(reasoningSelect, { key: "ArrowDown" });
 
-    expect(await screen.findByRole("option", { name: /^Omit reasoning parameter$/ })).toBeVisible();
+    expect(
+      await screen.findByRole("option", { name: /^Omit reasoning parameter$/ }),
+    ).toBeVisible();
     expect(screen.getByRole("option", { name: /^none$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^minimal$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^low$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^medium$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^high$/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /^xhigh$/ })).toBeVisible();
-    expect(screen.getByRole("option", { name: /^Custom\.\.\.$/ })).toBeVisible();
-    expect(screen.getByText(/Responses API as reasoning\.effort/i)).toBeVisible();
-    expect(screen.getByText(/Chat Completions as reasoning_effort/i)).toBeVisible();
     expect(
-      screen.getByText(
-        /Existing agent versions keep saved model-connection snapshots; re-save the agent to pick up changed model-connection settings\./i,
-      ),
+      screen.getByRole("option", { name: /^Custom\.\.\.$/ }),
     ).toBeVisible();
+    expect(screen.getByText(/providers that reject reasoning/i)).toBeVisible();
   });
 
   it("submits null reasoning effort when Omit is selected", async () => {
@@ -167,9 +210,13 @@ describe("ModelConnectionsEditorPage", () => {
     fillRequiredCreateFields();
     await chooseReasoningEffort(/^Omit reasoning parameter$/);
 
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({ reasoningEffort: null }),
     );
@@ -182,9 +229,13 @@ describe("ModelConnectionsEditorPage", () => {
     fillRequiredCreateFields();
     await chooseReasoningEffort(/^none$/);
 
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({ reasoningEffort: "none" }),
     );
@@ -200,9 +251,13 @@ describe("ModelConnectionsEditorPage", () => {
       target: { value: "  xhigh  " },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({ reasoningEffort: "xhigh" }),
     );
@@ -215,7 +270,9 @@ describe("ModelConnectionsEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
       target: { value: "   " },
     });
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith(
@@ -232,17 +289,24 @@ describe("ModelConnectionsEditorPage", () => {
     fireEvent.change(screen.getByLabelText(/^Custom Reasoning Effort$/i), {
       target: { value: "x".repeat(129) },
     });
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
     await waitFor(() =>
-      expect(toastErrorMock).toHaveBeenCalledWith("Reasoning effort must be 128 characters or fewer."),
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "Reasoning effort must be 128 characters or fewer.",
+      ),
     );
     expect(createModelConnectionMock).not.toHaveBeenCalled();
   });
 
   it("loads existing custom reasoning effort values into the custom input", () => {
     paramsMock.modelConnectionId = "4";
-    const customConnection = { ...existingConnection, reasoningEffort: "experimental-reasoning" };
+    const customConnection = {
+      ...existingConnection,
+      reasoningEffort: "experimental-reasoning",
+    };
     useModelConnectionMock.mockImplementation(() => ({
       data: customConnection,
       error: null,
@@ -252,8 +316,12 @@ describe("ModelConnectionsEditorPage", () => {
 
     render(<ModelConnectionsEditorPage />);
 
-    expect(screen.getByLabelText(/^Reasoning Effort$/i)).toHaveTextContent("Custom...");
-    expect(screen.getByLabelText(/^Custom Reasoning Effort$/i)).toHaveValue("experimental-reasoning");
+    expect(screen.getByLabelText(/^Reasoning Effort$/i)).toHaveTextContent(
+      "Custom...",
+    );
+    expect(screen.getByLabelText(/^Custom Reasoning Effort$/i)).toHaveValue(
+      "experimental-reasoning",
+    );
   });
 
   it("submits Chat Completions API style when selected", async () => {
@@ -261,18 +329,30 @@ describe("ModelConnectionsEditorPage", () => {
 
     render(<ModelConnectionsEditorPage />);
 
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Compatible Chat" } });
-    fireEvent.change(screen.getByLabelText(/^Key$/i), { target: { value: "compatible_chat" } });
-    fireEvent.change(screen.getByLabelText(/^Model ID$/i), { target: { value: "third-party-chat" } });
+    fireEvent.change(screen.getByLabelText(/^Name$/i), {
+      target: { value: "Compatible Chat" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Key$/i), {
+      target: { value: "compatible_chat" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Model ID$/i), {
+      target: { value: "third-party-chat" },
+    });
     const apiStyleSelect = screen.getByLabelText(/^API Style$/i);
     apiStyleSelect.focus();
     fireEvent.keyDown(apiStyleSelect, { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("option", {
-      name: /^chat completions api$/i,
-    }));
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: /^chat completions api$/i,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(createModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     expect(createModelConnectionMock).toHaveBeenCalledWith(
       expect.objectContaining({ apiStyle: "chat_completions" }),
     );
@@ -288,15 +368,23 @@ describe("ModelConnectionsEditorPage", () => {
     expect(screen.getByLabelText(/^Key$/i)).toHaveValue("primary_openai");
     expect(screen.getByLabelText(/^Key$/i)).toBeDisabled();
 
-    expect(screen.getByText(/leave blank to keep the offline path credential-free\./i)).toBeVisible();
+    expect(
+      screen.getByText(/optional for deterministic smoke\./i),
+    ).toBeVisible();
     expect(screen.getByText(/last test passed/i)).toBeVisible();
     expect(screen.getByLabelText(/^API Style$/i)).toHaveTextContent(
       "Chat Completions API",
     );
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Primary OpenAI Updated" } });
-    fireEvent.click(screen.getByRole("button", { name: /save model connection/i }));
+    fireEvent.change(screen.getByLabelText(/^Name$/i), {
+      target: { value: "Primary OpenAI Updated" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /save model connection/i }),
+    );
 
-    await waitFor(() => expect(updateModelConnectionMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(updateModelConnectionMock).toHaveBeenCalledTimes(1),
+    );
     const updateCall = updateModelConnectionMock.mock.calls[0][0];
     expect(updateCall.modelConnectionId).toBe("4");
     expect(updateCall.payload).toMatchObject({
@@ -323,7 +411,9 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
     fireEvent.click(screen.getByTestId("model-connection-test"));
 
-    await waitFor(() => expect(screen.getByTestId("model-connection-feedback")).toBeVisible());
+    await waitFor(() =>
+      expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
+    );
     expect(screen.getByText(/connection succeeded/i)).toBeVisible();
     expect(screen.getByText(/connection ok/i)).toBeVisible();
     expect(toastSuccessMock).toHaveBeenCalledWith("Connection OK");
@@ -341,7 +431,9 @@ describe("ModelConnectionsEditorPage", () => {
     render(<ModelConnectionsEditorPage />);
     fireEvent.click(screen.getByTestId("model-connection-test"));
 
-    await waitFor(() => expect(screen.getByTestId("model-connection-feedback")).toBeVisible());
+    await waitFor(() =>
+      expect(screen.getByTestId("model-connection-feedback")).toBeVisible(),
+    );
     expect(screen.getByText(/connection failed/i)).toBeVisible();
     expect(screen.getByText(/key rejected/i)).toBeVisible();
     expect(toastErrorMock).toHaveBeenCalledWith("Key rejected");
