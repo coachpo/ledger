@@ -20,6 +20,7 @@ from app.schemas.model_connection import (
     ModelConnectionListRead,
     ModelConnectionRead,
     ModelConnectionUpdate,
+    build_model_connection_openai_base_url,
     normalize_model_connection_key,
 )
 
@@ -281,7 +282,7 @@ class ModelConnectionService:
 
         client_kwargs: dict[str, Any] = {
             "api_key": api_key,
-            "base_url": connection.base_url,
+            "base_url": build_model_connection_openai_base_url(connection.base_url),
             "timeout": float(connection.timeout_seconds),
             "max_retries": 0,
         }

@@ -56,26 +56,20 @@ def _normalize_base_url(value: object) -> str:
     if parsed.query or parsed.fragment:
         raise ValueError("Base URL must not include query parameters or fragments")
 
-    path = parsed.path.rstrip("/")
-    lower_path = path.lower()
-    if lower_path.endswith("/v1/responses"):
-        raise ValueError(
-            "Base URL must point to the /v1 root; "
-            + "set apiStyle to responses instead of using /v1/responses"
-        )
-    if lower_path.endswith("/v1/chat/completions"):
-        raise ValueError(
-            "Base URL must point to the /v1 root; "
-            + "set apiStyle to chat_completions instead of using /v1/chat/completions"
-        )
-    if "/v1/" in lower_path:
-        raise ValueError("Base URL must point to the /v1 root")
-    if not path:
-        path = "/v1"
-    elif not lower_path.endswith("/v1"):
-        path = f"{path}/v1"
+    return normalized
 
-    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+def build_model_connection_openai_base_url(value: object) -> str:
+    normalized = _normalize_required_text(value, field_name="Base URL")
+    parsed = urlsplit(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Base URL must be a valid http or https URL")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL must not include query parameters or fragments")
+
+    path = parsed.path.rstrip("/")
+    runtime_path = path if path.lower().endswith("/v1") else (f"{path}/v1" if path else "/v1")
+    return urlunsplit((parsed.scheme, parsed.netloc, runtime_path, "", ""))
 
 
 def normalize_model_connection_key(value: object) -> str:
@@ -270,5 +264,6 @@ __all__ = [
     "ModelConnectionRead",
     "ModelConnectionReasoningEffort",
     "ModelConnectionUpdate",
+    "build_model_connection_openai_base_url",
     "normalize_model_connection_key",
 ]

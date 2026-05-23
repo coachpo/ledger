@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
 from app.repositories.model_connection import ModelConnectionRepository
+from app.schemas.model_connection import build_model_connection_openai_base_url
 from app.services.capability_service import CapabilityService, RuntimeToolGrantError
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageResolvedModelBinding, PackageRuntimeAgentSpec
@@ -476,7 +477,7 @@ class AgentExecutionService:
         started_at = time.monotonic()
         client_kwargs: dict[str, Any] = {
             "api_key": model_connection.api_key,
-            "base_url": model_connection.base_url,
+            "base_url": build_model_connection_openai_base_url(model_connection.base_url),
             "timeout": float(model_connection.timeout_seconds),
         }
 

@@ -317,12 +317,14 @@ _DELETED_MODEL_CONNECTION_FIELDS: dict[str, object] = {
 }
 
 
-def _model_connection_create_payload() -> dict[str, object]:
+def _model_connection_create_payload(
+    base_url: str = "https://api.openai.com",
+) -> dict[str, object]:
     return {
         "key": "deleted_fields_model",
         "name": "Deleted Fields Model",
         "description": "Model connection without removed fields.",
-        "baseUrl": "https://api.openai.com/v1",
+        "baseUrl": base_url,
         "modelId": "gpt-5.5-mini",
         "reasoningEffort": "medium",
         "apiStyle": "responses",
@@ -2886,6 +2888,59 @@ def test_model_connection_round_trips_connection_kind(client: TestClient) -> Non
     assert get_response.status_code == 200
     get_body = cast(dict[str, object], get_response.json())
     assert get_body["connectionKind"] == "provider"
+
+
+def test_model_connection_base_url_preserves_exact_user_input(
+    client: TestClient,
+) -> None:
+    create_payload = _model_connection_create_payload(
+        "https://provider.example.test/openai-compatible/",
+    )
+
+    create_response = client.post("/api/model-connections", json=create_payload)
+    assert create_response.status_code == 201, create_response.json()
+    create_body = cast(dict[str, object], create_response.json())
+    assert create_body["baseUrl"] == "https://provider.example.test/openai-compatible/"
+    connection_id = cast(int, create_body["id"])
+
+    patch_response = client.patch(
+        f"/api/model-connections/{connection_id}",
+        json={"baseUrl": "https://provider.example.test/v1/responses/"},
+    )
+    assert patch_response.status_code == 200, patch_response.json()
+    patch_body = cast(dict[str, object], patch_response.json())
+    assert patch_body["baseUrl"] == "https://provider.example.test/v1/responses/"
+
+    get_response = client.get(f"/api/model-connections/{connection_id}")
+    assert get_response.status_code == 200, get_response.json()
+    get_body = cast(dict[str, object], get_response.json())
+    assert get_body["baseUrl"] == "https://provider.example.test/v1/responses/"
+
+    assert (
+        ModelConnectionCreate.model_validate(create_payload).base_url
+        == "https://provider.example.test/openai-compatible/"
+    )
+    assert (
+        ModelConnectionUpdate.model_validate(
+            {"baseUrl": "https://provider.example.test/v1/responses/"}
+        ).base_url
+        == "https://provider.example.test/v1/responses/"
+    )
+
+    with pytest.raises(ValidationError):
+        ModelConnectionCreate.model_validate(
+            {
+                **_model_connection_create_payload(
+                    "https://provider.example.test/openai-compatible",
+                ),
+                "baseUrl": "https://provider.example.test/openai-compatible?query=1",
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ModelConnectionUpdate.model_validate(
+            {"baseUrl": "ftp://provider.example.test/openai-compatible"}
+        )
 
 
 def test_model_connection_connection_test_uses_provider_openai_behavior(
