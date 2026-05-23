@@ -21,7 +21,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type TradingOperationSymbolOption = {
   label: string;
@@ -84,10 +90,11 @@ export function TradingOperationForm({
       return symbolOptions;
     }
 
-    return symbolOptions.filter((option) => (
-      option.symbol.toUpperCase().includes(normalizedSymbol)
-      || option.label.toUpperCase().includes(normalizedSymbol)
-    ));
+    return symbolOptions.filter(
+      (option) =>
+        option.symbol.toUpperCase().includes(normalizedSymbol) ||
+        option.label.toUpperCase().includes(normalizedSymbol),
+    );
   }, [symbolFilter, symbolOptions]);
 
   const closeSymbolMenu = () => {
@@ -107,17 +114,23 @@ export function TradingOperationForm({
 
     const selectedBalanceId = form.getValues("balanceId");
     if (!selectedBalanceId && balances[0]?.id) {
-      form.setValue("balanceId", String(balances[0].id), { shouldValidate: true });
+      form.setValue("balanceId", String(balances[0].id), {
+        shouldValidate: true,
+      });
       return;
     }
 
     if (
-      selectedBalanceId
-      && !balances.some((balance) => String(balance.id) === selectedBalanceId)
+      selectedBalanceId &&
+      !balances.some((balance) => String(balance.id) === selectedBalanceId)
     ) {
-      form.setValue("balanceId", balances[0]?.id ? String(balances[0].id) : "", {
-        shouldValidate: true,
-      });
+      form.setValue(
+        "balanceId",
+        balances[0]?.id ? String(balances[0].id) : "",
+        {
+          shouldValidate: true,
+        },
+      );
     }
   }, [balances, form, requiresBalance]);
 
@@ -128,7 +141,9 @@ export function TradingOperationForm({
 
     const normalizedInitialSymbol = initialSymbol.toUpperCase();
     if (form.getValues("symbol") !== normalizedInitialSymbol) {
-      form.setValue("symbol", normalizedInitialSymbol, { shouldValidate: true });
+      form.setValue("symbol", normalizedInitialSymbol, {
+        shouldValidate: true,
+      });
     }
   }, [form, initialSymbol]);
 
@@ -189,42 +204,50 @@ export function TradingOperationForm({
         <div className="grid gap-4 sm:grid-cols-2">
           {requiresBalance ? (
             balances.length > 0 ? (
-            <FormField
-              control={form.control}
-              name="balanceId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Balance</FormLabel>
-                  <Select
-                    disabled={isPending}
-                    value={field.value}
-                    onValueChange={field.onChange}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select balance" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {balances.map((balance) => (
-                        <SelectItem key={balance.id} value={String(balance.id)}>
-                          {getBalanceOptionLabel(balance)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedBalance ? (
-                    <FormDescription>
-                      Available in selected balance: {formatCurrency(selectedBalance.amount, selectedBalance.currency)}
-                    </FormDescription>
-                  ) : null}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="balanceId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Balance</FormLabel>
+                    <Select
+                      disabled={isPending}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select balance" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {balances.map((balance) => (
+                          <SelectItem
+                            key={balance.id}
+                            value={String(balance.id)}
+                          >
+                            {getBalanceOptionLabel(balance)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedBalance ? (
+                      <FormDescription>
+                        Available in selected balance:{" "}
+                        {formatCurrency(
+                          selectedBalance.amount,
+                          selectedBalance.currency,
+                        )}
+                      </FormDescription>
+                    ) : null}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             ) : (
               <div className="rounded-md border border-dashed border-destructive/50 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {side} requires a deposit balance. Add one in the Balances tab first.
+                {side} requires a deposit balance. Add one in the Balances tab
+                first.
               </div>
             )
           ) : (
@@ -238,7 +261,11 @@ export function TradingOperationForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Operation</FormLabel>
-                <Select disabled={isPending} value={field.value} onValueChange={field.onChange}>
+                <Select
+                  disabled={isPending}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue />
@@ -278,8 +305,8 @@ export function TradingOperationForm({
                         const nextFocusedElement = event.relatedTarget;
 
                         if (
-                          nextFocusedElement instanceof HTMLElement
-                          && nextFocusedElement.dataset.symbolOption === "true"
+                          nextFocusedElement instanceof HTMLElement &&
+                          nextFocusedElement.dataset.symbolOption === "true"
                         ) {
                           return;
                         }
@@ -312,13 +339,20 @@ export function TradingOperationForm({
                           return;
                         }
 
-                        if (event.key === "ArrowDown" && filteredSymbolOptions.length > 0) {
+                        if (
+                          event.key === "ArrowDown" &&
+                          filteredSymbolOptions.length > 0
+                        ) {
                           event.preventDefault();
                           setIsSymbolMenuOpen(true);
                           focusSymbolOption(0);
                         }
                       }}
-                      placeholder={symbolOptions.length > 0 ? "Type or choose a symbol" : undefined}
+                      placeholder={
+                        symbolOptions.length > 0
+                          ? "Type or choose a symbol"
+                          : undefined
+                      }
                     />
                   </FormControl>
                   {symbolOptions.length > 0 && isSymbolMenuOpen ? (
@@ -339,14 +373,15 @@ export function TradingOperationForm({
                                 }}
                                 type="button"
                                 onBlur={(event) => {
-                                  const nextFocusedElement = event.relatedTarget;
+                                  const nextFocusedElement =
+                                    event.relatedTarget;
 
                                   if (
-                                    nextFocusedElement instanceof HTMLElement
-                                    && (
-                                      nextFocusedElement.dataset.symbolInput === "true"
-                                      || nextFocusedElement.dataset.symbolOption === "true"
-                                    )
+                                    nextFocusedElement instanceof HTMLElement &&
+                                    (nextFocusedElement.dataset.symbolInput ===
+                                      "true" ||
+                                      nextFocusedElement.dataset
+                                        .symbolOption === "true")
                                   ) {
                                     return;
                                   }
@@ -360,7 +395,10 @@ export function TradingOperationForm({
                                 onKeyDown={(event) => {
                                   if (event.key === "ArrowDown") {
                                     event.preventDefault();
-                                    focusSymbolOption((index + 1) % filteredSymbolOptions.length);
+                                    focusSymbolOption(
+                                      (index + 1) %
+                                        filteredSymbolOptions.length,
+                                    );
                                     return;
                                   }
 
@@ -386,15 +424,19 @@ export function TradingOperationForm({
                                   event.preventDefault();
                                 }}
                               >
-                                <span className="font-medium">{option.symbol}</span>
-                                <span className="text-muted-foreground text-xs">{option.label}</span>
+                                <span className="font-medium">
+                                  {option.symbol}
+                                </span>
+                                <span className="text-muted-foreground text-xs">
+                                  {option.label}
+                                </span>
                               </button>
                             </li>
                           ))}
                         </ul>
                       ) : (
                         <div className="px-3 py-2 text-sm text-muted-foreground">
-                          No matching symbols found. You can still save a new symbol.
+                          No matching symbols found.
                         </div>
                       )}
                     </div>
@@ -403,7 +445,8 @@ export function TradingOperationForm({
                 {symbolOptions.length > 0 ? (
                   <>
                     <FormDescription>
-                      Portfolio symbols are suggested here. BUY can still use a new symbol.
+                      Portfolio symbols are suggested here. BUY can still use a
+                      new symbol.
                     </FormDescription>
                   </>
                 ) : null}
@@ -418,7 +461,11 @@ export function TradingOperationForm({
               <FormItem>
                 <FormLabel>Executed At</FormLabel>
                 <FormControl>
-                  <Input {...field} disabled={isPending} type="datetime-local" />
+                  <Input
+                    {...field}
+                    disabled={isPending}
+                    type="datetime-local"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -434,7 +481,11 @@ export function TradingOperationForm({
                 <FormItem>
                   <FormLabel>Quantity</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} inputMode="decimal" />
+                    <Input
+                      {...field}
+                      disabled={isPending}
+                      inputMode="decimal"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -447,7 +498,11 @@ export function TradingOperationForm({
                 <FormItem>
                   <FormLabel>Price</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} inputMode="decimal" />
+                    <Input
+                      {...field}
+                      disabled={isPending}
+                      inputMode="decimal"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -460,7 +515,11 @@ export function TradingOperationForm({
                 <FormItem>
                   <FormLabel>Commission</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} inputMode="decimal" />
+                    <Input
+                      {...field}
+                      disabled={isPending}
+                      inputMode="decimal"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -477,7 +536,11 @@ export function TradingOperationForm({
                 <FormItem>
                   <FormLabel>Dividend Amount</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} inputMode="decimal" />
+                    <Input
+                      {...field}
+                      disabled={isPending}
+                      inputMode="decimal"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -490,7 +553,11 @@ export function TradingOperationForm({
                 <FormItem>
                   <FormLabel>Commission</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isPending} inputMode="decimal" />
+                    <Input
+                      {...field}
+                      disabled={isPending}
+                      inputMode="decimal"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -503,21 +570,33 @@ export function TradingOperationForm({
             control={form.control}
             name="splitRatio"
             render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Split Ratio</FormLabel>
-                  <FormControl>
-                    <Input {...field} disabled={isPending} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              <FormItem>
+                <FormLabel>Split Ratio</FormLabel>
+                <FormControl>
+                  <Input {...field} disabled={isPending} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
           />
         ) : null}
         <div className="flex justify-end gap-2">
-          <Button onClick={onCancel} type="button" variant="outline" disabled={isPending}>
+          <Button
+            onClick={onCancel}
+            type="button"
+            variant="outline"
+            disabled={isPending}
+          >
             Cancel
           </Button>
-          <Button disabled={isPending || !form.formState.isValid || (requiresBalance && balances.length === 0)} type="submit">
+          <Button
+            disabled={
+              isPending ||
+              !form.formState.isValid ||
+              (requiresBalance && balances.length === 0)
+            }
+            type="submit"
+          >
             Save Operation
           </Button>
         </div>

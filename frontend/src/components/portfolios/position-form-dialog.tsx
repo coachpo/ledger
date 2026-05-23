@@ -5,11 +5,23 @@ import { useForm } from "react-hook-form";
 
 import { useDebounce } from "@/hooks/use-debounce";
 import { usePositionSymbolLookup } from "@/hooks/use-positions";
-import type { PositionRead, PositionUpdateInput, PositionWriteInput } from "@/lib/types/position";
-import { positionCreateFormSchema, type PositionCreateFormValues } from "@/components/shared/form-schemas";
+import type {
+  PositionRead,
+  PositionUpdateInput,
+  PositionWriteInput,
+} from "@/lib/types/position";
+import {
+  positionCreateFormSchema,
+  type PositionCreateFormValues,
+} from "@/components/shared/form-schemas";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -76,12 +88,23 @@ export function PositionFormDialog({
 
   useEffect(() => {
     if (initial) return;
-    if (!debouncedSymbol || normalizedSymbol !== debouncedSymbol || nameManuallyEdited) {
+    if (
+      !debouncedSymbol ||
+      normalizedSymbol !== debouncedSymbol ||
+      nameManuallyEdited
+    ) {
       return;
     }
 
     form.setValue("name", symbolLookup?.name ?? "", { shouldDirty: false });
-  }, [debouncedSymbol, form, initial, nameManuallyEdited, normalizedSymbol, symbolLookup?.name]);
+  }, [
+    debouncedSymbol,
+    form,
+    initial,
+    nameManuallyEdited,
+    normalizedSymbol,
+    symbolLookup?.name,
+  ]);
 
   useEffect(() => {
     form.reset({
@@ -94,19 +117,22 @@ export function PositionFormDialog({
     setNameManuallyEdited(false);
   }, [form, initial, open]);
 
-  const lookupStatusMessage = !initial && debouncedSymbol && normalizedSymbol === debouncedSymbol
-    ? isSymbolLookupFetching
-      ? "Looking up company name..."
-      : symbolLookup?.name
-        ? "Suggested name loaded. You can edit it before saving."
-        : "No company name found. You can enter one manually."
-    : null;
+  const lookupStatusMessage =
+    !initial && debouncedSymbol && normalizedSymbol === debouncedSymbol
+      ? isSymbolLookupFetching
+        ? "Looking up company name..."
+        : symbolLookup?.name
+          ? "Suggested name loaded."
+          : "No company name found."
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{initial ? "Edit Position" : "Add Position"}</DialogTitle>
+          <DialogTitle>
+            {initial ? "Edit Position" : "Add Position"}
+          </DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -139,7 +165,9 @@ export function PositionFormDialog({
                     <Input
                       {...field}
                       disabled={isPending || Boolean(initial)}
-                      onChange={(event) => field.onChange(event.target.value.toUpperCase())}
+                      onChange={(event) =>
+                        field.onChange(event.target.value.toUpperCase())
+                      }
                     />
                   </FormControl>
                   <FormMessage />
@@ -165,13 +193,18 @@ export function PositionFormDialog({
                         }}
                       />
                     </FormControl>
-                    {isSymbolLookupFetching && !initial && debouncedSymbol && normalizedSymbol === debouncedSymbol && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                      </div>
-                    )}
+                    {isSymbolLookupFetching &&
+                      !initial &&
+                      debouncedSymbol &&
+                      normalizedSymbol === debouncedSymbol && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
                   </div>
-                  {lookupStatusMessage ? <FormDescription>{lookupStatusMessage}</FormDescription> : null}
+                  {lookupStatusMessage ? (
+                    <FormDescription>{lookupStatusMessage}</FormDescription>
+                  ) : null}
                   <FormMessage />
                 </FormItem>
               )}
@@ -193,7 +226,11 @@ export function PositionFormDialog({
                   <FormItem>
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
-                      <Input {...field} disabled={isPending} inputMode="decimal" />
+                      <Input
+                        {...field}
+                        disabled={isPending}
+                        inputMode="decimal"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -206,7 +243,11 @@ export function PositionFormDialog({
                   <FormItem>
                     <FormLabel>Average Cost</FormLabel>
                     <FormControl>
-                      <Input {...field} disabled={isPending} inputMode="decimal" />
+                      <Input
+                        {...field}
+                        disabled={isPending}
+                        inputMode="decimal"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -214,11 +255,18 @@ export function PositionFormDialog({
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button onClick={() => onOpenChange(false)} type="button" variant="outline" disabled={isPending}>
+              <Button
+                onClick={() => onOpenChange(false)}
+                type="button"
+                variant="outline"
+                disabled={isPending}
+              >
                 Cancel
               </Button>
               <Button disabled={isPending} type="submit">
-                {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                {isPending ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : null}
                 Save
               </Button>
             </div>

@@ -8,7 +8,8 @@ vi.mock("@/hooks/use-debounce", () => ({
 }));
 
 vi.mock("@/hooks/use-positions", () => ({
-  usePositionSymbolLookup: (...args: unknown[]) => usePositionSymbolLookupMock(...args),
+  usePositionSymbolLookup: (...args: unknown[]) =>
+    usePositionSymbolLookupMock(...args),
 }));
 
 import { PositionFormDialog } from "./position-form-dialog";
@@ -16,11 +17,16 @@ import { PositionFormDialog } from "./position-form-dialog";
 describe("PositionFormDialog", () => {
   beforeEach(() => {
     usePositionSymbolLookupMock.mockReset();
-    usePositionSymbolLookupMock.mockImplementation((_portfolioId: unknown, symbol: string | undefined) => ({
-      data: symbol === "AAPL" ? { symbol: "AAPL", name: "Apple Inc." } : { symbol: symbol ?? "", name: null },
-      isError: false,
-      isFetching: false,
-    }));
+    usePositionSymbolLookupMock.mockImplementation(
+      (_portfolioId: unknown, symbol: string | undefined) => ({
+        data:
+          symbol === "AAPL"
+            ? { symbol: "AAPL", name: "Apple Inc." }
+            : { symbol: symbol ?? "", name: null },
+        isError: false,
+        isFetching: false,
+      }),
+    );
   });
 
   it("auto-fills a resolved name and keeps the field editable", async () => {
@@ -34,11 +40,13 @@ describe("PositionFormDialog", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Symbol"), { target: { value: "aapl" } });
+    fireEvent.change(screen.getByLabelText("Symbol"), {
+      target: { value: "aapl" },
+    });
 
     const nameInput = screen.getByLabelText("Name");
     await waitFor(() => expect(nameInput).toHaveValue("Apple Inc."));
-    expect(screen.getByText("Suggested name loaded. You can edit it before saving.")).toBeInTheDocument();
+    expect(screen.getByText("Suggested name loaded.")).toBeInTheDocument();
 
     fireEvent.change(nameInput, { target: { value: "Apple Custom Name" } });
     expect(nameInput).toHaveValue("Apple Custom Name");
@@ -55,12 +63,14 @@ describe("PositionFormDialog", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Symbol"), { target: { value: "unknown" } });
+    fireEvent.change(screen.getByLabelText("Symbol"), {
+      target: { value: "unknown" },
+    });
 
     const nameInput = screen.getByLabelText("Name");
     await waitFor(() => {
       expect(nameInput).toHaveValue("");
-      expect(screen.getByText("No company name found. You can enter one manually.")).toBeInTheDocument();
+      expect(screen.getByText("No company name found.")).toBeInTheDocument();
     });
 
     fireEvent.change(nameInput, { target: { value: "Manual Name" } });
