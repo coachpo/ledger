@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
@@ -281,6 +281,59 @@ def test_resolve_append_and_query_use_canonical_revisions_without_leaks(
     for fragment in _FORBIDDEN_MODEL_FRAGMENTS:
         assert fragment not in _serialized(snippet_payload)
         assert fragment not in snippets[0].text
+
+
+def test_concurrent_shared_scope_revision_update_conflicts_then_retries_without_loss(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        created = PostgresMemoryStore(session).create_pending(_write_request(run.id))
+        memory_id = created.memory_id
+        session.commit()
+
+    with session_factory() as winner_session, session_factory() as conflict_session:
+        winner = PostgresMemoryStore(winner_session).resolve(memory_id, _outcome())
+        _ = conflict_session.execute(text("SET LOCAL lock_timeout = '200ms'"))
+        with pytest.raises(ApiError) as exc_info:
+            _ = PostgresMemoryStore(conflict_session).append_reflection(
+                memory_id,
+                _reflection(),
+            )
+        conflict_session.rollback()
+        winner_session.commit()
+
+    with session_factory() as retry_session:
+        retried = PostgresMemoryStore(retry_session).append_reflection(
+            memory_id,
+            _reflection(),
+        )
+        retry_session.commit()
+
+    with session_factory() as session:
+        entry = AgentMemoryEntryRepository(session).get_by_memory_id(memory_id)
+        revisions = list(
+            session.scalars(select(AgentMemoryRevision).order_by(AgentMemoryRevision.version))
+        )
+        events = list(session.scalars(select(RunMemoryEvent).order_by(RunMemoryEvent.id)))
+
+    error = exc_info.value
+    assert error.status_code == 409
+    assert error.code == "memory_revision_conflict"
+    assert winner.revision.version == 2
+    assert retried.revision.version == 3
+    assert retried.reflections[0].reflection == _reflection().reflection
+    assert entry is not None
+    assert entry.status == "resolved"
+    assert [revision.version for revision in revisions] == [1, 2, 3]
+    assert revisions[1].supersedes_revision_id == revisions[0].revision_id
+    assert revisions[2].supersedes_revision_id == revisions[1].revision_id
+    assert [event.event_type for event in events] == ["written", "reviewed", "reviewed"]
+    assert [event.revision_id for event in events] == [
+        revisions[0].revision_id,
+        revisions[1].revision_id,
+        revisions[2].revision_id,
+    ]
 
 
 def test_query_with_embedding_falls_back_to_lexical_when_vectors_are_absent(

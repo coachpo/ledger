@@ -156,11 +156,31 @@ stop_local_database() {
   )
 }
 
+stop_existing_scheduler_workers() {
+  local pids
+  local pid
+
+  if ! command -v pgrep >/dev/null 2>&1; then
+    return 0
+  fi
+
+  pids="$(pgrep -f 'app.workers.run_scheduler' 2>/dev/null || true)"
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+
+  printf 'Stopping existing SignalDeck scheduler worker(s).\n'
+  for pid in $pids; do
+    kill "$pid" 2>/dev/null || true
+  done
+}
+
 stop_existing_instances() {
   local port
 
   printf 'Stopping existing SignalDeck development instances.\n'
   stop_local_database
+  stop_existing_scheduler_workers
 
   for port in "$REQUESTED_BACKEND_PORT" 28000 28001 28002 "$REQUESTED_FRONTEND_PORT" 25173 25174; do
     kill_listener_on_port "$port"
@@ -283,6 +303,19 @@ if [[ "$REUSE_BACKEND" -eq 0 ]]; then
       printf 'Database did not become ready at %s.\n' "$selected_database_url" >&2
       exit 1
     fi
+
+    cleanup_backend_children() {
+      if [[ -n "${SCHEDULER_PID:-}" ]]; then
+        kill "$SCHEDULER_PID" 2>/dev/null || true
+        wait "$SCHEDULER_PID" 2>/dev/null || true
+      fi
+    }
+
+    trap cleanup_backend_children EXIT INT TERM
+
+    printf 'Starting SignalDeck scheduler worker.\n'
+    DATABASE_URL="$selected_database_url" uv run python -m app.workers.run_scheduler &
+    SCHEDULER_PID=$!
 
     BACKEND_CORS_ALLOWED_ORIGINS="$(merged_cors_allowed_origins "$FRONTEND_HOST" "$SELECTED_FRONTEND_PORT")"
     DATABASE_URL="$selected_database_url" CORS_ALLOWED_ORIGINS="$BACKEND_CORS_ALLOWED_ORIGINS" uv run uvicorn app.main:app --reload --host "$BACKEND_HOST" --port "$SELECTED_BACKEND_PORT"

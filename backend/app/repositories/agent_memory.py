@@ -49,6 +49,20 @@ class AgentMemoryEntryRepository(BaseRepository[AgentMemoryEntry]):
         statement = select(self.model).where(self.model.memory_id == memory_id)
         return self._get_by_statement(statement)
 
+    def get_by_memory_id_for_update(
+        self,
+        memory_id: str,
+        *,
+        nowait: bool = False,
+    ) -> AgentMemoryEntry | None:
+        statement = (
+            select(self.model)
+            .where(self.model.memory_id == memory_id)
+            .with_for_update(nowait=nowait)
+            .execution_options(populate_existing=True)
+        )
+        return self._get_by_statement(statement)
+
     def get_by_idempotency_key(self, idempotency_key: str) -> AgentMemoryEntry | None:
         statement = select(self.model).where(self.model.idempotency_key == idempotency_key)
         return self._get_by_statement(statement)

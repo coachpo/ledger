@@ -18,6 +18,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import {
+  diagnosticsFromDraftReadiness,
+  type RunDraftReadiness,
+  type RunDraftReadinessDiagnostic,
+} from "./detail-helpers";
+
 type JsonValidationResult<T> = {
   error: string | null;
   value: T | null;
@@ -81,6 +87,43 @@ function JsonEditorField({
   );
 }
 
+function draftDiagnosticBadge(diagnostic: RunDraftReadinessDiagnostic) {
+  return diagnostic.severity === "error" ? (
+    <Badge variant="destructive">Blocking</Badge>
+  ) : (
+    <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
+  );
+}
+
+function RunDraftReadinessPanel({ readiness }: { readiness: RunDraftReadiness }) {
+  const diagnostics = diagnosticsFromDraftReadiness(readiness);
+  const title = readiness.ready ? "Current snapshot readiness passed" : "Current snapshot readiness blocked";
+  const description = readiness.ready
+    ? "The backend reports this rerun draft is ready to create from current package dependencies."
+    : "The backend reports this rerun draft is not ready to create from current package dependencies.";
+
+  return (
+    <Alert data-testid="run-rerun-readiness" variant={readiness.ready ? "default" : "destructive"}>
+      <AlertCircle />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription className="space-y-3">
+        <p>{description}</p>
+        {diagnostics.length > 0 ? (
+          <div className="space-y-2">
+            {diagnostics.map((diagnostic) => (
+              <div className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center" key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}>
+                <div>{draftDiagnosticBadge(diagnostic)}</div>
+                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
+                <span className="min-w-0 break-words">{diagnostic.issue}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export function RunRerunDialog({
   onClose,
   open,
@@ -132,7 +175,7 @@ export function RunRerunDialog({
     return { parameters: parametersValidation.value };
   }, [parametersValidation.error, parametersValidation.value]);
   const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(parametersValidation.value, draftQuery.data.parameters));
-  const isSubmitDisabled = !rerunPayload || createRerun.isPending || draftQuery.isPending || Boolean(parametersValidation.error);
+  const isSubmitDisabled = !rerunPayload || createRerun.isPending || draftQuery.isPending || Boolean(parametersValidation.error) || (draftQuery.data ? !draftQuery.data.ready : false);
 
   const resetToDraft = () => {
     if (!draftQuery.data) {
@@ -201,6 +244,8 @@ export function RunRerunDialog({
             <AlertDescription>{apiError}</AlertDescription>
           </Alert>
         ) : null}
+
+        {draftQuery.data ? <RunDraftReadinessPanel readiness={draftQuery.data} /> : null}
 
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-rerun-dialog-body">

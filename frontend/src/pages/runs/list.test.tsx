@@ -34,9 +34,45 @@ describe("RunsListPage", () => {
             queuedAt: "2026-04-20T09:59:00Z",
             startedAt: null,
             status: "queued",
+            progress: {
+              unit: "invocation",
+              terminalCount: 1,
+              totalCount: 8,
+              percent: 12,
+            },
+            queue: {
+              blockingRunId: null,
+              message: "Backend queue read model: waiting on worker capacity.",
+              reason: "awaiting-worker-capacity",
+              state: "waiting",
+            },
             targetId: 40,
             targetKey: "queued_review",
             targetKind: "workflow",
+            totalTokens: 0,
+            traceId: null,
+          },
+          {
+            finishedAt: null,
+            id: 17,
+            queuedAt: "2026-04-20T09:59:15Z",
+            startedAt: null,
+            status: "queued",
+            progress: {
+              unit: "invocation",
+              terminalCount: 0,
+              totalCount: 3,
+              percent: 0,
+            },
+            queue: {
+              blockingRunId: 14,
+              message: "Backend queue read model: run #14 is holding package serial lane.",
+              reason: "blocked-by-package-serial-policy",
+              state: "blocked",
+            },
+            targetId: 42,
+            targetKey: "queued_review",
+            targetKind: "workflowPackage",
             totalTokens: 0,
             traceId: null,
           },
@@ -46,6 +82,13 @@ describe("RunsListPage", () => {
             queuedAt: "2026-04-20T09:59:30Z",
             startedAt: "2026-04-20T10:00:00Z",
             status: "running",
+            progress: {
+              unit: "invocation",
+              terminalCount: 2,
+              totalCount: 5,
+              percent: 37,
+            },
+            queue: null,
             targetId: 41,
             targetKey: "market_review_package",
             targetKind: "workflowPackage",
@@ -58,6 +101,13 @@ describe("RunsListPage", () => {
             queuedAt: "2026-04-20T10:00:30Z",
             startedAt: "2026-04-20T10:01:00Z",
             status: "succeeded",
+            progress: {
+              unit: "invocation",
+              terminalCount: 3,
+              totalCount: 3,
+              percent: 100,
+            },
+            queue: null,
             targetId: 12,
             targetKey: "macro_agent",
             targetKind: "agent",
@@ -118,11 +168,12 @@ describe("RunsListPage", () => {
     expect(screen.getByLabelText("Run status")).toBeVisible();
 
     expect(screen.getByTestId("runs-row-14")).toBeVisible();
+    expect(screen.getByTestId("runs-row-17")).toBeVisible();
     expect(screen.getByTestId("runs-row-15")).toBeVisible();
     expect(screen.getByTestId("runs-row-16")).toBeVisible();
     expect(screen.getAllByText("Workflow")[0]).toBeVisible();
     expect(screen.getAllByText("Agent")[0]).toBeVisible();
-    expect(screen.getByText(/^queued_review$/i)).toBeVisible();
+    expect(screen.getAllByText(/^queued_review$/i)[0]).toBeVisible();
     expect(screen.getAllByText(/^market_review_package$/i)[0]).toBeVisible();
     expect(screen.getByText(/^macro_agent$/i)).toBeVisible();
     expect(screen.getByText(/workflow id: 40/i)).toBeVisible();
@@ -131,14 +182,21 @@ describe("RunsListPage", () => {
     expect(screen.getByText(/agent id: 12/i)).toBeVisible();
     expect(screen.queryByRole("link", { name: /package:/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/total tokens: 0/i);
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(/total tokens: 0/i);
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/total tokens: 21/i);
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/total tokens: 13/i);
     expect(screen.queryByText(/total cost/i)).not.toBeInTheDocument();
 
-    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/awaiting execution/i);
-    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/0%/i);
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/queued/i);
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/awaiting worker capacity/i);
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/backend queue read model: waiting on worker capacity/i);
+    expect(screen.getByTestId("runs-row-14")).toHaveTextContent(/12%/i);
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(/blocked by package serial policy/i);
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(/backend queue read model: run #14 is holding package serial lane/i);
+    expect(screen.getByTestId("runs-row-17")).toHaveTextContent(/0%/i);
+    expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/still running/i);
-    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/50%/i);
+    expect(screen.getByTestId("runs-row-15")).toHaveTextContent(/37%/i);
     expect(screen.getByTestId("runs-row-16")).toHaveTextContent(/100%/i);
 
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));

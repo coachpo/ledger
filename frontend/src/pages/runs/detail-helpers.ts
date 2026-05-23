@@ -1,7 +1,9 @@
+import type { UnknownRecord } from "@/lib/types/common";
 import type {
   RunAgentInvocationRead,
   RunOperationInvocationRead,
   RunRead,
+  RunRerunDraftRead,
   RunStatus,
   RunStepRead,
   RunStepStatus,
@@ -26,7 +28,43 @@ export type ForkTargetContext = {
   step: RunStepRead;
 };
 
+export type RunDraftReadiness = Pick<RunRerunDraftRead, "ready" | "blockingErrors" | "warnings">;
+
+export type RunDraftReadinessDiagnostic = {
+  field: string;
+  issue: string;
+  severity: "error" | "warning";
+};
+
 export const DEFAULT_FORK_UNAVAILABLE_REASON = "Forking is available for succeeded Workflow Package runs and succeeded agent invocations.";
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function diagnosticFromRecord(value: unknown, severity: RunDraftReadinessDiagnostic["severity"]): RunDraftReadinessDiagnostic {
+  const record = isUnknownRecord(value) ? value : {};
+  return {
+    field: stringValue(record.field) || stringValue(record.path) || "$",
+    issue: stringValue(record.issue) || stringValue(record.message) || "Review this run draft diagnostic.",
+    severity,
+  };
+}
+
+export function diagnosticsFromDraftReadiness(readiness: RunDraftReadiness | null | undefined): RunDraftReadinessDiagnostic[] {
+  if (!readiness) {
+    return [];
+  }
+
+  return [
+    ...readiness.blockingErrors.map((diagnostic) => diagnosticFromRecord(diagnostic, "error")),
+    ...readiness.warnings.map((diagnostic) => diagnosticFromRecord(diagnostic, "warning")),
+  ];
+}
 
 export function isTerminalStatus(status: RunStepStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "skipped";
@@ -41,26 +79,8 @@ export function progressForInvocations(invocations: Array<{ status: RunStepStatu
   return Math.round((completed / invocations.length) * 100);
 }
 
-export function progressForRun(status: RunStatus, steps: RunStepRead[]): number {
-  if (status === "queued") {
-    return 0;
-  }
-
-  const invocations = steps.flatMap((step) => [...step.invocations, ...step.operationInvocations]);
-
-  if (invocations.length === 0) {
-    return status === "running" ? 0 : 100;
-  }
-
-  if (status !== "running") {
-    return 100;
-  }
-
-  return progressForInvocations(invocations);
-}
-
 export function formatUnfinishedRunStatus(status: RunStatus): string {
-  return status === "queued" ? " · Awaiting execution" : " · Still running";
+  return status === "queued" ? " · Queued" : " · Still running";
 }
 
 export function formatTargetKindLabel(targetKind: RunTargetKind): string {

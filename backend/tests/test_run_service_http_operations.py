@@ -115,7 +115,6 @@ def test_final_output_resolves_from_http_operation_slot(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     create_response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": _package_source("final_output_http_callbacks")},
@@ -183,7 +182,6 @@ def test_package_delete_removes_http_operation_run_and_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     package_key = "deleted_secret_http_callbacks"
     create_response = client.post(
         "/api/workflow-packages",
@@ -404,6 +402,147 @@ def _running_run(session: Session) -> Run:
     session.add(run)
     session.flush()
     return run
+
+
+def test_progress_for_running_run_without_invocations_stays_zero_in_list_and_detail(
+    session_factory: sessionmaker[Session],
+) -> None:
+    expected_progress = {
+        "unit": "invocation",
+        "terminalCount": 0,
+        "totalCount": 0,
+        "percent": 0,
+    }
+    with session_factory() as session:
+        run = _running_run(session)
+        run_id = run.id
+        session.commit()
+
+    with session_factory() as session:
+        service = RunService(session, session_factory)
+        detail = service.get_run(run_id).model_dump(mode="json", by_alias=True)
+        run_list = service.list_runs().model_dump(mode="json", by_alias=True)
+
+    assert detail["status"] == "running"
+    assert detail["progress"] == expected_progress
+    items = cast(list[dict[str, Any]], run_list["items"])
+    assert [item["id"] for item in items] == [run_id]
+    assert items[0]["progress"] == expected_progress
+
+
+@pytest.mark.parametrize("terminal_status", ["succeeded", "failed"])
+def test_progress_for_terminal_run_without_invocations_is_complete_in_list_and_detail(
+    terminal_status: str,
+    session_factory: sessionmaker[Session],
+) -> None:
+    expected_progress = {
+        "unit": "invocation",
+        "terminalCount": 0,
+        "totalCount": 0,
+        "percent": 100,
+    }
+    with session_factory() as session:
+        run = _running_run(session)
+        run.status = terminal_status
+        run.finished_at = run.started_at
+        run.error = "terminal failure" if terminal_status == "failed" else None
+        run.final_output = {"summary": "done"} if terminal_status == "succeeded" else None
+        run_id = run.id
+        session.commit()
+
+    with session_factory() as session:
+        service = RunService(session, session_factory)
+        detail = service.get_run(run_id).model_dump(mode="json", by_alias=True)
+        run_list = service.list_runs().model_dump(mode="json", by_alias=True)
+
+    assert detail["status"] == terminal_status
+    assert detail["progress"] == expected_progress
+    items = cast(list[dict[str, Any]], run_list["items"])
+    assert [item["id"] for item in items] == [run_id]
+    assert items[0]["progress"] == expected_progress
+
+
+def test_progress_for_running_mixed_agent_operation_invocations_matches_list_and_detail(
+    session_factory: sessionmaker[Session],
+) -> None:
+    plan = _mixed_plan()
+    with session_factory() as session:
+        run = _running_run(session)
+        service = RunService(session, session_factory)
+        service._create_planned_run_rows(
+            run=run,
+            plan=plan,
+            validated_input=cast(dict[str, Any], run.input),
+        )
+        session.flush()
+        invocation = session.query(RunAgentInvocation).filter_by(run_id=run.id).one()
+        operation = session.query(RunOperationInvocation).filter_by(run_id=run.id).one()
+        invocation.status = "succeeded"
+        invocation.output = {"summary": "partial progress"}
+        invocation.output_origin = "executed"
+        operation.status = "running"
+        run_id = run.id
+        session.commit()
+
+    expected_progress = {
+        "unit": "invocation",
+        "terminalCount": 1,
+        "totalCount": 2,
+        "percent": 50,
+    }
+    with session_factory() as session:
+        service = RunService(session, session_factory)
+        detail = service.get_run(run_id).model_dump(mode="json", by_alias=True)
+        run_list = service.list_runs().model_dump(mode="json", by_alias=True)
+
+    assert detail["progress"] == expected_progress
+    step = cast(dict[str, Any], detail["steps"][0])
+    assert step["invocations"][0]["status"] == "succeeded"
+    assert step["operationInvocations"][0]["status"] == "running"
+    items = cast(list[dict[str, Any]], run_list["items"])
+    assert [item["id"] for item in items] == [run_id]
+    assert items[0]["progress"] == expected_progress
+
+
+def test_progress_for_terminal_run_with_sparse_invocation_counts_is_complete(
+    session_factory: sessionmaker[Session],
+) -> None:
+    plan = _mixed_plan()
+    with session_factory() as session:
+        run = _running_run(session)
+        service = RunService(session, session_factory)
+        service._create_planned_run_rows(
+            run=run,
+            plan=plan,
+            validated_input=cast(dict[str, Any], run.input),
+        )
+        session.flush()
+        invocation = session.query(RunAgentInvocation).filter_by(run_id=run.id).one()
+        operation = session.query(RunOperationInvocation).filter_by(run_id=run.id).one()
+        invocation.status = "succeeded"
+        operation.status = "running"
+        run.status = "failed"
+        run.finished_at = run.started_at
+        run.error = "operation interrupted"
+        run_id = run.id
+        session.commit()
+
+    expected_progress = {
+        "unit": "invocation",
+        "terminalCount": 1,
+        "totalCount": 2,
+        "percent": 100,
+    }
+    with session_factory() as session:
+        service = RunService(session, session_factory)
+        detail = service.get_run(run_id).model_dump(mode="json", by_alias=True)
+        run_list = service.list_runs().model_dump(mode="json", by_alias=True)
+
+    assert detail["status"] == "failed"
+    assert detail["progress"] == expected_progress
+    items = cast(list[dict[str, Any]], run_list["items"])
+    assert [item["id"] for item in items] == [run_id]
+    assert items[0]["progress"] == expected_progress
 
 
 def test_mixed_execution_runs_agent_and_http_operation_families(

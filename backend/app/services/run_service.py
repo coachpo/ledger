@@ -30,7 +30,6 @@ from app.models.run_step import RunStep
 from app.models.workflow import Workflow
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.agent import AgentRepository
-from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.output_schema import OutputSchemaRepository
 from app.repositories.report import ReportRepository
 from app.repositories.run import RunRepository
@@ -49,6 +48,8 @@ from app.schemas.run import (
     RunForkDraftRead,
     RunListItemRead,
     RunListRead,
+    RunProgressRead,
+    RunQueueRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
@@ -198,7 +199,6 @@ class RunService:
         )
         self.quote_provider: QuoteProvider | None = self.provider_bundle.quote_provider
         self.agent_repository = AgentRepository(session)
-        self.model_connection_repository = ModelConnectionRepository(session)
         self.output_schema_repository = OutputSchemaRepository(session)
         self.report_repository = ReportRepository(session)
         self.run_repository = RunRepository(session)
@@ -224,7 +224,6 @@ class RunService:
         self._run_rerun_fork_preparation = RunRerunForkPreparation(
             session=session,
             run_repository=self.run_repository,
-            model_connection_repository=self.model_connection_repository,
             run_agent_invocation_repository=self.run_agent_invocation_repository,
             run_operation_invocation_repository=self.run_operation_invocation_repository,
             schema_compiler=self.schema_compiler,
@@ -277,7 +276,27 @@ class RunService:
             limit=limit,
             offset=offset,
         )
-        return RunListRead(items=[self._to_list_item(run) for run in runs])
+        run_ids = [run.id for run in runs]
+        progress_counts_by_run_id = self.run_repository.invocation_status_counts_by_run_id(run_ids)
+        serial_blockers_by_run_id = self.run_repository.serial_queue_blocker_run_ids_by_run_id(
+            run_ids
+        )
+        return RunListRead(
+            items=[
+                self._to_list_item(
+                    run,
+                    progress=self._run_read_projection.progress_from_status_counts(
+                        progress_counts_by_run_id.get(run.id, {}),
+                        run_status=run.status,
+                    ),
+                    queue=self._run_read_projection.queue_from_run(
+                        run,
+                        serial_blocker_run_id=serial_blockers_by_run_id.get(run.id),
+                    ),
+                )
+                for run in runs
+            ]
+        )
 
     def get_run(self, run_id: int) -> RunRead:
         return self._run_read_projection.to_read_model(self._get_run_or_raise(run_id))
@@ -744,7 +763,6 @@ class RunService:
             self.session.rollback()
             raise
 
-        self._dispatch_queue_worker()
         return self._to_created_read(run)
 
     def build_rerun_draft(self, source_run_id: int) -> RunRerunDraftRead:
@@ -763,6 +781,7 @@ class RunService:
             source_run=prepared.source_run,
             plan=prepared.plan,
             validated_input=prepared.validated_input,
+            preflight=prepared.readiness,
         )
 
     def build_fork_draft(
@@ -787,6 +806,7 @@ class RunService:
         return self._create_queued_fork_run(
             prepared=prepared.prepared_fork,
             invocation_input=prepared.invocation_input,
+            preflight=prepared.readiness,
         )
 
     def _create_queued_rerun_run(
@@ -795,6 +815,7 @@ class RunService:
         source_run: Run,
         plan: ExecutionPlan,
         validated_input: dict[str, Any],
+        preflight: WorkflowPackagePreflightResult,
     ) -> RunCreatedRead:
         run = Run(
             agent_id=source_run.agent_id,
@@ -828,6 +849,7 @@ class RunService:
         run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
             source_run=source_run,
             launch_parameters=validated_input,
+            preflight=preflight,
         )
         try:
             _ = self.run_repository.add(run)
@@ -843,7 +865,6 @@ class RunService:
             self.session.rollback()
             raise
 
-        self._dispatch_queue_worker()
         return self._to_created_read(run)
 
     def _create_queued_fork_run(
@@ -851,6 +872,7 @@ class RunService:
         *,
         prepared: PreparedRunFork,
         invocation_input: dict[str, Any],
+        preflight: WorkflowPackagePreflightResult,
     ) -> RunCreatedRead:
         source_run = prepared.source_run
         source_invocation = prepared.source_invocation
@@ -892,6 +914,7 @@ class RunService:
         run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
             source_run=source_run,
             launch_parameters=deepcopy(source_snapshot.launch_parameters),
+            preflight=preflight,
         )
         try:
             _ = self.run_repository.add(run)
@@ -942,7 +965,6 @@ class RunService:
             self.session.rollback()
             raise
 
-        self._dispatch_queue_worker()
         return self._to_created_read(run)
 
     def _lineage_workflow_package_snapshot(
@@ -950,6 +972,7 @@ class RunService:
         *,
         source_run: Run,
         launch_parameters: dict[str, Any],
+        preflight: WorkflowPackagePreflightResult,
     ) -> RunWorkflowPackageSnapshot:
         source_snapshot = self._workflow_package_snapshot_for_run(source_run)
         return RunWorkflowPackageSnapshot(
@@ -971,7 +994,7 @@ class RunService:
             input_schema=deepcopy(source_snapshot.input_schema),
             launch_parameters=deepcopy(launch_parameters),
             resolved_model_connections=deepcopy(source_snapshot.resolved_model_connections),
-            preflight_summary=deepcopy(source_snapshot.preflight_summary),
+            preflight_summary=self._preflight_summary_payload(preflight),
         )
 
     def _create_planned_run_rows(
@@ -1083,17 +1106,14 @@ class RunService:
         )
 
     def execute_run(self, run_id: int) -> None:
-        try:
-            claimed_run = self.run_repository.claim_next_queued(run_id=run_id)
-            if claimed_run is None:
-                self.session.rollback()
-                return
-            claimed_run_id = claimed_run.id
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
-        self.execute_claimed_run(claimed_run_id)
+        import importlib
+
+        queue_module = importlib.import_module("app.services.run_queue_service")
+        _ = queue_module.RunQueueService(
+            self.session,
+            self.session_factory,
+            provider_bundle=self.provider_bundle,
+        ).drain_once(run_id=run_id)
 
     def execute_claimed_run(self, run_id: int) -> None:
         try:
@@ -2529,17 +2549,6 @@ class RunService:
             current = cached
         return current
 
-    def _dispatch_queue_worker(self) -> None:
-        import importlib
-
-        queue_module = importlib.import_module("app.services.run_queue_service")
-        with self.session_factory() as session:
-            queue_module.RunQueueService(
-                session,
-                self.session_factory,
-                provider_bundle=self.provider_bundle,
-            ).dispatch_pending()
-
     def _mark_run_failed_in_fresh_session(self, run_id: int, *, code: str, message: str) -> None:
         with self.session_factory() as session:
             service = RunService(
@@ -2730,7 +2739,12 @@ class RunService:
         )
 
     @staticmethod
-    def _to_list_item(run: Run) -> RunListItemRead:
+    def _to_list_item(
+        run: Run,
+        *,
+        progress: RunProgressRead,
+        queue: RunQueueRead | None,
+    ) -> RunListItemRead:
         return RunListItemRead.model_validate(
             {
                 "id": run.id,
@@ -2738,6 +2752,8 @@ class RunService:
                 "targetId": run.target_id,
                 "targetKey": run.target_key,
                 "status": run.status,
+                "progress": progress,
+                "queue": queue,
                 "totalTokens": run.total_tokens,
                 "traceId": run.trace_id,
                 "queuedAt": run.queued_at,

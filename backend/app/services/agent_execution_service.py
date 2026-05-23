@@ -260,7 +260,7 @@ class AgentExecutionService:
                 binding=binding,
                 connection=connection,
             )
-            return self._to_package_runtime_model_connection(binding, connection)
+            return self._to_runtime_model_connection(connection)
 
         if agent.model_connection_id is None:
             raise RunExecutionError(
@@ -278,8 +278,8 @@ class AgentExecutionService:
             )
         return self._to_runtime_model_connection(connection)
 
+    @staticmethod
     def _assert_package_model_connection_available(
-        self,
         *,
         agent: PackageRuntimeAgentSpec,
         binding: PackageResolvedModelBinding,
@@ -300,56 +300,6 @@ class AgentExecutionService:
                     }
                 ],
             )
-        mismatches = self._package_model_connection_mismatches(binding, connection)
-        if mismatches:
-            raise RunExecutionError(
-                code="run_agent_model_connection_incompatible",
-                message=(
-                    f"Package agent {agent.key!r} references model connection "
-                    f"{binding.key!r}, but the live connection no longer matches "
-                    "the run snapshot"
-                ),
-                details=mismatches,
-            )
-
-    @staticmethod
-    def _package_model_connection_mismatches(
-        binding: PackageResolvedModelBinding,
-        connection: ModelConnection,
-    ) -> list[dict[str, object]]:
-        expected_actual = {
-            "connectionKind": (binding.connection_kind, connection.connection_kind),
-            "baseUrl": (binding.base_url, connection.base_url),
-            "modelId": (binding.model_id, connection.model_id),
-            "reasoningEffort": (binding.reasoning_effort, connection.reasoning_effort),
-            "apiStyle": (binding.api_style, connection.api_style),
-            "timeoutSeconds": (binding.timeout_seconds, connection.timeout_seconds),
-        }
-        return [
-            {
-                "field": f"modelConnection.{field_name}",
-                "issue": "Live model connection no longer matches the run snapshot",
-            }
-            for field_name, (expected, actual) in expected_actual.items()
-            if expected != actual
-        ]
-
-    def _to_package_runtime_model_connection(
-        self,
-        binding: PackageResolvedModelBinding,
-        connection: ModelConnection,
-    ) -> _ResolvedModelConnectionConfig:
-        return _ResolvedModelConnectionConfig(
-            id=connection.id,
-            name=binding.name,
-            connection_kind=binding.connection_kind,
-            base_url=binding.base_url,
-            model_id=binding.model_id,
-            reasoning_effort=binding.reasoning_effort,
-            api_style=binding.api_style,
-            timeout_seconds=binding.timeout_seconds,
-            api_key=self._extract_model_connection_api_key(connection),
-        )
 
     def _to_runtime_model_connection(
         self,

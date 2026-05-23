@@ -249,6 +249,51 @@ function buildMemoryEvent(overrides: Partial<RunMemoryEventRead> = {}): RunMemor
   };
 }
 
+function buildPackageProvenance(
+  overrides: Partial<NonNullable<RunRead["packageProvenance"]>> = {},
+): NonNullable<RunRead["packageProvenance"]> {
+  return {
+    compiledPlan: { workflow: { key: "market_review" } },
+    currentPackage: {
+      available: true,
+      compiledHash: "compiled-hash-abc",
+      compiledHashMatchesSnapshot: true,
+      manifestHash: "manifest-hash-abc",
+      manifestHashMatchesSnapshot: true,
+    },
+    extensionDependencies: [],
+    launchSnapshot: {
+      inputSchema: { type: "object" },
+      parameters: { ticker: "AAPL" },
+      workflowDescription: "Review market context.",
+      workflowKey: "market_review",
+      workflowName: "Market review",
+    },
+    localResourceRefs: {
+      agents: ["research_agent"],
+      capabilityProfiles: [],
+      mcpServers: [],
+      outputSchemas: [],
+      workflows: ["market_review"],
+    },
+    manifestSource: "apiVersion: signaldeck.workflowPackage/v1",
+    packageDefinition: { package: { key: "market_review_package" } },
+    preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
+    resolvedModelConnections: [],
+    workflowDescription: "Review market context.",
+    workflowKey: "market_review",
+    workflowName: "Market review",
+    workflowPackageCompiledHash: "compiled-hash-abc",
+    workflowPackageDescription: "Snapshot package for market reviews.",
+    workflowPackageId: 7,
+    workflowPackageKey: "market_review_package",
+    workflowPackageManifestHash: "manifest-hash-abc",
+    workflowPackageName: "Market Review Package",
+    workflowPackageStatus: "active",
+    ...overrides,
+  };
+}
+
 function buildRun(overrides: Partial<RunRead> = {}): RunRead {
   return {
     createdAt: NOW,
@@ -265,6 +310,13 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     memoryEvents: [],
     extensionDependencies: [],
     packageProvenance: null,
+    progress: {
+      unit: "invocation",
+      terminalCount: 1,
+      totalCount: 1,
+      percent: 100,
+    },
+    queue: null,
     queuedAt: NOW,
     resumeStepIndex: 1,
     sourceRunId: null,
@@ -309,6 +361,9 @@ function buildReplayableWorkflowRun(overrides: Partial<RunRead> = {}): RunRead {
 function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDraftRead {
   return {
     parameters: { ticker: "AAPL" },
+    ready: true,
+    blockingErrors: [],
+    warnings: [],
     sourceRunId: 42,
     targetId: 7,
     targetKey: "market_review_package",
@@ -321,6 +376,9 @@ function buildRerunDraft(overrides: Partial<RunRerunDraftRead> = {}): RunRerunDr
 function buildForkDraft(overrides: Partial<RunForkDraftRead> = {}): RunForkDraftRead {
   return {
     invocationInput: { ticker: "AAPL" },
+    ready: true,
+    blockingErrors: [],
+    warnings: [],
     sourceInvocationId: 1001,
     sourceRunId: 42,
     targetId: 7,
@@ -1131,6 +1189,12 @@ describe("RunsDetailPage", () => {
       queryResult(
         buildRun({
           finalOutput: null,
+          progress: {
+            unit: "invocation",
+            terminalCount: 3,
+            totalCount: 5,
+            percent: 64,
+          },
           status: "running",
           steps: [
             buildStep({
@@ -1159,6 +1223,7 @@ describe("RunsDetailPage", () => {
     render(<RunsDetailPage />);
 
     expect(screen.getByText(/0 of 0 invocation\(s\) terminal/i)).toBeVisible();
+    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(/64%/i);
     const pendingFinalOutputCard = screen.getByTestId("runs-detail-final-output-card");
     const pendingFinalOutput = within(pendingFinalOutputCard).getByTestId("runs-detail-final-output");
     expect(pendingFinalOutputCard).toHaveAttribute("data-slot", "card");
@@ -1183,11 +1248,23 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("runs-empty-steps")).toHaveTextContent(/no steps have been planned/i);
   });
 
-  it("shows queued runs as awaiting execution with zero progress", () => {
+  it("shows backend-owned queued reasons with zero progress", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
           finishedAt: null,
+          progress: {
+            unit: "invocation",
+            terminalCount: 0,
+            totalCount: 0,
+            percent: 0,
+          },
+          queue: {
+            blockingRunId: 41,
+            message: "Backend queue read model: source package run #41 is still active.",
+            reason: "blocked-by-package-serial-policy",
+            state: "blocked",
+          },
           startedAt: null,
           status: "queued",
           steps: [],
@@ -1196,11 +1273,46 @@ describe("RunsDetailPage", () => {
       ),
     );
 
+    const queuedReasonRender = render(<RunsDetailPage />);
+
+    expect(screen.getByTestId("runs-detail-status")).toHaveTextContent(/queued/i);
+    expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
+      /blocked by package serial policy/i,
+    );
+    expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
+      /backend queue read model: source package run #41 is still active/i,
+    );
+    expect(screen.getByTestId("runs-detail-queue-reason")).toHaveTextContent(
+      /blocking run: #41/i,
+    );
+    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(/0%/i);
+    expect(screen.queryByText(/awaiting execution/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/still running/i)).not.toBeInTheDocument();
+
+    queuedReasonRender.unmount();
+    useRunMock.mockReturnValue(
+      queryResult(
+        buildRun({
+          finishedAt: null,
+          progress: {
+            unit: "invocation",
+            terminalCount: 0,
+            totalCount: 0,
+            percent: 0,
+          },
+          queue: null,
+          startedAt: null,
+          status: "queued",
+          steps: [],
+          traceId: null,
+        }),
+      ),
+    );
     render(<RunsDetailPage />);
 
-    expect(screen.getByText(/awaiting execution/i)).toBeVisible();
-    expect(screen.getByText(/run progress/i).parentElement).toHaveTextContent(/0%/i);
-    expect(screen.queryByText(/still running/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("runs-detail-queue-reason")).not.toBeInTheDocument();
+    expect(screen.queryByText(/awaiting worker capacity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/blocked by package serial policy/i)).not.toBeInTheDocument();
   });
 
   it("submits a full rerun with changed root parameters and navigates to the created run", async () => {
@@ -1229,6 +1341,59 @@ describe("RunsDetailPage", () => {
     expect(navigateMock).toHaveBeenCalledWith("/runs/98");
   });
 
+  it("shows current rerun readiness blockers from top-level draft fields", async () => {
+    searchParamsMock = new URLSearchParams("rerun=1");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunRerunDraftMock.mockReturnValue(
+      draftQueryResult(
+        buildRerunDraft({
+          blockingErrors: [{ field: "modelConnections.primary_openai", issue: "Current model connection is missing." }],
+          packageProvenance: buildPackageProvenance({
+            preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
+          }),
+          ready: false,
+          warnings: [{ field: "extensions.signaldeck.finance", issue: "Historical package used Finance Workspace tools." }],
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const readiness = await screen.findByTestId("run-rerun-readiness");
+    expect(readiness).toHaveTextContent(/current snapshot readiness blocked/i);
+    expect(readiness).toHaveTextContent(/current model connection is missing/i);
+    expect(readiness).toHaveTextContent(/historical package used finance workspace tools/i);
+    expect(screen.getByTestId("run-rerun-submit")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("run-rerun-submit"));
+    expect(createRunRerunMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("does not treat historical rerun provenance preflight as current readiness", async () => {
+    searchParamsMock = new URLSearchParams("rerun=1");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunRerunDraftMock.mockReturnValue(
+      draftQueryResult(
+        buildRerunDraft({
+          packageProvenance: buildPackageProvenance({
+            preflightSummary: {
+              blockingErrors: [{ field: "modelConnections.old", issue: "Historical model connection was missing." }],
+              ready: false,
+              warnings: [],
+            },
+          }),
+          ready: true,
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const readiness = await screen.findByTestId("run-rerun-readiness");
+    expect(readiness).toHaveTextContent(/current snapshot readiness passed/i);
+    expect(readiness).not.toHaveTextContent(/historical model connection was missing/i);
+    expect(screen.getByTestId("run-rerun-submit")).toBeEnabled();
+  });
+
   it("opens the fork dialog from invocation URL params and fetches the invocation draft", async () => {
     searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
     useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
@@ -1242,6 +1407,59 @@ describe("RunsDetailPage", () => {
     expect(screen.getByText(/invocation #1001/i)).toBeVisible();
     expect(await screen.findByLabelText("Target invocation input JSON")).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
     expect(screen.queryByLabelText("Root run parameters JSON")).not.toBeInTheDocument();
+  });
+
+  it("shows current fork readiness blockers from top-level draft fields", async () => {
+    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunForkDraftMock.mockReturnValue(
+      forkDraftQueryResult(
+        buildForkDraft({
+          blockingErrors: [{ field: "modelConnections.primary_openai", issue: "Current model connection is missing for fork." }],
+          packageProvenance: buildPackageProvenance({
+            preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
+          }),
+          ready: false,
+          warnings: [{ field: "extensions.signaldeck.finance", issue: "Current extension state changed since source run." }],
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const readiness = await screen.findByTestId("run-fork-readiness");
+    expect(readiness).toHaveTextContent(/current fork readiness blocked/i);
+    expect(readiness).toHaveTextContent(/current model connection is missing for fork/i);
+    expect(readiness).toHaveTextContent(/current extension state changed since source run/i);
+    expect(screen.getByTestId("run-fork-submit")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("run-fork-submit"));
+    expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("does not treat historical fork provenance preflight as current readiness", async () => {
+    searchParamsMock = new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001");
+    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
+    useRunForkDraftMock.mockReturnValue(
+      forkDraftQueryResult(
+        buildForkDraft({
+          packageProvenance: buildPackageProvenance({
+            preflightSummary: {
+              blockingErrors: [{ field: "modelConnections.old", issue: "Historical model connection was missing." }],
+              ready: false,
+              warnings: [],
+            },
+          }),
+          ready: true,
+        }),
+      ),
+    );
+
+    render(<RunsDetailPage />);
+
+    const readiness = await screen.findByTestId("run-fork-readiness");
+    expect(readiness).toHaveTextContent(/current fork readiness passed/i);
+    expect(readiness).not.toHaveTextContent(/historical model connection was missing/i);
+    expect(screen.getByTestId("run-fork-submit")).toBeEnabled();
   });
 
   it("keeps the last fork presentation while Cancel closes the dialog", async () => {

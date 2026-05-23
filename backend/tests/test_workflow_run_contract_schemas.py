@@ -121,6 +121,9 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
         "targetId": 42,
         "targetKey": "portfolio_review",
         "parameters": {"ticker": "MSFT"},
+        "ready": True,
+        "blockingErrors": [],
+        "warnings": [],
         "packageProvenance": None,
     }
 
@@ -149,6 +152,9 @@ def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() ->
         "targetId": 42,
         "targetKey": "portfolio_review",
         "invocationInput": {"ticker": "MSFT", "notes": "adjust thesis"},
+        "ready": True,
+        "blockingErrors": [],
+        "warnings": [],
         "packageProvenance": None,
     }
 
@@ -198,6 +204,12 @@ def test_run_read_preserves_historical_lineage_as_read_only_fields() -> None:
         "resumeStepIndex": 2,
         "finalOutput": {"summary": "historical lineage output"},
         "status": RunStatus.SUCCEEDED.value,
+        "progress": {
+            "unit": "invocation",
+            "terminalCount": 1,
+            "totalCount": 1,
+            "percent": 100,
+        },
         "totalTokens": 12,
         "inheritedTokens": 5,
         "executedTokens": 7,

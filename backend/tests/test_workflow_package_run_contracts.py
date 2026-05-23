@@ -259,23 +259,99 @@ def _launch_package_run(
     return cast(dict[str, Any], response.json())
 
 
-def _assert_replay_model_connection_rejected(
+def test_progress_for_queued_run_uses_planned_invocation_counts_in_list_and_detail(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="queued_progress_package")
+    launched = _launch_package_run(client, package, ticker="MSFT")
+    run_id = int(launched["id"])
+    expected_progress = {
+        "unit": "invocation",
+        "terminalCount": 0,
+        "totalCount": 1,
+        "percent": 0,
+    }
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    list_response = client.get(
+        "/api/runs",
+        params={"workflowPackageKey": "queued_progress_package"},
+    )
+
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    assert detail["status"] == "queued"
+    assert detail["progress"] == expected_progress
+    assert detail["steps"][0]["invocations"][0]["status"] == "pending"
+    assert list_response.status_code == 200, list_response.json()
+    items = cast(list[dict[str, Any]], list_response.json()["items"])
+    assert [item["id"] for item in items] == [run_id]
+    assert items[0]["progress"] == expected_progress
+
+
+def test_queue_read_models_expose_capacity_and_serial_policy_reasons_in_list_and_detail(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    package = _create_package(client, package_key="queue_reason_package")
+    first_run = _launch_package_run(client, package, ticker="MSFT")
+    second_run = _launch_package_run(client, package, ticker="AAPL")
+    first_run_id = int(first_run["id"])
+    second_run_id = int(second_run["id"])
+
+    first_detail_response = client.get(f"/api/runs/{first_run_id}")
+    second_detail_response = client.get(f"/api/runs/{second_run_id}")
+    list_response = client.get(
+        "/api/runs",
+        params={"workflowPackageKey": "queue_reason_package"},
+    )
+
+    assert first_detail_response.status_code == 200, first_detail_response.json()
+    assert second_detail_response.status_code == 200, second_detail_response.json()
+    assert list_response.status_code == 200, list_response.json()
+    first_detail = cast(dict[str, Any], first_detail_response.json())
+    second_detail = cast(dict[str, Any], second_detail_response.json())
+    items = cast(list[dict[str, Any]], list_response.json()["items"])
+
+    assert first_detail["status"] == "queued"
+    assert first_detail["queue"] == {
+        "state": "waiting",
+        "reason": "awaiting-worker-capacity",
+        "message": "Eligible to run and waiting for an available scheduler worker.",
+        "blockingRunId": None,
+    }
+    assert second_detail["status"] == "queued"
+    assert second_detail["queue"] == {
+        "state": "blocked",
+        "reason": "blocked-by-package-serial-policy",
+        "message": (
+            f"Queued behind run #{first_run_id} from the same Workflow Package "
+            "because package runs execute one at a time."
+        ),
+        "blockingRunId": first_run_id,
+    }
+    assert [item["id"] for item in items] == [second_run_id, first_run_id]
+    assert items[0]["status"] == "queued"
+    assert items[0]["queue"] == second_detail["queue"]
+    assert items[1]["status"] == "queued"
+    assert items[1]["queue"] == first_detail["queue"]
+
+
+def _assert_current_readiness_create_rejected(
     client: TestClient,
     *,
     run_id: int,
     source_invocation_id: int,
-    expected_code: str,
     expected_detail_field: str,
 ) -> None:
     responses = [
-        client.get(f"/api/runs/{run_id}/rerun-draft"),
         client.post(
             f"/api/runs/{run_id}/reruns",
             json={"parameters": {"ticker": "AAPL"}},
-        ),
-        client.get(
-            f"/api/runs/{run_id}/fork-draft",
-            params={"sourceInvocationId": source_invocation_id},
         ),
         client.post(
             f"/api/runs/{run_id}/forks",
@@ -287,9 +363,9 @@ def _assert_replay_model_connection_rejected(
     ]
     for response in responses:
         body = response.json()
-        assert response.status_code == 400, body
-        assert body["code"] == expected_code
-        assert body["message"].startswith("Run cannot be replayed")
+        assert response.status_code == 422, body
+        assert body["code"] == "validation_error"
+        assert body["message"] == "Run descendant validation failed"
         assert any(
             detail.get("field") == expected_detail_field
             for detail in cast(list[dict[str, Any]], body["details"])
@@ -301,7 +377,6 @@ def test_run_detail_exposes_persisted_memory_event_evidence_and_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     package = _create_package(client, package_key="memory_evidence_package")
     launched = _launch_package_run(client, package, ticker="MSFT")
@@ -424,7 +499,6 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     create_response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": http_node_package_source()},
@@ -490,12 +564,116 @@ def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
         assert operation.request_metadata == request_metadata
 
 
+def test_secret_binding_delete_preserves_historical_detail_and_blocks_future_readiness(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": http_node_package_source()},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    package_id = int(package["id"])
+    secret_values = {
+        "slack_webhook_token": "slack-delete-secret-value",
+        "body_token": "body-delete-secret-value",
+    }
+    for key, value in secret_values.items():
+        secret_response = client.put(
+            f"/api/workflow-packages/{package_id}/secret-bindings/{key}",
+            json={"value": value},
+        )
+        assert secret_response.status_code == 200, secret_response.json()
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "notify",
+            "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "MSFT"},
+        },
+    )
+    assert launch_response.status_code == 201, launch_response.json()
+    run_id = int(launch_response.json()["id"])
+    with session_factory() as session:
+        runs_before_delete = session.query(Run).count()
+
+    delete_response = client.delete(
+        f"/api/workflow-packages/{package_id}/secret-bindings/slack_webhook_token"
+    )
+    assert delete_response.status_code == 204, delete_response.text
+    assert delete_response.content == b""
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, Any], detail_response.json())
+    serialized_detail = json.dumps(detail, sort_keys=True)
+    operation = cast(dict[str, Any], detail["steps"][0]["operationInvocations"][0])
+    assert operation["requestMetadata"]["headers"]["Authorization"] == {
+        "from": "secret",
+        "key": "slack_webhook_token",
+        "redacted": True,
+    }
+    assert operation["requestMetadata"]["body"]["token"] == {
+        "from": "secret",
+        "key": "body_token",
+        "redacted": True,
+    }
+    assert all(value not in serialized_detail for value in secret_values.values())
+    assert "secretPayload" not in serialized_detail
+
+    preflight_response = client.post(f"/api/workflow-packages/{package_id}/preflight")
+    assert preflight_response.status_code == 200, preflight_response.json()
+    preflight = cast(dict[str, Any], preflight_response.json())
+    assert preflight["ready"] is False
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'slack_webhook_token' is not configured",
+    } in cast(list[dict[str, Any]], preflight["blockingErrors"])
+
+    blocked_launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={
+            "workflowKey": "notify",
+            "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "AAPL"},
+        },
+    )
+    assert blocked_launch.status_code == 422, blocked_launch.json()
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'slack_webhook_token' is not configured",
+    } in cast(list[dict[str, Any]], blocked_launch.json()["details"])
+
+    rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
+    assert rerun_draft.status_code == 200, rerun_draft.json()
+    assert rerun_draft.json()["ready"] is False
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'slack_webhook_token' is not configured",
+    } in cast(list[dict[str, Any]], rerun_draft.json()["blockingErrors"])
+
+    rerun_create = client.post(
+        f"/api/runs/{run_id}/reruns",
+        json={"parameters": {"webhookUrl": "https://example.test/hook", "ticker": "AAPL"}},
+    )
+    assert rerun_create.status_code == 422, rerun_create.json()
+    assert rerun_create.json()["message"] == "Run descendant validation failed"
+    assert {
+        "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
+        "issue": "HTTP secret binding 'slack_webhook_token' is not configured",
+    } in cast(list[dict[str, Any]], rerun_create.json()["details"])
+
+    with session_factory() as session:
+        assert session.query(Run).count() == runs_before_delete
+        assert session.get(Run, run_id) is not None
+        assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
+
+
 def test_fork_rejects_operation_invocation_target_without_creating_run(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     create_response = client.post(
         "/api/workflow-packages",
         json={"manifestSource": http_node_package_source()},
@@ -558,7 +736,6 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory, api_key="sk-package-provenance-secret")
     first_package = _create_package(client, package_key="provenance_filter_package")
     second_package = _create_package(client, package_key="other_filter_package")
@@ -669,7 +846,6 @@ def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_line
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     package = _create_package(client, package_key="null_status_snapshot_package")
     fresh_run = _launch_package_run(client, package, ticker="MSFT")
@@ -746,7 +922,6 @@ def test_workflow_package_runtime_context_does_not_emit_fake_workflow_version(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     monkeypatch.setattr(AgentExecutionService, "invoke", _recording_package_agent_invoke)
     _recording_package_agent_calls.clear()
     _seed_model_connection(session_factory)
@@ -769,7 +944,6 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     package = _create_package(client, package_key="mutated_snapshot_package")
     package_id = cast(int, package["id"])
@@ -836,7 +1010,6 @@ def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package deletion output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     package = _create_package(client, package_key="deleted_owned_runs_package")
     package_id = cast(int, package["id"])
@@ -913,7 +1086,7 @@ def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
         assert session.query(Report).filter(Report.slug.in_(memory_slugs.values())).count() == 0
 
 
-def test_deleted_model_connection_preserves_run_detail_but_blocks_replay(
+def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_readiness(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -921,7 +1094,6 @@ def test_deleted_model_connection_preserves_run_detail_but_blocks_replay(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "deleted connection source output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     package = _create_package(client, package_key="deleted_connection_snapshot_package")
     package_id = cast(int, package["id"])
@@ -935,51 +1107,84 @@ def test_deleted_model_connection_preserves_run_detail_but_blocks_replay(
     source_invocation_id = int(source_invocation["id"])
 
     with session_factory() as session:
-        package_row = session.get(WorkflowPackage, package_id)
-        assert package_row is not None
-        package_row.compiled_plan = {"agents": [], "workflows": []}
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
         connection_id = connection.id
-        session.commit()
+        runs_before = session.query(Run).count()
 
     deleted_connection = client.delete(f"/api/model-connections/{connection_id}")
     assert deleted_connection.status_code == 204, deleted_connection.text
+    assert deleted_connection.content == b""
 
     detail_response = client.get(f"/api/runs/{run_id}")
     assert detail_response.status_code == 200, detail_response.json()
     detail = cast(dict[str, Any], detail_response.json())
     provenance = cast(dict[str, Any], detail["packageProvenance"])
     assert provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
+    assert provenance["currentPackage"]["available"] is True
+
+    preflight_response = client.post(f"/api/workflow-packages/{package_id}/preflight")
+    assert preflight_response.status_code == 200, preflight_response.json()
+    preflight = cast(dict[str, Any], preflight_response.json())
+    assert preflight["ready"] is False
+    assert any(
+        detail.get("field") == "spec.agents[0].modelConnection"
+        for detail in cast(list[dict[str, Any]], preflight["blockingErrors"])
+    )
+
+    launch_response = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AAPL"}},
+    )
+    assert launch_response.status_code == 422, launch_response.json()
+    assert launch_response.json()["message"] == "Workflow package launch validation failed"
+    assert any(
+        detail.get("field") == "spec.agents[0].modelConnection"
+        for detail in cast(list[dict[str, Any]], launch_response.json()["details"])
+    )
+
+    rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
+    fork_draft = client.get(
+        f"/api/runs/{run_id}/fork-draft",
+        params={"sourceInvocationId": source_invocation_id},
+    )
+    for draft_response in (rerun_draft, fork_draft):
+        assert draft_response.status_code == 200, draft_response.json()
+        draft = cast(dict[str, Any], draft_response.json())
+        assert draft["ready"] is False
+        assert any(
+            detail.get("field") == "spec.agents[0].modelConnection"
+            for detail in cast(list[dict[str, Any]], draft["blockingErrors"])
+        )
+        draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
+        assert draft_provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
 
     with session_factory() as session:
         assert session.get(ModelConnection, connection_id) is None
+        assert session.get(WorkflowPackage, package_id) is not None
         assert session.get(Run, run_id) is not None
         assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
-        runs_before = session.query(Run).count()
 
-    _assert_replay_model_connection_rejected(
+    _assert_current_readiness_create_rejected(
         client,
         run_id=run_id,
         source_invocation_id=source_invocation_id,
-        expected_code="run_model_connection_missing",
-        expected_detail_field="modelConnection",
+        expected_detail_field="spec.agents[0].modelConnection",
     )
 
     with session_factory() as session:
         assert session.query(Run).count() == runs_before
 
 
-def test_rerun_and_fork_reject_incompatible_live_model_connection_before_queueing(
+def test_rerun_and_fork_drafts_create_and_execute_after_live_model_connection_drift(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
     _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "incompatible source output"}'
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift source output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
-    package = _create_package(client, package_key="incompatible_connection_snapshot_package")
+    package = _create_package(client, package_key="drifted_connection_snapshot_package")
     launched = _launch_package_run(client, package, ticker="NVDA")
     run_id = int(launched["id"])
 
@@ -990,21 +1195,83 @@ def test_rerun_and_fork_reject_incompatible_live_model_connection_before_queuein
     source_invocation_id = int(source_invocation["id"])
 
     with session_factory() as session:
+        source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
+        assert source_snapshot is not None
+        source_snapshot.preflight_summary = {
+            "ready": False,
+            "blockingErrors": [{"field": "historical", "issue": "stale source readiness"}],
+            "warnings": [],
+        }
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
-        connection.base_url = "https://runtime-incompatible.example.com/v1"
+        connection.base_url = "https://runtime-live-drift.example.com/v1"
+        connection.model_id = "gpt-package-live-drift"
         session.commit()
         runs_before = session.query(Run).count()
 
-    _assert_replay_model_connection_rejected(
-        client,
-        run_id=run_id,
-        source_invocation_id=source_invocation_id,
-        expected_code="run_model_connection_incompatible",
-        expected_detail_field="modelConnection.baseUrl",
+    rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
+    fork_draft = client.get(
+        f"/api/runs/{run_id}/fork-draft",
+        params={"sourceInvocationId": source_invocation_id},
     )
+    for draft_response in (rerun_draft, fork_draft):
+        assert draft_response.status_code == 200, draft_response.json()
+        draft = cast(dict[str, Any], draft_response.json())
+        assert draft["ready"] is True
+        assert draft["blockingErrors"] == []
+        draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
+        assert draft_provenance["preflightSummary"]["ready"] is False
+        assert draft_provenance["resolvedModelConnections"][0]["baseUrl"] == (
+            "https://runtime-v1.example.com/v1"
+        )
+
+    rerun_response = client.post(
+        f"/api/runs/{run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    fork_response = client.post(
+        f"/api/runs/{run_id}/forks",
+        json={
+            "sourceInvocationId": source_invocation_id,
+            "invocationInput": {"ticker": "TSLA"},
+        },
+    )
+    assert rerun_response.status_code == 201, rerun_response.json()
+    assert fork_response.status_code == 201, fork_response.json()
+    old_snapshot_gate_code = "run_model_connection_" + "incompatible"
+    assert old_snapshot_gate_code not in json.dumps(
+        [
+            rerun_draft.json(),
+            fork_draft.json(),
+            rerun_response.json(),
+            fork_response.json(),
+        ],
+        sort_keys=True,
+    )
+    rerun_id = int(rerun_response.json()["id"])
+    fork_id = int(fork_response.json()["id"])
+
+    _RuntimeRecordingOpenAIClient.reset()
+    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift rerun output"}'
+    with session_factory() as session:
+        RunService(session, session_factory).execute_run(rerun_id)
+    rerun_detail = _wait_for_run(client, rerun_id)
+    assert rerun_detail["status"] == "succeeded"
+    assert _RuntimeRecordingOpenAIClient.init_calls[-1] == {
+        "api_key": "sk-package-runtime-v1",
+        "base_url": "https://runtime-live-drift.example.com/v1",
+        "timeout": 31.0,
+    }
+    assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-live-drift"
 
     with session_factory() as session:
-        assert session.query(Run).count() == runs_before
+        rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
+        fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
+        assert rerun_snapshot is not None
+        assert fork_snapshot is not None
+        expected_current_readiness = {"ready": True, "blockingErrors": [], "warnings": []}
+        assert rerun_snapshot.preflight_summary == expected_current_readiness
+        assert fork_snapshot.preflight_summary == expected_current_readiness
+        assert session.query(Run).count() == runs_before + 2
 
 
 def _create_tradingagents_package(client: TestClient) -> dict[str, Any]:
@@ -1101,7 +1368,6 @@ def test_tradingagents_advisory_research_launch_persists_extension_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_tradingagents_model_connection(session_factory)
     package = _create_tradingagents_package(client)
 
@@ -1140,7 +1406,6 @@ def test_run_dependency_snapshot_is_copied_from_current_package(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_tradingagents_model_connection(session_factory)
     package = _create_tradingagents_package(client)
     with session_factory() as session:
@@ -1180,7 +1445,6 @@ def test_package_private_mcp_dependency_snapshot_blocks_disabled_extension_runti
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_tradingagents_model_connection(session_factory)
     create_response = client.post(
         "/api/workflow-packages",
@@ -1216,7 +1480,6 @@ def test_tradingagents_advisory_research_launch_blocks_extension_disabled(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_tradingagents_model_connection(session_factory)
     package = _create_tradingagents_package(client)
     _disable_finance_extension(session_factory)
@@ -1245,7 +1508,6 @@ def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_a
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_tradingagents_model_connection(session_factory)
     package = _create_tradingagents_package(client)
     launch_response = client.post(

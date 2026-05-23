@@ -4,7 +4,7 @@ import { Link } from "react-router";
 
 import { useRuns } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
-import type { RunStatus, RunTargetKind } from "@/lib/types/run";
+import type { RunQueueReason, RunStatus, RunTargetKind } from "@/lib/types/run";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,20 +46,14 @@ function describeRunTarget(targetKind: RunTargetKind): string {
     : "Multi-step workflow execution";
 }
 
-function progressForStatus(status: RunStatus): number {
-  if (status === "queued") {
-    return 0;
-  }
-
-  if (status === "running") {
-    return 50;
-  }
-
-  return 100;
+function formatUnfinishedRunStatus(status: RunStatus): string {
+  return status === "queued" ? " · Queued" : " · Still running";
 }
 
-function formatUnfinishedRunStatus(status: RunStatus): string {
-  return status === "queued" ? " · Awaiting execution" : " · Still running";
+function formatQueueReasonTitle(reason: RunQueueReason): string {
+  return reason === "blocked-by-package-serial-policy"
+    ? "Blocked by package serial policy"
+    : "Awaiting worker capacity";
 }
 
 export function RunsListPage() {
@@ -167,6 +161,7 @@ export function RunsListPage() {
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value={ALL_STATUSES}>All statuses</SelectItem>
+                  <SelectItem value="queued">queued</SelectItem>
                   <SelectItem value="running">running</SelectItem>
                   <SelectItem value="succeeded">succeeded</SelectItem>
                   <SelectItem value="failed">failed</SelectItem>
@@ -252,12 +247,23 @@ export function RunsListPage() {
                     )}
                     <span className="min-w-0 break-words">{`Total tokens: ${run.totalTokens}`}</span>
                   </div>
+                  {run.status === "queued" && run.queue ? (
+                    <div
+                      className="rounded-md border bg-muted/20 p-2"
+                      data-testid={`runs-row-queue-${run.id}`}
+                    >
+                      <p className="font-medium text-foreground">
+                        {formatQueueReasonTitle(run.queue.reason)}
+                      </p>
+                      <p>{run.queue.message}</p>
+                    </div>
+                  ) : null}
                   <div className="flex w-full flex-col gap-2">
                     <div className="flex items-center justify-between gap-3">
                       <span>Progress</span>
-                      <span>{progressForStatus(run.status)}%</span>
+                      <span>{run.progress.percent}%</span>
                     </div>
-                    <Progress value={progressForStatus(run.status)} />
+                    <Progress value={run.progress.percent} />
                   </div>
                 </div>
               }

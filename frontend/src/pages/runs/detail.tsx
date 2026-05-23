@@ -9,6 +9,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
+import type { RunQueueReason } from "@/lib/types/run";
 
 import {
   describeRunTarget,
@@ -18,7 +19,6 @@ import {
   getRunForkAvailability,
   hasCurrentForkLineage,
   isTerminalStatus,
-  progressForRun,
   sortedInvocations,
   sortedOperationInvocations,
 } from "./detail-helpers";
@@ -35,6 +35,12 @@ import {
   type RunInspectionTarget,
 } from "./inspection-state";
 import { RunRerunDialog } from "./rerun-dialog";
+
+function formatQueueReasonTitle(reason: RunQueueReason): string {
+  return reason === "blocked-by-package-serial-policy"
+    ? "Blocked by package serial policy"
+    : "Awaiting worker capacity";
+}
 
 export function RunsDetailPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -163,7 +169,7 @@ export function RunsDetailPage() {
     0,
   );
   const plannedInvocations = allInvocations.length - copiedInvocations;
-  const runProgress = progressForRun(run.status, steps);
+  const runProgress = run.progress.percent;
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
   const forkTarget = findForkTargetContext(steps, resumeStepIndex, forkInvocationId);
   const forkAvailability = getRunForkAvailability(run, steps, resumeStepIndex, forkInvocationId);
@@ -231,6 +237,16 @@ export function RunsDetailPage() {
               <AlertCircle />
               <AlertTitle>Run failed</AlertTitle>
               <AlertDescription>{run.error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {run.status === "queued" && run.queue ? (
+            <Alert data-testid="runs-detail-queue-reason">
+              <AlertCircle />
+              <AlertTitle>{formatQueueReasonTitle(run.queue.reason)}</AlertTitle>
+              <AlertDescription>
+                {run.queue.message}
+                {run.queue.blockingRunId ? ` Blocking run: #${run.queue.blockingRunId}.` : null}
+              </AlertDescription>
             </Alert>
           ) : null}
           <RunContextStrip

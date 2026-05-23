@@ -32,11 +32,27 @@ class Run(IdMixin, TimestampMixin, Base):
         CheckConstraint("total_tokens >= 0", name="ck_runs_total_tokens_non_negative"),
         CheckConstraint("inherited_tokens >= 0", name="ck_runs_inherited_tokens_non_negative"),
         CheckConstraint("executed_tokens >= 0", name="ck_runs_executed_tokens_non_negative"),
+        CheckConstraint(
+            "concurrency_policy IN ('serial', 'parallel')",
+            name="ck_runs_concurrency_policy",
+        ),
+        CheckConstraint("attempt_count >= 0", name="ck_runs_attempt_count_non_negative"),
         Index("ix_runs_status", "status"),
+        Index("ix_runs_queue_claim", "status", "queued_at", "id"),
         Index("ix_runs_target", "target_kind", "target_id", "target_version"),
         Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
         Index("ix_runs_source_run", "source_run_id"),
         Index("ix_runs_lineage_root", "lineage_root_run_id"),
+        Index("ix_runs_execution_scope_status", "execution_scope_key", "status"),
+        Index(
+            "uq_runs_running_serial_execution_scope",
+            "execution_scope_key",
+            unique=True,
+            postgresql_where=sql_text(
+                "status = 'running' AND concurrency_policy = 'serial' "
+                "AND execution_scope_key IS NOT NULL"
+            ),
+        ),
         Index("ix_runs_workflow_package", "workflow_package_id"),
         Index("ix_runs_workflow_package_key", "workflow_package_key"),
         Index("ix_runs_workflow_package_workflow_key", "workflow_package_workflow_key"),
@@ -73,6 +89,24 @@ class Run(IdMixin, TimestampMixin, Base):
         nullable=False,
         default="queued",
         server_default="queued",
+    )
+    execution_scope_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    concurrency_policy: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="serial",
+        server_default="serial",
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    last_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("runs.id", ondelete="SET NULL"),
@@ -204,6 +238,40 @@ class Run(IdMixin, TimestampMixin, Base):
         self.target_version = value
 
 
+def _non_empty_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _default_run_execution_scope_key(run: Run) -> str | None:
+    if run.target_kind == "workflowPackage":
+        package_key = _non_empty_string(run.workflow_package_key) or _non_empty_string(
+            run.target_key
+        )
+        return f"package:{package_key}" if package_key is not None else None
+
+    target_kind = _non_empty_string(run.target_kind)
+    target_key = _non_empty_string(run.target_key)
+    if target_kind is None or target_key is None:
+        return None
+    return f"target:{target_kind}:{target_key}"
+
+
+def _default_run_concurrency_policy(run: Run) -> str:
+    return "serial" if run.target_kind == "workflowPackage" else "parallel"
+
+
+def _normalize_run_scheduler_metadata(run: Run) -> None:
+    if _non_empty_string(run.execution_scope_key) is None:
+        run.execution_scope_key = _default_run_execution_scope_key(run)
+    if _non_empty_string(run.concurrency_policy) is None:
+        run.concurrency_policy = _default_run_concurrency_policy(run)
+    if run.attempt_count is None:
+        run.attempt_count = 0
+
+
 class RunWorkflowPackageSnapshot(TimestampMixin, Base):
     __tablename__ = "run_workflow_package_snapshots"
     __table_args__ = (
@@ -297,5 +365,8 @@ def _require_workflow_package_run_snapshot(
     instances: object,
 ) -> None:
     del flush_context, instances
+    for obj in [*session.new, *session.dirty]:
+        if isinstance(obj, Run):
+            _normalize_run_scheduler_metadata(obj)
     if _workflow_package_runs_pending_snapshot(session):
         raise ValueError("workflow package runs require a run-owned executable snapshot")

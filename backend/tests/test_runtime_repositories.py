@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Event
 from typing import TypedDict, cast
 
 import pytest
@@ -326,6 +328,54 @@ def _seed_workflow_package_target(
     session.add(package)
     session.flush()
     return package
+
+
+def _build_workflow_package_queue_run(
+    package: WorkflowPackage,
+    *,
+    queued_at: datetime,
+    workflow_key: str = "runtime_workflow",
+) -> Run:
+    run = Run(
+        target_kind="workflowPackage",
+        target_id=package.id,
+        target_key=package.key,
+        target_version=1,
+        workflow_package_id=package.id,
+        workflow_package_key=package.key,
+        workflow_package_workflow_key=workflow_key,
+        extension_dependencies=[],
+        input={"ticker": "NVDA"},
+        status=RunStatus.QUEUED.value,
+        queued_at=queued_at,
+        started_at=None,
+        finished_at=None,
+        total_tokens=0,
+        inherited_tokens=0,
+        executed_tokens=0,
+    )
+    run.workflow_package_snapshot = RunWorkflowPackageSnapshot(
+        workflow_package_id=package.id,
+        workflow_package_key=package.key,
+        workflow_package_name=package.name,
+        workflow_package_description=package.description,
+        workflow_package_status=None,
+        workflow_key=workflow_key,
+        workflow_name="Runtime Workflow",
+        workflow_description="",
+        manifest_hash=package.manifest_hash,
+        compiled_hash=package.compiled_hash,
+        manifest_source=package.manifest_source,
+        package_definition=package.package_definition,
+        compiled_plan=package.compiled_plan,
+        extension_dependencies=package.extension_dependencies,
+        local_resource_refs={"workflows": [workflow_key]},
+        input_schema={},
+        launch_parameters={"ticker": "NVDA"},
+        resolved_model_connections=[],
+        preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
+    )
+    return run
 
 
 def _runtime_input_scope(
@@ -809,11 +859,11 @@ def test_model_connection_delete_unused_hard_deletes_row(
         assert session.get(ModelConnection, connection_id) is None
 
 
-def test_model_connection_delete_blocked_by_current_package_ref(
+def test_model_connection_delete_allows_current_package_ref_as_future_readiness_dependency(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
-    secret_value = "sk-package-blocker-2222"
+    secret_value = "sk-package-readiness-2222"
     with session_factory() as session:
         connection = _build_model_connection(
             name="Package Referenced Model",
@@ -824,38 +874,38 @@ def test_model_connection_delete_blocked_by_current_package_ref(
         session.add(connection)
         session.flush()
         package = WorkflowPackageRepository(session).create_package(
-            key="package_delete_blocker",
-            name="Package Delete Blocker",
+            key="package_delete_readiness",
+            name="Package Delete Readiness",
             manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
             manifest_hash="p" * 64,
-            package_definition={"metadata": {"key": "package_delete_blocker"}},
+            package_definition={"metadata": {"key": "package_delete_readiness"}},
             compiled_plan={"agents": [{"key": "local_agent", "modelConnection": connection.key}]},
             compiled_hash="c" * 64,
         )
         session.commit()
         connection_id = connection.id
         package_id = package.id
+        refs = ModelConnectionRepository(session).list_current_package_refs(connection.key)
+        assert [(ref.ref_type, ref.ref_id, ref.ref_key) for ref in refs] == [
+            ("workflowPackage", package_id, "package_delete_readiness")
+        ]
 
     response = client.delete(f"/api/model-connections/{connection_id}")
-    body = cast(dict[str, object], response.json())
 
-    assert response.status_code == 409, body
-    assert body["code"] == "model_connection_in_use"
-    assert body["message"] == "Model connection is in use"
-    assert body["details"] == [
-        {
-            "field": "modelConnection",
-            "issue": "Model connection is referenced",
-            "refType": "workflowPackage",
-            "refId": package_id,
-            "refKey": "package_delete_blocker",
-        }
-    ]
-    assert secret_value not in str(body)
-    assert "secretPayload" not in str(body)
+    assert response.status_code == 204, response.text
+    assert response.content == b""
+    assert secret_value not in response.text
+    assert "secretPayload" not in response.text
 
     with session_factory() as session:
-        assert session.get(ModelConnection, connection_id) is not None
+        assert session.get(ModelConnection, connection_id) is None
+        assert session.get(WorkflowPackage, package_id) is not None
+        refs = ModelConnectionRepository(session).list_current_package_refs(
+            "package_referenced_model"
+        )
+        assert [(ref.ref_type, ref.ref_id, ref.ref_key) for ref in refs] == [
+            ("workflowPackage", package_id, "package_delete_readiness")
+        ]
 
 
 @pytest.mark.parametrize("run_status", ["queued", "running", "succeeded", "failed"])
@@ -915,7 +965,19 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
             },
             input_schema={},
             launch_parameters={"ticker": "MSFT"},
-            resolved_model_connections=[{"key": connection.key, "name": connection.name}],
+            resolved_model_connections=[
+                {
+                    "key": connection.key,
+                    "name": connection.name,
+                    "connectionKind": connection.connection_kind,
+                    "baseUrl": connection.base_url,
+                    "modelId": connection.model_id,
+                    "reasoningEffort": connection.reasoning_effort,
+                    "apiStyle": connection.api_style,
+                    "timeoutSeconds": connection.timeout_seconds,
+                    "hasApiKey": True,
+                }
+            ],
             preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
         session.add(run)
@@ -927,6 +989,26 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
 
     assert response.status_code == 204, response.text
     assert response.content == b""
+
+    detail_response = client.get(f"/api/runs/{run_id}")
+    assert detail_response.status_code == 200, detail_response.json()
+    detail = cast(dict[str, object], detail_response.json())
+    provenance = cast(dict[str, object], detail["packageProvenance"])
+    assert provenance["resolvedModelConnections"] == [
+        {
+            "key": f"snapshot_ignored_model_{run_status}",
+            "name": f"Snapshot Ignored Model {run_status}",
+            "connectionKind": "provider",
+            "baseUrl": "https://api.openai.com/v1",
+            "modelId": "gpt-5.4-mini",
+            "reasoningEffort": "medium",
+            "apiStyle": "responses",
+            "timeoutSeconds": 60,
+            "hasApiKey": True,
+        }
+    ]
+    assert cast(dict[str, object], provenance["currentPackage"])["available"] is False
+
     with session_factory() as session:
         assert session.get(ModelConnection, connection_id) is None
         assert session.get(Run, run_id) is not None
@@ -1090,7 +1172,6 @@ def test_legacy_agent_workflow_run_creation_rerun_and_replay_remain_blocked(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     with session_factory() as session:
         agent, workflow = _seed_run_target_fk_targets(session, key_prefix="target_fk")
         agent_id = agent.id
@@ -1395,6 +1476,13 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "resumeStepIndex": run_detail.resume_step_index,
                     "finalOutput": run_detail.final_output,
                     "status": run_detail.status,
+                    "progress": {
+                        "unit": "invocation",
+                        "terminalCount": 1,
+                        "totalCount": 1,
+                        "percent": 100,
+                    },
+                    "queue": None,
                     "totalTokens": run_detail.total_tokens,
                     "inheritedTokens": run_detail.inherited_tokens,
                     "executedTokens": run_detail.executed_tokens,
@@ -1432,6 +1520,8 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "resumeStepIndex",
             "finalOutput",
             "status",
+            "progress",
+            "queue",
             "totalTokens",
             "inheritedTokens",
             "executedTokens",
@@ -1607,6 +1697,159 @@ def test_run_detail_loads_fork_artifact_without_requiring_legacy_backfill(
         assert legacy_detail.lineage_root_run_id == source_run_id
         assert legacy_detail.forked_from_step_index == 2
         assert legacy_detail.resume_step_index == 2
+
+
+def test_run_repository_claim_next_queued_serializes_same_package_scope(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package = _seed_workflow_package_target(session, key_prefix="serial_claim")
+        first_run = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 5, 20, 10, 0, tzinfo=UTC_TZ),
+        )
+        second_run = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 5, 20, 10, 1, tzinfo=UTC_TZ),
+        )
+        session.add_all([first_run, second_run])
+        session.commit()
+        first_run_id = first_run.id
+        second_run_id = second_run.id
+        execution_scope_key = first_run.execution_scope_key
+
+    first_session = session_factory()
+    second_session = session_factory()
+    try:
+        first_claim = RunRepository(first_session).claim_next_queued()
+        assert first_claim is not None
+        assert first_claim.id == first_run_id
+        assert first_claim.execution_scope_key == execution_scope_key
+        assert first_claim.concurrency_policy == "serial"
+        assert first_claim.attempt_count == 1
+        assert first_claim.last_claimed_at is not None
+
+        blocked_claim = RunRepository(second_session).claim_next_queued()
+        assert blocked_claim is None
+        second_session.rollback()
+        first_session.commit()
+    finally:
+        first_session.close()
+        second_session.close()
+
+    with session_factory() as session:
+        assert RunRepository(session).claim_next_queued() is None
+        running_run = session.get(Run, first_run_id)
+        queued_run = session.get(Run, second_run_id)
+        assert running_run is not None
+        assert queued_run is not None
+        assert running_run.status == RunStatus.RUNNING.value
+        assert queued_run.status == RunStatus.QUEUED.value
+        running_run.status = RunStatus.SUCCEEDED.value
+        running_run.finished_at = datetime(2026, 5, 20, 10, 5, tzinfo=UTC_TZ)
+        session.commit()
+
+    with session_factory() as session:
+        next_claim = RunRepository(session).claim_next_queued()
+        assert next_claim is not None
+        assert next_claim.id == second_run_id
+        assert next_claim.status == RunStatus.RUNNING.value
+
+
+def test_run_repository_claim_next_queued_allows_different_package_concurrent_claims(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        first_package = _seed_workflow_package_target(session, key_prefix="parallel_claim_a")
+        second_package = _seed_workflow_package_target(session, key_prefix="parallel_claim_b")
+        first_run = _build_workflow_package_queue_run(
+            first_package,
+            queued_at=datetime(2026, 5, 20, 11, 0, tzinfo=UTC_TZ),
+        )
+        second_run = _build_workflow_package_queue_run(
+            second_package,
+            queued_at=datetime(2026, 5, 20, 11, 1, tzinfo=UTC_TZ),
+        )
+        session.add_all([first_run, second_run])
+        session.commit()
+        first_run_id = first_run.id
+        second_run_id = second_run.id
+
+    first_session = session_factory()
+    second_session = session_factory()
+    try:
+        first_claim = RunRepository(first_session).claim_next_queued()
+        assert first_claim is not None
+        assert first_claim.id == first_run_id
+
+        second_claim = RunRepository(second_session).claim_next_queued()
+        assert second_claim is not None
+        assert second_claim.id == second_run_id
+        assert second_claim.execution_scope_key != first_claim.execution_scope_key
+        second_session.commit()
+        first_session.commit()
+    finally:
+        first_session.close()
+        second_session.close()
+
+    with session_factory() as session:
+        statuses = {
+            run.id: run.status
+            for run in session.query(Run).filter(Run.id.in_([first_run_id, second_run_id]))
+        }
+    assert statuses == {
+        first_run_id: RunStatus.RUNNING.value,
+        second_run_id: RunStatus.RUNNING.value,
+    }
+
+
+def test_run_serial_partial_index_allows_one_concurrent_running_claim_per_scope(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        package = _seed_workflow_package_target(session, key_prefix="serial_index_race")
+        first_run = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 5, 20, 12, 0, tzinfo=UTC_TZ),
+        )
+        second_run = _build_workflow_package_queue_run(
+            package,
+            queued_at=datetime(2026, 5, 20, 12, 1, tzinfo=UTC_TZ),
+        )
+        session.add_all([first_run, second_run])
+        session.commit()
+        run_ids = (first_run.id, second_run.id)
+        assert first_run.execution_scope_key == second_run.execution_scope_key
+
+    start = Event()
+
+    def force_running(run_id: int) -> tuple[str, int | str]:
+        assert start.wait(timeout=5)
+        with session_factory() as session:
+            run = session.get(Run, run_id)
+            assert run is not None
+            run.status = RunStatus.RUNNING.value
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                return ("loser", exc.__class__.__name__)
+            return ("winner", run_id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(force_running, run_id) for run_id in run_ids]
+        start.set()
+        results = [future.result(timeout=5) for future in futures]
+
+    assert sorted(result[0] for result in results) == ["loser", "winner"]
+    assert ("loser", "IntegrityError") in results
+    winner_ids = [result[1] for result in results if result[0] == "winner"]
+    assert len(winner_ids) == 1
+
+    with session_factory() as session:
+        rows = session.query(Run).filter(Run.id.in_(run_ids)).all()
+    assert sum(1 for row in rows if row.status == RunStatus.RUNNING.value) == 1
+    assert sum(1 for row in rows if row.status == RunStatus.QUEUED.value) == 1
 
 
 def test_run_service_post_run_memory_artifact_writes_memory_native_detail(

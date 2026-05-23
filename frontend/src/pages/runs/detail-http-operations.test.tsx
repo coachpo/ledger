@@ -108,6 +108,13 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     memoryEvents: [],
     extensionDependencies: [],
     packageProvenance: null,
+    progress: {
+      unit: "invocation",
+      terminalCount: 1,
+      totalCount: 1,
+      percent: 100,
+    },
+    queue: null,
     queuedAt: NOW,
     replayStepIndex: null,
     resumeStepIndex: 1,

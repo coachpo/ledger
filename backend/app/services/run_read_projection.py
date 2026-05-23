@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, cast
@@ -19,7 +19,13 @@ from app.schemas.run import (
     RunInvocationResourceScope,
     RunMemoryArtifactRead,
     RunMemoryEventRead,
+    RunProgressRead,
+    RunQueueRead,
+    RunQueueReason,
+    RunQueueState,
     RunRead,
+    RunStatus,
+    RunStepStatus,
     RunTargetKind,
 )
 from app.services.extension_dependency_service import ExtensionDependencyService
@@ -56,6 +62,64 @@ class RunReadProjection:
     def package_provenance_payload(self, run: Run) -> dict[str, Any] | None:
         return self._package_provenance_payload(run)
 
+    @staticmethod
+    def queue_from_run(
+        run: Run,
+        *,
+        serial_blocker_run_id: int | None,
+    ) -> RunQueueRead | None:
+        if run.status != RunStatus.QUEUED.value:
+            return None
+        if serial_blocker_run_id is not None:
+            return RunQueueRead.model_validate(
+                {
+                    "state": RunQueueState.BLOCKED.value,
+                    "reason": RunQueueReason.BLOCKED_BY_PACKAGE_SERIAL_POLICY.value,
+                    "message": (
+                        f"Queued behind run #{serial_blocker_run_id} from the same "
+                        "Workflow Package because package runs execute one at a time."
+                    ),
+                    "blockingRunId": serial_blocker_run_id,
+                }
+            )
+        return RunQueueRead.model_validate(
+            {
+                "state": RunQueueState.WAITING.value,
+                "reason": RunQueueReason.AWAITING_WORKER_CAPACITY.value,
+                "message": "Eligible to run and waiting for an available scheduler worker.",
+                "blockingRunId": None,
+            }
+        )
+
+    @staticmethod
+    def progress_from_status_counts(
+        status_counts: Mapping[str, int],
+        *,
+        run_status: str,
+    ) -> RunProgressRead:
+        counts = {
+            status.value: max(0, int(status_counts.get(status.value, 0)))
+            for status in RunStepStatus
+        }
+        terminal_count = (
+            counts[RunStepStatus.SUCCEEDED.value]
+            + counts[RunStepStatus.FAILED.value]
+            + counts[RunStepStatus.SKIPPED.value]
+        )
+        total_count = sum(counts.values())
+        if run_status in {RunStatus.SUCCEEDED.value, RunStatus.FAILED.value}:
+            percent = 100
+        else:
+            percent = 0 if total_count == 0 else terminal_count * 100 // total_count
+        return RunProgressRead.model_validate(
+            {
+                "unit": "invocation",
+                "terminalCount": terminal_count,
+                "totalCount": total_count,
+                "percent": percent,
+            }
+        )
+
     def _to_read_model(self, run: Run) -> RunRead:
         identity_context = self._invocation_identity_context(run)
         return RunRead.model_validate(
@@ -71,6 +135,15 @@ class RunReadProjection:
                 "resumeStepIndex": run.resume_step_index,
                 "finalOutput": run.final_output,
                 "status": run.status,
+                "progress": self._progress_for_loaded_run(run),
+                "queue": self.queue_from_run(
+                    run,
+                    serial_blocker_run_id=self.run_repository.serial_queue_blocker_run_ids_by_run_id(
+                        [run.id]
+                    ).get(
+                        run.id
+                    ),
+                ),
                 "totalTokens": run.total_tokens,
                 "inheritedTokens": run.inherited_tokens,
                 "executedTokens": run.executed_tokens,
@@ -96,6 +169,19 @@ class RunReadProjection:
                 "packageProvenance": self._package_provenance_payload(run),
             }
         )
+
+    def _progress_for_loaded_run(self, run: Run) -> RunProgressRead:
+        status_counts: dict[str, int] = {}
+        for step in cast(list[RunStep], run.steps):
+            for invocation in cast(list[RunAgentInvocation], step.invocations):
+                self._add_progress_status(status_counts, invocation.status)
+            for operation in cast(list[RunOperationInvocation], step.operation_invocations):
+                self._add_progress_status(status_counts, operation.status)
+        return self.progress_from_status_counts(status_counts, run_status=run.status)
+
+    @staticmethod
+    def _add_progress_status(status_counts: dict[str, int], status: str) -> None:
+        status_counts[status] = status_counts.get(status, 0) + 1
 
     def _package_provenance_payload(self, run: Run) -> dict[str, Any] | None:
         if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:

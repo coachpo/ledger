@@ -2,6 +2,8 @@ import type { UnknownRecord } from "./common";
 import type { ModelConnectionApiStyle, ModelConnectionKind, ModelConnectionReasoningEffort } from "./model-connection";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
+export type RunQueueState = "waiting" | "blocked";
+export type RunQueueReason = "awaiting-worker-capacity" | "blocked-by-package-serial-policy";
 export type RunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 export type RunStepOrigin = "planned" | "copied";
 export type RunInvocationInputMode = "passthrough" | "wired";
@@ -135,6 +137,20 @@ export interface RunPackagePreflightSummaryRead {
   ready: boolean;
   blockingErrors: UnknownRecord[];
   warnings: UnknownRecord[];
+}
+
+export interface RunProgressRead {
+  unit: "invocation";
+  terminalCount: number;
+  totalCount: number;
+  percent: number;
+}
+
+export interface RunQueueRead {
+  state: RunQueueState;
+  reason: RunQueueReason;
+  message: string;
+  blockingRunId: number | null;
 }
 
 export interface RunPackageLaunchSnapshotRead {
@@ -278,6 +294,8 @@ export interface RunListItemRead extends RunTargetIdentityRead {
   id: number;
   status: RunStatus;
   totalTokens: number;
+  progress: RunProgressRead;
+  queue: RunQueueRead | null;
   traceId: string | null;
   queuedAt: string;
   startedAt: string | null;
@@ -300,6 +318,8 @@ export interface RunRead extends RunTargetIdentityRead {
   totalTokens: number;
   inheritedTokens: number;
   executedTokens: number;
+  progress: RunProgressRead;
+  queue: RunQueueRead | null;
   traceId: string | null;
   error: string | null;
   queuedAt: string;
@@ -317,6 +337,9 @@ export interface RunRead extends RunTargetIdentityRead {
 export interface RunRerunDraftRead extends RunTargetIdentityRead {
   sourceRunId: number;
   parameters: UnknownRecord;
+  ready: boolean;
+  blockingErrors: UnknownRecord[];
+  warnings: UnknownRecord[];
   packageProvenance: RunPackageProvenanceRead | null;
 }
 
@@ -328,6 +351,9 @@ export interface RunForkDraftRead extends RunTargetIdentityRead {
   sourceRunId: number;
   sourceInvocationId: number;
   invocationInput: UnknownRecord;
+  ready: boolean;
+  blockingErrors: UnknownRecord[];
+  warnings: UnknownRecord[];
   packageProvenance: RunPackageProvenanceRead | null;
 }
 

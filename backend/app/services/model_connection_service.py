@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import ApiError, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
-from app.repositories.model_connection import ModelConnectionReference, ModelConnectionRepository
+from app.repositories.model_connection import ModelConnectionRepository
 from app.schemas.model_connection import (
     ModelConnectionConnectionTestRead,
     ModelConnectionCreate,
@@ -203,14 +203,6 @@ class ModelConnectionService:
 
     def delete_connection(self, connection_id: int) -> None:
         connection = self._get_model(connection_id)
-        reference_details = self._connection_reference_details(connection)
-        if reference_details:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="model_connection_in_use",
-                message="Model connection is in use",
-                details=reference_details,
-            )
 
         try:
             self.repository.delete(connection)
@@ -218,28 +210,6 @@ class ModelConnectionService:
         except Exception:
             self.session.rollback()
             raise
-
-    def _connection_reference_details(self, connection: ModelConnection) -> list[dict[str, object]]:
-        references_by_identity: dict[tuple[str, int], ModelConnectionReference] = {}
-        for reference in self.repository.list_current_package_refs(connection.key):
-            references_by_identity[(reference.ref_type, reference.ref_id)] = reference
-        return [
-            self._reference_detail(reference)
-            for reference in sorted(
-                references_by_identity.values(),
-                key=lambda item: (item.ref_type, item.ref_key, item.ref_id),
-            )
-        ]
-
-    @staticmethod
-    def _reference_detail(reference: ModelConnectionReference) -> dict[str, object]:
-        return {
-            "field": "modelConnection",
-            "issue": "Model connection is referenced",
-            "refType": reference.ref_type,
-            "refId": reference.ref_id,
-            "refKey": reference.ref_key,
-        }
 
     def _get_model(self, connection_id: int) -> ModelConnection:
         connection = self.repository.get(connection_id)

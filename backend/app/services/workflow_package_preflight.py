@@ -70,6 +70,19 @@ class WorkflowPackagePreflightService:
         workflow_key: str,
         require_api_key: bool,
     ) -> WorkflowPackagePreflightResult:
+        return self.evaluate_readiness(
+            package,
+            workflow_key=workflow_key,
+            require_api_key=require_api_key,
+        )
+
+    def evaluate_readiness(
+        self,
+        package: WorkflowPackage,
+        *,
+        workflow_key: str,
+        require_api_key: bool,
+    ) -> WorkflowPackagePreflightResult:
         blocking_errors: list[dict[str, Any]] = []
         package_definition = package.package_definition or {}
         compiled_plan = package.compiled_plan or {}

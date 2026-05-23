@@ -339,7 +339,6 @@ def test_tradingagents_package_smoke_calls_private_exa_mcp(
     monkeypatch.setattr("app.services.run_service.OpenAI", _TradingAgentsOpenAIClient)
     monkeypatch.setattr("app.agents.mcp.runtime.DefaultMcpToolClient", lambda: mcp_client)
     monkeypatch.setattr("app.agents.mcp.boundaries.validate_http_sse_url", _allow_http_sse_url)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", _disable_queue_worker)
 
     _seed_tradingagents_model(session_factory)
     created = _create_tradingagents_package(
@@ -406,7 +405,6 @@ def test_tradingagents_package_rejected_continuation_does_not_retry_statelessly(
     monkeypatch.setattr("app.services.run_service.OpenAI", _TradingAgentsOpenAIClient)
     monkeypatch.setattr("app.agents.mcp.runtime.DefaultMcpToolClient", lambda: mcp_client)
     monkeypatch.setattr("app.agents.mcp.boundaries.validate_http_sse_url", _allow_http_sse_url)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", _disable_queue_worker)
 
     _seed_tradingagents_model(session_factory)
     created = _create_tradingagents_package(

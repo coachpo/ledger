@@ -60,11 +60,14 @@ import type {
 import { stringifyJson } from "../platform-resource-helpers";
 import {
   DEFAULT_FORK_UNAVAILABLE_REASON,
+  diagnosticsFromDraftReadiness,
   getRunForkAvailability,
   progressForInvocations,
   sortedInvocations,
   sortedOperationInvocations,
   type ForkTargetContext,
+  type RunDraftReadiness,
+  type RunDraftReadinessDiagnostic,
   type RunForkAvailability,
   type TraceSpanEntry,
 } from "./detail-helpers";
@@ -659,6 +662,43 @@ function JsonEditorField({
   );
 }
 
+function draftDiagnosticBadge(diagnostic: RunDraftReadinessDiagnostic) {
+  return diagnostic.severity === "error" ? (
+    <Badge variant="destructive">Blocking</Badge>
+  ) : (
+    <Badge className="border-chart-3/30 bg-chart-3/10 text-chart-3" variant="outline">Warning</Badge>
+  );
+}
+
+function RunForkReadinessPanel({ readiness }: { readiness: RunDraftReadiness }) {
+  const diagnostics = diagnosticsFromDraftReadiness(readiness);
+  const title = readiness.ready ? "Current fork readiness passed" : "Current fork readiness blocked";
+  const description = readiness.ready
+    ? "The backend reports this fork draft is ready to create from current package dependencies."
+    : "The backend reports this fork draft is not ready to create from current package dependencies.";
+
+  return (
+    <Alert data-testid="run-fork-readiness" variant={readiness.ready ? "default" : "destructive"}>
+      <AlertCircle />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription className="space-y-3">
+        <p>{description}</p>
+        {diagnostics.length > 0 ? (
+          <div className="space-y-2">
+            {diagnostics.map((diagnostic) => (
+              <div className="grid min-w-0 gap-2 rounded-md border bg-background/60 p-3 text-sm md:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] md:items-center" key={`${diagnostic.severity}-${diagnostic.field}-${diagnostic.issue}`}>
+                <div>{draftDiagnosticBadge(diagnostic)}</div>
+                <code className="min-w-0 break-all rounded bg-muted/40 px-2 py-1 text-xs">{diagnostic.field}</code>
+                <span className="min-w-0 break-words">{diagnostic.issue}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export function RunForkDialog({
   forkAvailability,
   forkTarget,
@@ -751,7 +791,7 @@ export function RunForkDialog({
     };
   }, [draftQuery.data, invocationInputValidation.error, invocationInputValidation.value]);
   const hasDraftEdits = Boolean(draftQuery.data && !areJsonValuesEqual(invocationInputValidation.value, draftQuery.data.invocationInput));
-  const isSubmitDisabled = !forkPayload || createFork.isPending || draftQuery.isPending || Boolean(invocationInputValidation.error);
+  const isSubmitDisabled = !forkPayload || createFork.isPending || draftQuery.isPending || Boolean(invocationInputValidation.error) || (draftQuery.data ? !draftQuery.data.ready : false);
   const targetLabel = presentedTarget
     ? `${presentedTarget.invocation.slot} invocation`
     : presentedInvocationId === undefined ? "selected invocation" : `invocation #${presentedInvocationId}`;
@@ -842,6 +882,8 @@ export function RunForkDialog({
             <AlertDescription>{apiError}</AlertDescription>
           </Alert>
         ) : null}
+
+        {draftQuery.data ? <RunForkReadinessPanel readiness={draftQuery.data} /> : null}
 
         {draftQuery.data ? (
           <Card className="gap-3" data-testid="run-fork-dialog-body">

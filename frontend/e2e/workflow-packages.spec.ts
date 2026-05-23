@@ -218,6 +218,39 @@ async function launchPackageFromDedicatedPage(
 }
 
 test.describe("Workflow packages", () => {
+  test("scheduler worker from backend launcher drains queued workflow package runs", async ({
+    request,
+  }) => {
+    const suffix = Date.now();
+    const packageKey = `e2e_scheduler_worker_${suffix}`;
+    const modelKey = `e2e_scheduler_model_${suffix}`;
+
+    await seedModelConnection(request, modelKey);
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: { manifestSource: packageManifest(packageKey, modelKey) },
+      },
+    );
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json();
+
+    const launch = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+      {
+        data: { workflowKey: "advisory_flow", parameters: { ticker: "MSFT" } },
+      },
+    );
+    expect(launch.status()).toBe(201);
+    const launched = await launch.json();
+    const detail = await waitForRun(request, Number(launched.id));
+
+    expect(detail.status).toBe("succeeded");
+    expect(detail.finalOutput).toMatchObject({
+      summary: "deterministic summary",
+    });
+  });
+
   test("launches workflow package from dedicated run page", async ({
     page,
     request,

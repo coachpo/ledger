@@ -59,6 +59,31 @@ class Settings(BaseSettings):
         alias="HTTP_OPERATION_MAX_REDIRECTS",
         ge=0,
     )
+    run_scheduler_max_active_runs: int = Field(
+        default=4,
+        alias="RUN_SCHEDULER_MAX_ACTIVE_RUNS",
+        ge=1,
+    )
+    run_scheduler_max_active_per_package: int = Field(
+        default=1,
+        alias="RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE",
+        ge=1,
+    )
+    run_scheduler_poll_interval_seconds: float = Field(
+        default=1.0,
+        alias="RUN_SCHEDULER_POLL_INTERVAL_SECONDS",
+        gt=0,
+    )
+    run_scheduler_heartbeat_seconds: float = Field(
+        default=10.0,
+        alias="RUN_SCHEDULER_HEARTBEAT_SECONDS",
+        gt=0,
+    )
+    run_scheduler_lease_ttl_seconds: float = Field(
+        default=60.0,
+        alias="RUN_SCHEDULER_LEASE_TTL_SECONDS",
+        gt=0,
+    )
     mcp_stdio_allowed_commands: Annotated[list[str], NoDecode] = Field(
         default=["node", "npx", "python", "python3"],
         alias="MCP_STDIO_ALLOWED_COMMANDS",

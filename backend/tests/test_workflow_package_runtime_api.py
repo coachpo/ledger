@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Event, Lock
 from typing import Any, cast
 
@@ -10,7 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import Settings
 from app.core.errors import ApiError
+from app.core.formatting import utcnow
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.agent import Agent
 from app.models.model_connection import ModelConnection
@@ -40,6 +43,7 @@ from app.services.workflow_package_runtime_inputs import (
     runtime_input_schema_fingerprint,
     validate_runtime_input_payload_safety,
 )
+from app.workers.run_scheduler import scheduler_lease_owner
 from tests.test_workflow_package_manifest_http_node import assert_removed_contract_tokens_absent
 
 
@@ -296,6 +300,123 @@ def _create_runtime_input_launch(
             ),
         )
         return launched.id
+
+
+def test_run_scheduler_locked_settings_defaults_and_lease_owner_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for env_name in (
+        "RUN_SCHEDULER_MAX_ACTIVE_RUNS",
+        "RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE",
+        "RUN_SCHEDULER_POLL_INTERVAL_SECONDS",
+        "RUN_SCHEDULER_HEARTBEAT_SECONDS",
+        "RUN_SCHEDULER_LEASE_TTL_SECONDS",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+    settings = Settings.model_validate({})
+
+    assert settings.run_scheduler_max_active_runs == 4
+    assert settings.run_scheduler_max_active_per_package == 1
+    assert settings.run_scheduler_poll_interval_seconds == 1.0
+    assert settings.run_scheduler_heartbeat_seconds == 10.0
+    assert settings.run_scheduler_lease_ttl_seconds == 60.0
+    assert scheduler_lease_owner(hostname="test-host", pid=1234, slot=2) == (
+        "scheduler:test-host:1234:2"
+    )
+
+
+def test_workflow_package_launch_enqueues_without_request_worker(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _RuntimeRecordingOpenAIClient.reset()
+    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="enqueue_only_worker_boundary_package")
+
+    launch = client.post(
+        f"/api/workflow-packages/{created['id']}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+
+    assert launch.status_code == 201, launch.json()
+    run_id = int(launch.json()["id"])
+    time.sleep(0.1)
+    with session_factory() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert run.status == "queued"
+        assert run.attempt_count == 0
+        assert run.last_claimed_at is None
+        assert run.lease_owner is None
+        assert run.lease_expires_at is None
+        assert run.heartbeat_at is None
+    assert _RuntimeRecordingOpenAIClient.create_calls == []
+
+
+def test_run_queue_stale_lease_recovery_frees_serial_worker_lane(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client, package_key="stale_lease_worker_lane_package")
+    launch_payload = {"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}}
+    first = client.post(f"/api/workflow-packages/{created['id']}/launches", json=launch_payload)
+    second = client.post(f"/api/workflow-packages/{created['id']}/launches", json=launch_payload)
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    first_run_id = int(first.json()["id"])
+    second_run_id = int(second.json()["id"])
+
+    first_worker = scheduler_lease_owner(hostname="test-host", pid=100, slot=1)
+    second_worker = scheduler_lease_owner(hostname="test-host", pid=100, slot=2)
+
+    with session_factory() as session:
+        claimed_id = RunQueueService(
+            session,
+            session_factory,
+            lease_owner=first_worker,
+            lease_ttl_seconds=1.0,
+        ).claim_next_run()
+        assert claimed_id == first_run_id
+
+    expired_at = utcnow() - timedelta(seconds=5)
+    with session_factory() as session:
+        blocked = RunQueueService(
+            session,
+            session_factory,
+            lease_owner=second_worker,
+        ).claim_next_run()
+        assert blocked is None
+        running = session.get(Run, first_run_id)
+        assert running is not None
+        running.lease_expires_at = expired_at
+        running.heartbeat_at = expired_at
+        session.commit()
+
+    recovered_at = utcnow()
+    with session_factory() as session:
+        recovered = RunQueueService(
+            session,
+            session_factory,
+            lease_owner=second_worker,
+        ).recover_stale_leases(now=recovered_at)
+        assert recovered == 1
+
+    with session_factory() as session:
+        next_claim = RunQueueService(
+            session,
+            session_factory,
+            lease_owner=second_worker,
+        ).claim_next_run()
+        assert next_claim == second_run_id
+        recovered_run = session.get(Run, first_run_id)
+        assert recovered_run is not None
+        assert recovered_run.status == "failed"
+        assert recovered_run.lease_owner is None
+        assert "scheduler lease expired" in str(recovered_run.error)
 
 
 def test_runtime_input_payload_validation_accepts_schema_agnostic_object_and_launch_still_validates(
@@ -680,7 +801,6 @@ def test_runtime_input_registry_api_contract_and_personal_mutations(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = _create_package(client, package_key="runtime_input_registry_api_package")
     package_id = cast(int, created["id"])
@@ -888,7 +1008,6 @@ def test_runtime_input_registry_stale_workflow_read_remains_available(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = _create_package(client, package_key="runtime_input_registry_stale_package")
     package_id = cast(int, created["id"])
@@ -1182,7 +1301,6 @@ def test_workflow_package_launch_executes_with_live_model_connection(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package live runtime output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     _seed_model_connection(session_factory)
     created = _create_package(client)
@@ -1293,7 +1411,6 @@ def test_workflow_package_runtime_uses_smoke_kind_without_openai(
             raise AssertionError("OpenAI should not be used for deterministic smoke runs")
 
     monkeypatch.setattr("app.services.run_service.OpenAI", _UnexpectedOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     _seed_model_connection(
         session_factory,
@@ -1331,7 +1448,6 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
             raise AssertionError("OpenAI should not be used for deterministic smoke runs")
 
     monkeypatch.setattr("app.services.run_service.OpenAI", _UnexpectedOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     _seed_model_connection(
         session_factory,
@@ -1420,7 +1536,6 @@ def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "package provider host output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
 
     _seed_model_connection(
         session_factory,
@@ -1449,7 +1564,7 @@ def test_workflow_package_runtime_provider_kind_ignores_deterministic_hostname(
     assert _RuntimeRecordingOpenAIClient.create_calls[-1]["model"] == "gpt-package-v1"
 
 
-def test_workflow_package_create_rejects_missing_model_connection(
+def test_workflow_package_save_allows_missing_model_connection_and_launch_rejects_readiness(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1458,21 +1573,27 @@ def test_workflow_package_create_rejects_missing_model_connection(
         json={"manifestSource": _package_source(package_key="runtime_missing_model_package")},
     )
 
-    assert create.status_code == 422, create.json()
-    body = create.json()
+    assert create.status_code == 201, create.json()
+    package_id = int(create.json()["id"])
+    launch = client.post(
+        f"/api/workflow-packages/{package_id}/launches",
+        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
+    )
+
+    assert launch.status_code == 422, launch.json()
+    body = cast(dict[str, object], launch.json())
     assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package manifest validation failed"
-    assert body["details"] == [
-        {
-            "field": "spec.agents[0].modelConnection",
-            "issue": "Model connection 'package_runtime_model' was not found",
-        }
-    ]
+    assert body["message"] == "Workflow package launch validation failed"
+    details = cast(list[dict[str, object]], body["details"])
+    assert {
+        "field": "spec.agents[0].modelConnection",
+        "issue": "Model connection 'package_runtime_model' was not found",
+    } in details
     with session_factory() as session:
         assert session.query(Run).count() == 0
         assert (
             session.query(WorkflowPackage).filter_by(key="runtime_missing_model_package").count()
-            == 0
+            == 1
         )
 
 
@@ -1525,7 +1646,6 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "runtime input source output"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = client.post(
         "/api/workflow-packages",
@@ -1584,6 +1704,7 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     )
     assert rerun.status_code == 201, rerun.json()
     assert len(_runtime_input_history_entries(client, package_id)) == 1
+    _drain_run_queue(session_factory)
 
     fork_draft = client.get(
         f"/api/runs/{source_run_id}/fork-draft",
@@ -1666,7 +1787,6 @@ def test_runtime_input_history_trim_uses_scope_lock_for_concurrent_launches(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = _create_package(client, package_key="runtime_input_history_lock_package")
     package_id = cast(int, created["id"])
@@ -1745,7 +1865,6 @@ def test_runtime_input_no_history_on_invalid_launch_or_preflight(
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
     created = _create_package(client, package_key="runtime_input_no_history_invalid_package")
     package_id = cast(int, created["id"])

@@ -5,16 +5,13 @@ from typing import Any, NoReturn, cast
 from urllib.parse import quote
 
 from fastapi import Response, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import ToolCatalog
 from app.core.errors import ApiError, not_found_error, validation_error
-from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_secret_binding import WorkflowPackageSecretBindingRepository
-from app.schemas.model_connection import normalize_model_connection_key
 from app.schemas.workflow_package import (
     WorkflowPackageImportRequest,
     WorkflowPackageLaunchCreateRequest,
@@ -33,8 +30,6 @@ from app.schemas.workflow_package import (
 )
 from app.schemas.workflow_package_manifest import WorkflowPackageManifestDiagnostic
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.extension_service import ExtensionService
-from app.services.model_connection_service import ModelConnectionService
 from app.services.quote_provider import QuoteProvider
 from app.services.run_service import RunService
 from app.services.workflow_package_export import (
@@ -73,10 +68,9 @@ class WorkflowPackageService:
             quote_provider=quote_provider,
         )
         self.quote_provider = self.provider_bundle.quote_provider
-        self.tool_catalog = tool_catalog or ExtensionService(session).get_tool_catalog()
+        self.tool_catalog = self._artifact_tool_catalog(tool_catalog)
         self.repository = WorkflowPackageRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
-        self.model_connection_service = ModelConnectionService(session)
 
     @staticmethod
     def _provider_bundle(
@@ -92,6 +86,12 @@ class WorkflowPackageService:
             fallback_quote_provider=base_bundle.fallback_quote_provider,
             social_sentiment_adapters=base_bundle.social_sentiment_adapters,
         )
+
+    @staticmethod
+    def _artifact_tool_catalog(tool_catalog: ToolCatalog | None) -> ToolCatalog:
+        if tool_catalog is None:
+            return ToolCatalog()
+        return ToolCatalog(tool_registry=tool_catalog.tool_registry)
 
     def list_packages(self) -> WorkflowPackageListRead:
         packages = self.repository.list_packages()
@@ -136,7 +136,6 @@ class WorkflowPackageService:
                 code="workflow_package_duplicate_key",
                 message="A workflow package with this key already exists",
             )
-        self._resolve_model_connection_refs(prepared)
         package = self.repository.create_package(
             key=key,
             name=str(cast(dict[str, Any], metadata)["name"]),
@@ -171,7 +170,6 @@ class WorkflowPackageService:
                         }
                     ],
                 )
-            self._resolve_model_connection_refs(prepared)
             self.repository.update_package(
                 package,
                 name=str(cast(dict[str, Any], metadata)["name"]),
@@ -245,14 +243,6 @@ class WorkflowPackageService:
         binding = self.secret_binding_repository.get_by_key(package.id, normalized_key)
         if binding is None:
             raise not_found_error("Workflow package secret binding")
-        reference_details = self._secret_binding_reference_details(package, normalized_key)
-        if reference_details:
-            raise ApiError(
-                status_code=status.HTTP_409_CONFLICT,
-                code="workflow_package_secret_binding_in_use",
-                message="Workflow package secret binding is in use",
-                details=reference_details,
-            )
         try:
             self.secret_binding_repository.delete(binding)
             self.session.commit()
@@ -397,43 +387,6 @@ class WorkflowPackageService:
             ),
         }
 
-    def _resolve_model_connection_refs(
-        self,
-        prepared: dict[str, object],
-    ) -> list[tuple[int, str]]:
-        compiled_plan = cast(dict[str, Any], prepared["compiledPlan"])
-        agents = compiled_plan.get("agents")
-        if not isinstance(agents, list):
-            return []
-        refs_by_id: dict[int, str] = {}
-        errors: list[dict[str, str]] = []
-        for index, raw_agent in enumerate(agents):
-            if not isinstance(raw_agent, dict):
-                continue
-            path = f"spec.agents[{index}].modelConnection"
-            try:
-                model_connection_key = normalize_model_connection_key(
-                    raw_agent.get("modelConnection")
-                )
-            except ValueError as exc:
-                errors.append({"field": path, "issue": str(exc)})
-                continue
-            model_connection = self.model_connection_service.repository.get_by_key(
-                model_connection_key
-            )
-            if model_connection is None:
-                errors.append(
-                    {
-                        "field": path,
-                        "issue": f"Model connection {model_connection_key!r} was not found",
-                    }
-                )
-                continue
-            refs_by_id[model_connection.id] = model_connection.key
-        if errors:
-            raise validation_error("Workflow package manifest validation failed", errors)
-        return list(refs_by_id.items())
-
     @staticmethod
     def _select_compiled_workflow(
         package: WorkflowPackage,
@@ -471,83 +424,6 @@ class WorkflowPackageService:
                 "Workflow package secret binding validation failed",
                 [{"field": "key", "issue": str(exc)}],
             ) from exc
-
-    def _secret_binding_reference_details(
-        self,
-        package: WorkflowPackage,
-        key: str,
-    ) -> list[dict[str, object]]:
-        references: dict[tuple[str, int], dict[str, object]] = {}
-        if self._compiled_plan_references_secret(package.compiled_plan, key):
-            references[("workflowPackage", package.id)] = self._secret_reference_detail(
-                ref_type="workflowPackage",
-                ref_id=package.id,
-                ref_key=package.key,
-            )
-        snapshot_statement = (
-            select(RunWorkflowPackageSnapshot)
-            .join(Run, Run.id == RunWorkflowPackageSnapshot.run_id)
-            .where(
-                Run.target_kind == "workflowPackage",
-                RunWorkflowPackageSnapshot.workflow_package_id == package.id,
-            )
-            .order_by(
-                RunWorkflowPackageSnapshot.workflow_package_key.asc(),
-                RunWorkflowPackageSnapshot.workflow_key.asc(),
-                RunWorkflowPackageSnapshot.run_id.asc(),
-            )
-        )
-        for snapshot in self.session.scalars(snapshot_statement):
-            if not self._compiled_plan_references_secret(snapshot.compiled_plan, key):
-                continue
-            ref_key = snapshot.workflow_package_key
-            if snapshot.workflow_key:
-                ref_key = f"{ref_key}:{snapshot.workflow_key}"
-            references[("workflowPackageRunSnapshot", snapshot.run_id)] = (
-                self._secret_reference_detail(
-                    ref_type="workflowPackageRunSnapshot",
-                    ref_id=snapshot.run_id,
-                    ref_key=ref_key,
-                )
-            )
-        return sorted(
-            references.values(),
-            key=lambda item: (
-                str(item["refType"]),
-                str(item["refKey"]),
-                cast(int, item["refId"]),
-            ),
-        )
-
-    @staticmethod
-    def _secret_reference_detail(
-        *,
-        ref_type: str,
-        ref_id: int,
-        ref_key: str,
-    ) -> dict[str, object]:
-        return {
-            "field": "secretBinding",
-            "issue": "Secret binding is referenced",
-            "refType": ref_type,
-            "refId": ref_id,
-            "refKey": ref_key,
-        }
-
-    @classmethod
-    def _compiled_plan_references_secret(cls, value: object, key: str) -> bool:
-        if isinstance(value, dict):
-            raw_source = value.get("from", value.get("source"))
-            if (
-                isinstance(raw_source, str)
-                and raw_source.strip().lower() in {"secret", "secrets"}
-                and value.get("key") == key
-            ):
-                return True
-            return any(cls._compiled_plan_references_secret(item, key) for item in value.values())
-        if isinstance(value, list):
-            return any(cls._compiled_plan_references_secret(item, key) for item in value)
-        return False
 
     def _to_package_read(self, package: WorkflowPackage) -> WorkflowPackageRead:
         return WorkflowPackageRead.model_validate(

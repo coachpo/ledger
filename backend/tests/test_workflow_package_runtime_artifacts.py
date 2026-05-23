@@ -13,7 +13,6 @@ from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.schemas.run import RunPackageProvenanceRead, RunRead
-from app.services.run_service import RunService
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -243,6 +242,12 @@ def _run_read_payload(*, target_kind: str) -> dict[str, object]:
         "resumeStepIndex": 1,
         "finalOutput": None,
         "status": "queued",
+        "progress": {
+            "unit": "invocation",
+            "terminalCount": 0,
+            "totalCount": 0,
+            "percent": 0,
+        },
         "totalTokens": 0,
         "inheritedTokens": 0,
         "executedTokens": 0,
@@ -317,7 +322,6 @@ def test_runtime_input_registry_boundary_does_not_mutate_manifest_export_import_
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
 ) -> None:
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_runtime_input_registry_boundary_model_connection(session_factory)
     package_key = "runtime_boundary_package"
     create_response = client.post(

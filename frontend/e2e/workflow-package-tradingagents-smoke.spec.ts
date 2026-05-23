@@ -137,18 +137,35 @@ test.describe("TradingAgents workflow-package smoke", () => {
     }
   });
 
-  test("reports missing model binding through a separate create validation path", async ({ request }) => {
+  test("reports missing model binding through launch readiness validation", async ({ request }) => {
     const suffix = Date.now();
     const missingModelKey = `missing_tradingagents_model_${suffix}`;
     const manifestSource = fixtureSource()
       .replace("key: tradingagents_advisory_research", `key: e2e_missing_model_${suffix}`)
-      .replace(/modelConnection: tradingagents_primary_model/g, `modelConnection: ${missingModelKey}`);
+      .replace(
+        /modelConnection: tradingagents_primary_model/g,
+        `modelConnection: ${missingModelKey}`,
+      );
 
-    const create = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, { data: { manifestSource } });
-    expect(create.status()).toBe(422);
-    const body = await create.json();
+    const create = await request.post(`${PLATFORM_API_BASE}/workflow-packages`, {
+      data: { manifestSource },
+    });
+    expect(create.status()).toBe(201);
+    const created = await create.json();
 
-    expect(body).toMatchObject({ code: "validation_error" });
+    const launch = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+      {
+        data: { workflowKey: "advisory_research", parameters: LAUNCH_PARAMETERS },
+      },
+    );
+    expect(launch.status()).toBe(422);
+    const body = await launch.json();
+
+    expect(body).toMatchObject({
+      code: "validation_error",
+      message: "Workflow package launch validation failed",
+    });
     expect(body.details).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

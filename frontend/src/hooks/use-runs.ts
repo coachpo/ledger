@@ -19,6 +19,7 @@ import type {
   RunRead,
   RunRerunCreateRequest,
   RunRerunDraftRead,
+  RunStatus,
 } from "@/lib/types/run";
 
 type RunQueryOptions = {
@@ -29,9 +30,9 @@ type DraftQueryOptions = RunQueryOptions & {
   enabled?: boolean;
 };
 
-const ACTIVE_RUN_STATUSES = new Set<string>(["queued", "running"]);
+const ACTIVE_RUN_STATUSES = new Set<RunStatus>(["queued", "running"]);
 
-function isActiveRunStatus(status: string): boolean {
+function isActiveRunStatus(status: RunStatus): boolean {
   return ACTIVE_RUN_STATUSES.has(status);
 }
 

@@ -8,16 +8,15 @@ from typing import Any, cast
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.errors import ApiError, business_rule_error, not_found_error
+from app.core.errors import ApiError, business_rule_error, not_found_error, validation_error
 from app.core.formatting import utcnow
 from app.models.agent import Agent
-from app.models.model_connection import ModelConnection
 from app.models.output_schema import OutputSchema
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
-from app.repositories.model_connection import ModelConnectionRepository
+from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
@@ -45,6 +44,10 @@ from app.services.package_execution_plan_builder import (
     WorkflowPackageExecutionPlanError,
 )
 from app.services.run_read_projection import RunReadProjection
+from app.services.workflow_package_preflight import (
+    WorkflowPackagePreflightResult,
+    WorkflowPackagePreflightService,
+)
 
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
@@ -58,6 +61,7 @@ class PreparedRunRerun:
     source_run: Run
     plan: ExecutionPlan
     validated_input: dict[str, Any]
+    readiness: WorkflowPackagePreflightResult
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ class PreparedRunFork:
 class PreparedRunForkCreate:
     prepared_fork: PreparedRunFork
     invocation_input: dict[str, Any]
+    readiness: WorkflowPackagePreflightResult
 
 
 class RunRerunForkPreparation:
@@ -81,7 +86,6 @@ class RunRerunForkPreparation:
         *,
         session: Session,
         run_repository: RunRepository,
-        model_connection_repository: ModelConnectionRepository,
         run_agent_invocation_repository: RunAgentInvocationRepository,
         run_operation_invocation_repository: RunOperationInvocationRepository,
         schema_compiler: OutputSchemaCompiler,
@@ -91,7 +95,6 @@ class RunRerunForkPreparation:
     ) -> None:
         self.session: Session = session
         self.run_repository: RunRepository = run_repository
-        self.model_connection_repository: ModelConnectionRepository = model_connection_repository
         self.run_agent_invocation_repository: RunAgentInvocationRepository = (
             run_agent_invocation_repository
         )
@@ -110,6 +113,7 @@ class RunRerunForkPreparation:
         if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
             raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
         _ = self.build_plan_for_run(source_run)
+        readiness = self._current_readiness_for_run(source_run)
         return RunRerunDraftRead.model_validate(
             {
                 "sourceRunId": source_run.id,
@@ -117,6 +121,7 @@ class RunRerunForkPreparation:
                 "targetId": source_run.target_id,
                 "targetKey": source_run.target_key,
                 "parameters": deepcopy(source_run.input),
+                **self._readiness_payload(readiness),
                 "packageProvenance": self.read_projection.package_provenance_payload(source_run),
             }
         )
@@ -127,6 +132,10 @@ class RunRerunForkPreparation:
         payload: RunRerunCreateRequest,
     ) -> PreparedRunRerun:
         source_run = self._get_run_or_raise(source_run_id)
+        if source_run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
+            raise_legacy_global_authoring_runtime_blocked(source_run.target_kind)
+        readiness = self._current_readiness_for_run(source_run)
+        self._assert_current_readiness(readiness)
         plan = self.build_plan_for_run(source_run)
         validated_input = self.validate_run_input(
             input_schema=plan.input_schema,
@@ -138,6 +147,7 @@ class RunRerunForkPreparation:
             source_run=source_run,
             plan=plan,
             validated_input=validated_input,
+            readiness=readiness,
         )
 
     def build_fork_draft(
@@ -147,6 +157,7 @@ class RunRerunForkPreparation:
     ) -> RunForkDraftRead:
         prepared = self.prepare_fork_source(source_run_id, source_invocation_id)
         source_run = prepared.source_run
+        readiness = self._current_readiness_for_run(source_run)
         return RunForkDraftRead.model_validate(
             {
                 "sourceRunId": source_run.id,
@@ -155,6 +166,7 @@ class RunRerunForkPreparation:
                 "targetId": source_run.target_id,
                 "targetKey": source_run.target_key,
                 "invocationInput": deepcopy(prepared.source_invocation.resolved_input),
+                **self._readiness_payload(readiness),
                 "packageProvenance": self.read_projection.package_provenance_payload(source_run),
             }
         )
@@ -165,6 +177,8 @@ class RunRerunForkPreparation:
         payload: RunForkCreateRequest,
     ) -> PreparedRunForkCreate:
         prepared_fork = self.prepare_fork_source(source_run_id, payload.source_invocation_id)
+        readiness = self._current_readiness_for_run(prepared_fork.source_run)
+        self._assert_current_readiness(readiness)
         invocation_input = self.validate_fork_invocation_input(
             plan_agent=prepared_fork.plan_agent,
             invocation_input=cast(dict[str, Any], deepcopy(payload.invocation_input)),
@@ -172,6 +186,7 @@ class RunRerunForkPreparation:
         return PreparedRunForkCreate(
             prepared_fork=prepared_fork,
             invocation_input=invocation_input,
+            readiness=readiness,
         )
 
     def build_plan_for_run(self, run: Run) -> ExecutionPlan:
@@ -194,7 +209,7 @@ class RunRerunForkPreparation:
                 message=exc.message,
                 details=exc.details,
             ) from exc
-        plan = replace(
+        return replace(
             package_plan,
             target=ExecutionPlanTarget(
                 kind="workflow_package",
@@ -203,8 +218,49 @@ class RunRerunForkPreparation:
                 version=None,
             ),
         )
-        self._assert_snapshot_model_connections_available(plan)
-        return plan
+
+    def _current_readiness_for_run(self, run: Run) -> WorkflowPackagePreflightResult:
+        snapshot = self._workflow_package_snapshot_for_run(run)
+        return WorkflowPackagePreflightService(self.session).evaluate_readiness(
+            self._workflow_package_from_snapshot(snapshot),
+            workflow_key=snapshot.workflow_key,
+            require_api_key=True,
+        )
+
+    @staticmethod
+    def _assert_current_readiness(readiness: WorkflowPackagePreflightResult) -> None:
+        if readiness.ready:
+            return
+        details = readiness.blocking_errors or [
+            {
+                "field": "workflowPackage",
+                "issue": "Workflow package is not ready to run",
+            }
+        ]
+        raise validation_error("Run descendant validation failed", details)
+
+    @staticmethod
+    def _readiness_payload(readiness: WorkflowPackagePreflightResult) -> dict[str, Any]:
+        return {
+            "ready": readiness.ready,
+            "blockingErrors": deepcopy(readiness.blocking_errors),
+            "warnings": deepcopy(readiness.warnings),
+        }
+
+    @staticmethod
+    def _workflow_package_from_snapshot(snapshot: RunWorkflowPackageSnapshot) -> WorkflowPackage:
+        return WorkflowPackage(
+            id=snapshot.workflow_package_id,
+            key=snapshot.workflow_package_key,
+            name=snapshot.workflow_package_name,
+            description=snapshot.workflow_package_description,
+            manifest_source=snapshot.manifest_source,
+            manifest_hash=snapshot.manifest_hash,
+            package_definition=deepcopy(snapshot.package_definition),
+            compiled_plan=deepcopy(snapshot.compiled_plan),
+            compiled_hash=snapshot.compiled_hash,
+            extension_dependencies=deepcopy(snapshot.extension_dependencies),
+        )
 
     def prepare_fork_source(
         self,
@@ -550,101 +606,6 @@ class RunRerunForkPreparation:
                 ),
             )
         return bindings
-
-    def _assert_snapshot_model_connections_available(self, plan: ExecutionPlan) -> None:
-        bindings_by_key: dict[str, PackageResolvedModelBinding] = {}
-        for step in plan.steps:
-            for plan_agent in step.agents:
-                package_agent = plan_agent.package_runtime_agent
-                if package_agent is None:
-                    continue
-                binding = package_agent.model_binding
-                if binding is None:
-                    raise business_rule_error(
-                        "run_model_connection_missing",
-                        "Run cannot be replayed because a model connection snapshot is missing",
-                        details=[
-                            {
-                                "field": "modelConnection",
-                                "issue": (
-                                    f"Package agent {package_agent.key!r} is missing its "
-                                    "resolved model connection"
-                                ),
-                                "agentKey": package_agent.key,
-                            }
-                        ],
-                    )
-                bindings_by_key.setdefault(binding.key, binding)
-
-        for binding in bindings_by_key.values():
-            self._assert_snapshot_model_connection_available(binding)
-
-    def _assert_snapshot_model_connection_available(
-        self,
-        binding: PackageResolvedModelBinding,
-    ) -> None:
-        connection = self.model_connection_repository.get_by_key(binding.key)
-        if connection is None:
-            raise business_rule_error(
-                "run_model_connection_missing",
-                f"Run cannot be replayed because model connection {binding.key!r} is missing",
-                details=[
-                    {
-                        "field": "modelConnection",
-                        "issue": "Referenced live model connection was not found",
-                        "modelConnectionKey": binding.key,
-                    }
-                ],
-            )
-        if connection.status != "active":
-            raise business_rule_error(
-                "run_model_connection_unavailable",
-                (
-                    f"Run cannot be replayed because model connection {binding.key!r} "
-                    f"is {connection.status!r}"
-                ),
-                details=[
-                    {
-                        "field": "modelConnection",
-                        "issue": "Referenced live model connection is not active",
-                        "modelConnectionKey": binding.key,
-                        "status": connection.status,
-                    }
-                ],
-            )
-        mismatches = self._snapshot_model_connection_mismatches(binding, connection)
-        if mismatches:
-            raise business_rule_error(
-                "run_model_connection_incompatible",
-                (
-                    f"Run cannot be replayed because model connection {binding.key!r} "
-                    "no longer matches the run snapshot"
-                ),
-                details=mismatches,
-            )
-
-    @staticmethod
-    def _snapshot_model_connection_mismatches(
-        binding: PackageResolvedModelBinding,
-        connection: ModelConnection,
-    ) -> list[dict[str, object]]:
-        expected_actual = {
-            "connectionKind": (binding.connection_kind, connection.connection_kind),
-            "baseUrl": (binding.base_url, connection.base_url),
-            "modelId": (binding.model_id, connection.model_id),
-            "reasoningEffort": (binding.reasoning_effort, connection.reasoning_effort),
-            "apiStyle": (binding.api_style, connection.api_style),
-            "timeoutSeconds": (binding.timeout_seconds, connection.timeout_seconds),
-        }
-        return [
-            {
-                "field": f"modelConnection.{field_name}",
-                "issue": "Live model connection no longer matches the run snapshot",
-                "modelConnectionKey": binding.key,
-            }
-            for field_name, (expected, actual) in expected_actual.items()
-            if expected != actual
-        ]
 
     @staticmethod
     def _source_agent_invocation_for_id(

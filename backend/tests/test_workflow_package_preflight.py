@@ -127,28 +127,64 @@ def test_preflight_rejects_duplicate_tool_keys_and_accepts_core_memory_tool_keys
     ]
 
 
-def test_create_blocks_missing_model_connection(
+def test_save_allows_missing_model_connection_and_preflight_blocks(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _delete_existing_tradingagents_package(client)
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
-    assert response.status_code == 422, response.json()
-    body = response.json()
-    assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package manifest validation failed"
-    details = cast(list[dict[str, object]], body["details"])
+    assert response.status_code == 201, response.json()
+    package_id = int(response.json()["id"])
+    with session_factory() as session:
+        assert session.query(WorkflowPackage).count() == 1
+
+    preflight = client.post(f"/api/workflow-packages/{package_id}/preflight")
+
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
     expected_count = _package_source().count("modelConnection: tradingagents_primary_model")
-    assert len(details) == expected_count
-    assert [detail["field"] for detail in details] == [
+    missing_model_errors = [
+        error
+        for error in errors
+        if error["issue"] == "Model connection 'tradingagents_primary_model' was not found"
+    ]
+    assert [error["field"] for error in missing_model_errors] == [
         f"spec.agents[{index}].modelConnection" for index in range(expected_count)
     ]
-    assert {detail["issue"] for detail in details} == {
-        "Model connection 'tradingagents_primary_model' was not found"
-    }
-    with session_factory() as session:
-        assert session.query(WorkflowPackage).count() == 0
+
+
+def test_update_allows_unresolved_model_connection_and_preflight_blocks(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    created = _create_package(client)
+    missing_source = _package_source().replace(
+        "modelConnection: tradingagents_primary_model",
+        "modelConnection: tradingagents_future_model",
+    )
+
+    response = client.patch(
+        f"/api/workflow-packages/{created['id']}",
+        json={"manifestSource": missing_source},
+    )
+
+    assert response.status_code == 200, response.json()
+    preflight = client.post(f"/api/workflow-packages/{created['id']}/preflight")
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
+    expected_count = missing_source.count("modelConnection: tradingagents_future_model")
+    missing_model_errors = [
+        error
+        for error in errors
+        if error["issue"] == "Model connection 'tradingagents_future_model' was not found"
+    ]
+    assert len(missing_model_errors) == expected_count
 
 
 def test_preflight_reports_binding_schema_tool_and_graph_failures(
@@ -389,7 +425,7 @@ def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
         )
 
 
-def test_create_blocks_tradingagents_advisory_research_when_extension_disabled(
+def test_save_allows_disabled_extension_dependency_and_preflight_blocks(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -399,14 +435,17 @@ def test_create_blocks_tradingagents_advisory_research_when_extension_disabled(
 
     response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
 
-    assert response.status_code == 422, response.json()
-    body = response.json()
-    assert body["code"] == "validation_error"
-    details = cast(list[dict[str, object]], body["details"])
+    assert response.status_code == 201, response.json()
+    preflight = client.post(f"/api/workflow-packages/{response.json()['id']}/preflight")
+    assert preflight.status_code == 200, preflight.json()
+    body = preflight.json()
+    assert body["ready"] is False
+    errors = cast(list[dict[str, object]], body["blockingErrors"])
     assert any(
-        "extension 'signaldeck.finance' is disabled" in str(detail.get("issue"))
-        and str(detail.get("path", "")).startswith("spec.capabilityProfiles.")
-        for detail in details
+        error.get("code") == "extension_disabled"
+        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
+        for error in errors
     )
 
 

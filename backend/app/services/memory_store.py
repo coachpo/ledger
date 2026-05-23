@@ -7,6 +7,7 @@ from typing import Any, Final, Literal, Protocol, cast
 from uuid import uuid4
 
 from fastapi import status
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
@@ -45,6 +46,9 @@ from app.schemas.memory import (
 
 _LOOKUP_CANDIDATE_MULTIPLIER: Final = 4
 _LOOKUP_MAX_CANDIDATES: Final = 200
+_MEMORY_SCOPE_KEY_MAX_CHARACTERS: Final = 160
+_MEMORY_SCOPE_KEY_HASH_CHARACTERS: Final = 16
+_POSTGRES_LOCK_NOT_AVAILABLE_SQLSTATE: Final = "55P03"
 _RRF_K: Final = 60.0
 _SCOPE_SPECIFICITY: Final[dict[str, int]] = {
     "agent": 5,
@@ -54,6 +58,24 @@ _SCOPE_SPECIFICITY: Final[dict[str, int]] = {
     "workspace": 1,
 }
 _FINANCE_LIFECYCLE_ATTRIBUTES_KEY: Final = "_finance"
+
+
+def canonical_package_qualified_scope_key(*, package_key: str, local_key: str) -> str:
+    normalized_package_key = package_key.strip()
+    normalized_local_key = local_key.strip()
+    candidate = f"{normalized_package_key}:{normalized_local_key}"
+    if len(candidate) <= _MEMORY_SCOPE_KEY_MAX_CHARACTERS:
+        return candidate
+
+    package_hash = _scope_key_hash(normalized_package_key)
+    hashed_candidate = f"{package_hash}:{normalized_local_key}"
+    if len(hashed_candidate) <= _MEMORY_SCOPE_KEY_MAX_CHARACTERS:
+        return hashed_candidate
+    return f"{package_hash}:{_scope_key_hash(normalized_local_key)}"
+
+
+def _scope_key_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:_MEMORY_SCOPE_KEY_HASH_CHARACTERS]
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +275,7 @@ class PostgresMemoryStore:
         return snippets
 
     def resolve(self, memory_id: str, outcome: MemoryOutcome) -> MemoryEntryRead:
-        entry = self._entry_by_memory_id(memory_id)
+        entry = self._locked_entry_by_memory_id(memory_id)
         latest = self._latest_revision(entry)
         attributes = self._attributes_payload(latest.attributes)
         attributes["outcome"] = self._outcome_payload(outcome)
@@ -285,7 +307,7 @@ class PostgresMemoryStore:
         return self._entry_read(entry, revision)
 
     def append_reflection(self, memory_id: str, reflection: MemoryReflection) -> MemoryEntryRead:
-        entry = self._entry_by_memory_id(memory_id)
+        entry = self._locked_entry_by_memory_id(memory_id)
         latest = self._latest_revision(entry)
         attributes = self._attributes_payload(latest.attributes)
         reflections = self._stored_reflections(attributes)
@@ -520,6 +542,18 @@ class PostgresMemoryStore:
     def _entry_by_memory_id(self, memory_id: str) -> AgentMemoryEntry:
         normalized = self._normalize_memory_id(memory_id)
         entry = self.entries.get_by_memory_id(normalized)
+        if entry is None:
+            raise memory_not_found_error()
+        return entry
+
+    def _locked_entry_by_memory_id(self, memory_id: str) -> AgentMemoryEntry:
+        normalized = self._normalize_memory_id(memory_id)
+        try:
+            entry = self.entries.get_by_memory_id_for_update(normalized, nowait=True)
+        except OperationalError as exc:
+            if self._is_lock_not_available(exc):
+                raise self._memory_revision_conflict() from exc
+            raise
         if entry is None:
             raise memory_not_found_error()
         return entry
@@ -1017,6 +1051,24 @@ class PostgresMemoryStore:
         return f"revision_{uuid4().hex}"
 
     @staticmethod
+    def _is_lock_not_available(error: OperationalError) -> bool:
+        original = getattr(error, "orig", None)
+        sqlstate = getattr(original, "sqlstate", None) or getattr(
+            original,
+            "pgcode",
+            None,
+        )
+        return isinstance(sqlstate, str) and sqlstate == _POSTGRES_LOCK_NOT_AVAILABLE_SQLSTATE
+
+    @staticmethod
+    def _memory_revision_conflict() -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="memory_revision_conflict",
+            message="Memory is being updated by another transaction; retry the mutation",
+        )
+
+    @staticmethod
     def _memory_conflict() -> ApiError:
         return ApiError(
             status_code=status.HTTP_409_CONFLICT,
@@ -1025,4 +1077,9 @@ class PostgresMemoryStore:
         )
 
 
-__all__ = ["MemoryEventContext", "MemoryStore", "PostgresMemoryStore"]
+__all__ = [
+    "MemoryEventContext",
+    "MemoryStore",
+    "PostgresMemoryStore",
+    "canonical_package_qualified_scope_key",
+]

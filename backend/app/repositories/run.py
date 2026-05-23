@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy import or_, select
-from sqlalchemy.orm import selectinload
+from collections.abc import Iterable
+
+from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.formatting import utcnow
 from app.models.agent_memory import RunMemoryEvent
 from app.models.run import Run, RunWorkflowPackageSnapshot
+from app.models.run_agent_invocation import RunAgentInvocation
+from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.repositories.base import BaseRepository
 
@@ -81,6 +87,31 @@ class RunRepository(BaseRepository[Run]):
             statement = statement.limit(limit)
         return self._list(statement)
 
+    def invocation_status_counts_by_run_id(
+        self,
+        run_ids: Iterable[int],
+    ) -> dict[int, dict[str, int]]:
+        resolved_run_ids = list(dict.fromkeys(run_ids))
+        if not resolved_run_ids:
+            return {}
+
+        counts_by_run_id: dict[int, dict[str, int]] = {run_id: {} for run_id in resolved_run_ids}
+        for invocation_model in (RunAgentInvocation, RunOperationInvocation):
+            statement = (
+                select(
+                    invocation_model.run_id,
+                    invocation_model.status,
+                    func.count().label("status_count"),
+                )
+                .where(invocation_model.run_id.in_(resolved_run_ids))
+                .group_by(invocation_model.run_id, invocation_model.status)
+            )
+            for run_id, status, status_count in self.session.execute(statement):
+                run_counts = counts_by_run_id.setdefault(int(run_id), {})
+                status_key = str(status)
+                run_counts[status_key] = run_counts.get(status_key, 0) + int(status_count)
+        return counts_by_run_id
+
     def get_detail(self, run_id: int) -> Run | None:
         statement = (
             select(self.model)
@@ -100,6 +131,56 @@ class RunRepository(BaseRepository[Run]):
             .order_by(RunMemoryEvent.created_at.asc(), RunMemoryEvent.id.asc())
         )
         return list(self.session.scalars(statement))
+
+    def serial_queue_blocker_run_ids_by_run_id(
+        self,
+        run_ids: Iterable[int],
+    ) -> dict[int, int]:
+        resolved_run_ids = list(dict.fromkeys(run_ids))
+        if not resolved_run_ids:
+            return {}
+
+        queued_run = aliased(self.model)
+        serial_blocker = aliased(self.model)
+        older_queued_blocker = and_(
+            serial_blocker.status == "queued",
+            or_(
+                serial_blocker.queued_at < queued_run.queued_at,
+                and_(
+                    serial_blocker.queued_at == queued_run.queued_at,
+                    serial_blocker.id < queued_run.id,
+                ),
+            ),
+        )
+        statement = (
+            select(queued_run.id, serial_blocker.id)
+            .join(
+                serial_blocker,
+                and_(
+                    serial_blocker.execution_scope_key == queued_run.execution_scope_key,
+                    serial_blocker.concurrency_policy == "serial",
+                    or_(serial_blocker.status == "running", older_queued_blocker),
+                ),
+            )
+            .where(
+                queued_run.id.in_(resolved_run_ids),
+                queued_run.status == "queued",
+                queued_run.concurrency_policy == "serial",
+                queued_run.execution_scope_key.is_not(None),
+            )
+            .order_by(
+                queued_run.id.asc(),
+                case((serial_blocker.status == "running", 0), else_=1),
+                serial_blocker.queued_at.asc(),
+                serial_blocker.id.asc(),
+            )
+        )
+        blockers_by_run_id: dict[int, int] = {}
+        for run_id, blocker_run_id in self.session.execute(statement):
+            resolved_run_id = int(run_id)
+            if resolved_run_id not in blockers_by_run_id:
+                blockers_by_run_id[resolved_run_id] = int(blocker_run_id)
+        return blockers_by_run_id
 
     def list_ids_for_target_owner(
         self,
@@ -159,7 +240,64 @@ class RunRepository(BaseRepository[Run]):
         return (f"target_{target_kind}_id", f"{target_kind}_id")
 
     def claim_next_queued(self, run_id: int | None = None) -> Run | None:
-        statement = select(self.model).where(self.model.status == "queued")
+        for _ in range(2):
+            run = self._claim_next_queued_once(run_id=run_id)
+            if run is None:
+                return None
+            try:
+                self.session.flush()
+            except IntegrityError:
+                self.session.rollback()
+                if run_id is not None:
+                    return None
+                continue
+            return run
+        return None
+
+    def _claim_next_queued_once(self, run_id: int | None = None) -> Run | None:
+        running_run = aliased(self.model)
+        older_queued_run = aliased(self.model)
+        running_scope_exists = (
+            select(running_run.id)
+            .where(
+                running_run.status == "running",
+                running_run.concurrency_policy == "serial",
+                running_run.execution_scope_key == self.model.execution_scope_key,
+            )
+            .exists()
+        )
+        older_queued_scope_exists = (
+            select(older_queued_run.id)
+            .where(
+                older_queued_run.status == "queued",
+                older_queued_run.concurrency_policy == "serial",
+                older_queued_run.execution_scope_key == self.model.execution_scope_key,
+                or_(
+                    older_queued_run.queued_at < self.model.queued_at,
+                    and_(
+                        older_queued_run.queued_at == self.model.queued_at,
+                        older_queued_run.id < self.model.id,
+                    ),
+                ),
+            )
+            .exists()
+        )
+        serial_scope_is_eligible = or_(
+            self.model.concurrency_policy != "serial",
+            self.model.execution_scope_key.is_(None),
+            ~running_scope_exists,
+        )
+        serial_queue_head_is_eligible = or_(
+            self.model.concurrency_policy != "serial",
+            self.model.execution_scope_key.is_(None),
+            ~older_queued_scope_exists,
+        )
+        statement = select(self.model).where(
+            self.model.status == "queued",
+            self.model.lease_owner.is_(None),
+            serial_scope_is_eligible,
+            serial_queue_head_is_eligible,
+        )
         if run_id is not None:
             statement = statement.where(self.model.id == run_id)
         statement = (
@@ -173,6 +311,8 @@ class RunRepository(BaseRepository[Run]):
         run.status = "running"
         run.error = None
         run.finished_at = None
+        run.last_claimed_at = utcnow()
+        run.attempt_count = int(run.attempt_count or 0) + 1
         return self.add(run)
 
     def list_for_target(

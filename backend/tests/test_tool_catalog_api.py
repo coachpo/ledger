@@ -145,7 +145,7 @@ def test_tools_catalog_route_is_get_only(client: TestClient) -> None:
     assert set(tools_path) == {"get"}
 
 
-def test_tool_catalog_hides_disabled_extension_tools_and_validation_classifies_them(
+def test_tool_catalog_hides_disabled_extension_tools_and_validation_stays_artifact_only(
     client: TestClient,
 ) -> None:
     response = client.patch(
@@ -162,21 +162,30 @@ def test_tool_catalog_hides_disabled_extension_tools_and_validation_classifies_t
     assert not visible_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
     assert _REQUIRED_CORE_TOOL_KEYS <= visible_keys
 
+    manifest_source = _valid_manifest_source()
     validation_response = client.post(
         "/api/workflow-packages/validate-manifest",
-        json={"manifestSource": _valid_manifest_source()},
+        json={"manifestSource": manifest_source},
     )
     assert validation_response.status_code == 200, validation_response.json()
     body = cast(dict[str, object], validation_response.json())
+    metadata = cast(dict[str, object], body["metadata"])
     diagnostics = cast(list[dict[str, object]], body["diagnostics"])
-    assert body["metadata"] is None
+    assert diagnostics == []
+    assert metadata["key"] == "tradingagents_research"
+    assert body["packageDefinition"] is not None
+    assert body["compiledPlan"] is not None
+
+    created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
+    assert created.status_code == 201, created.json()
+    preflight = client.post(f"/api/workflow-packages/{created.json()['id']}/preflight")
+    assert preflight.status_code == 200, preflight.json()
+    preflight_body = cast(dict[str, object], preflight.json())
+    blocking_errors = cast(list[dict[str, object]], preflight_body["blockingErrors"])
+    assert preflight_body["ready"] is False
     assert any(
-        diagnostic["path"] == "spec.capabilityProfiles.market_research_tools.toolKeys[0]"
-        and diagnostic["message"]
-        == (
-            "Server-declared tool 'signaldeck.market_data.quote_lookup' is disabled because "
-            "extension 'signaldeck.finance' is disabled"
-        )
-        for diagnostic in diagnostics
+        error.get("code") == "extension_disabled"
+        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
+        and error.get("surface") == "tool.signaldeck.market_data.quote_lookup"
+        for error in blocking_errors
     )
-    assert not any("Unknown server-declared tool" in str(item) for item in diagnostics)

@@ -28,7 +28,12 @@ from app.schemas.memory_report import (
     AgentMemoryTrustedCreateContext,
 )
 from app.services.capability_service import CapabilityService, RuntimeToolGrantPolicy
-from app.services.memory_store import MemoryEventContext, MemoryStore, PostgresMemoryStore
+from app.services.memory_store import (
+    MemoryEventContext,
+    MemoryStore,
+    PostgresMemoryStore,
+    canonical_package_qualified_scope_key,
+)
 
 _EVENT_TEXT_SNAPSHOT_MAX_CHARACTERS = 8_000
 _EVENT_SNIPPET_EXCERPT_MAX_CHARACTERS = 1_000
@@ -61,15 +66,69 @@ class MemoryLookupContext:
         scopes: list[MemoryScope] = []
         if self.run_id is not None:
             scopes.append(MemoryScope(scope_type=MemoryScopeType.RUN, scope_key=str(self.run_id)))
-        for scope_type, scope_key in (
-            (MemoryScopeType.PACKAGE, self.package_key),
-            (MemoryScopeType.WORKFLOW, self.workflow_key),
-            (MemoryScopeType.AGENT, self.agent_key),
+        for scope_type in (
+            MemoryScopeType.PACKAGE,
+            MemoryScopeType.WORKFLOW,
+            MemoryScopeType.AGENT,
         ):
-            normalized = self.normalized_text(scope_key)
-            if normalized is not None:
-                scopes.append(MemoryScope(scope_type=scope_type, scope_key=normalized))
+            scope_key = self.scope_key_for_type(scope_type)
+            if scope_key is not None:
+                scopes.append(MemoryScope(scope_type=scope_type, scope_key=scope_key))
         return tuple(scopes)
+
+    def canonicalize_scope(self, scope: MemoryScope) -> MemoryScope:
+        if scope.scope_type == MemoryScopeType.RUN:
+            return scope
+        scope_key = self.scope_key_for_type(
+            scope.scope_type,
+            fallback_scope_key=scope.scope_key,
+        )
+        if scope_key is None or scope_key == scope.scope_key:
+            return scope
+        return scope.model_copy(update={"scope_key": scope_key})
+
+    def scope_key_for_type(
+        self,
+        scope_type: MemoryScopeType,
+        *,
+        fallback_scope_key: str | None = None,
+    ) -> str | None:
+        fallback = self.normalized_text(fallback_scope_key)
+        package_key = self.normalized_text(self.package_key)
+        if scope_type == MemoryScopeType.PACKAGE:
+            return package_key or fallback
+        if scope_type == MemoryScopeType.WORKFLOW:
+            workflow_key = self.normalized_text(self.workflow_key) or fallback
+            return self._package_qualified_scope_key(
+                package_key=package_key,
+                local_key=workflow_key,
+            )
+        if scope_type == MemoryScopeType.AGENT:
+            agent_key = self.normalized_text(self.agent_key) or fallback
+            return self._package_qualified_scope_key(
+                package_key=package_key,
+                local_key=agent_key,
+            )
+        if scope_type == MemoryScopeType.RUN:
+            if self.run_id is not None:
+                return str(self.run_id)
+            return fallback
+        return fallback
+
+    @staticmethod
+    def _package_qualified_scope_key(
+        *,
+        package_key: str | None,
+        local_key: str | None,
+    ) -> str | None:
+        if local_key is None:
+            return None
+        if package_key is None:
+            return local_key
+        return canonical_package_qualified_scope_key(
+            package_key=package_key,
+            local_key=local_key,
+        )
 
     @staticmethod
     def normalized_text(value: str | None) -> str | None:
@@ -109,9 +168,10 @@ class MemoryService:
                 capability_references=capability_references,
                 grant_policy=grant_policy,
             )
+        effective_payload = self._canonicalize_write_payload(payload)
         try:
             result = self.store.create_pending(
-                payload,
+                effective_payload,
                 event_context=self._event_context_from_lookup(self.current_context),
             )
             if commit:
@@ -208,11 +268,12 @@ class MemoryService:
         commit_event: bool = True,
     ) -> list[MemoryPromptSnippet]:
         context = current_context or self.current_context
-        lookup_queries = self._lookup_queries(query, current_context=context)
+        effective_query = self._canonicalize_query(query, current_context=context)
+        lookup_queries = self._lookup_queries(effective_query, current_context=context)
         if len(lookup_queries) == 1:
             snippets = self.store.query(lookup_queries[0])
         else:
-            snippets = self._query_memory_across_contexts(query, lookup_queries)
+            snippets = self._query_memory_across_contexts(effective_query, lookup_queries)
         if record_event:
             self._record_retrieval_event(
                 query=query,
@@ -507,6 +568,27 @@ class MemoryService:
         if len(text) <= max_characters:
             return text
         return f"{text[: max_characters - 1]}…"
+
+    def _canonicalize_write_payload(self, payload: MemoryWriteRequest) -> MemoryWriteRequest:
+        if self.current_context is None:
+            return payload
+        canonical_scope = self.current_context.canonicalize_scope(payload.scope)
+        if canonical_scope == payload.scope:
+            return payload
+        return payload.model_copy(update={"scope": canonical_scope})
+
+    @staticmethod
+    def _canonicalize_query(
+        query: MemoryQuery,
+        *,
+        current_context: MemoryLookupContext | None,
+    ) -> MemoryQuery:
+        if current_context is None or query.scope is None:
+            return query
+        canonical_scope = current_context.canonicalize_scope(query.scope)
+        if canonical_scope == query.scope:
+            return query
+        return query.model_copy(update={"scope": canonical_scope})
 
     def _lookup_queries(
         self,

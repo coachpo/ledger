@@ -104,6 +104,13 @@ _RUN_HEADER_COLUMNS = {
     "extension_dependencies",
     "input",
     "status",
+    "execution_scope_key",
+    "concurrency_policy",
+    "lease_owner",
+    "lease_expires_at",
+    "heartbeat_at",
+    "attempt_count",
+    "last_claimed_at",
     "source_run_id",
     "lineage_root_run_id",
     "forked_from_step_index",
@@ -1508,6 +1515,14 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         for constraint in run_check_constraints
         if constraint.get("name") == "ck_runs_status"
     )
+    with engine.connect() as connection:
+        serial_scope_index_sql = connection.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE tablename = 'runs' "
+                "AND indexname = 'uq_runs_running_serial_execution_scope'"
+            )
+        ).scalar_one()
     run_step_checks = {
         constraint["name"]
         for constraint in inspector.get_check_constraints("run_steps")
@@ -1577,13 +1592,25 @@ def _assert_runtime_execution_table_shape(engine) -> None:
     assert run_columns["extension_dependencies"]["nullable"] is False
     assert run_columns["queued_at"]["nullable"] is False
     assert run_columns["started_at"]["nullable"] is True
+    assert run_columns["execution_scope_key"]["nullable"] is True
+    assert run_columns["concurrency_policy"]["nullable"] is False
+    assert run_columns["attempt_count"]["nullable"] is False
     assert all(status in run_status_sql for status in ("queued", "running", "succeeded", "failed"))
+    normalized_serial_scope_index_sql = serial_scope_index_sql.lower()
+    assert "where" in normalized_serial_scope_index_sql
+    assert "status" in normalized_serial_scope_index_sql
+    assert "running" in normalized_serial_scope_index_sql
+    assert "concurrency_policy" in normalized_serial_scope_index_sql
+    assert "serial" in normalized_serial_scope_index_sql
     assert {
         "ix_runs_status",
+        "ix_runs_queue_claim",
         "ix_runs_target",
         "ix_runs_target_key",
         "ix_runs_source_run",
         "ix_runs_lineage_root",
+        "ix_runs_execution_scope_status",
+        "uq_runs_running_serial_execution_scope",
         "ix_runs_workflow_package",
         "ix_runs_workflow_package_key",
         "ix_runs_workflow_package_workflow_key",
@@ -1597,6 +1624,8 @@ def _assert_runtime_execution_table_shape(engine) -> None:
         "ck_runs_total_tokens_non_negative",
         "ck_runs_inherited_tokens_non_negative",
         "ck_runs_executed_tokens_non_negative",
+        "ck_runs_concurrency_policy",
+        "ck_runs_attempt_count_non_negative",
     } <= run_checks
     assert set(_RUN_COST_CHECKS).isdisjoint(run_checks)
     assert (("source_run_id",), "runs", "SET NULL") in run_foreign_keys
@@ -3291,6 +3320,83 @@ def test_init_db_repairs_run_lifecycle_columns_and_status_constraint(
             (running_run_id, "failed", True, True, True),
         ]
         assert queued_insert_status == "queued"
+    finally:
+        engine.dispose()
+
+
+def test_init_db_repairs_run_scheduler_metadata_columns_and_indexes(
+    database_url: str,
+) -> None:
+    init_db(database_url)
+    engine = create_engine(database_url, future=True)
+
+    try:
+        with engine.begin() as connection:
+            package = _insert_representable_workflow_package(
+                connection,
+                key="scheduler_repair_package",
+                workflow_key="scheduler_repair_workflow",
+            )
+            run_id = connection.execute(
+                text(
+                    """
+                    INSERT INTO runs (
+                        target_kind, target_id, target_key, target_version,
+                        workflow_package_id, workflow_package_key,
+                        workflow_package_workflow_key, status, input
+                    ) VALUES (
+                        'workflowPackage', :package_id, :package_key, :target_version,
+                        :package_id, :package_key, :workflow_key, 'queued', '{}'::jsonb
+                    ) RETURNING id
+                    """
+                ),
+                package,
+            ).scalar_one()
+            _insert_run_workflow_package_snapshot(
+                connection,
+                run_id=int(run_id),
+                package=package,
+            )
+            connection.exec_driver_sql(
+                "DROP INDEX IF EXISTS uq_runs_running_serial_execution_scope"
+            )
+            for column_name in (
+                "execution_scope_key",
+                "concurrency_policy",
+                "lease_owner",
+                "lease_expires_at",
+                "heartbeat_at",
+                "attempt_count",
+                "last_claimed_at",
+            ):
+                connection.exec_driver_sql(
+                    f"ALTER TABLE runs DROP COLUMN IF EXISTS {column_name} CASCADE"
+                )
+
+        init_db(database_url)
+        _assert_runtime_execution_table_shape(engine)
+        with engine.connect() as connection:
+            scheduler_row = connection.execute(
+                text(
+                    """
+                    SELECT execution_scope_key, concurrency_policy, attempt_count,
+                           lease_owner, lease_expires_at, heartbeat_at, last_claimed_at
+                    FROM runs
+                    WHERE id = :run_id
+                    """
+                ),
+                {"run_id": run_id},
+            ).one()
+
+        assert tuple(scheduler_row) == (
+            "package:scheduler_repair_package",
+            "serial",
+            0,
+            None,
+            None,
+            None,
+            None,
+        )
     finally:
         engine.dispose()
 

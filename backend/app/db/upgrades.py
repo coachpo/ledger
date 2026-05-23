@@ -380,6 +380,13 @@ $$,
                 extension_dependencies JSONB NOT NULL DEFAULT '[]'::jsonb,
                 input JSONB NOT NULL,
                 status VARCHAR(20) NOT NULL DEFAULT 'queued',
+                execution_scope_key VARCHAR(255),
+                concurrency_policy VARCHAR(20) NOT NULL DEFAULT 'serial',
+                lease_owner VARCHAR(255),
+                lease_expires_at TIMESTAMPTZ,
+                heartbeat_at TIMESTAMPTZ,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_claimed_at TIMESTAMPTZ,
                 source_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 lineage_root_run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
                 forked_from_step_index INTEGER,
@@ -408,7 +415,11 @@ $$,
                 ),
                 CONSTRAINT ck_runs_total_tokens_non_negative CHECK (total_tokens >= 0),
                 CONSTRAINT ck_runs_inherited_tokens_non_negative CHECK (inherited_tokens >= 0),
-                CONSTRAINT ck_runs_executed_tokens_non_negative CHECK (executed_tokens >= 0)
+                CONSTRAINT ck_runs_executed_tokens_non_negative CHECK (executed_tokens >= 0),
+                CONSTRAINT ck_runs_concurrency_policy CHECK (
+                    concurrency_policy IN ('serial', 'parallel')
+                ),
+                CONSTRAINT ck_runs_attempt_count_non_negative CHECK (attempt_count >= 0)
             )
             """,
             "CREATE INDEX IF NOT EXISTS ix_runs_status ON runs (status)",
@@ -863,6 +874,29 @@ _RUN_WORKFLOW_PACKAGE_PROVENANCE_INDEXES: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS ix_runs_workflow_package_workflow_key "
         "ON runs (workflow_package_workflow_key)"
     ),
+)
+_RUN_SCHEDULER_METADATA_COLUMNS: dict[str, str] = {
+    "execution_scope_key": "VARCHAR(255)",
+    "concurrency_policy": "VARCHAR(20) NOT NULL DEFAULT 'serial'",
+    "lease_owner": "VARCHAR(255)",
+    "lease_expires_at": "TIMESTAMPTZ",
+    "heartbeat_at": "TIMESTAMPTZ",
+    "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+    "last_claimed_at": "TIMESTAMPTZ",
+}
+_RUN_SCHEDULER_NON_UNIQUE_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_runs_queue_claim ON runs (status, queued_at, id)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_runs_execution_scope_status "
+        "ON runs (execution_scope_key, status)"
+    ),
+)
+_RUN_SCHEDULER_SERIAL_INDEX = "uq_runs_running_serial_execution_scope"
+_RUN_SCHEDULER_SERIAL_INDEX_SQL = (
+    f"CREATE UNIQUE INDEX IF NOT EXISTS {_RUN_SCHEDULER_SERIAL_INDEX} "
+    "ON runs (execution_scope_key) "
+    "WHERE status = 'running' AND concurrency_policy = 'serial' "
+    "AND execution_scope_key IS NOT NULL"
 )
 _RUN_TARGET_REFERENCE_COLUMNS: dict[str, str] = {
     "agent_id": "INTEGER",
@@ -1399,6 +1433,13 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
             "extension_dependencies",
             "input",
             "status",
+            "execution_scope_key",
+            "concurrency_policy",
+            "lease_owner",
+            "lease_expires_at",
+            "heartbeat_at",
+            "attempt_count",
+            "last_claimed_at",
             "source_run_id",
             "lineage_root_run_id",
             "forked_from_step_index",
@@ -1546,9 +1587,10 @@ _RUNTIME_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
         }
     ),
 }
+_RUNTIME_REPAIRABLE_RUN_COLUMNS = frozenset({"queued_at", *_RUN_SCHEDULER_METADATA_COLUMNS.keys()})
 _RUNTIME_CUTOVER_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
     table_name: (
-        _RUNTIME_REQUIRED_COLUMNS[table_name] - {"queued_at"}
+        _RUNTIME_REQUIRED_COLUMNS[table_name] - _RUNTIME_REPAIRABLE_RUN_COLUMNS
         if table_name == "runs"
         else _RUNTIME_REQUIRED_COLUMNS[table_name]
     )
@@ -3693,6 +3735,83 @@ def _ensure_run_lifecycle_support(engine: Engine, table_names: set[str]) -> None
         )
 
 
+def _ensure_run_scheduler_metadata_support(engine: Engine, table_names: set[str]) -> None:
+    if "runs" not in table_names:
+        return
+
+    inspector = inspect(engine)
+    run_columns = {column["name"] for column in inspector.get_columns("runs")}
+    with engine.begin() as connection:
+        for column_name, column_type in _RUN_SCHEDULER_METADATA_COLUMNS.items():
+            if column_name not in run_columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE runs ADD COLUMN {column_name} {column_type}"
+                )
+                run_columns.add(column_name)
+        connection.exec_driver_sql(
+            """
+            UPDATE runs
+            SET execution_scope_key = CASE
+                WHEN target_kind = 'workflowPackage' THEN 'package:' || COALESCE(
+                    NULLIF(btrim(workflow_package_key), ''),
+                    NULLIF(btrim(target_key), ''),
+                    target_id::text
+                )
+                WHEN target_kind IS NOT NULL AND btrim(target_kind) <> '' THEN
+                    'target:' || target_kind || ':' || COALESCE(
+                        NULLIF(btrim(target_key), ''),
+                        target_id::text
+                    )
+                ELSE NULL
+            END
+            WHERE execution_scope_key IS NULL OR btrim(execution_scope_key) = ''
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            UPDATE runs
+            SET concurrency_policy = CASE
+                WHEN target_kind = 'workflowPackage' THEN 'serial'
+                ELSE 'parallel'
+            END
+            WHERE concurrency_policy IS NULL
+               OR btrim(concurrency_policy) = ''
+               OR concurrency_policy NOT IN ('serial', 'parallel')
+            """
+        )
+        connection.exec_driver_sql(
+            "UPDATE runs SET attempt_count = 0 " "WHERE attempt_count IS NULL OR attempt_count < 0"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ALTER COLUMN concurrency_policy SET DEFAULT 'serial'"
+        )
+        connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN concurrency_policy SET NOT NULL")
+        connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN attempt_count SET DEFAULT 0")
+        connection.exec_driver_sql("ALTER TABLE runs ALTER COLUMN attempt_count SET NOT NULL")
+        _drop_constraint_if_exists(connection, "runs", "ck_runs_concurrency_policy")
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT ck_runs_concurrency_policy "
+            "CHECK (concurrency_policy IN ('serial', 'parallel'))"
+        )
+        _drop_constraint_if_exists(connection, "runs", "ck_runs_attempt_count_non_negative")
+        connection.exec_driver_sql(
+            "ALTER TABLE runs ADD CONSTRAINT ck_runs_attempt_count_non_negative "
+            "CHECK (attempt_count >= 0)"
+        )
+        for statement in _RUN_SCHEDULER_NON_UNIQUE_INDEXES:
+            connection.exec_driver_sql(statement)
+
+
+def _ensure_run_scheduler_serial_index(engine: Engine, table_names: set[str]) -> None:
+    if "runs" not in table_names:
+        return
+    run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
+    if not {"execution_scope_key", "concurrency_policy"} <= run_columns:
+        return
+    with engine.begin() as connection:
+        connection.exec_driver_sql(_RUN_SCHEDULER_SERIAL_INDEX_SQL)
+
+
 def _ensure_run_graph_metadata_support(engine: Engine, table_names: set[str]) -> None:
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -3974,9 +4093,11 @@ def upgrade_legacy_schema(engine: Engine) -> None:
     _backfill_platform_reference_tables(engine, table_names)
     _ensure_platform_foreign_keys(engine, table_names)
     _ensure_run_lifecycle_support(engine, table_names)
+    _ensure_run_scheduler_metadata_support(engine, table_names)
     _ensure_run_graph_metadata_support(engine, table_names)
     _ensure_core_memory_tables(engine, table_names)
     _recover_stale_agent_platform_runs(engine, table_names)
+    _ensure_run_scheduler_serial_index(engine, table_names)
 
     if "portfolios" in table_names:
         portfolio_columns = {column["name"] for column in inspector.get_columns("portfolios")}

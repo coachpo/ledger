@@ -163,6 +163,224 @@ def _disable_finance_workspace(session: Session) -> None:
     )
 
 
+def _write_request_for_context(
+    run_id: int,
+    *,
+    workflow_key: str,
+    agent_key: str,
+    scope: MemoryScope,
+    summary: str,
+    content: str,
+) -> MemoryWriteRequest:
+    request = _write_request(run_id)
+    return request.model_copy(
+        update={
+            "scope": scope,
+            "summary": summary,
+            "content": content,
+            "provenance": request.provenance.model_copy(
+                update={
+                    "agent_key": agent_key,
+                    "workflow_key": workflow_key,
+                    "step_id": "memory_write",
+                    "slot": "memory",
+                }
+            ),
+        }
+    )
+
+
+def test_package_runtime_broader_scopes_are_package_isolated(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        alpha_run = _seed_run(session)
+        beta_run = _seed_run(session)
+        shared_workflow_key = "shared_review"
+        shared_agent_key = "shared_agent"
+        alpha_context = MemoryLookupContext(
+            run_id=alpha_run.id,
+            package_key="pkg_alpha",
+            workflow_key=shared_workflow_key,
+            agent_key=shared_agent_key,
+        )
+        beta_context = MemoryLookupContext(
+            run_id=beta_run.id,
+            package_key="pkg_beta",
+            workflow_key=shared_workflow_key,
+            agent_key=shared_agent_key,
+        )
+        alpha_service = MemoryService(session, current_context=alpha_context)
+        beta_service = MemoryService(session, current_context=beta_context)
+        alpha_created = alpha_service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                alpha_run.id,
+                workflow_key=shared_workflow_key,
+                agent_key=shared_agent_key,
+                scope=MemoryScope(
+                    scope_type=MemoryScopeType.AGENT,
+                    scope_key=shared_agent_key,
+                ),
+                summary="Alpha package isolation memory.",
+                content="package isolation signal belongs only to alpha.",
+            ),
+        )
+        beta_created = beta_service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                beta_run.id,
+                workflow_key=shared_workflow_key,
+                agent_key=shared_agent_key,
+                scope=MemoryScope(
+                    scope_type=MemoryScopeType.AGENT,
+                    scope_key=shared_agent_key,
+                ),
+                summary="Beta package isolation memory.",
+                content="package isolation signal belongs only to beta.",
+            ),
+        )
+        _ = alpha_service.resolve_memory(
+            alpha_created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Alpha resolved"),
+        )
+        _ = beta_service.resolve_memory(
+            beta_created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Beta resolved"),
+        )
+        alpha_snippets = alpha_service.query_memory(
+            MemoryQuery(query="package isolation", limit=10),
+            record_event=False,
+        )
+        beta_snippets = beta_service.query_memory(
+            MemoryQuery(query="package isolation", limit=10),
+            record_event=False,
+        )
+        entries = {
+            entry.memory_id: entry
+            for entry in session.scalars(
+                select(AgentMemoryEntry).where(
+                    AgentMemoryEntry.memory_id.in_(
+                        [alpha_created.memory_id, beta_created.memory_id]
+                    )
+                )
+            )
+        }
+
+    assert entries[alpha_created.memory_id].scope_type == "agent"
+    assert entries[alpha_created.memory_id].scope_key == "pkg_alpha:shared_agent"
+    assert entries[beta_created.memory_id].scope_type == "agent"
+    assert entries[beta_created.memory_id].scope_key == "pkg_beta:shared_agent"
+    assert [snippet.memory_id for snippet in alpha_snippets] == [alpha_created.memory_id]
+    assert [snippet.memory_id for snippet in beta_snippets] == [beta_created.memory_id]
+
+
+def test_package_runtime_run_scope_default_remains_run_scoped(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        service = MemoryService(
+            session,
+            current_context=MemoryLookupContext(
+                run_id=run.id,
+                package_key="pkg_default_scope",
+                workflow_key="platform_graph_daily_review",
+                agent_key="portfolio_manager",
+            ),
+        )
+        created = service.write_memory(
+            capability_references=[],
+            payload=_write_request(run.id),
+        )
+        entry = session.scalar(
+            select(AgentMemoryEntry).where(AgentMemoryEntry.memory_id == created.memory_id)
+        )
+        written_event = session.scalar(
+            select(RunMemoryEvent).where(
+                RunMemoryEvent.memory_id == created.memory_id,
+                RunMemoryEvent.event_type == "written",
+            )
+        )
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Run resolved"),
+        )
+        snippets = service.query_memory(
+            MemoryQuery(query="compounding", limit=5),
+            record_event=False,
+        )
+
+    assert entry is not None
+    assert entry.scope_type == "run"
+    assert entry.scope_key == str(run.id)
+    assert written_event is not None
+    assert written_event.run_id == run.id
+    assert written_event.filters["scope"] == {"scopeType": "run", "scopeKey": str(run.id)}
+    assert created.provenance.run_id == run.id
+    assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
+
+
+def test_package_runtime_current_context_lookup_uses_canonical_scope_keys(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        run = _seed_run(session)
+        context = MemoryLookupContext(
+            run_id=run.id,
+            package_key="pkg_current_context",
+            workflow_key="shared_workflow",
+            agent_key="shared_agent",
+            trace_span_id="span-current-context",
+        )
+        service = MemoryService(session, current_context=context)
+        created = service.write_memory(
+            capability_references=[],
+            payload=_write_request_for_context(
+                run.id,
+                workflow_key="shared_workflow",
+                agent_key="shared_agent",
+                scope=MemoryScope(
+                    scope_type=MemoryScopeType.WORKFLOW,
+                    scope_key="shared_workflow",
+                ),
+                summary="Current context canonical lookup memory.",
+                content="canonical fallback should find this workflow memory.",
+            ),
+        )
+        _ = service.resolve_memory(
+            created.memory_id,
+            MemoryOutcome(status=MemoryLifecycleStatus.RESOLVED, summary="Workflow resolved"),
+        )
+        snippets = service.query_memory(MemoryQuery(query="canonical fallback", limit=5))
+        retrieval_event = session.scalar(
+            select(RunMemoryEvent)
+            .where(
+                RunMemoryEvent.run_id == run.id,
+                RunMemoryEvent.event_type == "retrieved",
+            )
+            .order_by(RunMemoryEvent.id.desc())
+        )
+
+    assert [snippet.memory_id for snippet in snippets] == [created.memory_id]
+    assert retrieval_event is not None
+    effective_scopes = [
+        (item["scope"]["scopeType"], item["scope"]["scopeKey"])
+        for item in retrieval_event.filters["effective"]
+    ]
+    assert ("workflow", "pkg_current_context:shared_workflow") in effective_scopes
+    assert ("agent", "pkg_current_context:shared_agent") in effective_scopes
+    assert ("workflow", "shared_workflow") not in effective_scopes
+    assert ("agent", "shared_agent") not in effective_scopes
+    assert retrieval_event.filters["context"] == {
+        "runId": run.id,
+        "packageKey": "pkg_current_context",
+        "workflowKey": "shared_workflow",
+        "agentKey": "shared_agent",
+        "traceSpanId": "span-current-context",
+    }
+
+
 def test_core_memory_service_write_requires_grant_and_creates_no_report(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -625,6 +843,52 @@ def test_core_memory_write_rolls_back_when_event_persistence_fails(
         assert _count(session, AgentMemoryEntry) == 0
         assert _count(session, AgentMemoryRevision) == 0
         assert _count(session, RunMemoryEvent) == 0
+
+
+def test_core_memory_revision_update_rolls_back_when_event_persistence_fails(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_factory() as session:
+        _ensure_memory_write_capability(session)
+        run = _seed_run(session)
+        service = MemoryService(session)
+        created = service.write_memory(
+            capability_references=_capability_references(),
+            payload=_write_request(run.id),
+            grant_policy=MEMORY_WRITE_GRANT_POLICY,
+        )
+
+        def failing_add_event(
+            self: RunMemoryEventRepository,
+            **fields: object,
+        ) -> RunMemoryEvent:
+            del self, fields
+            raise RuntimeError("simulated revision event persistence failure")
+
+        monkeypatch.setattr(RunMemoryEventRepository, "add_event", failing_add_event)
+
+        with pytest.raises(RuntimeError, match="simulated revision event persistence failure"):
+            _ = service.resolve_memory(
+                created.memory_id,
+                MemoryOutcome(
+                    status=MemoryLifecycleStatus.RESOLVED,
+                    summary="Resolution should roll back",
+                ),
+            )
+
+    with session_factory() as session:
+        entry = session.scalar(
+            select(AgentMemoryEntry).where(AgentMemoryEntry.memory_id == created.memory_id)
+        )
+        revisions = list(session.scalars(select(AgentMemoryRevision)))
+        events = list(session.scalars(select(RunMemoryEvent)))
+
+    assert entry is not None
+    assert entry.status == "pending"
+    assert [revision.version for revision in revisions] == [1]
+    assert [event.event_type for event in events] == ["written"]
+    assert events[0].revision_id == created.revision_id
 
 
 def test_memory_report_service_boundary_rolls_back_write_when_commit_fails(

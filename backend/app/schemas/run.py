@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -16,6 +16,16 @@ class RunStatus(str, Enum):  # noqa: UP042
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class RunQueueState(str, Enum):  # noqa: UP042
+    WAITING = "waiting"
+    BLOCKED = "blocked"
+
+
+class RunQueueReason(str, Enum):  # noqa: UP042
+    AWAITING_WORKER_CAPACITY = "awaiting-worker-capacity"
+    BLOCKED_BY_PACKAGE_SERIAL_POLICY = "blocked-by-package-serial-policy"
 
 
 class RunStepStatus(str, Enum):  # noqa: UP042
@@ -450,12 +460,34 @@ class RunCreatedRead(CamelModel):
         return ensure_timezone(value)
 
 
+class RunProgressRead(CamelModel):
+    unit: Literal["invocation"]
+    terminal_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    percent: int = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def require_consistent_counts(self) -> Self:
+        if self.terminal_count > self.total_count:
+            raise ValueError("terminalCount cannot exceed totalCount")
+        return self
+
+
+class RunQueueRead(CamelModel):
+    state: RunQueueState
+    reason: RunQueueReason
+    message: str
+    blocking_run_id: int | None = None
+
+
 class RunListItemRead(CamelModel):
     id: int
     target_kind: RunTargetKind
     target_id: int
     target_key: str
     status: RunStatus
+    progress: RunProgressRead
+    queue: RunQueueRead | None = None
     total_tokens: int = Field(ge=0)
     trace_id: str | None = None
     queued_at: datetime
@@ -605,6 +637,8 @@ class RunRead(CamelModel):
     resume_step_index: int = Field(ge=1)
     final_output: Any | None = None
     status: RunStatus
+    progress: RunProgressRead
+    queue: RunQueueRead | None = None
     total_tokens: int = Field(ge=0)
     inherited_tokens: int = Field(ge=0)
     executed_tokens: int = Field(ge=0)
@@ -643,6 +677,9 @@ class RunRerunDraftRead(CamelModel):
     target_id: int
     target_key: str
     parameters: dict[str, object]
+    ready: bool
+    blocking_errors: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
 
 
@@ -657,6 +694,9 @@ class RunForkDraftRead(CamelModel):
     target_id: int
     target_key: str
     invocation_input: dict[str, object]
+    ready: bool
+    blocking_errors: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
 
 
@@ -687,6 +727,10 @@ __all__ = [
     "RunPackagePreflightSummaryRead",
     "RunPackageProvenanceRead",
     "RunPackageResolvedModelConnectionRead",
+    "RunProgressRead",
+    "RunQueueRead",
+    "RunQueueReason",
+    "RunQueueState",
     "RunRead",
     "RunRerunCreateRequest",
     "RunRerunDraftRead",

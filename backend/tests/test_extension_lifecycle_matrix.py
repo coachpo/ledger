@@ -250,7 +250,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "restored finance runtime"}'
     monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    monkeypatch.setattr(RunService, "_dispatch_queue_worker", lambda self: None)
     _seed_model_connection(session_factory)
 
     enabled_tool_keys = _tool_keys(client)
