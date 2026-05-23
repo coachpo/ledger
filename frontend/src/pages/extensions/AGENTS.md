@@ -4,7 +4,9 @@
 
 ## OVERVIEW
 
-`src/pages/extensions/` owns the `/extensions` system route: a slim bundled-extension inventory that renders backend state, sorts labels/keys for stable display, and toggles enablement through the shared extension hooks. This is a state surface, not a marketplace or plugin-management UI.
+`src/pages/extensions/` owns the `/extensions` system route: a slim statically resident extension inventory that renders backend state, sorts labels/keys for stable display, and toggles enablement through the shared extension hooks. This is a state surface, not a marketplace or plugin-management UI.
+
+Extension model: statically resident extension inventory.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -33,7 +35,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Do not add marketplace, install, remove, or contribution-browser behavior here in phase 1.
 - Do not mirror private registry or scaffold metadata in the UI.
 - Do not bypass `useToggleExtension()` or duplicate finance visibility rules in the page layer.
-- Do not turn this route into a generic settings dump unrelated to bundled extension state.
+- Do not turn this route into a generic settings dump unrelated to statically resident extension state.
 
 ## VALIDATION
 

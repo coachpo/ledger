@@ -6,6 +6,8 @@
 
 `src/pages/reports/` owns the report inventory and slug-addressed detail routes. The list page handles search, grouping, view mode, batch actions, upload, and template-driven generation, while the detail page handles markdown viewing, editing, and downloads for a single persisted report snapshot.
 
+Extension model: statically resident Finance Workspace extension.
+
 ## WHERE TO LOOK
 
 | Task                    | Location                                            | Notes                                                                                    |

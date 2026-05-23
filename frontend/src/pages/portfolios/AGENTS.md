@@ -6,6 +6,8 @@
 
 `src/pages/portfolios/` owns the live portfolio inventory and workspace detail routes. The list page handles create/edit/delete entry points, cards/table switching, table-only batch selection, and bulk delete, while the detail page composes balances, positions, trades, quotes, and derived portfolio metrics inside one routed workspace.
 
+Extension model: statically resident Finance Workspace extension.
+
 ## WHERE TO LOOK
 
 | Task                    | Location                                                                                                                                | Notes                                                                                                                           |

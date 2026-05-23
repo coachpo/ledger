@@ -14,7 +14,9 @@
 
 ## OVERVIEW
 
-`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, bundled extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
+`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, statically resident extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Model Connections, and Runs.
+
+Extension model: statically resident extension-gated route families.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -27,7 +29,7 @@ This parent guide now delegates the contract-heavy Extensions, Model Connections
 ```text
 src/pages/
 ├── dashboard.tsx                # home route summary
-├── extensions/                  # bundled extension state/toggle route
+├── extensions/                  # statically resident extension state/toggle route
 ├── workflow-packages/           # package list and editor routes
 ├── model-connections/           # saved model connection list and editor routes
 ├── runs/                        # run list and detail routes
@@ -42,7 +44,7 @@ src/pages/
 | Task                         | Location                                                                                | Notes                                                                                                       |
 | ---------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Dashboard landing            | `dashboard.tsx`                                                                         | home route summary and retry state                                                                          |
-| Extension state route        | `extensions/AGENTS.md`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts`         | bundled extension slim state and enable/disable toggle flow                                                 |
+| Extension state route        | `extensions/AGENTS.md`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts`         | statically resident extension slim state and enable/disable toggle flow                                                 |
 | Workflow Package pages       | `workflow-packages/AGENTS.md`                                                           | package authoring, validation, preflight, launch, import, and export                                        |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
 | Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, invocation-input fork, trace views, and historical replay lineage reads |
@@ -74,7 +76,7 @@ src/pages/
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, trace, payload, and fork/rerun controls with internal scrolling for wide data.
-- System-state routes stay narrow and contract-bound. `/extensions` renders only slim bundled extension state and must not grow marketplace, install, remove, or private scaffold details.
+- System-state routes stay narrow and contract-bound. `/extensions` renders only slim statically resident extension state and must not grow marketplace, install, remove, or private scaffold details.
 - Loading, error, empty, filtered-empty, disabled-extension, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 
 ## REGRESSION COVERAGE MATRIX
