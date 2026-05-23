@@ -68,3 +68,4 @@ tmp/
 backend/results/
 
 *.png
+docs/pending-design/*
