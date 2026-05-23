@@ -22,7 +22,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 | Extension state flows | `use-extensions.ts` | `/api/extensions` list/toggle state, finance cache invalidation, route/tool visibility support |
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, runtime-input registry, validation, preflight, launch, and extension-filtered tool reads |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
-| Run flows | `use-runs.ts` | run list/detail reads with package provenance plus rerun/fork drafts and create mutations |
+| Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
 | Hook test hotspots | `use-workflow-packages.test.ts`, `use-model-connections.test.ts`, `use-runs.test.ts` | focused cache and mutation coverage |
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 

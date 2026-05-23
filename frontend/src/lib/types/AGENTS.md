@@ -32,7 +32,7 @@ Platform invariant: SignalDeck is a universal agents workflow/pipeline platform.
 - Keep route forms, hook inputs, extension-state consumers, and shared type names aligned with the current backend contract.
 - Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Run memory evidence is phase-1 core memory shaped: `memoryEvents` carries the full event stream, `memoryArtifacts` is the compact artifact slice, and `memoryId` is an opaque string. Optional report actions live only under `auditLinks.report`; frontend types must not derive report slugs, report downloads, or route paths from `memoryId`.
-- No vector search, embeddings, chunk table, or public browser `/api/memory` shape exists in phase 1 frontend contracts.
+- Frontend phase 1 has run memory evidence types only; there is no vector search, embeddings, chunk table, or public browser `/api/memory` shape.
 
 ## ANTI-PATTERNS
 - Do not declare ad-hoc wire types inside hooks or page components.

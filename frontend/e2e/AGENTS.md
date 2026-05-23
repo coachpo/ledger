@@ -22,7 +22,7 @@ e2e/
 ```
 
 ## CONVENTIONS
-- Playwright runs backend `8001` and frontend `4173` through `scripts/start-playwright-backend.mjs` and `scripts/start-playwright-frontend.mjs`.
+- Playwright runs backend `8001` and frontend `4173` through `scripts/start-playwright-backend.mjs` and `scripts/start-playwright-frontend.mjs`; the backend helper also starts and tears down the scheduler worker so queued Workflow Package runs can advance during browser tests.
 - Specs should use API-assisted setup when it keeps the UI assertion focused.
 - Preserved product setup uses `/api/v1`; platform setup uses `/api`.
 - Use role/text/testid locators and web-first assertions; avoid brittle deep CSS, XPath, and `nth-child` chains.

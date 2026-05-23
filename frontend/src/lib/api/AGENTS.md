@@ -23,7 +23,7 @@ src/lib/api/
 ├── workflow-packages.ts   # package manifest, version, preflight, launch, import, export
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
-└── runs.ts                # run list/detail reads with package provenance
+└── runs.ts                # run list/detail reads with package provenance, progress, queue, rerun/fork contracts
 ```
 
 ## WHERE TO LOOK
