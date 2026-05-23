@@ -5,6 +5,8 @@
 ## OVERVIEW
 `app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts preserved `/api/v1` finance routes through `signaldeck.finance` registrations plus current `/api/*` platform routes for Workflow Packages, Model Connections, Extensions, Tools, and Runs.
 
+Extension model: statically resident `signaldeck.finance` registrations.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
