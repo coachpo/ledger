@@ -5,7 +5,9 @@
 ## OVERVIEW
 `src/extensions/` owns frontend extension registration, route assembly, sidebar grouping, extension-gated route shells, and tool-catalog filtering. The current bundled frontend extension is `signaldeck.finance`, enabled by backend state from `/api/extensions`.
 
-Future upgrade work must keep this folder focused on generic extension-runtime wiring. Finance-specific route/nav/tool behavior should stay in the bundled finance scaffold until a shared platform contract is explicit.
+Extension model: this folder owns statically resident frontend extension registration, route assembly, sidebar grouping, extension-gated route shells, and tool-catalog filtering.
+
+Future upgrade work must keep this folder focused on generic extension-runtime wiring. Finance-specific route/nav/tool behavior should stay in the statically resident finance scaffold until a shared platform contract is explicit.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -27,7 +29,7 @@ src/extensions/
 | Runtime gates and shells | `runtime.tsx` | `FinanceWorkspaceRouteGate`, loading/disabled shells, and backend-state gating UI |
 | Runtime assembly | `runtime-helpers.ts` | `assembleFinanceWorkspaceRoutes()`, `assembleNavGroups()`, and `filterToolsForExtensionState()` |
 | Finance scaffold | `signaldeck-finance/scaffold.ts` | finance route/nav/tool entries and private backend-state gate tags |
-| Registry export | `registry.ts`, `index.ts` | bundled extension lookup and public exports |
+| Registry export | `registry.ts`, `index.ts` | statically resident extension lookup and public exports |
 | Backend state hooks | `../hooks/use-extensions.ts` | TanStack Query wrapper for `/api/extensions` |
 | Route-state surface | `../pages/extensions/AGENTS.md` | `/extensions` page consumes the slim backend contract, not scaffold metadata |
 

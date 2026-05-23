@@ -5,6 +5,8 @@
 ## OVERVIEW
 `src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, including extension-aware finance routes, the `/extensions` system route, and the current agent-platform routes.
 
+Extension model: statically resident extension runtime nav groups and extension state.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.

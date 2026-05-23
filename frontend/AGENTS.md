@@ -5,6 +5,8 @@
 ## OVERVIEW
 React 19 + Vite frontend with a flat route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Model Connections, and Runs, plus shared UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface.
 
+Extension model: SignalDeck Core ships statically resident extensions in code, while frontend state and gates decide which routes, nav items, and tool pickers are exposed.
+
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
@@ -20,7 +22,7 @@ Future frontend upgrade work must keep platform-core route, query, and authoring
 - `src/lib/platform-authoring/AGENTS.md` — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim bundled extension contract, and toggle behavior
+- `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim statically resident extension contract, and toggle behavior
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
